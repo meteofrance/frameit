@@ -1,0 +1,42 @@
+cff-version: 1.2.0
+message: If you use FrameIt, please cite it using the metadata from this file.
+title: "FrameIt: Focused Regional Analysis of Modeled Events with Integrated Tracking"
+abstract: >-
+  FrameIt is a modular Python library for tracking atmospheric events in
+  numerical model outputs and extracting a moving sub-domain centred on them.
+  It reads and normalises outputs from several models, locates the event with
+  one of four tracking methods, and writes the surrounding fields as
+  self-contained NetCDF files on the model native cartesian grid and on a
+  geodesic polar grid. It is designed to reduce the volume of regional,
+  kilometre-scale simulations to datasets that can be archived and shared.
+type: software
+authors:
+  - family-names: Soufflet
+    given-names: Clément
+    affiliation: Météo-France
+    orcid: https://orcid.org/0009-0006-3355-6998
+  - family-names: Hoarau
+    given-names: Kevin
+    affiliation: CNRS
+    orcid: https://orcid.org/0009-0008-5866-6450
+  - family-names: Colomb
+    given-names: Adrien
+    affiliation: Météo-France
+    orcid: https://orcid.org/0009-0002-7618-171X
+  - family-names: Laxenaire
+    given-names: Rémi
+    affiliation: Météo-France
+    orcid: https://orcid.org/0000-0001-5157-1821
+version: 1.0.0
+date-released: 2026-01-01
+license: Apache-2.0
+repository-code: https://github.com/meteofrance/frameit
+url: https://meteofrance.github.io/frameit/
+keywords:
+  - tropical cyclones
+  - object tracking
+  - numerical weather prediction
+  - data reduction
+  - xarray
+  - AROME
+  - Meso-NH
