@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,26 @@ name = "frameit"
 version = "1.0.0"
 requires-python = ">=3.10"
 description = "Focused Regional Analysis of Modeled Events with Integrated Tracking"
-license = {text = "Apache-2.0"}
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Clément Soufflet"},
+    {name = "Kevin Hoarau"},
+    {name = "Adrien Colomb"},
+    {name = "Rémi Laxenaire"},
+]
+maintainers = [
+    {name = "Clément Soufflet", email = "clement.soufflet@meteo.fr"},
+]
+
+[project.urls]
+Homepage = "https://github.com/meteofrance/frameit"
+Documentation = "https://meteofrance.github.io/frameit/"
+Repository = "https://github.com/meteofrance/frameit"
+
+[project.scripts]
+frameit = "frameit.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -18,9 +37,6 @@ frameit = ["presets/**/*.yaml"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
-
-[project.scripts]
-frameit = "frameit.cli:main"
 
 [tool.ruff]
 line-length = 100
@@ -46,5 +62,3 @@ fixable = ["ALL"]
 
 [tool.ruff.format]
 quote-style = "double"
-
-
