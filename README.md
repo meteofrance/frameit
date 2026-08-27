@@ -3,6 +3,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22128192.svg)](https://doi.org/10.5281/zenodo.22128192)
 
 A modular Python tool for subdomain extraction, object tracking and diagnostics 
 from atmospheric and oceanic model outputs.
@@ -86,14 +87,18 @@ If you use FrameIt in your research, please cite it as follows:
 
 ```bibtex
 @software{soufflet_frameit_2026,
-  author    = {Soufflet, Clément and others},
+  author    = {Soufflet, Clément and Hoarau, Kevin and Colomb, Adrien and Laxenaire, Rémi},
   title     = {FrameIt: Focused Regional Analysis of Modeled Events with Integrated Tracking},
   year      = {2026},
-  publisher = {Météo-France},
-  url       = {https://github.com/meteofrance/frameit},
-  version   = {1.0}
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.22128192},
+  url       = {https://doi.org/10.5281/zenodo.22128192}
 }
 ```
+
+This DOI always resolves to the latest release. To cite the exact version you
+used, add the corresponding `version` field and replace the DOI with the
+version DOI listed on the [Zenodo record](https://doi.org/10.5281/zenodo.22128192).
 
 ## License
 
@@ -108,4 +113,4 @@ FrameIt was developed at Météo-France.
 - Clément Soufflet — Météo-France
 - Kevin Hoarau — CNRS
 - Adrien Colomb — Météo-France
-- Remi Laxenaire — Météo-France
+- Rémi Laxenaire — Météo-France
