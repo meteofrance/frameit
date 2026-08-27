@@ -24,6 +24,7 @@ maintainers = [
 Homepage = "https://github.com/meteofrance/frameit"
 Documentation = "https://meteofrance.github.io/frameit/"
 Repository = "https://github.com/meteofrance/frameit"
+DOI = "https://doi.org/10.5281/zenodo.22128192"
 
 [project.scripts]
 frameit = "frameit.cli:main"

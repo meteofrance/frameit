@@ -32,6 +32,7 @@ date-released: 2026-08-27
 license: Apache-2.0
 repository-code: https://github.com/meteofrance/frameit
 url: https://meteofrance.github.io/frameit/
+doi: 10.5281/zenodo.22128192
 keywords:
   - tropical cyclones
   - object tracking
