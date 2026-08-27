@@ -28,7 +28,7 @@ authors:
     affiliation: Météo-France
     orcid: https://orcid.org/0000-0001-5157-1821
 version: 1.0.0
-date-released: 2026-01-01
+date-released: 2026-08-27
 license: Apache-2.0
 repository-code: https://github.com/meteofrance/frameit
 url: https://meteofrance.github.io/frameit/
