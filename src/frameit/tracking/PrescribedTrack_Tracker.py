@@ -12,7 +12,7 @@ import xarray as xr
 
 from frameit.core.settings_class import SimulationConfig
 
-from .tracker_core import TcTracker, register_tracker
+from .tracker_core import TcTracker, nearest_grid_point, register_tracker
 
 
 @register_tracker
@@ -52,6 +52,8 @@ class PrescribedTrack(TcTracker):
             Path to the NetCDF file containing the prescribed track.
         atm_model : str or None, optional
             Atmospheric model identifier, either ``"AROME"`` or ``"MNH"``.
+            Kept for backward compatibility: the grid type is now inferred
+            from the dimensionality of the latitude and longitude coordinates.
         lat_name : str, optional
             Name of the latitude coordinate in the model dataset.
             Default ``"latitude"``.
@@ -154,8 +156,8 @@ class PrescribedTrack(TcTracker):
         ------
         ValueError
             If required coordinates are missing from the track file or model
-            dataset, if no common dates are found, or if ``atm_model`` is
-            not ``"AROME"`` or ``"MNH"``.
+            dataset, if no common dates are found, or if latitude and
+            longitude are neither both 1-D nor both 2-D.
         """
         lat = ds.coords[self.lat_name]
         lon = ds.coords[self.lon_name]
@@ -198,55 +200,9 @@ class PrescribedTrack(TcTracker):
         cy = np.empty(ntime, dtype="int64")
         cx = np.empty(ntime, dtype="int64")
 
-        model = self.atm_model
-
-        # 3) Calcul des indices (cy, cx) pour chaque date
-
-        # AROME case: 1D lat (nj), 1D lon (ni)
-        if model == "AROME":
-            if not (lat.ndim == 1 and lon.ndim == 1):
-                raise ValueError(
-                    f"PrescribedTrack (AROME): expected 1D lat/lon, got "
-                    f"lat.ndim={lat.ndim}, lon.ndim={lon.ndim}"
-                )
-
-            lat_vals = lat.values
-            lon_vals = lon.values
-
-            for k in range(ntime):
-                lat0 = float(lat_trk[k])
-                lon0 = float(lon_trk[k])
-
-                j = int(np.nanargmin((lat_vals - lat0) ** 2))
-                i = int(np.nanargmin((lon_vals - lon0) ** 2))
-
-                cy[k] = j
-                cx[k] = i
-
-        # MNH case: 2D lat (nj, ni), 2D lon (nj, ni)
-        elif model == "MNH":
-            if not (lat.ndim == 2 and lon.ndim == 2):
-                raise ValueError(
-                    f"PrescribedTrack (MNH): expected 2D lat/lon, got "
-                    f"lat.ndim={lat.ndim}, lon.ndim={lon.ndim}"
-                )
-            if lat.shape != lon.shape:
-                raise ValueError(
-                    "PrescribedTrack (MNH): 2D latitude and longitude must have the same shape"
-                )
-
-            for k in range(ntime):
-                lat0 = float(lat_trk[k])
-                lon0 = float(lon_trk[k])
-
-                dlat = lat - lat0
-                dlon = lon - lon0
-                dist2 = dlat * dlat + dlon * dlon
-
-                dist_vals = dist2.values
-                j_flat, i_flat = np.unravel_index(int(np.nanargmin(dist_vals)), dist_vals.shape)
-                cy[k] = int(j_flat)
-                cx[k] = int(i_flat)
+        # 3) Closest grid point for each date (1-D or 2-D lat/lon)
+        for k in range(ntime):
+            cy[k], cx[k], _ = nearest_grid_point(lat, lon, lat_trk[k], lon_trk[k])
 
         # 4) Construction du Dataset de sortie
         time_da = xr.DataArray(common_times, dims=("time",), name="time")

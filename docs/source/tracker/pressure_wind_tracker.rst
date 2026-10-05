@@ -44,8 +44,14 @@ Initialization (t = 0)
 ^^^^^^^^^^^^^^^^^^^^^^
 
 1. **MSLP first guess**:
-   compute the global minimum of MSLP at ``t = 0``, yielding a first-guess index pair
-   ``(cy_fg, cx_fg)``.
+   compute the minimum of MSLP at ``t = 0``, yielding a first-guess index pair
+   ``(cy_fg, cx_fg)``. The search domain depends on ``tracking_first_guess``:
+
+   - not set: the minimum is searched over the full domain;
+   - set to ``[lat0, lon0]``: the minimum is searched within ``half_search`` of the
+     grid point closest to ``(lat0, lon0)``, as for ``t >= 1``. This avoids locking
+     onto another low (domain edge, orography, second system) when the cyclone is
+     not the deepest minimum of the domain.
 
 2. **Wind refinement**:
    build a sub-window centered on the first guess with half-width ``half_refine`` and
@@ -98,7 +104,7 @@ Window sizes and conversion from physical radii
 
 The tracker class defines two physical radii (in kilometers):
 
-- ``SEARCH_RADIUS_KM = 150.0``: MSLP search radius around the previous center,
+- ``SEARCH_RADIUS_KM = 100.0``: MSLP search radius around the previous center,
 - ``REFINE_RADIUS_KM = 50.0``: wind refinement radius around the MSLP first guess.
 
 These radii are converted into grid-point half-widths using the grid spacing provided
@@ -121,6 +127,20 @@ To activate this tracker in the YAML configuration, set:
 .. code-block:: yaml
 
    tracking_method: "wind_pressure"
+
+Optionally, give a first guess of the cyclone centre at the first output time:
+
+.. code-block:: yaml
+
+   tracking_first_guess: [-18.0, 56.0]   # [lat0, lon0] in degrees
+
+``tracking_first_guess``
+   Optional. If absent, the behaviour is unchanged (global MSLP minimum at ``t = 0``).
+   The longitude can be given in either convention (``[-180, 180)`` or ``[0, 360)``).
+   The first guess must lie inside the model domain: if the nearest grid point is
+   farther than one grid spacing (``resolution``), FrameIt stops with an error.
+   A first guess close to the domain edge is accepted; the search window is then
+   clipped to the domain.
 
 
 Illustration
