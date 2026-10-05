@@ -30,7 +30,7 @@ class UtrackTracker(TcTracker):
     """
 
     name = "utrack"
-    required_fields = ("10si", "absv")
+    logical_fields = ("u10m", "v10m", "absv")
 
     def __init__(self, var_aliases, checkpoint_path, use_gpu, batch_size):
         """

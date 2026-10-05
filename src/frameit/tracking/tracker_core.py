@@ -163,7 +163,7 @@ class TcTracker(ABC):
         ds_tree: Mapping[str, Mapping[str, xr.Dataset]],
     ) -> xr.Dataset:
         """
-        Convenience wrapper: flatten ``ds_tree`` then apply the tracker.
+        Alias of :meth:`__call__`: flatten ``ds_tree`` then apply the tracker.
 
         Parameters
         ----------
@@ -175,8 +175,7 @@ class TcTracker(ABC):
         xr.Dataset
             Tracking result (see :meth:`_track_method`).
         """
-        ds_flat = make_tracking_dataset(ds_tree, self.name)
-        return self(ds_flat)
+        return self(ds_tree)
 
 
 # --------------------------------------------------------------------
