@@ -15,7 +15,7 @@ All trackers inherit from the abstract base class ``TcTracker`` defined in
 
 - be decorated with ``@register_tracker`` so the factory can discover it;
 - declare a ``name`` attribute that matches the value of ``tracking_method`` in the configuration;
-- declare a ``required_fields`` tuple listing the physical fields it consumes;
+- declare a ``logical_fields`` tuple listing the logical names of the fields it consumes;
 - implement ``from_config(cls, conf: SimulationConfig)`` to build itself from the global configuration;
 - implement ``_track_method(self, ds: xr.Dataset) -> xr.Dataset`` to perform the actual tracking.
 
@@ -38,7 +38,7 @@ Minimal skeleton::
     @register_tracker
     class MyTracker(TcTracker):
         name = "my_tracker"                  # must match tracking_method in the config
-        required_fields = ("u10m", "v10m")   # fields your method needs
+        logical_fields = ("u10m", "v10m")    # logical names passed to self._field()
 
         def __init__(self, var_aliases, **kwargs):
             super().__init__(var_aliases=var_aliases)
@@ -134,6 +134,21 @@ internal name and the model-file name are identical::
       u10m:  "u10"
       v10m:  "v10"
       absv:  "absv"     # <-- add any alias your tracker needs
+
+Logical names and native names
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A tracker never uses model-file names directly. It works with *logical* names
+(``mslp``, ``u10m``, ``v10m``, ...), which ``tracking_var_aliases`` maps to the *native*
+names of each model (``prmsl`` for AROME, ``MSLP`` for Meso-NH).
+
+- ``logical_fields`` lists the logical names your tracker needs. It must contain every
+  name passed to ``self._field()`` in ``_track_method``.
+- Before tracking, the base class translates ``logical_fields`` into native names and
+  checks that all of them are present in the dataset. Missing variables are reported
+  together, in a single error.
+- The attribute must be named ``logical_fields``. Any other name (for example
+  ``required_fields``) is silently ignored, and the check is then skipped.
 
 Step 4 — Expose configuration parameters
 -----------------------------------------

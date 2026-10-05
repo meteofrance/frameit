@@ -218,7 +218,7 @@ def pressure_wind_tracker(
 @register_tracker
 class PressureWindTracker(TcTracker):
     name = "wind_pressure"
-    required_fields = ("prmsl", "u10", "v10")
+    logical_fields = ("mslp", "u10m", "v10m")
 
     SEARCH_RADIUS_KM: ClassVar[float] = 100.0
     REFINE_RADIUS_KM: ClassVar[float] = 50.0
