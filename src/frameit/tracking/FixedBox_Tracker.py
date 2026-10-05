@@ -11,7 +11,7 @@ import xarray as xr
 
 from frameit.core.settings_class import SimulationConfig
 
-from .tracker_core import TcTracker, register_tracker
+from .tracker_core import TcTracker, nearest_grid_point, register_tracker
 
 
 @register_tracker
@@ -44,6 +44,8 @@ class FixedBoxTracker(TcTracker):
             geographic coordinates.
         atm_model : str or None, optional
             Atmospheric model identifier, either ``"AROME"`` or ``"MNH"``.
+            Kept for backward compatibility: the grid type is now inferred
+            from the dimensionality of the latitude and longitude coordinates.
         lat_name : str, optional
             Name of the latitude coordinate in the tracking dataset.
             Default ``"latitude"``.
@@ -136,7 +138,7 @@ class FixedBoxTracker(TcTracker):
         ------
         ValueError
             If required coordinates or the ``"time"`` dimension are missing,
-            or if ``atm_model`` is neither ``"AROME"`` nor ``"MNH"``.
+            or if latitude and longitude are neither both 1-D nor both 2-D.
         """
         if self.lat_name not in ds.coords or self.lon_name not in ds.coords:
             raise ValueError(
@@ -153,52 +155,10 @@ class FixedBoxTracker(TcTracker):
         time_coord = ds["time"]
         nt = time_coord.size
 
-        lat = ds[self.lat_name]
-        lon = ds[self.lon_name]
-        model = self.atm_model
-
-        # AROME case: 1D lat, 1D lon
-        if model == "AROME":
-            if not (lat.ndim == 1 and lon.ndim == 1):
-                raise ValueError(
-                    f"FixedBoxTracker (AROME): expected 1D lat/lon, got "
-                    f"lat.ndim={lat.ndim}, lon.ndim={lon.ndim}"
-                )
-
-            lat_vals = lat.values
-            lon_vals = lon.values
-
-            j = int(np.nanargmin((lat_vals - self.lat0) ** 2))
-            i = int(np.nanargmin((lon_vals - self.lon0) ** 2))
-
-            cy_scalar = j
-            cx_scalar = i
-
-        # MNH case: 2D lat, 2D lon
-        elif model == "MNH":
-            if not (lat.ndim == 2 and lon.ndim == 2):
-                raise ValueError(
-                    f"FixedBoxTracker (MNH): expected 2D lat/lon, got "
-                    f"lat.ndim={lat.ndim}, lon.ndim={lon.ndim}"
-                )
-            if lat.shape != lon.shape:
-                raise ValueError(
-                    "FixedBoxTracker (MNH): 2D latitude and longitude must have the same shape"
-                )
-
-            dlat = lat - self.lat0
-            dlon = lon - self.lon0
-            dist2 = dlat**2 + dlon**2
-
-            dist_vals = dist2.values
-            j_flat, i_flat = np.unravel_index(int(np.nanargmin(dist_vals)), dist_vals.shape)
-            cy_scalar = int(j_flat)
-            cx_scalar = int(i_flat)
-
-        else:
-            raise ValueError(
-                f"FixedBoxTracker: unknown or unsupported atm_model: {self.atm_model!r}"
-            )
+        # Closest grid point to the imposed centre (1-D or 2-D lat/lon)
+        cy_scalar, cx_scalar, _ = nearest_grid_point(
+            ds[self.lat_name], ds[self.lon_name], self.lat0, self.lon0
+        )
 
         # Replicate over the time dimension
         cy = xr.DataArray(

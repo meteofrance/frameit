@@ -9,9 +9,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+import numpy as np
 import xarray as xr
+from pyproj import Geod
 
 from frameit.core.settings_class import SimulationConfig
+
+_GEOD = Geod(ellps="WGS84")
 
 
 @dataclass
@@ -225,6 +229,102 @@ def make_tracking_dataset(
 
     ds_flat = xr.merge(datasets, compat="no_conflicts")
     return ds_flat
+
+
+# --------------------------------------------------------------------
+# Geographic position -> grid indices, shared by all trackers
+# --------------------------------------------------------------------
+
+
+def _wrap_longitude(lon0: float, lon_grid: np.ndarray) -> float:
+    """
+    Express a longitude in the convention of the model grid.
+
+    Parameters
+    ----------
+    lon0 : float
+        Longitude in degrees, in any convention.
+    lon_grid : np.ndarray
+        Grid longitudes in degrees. A maximum above 180 means [0, 360),
+        otherwise [-180, 180) is assumed.
+
+    Returns
+    -------
+    float
+        ``lon0`` wrapped into the grid convention.
+    """
+    if np.nanmax(lon_grid) > 180.0:
+        return lon0 % 360.0
+    return (lon0 + 180.0) % 360.0 - 180.0
+
+
+def nearest_grid_point(
+    lat: xr.DataArray | np.ndarray,
+    lon: xr.DataArray | np.ndarray,
+    lat0: float,
+    lon0: float,
+) -> tuple[int, int, float]:
+    """
+    Find the grid point closest to a geographic position.
+
+    The grid type is inferred from the coordinate dimensionality:
+
+    - 1-D ``lat(y)`` and ``lon(x)`` (rectilinear grid, e.g. AROME): the
+      closest latitude and longitude are searched independently;
+    - 2-D ``lat(y, x)`` and ``lon(y, x)`` (curvilinear grid, e.g. Meso-NH):
+      the minimum of the squared distance in degrees is searched.
+
+    Parameters
+    ----------
+    lat : xr.DataArray or np.ndarray
+        Grid latitudes in degrees, 1-D or 2-D.
+    lon : xr.DataArray or np.ndarray
+        Grid longitudes in degrees, same dimensionality as ``lat``.
+    lat0 : float
+        Target latitude in degrees.
+    lon0 : float
+        Target longitude in degrees, in any convention. It is wrapped into
+        the grid convention before the search.
+
+    Returns
+    -------
+    j : int
+        Index of the closest point along the y (latitude) axis.
+    i : int
+        Index of the closest point along the x (longitude) axis.
+    distance_m : float
+        Geodesic distance on the WGS84 ellipsoid between the target and the
+        selected grid point, in metres.
+
+    Raises
+    ------
+    ValueError
+        If ``lat`` and ``lon`` are neither both 1-D nor both 2-D with the
+        same shape.
+    """
+    lat_vals = np.asarray(lat, dtype=np.float64)
+    lon_vals = np.asarray(lon, dtype=np.float64)
+    lon0 = _wrap_longitude(float(lon0), lon_vals)
+    lat0 = float(lat0)
+
+    if lat_vals.ndim == 1 and lon_vals.ndim == 1:
+        # Rectilinear grid: independent search along each axis
+        j = int(np.nanargmin((lat_vals - lat0) ** 2))
+        i = int(np.nanargmin((lon_vals - lon0) ** 2))
+        lat_sel, lon_sel = lat_vals[j], lon_vals[i]
+    elif lat_vals.ndim == 2 and lat_vals.shape == lon_vals.shape:
+        # Curvilinear grid: search over the full 2-D field
+        dist2 = (lat_vals - lat0) ** 2 + (lon_vals - lon0) ** 2
+        j, i = (int(k) for k in np.unravel_index(np.nanargmin(dist2), dist2.shape))
+        lat_sel, lon_sel = lat_vals[j, i], lon_vals[j, i]
+    else:
+        raise ValueError(
+            "nearest_grid_point: expected 1-D lat/lon or 2-D lat/lon of the same "
+            f"shape, got lat.shape={lat_vals.shape}, lon.shape={lon_vals.shape}"
+        )
+
+    _, _, distance_m = _GEOD.inv(lon0, lat0, lon_sel, lat_sel)
+    return j, i, float(distance_m)
 
 
 # --------------------------------------------------------------------

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -78,6 +79,8 @@ class SimulationConfig:
     requested_variables_tracker: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Variable name aliases for trackers
     tracking_var_aliases: dict[str, str] = field(default_factory=dict)
+    # Optional first guess [lat0, lon0] (degrees) of the centre at the first output time
+    tracking_first_guess: list[float] | None = None
     # Prescribed track
     prescribed_track_file: str = ""
     # Utrack
@@ -247,7 +250,15 @@ class SimulationConfig:
         self.file_name_prefix = self.file_name_prefix or ""
         self.file_name_suffix = self.file_name_suffix or ""
         self.file_type = self.file_type or ""
-        
+
+        if self.tracking_first_guess is not None:
+            self.tracking_first_guess = self._validate_first_guess(self.tracking_first_guess)
+            if self.tracking_method != "wind_pressure":
+                logger.warning(
+                    "tracking_first_guess is ignored by tracking_method=%r.",
+                    self.tracking_method,
+                )
+
         if self.compute_polar_proj:
             if self.radial_resolution is not None and self.radial_resolution < 0:
                 raise ValueError(
@@ -265,6 +276,41 @@ class SimulationConfig:
                     f"the native grid resolution={self.resolution} m. "
                     "Interpolating to a finer radial grid than the source data is not meaningful."
                 )
+
+    @staticmethod
+    def _validate_first_guess(value: Any) -> list[float]:
+        """
+        Validate the ``tracking_first_guess`` setting.
+
+        Parameters
+        ----------
+        value : Any
+            Raw value read from the configuration, expected ``[lat0, lon0]``
+            in degrees.
+
+        Returns
+        -------
+        list of float
+            ``[lat0, lon0]`` as floats. The longitude is wrapped into the grid
+            convention later, by the tracker.
+
+        Raises
+        ------
+        ValueError
+            If ``value`` is not a pair of finite numbers, or if the latitude
+            is outside [-90, 90].
+        """
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            raise ValueError("tracking_first_guess must be a sequence [lat0, lon0]")
+        try:
+            lat0, lon0 = (float(v) for v in value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("tracking_first_guess values must be numbers") from exc
+        if not (math.isfinite(lat0) and math.isfinite(lon0)):
+            raise ValueError("tracking_first_guess values must be finite")
+        if not -90.0 <= lat0 <= 90.0:
+            raise ValueError(f"tracking_first_guess latitude {lat0} is outside [-90, 90]")
+        return [lat0, lon0]
 
 
 

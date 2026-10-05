@@ -29,6 +29,8 @@ DEBUG: true
 # Tracking option
 # ---------------
 tracking_method: "CHOOSE_A_METHOD" # wind_pressure, fixed_box, prescribed_track, utrack
+# Pressure-wind first guess [lat0, lon0] at the first output time (optional, only if tracking_method: "wind_pressure")
+# tracking_first_guess: [-18.0, 56.0]
 # Prescribed track 
 prescribed_track_file: "PATH/TO/NC/FILE"  # Only if tracking_method: " prescribed_track"
 

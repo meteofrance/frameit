@@ -116,6 +116,22 @@ FrameIt supports multiple tracking approaches. The selected method is specified 
    - ``"wind_pressure"``: track based on wind and pressure extrema (see :doc:`/tracker/pressure_wind_tracker`).
    - ``"u-track"``: AI based tracker (see :doc:`/tracker/utrack`).
 
+Pressure-wind case
+~~~~~~~~~~~~~~~~~~
+
+If ``tracking_method`` is set to ``"wind_pressure"``, you can optionally provide:
+
+``tracking_first_guess``
+   First guess of the cyclone centre at the first output time, as ``[lat, lon]``
+   (in degrees). Use it when the cyclone is not the deepest MSLP minimum of the domain
+   at the first output time. If absent, the global MSLP minimum is used
+   (see :doc:`/tracker/pressure_wind_tracker`).
+
+.. code-block:: yaml
+
+   tracking_method: "wind_pressure"
+   tracking_first_guess: [-18.0, 56.0]
+
 Prescribed track case
 ~~~~~~~~~~~~~~~~~~~~~
 
