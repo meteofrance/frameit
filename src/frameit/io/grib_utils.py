@@ -262,10 +262,24 @@ def concat_grib2ds_by_vert_coord(
 
     # Concat unique en fin de boucle — une seule allocation par groupe
     by_group_user: dict[str, xr.Dataset] = {
-        g: xr.concat(parts, dim="time").sortby("time") for g, parts in parts_user_all.items()
+        g: xr.concat(parts, 
+                     dim="time",
+                     compat="no_conflicts",
+                     data_vars="all",
+                     coords="different",
+                     join="outer",
+                     combine_attrs="override",
+                     ).sortby("time") for g, parts in parts_user_all.items()
     }
     by_group_trk: dict[str, dict[str, xr.Dataset]] = {
-        m: {g: xr.concat(parts, dim="time").sortby("time") for g, parts in grp.items()}
+        m: {g: xr.concat(parts,
+                         dim="time",
+                         compat="no_conflicts",
+                         data_vars="all",
+                         coords="different",
+                         join="outer",
+                         combine_attrs="override", 
+                         ).sortby("time") for g, parts in grp.items()}
         for m, grp in parts_trk_all.items()
     }
 

@@ -30,18 +30,18 @@ name: frameit_env
 channels:
   - conda-forge
 dependencies:
-  - python=3.10
-  - xarray>=2023.8.0
+  - python=3.14
+  - xarray
   - dask
-  - numpy>=1.26
+  - numpy
   - scipy
-  - cfgrib>=0.9.15
-  - eccodes>=2.37
-  - pyyaml>=6.0
-  - pyproj>=3.0
+  - cfgrib
+  - eccodes
+  - pyyaml
+  - pyproj
   - xesmf
   - matplotlib
-  - netcdf4>=1.7
+  - netcdf4
   - h5netcdf
   - h5py
   - pip
