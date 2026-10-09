@@ -12,6 +12,7 @@ from typing import Any
 import xarray as xr
 
 from frameit.check.check_functions import drop_time_dupes
+from frameit.io.loader import managed_loading, resolve_input_files
 from frameit.processing.requests import build_group_ds, normalize_requests
 
 logger = logging.getLogger(__name__)
@@ -21,25 +22,28 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------------------
 
 
+@managed_loading
 def concat_nc2ds(
     files_list: Iterable[str | Path],
     variables: Iterable[str],
     concat_dimension: str | None = None,
     parallel: bool = False,
     strict: bool = False,
+    resources=None,
 ) -> xr.Dataset:
     """
     Open and concatenate a list of NetCDF files into a single Dataset.
 
-    Uses ``xr.open_dataset`` for a single file and ``xr.open_mfdataset``
-    for multiple files.  Loading is lazy (Dask): data is read only on
+    Uses ``xr.open_dataset`` for each original input, then combines the
+    lazy arrays. Loading is lazy (Dask): data is read only on
     explicit ``.compute()`` calls.
 
     Parameters
     ----------
     files_list : Iterable[str or Path]
-        Ordered list of NetCDF file paths.  Non-existent files are silently
-        skipped.
+        Ordered list of NetCDF file paths. With ``strict=True`` the order is
+        preserved and missing entries fail; otherwise paths are sorted and
+        non-existent entries are skipped for compatibility.
     variables : Iterable[str]
         Variable names to keep.  All other data variables are dropped before
         loading to reduce memory usage.
@@ -47,9 +51,11 @@ def concat_nc2ds(
         Dimension along which to concatenate (e.g. "time").  When None,
         ``xr.open_mfdataset`` uses ``combine="by_coords"``.
     parallel : bool, optional
-        Enable parallel file opening via Dask. Default False.
+        Retained for API compatibility. Original handles are opened serially;
+        array computation remains lazy and can use Dask scheduling.
     strict : bool, optional
-        Reserved for future use. Default False.
+        Consume an explicit inventory without sorting or omitting missing
+        paths. Default False preserves ordinary discovery behaviour.
 
     Returns
     -------
@@ -62,10 +68,7 @@ def concat_nc2ds(
     FileNotFoundError
         If no existing files are found after filtering.
     """
-    files = [Path(f) for f in files_list if Path(f).exists()]
-    if not files:
-        raise FileNotFoundError("No valid NetCDF file found.")
-    files = sorted(files)
+    files = resolve_input_files(files_list, strict=strict)
 
     # List variables from the first file (used to build drop_variables)
     with xr.open_dataset(files[0], decode_cf=False, engine="h5netcdf") as t0:
@@ -76,28 +79,42 @@ def concat_nc2ds(
     if len(files) == 1:
         if logger:
             logger.info("Single-file mode: xr.open_dataset")
-        ds = xr.open_dataset(
-            files[0],
-            engine="h5netcdf",
-            drop_variables=drop_vars or None,
-            chunks={},  # lazy Dask loading — avoids immediate memory allocation
+        ds = resources.add(
+            xr.open_dataset(
+                files[0],
+                engine="h5netcdf",
+                drop_variables=drop_vars or None,
+                chunks={},  # lazy Dask loading — avoids immediate memory allocation
+            )
         )
     else:
         if logger:
             logger.info(
-                "Multi-file mode: xr.open_mfdataset (combine=%s, concat_dim=%s)",
+                "Multi-file mode: original-handle loading (combine=%s, concat_dim=%s)",
                 "nested" if concat_dimension else "by_coords",
                 concat_dimension,
             )
-        ds = xr.open_mfdataset(
-            files,
-            engine="h5netcdf",
-            drop_variables=drop_vars or None,
-            combine="nested" if concat_dimension else "by_coords",
-            concat_dim=concat_dimension,
-            parallel=parallel,
-            chunks={},  # lazy Dask loading — avoids immediate memory allocation
-        )
+        # Keep each original handle alive, rather than relying on a derived
+        # merged Dataset to inherit all backend close callbacks.
+        opened = [
+            resources.add(
+                xr.open_dataset(
+                    file, engine="h5netcdf", drop_variables=drop_vars or None, chunks={}
+                )
+            )
+            for file in files
+        ]
+        if concat_dimension:
+            ds = xr.concat(
+                opened,
+                dim=concat_dimension,
+                data_vars="all",
+                coords="different",
+                compat="no_conflicts",
+                join="outer",
+            )
+        else:
+            ds = xr.combine_by_coords(opened)
 
     if logger:
         present = ", ".join(sorted(ds.data_vars))
@@ -110,6 +127,7 @@ def concat_nc2ds(
 # -------------------------------------------------------------
 
 
+@managed_loading
 def concat_nc2ds_by_vert_coord(
     files: Iterable[str | Path],
     user_requested_variables_yaml: dict[str, dict[str, Any]],
@@ -122,6 +140,7 @@ def concat_nc2ds_by_vert_coord(
     keep_geovars: bool = True,
     geovar_candidates: tuple[str, ...] = ("latitude", "longitude"),
     float_tol: float | None = None,
+    resources=None,
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open the NetCDF files once then apply two independent requests.
@@ -164,10 +183,7 @@ def concat_nc2ds_by_vert_coord(
             requested_vars_all.update(spec.get("variables", []))
 
     # Prepare the file list
-    files = [Path(f) for f in files if Path(f).exists()]
-    if not files:
-        raise FileNotFoundError("No valid NetCDF file found.")
-    files = sorted(files)
+    files = resolve_input_files(files, strict=strict)
 
     # Automatically add geographic variables
     auto_geo = []
@@ -186,6 +202,7 @@ def concat_nc2ds_by_vert_coord(
         concat_dimension=concat_dimension,
         parallel=parallel,
         strict=strict,
+        resources=resources,
     )
 
     # Promote geographic variables to coordinates if needed

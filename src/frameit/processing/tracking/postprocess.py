@@ -122,13 +122,15 @@ def enrich_track_with_kinematics(
     # Align lon/lat time axis to track time if present
     if tdim in lon_src.dims and tdim in track_ds.coords:
         try:
-            lon_src = lon_src.sel({tdim: track_ds[tdim]})
-            lat_src = lat_src.sel({tdim: track_ds[tdim]})
+            lon_src = lon_src.sel({tdim: track_ds[tdim].values})
+            lat_src = lat_src.sel({tdim: track_ds[tdim].values})
         except Exception:
             pass
 
-    cy = track_ds[cy_name]
-    cx = track_ds[cx_name]
+    # Only time labels belong on positional indexers. Auxiliary coordinates
+    # sampled by an earlier tracking stage can conflict with the source grid.
+    cy = track_ds[cy_name].reset_coords(drop=True)
+    cx = track_ds[cx_name].reset_coords(drop=True)
 
     # Identify spatial dims (excluding time)
     non_time_dims_lon = [d for d in lon_src.dims if d != tdim]
@@ -220,8 +222,11 @@ def enrich_track_with_kinematics(
                     heading_deg[i] = heading_deg[i - 1]
 
     out = track_ds.copy()
-    out["lon"] = lon_c.astype(float)
-    out["lat"] = lat_c.astype(float)
+    # Vectorized sampling attaches source-grid positions as coordinates. Keep
+    # the geographic values without leaking ni/nj or latitude/longitude(time)
+    # into downstream selection indexers.
+    out["lon"] = lon_c.astype(float).reset_coords(drop=True)
+    out["lat"] = lat_c.astype(float).reset_coords(drop=True)
     out["heading_deg"] = xr.DataArray(heading_deg, dims=(tdim,))
     out["dist"] = xr.DataArray(d_m, dims=(tdim,))
     out["speed"] = xr.DataArray(speed_ms, dims=(tdim,))

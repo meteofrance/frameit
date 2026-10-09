@@ -4,7 +4,10 @@
 
 from __future__ import annotations
 
+import copy
 import logging
+from collections.abc import Mapping
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +16,98 @@ import yaml
 log = logging.getLogger("frameit.io.loader")
 
 DEFAULT_PRESETS_ROOT = Path(__file__).resolve().parents[1] / "presets"
+
+
+class DatasetResources:
+    """Own the original opened datasets until computation and export finish."""
+
+    def __init__(self):
+        self._datasets = []
+        self._ids = set()
+
+    def add(self, dataset):
+        if id(dataset) not in self._ids:
+            self._ids.add(id(dataset))
+            self._datasets.append(dataset)
+        return dataset
+
+    def close_from(self, start=0):
+        datasets = self._datasets[start:]
+        del self._datasets[start:]
+        for dataset in reversed(datasets):
+            self._ids.discard(id(dataset))
+            try:
+                dataset.close()
+            except Exception:
+                log.exception("Failed to close a loaded dataset")
+
+    def close(self):
+        self.close_from()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def managed_loading(function):
+    """Give direct loader callers a close hook; roll back failed opens."""
+
+    @wraps(function)
+    def wrapper(*args, resources=None, **kwargs):
+        owned = resources is None
+        registry = resources if resources is not None else DatasetResources()
+        start = len(registry._datasets)
+        try:
+            result = function(*args, resources=registry, **kwargs)
+        except BaseException:
+            registry.close_from(start)
+            raise
+        if owned:
+
+            def attach(value):
+                if hasattr(value, "set_close"):
+                    # Do not overwrite an original backend's close callback
+                    # with a callback that would recursively close itself.
+                    if id(value) in registry._ids:
+                        value = value.copy(deep=False)
+                    value.set_close(registry.close)
+                    return value
+                elif isinstance(value, Mapping):
+                    return {key: attach(item) for key, item in value.items()}
+                elif isinstance(value, tuple):
+                    return tuple(attach(item) for item in value)
+                elif isinstance(value, list):
+                    return [attach(item) for item in value]
+                return value
+
+            result = attach(result)
+        return result
+
+    return wrapper
+
+
+def resolve_input_files(files, *, strict=False):
+    """Validate an explicit inventory without sorting or omitting its entries."""
+    paths = [Path(path) for path in files]
+    missing = [str(path) for path in paths if not path.is_file()]
+    if strict and missing:
+        raise FileNotFoundError(
+            "Resolved input file is missing or not a file: " + ", ".join(missing)
+        )
+    if not strict:
+        paths = sorted(path for path in paths if path.is_file())
+    if not paths:
+        raise FileNotFoundError("No valid input file found")
+    return paths
+
+
+def discover_input_files(config):
+    """Ordinary run discovery, shared with native matrix planning."""
+    files = sorted(config.data_dir.glob(config.build_pattern()))
+    files = [path for path in files if not config.is_mnh_timeseries_name(path)]
+    return resolve_input_files(files, strict=True)
 
 
 def _load_yaml(p: Path) -> dict[str, Any]:
@@ -63,8 +158,18 @@ def load_config_with_model_presets(
     FileNotFoundError
         If the coordinate or tracker preset file for the model is not found.
     """
-    run_yaml_path = Path(run_yaml_path)
-    run = _load_yaml(run_yaml_path)
+    return resolve_config_with_model_presets(
+        _load_yaml(Path(run_yaml_path)), strict_locked=strict_locked
+    )
+
+
+def resolve_config_with_model_presets(
+    mapping: Mapping[str, Any], *, strict_locked: bool = False
+) -> dict[str, Any]:
+    """Resolve YAML and in-memory configurations through the same presets."""
+    if not isinstance(mapping, Mapping):
+        raise ValueError("The configuration must be a key-value mapping")
+    run = copy.deepcopy(dict(mapping))
 
     model = run.get("atm_model")
     if not model:

@@ -182,7 +182,7 @@ def center2box(
         raise ValueError("center coordinates must be one dimensional")
 
     time_dim = cx.dims[0]
-    time_coord = cx.coords[time_dim]
+    time_coord = cx.coords[time_dim].variable
 
     # Convert box sizes to half widths in grid points
     res_km = resolution_m / 1000.0
@@ -335,7 +335,9 @@ def _build_box_indexers(track_box: xr.Dataset, nx: int, ny: int, resolution_m: f
     # Reference time dimension
     time_var = track_box["ix_min"]
     time_dim = time_var.dims[0]
-    time_coord = time_var.coords[time_dim]
+    # A track can carry sampled source-grid coordinates along time. Indexers
+    # must carry only the time labels, not those unrelated spatial coordinates.
+    time_coord = time_var.coords[time_dim].variable
 
     # Box geometry
     box_nx = int(track_box.attrs["box_nx_points"])
@@ -691,6 +693,14 @@ def extract_data(
     # Always normalize dims so the rest of the pipeline can rely on the convention
     ds_user_norm = normalize_dims_for_extraction(ds_user, conf=conf)
 
+    # Prescribed tracks can contain only a subset of model times. Align before
+    # time-dependent spatial indexing, also when no spatial box is requested.
+    if "time" in track_ds.coords:
+        ds_user_norm = {
+            key: ds.sel(time=track_ds["time"].values) if "time" in ds.dims else ds
+            for key, ds in ds_user_norm.items()
+        }
+
     # If no box requested, return track_ds and normalized datasets
     if x_box <= 0.0 or y_box <= 0.0:
         logger.info(
@@ -743,6 +753,8 @@ def extract_data(
     # Extract cyclone-centred box for each user dataset
     extracted: dict[str, xr.Dataset] = {}
     for key, ds in ds_user_norm.items():
+        if "time" in ds.dims:
+            ds = ds.sel(time=track_box["time"].values)
         logger.info("Extracting cyclone-centred box for ds_user[%s]", key)
         extracted[key] = _extract_box_for_dataset(
             ds=ds,

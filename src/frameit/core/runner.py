@@ -9,10 +9,8 @@ from pathlib import Path
 import xarray as xr
 
 from frameit.check.check_functions import check_group_var, check_resolution
-from frameit.io.grib_utils import concat_grib2ds_by_vert_coord
-from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
+from frameit.io.loader import DatasetResources, discover_input_files, resolve_input_files
 from frameit.processing.extraction import extract_data
-from frameit.processing.polar.polar_proj import polar_project
 from frameit.processing.tracking.postprocess import enrich_track_with_kinematics
 from frameit.processing.wind_collocation import collocate_winds
 from frameit.tracking.tracker_core import build_tracker_from_config, make_tracking_dataset
@@ -35,7 +33,7 @@ class RunResult:
 
 
 class FrameitRunner:
-    def __init__(self, conf, output_dir: Path | None = None):
+    def __init__(self, conf, output_dir: Path | None = None, *, input_files=None):
         """
         Parameters
         ----------
@@ -46,6 +44,8 @@ class FrameitRunner:
             when None.
         """
         self.conf = conf
+        self.input_files = None if input_files is None else tuple(Path(p) for p in input_files)
+        self.resources = DatasetResources()
         self._output_dir_override = output_dir
         self.timer = RunTimer()
         self.ds_user = None  # variables requested by the user
@@ -60,6 +60,16 @@ class FrameitRunner:
         )
 
         self.tracker = build_tracker_from_config(conf)
+
+    def close(self):
+        """Release original lazy input handles after computation/export."""
+        self.resources.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
 
     @property
     def output_dir(self) -> Path:
@@ -111,11 +121,15 @@ class FrameitRunner:
         log_tracker_requested_vars(self.conf)
 
         # 2) Recherche des fichiers
-        files = sorted(self.conf.data_dir.glob(pattern))
+        if self.input_files is not None:
+            files = resolve_input_files(self.input_files, strict=True)
+        else:
+            files = discover_input_files(self.conf)
 
         # MNH-specific: skip the '000' timeseries file
         n_before = len(files)
-        files = [p for p in files if not self.conf.is_mnh_timeseries_name(p)]
+        if self.input_files is None:
+            files = [p for p in files if not self.conf.is_mnh_timeseries_name(p)]
         n_skipped = n_before - len(files)
         if n_skipped:
             logger.info("Skipped MNH timeseries '000' file(s): %d", n_skipped)
@@ -162,6 +176,8 @@ class FrameitRunner:
         requested_vars_tracker = getattr(self.conf, "requested_variables_tracker", None) or {}
 
         if file_type in {"nc", "netcdf", "netcdf4"}:
+            from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
+
             logger.info("Loading NetCDF files (%d files)...", len(files))
 
             dict_user, dict_tracker = concat_nc2ds_by_vert_coord(
@@ -171,9 +187,13 @@ class FrameitRunner:
                 method=tracking_method,
                 concat_dimension=time_dim,
                 float_tol=0.5,
+                strict=self.input_files is not None,
+                resources=self.resources,
             )
 
         elif file_type in {"grib", "grib2"}:
+            from frameit.io.grib_utils import concat_grib2ds_by_vert_coord
+
             logger.info("Loading GRIB files (%d files)...", len(files))
             index_dir = Path(self.output_dir) / ".cfgrib"
 
@@ -185,6 +205,8 @@ class FrameitRunner:
                 index_dir=index_dir,
                 float_tol=0.51,
                 warn=True,
+                strict=self.input_files is not None,
+                resources=self.resources,
             )
 
         else:
@@ -283,10 +305,15 @@ class FrameitRunner:
             else:
                 src_dict = self.dict_crop_user
 
-            self.dict_polar_user, self.polar_report = polar_project(
-                src_dict,
-                conf=self.conf,
-                method="bilinear",
-            )
+            if self.conf.compute_polar_proj:
+                from frameit.processing.polar.polar_proj import polar_project
+
+                self.dict_polar_user, self.polar_report = polar_project(
+                    src_dict,
+                    conf=self.conf,
+                    method="bilinear",
+                )
+            else:
+                self.dict_polar_user, self.polar_report = {}, {}
 
         return RunResult(ok=True, n_files=len(files), output_dir=self.output_dir, files=files)

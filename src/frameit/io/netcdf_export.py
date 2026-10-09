@@ -383,6 +383,7 @@ def write_group_dict(
     compress_coords: bool = False,
     unlimited_time: bool = True,
     max_workers: int | None = None,
+    synchronous: bool = False,
 ) -> list[Path]:
     """
     Write a dictionary of Datasets to individual NetCDF files, optionally in parallel.
@@ -469,6 +470,11 @@ def write_group_dict(
             )
         )
 
+    if synchronous:
+        # A matrix case already runs in an isolated worker. Do not create a
+        # nested process pool, even a one-worker pool, for group serialization.
+        return [_write_single_group(args) for args in tasks_args]
+
     written: list[Path] = []
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -504,6 +510,7 @@ def export_outputs(
     compress_coords: bool = False,
     unlimited_time: bool = True,
     max_workers: int | None = None,
+    synchronous: bool = False,
 ) -> dict[str, Path | list[Path]]:
     """
     Export all FrameIt products (track, polar, Cartesian) from a completed run.
@@ -612,6 +619,7 @@ def export_outputs(
             compress_coords=compress_coords,
             unlimited_time=unlimited_time,
             max_workers=max_workers,
+            synchronous=synchronous,
         )
     else:
         logger.debug(
@@ -637,6 +645,7 @@ def export_outputs(
             compress_coords=compress_coords,
             unlimited_time=unlimited_time,
             max_workers=max_workers,
+            synchronous=synchronous,
         )
     else:
         logger.debug(

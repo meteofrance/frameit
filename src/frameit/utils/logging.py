@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import warnings
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -112,6 +113,7 @@ def setup_frameit_logging(
 
     for h in list(logger.handlers):
         logger.removeHandler(h)
+        h.close()
 
     fmt = logging.Formatter(
         "%(levelname)-8s | %(name)s:%(lineno)d | %(message)s",
@@ -132,3 +134,30 @@ def setup_frameit_logging(
     configure_warnings(level)
 
     return log_path
+
+
+@contextmanager
+def frameit_logging_scope(output_dir, *, level="INFO", simu_name=None):
+    """Own execution handlers and restore the caller's logging state."""
+    logger = logging.getLogger("frameit")
+    previous = list(logger.handlers)
+    previous_level, previous_propagate = logger.level, logger.propagate
+    third_party_levels = {
+        name: logging.getLogger(name).level for name in _DEFAULT_THIRD_PARTY_LEVELS
+    }
+    for handler in previous:
+        logger.removeHandler(handler)
+    try:
+        with warnings.catch_warnings():
+            log_path = setup_frameit_logging(output_dir, level=level, simu_name=simu_name)
+            yield log_path
+    finally:
+        for handler in list(logger.handlers):
+            logger.removeHandler(handler)
+            handler.close()
+        for handler in previous:
+            logger.addHandler(handler)
+        logger.setLevel(previous_level)
+        logger.propagate = previous_propagate
+        for name, saved_level in third_party_levels.items():
+            logging.getLogger(name).setLevel(saved_level)

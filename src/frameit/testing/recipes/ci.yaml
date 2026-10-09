@@ -1,0 +1,43 @@
+recipe_id: frozen-ci-1
+recipe_version: 1
+datasets:
+  AROME/BATSIRAI:
+    format: grib
+    source_shape: [747, 1395]
+    crop_xy_python: [1050, 1131, 370, 451]
+    output_shape: [81, 81]
+    fixed_center_lat_lon: [-17.5, 60.0]
+    fixed_center_source_xy: [1090, 410]
+    files:
+      - arome_BATSIRAI_20220201+0000P.grib
+      - arome_BATSIRAI_20220201+0600P.grib
+      - arome_BATSIRAI_20220201+1200P.grib
+      - arome_BATSIRAI_20220201+1800P.grib
+      - arome_BATSIRAI_20220201+2400P.grib
+    times:
+      - '2022-02-01T00:00:00'
+      - '2022-02-01T06:00:00'
+      - '2022-02-01T12:00:00'
+      - '2022-02-01T18:00:00'
+      - '2022-02-02T00:00:00'
+  MNH/CHIDO:
+    format: netcdf
+    source_shape: [578, 1154]
+    crop_xy_python: [730, 802, 315, 385]
+    output_shape: [70, 72]
+    expected_dimensions:
+      ni: 1154
+      nj: 578
+      level: 87
+      level_w: 87
+    variables: [UT, VT, THT, POVOT, WT, UM10, VM10, MSLP, LE, H, latitude, longitude]
+    optional_variables: [ZS, ZTOP]
+    files:
+      - 3CH09.1.MXX30.011diag.nc
+      - 3CH09.1.MXX30.012diag.nc
+      - 3CH09.1.MXX30.013diag.nc
+    times:
+      - '2024-12-11T11:00:00'
+      - '2024-12-11T12:00:00'
+      - '2024-12-11T13:00:00'
+external_track: MNH/IBTracks_reunion_CHIDO.nc

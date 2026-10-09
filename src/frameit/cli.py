@@ -44,11 +44,6 @@ import logging  # noqa: E402
 import platform  # noqa: E402
 from typing import Any  # noqa: E402
 
-from frameit.core.runner import FrameitRunner  # noqa: E402
-from frameit.core.settings_class import SimulationConfig  # noqa: E402
-from frameit.io.netcdf_export import export_outputs  # noqa: E402
-from frameit.utils import setup_frameit_logging  # noqa: E402
-
 _DEFAULT_INSTITUTION = "LACy, Université de La Réunion, CNRS, Météo-France"
 
 
@@ -138,35 +133,71 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pi.add_argument("--short", action="store_true", help="Print only 'FrameIt <version>'")
 
+    pd = sub.add_parser(
+        "prepare-ci-dataset", help="Prepare and verify the frozen scientific CI fixture."
+    )
+    pd.add_argument("--source", type=Path, required=True, help="Full simulation dataset root")
+    pd.add_argument("--output", type=Path, required=True, help="Fixture destination")
+    pd.add_argument(
+        "--max-size-mb",
+        type=float,
+        default=100.0,
+        help="Maximum installed fixture size in decimal MB (default: 100)",
+    )
+    pd.add_argument(
+        "--force", action="store_true", help="Transactionally replace an existing fixture"
+    )
+    pd.add_argument(
+        "--plan-only", action="store_true", help="Inspect the recipe without writing data"
+    )
+    pd.add_argument(
+        "--track-file",
+        type=Path,
+        default=None,
+        help="Override source/MNH/IBTracks_reunion_CHIDO.nc",
+    )
+
+    pm = sub.add_parser(
+        "run-matrix-test", help="Run scientific simulation cases and check their product contracts."
+    )
+    pm.add_argument("--ci", action="store_true", help="Use the frozen small fixture and CI cases")
+    pm.add_argument(
+        "--data-root",
+        type=Path,
+        default=None,
+        help="Input root; overrides the bundled fixture with --ci, required otherwise",
+    )
+    pm.add_argument("--output", type=Path, required=True, help="Fresh matrix run directory")
+    pm.add_argument("--profile", choices=("core", "full"), default="full")
+    pm.add_argument(
+        "--case",
+        action="append",
+        default=[],
+        dest="cases",
+        metavar="ID_OR_GLOB",
+        help="Select case IDs or glob patterns (repeatable)",
+    )
+    pm.add_argument(
+        "--plan-only", action="store_true", help="Resolve the plan without running cases"
+    )
+    pm.add_argument("--input-policy", choices=("strict", "available"), default="strict")
+    scheduling = pm.add_mutually_exclusive_group()
+    scheduling.add_argument("--keep-going", action="store_true", dest="keep_going", default=True)
+    scheduling.add_argument("--fail-fast", action="store_false", dest="keep_going")
+    pm.add_argument(
+        "--utrack-weights",
+        type=Path,
+        default=None,
+        help="UTrack checkpoint for full-domain runs; UTrack is excluded in CI",
+    )
+    pm.add_argument("--log-level", default=None, choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+
     return p
 
 
-def _configure_logging(conf: SimulationConfig, log_level_override: str | None) -> None:
-    """
-    Initialise FrameIt logging for the ``run`` sub-command.
-
-    Parameters
-    ----------
-    conf : SimulationConfig
-        Configuration object.  Reads ``frameit_output_dir``, ``DEBUG``, and
-        ``simulation_name``.
-    log_level_override : str or None
-        Explicit log level (``"DEBUG"``, ``"INFO"``, …).  When ``None``, the
-        level is ``"DEBUG"`` if ``conf.DEBUG`` is truthy, else ``"INFO"``.
-    """
-    level = log_level_override
-    if level is None:
-        level = "DEBUG" if getattr(conf, "DEBUG", False) else "INFO"
-
-    log_path = setup_frameit_logging(
-        conf.frameit_output_dir,
-        level=level,
-        simu_name=getattr(conf, "simulation_name", None),
-    )
-    logging.getLogger("frameit").info("Logging initialized: %s", str(log_path))
-
-
 def _cmd_validate(cfg_path: Path) -> int:
+    from frameit.core.settings_class import SimulationConfig
+
     conf = SimulationConfig.from_yaml_with_model_preset(cfg_path)
 
     out_dir = Path(conf.frameit_output_dir)
@@ -180,7 +211,9 @@ def _cmd_validate(cfg_path: Path) -> int:
 
 
 def _cmd_info(short: bool) -> int:
-    frameit_ver = _package_version("frameit") or "unknown"
+    from frameit import __version__
+
+    frameit_ver = _package_version("frameit") or __version__
     if short:
         print(f"FrameIt {frameit_ver}")
         return 0
@@ -226,54 +259,67 @@ def _cmd_info(short: bool) -> int:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    """
-    Execute the ``frameit run`` sub-command.
-
-    Parameters
-    ----------
-    args : argparse.Namespace
-        Parsed CLI arguments.  Consumed attributes: ``config``, ``log_level``,
-        ``no_hdf5_debug_pop``, ``export_netcdf``, ``export_polar``,
-        ``export_cart``, ``compress_level``, ``institution``.
-
-    Returns
-    -------
-    int
-        Exit code: ``0`` on success.
-    """
-    if not args.no_hdf5_debug_pop:
-        os.environ.pop("HDF5_DEBUG", None)
-
-    if not (0 <= int(args.compress_level) <= 9):
-        raise ValueError("--compress-level must be in [0, 9]")
+    from frameit.core.execution import ExecutionOptions, execute_simulation
+    from frameit.core.settings_class import SimulationConfig
 
     conf = SimulationConfig.from_yaml_with_model_preset(args.config)
-
-    _configure_logging(conf, args.log_level)
-    logger = logging.getLogger("frameit")
-
-    runner = FrameitRunner(conf)
-    runner.run()
-
-    out_dir = Path(conf.frameit_output_dir).resolve()
-
-    if args.export_netcdf:
-        with runner.timer.section("Netcdf export"):
-            export_outputs(
-                runner,
-                institution=str(args.institution),
-                out_dir=out_dir,
-                export_polar=bool(args.export_polar),
-                export_cart=bool(args.export_cart),
-                compress_level=int(args.compress_level),
-            )
-        logger.info("NetCDF export done.")
-    else:
-        logger.info("NetCDF export skipped (--no-export-netcdf).")
-
-    runner.timer.log_summary(logger, title="FrameIt runtime summary")
-    logger.info("FrameIt ends correctly")
+    execute_simulation(
+        conf,
+        ExecutionOptions(
+            export_netcdf=args.export_netcdf,
+            export_polar=args.export_polar,
+            export_cart=args.export_cart,
+            compress_level=args.compress_level,
+            institution=args.institution,
+            log_level=args.log_level,
+            no_hdf5_debug_pop=args.no_hdf5_debug_pop,
+        ),
+    )
     return 0
+
+
+def _cmd_prepare_ci_dataset(args: argparse.Namespace) -> int:
+    from frameit.testing.datasets import prepare_ci_dataset
+
+    report = prepare_ci_dataset(
+        args.source,
+        args.output,
+        max_size_mb=args.max_size_mb,
+        force=args.force,
+        plan_only=args.plan_only,
+        track_file=args.track_file,
+    )
+    import json
+
+    print(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False))
+    return 0
+
+
+def _cmd_run_matrix(args: argparse.Namespace) -> int:
+    from importlib import resources
+
+    from frameit.testing.matrix import run_matrix
+
+    if args.data_root is None and not args.ci:
+        raise ValueError("--data-root is required without --ci")
+    data_root = args.data_root
+    if data_root is None:
+        data_root = Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
+    report = run_matrix(
+        data_root,
+        args.output,
+        ci=args.ci,
+        profile=args.profile,
+        cases=tuple(args.cases),
+        plan_only=args.plan_only,
+        input_policy=args.input_policy,
+        keep_going=args.keep_going,
+        utrack_weights=args.utrack_weights,
+        log_level=args.log_level,
+    )
+    print(f"Matrix results: {args.output.resolve()}")
+    print(f"Exit code: {report['exit_code']}")
+    return int(report["exit_code"])
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -304,8 +350,17 @@ def main(argv: list[str] | None = None) -> None:
             code = _cmd_validate(args.config)
         elif args.command == "info":
             code = _cmd_info(short=bool(args.short))
+        elif args.command == "prepare-ci-dataset":
+            code = _cmd_prepare_ci_dataset(args)
+        elif args.command == "run-matrix-test":
+            code = _cmd_run_matrix(args)
         else:
             code = 2
+    except KeyboardInterrupt:
+        code = 130
+    except (ValueError, FileNotFoundError) as exc:
+        logging.getLogger("frameit").error("%s", exc)
+        code = 2 if args.command in ("prepare-ci-dataset", "run-matrix-test") else 1
     except Exception:
         logging.getLogger("frameit").exception("FrameIt CLI failed")
         code = 1

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "frameit"
-version = "1.0.0"
+version = "1.1.0"
 requires-python = ">=3.10"
 description = "Focused Regional Analysis of Modeled Events with Integrated Tracking"
 readme = "README.md"
@@ -33,7 +33,7 @@ frameit = "frameit.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-frameit = ["presets/**/*.yaml"]
+frameit = ["presets/**/*.yaml", "testing/catalogs/*.yaml", "testing/recipes/*.yaml", "testing/ci_dataset/manifest.json", "testing/ci_dataset/**/*.grib", "testing/ci_dataset/**/*.nc"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

@@ -1,0 +1,96 @@
+schema_version: 1
+catalog_version: '1'
+
+# Dataset mode and coverage profile are independent axes. Bindings preserve
+# scientific settings; fragments share requests without leaking full-domain
+# model-level assumptions into the frozen CI fixture.
+datasets:
+  AROME/BATSIRAI:
+    model: AROME
+    stem: arome_BATSIRAI_20220201+
+    resolution: 2500
+    ci: {count: 5, shape: [81, 81], centre: [-17.5, 60.0], box_km: 200}
+    full: {count: 5, centre: [-18.0, 58.0], box_km: 500}
+  AROME/BELNA:
+    model: AROME
+    stem: arome_BELNA_20191206+
+    resolution: 2500
+    full: {count: 5, centre: [-11.0, 62.0], box_km: 200}
+  MNH/CHIDO:
+    model: MNH
+    stem: 3CH09.1.MXX30.
+    resolution: 3000
+    ci: {count: 3, shape: [70, 72], centre_grid: [37, 35], box_km: 120}
+    full: {count: 5, centre: [-10.3, 55.0], box_km: 200}
+  MNH/CHIDO_02_MXX30:
+    model: MNH
+    stem: allCH09.1.MXX30.
+    resolution: 3000
+    full: {count: 36, centre: [-10.3, 55.0], box_km: 200}
+  MNH/CHIDO_03_MXX30:
+    model: MNH
+    stem: allCH09.1.MXX30.
+    resolution: 3000
+    full: {count: 56, centre: [-10.3, 55.0], box_km: 200}
+  MNH/CHIDO_MXX20:
+    model: MNH
+    stem: allCH09.1.MXX20.
+    resolution: 2000
+    full: {count: 48, centre: [-10.3, 55.0], box_km: 200}
+
+fragments:
+  arome_ci:
+    heightAboveGround: {variables: [u, v, t, r, tke], indices: [0, 2, 5]}
+    isobaricInhPa: {variables: [u, v], values: [1000, 850, 400]}
+    surface: {variables: [u10, v10, prmsl, sshf, slhf]}
+  arome_full:
+    heightAboveGround: {variables: [u, v, t, w, r, tke], polar_variables: [u, v, t, r, tke], indices: [0, 2, 5]}
+    level: {variables: [u, v], indices: [0, 5, 10]}
+    isobaricInhPa: {variables: [u, v], values: [1000, 850, 400]}
+    surface: {variables: [u10, v10, prmsl, sshf, slhf]}
+  mnh:
+    level: {variables: [UT, VT, THT, POVOT], indices: [1, 3, 5]}
+    level_w: {variables: [WT], indices: [1, 3, 5]}
+    surface: {variables: [UM10, VM10, MSLP, LE, H]}
+
+# Gaps are allowed only at the initial time, only for named fields. Their
+# values remain missing in products; no substitutions are made.
+allowed_initial_gaps:
+  AROME: {heightAboveGround: [tke], surface: [sshf, slhf]}
+
+cases:
+  - {id: arome_batsirai_fixed_polar, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci, full], profile: core, coverage: [grib, fixed-centre, cartesian, polar, hag-winds, mixed-level-selection]}
+  - {id: arome_batsirai_fixed_cart_only, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci, full], profile: core, polar: false, coverage: [grib, cartesian, wind-speed, polar-disabled]}
+  - {id: mnh_chido_fixed_polar, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci, full], profile: core, coverage: [netcdf, fixed-centre, staggered-uvw, polar, level-winds]}
+  - {id: mnh_chido_wind_pressure_polar, dataset: MNH/CHIDO, tracker: wind_pressure, modes: [ci, full], profile: core, coverage: [netcdf, pressure-wind-tracker, track-kinematics, staggered-uvw, moving-polar, level-winds]}
+  - {id: mnh_chido_wind_pressure_cart_only, dataset: MNH/CHIDO, tracker: wind_pressure, modes: [ci], profile: core, polar: false, coverage: [moving-cartesian, polar-disabled]}
+  - {id: mnh_chido_prescribed_polar, dataset: MNH/CHIDO, tracker: prescribed_track, modes: [ci, full], profile: core, requirement: optional, coverage: [external-netcdf-track, exact-time-intersection, nearest-2d-grid, moving-polar]}
+  - {id: arome_belna_wind_pressure_polar, dataset: AROME/BELNA, tracker: wind_pressure, modes: [full], profile: core, coverage: [grib, pressure-wind-tracker, track-kinematics, moving-polar, hag-winds]}
+  - {id: arome_batsirai_fixed_all_polar, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci], profile: full, selection: all, coverage: [all-level-selection, hag-winds]}
+  - {id: arome_batsirai_fixed_values_polar, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci], profile: full, selection: values, coverage: [physical-level-selection]}
+  - {id: arome_batsirai_prescribed_polar, dataset: AROME/BATSIRAI, tracker: prescribed_track, modes: [ci], profile: full, coverage: [stationary-reference-netcdf, exact-time-intersection, nearest-1d-grid]}
+  - {id: arome_batsirai_surface_polar, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci], profile: full, groups: [surface], coverage: [surface-only-polar]}
+  - {id: mnh_chido_fixed_cart_only, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci], profile: full, polar: false, coverage: [staggered-cartesian, polar-disabled]}
+  - {id: mnh_chido_wind_pressure_all_polar, dataset: MNH/CHIDO, tracker: wind_pressure, modes: [ci], profile: full, selection: all, azimuth: 30, coverage: [all-level-selection, coarse-azimuth, moving-polar]}
+  - {id: mnh_chido_fixed_values_polar, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci], profile: full, selection: values, coverage: [physical-mass-w-level-selection]}
+  - {id: mnh_chido_prescribed_cart_only, dataset: MNH/CHIDO, tracker: prescribed_track, modes: [ci], profile: full, requirement: optional, polar: false, coverage: [external-netcdf-track, exact-time-intersection, moving-cartesian]}
+  - {id: mnh_chido_w_only_polar, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci], profile: full, groups: [level_w], coverage: [w-only-polar]}
+  - {id: mnh_chido_surface_polar, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci], profile: full, groups: [surface], coverage: [surface-only-polar]}
+  - {id: arome_batsirai_wind_pressure_polar, dataset: AROME/BATSIRAI, tracker: wind_pressure, modes: [full], profile: full, coverage: [second-arome-moving-storm, pressure-wind-tracker]}
+  - {id: arome_belna_fixed_polar, dataset: AROME/BELNA, tracker: fixed_box, modes: [full], profile: full, coverage: [second-arome-fixed-storm]}
+  - {id: mnh_chido02_wind_pressure_polar, dataset: MNH/CHIDO_02_MXX30, tracker: wind_pressure, modes: [full], profile: full, coverage: [long-sequence, 3-km-resolution, moving-polar, staggered-uvw]}
+  - {id: mnh_chido03_wind_pressure_polar, dataset: MNH/CHIDO_03_MXX30, tracker: wind_pressure, modes: [full], profile: full, coverage: [long-sequence, 3-km-resolution, moving-polar, staggered-uvw]}
+  - {id: mnh_chido_mxx20_wind_pressure_polar, dataset: MNH/CHIDO_MXX20, tracker: wind_pressure, modes: [full], profile: full, coverage: [2-km-resolution, resolution-sensitive-tracking, native-polar-grid]}
+  - id: arome_batsirai_utrack_polar
+    dataset: AROME/BATSIRAI
+    tracker: utrack
+    modes: [ci, full]
+    profile: full
+    requirement: optional
+    coverage: [ml-tracker, checkpoint, absolute-vorticity-850]
+    ci_exclusion: Frozen crop does not guarantee UTrack spatial context or extraction margins; use full-domain mode
+
+ci_prescribed_oracle:
+  dataset: MNH/CHIDO
+  times: ['2024-12-11T12:00:00.000000000']
+  centres: [{cx: 45, cy: 33}]

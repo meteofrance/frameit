@@ -12,6 +12,7 @@ import numpy as np
 import xarray as xr
 
 from frameit.check.check_functions import drop_time_dupes
+from frameit.io.loader import managed_loading, resolve_input_files
 
 logger = logging.getLogger(__name__)
 logging.getLogger("cfgrib").setLevel(logging.WARNING)
@@ -136,6 +137,7 @@ def _collect_parts_for_req(
     return file_parts
 
 
+@managed_loading
 def concat_grib2ds_by_vert_coord(
     files,
     user_requested_variables_yaml: dict,
@@ -144,6 +146,9 @@ def concat_grib2ds_by_vert_coord(
     index_dir: str | Path = ".cfgrib",
     float_tol: float = 0.51,
     warn: bool = True,
+    *,
+    strict: bool = False,
+    resources=None,
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open a list of GRIB files and build per-group user and tracker Datasets.
@@ -179,7 +184,7 @@ def concat_grib2ds_by_vert_coord(
         ``{method -> {group -> xr.Dataset}}`` for tracker-requested variables.
     """
 
-    files = [Path(f) for f in files]
+    files = resolve_input_files(files, strict=strict)
     idx_dir = Path(index_dir)
     idx_dir.mkdir(parents=True, exist_ok=True)
 
@@ -188,6 +193,8 @@ def concat_grib2ds_by_vert_coord(
     dims_seen: set[str] = set()
     for f in files:
         dsets = cfgrib.open_datasets(str(f), indexpath=str(idx_dir / (f.name + ".idx")))
+        for ds in dsets:
+            resources.add(ds)
         opened_per_file[f] = dsets
         for ds in dsets:
             dims_seen.update(ds.sizes.keys())
@@ -262,24 +269,32 @@ def concat_grib2ds_by_vert_coord(
 
     # Concat unique en fin de boucle — une seule allocation par groupe
     by_group_user: dict[str, xr.Dataset] = {
-        g: xr.concat(parts, 
-                     dim="time",
-                     compat="no_conflicts",
-                     data_vars="all",
-                     coords="different",
-                     join="outer",
-                     combine_attrs="override",
-                     ).sortby("time") for g, parts in parts_user_all.items()
+        g: xr.concat(
+            parts,
+            dim="time",
+            # compat="equals",
+            compat="no_conflicts",
+            data_vars="all",
+            coords="different",
+            join="outer",
+            combine_attrs="override",
+        ).sortby("time")
+        for g, parts in parts_user_all.items()
     }
     by_group_trk: dict[str, dict[str, xr.Dataset]] = {
-        m: {g: xr.concat(parts,
-                         dim="time",
-                         compat="no_conflicts",
-                         data_vars="all",
-                         coords="different",
-                         join="outer",
-                         combine_attrs="override", 
-                         ).sortby("time") for g, parts in grp.items()}
+        m: {
+            g: xr.concat(
+                parts,
+                dim="time",
+                # compat="equals",
+                compat="no_conflicts",
+                data_vars="all",
+                coords="different",
+                join="outer",
+                combine_attrs="override",
+            ).sortby("time")
+            for g, parts in grp.items()
+        }
         for m, grp in parts_trk_all.items()
     }
 

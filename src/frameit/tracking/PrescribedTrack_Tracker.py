@@ -106,7 +106,7 @@ class PrescribedTrack(TcTracker):
         var_aliases = getattr(conf, "tracking_var_aliases", {}) or {}
 
         track_file = getattr(conf, "prescribed_track_file", None)
-        if track_file is None:
+        if not track_file:
             raise ValueError(
                 "tracking_method='prescribed_tracker' but "
                 "'prescribed_track_file' is not defined in the configuration."
@@ -162,37 +162,47 @@ class PrescribedTrack(TcTracker):
         time_model = ds["time"].values
 
         # 1) Read the external track file
-        trk = xr.open_dataset(self.track_file)
+        with xr.open_dataset(self.track_file) as trk:
+            if self.track_time_name not in trk.coords:
+                raise ValueError(
+                    f"PrescribedTrack: time coordinate {self.track_time_name!r} "
+                    "not found in the track file."
+                )
+            names = []
+            for requested, long_name, short_name in (
+                (self.track_lat_name, "latitude", "lat"),
+                (self.track_lon_name, "longitude", "lon"),
+            ):
+                name = requested
+                if name not in trk and name == long_name and short_name in trk:
+                    name = short_name
+                if name not in trk:
+                    raise ValueError(
+                        f"PrescribedTrack: variable {requested!r} not found in the track file."
+                    )
+                if trk[name].dims != (self.track_time_name,):
+                    raise ValueError(
+                        f"PrescribedTrack: {name!r} must be one-dimensional "
+                        f"along {self.track_time_name!r}"
+                    )
+                names.append(name)
 
-        # Check that temporal and spatial fields are present
-        if self.track_time_name not in trk.coords:
-            raise ValueError(
-                f"PrescribedTrack: time coordinate {self.track_time_name!r} "
-                f"not found in the track file."
-            )
-        if self.track_lat_name not in trk:
-            raise ValueError(
-                f"PrescribedTrack: variable {self.track_lat_name!r} not found in the track file."
-            )
-        if self.track_lon_name not in trk:
-            raise ValueError(
-                f"PrescribedTrack: variable {self.track_lon_name!r} not found in the track file."
-            )
-
-        time_trk = trk[self.track_time_name].values
-
-        # 2) Restrict to dates common to the model and the track file
-        common_times = np.intersect1d(time_model, time_trk)
-        if common_times.size == 0:
-            raise ValueError(
-                "PrescribedTrack: no common dates between the model Dataset and the track file."
-            )
-
-        # Select only the common dates from the track file
-        trk_sel = trk.sel({self.track_time_name: common_times})
-
-        lat_trk = trk_sel[self.track_lat_name].values
-        lon_trk = trk_sel[self.track_lon_name].values
+            time_trk = trk[self.track_time_name].values
+            if trk[self.track_time_name].dims != (self.track_time_name,):
+                raise ValueError("PrescribedTrack: time must be a one-dimensional coordinate")
+            if np.unique(time_trk).size != time_trk.size:
+                raise ValueError("PrescribedTrack: duplicate track times are ambiguous")
+            common_times = np.intersect1d(time_model, time_trk)
+            if common_times.size == 0:
+                raise ValueError(
+                    "PrescribedTrack: no common dates between the model Dataset and the track file."
+                )
+            trk_sel = trk.sel({self.track_time_name: common_times})
+            # Eagerly copy the small coordinate arrays before closing the file.
+            lat_trk = trk_sel[names[0]].values.copy()
+            lon_trk = trk_sel[names[1]].values.copy()
+            if not (np.isfinite(lat_trk).all() and np.isfinite(lon_trk).all()):
+                raise ValueError("PrescribedTrack: common-time track positions must be finite")
 
         ntime = common_times.size
         cy = np.empty(ntime, dtype="int64")
@@ -247,6 +257,9 @@ class PrescribedTrack(TcTracker):
                 j_flat, i_flat = np.unravel_index(int(np.nanargmin(dist_vals)), dist_vals.shape)
                 cy[k] = int(j_flat)
                 cx[k] = int(i_flat)
+
+        else:
+            raise ValueError(f"PrescribedTrack: unsupported atmospheric model {model!r}")
 
         # 4) Construction du Dataset de sortie
         time_da = xr.DataArray(common_times, dims=("time",), name="time")

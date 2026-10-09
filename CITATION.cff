@@ -27,8 +27,12 @@ authors:
     given-names: Rémi
     affiliation: Météo-France
     orcid: https://orcid.org/0000-0001-5157-1821
-version: 1.0.0
-date-released: 2026-08-27
+  - family-names: Deferrez
+    given-names: Maxence
+    affiliation: Météo-France
+    orcid: https://orcid.org/0009-0006-5921-4101
+version: 1.1.0
+date-released: 2026-10-07
 license: Apache-2.0
 repository-code: https://github.com/meteofrance/frameit
 url: https://meteofrance.github.io/frameit/

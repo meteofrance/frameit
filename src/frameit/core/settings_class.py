@@ -26,7 +26,7 @@ from typing import Any, Literal
 
 import yaml
 
-from frameit.io.loader import load_config_with_model_presets
+from frameit.io.loader import load_config_with_model_presets, resolve_config_with_model_presets
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +80,9 @@ class SimulationConfig:
     tracking_var_aliases: dict[str, str] = field(default_factory=dict)
     # Prescribed track
     prescribed_track_file: str = ""
+    prescribed_track_time_name: str = "time"
+    prescribed_track_lat_name: str = "latitude"
+    prescribed_track_lon_name: str = "longitude"
     # Utrack
     utrack_weights_file: str = None
     utrack_use_gpu: bool = False
@@ -247,12 +250,10 @@ class SimulationConfig:
         self.file_name_prefix = self.file_name_prefix or ""
         self.file_name_suffix = self.file_name_suffix or ""
         self.file_type = self.file_type or ""
-        
+
         if self.compute_polar_proj:
             if self.radial_resolution is not None and self.radial_resolution < 0:
-                raise ValueError(
-                    f"radial_resolution={self.radial_resolution} m must be positive."
-                )
+                raise ValueError(f"radial_resolution={self.radial_resolution} m must be positive.")
             if not self.radial_resolution:
                 logger.warning(
                     "radial_resolution not set, defaulting to native resolution=%d m.",
@@ -265,8 +266,6 @@ class SimulationConfig:
                     f"the native grid resolution={self.resolution} m. "
                     "Interpolating to a finer radial grid than the source data is not meaningful."
                 )
-
-
 
     # -----------------------
     # Constructors
@@ -327,6 +326,13 @@ class SimulationConfig:
         """
         merged = load_config_with_model_presets(Path(path), strict_locked=strict_locked)
         return cls(**merged)
+
+    @classmethod
+    def from_mapping_with_model_preset(
+        cls, mapping: dict[str, Any], *, strict_locked: bool = True
+    ) -> SimulationConfig:
+        """Resolve an in-memory run mapping with the ordinary model presets."""
+        return cls(**resolve_config_with_model_presets(mapping, strict_locked=strict_locked))
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SimulationConfig:
