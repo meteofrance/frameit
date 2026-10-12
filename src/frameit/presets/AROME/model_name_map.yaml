@@ -23,6 +23,8 @@ velocity_aliases :
 # Name of variables for trackers
 # -----------------------------
 tracking_var_aliases:
+  u: "u"
+  v: "v"
   u10m:  "u10"
   v10m:  "v10"
   mslp: "prmsl"

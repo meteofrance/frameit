@@ -312,6 +312,7 @@ class FrameitRunner:
                     src_dict,
                     conf=self.conf,
                     method="bilinear",
+                    track=self.track if self.conf.tracking_method == "pressure_centroid" else None,
                 )
             else:
                 self.dict_polar_user, self.polar_report = {}, {}

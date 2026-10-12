@@ -139,7 +139,14 @@ def enrich_track_with_kinematics(
     is_2d = len(non_time_dims_lon) >= 2 and len(non_time_dims_lat) >= 2
     is_1d = len(non_time_dims_lon) == 1 and len(non_time_dims_lat) == 1
 
-    if is_2d:
+    if "lon" in track_ds and "lat" in track_ds:
+        lon_c = track_ds["lon"]
+        lat_c = track_ds["lat"]
+        if lon_c.dims != (tdim,) or lat_c.dims != (tdim,):
+            raise ValueError("Tracker geographic centres must have dimensions (time,)")
+        if not (np.isfinite(lon_c.values).all() and np.isfinite(lat_c.values).all()):
+            raise ValueError("Tracker geographic centres must be finite")
+    elif is_2d:
         # Standard case: lon(y, x) and lat(y, x)
         ydim, xdim = non_time_dims_lon[-2], non_time_dims_lon[-1]
         try:

@@ -15,7 +15,7 @@ All trackers inherit from the abstract base class ``TcTracker`` defined in
 
 - be decorated with ``@register_tracker`` so the factory can discover it;
 - declare a ``name`` attribute that matches the value of ``tracking_method`` in the configuration;
-- declare a ``required_fields`` tuple listing the physical fields it consumes;
+- declare a ``logical_fields`` tuple listing the aliased physical fields it consumes;
 - implement ``from_config(cls, conf: SimulationConfig)`` to build itself from the global configuration;
 - implement ``_track_method(self, ds: xr.Dataset) -> xr.Dataset`` to perform the actual tracking.
 
@@ -38,7 +38,7 @@ Minimal skeleton::
     @register_tracker
     class MyTracker(TcTracker):
         name = "my_tracker"                  # must match tracking_method in the config
-        required_fields = ("u10m", "v10m")   # fields your method needs
+        logical_fields = ("u10m", "v10m")   # fields your method needs
 
         def __init__(self, var_aliases, **kwargs):
             super().__init__(var_aliases=var_aliases)
@@ -67,13 +67,16 @@ Minimal skeleton::
 Output contract
 ^^^^^^^^^^^^^^^
 
-``_track_method`` must return an ``xr.Dataset`` with exactly two variables:
+``_track_method`` must return an ``xr.Dataset`` with at least two variables:
 
 - ``cx`` — the **column** (longitude) index of the detected cyclone centre, dtype ``int``.
 - ``cy`` — the **row** (latitude) index of the detected cyclone centre, dtype ``int``.
 
 Both must share a ``time`` coordinate aligned with ``ds["time"]``.
-If no cyclone is detected at a given time step, return ``0`` rather than ``NaN``, since the output is cast to ``int``.
+Trackers may additionally return continuous ``lon(time)`` and ``lat(time)``
+and method-specific diagnostics. Geographic centres are preserved by kinematic
+post-processing; integer indices remain the Cartesian extraction anchors.
+If detection fails, raise an explicit error rather than inventing a centre.
 
 Optional dependencies
 ^^^^^^^^^^^^^^^^^^^^^

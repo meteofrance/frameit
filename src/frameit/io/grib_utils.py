@@ -192,7 +192,12 @@ def concat_grib2ds_by_vert_coord(
     opened_per_file: dict[Path, list[xr.Dataset]] = {}
     dims_seen: set[str] = set()
     for f in files:
-        dsets = cfgrib.open_datasets(str(f), indexpath=str(idx_dir / (f.name + ".idx")))
+        backend_kwargs = (
+            {"read_keys": ["uvRelativeToGrid"]} if method == "pressure_centroid" else {}
+        )
+        dsets = cfgrib.open_datasets(
+            str(f), indexpath=str(idx_dir / (f.name + ".idx")), backend_kwargs=backend_kwargs
+        )
         for ds in dsets:
             resources.add(ds)
         opened_per_file[f] = dsets

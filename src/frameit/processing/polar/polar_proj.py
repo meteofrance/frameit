@@ -251,6 +251,7 @@ def polar_project(
     *,
     conf: Any,
     method: str = "bilinear",
+    track: xr.Dataset | None = None,
 ) -> tuple[dict[str, xr.Dataset], dict[str, Any]]:
     """
     Project cyclone-centred Cartesian fields onto a polar (r, θ) grid.
@@ -272,6 +273,9 @@ def polar_project(
         :class:`~frameit.processing.polar.polar_grid.PolarLonLatGrid`.
     method : str, optional
         xESMF regridding method. Default ``"bilinear"``.
+    track : xr.Dataset or None, optional
+        Continuous ``lon(time)``/``lat(time)`` centres for the polar origin.
+        When absent, use the centre cell of the extracted Cartesian box.
 
     Returns
     -------
@@ -326,7 +330,7 @@ def polar_project(
 
     # Step 2: Build polar grid and drop non-dimension coords (AROME GRIB artefacts)
     grid = PolarLonLatGrid.from_conf(conf=conf)
-    ds_polar_grid = grid.build(ds_ref).reset_coords(drop=True)
+    ds_polar_grid = grid.build(ds_ref, track=track).reset_coords(drop=True)
 
     lon_polar, lat_polar = _polar_lonlat_from_grid(ds_polar_grid)
     r_km = np.asarray(grid.r_km, dtype=float)

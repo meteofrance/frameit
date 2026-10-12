@@ -114,6 +114,7 @@ FrameIt supports multiple tracking approaches. The selected method is specified 
    - ``"fixed_box"``: use a fixed analysis box, centered on a given location define by ``fix_subdomain_center`` (see :doc:`/tracker/fixed_box`).
    - ``"prescribed_track"``: use an external track file created beforehand by the user (see :doc:`/tracker/prescribed_track`).
    - ``"wind_pressure"``: track based on wind and pressure extrema (see :doc:`/tracker/pressure_wind_tracker`).
+   - ``"pressure_centroid"``: adaptive, storm-motion-relative 2-km pressure centroid (see :doc:`/tracker/pressure_centroid`).
    - ``"u-track"``: AI based tracker (see :doc:`/tracker/utrack`).
 
 Prescribed track case

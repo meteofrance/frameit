@@ -283,7 +283,7 @@ class PolarLonLatGrid:
 
         return lon0, lat0
 
-    def build(self, ds_surface: xr.Dataset) -> xr.Dataset:
+    def build(self, ds_surface: xr.Dataset, *, track: xr.Dataset | None = None) -> xr.Dataset:
         """
         Compute the polar lon/lat grid for all time steps in ``ds_surface``.
 
@@ -292,6 +292,8 @@ class PolarLonLatGrid:
         ds_surface : xr.Dataset
             Surface-level dataset used to retrieve the time axis and the
             cyclone center coordinates.
+        track : xr.Dataset or None, optional
+            Continuous lon(time)/lat(time) centres, overriding the box centre.
 
         Returns
         -------
@@ -310,7 +312,15 @@ class PolarLonLatGrid:
         When ``tracking_method == "fixed_box"``, the center is taken at ``t=0``
         and broadcast to all time steps, producing a static polar grid.
         """
-        lon0, lat0 = self._get_center_lonlat(ds_surface)
+        if track is not None and "lon" in track and "lat" in track:
+            selected = track.sel({self.time_dim: ds_surface[self.time_dim]})
+            lon0, lat0 = selected["lon"], selected["lat"]
+            if lon0.dims != (self.time_dim,) or lat0.dims != (self.time_dim,):
+                raise ValueError("Polar track centres must have dimensions (time,)")
+            if not (np.isfinite(lon0.values).all() and np.isfinite(lat0.values).all()):
+                raise ValueError("Polar track centres must be finite")
+        else:
+            lon0, lat0 = self._get_center_lonlat(ds_surface)
 
         # Determine time axis
         if self.time_dim in ds_surface.dims or self.time_dim in ds_surface.coords:

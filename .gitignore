@@ -236,7 +236,8 @@ DRAFT/
 old/
 
 # Test suite and generated test artefacts
-tests/
+tests/*
+!tests/test_pressure_centroid.py
 
 # Claude Code local settings
 .claude/

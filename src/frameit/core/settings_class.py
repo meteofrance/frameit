@@ -32,7 +32,9 @@ logger = logging.getLogger(__name__)
 
 # Restricted types for a few key fields
 ModelName = Literal["AROME", "MNH"]
-TrackingMethod = Literal["wind_pressure", "fixed_box", "prescribed_track"]  # extend as needed
+TrackingMethod = Literal[
+    "wind_pressure", "pressure_centroid", "fixed_box", "prescribed_track", "utrack"
+]
 
 
 @dataclass
@@ -87,6 +89,17 @@ class SimulationConfig:
     utrack_weights_file: str = None
     utrack_use_gpu: bool = False
     utrack_batch_size: int = 16
+
+    # Adaptive pressure centroid (compare_batsirai_centers v1.4.1)
+    pressure_centroid_max_iterations: int = 15
+    pressure_centroid_tolerance_m: float = 250.0
+    pressure_centroid_max_motion_iterations: int = 50
+    pressure_centroid_motion_solver: str = "aitken"
+    pressure_centroid_motion_relaxation: float = 0.25
+    pressure_centroid_motion_tolerance_m: float = 250.0
+    pressure_centroid_r80_max_km: float = 250.0
+    pressure_centroid_dr_km: float = 2.5
+    pressure_centroid_dtheta: float = 5.0
 
     # Variables requested by the user
     requested_variables_user: dict[str, dict[str, Any]] = field(default_factory=dict)
