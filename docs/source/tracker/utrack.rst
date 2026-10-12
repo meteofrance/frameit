@@ -31,6 +31,12 @@ This tracker requires the following variables to be available in the dataset:
 - 10 m meridional wind component (``v10``),
 - Absolute vorticity at 850 hPa (``absv``).
 
+The dataset must also carry a latitude coordinate named ``latitude`` or ``lat``.
+Latitude is passed to UTrack to reverse the sign of raw absolute vorticity south
+of the equator, matching the model's cyclonic-positive convention. Input
+vorticity must retain its raw signed convention to avoid applying this correction
+twice.
+
 Output
 ------
 

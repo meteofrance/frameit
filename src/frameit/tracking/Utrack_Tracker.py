@@ -12,7 +12,7 @@ from .tracker_core import TcTracker, register_tracker
 
 try:
     from utrack import Utracker
-    from utrack.prepare import prepare_input
+    from utrack.prepare import get_latitude, prepare_input
 except Exception:
     pass
 
@@ -30,7 +30,7 @@ class UtrackTracker(TcTracker):
     """
 
     name = "utrack"
-    required_fields = ("10si", "absv")
+    logical_fields = ("u10m", "v10m", "absv")
 
     def __init__(self, var_aliases, checkpoint_path, use_gpu, batch_size):
         """
@@ -100,7 +100,8 @@ class UtrackTracker(TcTracker):
         ds : xr.Dataset
             Flat tracking dataset.  Must contain the fields aliased to
             ``"u10m"``, ``"v10m"``, and ``"absv"`` (absolute vorticity
-            on isobaric levels; the first level is used).
+            on isobaric levels; the first level is used), and a ``latitude``
+            or ``lat`` coordinate for the hemisphere vorticity correction.
 
         Returns
         -------
@@ -110,12 +111,18 @@ class UtrackTracker(TcTracker):
         u10 = self._field(ds, "u10m")
         v10 = self._field(ds, "v10m")
         absv = self._field(ds, "absv").isel(isobaricInhPa=0)
+        lat = get_latitude(ds)
 
         time_da = ds["time"]
 
         # Applying utrack model
 
-        x = prepare_input(u10=u10, v10=v10, absv=absv)
+        x = prepare_input(
+            u10=u10.values,
+            v10=v10.values,
+            absv=absv.values,
+            lat=lat.values,
+        )
         y_pred, cyclones = self.utracker.predict_batch(
             x, use_gpu=self.use_gpu, match=False, batch_size=self.batch_size
         )
