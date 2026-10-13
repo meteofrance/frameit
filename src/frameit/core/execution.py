@@ -23,6 +23,7 @@ class ExecutionOptions:
     log_level: str | None = None
     no_hdf5_debug_pop: bool = False
     synchronous_export: bool = False
+    benchmark: bool = False
 
     def __post_init__(self):
         if not 0 <= int(self.compress_level) <= 9:
@@ -39,6 +40,8 @@ class SimulationExecutionResult:
     duration_s: float = 0.0
     log_path: str | None = None
     backend_versions: dict[str, str] = field(default_factory=dict)
+    timing_sections_s: dict[str, float] = field(default_factory=dict)
+    computation_s: float = 0.0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -120,7 +123,7 @@ def execute_simulation(
             from frameit.core.runner import FrameitRunner
 
             runner = FrameitRunner(config, input_files=input_files)
-            result = runner.run()
+            result = runner.run(benchmark=True) if options.benchmark else runner.run()
             exports = {}
             if options.export_netcdf:
                 from frameit.io.netcdf_export import export_outputs
@@ -149,6 +152,11 @@ def execute_simulation(
                 duration_s=time.monotonic() - started,
                 log_path=str(log_path.resolve()),
                 backend_versions=_loaded_backend_versions(),
+                timing_sections_s=dict(runner.timer.sections),
+                computation_s=sum(
+                    runner.timer.sections.get(name, 0.0)
+                    for name in ("tracking", "extraction", "polar_projection")
+                ),
             )
         except BaseException:
             log.exception("Simulation execution failed")

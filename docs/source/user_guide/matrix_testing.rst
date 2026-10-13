@@ -52,6 +52,37 @@ The ready-to-use fixture is included as wheel and source-distribution package da
 Run the matrix
 --------------
 
+Run all tests with a computation benchmark
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Install pytest (``pip install 'frameit[test]'``), then run:
+
+.. code-block:: bash
+
+   frameit run-all-tests --output ./runs/all-tests
+   frameit run-all-tests --data-root /data/DONEE_TEST_CYCLOPY --output ./runs/all-full
+
+The default runs every packaged numerical test and the full CI matrix using the
+bundled fixture. ``--data-root`` selects the full-domain matrix instead; optional
+UTrack cases accept ``--utrack-weights``. Both suites run even if one fails.
+The output directory must be fresh and must not overlap the input data.
+
+``all-tests.json`` combines exit codes, environment information, suite wall times,
+and per-case computation timings. ``numerical.log`` and ``numerical.xml`` contain
+pytest results; ``matrix/`` contains the normal matrix artifacts. Exit code 0 means
+both suites passed, 1 indicates a test failure, 2 a setup error, and 130 interruption.
+
+Benchmark workers load inputs before computation, and materialize lazy results
+within the timed processing stages. Computation time is the sum of tracking,
+extraction and polar projection (including wind collocation), excluding input
+loading, imports, process startup, NetCDF writing and product checks. Only passing
+matrix cases enter the benchmark total. Per-stage times are retained for inspection.
+This is a single-run wall-clock measurement; OS caches are not flushed. Eager input
+loading can require more memory than an ordinary run, especially on full domains.
+
+The numerical tests ship in ``frameit.testing.numerical`` and are also collected by
+the repository's ordinary ``pytest`` command.
+
 .. code-block:: bash
 
    frameit run-matrix-test --ci --output ./runs/ci
@@ -172,5 +203,5 @@ Reference comparison and numerical validation
 The artifacts are designed to support later ``frameit validate-matrix-test`` and
 ``frameit full-validation`` services. These commands are not part of this release.
 Reference comparison will assess compatible scientific inputs, case contracts and
-products across FrameIt versions. Full validation will eventually combine simulation
-comparison with numerical tests once those tests are implemented.
+products across FrameIt versions. The current ``run-all-tests`` command combines
+numerical tests with product-contract validation, without reference comparison.

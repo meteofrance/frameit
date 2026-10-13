@@ -143,7 +143,10 @@ def _worker_entry(case: dict, log_path: str, completion_path: str, log_level: st
             config = SimulationConfig.from_mapping_with_model_preset(case["config"])
             result = execute_simulation(
                 config,
-                ExecutionOptions(synchronous_export=True, log_level=log_level),
+                ExecutionOptions(
+                    synchronous_export=True, log_level=log_level,
+                    benchmark=case.get("benchmark", False),
+                ),
                 input_files=tuple(Path(path) for path in case["input_files"]),
             )
             metadata = result.to_dict()
@@ -395,6 +398,7 @@ def run_matrix(
     keep_going: bool = True,
     utrack_weights: Path | None = None,
     log_level: str | None = None,
+    benchmark: bool = False,
 ) -> dict:
     """Resolve, execute and report selected native matrix cases.
 
@@ -460,6 +464,7 @@ def run_matrix(
                 expected={},
             )
         case["mode"] = mode
+        case["benchmark"] = benchmark
         case.setdefault("input_files", [])
         case.setdefault("input_records", [])
         case.setdefault("expected", {})

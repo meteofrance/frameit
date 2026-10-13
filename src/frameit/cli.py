@@ -192,6 +192,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pm.add_argument("--log-level", default=None, choices=("DEBUG", "INFO", "WARNING", "ERROR"))
 
+    pa = sub.add_parser(
+        "run-all-tests", help="Run numerical tests and the simulation matrix with benchmarks."
+    )
+    pa.add_argument("--output", type=Path, required=True, help="Fresh results directory")
+    pa.add_argument("--data-root", type=Path, default=None,
+                    help="Full simulation root; defaults to the bundled CI fixture")
+    pa.add_argument("--utrack-weights", type=Path, default=None)
+    pa.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+
     return p
 
 
@@ -354,13 +363,25 @@ def main(argv: list[str] | None = None) -> None:
             code = _cmd_prepare_ci_dataset(args)
         elif args.command == "run-matrix-test":
             code = _cmd_run_matrix(args)
+        elif args.command == "run-all-tests":
+            from frameit.testing.all_tests import run_all_tests
+
+            report = run_all_tests(
+                args.output, data_root=args.data_root,
+                utrack_weights=args.utrack_weights, log_level=args.log_level,
+            )
+            print(f"All-test results: {args.output.resolve()}")
+            print(f"Computation benchmark: {report['benchmark']['computation_s']:.6f} s")
+            code = report["exit_code"]
         else:
             code = 2
     except KeyboardInterrupt:
         code = 130
     except (ValueError, FileNotFoundError) as exc:
         logging.getLogger("frameit").error("%s", exc)
-        code = 2 if args.command in ("prepare-ci-dataset", "run-matrix-test") else 1
+        code = 2 if args.command in (
+            "prepare-ci-dataset", "run-matrix-test", "run-all-tests"
+        ) else 1
     except Exception:
         logging.getLogger("frameit").exception("FrameIt CLI failed")
         code = 1

@@ -29,6 +29,9 @@ DOI = "https://doi.org/10.5281/zenodo.22128192"
 [project.scripts]
 frameit = "frameit.cli:main"
 
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -37,7 +40,7 @@ frameit = ["presets/**/*.yaml", "testing/catalogs/*.yaml", "testing/recipes/*.ya
 
 [tool.pytest.ini_options]
 addopts = "-ra"
-testpaths = ["tests"]
+testpaths = ["src/frameit/testing/numerical"]
 
 [tool.ruff]
 line-length = 100

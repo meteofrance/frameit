@@ -272,7 +272,7 @@ class FrameitRunner:
         )
         return track
 
-    def run(self):
+    def run(self, *, benchmark: bool = False):
         """
         Execute the full FrameIt pipeline.
 
@@ -299,10 +299,15 @@ class FrameitRunner:
             dict_user, dict_tracker, files = self.load_dataset()
             self.ds_user = dict_user
             self.ds_tracker = dict_tracker
+            if benchmark:
+                for dataset in (*dict_user.values(), *dict_tracker.values()):
+                    dataset.load()
 
         # Tracking step
         with self.timer.section("tracking"):
             self.track = self.run_tracking(self.ds_tracker)
+            if benchmark:
+                self.track.load()
 
         # Extraction step
         with self.timer.section("extraction"):
@@ -312,6 +317,10 @@ class FrameitRunner:
                 ds_tracker=self.ds_tracker,
                 track_ds=self.track,
             )
+            if benchmark:
+                self.track.load()
+                for dataset in self.dict_crop_user.values():
+                    dataset.load()
 
         # Polar projection (including optional MNH collocation)
         with self.timer.section("polar_projection"):
@@ -358,6 +367,12 @@ class FrameitRunner:
                 )
             else:
                 self.dict_polar_user, self.polar_report = {}, {}
+            if benchmark:
+                for dataset in (
+                    *self.dict_crop_user.values(), *self.dict_polar_user.values(),
+                    *(self.dict_collocated_crop_user or {}).values(),
+                ):
+                    dataset.load()
 
         for group, names in getattr(self, "_internal_wind_names", {}).items():
             if group in self.dict_crop_user:
