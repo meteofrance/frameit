@@ -12,9 +12,9 @@ FrameIt offers a collection of tools for:
 
 - Loading and preprocessing model data (GRIB, NetCDF) with automatic handling of metadata.
 - Running various cyclone tracking methods, including prescribed‑track, pressure‑wind, AI-based tracker and fixed‑box method.
-- Performing polar stereographic projections for accurate visualisation of polar data.
+- Performing storm-centred geodesic polar sampling with bilinear scalar interpolation
+  and a local geodesic basis for radial and tangential winds.
 - In the future : generating plots and diagnostics to aid interpretation of cyclone behaviour.
 
 The library is built with extensibility in mind, allowing users to plug in custom trackers and in the future custom diagnostics while leveraging the existing utilities for I/O, 
 logging, and configuration management.
-

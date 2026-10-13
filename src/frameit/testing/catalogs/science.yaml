@@ -1,5 +1,5 @@
 schema_version: 1
-catalog_version: '1'
+catalog_version: '2'
 
 # Dataset mode and coverage profile are independent axes. Bindings preserve
 # scientific settings; fragments share requests without leaking full-domain
@@ -76,6 +76,14 @@ cases:
   - {id: mnh_chido_prescribed_cart_only, dataset: MNH/CHIDO, tracker: prescribed_track, modes: [ci], profile: full, requirement: optional, polar: false, coverage: [external-netcdf-track, exact-time-intersection, moving-cartesian]}
   - {id: mnh_chido_w_only_polar, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci], profile: full, groups: [level_w], coverage: [w-only-polar]}
   - {id: mnh_chido_surface_polar, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci], profile: full, groups: [surface], coverage: [surface-only-polar]}
+  - {id: arome_batsirai_u_only_polar, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci, full], profile: full, groups: [heightAboveGround], field_selection: {heightAboveGround: [u]}, coverage: [u-only-polar, sparse-levels]}
+  - {id: arome_batsirai_v_only_polar, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci, full], profile: full, groups: [heightAboveGround], field_selection: {heightAboveGround: [v]}, coverage: [v-only-polar, sparse-levels]}
+  - {id: arome_batsirai_speed_only_polar, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci, full], profile: full, groups: [heightAboveGround], field_selection: {heightAboveGround: [wind_speed]}, coverage: [derived-speed-only, sparse-levels]}
+  - {id: arome_batsirai_scalar_only_polar, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci, full], profile: full, groups: [heightAboveGround], field_selection: {heightAboveGround: [t]}, coverage: [scalar-only-polar, sparse-levels]}
+  - {id: mnh_chido_u_only_polar, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci, full], profile: full, groups: [level], field_selection: {level: [UT]}, coverage: [u-only-polar, native-collocation, sparse-levels]}
+  - {id: mnh_chido_v_only_polar, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci, full], profile: full, groups: [level], field_selection: {level: [VT]}, coverage: [v-only-polar, native-collocation, sparse-levels]}
+  - {id: mnh_chido_speed_only_polar, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci, full], profile: full, groups: [level], field_selection: {level: [wind_speed]}, coverage: [derived-speed-only, native-collocation, sparse-levels]}
+  - {id: mnh_chido_scalar_only_polar, dataset: MNH/CHIDO, tracker: fixed_box, modes: [ci, full], profile: full, groups: [level], field_selection: {level: [THT]}, coverage: [scalar-only-polar, sparse-levels]}
   - {id: arome_batsirai_wind_pressure_polar, dataset: AROME/BATSIRAI, tracker: wind_pressure, modes: [full], profile: full, coverage: [second-arome-moving-storm, pressure-wind-tracker]}
   - {id: arome_belna_fixed_polar, dataset: AROME/BELNA, tracker: fixed_box, modes: [full], profile: full, coverage: [second-arome-fixed-storm]}
   - {id: mnh_chido02_wind_pressure_polar, dataset: MNH/CHIDO_02_MXX30, tracker: wind_pressure, modes: [full], profile: full, coverage: [long-sequence, 3-km-resolution, moving-polar, staggered-uvw]}

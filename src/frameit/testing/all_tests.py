@@ -50,6 +50,18 @@ def run_all_tests(
         "exit_code": result.returncode, "duration_s": time.perf_counter() - numerical_start,
         "log": "numerical.log", "junit": "numerical.xml",
     }
+    qualification_start = time.perf_counter()
+    with (output / "qualification.log").open("w", encoding="utf-8") as log:
+        qualification = subprocess.run(
+            [sys.executable, "-m", "frameit.testing.polar_qualification", "--output",
+             str(output / "qualification")], stdout=log, stderr=subprocess.STDOUT, env=env,
+        )
+    report["scientific_qualification"] = {
+        "exit_code": qualification.returncode,
+        "duration_s": time.perf_counter() - qualification_start,
+        "log": "qualification.log", "report": "qualification/qualification.json",
+        "summary": "qualification/summary.json",
+    }
     matrix_start = time.perf_counter()
     try:
         matrix = run_matrix(
@@ -72,11 +84,11 @@ def run_all_tests(
     report["benchmark"] = {
         "metric": "wall-clock seconds in tracking + extraction + polar_projection",
         "excluded": ["imports", "worker startup", "loading_data", "Netcdf export",
-                     "product checks", "numerical tests"],
+                     "product checks", "numerical tests", "scientific qualification"],
         "cases": cases, "computation_s": sum(case["computation_s"] for case in cases),
         "scope": "successful matrix cases only; single run, no cache flushing",
     }
-    codes = (result.returncode, matrix["exit_code"])
+    codes = (result.returncode, qualification.returncode, matrix["exit_code"])
     report["exit_code"] = 130 if 130 in codes or -2 in codes else (
         2 if any(code not in (0, 1) for code in codes) else int(any(codes))
     )

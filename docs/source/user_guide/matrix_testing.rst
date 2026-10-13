@@ -62,15 +62,18 @@ Install pytest (``pip install 'frameit[test]'``), then run:
    frameit run-all-tests --output ./runs/all-tests
    frameit run-all-tests --data-root /data/DONEE_TEST_CYCLOPY --output ./runs/all-full
 
-The default runs every packaged numerical test and the full CI matrix using the
+The default runs every packaged numerical test, the independent analytical
+scientific qualification, and the full CI matrix using the
 bundled fixture. ``--data-root`` selects the full-domain matrix instead; optional
-UTrack cases accept ``--utrack-weights``. Both suites run even if one fails.
+UTrack cases accept ``--utrack-weights``. All services run even if one fails.
 The output directory must be fresh and must not overlap the input data.
 
 ``all-tests.json`` combines exit codes, environment information, suite wall times,
 and per-case computation timings. ``numerical.log`` and ``numerical.xml`` contain
-pytest results; ``matrix/`` contains the normal matrix artifacts. Exit code 0 means
-both suites passed, 1 indicates a test failure, 2 a setup error, and 130 interruption.
+pytest results; ``qualification/summary.json`` contains compact convergence evidence,
+``qualification/qualification.json`` retains profiles and complex coefficients,
+and ``matrix/`` contains the normal matrix artifacts. Exit code 0 means all
+services passed, 1 indicates a test failure, 2 a setup error, and 130 interruption.
 
 Benchmark workers load inputs before computation, and materialize lazy results
 within the timed processing stages. Computation time is the sum of tracking,
@@ -214,3 +217,10 @@ The artifacts are designed to support later ``frameit validate-matrix-test`` and
 Reference comparison will assess compatible scientific inputs, case contracts and
 products across FrameIt versions. The current ``run-all-tests`` command combines
 numerical tests with product-contract validation, without reference comparison.
+
+The analytical qualification evaluates source and target truth directly; it is
+distinct from a historical simulation-file comparison. The full matrix includes
+U-only, V-only, derived-speed-only and scalar-only AROME/MNH products. Product
+checks validate finite/support/status masks, coverage fractions and the wind-speed
+norm invariant. See :doc:`../polar_projection/scientific_qualification` for the
+manufactured fields, numerical gates and scientific interpretation limits.

@@ -66,6 +66,11 @@ def load_cases(mode="ci", profile="full", patterns=()):
         requests = copy.deepcopy(catalog["fragments"][fragment])
         if definition.get("groups"):
             requests = {g: requests[g] for g in definition["groups"]}
+        for group, variables in definition.get("field_selection", {}).items():
+            if group not in requests:
+                raise ValueError(f"Field selection refers to an unrequested group: {group}")
+            requests[group]["variables"] = list(variables)
+            requests[group]["polar_variables"] = list(variables)
         user, polar = {}, {}
         for group, spec in requests.items():
             req = {"variables": spec["variables"]}
@@ -404,6 +409,13 @@ def _selected_levels(case, inventory):
 def _check_fields(case, inventory, selected):
     requests = copy.deepcopy(case["config"]["requested_variables_user"])
     model = inventory["model"]
+    # A derived-speed-only request still needs both native components. Keep
+    # these dependencies in preflight without expanding the exported contract.
+    for request in requests.values():
+        if "wind_speed" in request["variables"]:
+            native_winds = ["u", "v"] if model == "AROME" else ["UT", "VT"]
+            request["variables"] = [v for v in request["variables"] if v != "wind_speed"]
+            request["variables"].extend(native_winds)
     tracker = case["tracker"]
     if tracker in {"wind_pressure", "utrack"}:
         names = ["u10", "v10", "prmsl"] if model == "AROME" else ["UM10", "VM10", "MSLP"]

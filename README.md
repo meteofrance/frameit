@@ -20,7 +20,8 @@ from atmospheric and oceanic model outputs.
 - **Normalized outputs** — standardized NetCDF outputs to facilitate inter-model and inter-simulation comparisons, 
   and enable AI dataset creation
 - **Data reduction** — reduce data volume for easier manipulation and sharing with partners
-- **Polar sampling** — geodesic polar grid centered on the tracked object
+- **Polar sampling** — storm-centred geodesic polar sampling, bilinear scalar interpolation,
+  and radial/tangential winds in the local geodesic basis
 - **Modular architecture** — plug in custom trackers and diagnostics
 - **Model support** — currently compatible with **AROME** and **MesoNH** model outputs,ocean and wave model extension planned
 
@@ -50,6 +51,20 @@ pip install .
 - Python 3.10+
 - conda (via Miniconda or Anaconda)
 - Compatible with AROME and MesoNH model outputs
+
+## Scientific qualification and analytical example
+
+```bash
+python -m frameit.testing.polar_qualification --output ./runs/polar-qualification
+python -m frameit.testing.polar_qualification --example --output ./runs/analytical-vortex
+frameit run-all-tests --output ./runs/all-tests
+```
+
+Use fresh output directories. Qualification retains convergence tables, direct
+analytical truth, complex harmonic comparisons, displaced-centre experiments,
+coverage and export checks. The example writes a NetCDF vortex and truth/error/
+harmonic diagnostic plots. `run-all-tests` also runs the packaged numerical tests
+and the AROME/MNH integration matrix.
 
 ## Quick start
 

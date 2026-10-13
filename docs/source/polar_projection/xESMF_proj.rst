@@ -22,7 +22,7 @@ General strategy
    The target grid is parameterised by:
 
    - **radius** ``rr`` (km), from 0 to ``rmax_km = 0.5 * min(x_boxsize_km, y_boxsize_km)``
-   - **azimuth** ``theta`` (degrees), clockwise from North:
+   - **azimuth** ``theta`` (radians), with ``theta_deg`` in degrees, clockwise from North:
      0° North, 90° East, 180° South, 270° West.
    - For each time step, the polar grid points are converted to geographic
      coordinates (lon, lat) using a forward geodesic mapping on the WGS84 ellipsoid.
@@ -399,7 +399,7 @@ does not override explicit source metadata.
 
 Numerical verification
 ~~~~~~~~~~~~~~~~~~~~~~
-``python -m pytest tests/test_polar_wind.py tests/test_wind_collocation.py``
+``python -m pytest src/frameit/testing/numerical/test_polar_wind.py src/frameit/testing/numerical/test_wind_collocation.py``
 checks Karney's published geodesic example, endpoint-bearing radial leakage,
 cardinal signs, origin handling, continuous centres, wind frame/unit conversion,
 native affine-field collocation, sparse W selections and real-xESMF vortex
@@ -539,7 +539,8 @@ Software dependencies
 
 Recommendations for robust usage
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-- Choose ``radiale_resolution`` comparable to, or slightly coarser than, the native horizontal resolution of your input fields.
+- Choose ``radial_resolution`` (metres) comparable to, or slightly coarser than,
+  the native horizontal resolution of your input fields.
 - Check ``max_azimuthal_spacing_m`` and the effective angular step against the
   scales and azimuthal modes you want to analyse. Fine target spacing does not
   create finer resolved source information. Resolving a band-limited mode

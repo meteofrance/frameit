@@ -41,3 +41,16 @@ class AllTestsTest(unittest.TestCase):
             self.assertEqual(json.loads((output / "all-tests.json").read_text()), report)
             with self.assertRaises(ValueError):
                 run_all_tests(output)
+
+    def test_scientific_failure_propagates_after_numerical_success(self):
+        matrix = ModuleType("frameit.testing.matrix")
+        matrix.run_matrix = Mock(return_value={"exit_code": 0, "results": []})
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict("sys.modules", {"frameit.testing.matrix": matrix}), patch(
+                "frameit.testing.all_tests.subprocess.run",
+                side_effect=[SimpleNamespace(returncode=0), SimpleNamespace(returncode=1)],
+            ):
+                report = run_all_tests(Path(directory) / "results")
+        self.assertEqual(report["exit_code"], 1)
+        self.assertEqual(report["scientific_qualification"]["exit_code"], 1)
+        matrix.run_matrix.assert_called_once()

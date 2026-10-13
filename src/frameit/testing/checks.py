@@ -184,6 +184,58 @@ def _check_polar_quality(dataset, contract, record, detail):
                 "polar-ring-coverage", quality is not None and quality.dimensions == expected,
                 f"{name} lacks aligned {suffix}", **detail,
             )
+        _check_polar_quality_values(dataset, name, field, record, detail)
+    _check_polar_vector_speed(dataset, record, detail)
+
+
+def _check_polar_quality_values(dataset, name, field, record, detail):
+    import numpy as np
+
+    quality_names = [f"{name}_{suffix}" for suffix in
+                     ("valid", "support_fraction", "interpolation_status", "ring_coverage")]
+    if not all(key in dataset.variables for key in quality_names):
+        return
+    # Time-wise reads keep array residency independent of run duration.
+    for index in range(len(dataset.dimensions["time"])):
+        selection = [slice(None)] * field.ndim
+        selection[field.dimensions.index("time")] = index
+        selection = tuple(selection)
+        values = np.ma.filled(np.ma.asarray(field[selection]).astype(float), np.nan)
+        finite = np.isfinite(values)
+        valid = np.asarray(dataset[f"{name}_valid"][selection]) == 1
+        support = np.asarray(dataset[f"{name}_support_fraction"][selection])
+        status = np.asarray(dataset[f"{name}_interpolation_status"][selection])
+        angular_axis = [d for d in field.dimensions if d != "time"].index("theta")
+        ring = dataset[f"{name}_ring_coverage"]
+        ring_selection = [slice(None)] * ring.ndim
+        ring_selection[ring.dimensions.index("time")] = index
+        fraction = np.asarray(ring[tuple(ring_selection)])
+        record(
+            "polar-quality-values", np.array_equal(finite, valid)
+            and np.all(np.isfinite(support)) and np.all((support >= 0) & (support <= 1))
+            and np.all(np.isin(status, [0, 1, 2, 3, 4]))
+            and np.allclose(fraction, valid.mean(axis=angular_axis), rtol=0, atol=1e-7),
+            f"{name}: finite masks/support/status/ring coverage are inconsistent", **detail,
+        )
+
+
+def _check_polar_vector_speed(dataset, record, detail):
+    import numpy as np
+
+    if {"vrad", "vtan", "wind_speed"} <= set(dataset.variables):
+        for index in range(len(dataset.dimensions["time"])):
+            fields = []
+            for name in ("vrad", "vtan", "wind_speed"):
+                variable = dataset[name]
+                selection = [slice(None)] * variable.ndim
+                selection[variable.dimensions.index("time")] = index
+                fields.append(np.ma.filled(np.ma.asarray(variable[tuple(selection)]).astype(float),
+                                           np.nan))
+            radial, tangential, speed = fields
+            finite = np.isfinite(radial) & np.isfinite(tangential) & np.isfinite(speed)
+            record("polar-wind-speed-invariant", np.allclose(
+                np.hypot(radial[finite], tangential[finite]), speed[finite], rtol=5e-6, atol=1e-5
+            ), "Polar components do not reconstruct the sampled vector speed", **detail)
 
 
 def _check_track(dataset, expected, metadata, record, detail):
