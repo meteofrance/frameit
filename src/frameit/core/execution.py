@@ -118,7 +118,9 @@ def execute_simulation(
         config.output_dir, level=level, simu_name=config.simulation_name
     ) as log_path:
         log = logging.getLogger("frameit")
-        log.info("Logging initialized: %s", log_path)
+        log.info("Log file: %s", log_path)
+        if options.benchmark:
+            log.info("Benchmark: eager inputs; computation timed separately from I/O")
         try:
             # No ESMF/cfgrib/NetCDF backend import during CLI help or planning.
             from frameit.core.runner import FrameitRunner
@@ -139,17 +141,19 @@ def execute_simulation(
                         compress_level=options.compress_level,
                         synchronous=options.synchronous_export,
                     )
-                log.info("NetCDF export done.")
+                log.debug("NetCDF export finished")
             else:
                 log.info("NetCDF export skipped (--no-export-netcdf).")
             runner.timer.log_summary(log, title="FrameIt runtime summary")
-            log.info("FrameIt ends correctly")
+            products = _product_descriptors(exports, runner)
+            log.info("Run complete: %d input file(s) · %d product(s)",
+                     result.n_files, len(products))
             return SimulationExecutionResult(
                 ok=result.ok,
                 n_files=result.n_files,
                 output_dir=str(result.output_dir.resolve()),
                 files=[str(path) for path in result.files],
-                products=_product_descriptors(exports, runner),
+                products=products,
                 duration_s=time.monotonic() - started,
                 log_path=str(log_path.resolve()),
                 backend_versions=_loaded_backend_versions(),

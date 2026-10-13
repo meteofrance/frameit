@@ -85,7 +85,7 @@ def infer_domain_shape_from_tracker(
             if lat.ndim == 1 and lon.ndim == 1:
                 ny = lat.size
                 nx = lon.size
-                logger.info("Domain size inferred from 1D lat/lon: nx=%d, ny=%d", nx, ny)
+                logger.debug("Domain size inferred from 1D lat/lon: nx=%d, ny=%d", nx, ny)
                 return nx, ny
 
             # 2D case (MNH-type)
@@ -93,7 +93,7 @@ def infer_domain_shape_from_tracker(
                 if lat.shape != lon.shape:
                     raise ValueError("Latitude and longitude must have identical shapes")
                 ny, nx = lat.shape
-                logger.info("Domain size inferred from 2D lat/lon: nx=%d, ny=%d", nx, ny)
+                logger.debug("Domain size inferred from 2D lat/lon: nx=%d, ny=%d", nx, ny)
                 return nx, ny
 
     raise RuntimeError(
@@ -742,7 +742,7 @@ def extract_data(
     # Domain size nx, ny from tracker datasets
     nx, ny = infer_domain_shape_from_tracker(ds_tracker, conf)
 
-    logger.info(
+    logger.debug(
         "Running center2box: x=%.1f km, y=%.1f km, resolution=%.1f m, nx=%d, ny=%d",
         x_box,
         y_box,
@@ -777,7 +777,7 @@ def extract_data(
     for key, ds in ds_user_norm.items():
         if "time" in ds.dims:
             ds = ds.sel(time=track_box["time"].values)
-        logger.info("Extracting cyclone-centred box for ds_user[%s]", key)
+        logger.debug("Extracting cyclone-centred box for ds_user[%s]", key)
         extracted[key] = _extract_box_for_dataset(
             ds=ds,
             x_idx=x_idx,

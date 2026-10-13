@@ -86,18 +86,17 @@ class FrameitRunner:
         FileNotFoundError
             If ``conf.data_dir`` does not exist.
         """
-        logger.info("Data path (YAML): %s", self.conf.data_dir)
-        logger.info("Output path  (YAML): %s", self.conf.output_dir)
-        logger.info("Log path: %s", self.output_dir)
+        logger.info("Input:  %s", self.conf.data_dir)
+        logger.info("Output: %s", self.output_dir)
 
         created = not self.output_dir.exists()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         if created:
-            logger.info("Output directory created")
+            logger.debug("Output directory created")
 
         if not self.conf.data_dir.exists():
             raise FileNotFoundError(f"Data dir not found: {self.conf.data_dir}")
-        logger.info("Paths : OK")
+        logger.debug("Input/output paths verified")
 
     def find_files(self):
         """
@@ -139,9 +138,10 @@ class FrameitRunner:
         if not files:
             raise FileNotFoundError(f"No files correspond to {pattern} within {self.conf.data_dir}")
 
-        logger.info("Found (%d) files:", len(files))
+        logger.info("Input inventory: %d file(s), %s → %s", len(files),
+                    files[0].name, files[-1].name)
         for f in files:
-            logger.info("\t\t\t- %s", f.name, extra={"noprefix": True})
+            logger.debug("  %s", f.name)
 
         # Store the file pattern in the config for reference
         self.conf.add_parameter("simu_output_files", pattern)
@@ -235,12 +235,15 @@ class FrameitRunner:
         dict_user = add_speed_from_uv_dict(dict_user, self.conf)
 
         # Check groups and variables
-        logger.info("Datasets asked by user:")
+        logger.debug("Checking user datasets")
         check_group_var(dict_user, requested_vars_user)
-        logger.info("Datasets asked by tracker:")
+        logger.debug("Checking tracker datasets")
         req_trk = (requested_vars_tracker or {}).get(tracking_method, {})
         check_group_var(dict_tracker, req_trk)
         check_resolution(dict_user, self.conf)
+        for group, dataset in dict_user.items():
+            logger.info("  Loaded %s: %d field(s) · %s", group, len(dataset.data_vars),
+                        ", ".join(f"{name}={size}" for name, size in dataset.sizes.items()))
 
         return dict_user, dict_tracker, files
 
@@ -286,7 +289,7 @@ class FrameitRunner:
         """
         log = logging.getLogger("frameit")
 
-        log.info("Extraction of simulation: %s", self.conf.simulation_name)
+        log.info("Simulation: %s", self.conf.simulation_name)
 
         # Start global timer
         self.timer.start()
@@ -308,8 +311,11 @@ class FrameitRunner:
             self.track = self.run_tracking(self.ds_tracker)
             if benchmark:
                 self.track.load()
+        log.info("Tracking complete: %d time(s)", self.track.sizes.get("time", 0))
 
         # Extraction step
+        log.info("Extracting Cartesian fields: %.1f × %.1f km · %.0f m grid",
+                 self.conf.x_boxsize_km, self.conf.y_boxsize_km, self.conf.resolution)
         with self.timer.section("extraction"):
             self.track, self.dict_crop_user = extract_data(
                 conf=self.conf,
@@ -323,6 +329,8 @@ class FrameitRunner:
                     dataset.load()
 
         # Polar projection (including optional MNH collocation)
+        if self.conf.compute_polar_proj:
+            log.info("Projecting polar fields")
         with self.timer.section("polar_projection"):
             atm_model = str(getattr(self.conf, "atm_model", "")).upper()
             support_fields = self.dict_crop_user

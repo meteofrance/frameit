@@ -276,7 +276,7 @@ def write_dataset_netcdf(
         logger.error("Refusing to overwrite existing file (overwrite=False): %s", str(path))
         raise FileExistsError(f"File exists and overwrite=False: {path}")
 
-    logger.info(
+    logger.debug(
         "Writing NetCDF: %s (product_type=%s, group=%s, engine=%s, fmt=%s,"
         " compress_level=%s, compress_coords=%s, unlimited_time=%s).",
         str(path),
@@ -326,7 +326,7 @@ def write_dataset_netcdf(
         unlimited_dims=unlimited_dims,
     )
 
-    logger.info("NetCDF written: %s", str(path))
+    logger.debug("NetCDF written: %s", str(path))
     return path
 
 
@@ -429,7 +429,7 @@ def write_group_dict(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(
+    logger.debug(
         "Writing group dictionary: out_dir=%s, simu_name=%s, grid=%s, n_groups=%s, max_workers=%s.",
         str(out_dir),
         simu_name,
@@ -486,11 +486,12 @@ def write_group_dict(
             try:
                 path = future.result()
                 written.append(path)
+                logger.debug("NetCDF written: %s", path)
             except Exception:
                 logger.exception("Failed to write group=%s.", group_name)
                 raise
 
-    logger.info("Group dictionary written: n_files=%s.", len(written))
+    logger.debug("Group dictionary written: n_files=%s.", len(written))
     return written
 
 
@@ -567,7 +568,8 @@ def export_outputs(
     out_path = base_out / out_subdir if out_subdir else base_out
     out_path.mkdir(parents=True, exist_ok=True)
 
-    logger.info(
+    logger.info("Exporting NetCDF: engine=%s, compression=%d", engine, int(compress_level))
+    logger.debug(
         "Export outputs: simu_name=%s, out_path=%s, export_polar=%s, export_cart=%s,"
         " engine=%s, fmt=%s, overwrite=%s, compress_level=%s, max_workers=%s.",
         simu_name,
@@ -585,7 +587,7 @@ def export_outputs(
 
     # Track
     track_file = out_path / f"{simu_name}.track.nc"
-    logger.info("Exporting track to %s.", str(track_file))
+    logger.debug("Exporting track to %s", track_file)
 
     track_written = write_dataset_netcdf(
         runner.track,
@@ -604,7 +606,7 @@ def export_outputs(
 
     # Polar
     if export_polar and getattr(runner, "dict_polar_user", None):
-        logger.info("Exporting polar groups (n_groups=%s).", len(runner.dict_polar_user))
+        logger.info("  Polar: %d group(s)", len(runner.dict_polar_user))
         results["polar"] = write_group_dict(
             runner.dict_polar_user,
             out_path,
@@ -630,7 +632,7 @@ def export_outputs(
 
     # Cartesian crop
     if export_cart and getattr(runner, "dict_crop_user", None):
-        logger.info("Exporting cart groups (n_groups=%s).", len(runner.dict_crop_user))
+        logger.info("  Cartesian: %d group(s)", len(runner.dict_crop_user))
         results["cart"] = write_group_dict(
             runner.dict_crop_user,
             out_path,
@@ -654,5 +656,7 @@ def export_outputs(
             bool(getattr(runner, "dict_crop_user", None)),
         )
 
-    logger.info("Export completed. Results keys: %s.", list(results.keys()))
+    for role, paths in results.items():
+        for path in ([paths] if isinstance(paths, Path) else paths):
+            logger.info("  Saved %s: %s", role, path.name)
     return results

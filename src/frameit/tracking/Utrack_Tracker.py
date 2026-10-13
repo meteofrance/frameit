@@ -10,12 +10,6 @@ from frameit.core.settings_class import SimulationConfig
 
 from .tracker_core import TcTracker, register_tracker
 
-try:
-    from utrack import Utracker
-    from utrack.prepare import get_latitude, prepare_input
-except Exception:
-    pass
-
 logger = logging.getLogger(__name__)
 
 
@@ -46,6 +40,10 @@ class UtrackTracker(TcTracker):
             Number of time steps processed per batch.
         """
         super().__init__(var_aliases=var_aliases)
+
+        # Optional ML backends are initialized only when this tracker is used.
+        # Their import-time diagnostics do not belong in unrelated simulations.
+        from utrack import Utracker
 
         self.utracker = Utracker()
         self.utracker.load_checkpoint(checkpoint_path=checkpoint_path)
@@ -108,6 +106,8 @@ class UtrackTracker(TcTracker):
         xr.Dataset
             Dataset with variables ``cy(time)`` and ``cx(time)``.
         """
+        from utrack.prepare import get_latitude, prepare_input
+
         u10 = self._field(ds, "u10m")
         v10 = self._field(ds, "v10m")
         absv = self._field(ds, "absv").isel(isobaricInhPa=0)

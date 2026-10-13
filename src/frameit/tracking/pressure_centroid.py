@@ -321,7 +321,7 @@ def solve_motion_centroids(records, options):
             previous_vector = previous_alpha = previous_max = None
             residual_history.clear()
             fallback_steps = 5
-            logger.info("Centroid accelerated-step backtrack: relaxation=%.3f", retry_alpha)
+            logger.debug("Centroid accelerated-step backtrack: relaxation=%.3f", retry_alpha)
             continue
         backtracks = 0
         geodesics = [GEOD.inv(*a, *b) for a, b in zip(centers, targets, strict=True)]
@@ -332,7 +332,7 @@ def solve_motion_centroids(records, options):
         maximum = max(residuals)
         residual_history.append(maximum)
         if maximum < options.motion_tolerance_m:
-            logger.info("Centroid outer iteration %d: unrelaxed residual %.1f m (converged)",
+            logger.debug("Centroid outer iteration %d: unrelaxed residual %.1f m (converged)",
                         cycle, maximum)
             for rec, residual, velocity, diagnostic in zip(
                     records, residuals, velocities, diagnostics, strict=True):
@@ -364,10 +364,10 @@ def solve_motion_centroids(records, options):
                     and min(residual_history[-4:]) >= residual_history[-5] * .98):
                 fallback_steps = 5
                 alpha = options.motion_relaxation
-                logger.info("Aitken stalled: temporarily using fixed relaxation")
+                logger.debug("Aitken stalled: temporarily using fixed relaxation")
         elif fallback_steps:
             fallback_steps -= 1
-        logger.info("Centroid outer iteration %d: unrelaxed residual %.1f m; relaxation=%.3f",
+        logger.debug("Centroid outer iteration %d: unrelaxed residual %.1f m; relaxation=%.3f",
                     cycle, maximum, alpha)
         previous_vector, previous_alpha, previous_max = vector, alpha, maximum
         last_update = centers, targets, alpha

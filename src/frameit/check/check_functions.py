@@ -101,7 +101,7 @@ def check_group_var(by_group: dict, requests: dict) -> dict:
         # Log dims
         for g, ds in by_group.items():
             dims = ", ".join(f"{k}={v}" for k, v in ds.sizes.items())
-            logger.info("\t\t\tDataset[%s] : dimensions %s", g, dims)
+            logger.debug("Dataset[%s]: %s", g, dims)
 
         # Normalise requests -> {group -> spec}
         req_map = requests or {}
@@ -113,7 +113,7 @@ def check_group_var(by_group: dict, requests: dict) -> dict:
 
         ignored = requested_groups - loaded_groups
         if ignored:
-            logger.info("\t\t\tGroups ignored (absent from data): %s", ", ".join(sorted(ignored)))
+            logger.info("Groups absent from data: %s", ", ".join(sorted(ignored)))
 
         missing_by_group: dict[str, list[str]] = {}
         for grp in sorted(loaded_groups & requested_groups):
@@ -123,10 +123,10 @@ def check_group_var(by_group: dict, requests: dict) -> dict:
             present = set(by_group[grp].data_vars)
             missing = sorted(exp - present)
             if missing:
-                logger.warning("\t\t\t[%s] Missing variables: %s", grp, ", ".join(missing))
+                logger.warning("[%s] Missing variables: %s", grp, ", ".join(missing))
                 missing_by_group[grp] = missing
             else:
-                logger.info("\t\t\t[%s] All requested variables are present (%d).", grp, len(exp))
+                logger.debug("[%s] Requested variables verified: %d", grp, len(exp))
 
         return {"\t\t\tignored_groups": sorted(ignored), "missing_by_group": missing_by_group}
 
@@ -139,7 +139,7 @@ def check_group_var(by_group: dict, requests: dict) -> dict:
             if not hasattr(ds, "dims"):
                 continue
             dims = ", ".join(f"{k}={v}" for k, v in ds.sizes.items())
-            logger.info("\t\t\tDataset[%s/%s] : dimensions %s", m, g, dims)
+            logger.debug("Dataset[%s/%s]: %s", m, g, dims)
 
     # Normalise requests
     req_in = requests or {}
@@ -166,7 +166,7 @@ def check_group_var(by_group: dict, requests: dict) -> dict:
         ignored = requested_groups - loaded_groups
         if ignored:
             logger.info(
-                "\t\t\tGroups ignored (absent from data) for %s: %s",
+                "Groups absent from data for %s: %s",
                 m,
                 ", ".join(sorted(ignored)),
             )
@@ -180,10 +180,10 @@ def check_group_var(by_group: dict, requests: dict) -> dict:
             missing = sorted(exp - present)
             key = f"{m}/{g}"
             if missing:
-                logger.warning("\t\t\t[%s] Missing variables: %s", key, ", ".join(missing))
+                logger.warning("[%s] Missing variables: %s", key, ", ".join(missing))
                 missing_flat[key] = missing
             else:
-                logger.info("\t\t\t[%s] All requested variables are present (%d).", key, len(exp))
+                logger.debug("[%s] Requested variables verified: %d", key, len(exp))
 
     return {"\t\t\tignored_groups": ignored_flat, "missing_by_group": missing_flat}
 
@@ -263,5 +263,4 @@ def check_resolution(
         actual_m,
         rel_diff * 100,
     )
-
 

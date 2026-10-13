@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def log_global_params_and_presets(conf, pattern: str) -> None:
     """
-    Log model names, the file glob pattern, and model preset keys at INFO level.
+    Log active models and input pattern; retain preset details at DEBUG.
 
     Parameters
     ----------
@@ -20,16 +20,19 @@ def log_global_params_and_presets(conf, pattern: str) -> None:
     pattern : str
         Glob pattern used to find input files (e.g. "MNH_file???.nc").
     """
-    logger.info("Atmospheric model: %s", conf.atm_model)
-    logger.info("Ocean model: %s", conf.ocean_model)
-    logger.info("Wave model: %s", conf.wave_model)
-    logger.info("Files pattern: %s", pattern)
+    models = [f"atmosphere={conf.atm_model}"]
+    for name in ("ocean", "wave"):
+        model = getattr(conf, f"{name}_model", None)
+        if model and str(model).lower() not in {"none", "null"}:
+            models.append(f"{name}={model}")
+    logger.info("Models: %s", ", ".join(models))
+    logger.debug("Input pattern: %s", pattern)
 
     preset_fields = getattr(conf, "simulation_parameter", {}).get("preset_fields_coords_dims", {})
     if preset_fields:
-        logger.info("Model preset keys for %s:", conf.atm_model)
+        logger.debug("Model preset keys for %s:", conf.atm_model)
         for k, v in preset_fields.items():
-            logger.info("\t\t\t- %s: %s", k, v, extra={"noprefix": True})
+            logger.debug("  %s: %s", k, v)
 
 
 def log_user_requested_vars(conf) -> None:
@@ -59,7 +62,7 @@ def log_user_requested_vars(conf) -> None:
             extra_sel = " (all levels)"
         else:
             extra_sel = ""
-        logger.info("\t\t\t- %s: %s%s", g, vars_, extra_sel, extra={"noprefix": True})
+        logger.info("  %s: %s%s", g, ", ".join(vars_), extra_sel)
 
 
 def log_tracker_requested_vars(conf) -> None:
@@ -80,14 +83,14 @@ def log_tracker_requested_vars(conf) -> None:
     trk_req = trk_all.get(method, {}) if isinstance(trk_all, dict) else {}
 
     if not trk_req:
-        logger.info(
+        logger.debug(
             "No tracker variables found for method '%s'",
             method,
             extra={"noprefix": True},
         )
         return
 
-    logger.info("Tracker '%s' requested variables:", method)
+    logger.debug("Tracker '%s' requested variables:", method)
     for g, spec in trk_req.items():
         spec = spec or {}
         vars_ = spec.get("variables", [])
@@ -100,4 +103,4 @@ def log_tracker_requested_vars(conf) -> None:
             extra_sel = " (all levels)"
         else:
             extra_sel = ""
-        logger.info("\t\t\t- %s: %s%s", g, vars_, extra_sel, extra={"noprefix": True})
+        logger.debug("  %s: %s%s", g, ", ".join(vars_), extra_sel)

@@ -82,7 +82,7 @@ def concat_nc2ds(
 
     if len(files) == 1:
         if logger:
-            logger.info("Single-file mode: xr.open_dataset")
+            logger.debug("Single-file mode: xr.open_dataset")
         ds = resources.add(
             xr.open_dataset(
                 files[0],
@@ -93,7 +93,7 @@ def concat_nc2ds(
         )
     else:
         if logger:
-            logger.info(
+            logger.debug(
                 "Multi-file mode: original-handle loading (combine=%s, concat_dim=%s)",
                 "nested" if concat_dimension else "by_coords",
                 concat_dimension,
@@ -122,7 +122,7 @@ def concat_nc2ds(
 
     if logger:
         present = ", ".join(sorted(ds.data_vars))
-        logger.info("Variables in dataset: %s", present)
+        logger.debug("Variables in dataset: %s", present)
     return ds
 
 

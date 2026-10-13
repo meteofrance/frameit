@@ -17,15 +17,32 @@ _DEFAULT_THIRD_PARTY_LEVELS: dict[str, int] = {
     "xesmf": logging.WARNING,
     "xesmf.backend": logging.WARNING,
     "urllib3": logging.WARNING,
+    "xarray": logging.WARNING,
+    "dask": logging.WARNING,
 }
+
+
+class FrameitFormatter(logging.Formatter):
+    """Compact ordinary records, with source locations available in DEBUG."""
+
+    def __init__(self, *, debug: bool = False, timestamp: bool = False):
+        prefix = "%(asctime)s | " if timestamp else ""
+        source = "%(name)s:%(lineno)d | " if debug else ""
+        super().__init__(prefix + "%(levelname)-7s | " + source + "%(message)s",
+                         datefmt="%Y-%m-%d %H:%M:%S")
+
+    def format(self, record: logging.LogRecord) -> str:
+        # Legacy multiline/tabbed messages become aligned, readable continuations.
+        rendered = super().format(record).expandtabs(2)
+        return rendered.replace("\n", "\n          ")
 
 
 def configure_warnings(level: str = "INFO") -> None:
     """
     Configure Python warning filters for the active log level.
 
-    In DEBUG mode all warnings remain visible; otherwise noisy xESMF
-    array-contiguity warnings are suppressed.
+    DEBUG retains dependency diagnostics. Otherwise suppress only known
+    non-actionable performance hints and xarray default-change notices.
 
     Parameters
     ----------
@@ -41,6 +58,19 @@ def configure_warnings(level: str = "INFO") -> None:
         message=r"Input array is not (C|F)_CONTIGUOUS\. Will affect performance\.",
         category=UserWarning,
         module=r"xesmf\..*",
+    )
+    # xarray uses stacklevel to attribute these warnings to application code,
+    # so match the specific message rather than the emitting module.
+    warnings.filterwarnings(
+        "ignore",
+        message=r"The default value of (?:join|compat|coords|data_vars) will change from .*",
+        category=FutureWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=(r"In a future version of xarray the default value for "
+                 r"(?:join|compat|coords|data_vars) will change from .*"),
+        category=FutureWarning,
     )
 
 
@@ -115,17 +145,15 @@ def setup_frameit_logging(
         logger.removeHandler(h)
         h.close()
 
-    fmt = logging.Formatter(
-        "%(levelname)-8s | %(name)s:%(lineno)d | %(message)s",
-    )
+    debug = str(level).upper() == "DEBUG"
 
     sh = logging.StreamHandler()
     sh.setLevel(level)
-    sh.setFormatter(fmt)
+    sh.setFormatter(FrameitFormatter(debug=debug))
 
     fh = logging.FileHandler(log_path, encoding="utf-8")
     fh.setLevel(level)
-    fh.setFormatter(fmt)
+    fh.setFormatter(FrameitFormatter(debug=debug, timestamp=True))
 
     logger.addHandler(sh)
     logger.addHandler(fh)
@@ -150,6 +178,15 @@ def frameit_logging_scope(output_dir, *, level="INFO", simu_name=None):
     try:
         with warnings.catch_warnings():
             log_path = setup_frameit_logging(output_dir, level=level, simu_name=simu_name)
+            def showwarning(message, category, filename, lineno, file=None, line=None):
+                if file is not None:
+                    file.write(warnings.formatwarning(message, category, filename, lineno, line))
+                    return
+                logging.getLogger("frameit.warnings").warning(
+                    "%s: %s", category.__name__, message,
+                )
+
+            warnings.showwarning = showwarning
             yield log_path
     finally:
         for handler in list(logger.handlers):
