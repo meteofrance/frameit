@@ -281,6 +281,20 @@ FrameIt can project the selected variable in a polar coordinate system around th
    Ellipsoid identifier accepted by pyproj Geod, default ``WGS84``. It defines
    target geodesics; ESMF interpolation geometry is spherical longitude/latitude.
 
+``polar_regrid_cache_size`` / ``polar_regrid_cache_max_bytes``
+   In-memory plan LRU limits: default eight entries and 134217728 estimated
+   geometry/weight-array bytes. Zero disables retention. The key includes real
+   geometry/options, not just shape; dynamic masks are applied separately.
+
+``polar_output_chunks``
+   Optional dimension-to-size mapping for lazy output arrays, for example
+   ``{rr: 32, theta: -1, time: 1, level: 4}``. Sizes are positive or -1 for a
+   whole axis. Without overrides, backend blocks contain at most 32 whole rings.
+
+``polar_profile``
+   Optional graph-size and process RSS high-water observations, default false.
+   Plan counts and construction/application timings are always reported.
+
 ``polar_variables``
    List of variables to project on the polar grid.
 

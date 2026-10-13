@@ -123,6 +123,10 @@ class SimulationConfig:
     polar_weight_zero_tolerance: float = 1e-14
     polar_source_halo_points: int = 1
     polar_ellipsoid: str = "WGS84"
+    polar_regrid_cache_size: int = 8
+    polar_regrid_cache_max_bytes: int = 128 * 1024**2
+    polar_output_chunks: dict[str, int] = field(default_factory=dict)
+    polar_profile: bool = False
     polar_variables: dict[str, dict[str, Any]] = field(default_factory=dict)
     field_orientation: str = "geodesic"
     wind_reference_frame: str = "earth"
@@ -256,8 +260,13 @@ class SimulationConfig:
     # -----------------------
     def __post_init__(self):
         from frameit.processing.polar.coverage import validate_mask_options
+        from frameit.processing.polar.regrid_plan import validate_execution_options
         from frameit.processing.polar.sampling import sampling_axes, validate_sampling_options
 
+        validate_execution_options(
+            self.polar_regrid_cache_size, self.polar_regrid_cache_max_bytes,
+            self.polar_output_chunks, self.polar_profile,
+        )
         validate_mask_options(
             self.polar_missing_data_policy, self.polar_min_valid_weight_fraction,
             self.polar_weight_zero_tolerance,

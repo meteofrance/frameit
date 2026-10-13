@@ -432,12 +432,109 @@ Grid geometry constraints
 - The polar grid is computed using WGS84 geodesics, which is robust at regional scales, but it remains a sampling of geographic coordinates, not a true conformal map projection.
 
 Performance
-^^^^^^^^^^^
-- If the storm centre moves, FrameIt builds a separate regridder per time step, which can be computationally expensive for long time series and fine polar grids.
-- The number of target points is ``nloc = nr * ntheta``, memory and runtime scale with this product and with the number of variables and levels.
+~~~~~~~~~~~
+``PolarRegridPlan`` separates geometry-owned weights from field application.
+Compatible groups and variables share a plan. Across time, reuse requires
+identical source and target geometry; a fixed origin alone is not sufficient.
+Moving workloads process all groups at one instant before advancing time, so
+even a small cache can share a moving-grid plan across those groups.
+
+The in-memory LRU key includes canonical source/target coordinates, ordering,
+polar axes, method, periodic/extrapolation options, zero-weight tolerance,
+target Earth-model assumptions and backend versions. Shapes or group names
+alone never authorize reuse. Plans own read-only geometry snapshots and retain
+no field arrays, finite-data masks or valid-weight denominators. Every
+application recomputes support, including the joint U/V mask. An optional
+static binary source mask at the plan API excludes whole contributing
+stencils and is part of the geometry signature.
+
+.. code-block:: yaml
+
+   polar_regrid_cache_size: 8
+   polar_regrid_cache_max_bytes: 134217728
+   polar_output_chunks: {rr: 32, theta: -1, time: 1}
+   polar_profile: false
+
+The default cache holds at most eight plans and an estimated 128 MiB of
+geometry/weight arrays. Oversized plans are applied without retention. Setting
+either limit to zero disables plan retention and provides the corrected
+uncached baseline. Normalized source coordinates have a separate small cache
+(eight entries, at most 8 MiB). NumPy coordinates are content-fingerprinted;
+Dask geometry uses immutable graph tokens to avoid repeatedly loading the
+same arrays. Files and lazy geometry sources must remain unchanged while
+execution is in progress, as required by the input inventory contract.
+
+These limits bound cache-owned arrays, not total process memory: field outputs,
+native backend allocations and pending Dask graphs can retain additional
+references. Eviction never invalidates a previously returned lazy result.
+There is no automatic disk-weight persistence or shape-derived filename reuse.
+
+Dask field data remain lazy. Backend output blocks default to at most 32
+radial rings with the complete angular axis, avoiding tiny LocStream chunks
+inferred from the source's horizontal layout. ``polar_output_chunks`` can
+override ``rr``, ``theta`` and relevant leading dimensions such as ``time``,
+``level`` or ``heightAboveGround``. Sizes are positive integers or -1 for a
+whole axis. Unknown output dimensions fail clearly. NumPy inputs stay eager.
+An explicit angular split still needs consolidation before ordinary Fourier
+analysis. Output chunking changes storage/computation layout, not the operator.
+
+The projection report and ordinary execution result include
+``regrid_performance``: plan builds, hits, evictions, retained-array estimates,
+normalization/fingerprinting time, weight-construction time, field-application
+time, and geometry signatures with row-sum/mapping diagnostics. Application
+time is NumPy computation or Dask graph construction; it does not silently
+include later lazy materialization. ``polar_profile: true`` additionally
+records unique Dask task count and the process-lifetime RSS high-water mark.
+Graph inspection does not compute physical fields. RSS includes previous
+imports/loading and is not an incremental interpolation-only memory measure.
+
+For callers reusing a cache across repeated invocations:
+
+.. code-block:: python
+
+   from frameit.processing.polar import PolarRegridPlanCache
+   from frameit.processing.polar.polar_proj import polar_project
+
+   cache = PolarRegridPlanCache(maxsize=8, max_bytes=128 * 1024**2)
+   output, report = polar_project(source_groups, conf=conf, track=track, plan_cache=cache)
+
+Scientific equivalence and cache lifetime are covered by the packaged
+``test_polar_regrid_plan.py`` and ``test_polar_dask.py`` tests. These check
+constant preservation, nonnegative weights, linearity for fixed masks,
+geometry/mask/backend invalidation, moving-group reuse, eviction, per-field
+mask changes and lazy/eager agreement under multiple chunk layouts.
+
+Reproducible computation benchmark
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Run corrected cached and uncached workflows in fresh workers:
+
+.. code-block:: bash
+
+   python -m frameit.testing.polar_benchmark --output ./runs/polar-benchmark --repeats 2
+
+The output directory must be fresh or empty. ``--data-root`` selects full-domain
+model inputs; repeated ``--case`` options restrict workloads. The default CI
+workloads include fixed AROME/MNH runs, moving MNH tracking and a small explicit
+continuous-origin AROME track within the frozen fixture. Input preloading,
+computation, weight construction/application and NetCDF export timings are
+reported separately. Fresh workers isolate RSS high-water marks; the driver
+verifies all physical and quality outputs against the corrected uncached
+operator and stores versions, parameters and results in ``benchmark.json``.
+
+A single local CI run observed weight-build reductions of 3 to 1 for fixed
+AROME, 2 to 1 for fixed MNH, 6 to 3 for moving MNH and 15 to 5 for continuous
+AROME origins. All numerical differences were zero. Projection wall-time
+ratios were approximately 1.05, 1.00, 1.01 and 1.25 respectively: application
+work dominates these small fixtures. These are measured examples, not a
+universal speedup claim or a brittle timing threshold. Use repeated runs and
+the recorded environment/memory breakdown for larger workloads.
+
+The xESMF spherical point operator remains the numerical reference. A
+native-CRS rectilinear interpolation path would require independent accuracy
+tests because changing interpolation coordinates changes the operator.
 
 Software dependencies
-^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~
 - Polar projection requires **xESMF** and its backend dependencies (typically ESMF/esmpy). Ensure your FrameIt environment provides a working xESMF installation.
 
 Recommendations for robust usage

@@ -67,7 +67,10 @@ def attach_quality(ds, name, support, status):
 class SupportedRegridder:
     """Apply actual xESMF weights, retaining joint vector masks and strict stencils."""
 
-    def __init__(self, regridder, *, policy="strict", minimum_support=0.5, zero_tolerance=1e-14):
+    def __init__(
+        self, regridder, *, policy="strict", minimum_support=0.5, zero_tolerance=1e-14,
+        source_mask=None,
+    ):
         import sparse
 
         validate_mask_options(policy, minimum_support, zero_tolerance)
@@ -82,7 +85,16 @@ class SupportedRegridder:
             raise ValueError("Valid-weight fractions require nonnegative interpolation weights")
         weights.data[np.abs(weights.data) <= zero_tolerance] = 0
         weights.eliminate_zeros()
+        if source_mask is not None:
+            mask = np.asarray(source_mask)
+            if mask.shape != regridder.shape_in or not np.isin(mask, [0, 1]).all():
+                raise ValueError("Static source mask must be binary and match the source grid")
+            rows = np.repeat(np.arange(weights.shape[0]), np.diff(weights.indptr))
+            excluded_rows = np.unique(rows[~mask.astype(bool).ravel()[weights.indices]])
+            weights.data[np.isin(rows, excluded_rows)] = 0
+            weights.eliminate_zeros()
         row_sums = np.asarray(weights.sum(axis=1)).ravel()
+        self.row_sums = row_sums.copy()
         self.mapped = row_sums > 0
         if not np.allclose(row_sums[self.mapped], 1, rtol=1e-10, atol=1e-12):
             raise ValueError("Point interpolation weights must preserve constant fields")
@@ -101,28 +113,43 @@ class SupportedRegridder:
         )
         self.geometry_mapped = xr.DataArray(self.mapped, dims="locations")
 
-    def apply(self, field: xr.DataArray, mask: xr.DataArray | None = None):
+    def apply(
+        self, field: xr.DataArray, mask: xr.DataArray | None = None, *, policy=None,
+        minimum_support=None, output_chunks=None,
+    ):
+        policy = self.policy if policy is None else policy
+        minimum_support = self.minimum_support if minimum_support is None else minimum_support
+        validate_mask_options(policy, minimum_support, 0)
+        if not {"y_box", "x_box"} <= set(field.dims):
+            raise ValueError("Fields require named y_box/x_box dimensions")
+        leading = [dim for dim in field.dims if dim not in {"y_box", "x_box"}]
+        field = field.transpose(*leading, "y_box", "x_box")
         if mask is None:
             mask = np.isfinite(field)
         else:
             field, mask = xr.align(field, mask, join="exact")
             mask = mask & np.isfinite(field)
+        mask = mask.transpose(*field.dims)
+        if not hasattr(field.data, "__dask_graph__"):
+            field = field.copy(data=np.ascontiguousarray(field.data))
+            mask = mask.copy(data=np.ascontiguousarray(mask.data))
         # No source NaN/Inf ever enters a sparse matrix multiply, including
         # contributors whose mathematically zero coefficient was discarded.
-        numerator = self.operator(field.where(mask, 0), keep_attrs=True, skipna=False)
-        support = self.operator(mask.astype(float), skipna=False).clip(0, 1)
-        absent = self.presence((~mask).astype(float), skipna=False)
+        options = {"skipna": False, "output_chunks": output_chunks}
+        numerator = self.operator(field.where(mask, 0), keep_attrs=True, **options)
+        support = self.operator(mask.astype(float), **options).clip(0, 1)
+        absent = self.presence((~mask).astype(float), **options)
         mapped = self.geometry_mapped.broadcast_like(numerator)
         # Complete stencils have exactly unit support; floating sparse sums
         # must not turn a threshold of one into an accidental rejection.
         support = xr.where(mapped & (absent == 0), 1.0, support)
-        if self.policy == "strict":
+        if policy == "strict":
             valid = mapped & (absent == 0)
             result = numerator.where(valid)
             status = xr.where(absent > 0, 2, 0)
         else:
-            valid = mapped & (support > 0) & (support >= self.minimum_support)
-            if self.minimum_support == 1:
+            valid = mapped & (support > 0) & (support >= minimum_support)
+            if minimum_support == 1:
                 valid = valid & (absent == 0)
             result = (numerator / support.where(support > 0)).where(valid)
             status = xr.where(support <= 0, 2, xr.where(valid, 0, 3))

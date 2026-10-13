@@ -123,6 +123,10 @@ _NON_SCIENTIFIC_CONFIG_FIELDS = frozenset(
         "comment",
         "DEBUG",
         "simulation_name",
+        "polar_regrid_cache_size",
+        "polar_regrid_cache_max_bytes",
+        "polar_output_chunks",
+        "polar_profile",
     }
 )
 

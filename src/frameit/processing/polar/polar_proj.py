@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 from typing import Any
 
 import numpy as np
@@ -20,15 +21,13 @@ from frameit.processing.derived.wind import (
     wind_names,
 )
 from frameit.processing.polar.contracts import (
+    SourceGeometryCache,
     align_times,
-    finite_source_footprint,
     geographic_degrees,
     same_source_geometry,
-    target_locstream,
     time_index,
 )
 from frameit.processing.polar.coverage import (
-    SupportedRegridder,
     attach_quality,
     validate_mask_options,
 )
@@ -37,8 +36,15 @@ from frameit.processing.polar.metadata import (
     restore_auxiliaries,
     source_auxiliaries,
 )
+from frameit.processing.polar.performance import dask_graph_tasks, process_peak_rss_bytes
 from frameit.processing.polar.polar_grid import PolarLonLatGrid
 from frameit.processing.polar.polar_utils import finalize_polar_output
+from frameit.processing.polar.regrid_plan import (
+    DEFAULT_CACHE_BYTES,
+    DEFAULT_CACHE_SIZE,
+    PolarRegridPlanCache,
+    validate_execution_options,
+)
 
 try:
     import xesmf as xe
@@ -79,7 +85,7 @@ def _get_polar_requests_variables_only(conf):
     return requests
 
 
-def _reshape_locstream_dataset(ds_loc, *, r_km, theta_deg, loc_dim="locations"):
+def _reshape_locstream_dataset(ds_loc, *, r_km, theta_deg, loc_dim="locations", output_chunks=None):
     expected = len(r_km) * len(theta_deg)
     if ds_loc.sizes.get(loc_dim) != expected:
         raise ValueError("LocStream output size does not match the target polar grid")
@@ -97,6 +103,12 @@ def _reshape_locstream_dataset(ds_loc, *, r_km, theta_deg, loc_dim="locations"):
             value.data.reshape(shape), dims=(*leading, "rr", "theta_deg"),
             coords=coords, attrs=dict(value.attrs),
         )
+        if output_chunks and hasattr(fields[name].data, "__dask_graph__"):
+            fields[name] = fields[name].chunk({
+                ("theta_deg" if dim == "theta" else dim): size
+                for dim, size in output_chunks.items()
+                if ("theta_deg" if dim == "theta" else dim) in fields[name].dims
+            })
     return xr.Dataset(fields)
 
 
@@ -121,25 +133,24 @@ def _broadcast_auxiliary(value, grid):
     return xr.broadcast(value.reset_coords(drop=True), grid.lon)[0]
 
 
-def _sample_piece(source, names, pair, geometry, conf, method, prepared=None):
+def _sample_piece(source, names, pair, geometry, conf, method, plan_cache, source_geometry_cache):
     geography = source.isel(time=0, drop=True) if "time" in source.dims else source
-    _, grid, footprint = finite_source_footprint(
+    _, grid, footprint = source_geometry_cache.get(
         geography, conf.name_longitude, conf.name_latitude
     )
     cropped = source.isel(
         y_box=slice(*footprint["y_slice"]), x_box=slice(*footprint["x_slice"])
     )
-    if prepared is None:
-        targets = target_locstream(geometry.lon.values, geometry.lat.values)
-        backend = xe.Regridder(
-            grid, targets, method, locstream_out=True, unmapped_to_nan=False,
-            input_dims=("y_box", "x_box"),
-        )
-        prepared = SupportedRegridder(
-            backend, policy=getattr(conf, "polar_missing_data_policy", "strict"),
-            minimum_support=getattr(conf, "polar_min_valid_weight_fraction", 0.5),
-            zero_tolerance=getattr(conf, "polar_weight_zero_tolerance", 1e-14),
-        )
+    plan = plan_cache.get(
+        grid, geometry, method=method,
+        zero_tolerance=getattr(conf, "polar_weight_zero_tolerance", 1e-14),
+        regridder_factory=xe.Regridder,
+    )
+    application_options = dict(
+        policy=getattr(conf, "polar_missing_data_policy", "strict"),
+        minimum_support=getattr(conf, "polar_min_valid_weight_fraction", .5),
+        output_chunks=getattr(conf, "polar_output_chunks", {}),
+    )
     leading, auxiliaries, mapping = source_auxiliaries(
         cropped, conf.name_longitude, conf.name_latitude, field_names=names
     )
@@ -155,12 +166,15 @@ def _sample_piece(source, names, pair, geometry, conf, method, prepared=None):
             raise ValueError(f"Polar field {name} must contain named y_box/x_box dimensions")
         if not np.issubdtype(field.dtype, np.number):
             raise ValueError(f"Polar field {name} must be numerical")
-        sampled[name], support[name], status[name] = prepared.apply(
-            field, joint if joint is not None and name in pair else None
+        sampled[name], support[name], status[name] = plan_cache.apply(
+            plan, field, joint if joint is not None and name in pair else None,
+            **application_options,
         )
     transformed = {}
     for name, value in auxiliaries.items():
-        transformed[name] = prepared.apply(_broadcast_auxiliary(value, grid))[0]
+        transformed[name] = plan_cache.apply(
+            plan, _broadcast_auxiliary(value, grid), **application_options
+        )[0]
     all_values = dict(sampled)
     for name in names:
         all_values[f"{name}_support_fraction"] = support[name]
@@ -168,19 +182,20 @@ def _sample_piece(source, names, pair, geometry, conf, method, prepared=None):
     for name, value in transformed.items():
         all_values[name] = value
     template = next(iter(sampled.values()))
-    mapped = prepared.geometry_mapped
+    mapped = plan.supported.geometry_mapped
     if "time" in template.dims:
         mapped = mapped.expand_dims(time=template.time)
     all_values["geometry_mapped"] = mapped.astype(np.uint8)
     result = _reshape_locstream_dataset(
-        xr.Dataset(all_values), r_km=geometry.rr.values, theta_deg=geometry.theta_deg.values
+        xr.Dataset(all_values), r_km=plan.geometry.radius_km, theta_deg=plan.geometry.theta_deg,
+        output_chunks=getattr(conf, "polar_output_chunks", {}),
     )
     transformed = {name: result[name] for name in transformed}
     result = result.drop_vars(list(transformed))
     result = restore_auxiliaries(result, leading, transformed)
     result.attrs["source_grid_mapping"] = mapping
     result.attrs["source_finite_footprint"] = footprint
-    return result, prepared, footprint
+    return result, plan, footprint
 
 
 def _quality_for_outputs(ds, sampled_names, pair, internal):
@@ -219,6 +234,7 @@ def _quality_for_outputs(ds, sampled_names, pair, internal):
 
 def polar_project(
     dico_collocated: dict[str, xr.Dataset], *, conf: Any, method="bilinear", track=None,
+    plan_cache: PolarRegridPlanCache | None = None,
 ):
     """Sample aligned fields using explicit geometry, missing-data and coverage contracts.
 
@@ -237,6 +253,15 @@ def polar_project(
     minimum = getattr(conf, "polar_min_valid_weight_fraction", 0.5)
     tolerance = getattr(conf, "polar_weight_zero_tolerance", 1e-14)
     validate_mask_options(policy, minimum, tolerance)
+    cache_size = getattr(conf, "polar_regrid_cache_size", DEFAULT_CACHE_SIZE)
+    cache_bytes = getattr(conf, "polar_regrid_cache_max_bytes", DEFAULT_CACHE_BYTES)
+    chunks = getattr(conf, "polar_output_chunks", {})
+    profile = getattr(conf, "polar_profile", False)
+    validate_execution_options(cache_size, cache_bytes, chunks, profile)
+    cache = plan_cache if plan_cache is not None else PolarRegridPlanCache(cache_size, cache_bytes)
+    cache_start = dict(cache.counters)
+    source_geometry_cache = SourceGeometryCache()
+    projection_started = perf_counter()
     requests = _get_polar_requests_variables_only(conf)
     if not requests:
         return {}, {"skipped": [], "notes": ["No polar_variables request found"]}
@@ -259,7 +284,13 @@ def polar_project(
     reference = reference.assign_coords({conf.name_longitude: lon, conf.name_latitude: lat})
     grid = PolarLonLatGrid.from_conf(conf, ellps=getattr(conf, "polar_ellipsoid", "WGS84"))
     geometry = grid.build(reference, track=track)
+    target_static = all(
+        all(np.array_equal(geometry[name].isel(time=0), geometry[name].isel(time=index))
+            for name in ("lon", "lat")) for index in range(1, len(time))
+    )
     outputs = {}
+    plan_diagnostics = {}
+    projection_work = []
     for (output, source_name), job in _projection_jobs(requests, inputs, report).items():
         source = inputs[source_name]
         requested = job["variables"]
@@ -290,25 +321,50 @@ def polar_project(
         for name in names:
             if "time" not in source[name].dims:
                 source = source.assign({name: source[name].expand_dims(time=time)})
-        static = conf.tracking_method == "fixed_box" and same_source_geometry(
-            source, conf.name_longitude, conf.name_latitude
+        static = target_static and same_source_geometry(
+            source, conf.name_longitude, conf.name_latitude, geometry_cache=source_geometry_cache,
         )
-        footprints, pieces = [], []
-        if static:
+        projection_work.append(dict(
+            output=output, source_name=source_name, source=source, job=job, names=names,
+            pair=pair, internal=internal, missing=missing, static=static,
+            footprints=[], pieces=[], signatures=[],
+        ))
+    for work in projection_work:
+        if work["static"]:
             # Geometry is proven invariant; apply the same weights to all times.
-            result, _, footprint = _sample_piece(
-                source, names, pair, geometry.isel(time=0, drop=True), conf, method,
+            result, plan, footprint = _sample_piece(
+                work["source"], work["names"], work["pair"],
+                geometry.isel(time=0, drop=True), conf, method,
+                cache, source_geometry_cache,
             )
-            footprints = [footprint] * len(time)
-        else:
-            for index in range(len(time)):
-                piece, _, footprint = _sample_piece(
-                    source.isel(time=index, drop=True), names, pair,
+            work["result"] = result
+            work["footprints"] = [footprint] * len(time)
+            work["signatures"] = [plan.signature] * len(time)
+            plan_diagnostics[plan.signature] = plan.diagnostics()
+    # Apply every compatible group at one instant before advancing time. A
+    # small cache can then reuse moving-grid weights even for long sequences.
+    for index in range(len(time)):
+        for work in projection_work:
+            if not work["static"]:
+                piece, plan, footprint = _sample_piece(
+                    work["source"].isel(time=index, drop=True), work["names"], work["pair"],
                     geometry.isel(time=index, drop=True), conf, method,
+                    cache, source_geometry_cache,
                 )
-                pieces.append(piece.expand_dims(time=[time.values[index]]))
-                footprints.append(footprint)
-            result = xr.concat(pieces, dim="time", coords="different", compat="equals")
+                work["pieces"].append(piece.expand_dims(time=[time.values[index]]))
+                work["footprints"].append(footprint)
+                work["signatures"].append(plan.signature)
+                plan_diagnostics[plan.signature] = plan.diagnostics()
+    for work in projection_work:
+        output, source_name, source, job, names, pair, internal, missing = (
+            work[key] for key in (
+                "output", "source_name", "source", "job", "names", "pair", "internal", "missing"
+            )
+        )
+        footprints, signatures = work["footprints"], work["signatures"]
+        result = work["result"] if work["static"] else xr.concat(
+            work["pieces"], dim="time", coords="different", compat="equals"
+        )
         result = result.assign_coords(time=time.variable)
         for name in ("lon", "lat"):
             label = conf.name_longitude if name == "lon" else conf.name_latitude
@@ -350,6 +406,10 @@ def polar_project(
             if name in result.coords:
                 result[name].attrs = attributes
         result = finalize_polar_output(result)
+        for name, variable in list(result.data_vars.items()):
+            if chunks and hasattr(variable.data, "__dask_graph__"):
+                result[name] = variable.chunk({dim: size for dim, size in chunks.items()
+                                               if dim in variable.dims})
         outputs[output] = result
         mapped = result.geometry_mapped.mean("theta")
         report["projected"].append({
@@ -358,6 +418,24 @@ def polar_project(
             "output_group": output, "nvars": len(names), "missing_variables": missing,
             "geometry_mapped_fraction_by_radius": mapped.values.tolist(),
             "source_finite_footprints": footprints,
+            "regrid_plan_signatures": signatures,
         })
+    unknown_chunks = set(chunks) - {dim for ds in outputs.values() for dim in ds.dims}
+    if outputs and unknown_chunks:
+        raise ValueError(f"Unknown polar_output_chunks dimensions: {sorted(unknown_chunks)}")
     report["n_groups_out"], report["n_groups_requested"] = len(outputs), len(requests)
+    stats = cache.statistics()
+    per_call = {key: cache.counters[key] - value for key, value in cache_start.items()}
+    report["regrid_performance"] = {
+        **per_call, "cache": stats, "source_geometry_cache": source_geometry_cache.statistics(),
+        "plans": list(plan_diagnostics.values()),
+        "projection_setup_s": perf_counter() - projection_started,
+        "application_timing_scope": (
+            "NumPy computation or Dask graph setup; excludes lazy materialization"
+        ),
+        "output_chunks": chunks, "default_radial_block": 32,
+        "graph_tasks": dask_graph_tasks(outputs.values()) if profile else None,
+        "process_peak_rss_bytes": process_peak_rss_bytes() if profile else None,
+        "rss_scope": "process lifetime high-water mark, including prior imports and loading",
+    }
     return outputs, report

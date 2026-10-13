@@ -53,7 +53,7 @@ Run the matrix
 --------------
 
 Run all tests with a computation benchmark
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Install pytest (``pip install 'frameit[test]'``), then run:
 
@@ -155,6 +155,15 @@ support/status/validity arrays, ring coverage and complete-ring eligibility on
 the expected dimensions. The independent numerical oracles and scientific
 metadata checks are in ``tests/test_polar_contracts.py`` and
 ``tests/test_polar_coverage.py``.
+
+Numerical tests are packaged in ``src/frameit/testing/numerical`` and run with
+``python -m pytest`` or the installed ``run-all-tests`` service. Reusable plan
+invariants and chunk equivalence are covered by ``test_polar_regrid_plan.py``
+and ``test_polar_dask.py``. A focused cached/uncached benchmark is available as
+``python -m frameit.testing.polar_benchmark --output <fresh-directory>``; it
+retains separate weight/application/export timings, worker RSS peaks and
+numerical equivalence checks. Execution artifacts carry ``regrid_performance``
+alongside the existing section timings.
 
 The matrix records optional absence separately from mode exclusions and failed
 required coverage. An existing corrupt or incompatible track, a supplied unusable

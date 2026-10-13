@@ -12,7 +12,7 @@ import xarray as xr
 from frameit.check.check_functions import check_group_var, check_resolution
 from frameit.io.loader import DatasetResources, discover_input_files, resolve_input_files
 from frameit.processing.derived.wind import add_speed_from_uv_dict, wind_names
-from frameit.processing.extraction import extract_data, polar_support_settings
+from frameit.processing.extraction import _iter_datasets, extract_data, polar_support_settings
 from frameit.processing.tracking.postprocess import enrich_track_with_kinematics
 from frameit.processing.wind_collocation import collocate_winds
 from frameit.tracking.tracker_core import build_tracker_from_config, make_tracking_dataset
@@ -300,7 +300,7 @@ class FrameitRunner:
             self.ds_user = dict_user
             self.ds_tracker = dict_tracker
             if benchmark:
-                for dataset in (*dict_user.values(), *dict_tracker.values()):
+                for dataset in _iter_datasets((dict_user, dict_tracker)):
                     dataset.load()
 
         # Tracking step

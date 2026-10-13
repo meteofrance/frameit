@@ -42,6 +42,7 @@ class SimulationExecutionResult:
     backend_versions: dict[str, str] = field(default_factory=dict)
     timing_sections_s: dict[str, float] = field(default_factory=dict)
     computation_s: float = 0.0
+    regrid_performance: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -156,6 +157,9 @@ def execute_simulation(
                 computation_s=sum(
                     runner.timer.sections.get(name, 0.0)
                     for name in ("tracking", "extraction", "polar_projection")
+                ),
+                regrid_performance=getattr(runner, "polar_report", {}).get(
+                    "regrid_performance", {}
                 ),
             )
         except BaseException:

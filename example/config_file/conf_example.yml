@@ -85,6 +85,10 @@ polar_min_valid_weight_fraction: 0.5  # only for renormalized interpolation
 polar_weight_zero_tolerance: 1.0e-14
 polar_source_halo_points: 1    # input support; Cartesian output extent is preserved
 polar_ellipsoid: WGS84
+polar_regrid_cache_size: 8
+polar_regrid_cache_max_bytes: 134217728
+polar_output_chunks: {}        # optional output chunk sizes; -1 means whole axis
+polar_profile: false           # optional graph-size and process-memory observations
 
 # Variables (all level are selected in the projection)
 polar_variables:

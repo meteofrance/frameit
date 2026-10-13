@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 import xarray as xr
 import xesmf as xe
-from test_polar_contracts import polar_settings, source_scene
 
 from frameit.processing.polar import (
     azimuthal_mean,
@@ -13,6 +12,7 @@ from frameit.processing.polar import (
 )
 from frameit.processing.polar.coverage import SupportedRegridder
 from frameit.processing.polar.polar_proj import polar_project
+from frameit.testing.numerical.test_polar_contracts import polar_settings, source_scene
 
 
 def prescribed_weights(weights, **options):

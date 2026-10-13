@@ -9,8 +9,10 @@ from .diagnostics import (
 )
 from .polar_grid import PolarLonLatGrid
 from .polar_utils import close_theta_for_plot
+from .regrid_plan import PolarRegridPlan, PolarRegridPlanCache
 
 __all__ = [
     "PolarLonLatGrid", "azimuthal_mean", "coverage_aware_azimuthal_mean",
-    "periodic_fourier_coefficients", "close_theta_for_plot"
+    "periodic_fourier_coefficients", "close_theta_for_plot",
+    "PolarRegridPlan", "PolarRegridPlanCache"
 ]
