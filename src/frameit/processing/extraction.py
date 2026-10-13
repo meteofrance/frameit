@@ -6,14 +6,30 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Hashable, Iterable
+from copy import deepcopy
 
 import numpy as np
 import xarray as xr
 
 from .derived.wind import add_speed_from_uv_dict
 from .dims_utils import normalize_dims_for_extraction
+from .polar.metadata import preserve_coordinate_dependencies
 
 logger = logging.getLogger(__name__)
+
+
+def polar_support_settings(conf, track_box):
+    """Expand actual extraction index half-widths by the requested native halo.
+
+    Using already rounded widths avoids losing a halo point to half-integer
+    round-to-even behaviour when translating kilometres back to indices.
+    """
+    support = deepcopy(conf)
+    halo = getattr(conf, "polar_source_halo_points", 1)
+    scale = float(conf.resolution) / 1000
+    support.x_boxsize_km = 2 * (track_box.attrs["box_half_width_x_points"] + halo) * scale
+    support.y_boxsize_km = 2 * (track_box.attrs["box_half_width_y_points"] + halo) * scale
+    return support
 
 
 def _iter_datasets(tree) -> Iterable[xr.Dataset]:
@@ -533,9 +549,12 @@ def _extract_box_for_dataset(
         lon_full = ds[lon_name]
 
         try:
-            if lat_full.ndim == 2 and lon_full.ndim == 2:
+            lat_spatial = [d for d in lat_full.dims if d != time_dim]
+            lon_spatial = [d for d in lon_full.dims if d != time_dim]
+            if len(lat_spatial) == 2 and len(lon_spatial) == 2:
                 # Cas 2D (MNH typiquement)
-                y_lat, x_lat = lat_full.dims[-2], lat_full.dims[-1]
+                y_lat = getattr(conf, "name_lat_dim", None) or lat_spatial[-2]
+                x_lat = getattr(conf, "name_lon_dim", None) or lat_spatial[-1]
 
                 lat_box = lat_full.isel({y_lat: y_idx, x_lat: x_idx})
                 lon_box = lon_full.isel({y_lat: y_idx, x_lat: x_idx})
@@ -543,10 +562,10 @@ def _extract_box_for_dataset(
                 lat_box = lat_box.where(mask_box)
                 lon_box = lon_box.where(mask_box)
 
-            elif lat_full.ndim == 1 and lon_full.ndim == 1:
+            elif len(lat_spatial) == 1 and len(lon_spatial) == 1:
                 # Cas 1D (AROME typiquement)
-                y_lat = lat_full.dims[0]
-                x_lon = lon_full.dims[0]
+                y_lat = lat_spatial[0]
+                x_lon = lon_spatial[0]
 
                 lat_1d = lat_full.isel({y_lat: y_idx})  # (time, y_box)
                 lon_1d = lon_full.isel({x_lon: x_idx})  # (time, x_box)
@@ -644,6 +663,9 @@ def _extract_box_for_dataset(
     attrs["extraction_parameters"] = extraction_params
 
     ds_out.attrs = attrs
+    # Extra vertex dimensions prevent vertical bounds from being carried by
+    # individual field DataArrays during spatial indexing.
+    ds_out = preserve_coordinate_dependencies(ds, ds_out)
 
     return ds_out
 

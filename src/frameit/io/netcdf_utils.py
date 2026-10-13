@@ -69,11 +69,15 @@ def concat_nc2ds(
         If no existing files are found after filtering.
     """
     files = resolve_input_files(files_list, strict=strict)
+    variables = list(variables)
 
     # List variables from the first file (used to build drop_variables)
     with xr.open_dataset(files[0], decode_cf=False, engine="h5netcdf") as t0:
         all_vars = list(t0.data_vars)
-    keep_vars = list(dict.fromkeys([v for v in variables if v in all_vars]))
+        from frameit.processing.polar.metadata import coordinate_dependency_names
+
+        dependencies = coordinate_dependency_names(t0, variables)
+    keep_vars = list(dict.fromkeys([v for v in set(variables) | dependencies if v in all_vars]))
     drop_vars = [v for v in all_vars if v not in keep_vars]
 
     if len(files) == 1:
@@ -138,9 +142,10 @@ def concat_nc2ds_by_vert_coord(
     parallel: bool = False,
     strict: bool = False,
     keep_geovars: bool = True,
-    geovar_candidates: tuple[str, ...] = ("latitude", "longitude"),
+    geovar_candidates: tuple[str, ...] = ("latitude", "longitude", "grid_rotation"),
     float_tol: float | None = None,
     resources=None,
+    wind_conf=None,
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open the NetCDF files once then apply two independent requests.
@@ -155,6 +160,9 @@ def concat_nc2ds_by_vert_coord(
     - `method=None` processes all methods present in `tracker_requested_variables_by_method_yaml`.
     - Loading is lazy (Dask): data is only read on explicit .compute() calls
       downstream, avoiding MemoryError on large datasets.
+    - With ``wind_conf`` for MNH, U/V are prepared on native mass points before
+      selection. Native W is retained and ``_frameit_mass_w`` carries its mass
+      counterpart until the runner consumes it; it is not an export variable.
     """
 
     # Normalise the user request
@@ -211,15 +219,40 @@ def concat_nc2ds_by_vert_coord(
         if keep_as_coords:
             ds = ds.set_coords(keep_as_coords)
 
+    # Native collocation precedes both horizontal cropping and vertical selection.
+    mass_w = None
+    if wind_conf is not None and str(wind_conf.atm_model).upper() == "MNH":
+        from frameit.processing.wind_collocation import prepare_native_mnh
+
+        ds_user_native, mass_w = prepare_native_mnh(ds, wind_conf)
+    else:
+        ds_user_native = ds
+
     # Build groups
     out_user: dict[str, xr.Dataset] = {}
     out_trk: dict[str, dict[str, xr.Dataset]] = {}
 
     for g in ("level", "level_w", "surface"):
         if g in user_req:
-            ds_u = build_group_ds(ds, user_req[g], g, concat_dimension, float_tol)
+            ds_u = build_group_ds(ds_user_native, user_req[g], g, concat_dimension, float_tol)
             if ds_u is not None:
                 out_user[g] = ds_u
+
+    if mass_w is not None and "level_w" in out_user:
+        # Keep the requested native W product, but carry independently prepared
+        # mass-point W through extraction for polar use. Trim this internal field
+        # from Cartesian outputs in the runner after consuming it.
+        if "level" in out_user:
+            selected = mass_w.sel(level=out_user["level"]["level"])
+        elif user_req["level_w"]["all_levels"]:
+            selected = mass_w
+        else:
+            native_labels = out_user["level_w"]["level_w"].values
+            indices = ds.indexes["level_w"].get_indexer(native_labels)
+            if (indices < 0).any() or (indices >= mass_w.sizes["level"]).any():
+                raise ValueError("Requested W interfaces lack corresponding native mass levels")
+            selected = mass_w.isel(level=indices)
+        out_user["level_w"]["_frameit_mass_w"] = selected
 
     for m, blk in tracker_req_by_method.items():
         grp_map: dict[str, xr.Dataset] = {}

@@ -20,7 +20,7 @@ from atmospheric and oceanic model outputs.
 - **Normalized outputs** — standardized NetCDF outputs to facilitate inter-model and inter-simulation comparisons, 
   and enable AI dataset creation
 - **Data reduction** — reduce data volume for easier manipulation and sharing with partners
-- **Polar projection** — stereographic projection centered on the tracked object
+- **Polar sampling** — geodesic polar grid centered on the tracked object
 - **Modular architecture** — plug in custom trackers and diagnostics
 - **Model support** — currently compatible with **AROME** and **MesoNH** model outputs,ocean and wave model extension planned
 

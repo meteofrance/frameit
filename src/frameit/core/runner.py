@@ -3,6 +3,7 @@
 # See LICENSE file or http://www.apache.org/licenses/LICENSE-2.0
 
 import logging
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,7 +11,8 @@ import xarray as xr
 
 from frameit.check.check_functions import check_group_var, check_resolution
 from frameit.io.loader import DatasetResources, discover_input_files, resolve_input_files
-from frameit.processing.extraction import extract_data
+from frameit.processing.derived.wind import add_speed_from_uv_dict, wind_names
+from frameit.processing.extraction import extract_data, polar_support_settings
 from frameit.processing.tracking.postprocess import enrich_track_with_kinematics
 from frameit.processing.wind_collocation import collocate_winds
 from frameit.tracking.tracker_core import build_tracker_from_config, make_tracking_dataset
@@ -171,6 +173,23 @@ class FrameitRunner:
         time_dim = getattr(self.conf, "name_time_dim", None)
 
         requested_vars_user = getattr(self.conf, "requested_variables_user", None) or {}
+        loading_requests = deepcopy(requested_vars_user)
+        self._internal_wind_names = {}
+        polar_requests = getattr(self.conf, "polar_variables", {})
+        for group, spec in loading_requests.items():
+            variables = list(spec.get("variables", []))
+            polar_spec = polar_requests.get(group, {}) if isinstance(polar_requests, dict) else {}
+            polar_names = (
+                polar_spec.get("variables", []) if isinstance(polar_spec, dict) else polar_spec
+            )
+            pair = wind_names(self.conf, group)
+            needs_grid_pair = (
+                getattr(self.conf, "wind_reference_frame", "earth") == "grid"
+                and any(name in variables for name in pair)
+            )
+            if "wind_speed" in variables or "wind_speed" in polar_names or needs_grid_pair:
+                self._internal_wind_names[group] = [name for name in pair if name not in variables]
+                spec["variables"] = list(dict.fromkeys(variables + list(pair)))
 
         tracking_method = getattr(self.conf, "tracking_method", None)
         requested_vars_tracker = getattr(self.conf, "requested_variables_tracker", None) or {}
@@ -182,13 +201,14 @@ class FrameitRunner:
 
             dict_user, dict_tracker = concat_nc2ds_by_vert_coord(
                 files,
-                user_requested_variables_yaml=requested_vars_user,
+                user_requested_variables_yaml=loading_requests,
                 tracker_requested_variables_by_method_yaml=requested_vars_tracker,
                 method=tracking_method,
                 concat_dimension=time_dim,
                 float_tol=0.5,
                 strict=self.input_files is not None,
                 resources=self.resources,
+                wind_conf=self.conf,
             )
 
         elif file_type in {"grib", "grib2"}:
@@ -199,7 +219,7 @@ class FrameitRunner:
 
             dict_user, dict_tracker = concat_grib2ds_by_vert_coord(
                 files,
-                user_requested_variables_yaml=requested_vars_user,
+                user_requested_variables_yaml=loading_requests,
                 tracker_requested_variables_by_method_yaml=requested_vars_tracker,
                 method=tracking_method,
                 index_dir=index_dir,
@@ -211,6 +231,8 @@ class FrameitRunner:
 
         else:
             raise ValueError(f"Unsupported file_type: {self.conf.file_type}")
+
+        dict_user = add_speed_from_uv_dict(dict_user, self.conf)
 
         # Check groups and variables
         logger.info("Datasets asked by user:")
@@ -294,16 +316,36 @@ class FrameitRunner:
         # Polar projection (including optional MNH collocation)
         with self.timer.section("polar_projection"):
             atm_model = str(getattr(self.conf, "atm_model", "")).upper()
+            support_fields = self.dict_crop_user
+            if self.conf.compute_polar_proj:
+                support_conf = polar_support_settings(self.conf, self.track)
+                _, support_fields = extract_data(
+                    conf=support_conf, ds_user=self.ds_user, ds_tracker=self.ds_tracker,
+                    track_ds=self.track,
+                )
 
             if atm_model == "MNH":
                 self.dict_collocated_crop_user = collocate_winds(
                     self.dict_crop_user,
                     conf=self.conf,
-                    policy="partial",
+                    policy="strict",
                 )
-                src_dict = self.dict_collocated_crop_user
+                src_dict = (
+                    collocate_winds(support_fields, conf=self.conf, policy="strict")
+                    if self.conf.compute_polar_proj else self.dict_collocated_crop_user
+                )
+                self.dict_crop_user = {
+                    group: ds.drop_vars("_frameit_mass_w", errors="ignore")
+                    for group, ds in self.dict_crop_user.items()
+                }
+                for ds_group, ds in list(self.dict_crop_user.items()):
+                    mass_dim = self.conf.name_vertical_dim
+                    if ds_group == "level_w" and mass_dim in ds.dims and not any(
+                        mass_dim in da.dims for da in ds.data_vars.values()
+                    ):
+                        self.dict_crop_user[ds_group] = ds.drop_dims(mass_dim)
             else:
-                src_dict = self.dict_crop_user
+                src_dict = support_fields
 
             if self.conf.compute_polar_proj:
                 from frameit.processing.polar.polar_proj import polar_project
@@ -312,9 +354,21 @@ class FrameitRunner:
                     src_dict,
                     conf=self.conf,
                     method="bilinear",
-                    track=self.track if self.conf.tracking_method == "pressure_centroid" else None,
+                    track=self.track,
                 )
             else:
                 self.dict_polar_user, self.polar_report = {}, {}
+
+        for group, names in getattr(self, "_internal_wind_names", {}).items():
+            if group in self.dict_crop_user:
+                original = self.conf.requested_variables_user[group].get("variables", [])
+                drop = list(names)
+                if "wind_speed" not in original and not all(
+                    name in original for name in wind_names(self.conf, group)
+                ):
+                    drop.append("wind_speed")
+                self.dict_crop_user[group] = self.dict_crop_user[group].drop_vars(
+                    drop, errors="ignore"
+                )
 
         return RunResult(ok=True, n_files=len(files), output_dir=self.output_dir, files=files)

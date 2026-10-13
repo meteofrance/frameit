@@ -130,7 +130,8 @@ class FixedBoxTracker(TcTracker):
         -------
         xr.Dataset
             Dataset with variables ``cy(time)`` and ``cx(time)``, both
-            constant over time.
+            constant over time, and the declared ``lon(time)``/``lat(time)``
+            geographical centre.
 
         Raises
         ------
@@ -215,4 +216,12 @@ class FixedBoxTracker(TcTracker):
         )
 
         out = xr.Dataset({"cy": cy, "cx": cx})
+        out["lon"] = xr.DataArray(
+            np.full(nt, self.lon0), dims=("time",), coords={"time": time_coord},
+            attrs={"units": "degrees_east", "long_name": "declared fixed centre longitude"},
+        )
+        out["lat"] = xr.DataArray(
+            np.full(nt, self.lat0), dims=("time",), coords={"time": time_coord},
+            attrs={"units": "degrees_north", "long_name": "declared fixed centre latitude"},
+        )
         return out

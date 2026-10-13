@@ -148,7 +148,8 @@ class PrescribedTrack(TcTracker):
         -------
         xr.Dataset
             Dataset restricted to common dates, with variables ``cy(time)``
-            and ``cx(time)``.
+            and ``cx(time)``, plus the supplied continuous ``lon(time)`` and
+            ``lat(time)`` used by geographical diagnostics.
 
         Raises
         ------
@@ -268,6 +269,14 @@ class PrescribedTrack(TcTracker):
             data_vars={
                 "cy": xr.DataArray(cy, dims=("time",), coords={"time": time_da}),
                 "cx": xr.DataArray(cx, dims=("time",), coords={"time": time_da}),
+                "lon": xr.DataArray(
+                    lon_trk, dims=("time",), coords={"time": time_da},
+                    attrs={"units": "degrees_east", "long_name": "prescribed cyclone longitude"},
+                ),
+                "lat": xr.DataArray(
+                    lat_trk, dims=("time",), coords={"time": time_da},
+                    attrs={"units": "degrees_north", "long_name": "prescribed cyclone latitude"},
+                ),
             },
             coords={"time": time_da},
         )

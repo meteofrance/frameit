@@ -11,6 +11,8 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
+from frameit.processing.polar.metadata import preserve_coordinate_dependencies
+
 logger = logging.getLogger(__name__)
 
 
@@ -213,7 +215,7 @@ def build_group_ds(
                 da = da.expand_dims({concat_dimension: ds[concat_dimension]})
             var_map[v] = da
 
-        return xr.Dataset(var_map) if var_map else None
+        return preserve_coordinate_dependencies(ds, xr.Dataset(var_map)) if var_map else None
 
     # vertical group
     vert_dim = group_key
@@ -272,4 +274,4 @@ def build_group_ds(
 
         var_map[v] = da
 
-    return xr.Dataset(var_map) if var_map else None
+    return preserve_coordinate_dependencies(ds, xr.Dataset(var_map)) if var_map else None

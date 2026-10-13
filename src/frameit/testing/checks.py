@@ -120,6 +120,24 @@ def check_products(case, products):
                         "Polar product lacks rr/theta dimensions or theta_deg(theta)",
                         **detail,
                     )
+                    if ok:
+                        theta = np.asarray(dataset["theta"][:], dtype=float)
+                        expected_theta = np.arange(theta.size) * (2 * np.pi / theta.size)
+                        periodic = (
+                            theta.size >= 3 and np.all(np.isfinite(theta))
+                            and np.allclose(theta, expected_theta, rtol=0, atol=1e-12)
+                            and getattr(dataset, "theta_closed", None) == 0
+                            and getattr(dataset["theta"], "units", None) == "rad"
+                            and getattr(dataset["rr"], "units", None) == "km"
+                            and np.allclose(dataset["theta_deg"][:], np.rad2deg(theta),
+                                            rtol=0, atol=1e-10)
+                        )
+                        record(
+                            "periodic-analysis-grid", periodic,
+                            "Polar grid is not uniform, endpoint-exclusive, or correctly labelled",
+                            **detail,
+                        )
+                        _check_polar_quality(dataset, contract, record, detail)
         except Exception as exc:
             record(
                 "product-readable", False, f"Cannot check {path}: {exc}", role=key[0], group=key[1]
@@ -139,6 +157,33 @@ def check_products(case, products):
         "products": actual,
         "reference_validation": "not_performed",
     }
+
+
+def _check_polar_quality(dataset, contract, record, detail):
+    geometry = dataset.variables.get("geometry_mapped")
+    record(
+        "polar-mapping-coverage",
+        geometry is not None and geometry.dimensions == ("time", "rr", "theta"),
+        "Polar product lacks geometry_mapped(time, rr, theta)", **detail,
+    )
+    for name in contract["variables"]:
+        if name not in dataset.variables:
+            continue
+        field = dataset[name]
+        for suffix in ("support_fraction", "interpolation_status", "valid"):
+            quality = dataset.variables.get(f"{name}_{suffix}")
+            record(
+                "polar-field-support",
+                quality is not None and quality.dimensions == field.dimensions,
+                f"{name} lacks aligned {suffix}", **detail,
+            )
+        expected = tuple(dim for dim in field.dimensions if dim != "theta")
+        for suffix in ("ring_coverage", "full_ring_valid"):
+            quality = dataset.variables.get(f"{name}_{suffix}")
+            record(
+                "polar-ring-coverage", quality is not None and quality.dimensions == expected,
+                f"{name} lacks aligned {suffix}", **detail,
+            )
 
 
 def _check_track(dataset, expected, metadata, record, detail):

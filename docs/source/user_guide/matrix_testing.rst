@@ -7,7 +7,7 @@ fixture and execution of a catalog of simulation scenarios. Both ordinary
 invoke shell scripts or recursively invoke the CLI.
 
 Ready-to-use CI dataset
-----------------------
+-----------------------
 
 The release bundles the frozen simulation fixture, its manifest, and
 ``MNH/IBTracks_reunion_CHIDO.nc``. Run ``frameit run-matrix-test --ci`` with an
@@ -15,7 +15,7 @@ The release bundles the frozen simulation fixture, its manifest, and
 No access to the full source simulations is required.
 
 Reproduce the CI dataset (maintainers)
--------------------------------------
+----------------------------------------
 
 Preparation is optional and is intended for reproducing or updating the fixture.
 
@@ -112,6 +112,18 @@ the expected product groups, variables, time and level coordinates, finite centr
 positions, box geometry, and required derived wind diagnostics. Missing values
 are interpreted according to the scenario rather than a universal finite-everywhere
 rule. This command does not compare values to a reference simulation.
+
+Polar product checks additionally require a uniform, endpoint-exclusive angular
+cycle, radian angles, kilometre radii, consistent degree coordinates and an
+explicit open-grid marker. Numerical accuracy and Fourier behaviour are checked
+separately by ``tests/test_polar_axes.py`` and
+``tests/test_polar_periodic_diagnostics.py``.
+
+Polar outputs must also contain geometric mapping indicators and per-field
+support/status/validity arrays, ring coverage and complete-ring eligibility on
+the expected dimensions. The independent numerical oracles and scientific
+metadata checks are in ``tests/test_polar_contracts.py`` and
+``tests/test_polar_coverage.py``.
 
 The matrix records optional absence separately from mode exclusions and failed
 required coverage. An existing corrupt or incompatible track, a supplied unusable

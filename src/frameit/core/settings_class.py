@@ -115,9 +115,17 @@ class SimulationConfig:
     # Polar projection
     compute_polar_proj: bool = False
     radial_resolution: float = 0
-    azimuthal_resolution: float = 10.0
+    azimuthal_resolution: float | None = None
+    polar_n_theta: int | None = None
+    polar_max_points: int = 2_000_000
+    polar_missing_data_policy: str = "strict"
+    polar_min_valid_weight_fraction: float = 0.5
+    polar_weight_zero_tolerance: float = 1e-14
+    polar_source_halo_points: int = 1
+    polar_ellipsoid: str = "WGS84"
     polar_variables: dict[str, dict[str, Any]] = field(default_factory=dict)
     field_orientation: str = "geodesic"
+    wind_reference_frame: str = "earth"
 
     # Derived and runtime parameters
     simulation_parameter: dict[str, Any] = field(default_factory=dict)
@@ -247,6 +255,28 @@ class SimulationConfig:
     # Validation
     # -----------------------
     def __post_init__(self):
+        from frameit.processing.polar.coverage import validate_mask_options
+        from frameit.processing.polar.sampling import sampling_axes, validate_sampling_options
+
+        validate_mask_options(
+            self.polar_missing_data_policy, self.polar_min_valid_weight_fraction,
+            self.polar_weight_zero_tolerance,
+        )
+        if isinstance(self.polar_source_halo_points, bool) or not isinstance(
+            self.polar_source_halo_points, int
+        ) or self.polar_source_halo_points < 1:
+            raise ValueError("polar_source_halo_points must be an integer of at least one")
+        from pyproj import Geod
+
+        try:
+            Geod(ellps=self.polar_ellipsoid)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Unknown polar_ellipsoid {self.polar_ellipsoid!r}") from exc
+        validate_sampling_options(
+            self.polar_n_theta, self.azimuthal_resolution, self.polar_max_points
+        )
+        if self.wind_reference_frame not in {"earth", "grid"}:
+            raise ValueError("wind_reference_frame must be 'earth' or 'grid'")
         if self.atm_model not in ("AROME", "MNH"):
             raise ValueError("atm_model must be 'AROME' or 'MNH'")
 
@@ -279,6 +309,7 @@ class SimulationConfig:
                     f"the native grid resolution={self.resolution} m. "
                     "Interpolating to a finer radial grid than the source data is not meaningful."
                 )
+            sampling_axes(self)
 
     # -----------------------
     # Constructors

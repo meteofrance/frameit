@@ -10,6 +10,15 @@ import numpy as np
 import xarray as xr
 from pyproj import Geod
 
+from frameit.processing.polar.sampling import (
+    DEFAULT_MAX_POLAR_POINTS,
+    check_point_budget,
+    sampling_axes,
+    uniform_periodic_angles,
+    validate_axes,
+    validate_sampling_options,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,7 +36,7 @@ class PolarLonLatGrid:
     -----------
     - theta_deg is a geodesic azimuth in degrees, clockwise from North:
         0: North, 90: East, 180: South, 270: West
-    - center is always (x_box=0, y_box=0)
+    - supplied continuous track centres override the extraction centre cell
     """
 
     def __init__(
@@ -42,15 +51,19 @@ class PolarLonLatGrid:
         ellps: str = "WGS84",
         center_x: int = 0,
         center_y: int = 0,
+        max_target_points: int = DEFAULT_MAX_POLAR_POINTS,
     ) -> None:
         """
         Parameters
         ----------
         r_km : array-like
-            Radial distances in kilometres.  Must be 1D and non-empty.
+            Finite, nonnegative, strictly increasing radial distances in
+            kilometres. Must be 1D and non-empty.
         theta_deg : array-like
             Azimuths in degrees, clockwise from North, spanning [0, 360).
-            Must be 1D and non-empty.
+            Must be finite, strictly increasing, unique, 1D and non-empty.
+            Nonuniform directions are supported as directional samples, not
+            as a uniform ring for ordinary Fourier analysis.
         tracking_method : str
             Tracking method name (e.g. "wind_pressure", "fixed_box").
             "fixed_box" uses the first time step's center for all times.
@@ -66,6 +79,9 @@ class PolarLonLatGrid:
             x_box index of the cyclone centre (usually 0). Default 0.
         center_y : int, optional
             y_box index of the cyclone centre (usually 0). Default 0.
+        max_target_points : int, optional
+            Allocation budget for the complete target grid across all times.
+            Default 2,000,000. Checked before mesh/target-coordinate allocation.
         """
         self.r_km = np.asarray(r_km, dtype=float)
         self.theta_deg = np.asarray(theta_deg, dtype=float)
@@ -78,12 +94,14 @@ class PolarLonLatGrid:
         self.center_x = int(center_x)
         self.center_y = int(center_y)
 
-        if self.r_km.ndim != 1 or self.r_km.size == 0:
-            raise ValueError("r_km must be a non-empty 1D array.")
-        if self.theta_deg.ndim != 1 or self.theta_deg.size == 0:
-            raise ValueError("theta_deg must be a non-empty 1D array.")
+        validate_axes(self.r_km, self.theta_deg)
+        validate_sampling_options(None, None, max_target_points)
+        self.max_target_points = int(max_target_points)
+        check_point_budget(self.r_km.size * self.theta_deg.size, self.max_target_points)
+        self.sampling_metadata = {}
 
         self._geod = Geod(ellps=ellps)
+        self.ellps = ellps
 
         # Invariant polar mesh (nr, ntheta)
         AZ, RR = np.meshgrid(self.theta_deg, self.r_km, indexing="xy")
@@ -121,81 +139,9 @@ class PolarLonLatGrid:
 
     @staticmethod
     def _build_axes_from_conf(conf) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Build r_km and theta_deg from conf.
-
-        Required:
-          - x_boxsize_km, y_boxsize_km
-          - radial_resolution (m) or resolution (m)
-
-        Optional:
-          - azimuthal_resolution (deg), if absent use:
-                dtheta_rad ≈ dr_km / rmax_km
-            with safeguards and rounding.
-
-        Notes
-        -----
-        - rmax_km = 0.5 * min(x_boxsize_km, y_boxsize_km)
-        - r_km includes rmax_km (last point forced if needed)
-        - theta_deg spans [0, 360) with step dtheta_deg
-        """
-        xsz = float(PolarLonLatGrid._require(conf, "x_boxsize_km"))
-        ysz = float(PolarLonLatGrid._require(conf, "y_boxsize_km"))
-        if xsz <= 0.0 or ysz <= 0.0:
-            raise ValueError("x_boxsize_km and y_boxsize_km must be positive.")
-        rmax_km = 0.5 * min(xsz, ysz)
-
-        dr_m = getattr(conf, "radial_resolution", None)
-        if dr_m is None:
-            dr_m = getattr(conf, "resolution", None)
-        if dr_m is None:
-            raise ValueError("Need conf.radial_resolution (m) or conf.resolution (m).")
-
-        dr_km = float(dr_m) / 1000.0
-        if dr_km <= 0.0:
-            raise ValueError("radial_resolution (or resolution) must be positive.")
-
-        dtheta_deg = getattr(conf, "azimuthal_resolution", None)
-        inferred = False
-        if dtheta_deg is None:
-            dtheta_rad = dr_km / max(rmax_km, 1e-12)
-            dtheta_deg = float(np.rad2deg(dtheta_rad))
-            dtheta_deg = max(dtheta_deg, 1.0)
-            dtheta_deg = round(dtheta_deg, 1)
-            inferred = True
-
-        dtheta_deg = float(dtheta_deg)
-        if dtheta_deg <= 0.0:
-            raise ValueError("azimuthal_resolution must be positive.")
-
-        # r axis, enforce inclusion of rmax_km
-        n = int(np.floor(rmax_km / dr_km))
-        r_km = np.arange(n + 1, dtype=float) * dr_km
-        if r_km.size == 0:
-            r_km = np.array([0.0, rmax_km], dtype=float)
-        elif abs(r_km[-1] - rmax_km) > 1e-9:
-            if r_km[-1] < rmax_km:
-                r_km = np.append(r_km, rmax_km)
-
-        # theta axis
-        theta_deg = np.arange(0.0, 360.0, dtheta_deg, dtype=float)
-        if theta_deg.size == 0:
-            theta_deg = np.array([0.0], dtype=float)
-
-        logger.debug(
-            "Built polar axes from conf: x_boxsize_km=%.3f, y_boxsize_km=%.3f,"
-            " rmax_km=%.3f, dr_km=%.6f, dtheta_deg=%.3f (inferred=%s), nr=%d, ntheta=%d.",
-            xsz,
-            ysz,
-            rmax_km,
-            dr_km,
-            dtheta_deg,
-            bool(inferred),
-            int(r_km.size),
-            int(theta_deg.size),
-        )
-
-        return r_km, theta_deg
+        """Build physical radii and an exactly periodic, endpoint-exclusive ring."""
+        radius, angles, _ = sampling_axes(conf)
+        return radius, angles
 
     @classmethod
     def from_conf(cls, conf, *, ellps: str = "WGS84") -> PolarLonLatGrid:
@@ -209,7 +155,9 @@ class PolarLonLatGrid:
             ``name_longitude``, ``name_latitude``, ``x_boxsize_km``,
             ``y_boxsize_km``.  Either ``radial_resolution`` (m) or
             ``resolution`` (m) must be set.  ``azimuthal_resolution`` (deg)
-            is optional.
+            is optional. ``polar_n_theta`` selects an explicit integer count;
+            otherwise angular sampling targets the radial spacing at the outer
+            ring. ``polar_max_points`` bounds geometry points across all times.
         ellps : str, optional
             Ellipsoid identifier. Default "WGS84".
 
@@ -223,7 +171,7 @@ class PolarLonLatGrid:
         lon_name = str(cls._require(conf, "name_longitude"))
         lat_name = str(cls._require(conf, "name_latitude"))
 
-        r_km, theta_deg = cls._build_axes_from_conf(conf)
+        r_km, theta_deg, metadata = sampling_axes(conf)
 
         logger.debug(
             "Creating PolarLonLatGrid from conf: tracking_method=%s, time_dim=%s,"
@@ -235,7 +183,7 @@ class PolarLonLatGrid:
             ellps,
         )
 
-        return cls(
+        grid = cls(
             r_km=r_km,
             theta_deg=theta_deg,
             tracking_method=tracking_method,
@@ -245,7 +193,10 @@ class PolarLonLatGrid:
             ellps=ellps,
             center_x=0,
             center_y=0,
+            max_target_points=getattr(conf, "polar_max_points", DEFAULT_MAX_POLAR_POINTS),
         )
+        grid.sampling_metadata = metadata
+        return grid
 
     def _get_center_lonlat(self, ds_surface: xr.Dataset) -> tuple[xr.DataArray, xr.DataArray]:
         """
@@ -312,7 +263,9 @@ class PolarLonLatGrid:
         When ``tracking_method == "fixed_box"``, the center is taken at ``t=0``
         and broadcast to all time steps, producing a static polar grid.
         """
-        if track is not None and "lon" in track and "lat" in track:
+        if track is not None:
+            if "lon" not in track or "lat" not in track:
+                raise ValueError("Polar track requires continuous lon(time) and lat(time)")
             selected = track.sel({self.time_dim: ds_surface[self.time_dim]})
             lon0, lat0 = selected["lon"], selected["lat"]
             if lon0.dims != (self.time_dim,) or lat0.dims != (self.time_dim,):
@@ -336,6 +289,7 @@ class PolarLonLatGrid:
 
         nr = int(self.r_km.size)
         ntheta = int(self.theta_deg.size)
+        check_point_budget(nt * nr * ntheta, self.max_target_points)
 
         AZ = self._AZ_deg
         dist_m = self._dist_m
@@ -361,17 +315,26 @@ class PolarLonLatGrid:
                 "fixed_box mode: using center from it=0: lon=%.6f, lat=%.6f.", lon_c, lat_c
             )
 
-            lon2, lat2, _ = self._geod.fwd(
+            lon2, lat2, back_azimuth = self._geod.fwd(
                 np.full((nr, ntheta), lon_c),
                 np.full((nr, ntheta), lat_c),
                 AZ,
                 dist_m,
             )
+            lon2[self.r_km == 0] = lon_c
+            lat2[self.r_km == 0] = lat_c
             lon_out = np.broadcast_to(lon2[None, :, :], (nt, nr, ntheta))
             lat_out = np.broadcast_to(lat2[None, :, :], (nt, nr, ntheta))
+            bearing = np.deg2rad((back_azimuth + 180.0) % 360.0)
+            bearing_out = np.broadcast_to(bearing[None, :, :], (nt, nr, ntheta)).copy()
+            center_lon = np.full(nt, lon_c)
+            center_lat = np.full(nt, lat_c)
         else:
             lon_out = np.empty((nt, nr, ntheta), dtype=float)
             lat_out = np.empty((nt, nr, ntheta), dtype=float)
+            bearing_out = np.empty((nt, nr, ntheta), dtype=float)
+            center_lon = np.empty(nt)
+            center_lat = np.empty(nt)
 
             for it in range(nt):
                 lon_c, lat_c = _center_as_float(it)
@@ -380,14 +343,23 @@ class PolarLonLatGrid:
                         "time step %d/%d: center lon=%.6f, lat=%.6f.", it + 1, nt, lon_c, lat_c
                     )
 
-                lon2, lat2, _ = self._geod.fwd(
+                lon2, lat2, back_azimuth = self._geod.fwd(
                     np.full((nr, ntheta), lon_c),
                     np.full((nr, ntheta), lat_c),
                     AZ,
                     dist_m,
                 )
+                lon2[self.r_km == 0] = lon_c
+                lat2[self.r_km == 0] = lat_c
                 lon_out[it, :, :] = lon2
                 lat_out[it, :, :] = lat2
+                bearing_out[it] = np.deg2rad((back_azimuth + 180.0) % 360.0)
+                center_lon[it], center_lat[it] = lon_c, lat_c
+
+        bearing_out[:, self.r_km == 0, :] = np.nan
+        # Do not carry scalar GRIB coordinates attached to the reference time
+        # into geometry shared by unrelated vertical groups.
+        time = xr.DataArray(time.values, dims=(self.time_dim,), name=self.time_dim)
 
         ds_polar = xr.Dataset(
             data_vars=dict(
@@ -398,16 +370,74 @@ class PolarLonLatGrid:
             ),
             coords=dict(
                 **{self.time_dim: time},
+                rr=("rr", self.r_km),
                 rr_km=("rr", self.r_km),
                 theta_deg=("theta_deg", self.theta_deg),
+                radial_bearing=((self.time_dim, "rr", "theta_deg"), bearing_out),
+                center_lon=(self.time_dim, center_lon),
+                center_lat=(self.time_dim, center_lat),
             ),
             attrs=dict(
                 tracking_method=self.tracking_method,
                 theta_convention="azimuth_clockwise_from_north",
-                center_definition=f"(x_box={self.center_x}, y_box={self.center_y})",
-                ellps="WGS84",
+                center_definition=(
+                    "continuous_track" if track is not None
+                    else f"(x_box={self.center_x}, y_box={self.center_y})"
+                ),
+                ellps=self.ellps,
+                semi_major_axis_m=self._geod.a,
+                inverse_flattening=1.0 / self._geod.f if self._geod.f else 0.0,
+                polar_vector_origin_policy="undefined_radial_tangential_components",
             ),
         )
+        ds_polar["radial_bearing"].attrs.update(
+            units="rad", long_name="terminal-forward geodesic bearing clockwise from local north"
+        )
+        ds_polar["center_lon"].attrs.update(units="degrees_east")
+        ds_polar["center_lat"].attrs.update(units="degrees_north")
+        ds_polar.attrs.update(self.sampling_metadata)
+        uniform = uniform_periodic_angles(self.theta_deg)
+        ds_polar.attrs.update(
+            theta_topology="uniform_periodic" if uniform else "directional_samples",
+            n_theta=ntheta,
+            theta_closed=False,
+            radial_spacing_uniform=bool(
+                nr < 3 or np.allclose(np.diff(self.r_km), np.diff(self.r_km)[0],
+                                     rtol=1e-12, atol=0)
+            ),
+        )
+        for name in ("rr", "rr_km"):
+            ds_polar[name].attrs.update(units="km", long_name="radial distance from center")
+        if uniform:
+            ds_polar.attrs["effective_azimuthal_resolution_deg"] = 360.0 / ntheta
+        ds_polar = ds_polar.assign_coords(
+            radial_spacing_km=("rr", np.r_[np.diff(self.r_km), np.nan])
+        )
+        ds_polar["radial_spacing_km"].attrs.update(
+            units="km", long_name="distance to the next radial sample (undefined at last radius)"
+        )
+        _, _, distances = self._geod.inv(
+            lon_out, lat_out, np.roll(lon_out, -1, axis=-1), np.roll(lat_out, -1, axis=-1)
+        )
+        ds_polar = ds_polar.assign_coords(
+            max_azimuthal_spacing_m=((self.time_dim, "rr"), distances.max(axis=-1))
+        )
+        ds_polar["max_azimuthal_spacing_m"].attrs.update(
+            units="m", long_name="maximum geodesic distance between cyclic neighbour samples"
+        )
+        if "x_box" in ds_surface.dims and "y_box" in ds_surface.dims and (
+            self.center_x in ds_surface.x_box.values and self.center_y in ds_surface.y_box.values
+        ):
+            box_lon, box_lat = self._get_center_lonlat(ds_surface)
+            _, _, offset = self._geod.inv(
+                np.broadcast_to(box_lon.values, (nt,)),
+                np.broadcast_to(box_lat.values, (nt,)),
+                center_lon, center_lat,
+            )
+            ds_polar = ds_polar.assign_coords(center_grid_offset_m=(self.time_dim, offset))
+            ds_polar["center_grid_offset_m"].attrs.update(
+                units="m", long_name="distance between polar origin and extraction centre cell"
+            )
 
         logger.debug(
             "Polar grid built: lon shape=%s, lat shape=%s, x_km shape=%s, y_km shape=%s.",

@@ -2,460 +2,214 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file or http://www.apache.org/licenses/LICENSE-2.0
 
-from __future__ import annotations
+"""Coordinate-based MNH wind preparation before cropping and level selection."""
 
-import logging
+from __future__ import annotations
 
 import numpy as np
 import xarray as xr
 
-logger = logging.getLogger(__name__)
+from frameit.processing.derived.wind import (
+    add_speed_from_uv_dict,
+    normalize_velocity_units,
+    normalize_winds,
+)
 
 
-# ----------------------------
-# Core numerics (shift mean)
-# ----------------------------
-def _pairmean(a: xr.DataArray, b: xr.DataArray, policy: str) -> xr.DataArray:
-    if policy == "strict":
-        ok = np.isfinite(a) & np.isfinite(b)
-        return xr.where(ok, 0.5 * (a + b), np.nan)
-
-    # partial
-    wa = xr.where(np.isfinite(a), 1.0, 0.0)
-    wb = xr.where(np.isfinite(b), 1.0, 0.0)
-    num = xr.where(wa > 0, a, 0.0) + xr.where(wb > 0, b, 0.0)
-    den = wa + wb
-    return xr.where(den > 0, num / den, np.nan)
-
-
-def _collocate_keepN(da: xr.DataArray, dim: str, use_forward, policy: str) -> xr.DataArray:
-    """
-    Stagger-average along ``dim`` while keeping the same length.
-
-    Parameters
-    ----------
-    da : xr.DataArray
-        Input field to collocate.
-    dim : str
-        Dimension along which stagger-averaging is applied.
-    use_forward : bool or xr.DataArray
-        If True, use forward pairing ``mean(i, i+1)``; otherwise backward
-        ``mean(i-1, i)``.
-    policy : {"partial", "strict"}
-        Edge handling: "partial" keeps the single available value at the
-        boundary; "strict" produces NaN.
-
-    Returns
-    -------
-    xr.DataArray
-        Collocated field with the same shape as ``da``.
-    """
-    fwd = _pairmean(da, da.shift({dim: -1}), policy)
-    bwd = _pairmean(da.shift({dim: 1}), da, policy)
-    return xr.where(use_forward, fwd, bwd)
-
-
-def _dir_from_coords(c_center: xr.DataArray, c_stag: xr.DataArray, dim_box: str) -> xr.DataArray:
-    """
-    Infer the stagger-averaging direction from center and staggered coordinate arrays.
-
-    Parameters
-    ----------
-    c_center : xr.DataArray
-        Coordinate values at mass-point centers.
-    c_stag : xr.DataArray
-        Coordinate values at staggered (edge) points.
-    dim_box : str
-        Box dimension over which the median offset is computed.
-
-    Returns
-    -------
-    xr.DataArray
-        Boolean DataArray (typically on the "time" dimension).
-        True means forward pairing (center > stag on average).
-    """
-    d = c_center - c_stag
-    if dim_box in d.dims:
-        d = d.median(dim_box, skipna=True)
-    return d > 0
-
-
-def _get_uv_box_dims(da: xr.DataArray) -> tuple[str, str]:
-    """
-    Return the last two dimension names of a wind field (y_box, x_box).
-
-    Parameters
-    ----------
-    da : xr.DataArray
-        At least 2D wind component field.
-
-    Returns
-    -------
-    tuple[str, str]
-        ``(y_dim, x_dim)`` — last two dimension names.
-
-    Raises
-    ------
-    ValueError
-        If ``da`` has fewer than 2 dimensions.
-    """
-    if da.ndim < 2:
-        raise ValueError("Expected at least 2D field for horizontal collocation.")
-    return da.dims[-2], da.dims[-1]  # (y_box, x_box) in your extraction
-
-
-# ----------------------------
-# W vertical collocation
-# ----------------------------
-def _collocate_w_to_zC(
-    w: xr.DataArray,
-    *,
-    zC_name: str,
-    zC_coord: xr.DataArray,
-    policy: str,
+def interpolate_staggered(
+    da: xr.DataArray, source_dim: str, target: xr.DataArray
 ) -> xr.DataArray:
+    """Interpolate native brackets without extrapolation or lone-edge substitution.
+
+    MNH level coordinates are computational coordinates, not an assumption of
+    equally spaced physical altitude. The model's mass coordinates specify the
+    actual interpolation targets.
     """
-    Collocate the W (vertical velocity) field onto the mass-point vertical grid.
-
-    Parameters
-    ----------
-    w : xr.DataArray
-        Vertical velocity field.  The third-from-last dimension (index -3)
-        is treated as the native vertical dimension.
-    zC_name : str
-        Name of the target mass-point vertical dimension.
-    zC_coord : xr.DataArray
-        Coordinate values of the target vertical dimension.
-    policy : {"partial", "strict"}
-        Edge handling for stagger-averaging.
-
-    Returns
-    -------
-    xr.DataArray
-        W field on the ``zC_name`` vertical grid with ``len(zC_coord)`` levels.
-
-    Notes
-    -----
-    Four cases are handled in order:
-
-    1. Source dim == ``zC_name``: no-op (coordinates assigned only).
-    2. ``nzW == nzC``: keep-N stagger-mean.
-    3. ``nzW == nzC + 1``: true interface-to-center averaging.
-    4. Otherwise: keep-N then interpolate to ``zC_coord`` if coordinates allow.
-    """
-    # If not enough dims to have a vertical dimension, return as-is
-    if w.ndim < 3:
-        logger.debug(
-            "W collocation skipped, w.ndim=%s < 3, dims=%s.",
-            w.ndim,
-            w.dims,
-        )
-        return w
-
-    z_w = w.dims[-3]
-    if z_w == zC_name:
-        logger.debug(
-            "W already on target vertical dim, z_w=%s, zC_name=%s. Assigning coords only.",
-            z_w,
-            zC_name,
-        )
-        return w.assign_coords({zC_name: zC_coord})
-
-    zW_coord = w.coords.get(z_w, None)
-    nzC = zC_coord.sizes[zC_name]
-    nzW = w.sizes[z_w]
-
-    logger.debug(
-        "Vertical collocation of W, source dim=%s (nzW=%s) to target dim=%s (nzC=%s), policy=%s.",
-        z_w,
-        nzW,
-        zC_name,
-        nzC,
-        policy,
+    if source_dim not in da.coords or target.ndim != 1:
+        raise ValueError(f"Native coordinates required to collocate {da.name} on {source_dim}")
+    values = np.asarray(da[source_dim].values, dtype=float)
+    if values.size < 2 or not np.isfinite(values).all():
+        raise ValueError(f"Invalid native coordinate {source_dim}")
+    differences = np.diff(values)
+    if not (np.all(differences > 0) or np.all(differences < 0)):
+        raise ValueError(f"Native coordinate {source_dim} must be strictly monotone")
+    if not np.isfinite(target.values).all():
+        raise ValueError("Mass-point coordinates must be finite")
+    # Gather the two native brackets instead of xarray.interp's whole-axis
+    # rechunking. Subsequent spatial cropping can then cull unrelated lazy
+    # source chunks rather than computing full-domain wind arrays.
+    order = np.arange(values.size)
+    if differences[0] < 0:
+        order = order[::-1]
+    sorted_values = values[order]
+    points = np.asarray(target.values, dtype=float)
+    upper = np.searchsorted(sorted_values, points, side="right")
+    lower = np.clip(upper - 1, 0, values.size - 1)
+    upper = np.clip(upper, 0, values.size - 1)
+    denominator = sorted_values[upper] - sorted_values[lower]
+    weights = np.divide(
+        points - sorted_values[lower], denominator,
+        out=np.zeros_like(points), where=denominator != 0,
     )
-
-    # Direction inference (forward/backward) if 1D coords exist
-    if (zW_coord is not None) and (zW_coord.ndim == 1) and (zW_coord.sizes[z_w] == nzW):
-        nmin = min(nzC, nzW)
-        use_fwd_z = float(np.nanmedian(zC_coord.values[:nmin] - zW_coord.values[:nmin])) > 0
-        logger.debug(
-            "Vertical pairing direction inferred from coords, use_fwd_z=%s (nmin=%s).",
-            use_fwd_z,
-            nmin,
-        )
+    index_coords = {target.dims[0]: target.values}
+    low = da.isel({source_dim: xr.DataArray(order[lower], dims=target.dims, coords=index_coords)})
+    high = da.isel({source_dim: xr.DataArray(order[upper], dims=target.dims, coords=index_coords)})
+    # Their auxiliary native-coordinate labels differ; only the mass labels
+    # participate in arithmetic alignment.
+    if source_dim != target.dims[0]:
+        low, high = low.drop_vars(source_dim), high.drop_vars(source_dim)
     else:
-        use_fwd_z = True
-        logger.debug(
-            "Vertical pairing direction defaulted to forward "
-            "(missing or incompatible 1D coord for %s).",
-            z_w,
-        )
-
-    if nzW == nzC:
-        logger.debug("Case nzW == nzC, applying keep-N shift-mean on %s.", z_w)
-        wC = _collocate_keepN(w, z_w, use_fwd_z, policy)
-        wC = wC.rename({z_w: zC_name}).assign_coords({zC_name: zC_coord})
-        return wC
-
-    if nzW == nzC + 1:
-        logger.debug("Case nzW == nzC + 1, averaging interfaces to centers on %s.", z_w)
-        wC = _pairmean(w, w.shift({z_w: -1}), policy).isel({z_w: slice(0, -1)})
-        wC = wC.rename({z_w: zC_name}).assign_coords({zC_name: zC_coord})
-        return wC
-
-    # Fallback: collocate on z_w then interpolate to zC_coord
-    logger.debug(
-        "Fallback case for W vertical sizes, nzW=%s, nzC=%s."
-        " Collocate on %s then interpolate if possible.",
-        nzW,
-        nzC,
-        z_w,
+        low = low.assign_coords({source_dim: target})
+        high = high.assign_coords({source_dim: target})
+    weight = xr.DataArray(weights, dims=target.dims, coords=index_coords)
+    result = xr.where(weight == 0, low, xr.where(weight == 1, high,
+                                              low * (1 - weight) + high * weight))
+    mapped = xr.DataArray(
+        (points >= sorted_values[0]) & (points <= sorted_values[-1]),
+        dims=target.dims, coords=index_coords,
     )
-    w_tmp = _collocate_keepN(w, z_w, use_fwd_z, policy)
-    if zW_coord is not None:
-        w_tmp = w_tmp.assign_coords({z_w: zW_coord})
-        w_i = w_tmp.interp({z_w: zC_coord}, kwargs={"fill_value": np.nan})
-        w_i = w_i.rename({z_w: zC_name}).assign_coords({zC_name: zC_coord})
-        logger.debug("Interpolation from %s to %s completed.", z_w, zC_name)
-        return w_i
-
-    logger.error(
-        "Incompatible vertical sizes and no coord to interpolate,"
-        " z_w=%s (nzW=%s), zC_name=%s (nzC=%s).",
-        z_w,
-        nzW,
-        zC_name,
-        nzC,
-    )
-    raise ValueError(
-        f"Incompatible vertical sizes and no coord to interpolate: {z_w}={nzW}, {zC_name}={nzC}."
-    )
+    result = result.where(mapped).assign_coords({target.dims[0]: target})
+    result = result.transpose(*(target.dims[0] if d == source_dim else d for d in da.dims))
+    if source_dim != target.dims[0] and source_dim in result.coords:
+        result = result.drop_vars(source_dim)
+    result.attrs = dict(da.attrs)
+    result.attrs["wind_collocation"] = "native_coordinate_linear_strict"
+    return result
 
 
-# ----------------------------
-# Main entry point for dico_user
-# ----------------------------
-def collocate_winds(
-    dico_user: dict[str, xr.Dataset],
-    *,
-    conf,
-    policy: str = "partial",  # "partial" | "strict"
-    drop_level_w_group: bool = True,  # MNH only, to avoid confusion
-) -> dict[str, xr.Dataset]:
+def prepare_native_mnh(ds: xr.Dataset, conf) -> tuple[xr.Dataset, xr.DataArray | None]:
+    """Prepare U/V and a separate mass-point W while all native neighbours exist.
+
+    Native W remains unchanged for requested Cartesian interface products. Its
+    independently prepared counterpart is consumed by the polar pipeline.
     """
-    Post-extraction wind collocation for MNH (no-op for AROME).
+    out = ds.copy(deep=False)
+    aliases = conf.velocity_aliases
+    for name, suffix in (
+        (aliases.get("u_velocity", "UT"), "_u"),
+        (aliases.get("v_velocity", "VT"), "_v"),
+    ):
+        if name not in out:
+            continue
+        da = out[name].reset_coords(drop=True)
+        for mass in (conf.name_lon_dim, conf.name_lat_dim):
+            if mass + suffix in da.dims:
+                if mass not in ds.coords:
+                    raise ValueError(f"Missing native mass coordinate {mass}")
+                if np.array_equal(da[mass + suffix].values, ds[mass].values):
+                    da = da.rename({mass + suffix: mass})
+                else:
+                    da = interpolate_staggered(da, mass + suffix, ds[mass])
+            elif mass not in da.dims:
+                raise ValueError(f"Unrecognized native horizontal grid for {name}")
+        out[name] = da
+        out[name].attrs["wind_collocation"] = "native_coordinate_linear_strict"
+    out = normalize_winds(out, conf, conf.name_vertical_dim)
+    out = normalize_winds(out, conf, "surface")
+    w_name = aliases.get("w_velocity", "WT")
+    mass_w = None
+    if w_name in ds:
+        out[w_name] = normalize_velocity_units(ds[w_name], conf)
+    if w_name in ds and "level_w" in ds[w_name].dims:
+        if conf.name_vertical_dim not in ds.coords:
+            raise ValueError("W collocation requires the native mass vertical coordinate")
+        mass_w = interpolate_staggered(
+            out[w_name], "level_w", ds[conf.name_vertical_dim]
+        )
+    return out, mass_w
 
-    U and V are collocated from their staggered positions to the mass-point
-    grid.  W is collocated vertically onto the mass-point vertical grid and
-    injected into the main group, replacing the separate level_w group.
 
-    Parameters
-    ----------
-    dico_user : dict[str, xr.Dataset]
-        Extracted user datasets keyed by vertical group (e.g. "level",
-        "level_w", "surface").
-    conf : object
-        Configuration object.  Reads ``atm_model``, ``name_vertical_dim``,
-        and ``velocity_aliases``.
-    policy : {"partial", "strict"}, optional
-        Stagger-averaging edge policy. Default "partial".
-    drop_level_w_group : bool, optional
-        When True, remove the separate "level_w" group after injecting WT into
-        the main group (MNH only). Default True.
+def _collocate_w_to_zC(w, *, zC_name, zC_coord, policy="strict"):
+    """Direct-call compatibility helper using coordinates, never selected-array lengths."""
+    if policy not in {"strict", "partial"}:
+        raise ValueError("policy must be 'partial' or 'strict'")
+    if zC_name in w.dims:
+        return w.sel({zC_name: zC_coord})
+    if "level_w" not in w.dims:
+        raise ValueError("W requires an identified native level_w dimension")
+    return interpolate_staggered(w, "level_w", zC_coord)
 
-    Returns
-    -------
-    dict[str, xr.Dataset]
-        Updated dictionary where wind variables in the main group have been
-        replaced by their collocated versions.  The level_w key is removed
-        when ``drop_level_w_group=True`` and the model is MNH.
 
-    Raises
-    ------
-    ValueError
-        If ``policy`` is not "partial" or "strict", or if the main group is
-        missing its vertical coordinate.
+def _collocate_box_component(da, ds, mass, staggered, axis):
+    """Compatibility for cropped arrays retaining their actual coordinate pairs."""
+    if mass not in ds.coords or staggered not in ds.coords:
+        raise ValueError(f"Native mass/staggered coordinates required for {da.name}")
+    target, source = ds[mass], ds[staggered]
+    delta = source.diff(axis).median(axis, skipna=True)
+    forward = (target - source) * delta >= 0
+    other_source = xr.where(forward, source.shift({axis: -1}), source.shift({axis: 1}))
+    other_value = xr.where(forward, da.shift({axis: -1}), da.shift({axis: 1}))
+    weight = (target - source) / (other_source - source)
+    valid = (weight >= 0) & (weight <= 1) & np.isfinite(da) & np.isfinite(other_value)
+    result = xr.where(
+        target == source, da, (da * (1 - weight) + other_value * weight).where(valid)
+    )
+    result.attrs = dict(da.attrs)
+    result.attrs["wind_collocation"] = "coordinate_pair_linear_strict"
+    return result
+
+
+def collocate_winds(
+    dico_user: dict[str, xr.Dataset], *, conf, policy: str = "strict",
+    drop_level_w_group: bool = True,
+) -> dict[str, xr.Dataset]:
+    """Consume native-prepared winds, or collocate explicitly bracketed inputs.
+
+    ``partial`` is accepted for API compatibility but no longer extrapolates an
+    unavailable collocation neighbour. The standard loader prepares winds before
+    extraction/subsetting; direct calls must retain coordinates and brackets.
     """
     if policy not in {"partial", "strict"}:
-        raise ValueError("policy must be 'partial' or 'strict'.")
-
-    atm_model = str(conf.atm_model).upper()
-    zC_name = conf.name_vertical_dim  # also used as dict key (e.g., "level")
-
-    logger.debug(
-        "collocate_winds called, atm_model=%s, zC_name=%s, policy=%s,"
-        " drop_level_w_group=%s, dico_keys=%s.",
-        atm_model,
-        zC_name,
-        policy,
-        drop_level_w_group,
-        list(dico_user.keys()),
-    )
-
-    if zC_name not in dico_user:
-        logger.debug("Main vertical group %r not found in dico_user, no-op.", zC_name)
-        return dico_user
-
-    ds_h = dico_user[zC_name].copy(deep=False)
-    out = ds_h.copy(deep=False)
-
-    # Wind variable names from conf (e.g., UT/VT/WT for MNH, u/v/w for other models)
-    vel = getattr(conf, "velocity_aliases", {}) or {}
-    u_name = vel.get("u_velocity", "u")
-    v_name = vel.get("v_velocity", "v")
-    w_name = vel.get("w_velocity", "w")
-
-    logger.debug(
-        "Velocity aliases resolved, u_name=%s, v_name=%s, w_name=%s.",
-        u_name,
-        v_name,
-        w_name,
-    )
-
-    # Identify where W lives (same group or separate group)
-    ds_w = None
-    key_w = None
-    if w_name in out.data_vars:
-        ds_w = out
-        key_w = zC_name
-        logger.debug("W found in main group %r as variable %r.", zC_name, w_name)
-    else:
-        for k, ds in dico_user.items():
-            if (w_name in ds.data_vars) and ("level_w" in ds.coords):
-                ds_w = ds
-                key_w = k
-                logger.debug(
-                    "W found in separate group %r as variable %r (coord 'level_w' present).",
-                    k,
-                    w_name,
-                )
-                break
-        if ds_w is None:
-            logger.debug("W variable %r not found in any group with coord 'level_w'.", w_name)
-
-    # Vertical coordinate must exist in main group for WT insertion
-    if zC_name not in out.coords:
-        logger.error("Main 3D group is missing vertical coordinate %r.", zC_name)
-        raise ValueError(f"Main 3D group is missing vertical coordinate {zC_name!r}.")
-
-    # ----------------------------
-    # U, V (overwrite with collocated versions, keep original names)
-    # ----------------------------
-    if (u_name in out.data_vars) and (v_name in out.data_vars):
-        u = out[u_name]
-        v = out[v_name]
-
-        y_dim_u, x_dim_u = _get_uv_box_dims(u)
-        y_dim_v, x_dim_v = _get_uv_box_dims(v)
-
-        logger.debug(
-            "U/V present. U dims=%s (colloc along x_dim=%s), V dims=%s (colloc along y_dim=%s).",
-            u.dims,
-            x_dim_u,
-            v.dims,
-            y_dim_v,
-        )
-
-        if atm_model == "MNH":
-            # Use ni/ni_u and nj/nj_v if present, otherwise default forward
-            xC = getattr(conf, "name_lon_dim", "ni")
-            yC = getattr(conf, "name_lat_dim", "nj")
-            xU = f"{xC}_u"
-            yV = f"{yC}_v"
-
-            use_fwd_x = True
-            use_fwd_y = True
-
-            if (xC in out.coords) and (xU in out.coords) and (x_dim_u in out.coords[xC].dims):
-                use_fwd_x = _dir_from_coords(out.coords[xC], out.coords[xU], x_dim_u)
-                logger.debug(
-                    "MNH U x-direction inferred using coords %s/%s on dim_box=%s.",
-                    xC,
-                    xU,
-                    x_dim_u,
-                )
+        raise ValueError("policy must be 'partial' or 'strict'")
+    if str(conf.atm_model).upper() != "MNH":
+        return dict(dico_user)
+    out = {key: ds.copy(deep=False) for key, ds in dico_user.items()}
+    mass_group = conf.name_vertical_dim
+    aliases = conf.velocity_aliases
+    w_name = aliases.get("w_velocity", "WT")
+    for group, ds in list(out.items()):
+        if "_frameit_mass_w" in ds:
+            w = ds["_frameit_mass_w"].rename(w_name)
+            if mass_group not in out:
+                out[mass_group] = w.to_dataset()
             else:
-                logger.debug(
-                    "MNH U x-direction defaulted to forward"
-                    " (missing coords %s or %s, or incompatible dims).",
-                    xC,
-                    xU,
-                )
-
-            if (yC in out.coords) and (yV in out.coords) and (y_dim_v in out.coords[yC].dims):
-                use_fwd_y = _dir_from_coords(out.coords[yC], out.coords[yV], y_dim_v)
-                logger.debug(
-                    "MNH V y-direction inferred using coords %s/%s on dim_box=%s.",
-                    yC,
-                    yV,
-                    y_dim_v,
-                )
+                out[mass_group][w_name] = w.sel({mass_group: out[mass_group][mass_group]})
+            if drop_level_w_group:
+                out.pop(group)
             else:
-                logger.debug(
-                    "MNH V y-direction defaulted to forward"
-                    " (missing coords %s or %s, or incompatible dims).",
-                    yC,
-                    yV,
-                )
-
-            out[u_name] = _collocate_keepN(u, x_dim_u, use_fwd_x, policy).rename(u_name)
-            out[v_name] = _collocate_keepN(v, y_dim_v, use_fwd_y, policy).rename(v_name)
-
-            logger.debug("U/V collocation applied for MNH, policy=%s.", policy)
+                out[group] = ds.drop_vars("_frameit_mass_w")
+            break
+    if mass_group not in out:
+        if any(w_name in ds for ds in out.values()):
+            raise ValueError("W-only polar preparation requires native mass-level dependencies")
+        return out
+    ds = out[mass_group]
+    if any(
+        name in ds and any(dim.endswith(("_u", "_v")) for dim in ds[name].dims)
+        for name in (aliases.get("u_velocity", "UT"), aliases.get("v_velocity", "VT"))
+    ):
+        ds, native_w = prepare_native_mnh(ds, conf)
+        if native_w is not None:
+            ds[w_name] = native_w
+        out[mass_group] = ds
+    for name, mass, suffix, axis in (
+        (aliases.get("u_velocity", "UT"), conf.name_lon_dim, "_u", "x_box"),
+        (aliases.get("v_velocity", "VT"), conf.name_lat_dim, "_v", "y_box"),
+    ):
+        if name not in ds or ds[name].attrs.get("wind_collocation"):
+            continue
+        if mass + suffix in ds[name].dims and mass in ds.coords:
+            ds[name] = interpolate_staggered(ds[name], mass + suffix, ds[mass])
+        elif axis in ds[name].dims:
+            ds[name] = _collocate_box_component(ds[name], ds, mass, mass + suffix, axis)
         else:
-            # AROME (or others): assumed already on mass point in your workflow (no-op)
-            out[u_name] = u.rename(u_name)
-            out[v_name] = v.rename(v_name)
-            logger.debug("U/V collocation no-op for atm_model=%s.", atm_model)
-    else:
-        logger.debug(
-            "U/V collocation skipped, missing variables. u_present=%s, v_present=%s.",
-            (u_name in out.data_vars),
-            (v_name in out.data_vars),
-        )
-
-    # ----------------------------
-    # W (overwrite with collocated version, keep original name)
-    # ----------------------------
-    if (ds_w is not None) and (w_name in ds_w.data_vars):
-        w = ds_w[w_name]
-        logger.debug(
-            "W collocation starting, source_group=%r, w_name=%r, w.dims=%s.",
-            key_w,
-            w_name,
-            w.dims,
-        )
-
-        wC = _collocate_w_to_zC(
-            w,
-            zC_name=zC_name,
-            zC_coord=out.coords[zC_name],
-            policy=policy,
-        )
-        out[w_name] = wC.rename(w_name)
-
-        logger.debug("W collocation completed, new dims=%s.", out[w_name].dims)
-
-        # Ensure WT shares the same horizontal coords as the main group, when possible
-        for cname in ("x_box", "y_box", "x_box_km", "y_box_km", "latitude", "longitude"):
-            if cname in out.coords and cname not in out[w_name].coords:
-                out[w_name] = out[w_name].assign_coords({cname: out.coords[cname]})
-                logger.debug("Assigned missing coord %r to W from main group.", cname)
-    else:
-        logger.debug("W collocation skipped, W not available or not identified.")
-
-    # Build output dict with only the main group replaced
-    dico_out = dict(dico_user)
-    dico_out[zC_name] = out
-
-    # Optionally drop the separate level_w group (MNH only)
-    if drop_level_w_group and atm_model == "MNH" and key_w is not None and key_w != zC_name:
-        dico_out.pop(key_w, None)
-        logger.info(
-            "Dropped separate W group %r (WT injected into main group %r).",
-            key_w,
-            zC_name,
-        )
-
-    logger.debug("collocate_winds finished, output keys=%s.", list(dico_out.keys()))
-    return dico_out
+            raise ValueError(f"Native staggered coordinates required for {name}")
+    for key, source in list(out.items()):
+        if key != mass_group and w_name in source and "level_w" in source[w_name].dims:
+            if w_name not in ds or not ds[w_name].attrs.get("wind_collocation"):
+                ds[w_name] = _collocate_w_to_zC(
+                    source[w_name], zC_name=mass_group, zC_coord=ds[mass_group]
+                )
+            if drop_level_w_group:
+                out.pop(key)
+    return add_speed_from_uv_dict(out, conf)

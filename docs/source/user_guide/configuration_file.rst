@@ -243,11 +243,43 @@ FrameIt can project the selected variable in a polar coordinate system around th
 ``compute_polar_proj``
    Boolean switch to activate polar projection computations.
 
-``radiale_resolution``
+``radial_resolution``
    Radial sampling step (in meters) used in the polar grid.
 
 ``azimuthal_resolution``
-   Azimuthal sampling step (in degrees). Note that if this parameter is left empty, it will be set as ``radiale_resolution``/rmax_km where rmax is the maximum radial distance.
+   Maximum angular step in degrees, at most 120. The effective count is
+   ``ceil(360 / azimuthal_resolution)`` and spacing is exactly ``360/count``.
+   Omit it for an explicit count or automatic outer-ring spacing.
+
+``polar_n_theta``
+   Optional integer angular count of at least 3. Conflicting count and step
+   requests are rejected. With neither set, the count is
+   ``max(3, ceil(2*pi*rmax_km/dr_km))``; there is no implicit 10-degree default.
+
+``polar_max_points``
+   Maximum target geometry points across all times (default 2,000,000), checked
+   before allocation. Larger grids require an explicit increase.
+
+``polar_missing_data_policy``
+   ``strict`` (default) requires every contributing source value to be finite.
+   ``renormalize`` enables interpolation over valid weights with the support
+   threshold below; it does not extrapolate or reconstruct missing sectors.
+
+``polar_min_valid_weight_fraction``
+   Minimum support fraction for renormalized values, in [0, 1], default 0.5.
+   All-missing stencils remain invalid even with a zero threshold.
+
+``polar_weight_zero_tolerance``
+   Absolute numerical zero coefficient tolerance, default 1.0e-14, in
+   [0, 1.0e-6). Removed coefficients do not contribute to weighting or validity.
+
+``polar_source_halo_points``
+   Native points added to each actual extraction half-width for polar input,
+   default 1, at least 1. This does not enlarge Cartesian output products.
+
+``polar_ellipsoid``
+   Ellipsoid identifier accepted by pyproj Geod, default ``WGS84``. It defines
+   target geodesics; ESMF interpolation geometry is spherical longitude/latitude.
 
 ``polar_variables``
    List of variables to project on the polar grid.
@@ -255,15 +287,20 @@ FrameIt can project the selected variable in a polar coordinate system around th
 .. code-block:: yaml
 
    compute_polar_proj: true
-   radiale_resolution: 2500
-   azimuthal_resolution: 10
+   radial_resolution: 2500
+   polar_n_theta: 64
+   polar_max_points: 2000000
+   polar_missing_data_policy: strict
+   polar_source_halo_points: 1
    polar_variables:
-     - "u10"
-     - "v10"
-     - "u"
-     - "v"
-     - "prmsl"
-     - "pt"
+      heightAboveGround:
+         variables: [u, v, t]
+      surface:
+         variables: [u10, v10, prmsl]
+
+Analytical outputs contain one uniform cycle without a duplicate angular
+endpoint. See :doc:`/polar_projection/xESMF_proj` for plotting closure,
+azimuthal means, Fourier conventions and sampling diagnostics.
 
 Additional simulation parameters (optional)
 -------------------------------------------

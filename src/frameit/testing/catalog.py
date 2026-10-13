@@ -549,7 +549,7 @@ def probe_dependencies(case):
             raise ValueError(f"Installed xESMF/ESMF backend is unusable: {exc}") from exc
 
 
-def _products_expected(case, selected):
+def _products_expected(case, selected, inventory=None):
     config, model = case["config"], case["config"]["atm_model"]
     contract = [{"role": "track", "group": None, "variables": ["cx", "cy", "valid_box"]}]
     wind_group = "heightAboveGround" if model == "AROME" else "level"
@@ -576,7 +576,17 @@ def _products_expected(case, selected):
             )
             entry["variables"].extend(request["variables"])
             if source in selected:
-                entry["levels"][source] = selected[source]
+                if group == "level_w" and source == "level_w" and inventory is not None:
+                    # A W-only polar request uses the corresponding native mass
+                    # indices; Cartesian W retains the requested interfaces.
+                    native = inventory["levels"]["level_w"]
+                    mass = inventory["levels"]["level"]
+                    if config["requested_variables_user"][group].get("level_selection") == "all":
+                        entry["levels"]["level"] = mass
+                    else:
+                        entry["levels"]["level"] = [mass[native.index(v)] for v in selected[source]]
+                else:
+                    entry["levels"][source] = selected[source]
         for group, entry in merged.items():
             if group == wind_group and wind_names <= set(entry["variables"]):
                 entry["variables"].extend(["vrad", "vtan", "wind_speed"])
@@ -727,7 +737,7 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
             config["prescribed_track_file"] = str(path)
             value["input_records"].append(file_record(path, content=True))
             expected.update(times=times, centres=centres, prescribed_track=str(path))
-        expected["products"] = _products_expected(value, selected)
+        expected["products"] = _products_expected(value, selected, inventory)
         if (
             value["tracker"] in {"wind_pressure", "prescribed_track", "utrack"}
             and len(expected["times"]) > 1
