@@ -64,7 +64,8 @@ cases:
   - {id: mnh_chido_wind_pressure_polar, dataset: MNH/CHIDO, tracker: wind_pressure, modes: [ci, full], profile: core, coverage: [netcdf, pressure-wind-tracker, track-kinematics, staggered-uvw, moving-polar, level-winds]}
   - {id: mnh_chido_wind_pressure_cart_only, dataset: MNH/CHIDO, tracker: wind_pressure, modes: [ci], profile: core, polar: false, coverage: [moving-cartesian, polar-disabled]}
   - {id: mnh_chido_prescribed_polar, dataset: MNH/CHIDO, tracker: prescribed_track, modes: [ci, full], profile: core, requirement: optional, coverage: [external-netcdf-track, exact-time-intersection, nearest-2d-grid, moving-polar]}
-  - {id: arome_belna_wind_pressure_polar, dataset: AROME/BELNA, tracker: wind_pressure, modes: [full], profile: core, coverage: [grib, pressure-wind-tracker, track-kinematics, moving-polar, hag-winds]}
+  # The initial BELNA centre is only 9 grid points from the y boundary.
+  - {id: arome_belna_wind_pressure_polar, dataset: AROME/BELNA, tracker: wind_pressure, modes: [full], profile: core, x_boxsize_km: 200, y_boxsize_km: 40, coverage: [grib, pressure-wind-tracker, track-kinematics, moving-polar, hag-winds]}
   - {id: arome_batsirai_fixed_all_polar, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci], profile: full, selection: all, coverage: [all-level-selection, hag-winds]}
   - {id: arome_batsirai_fixed_values_polar, dataset: AROME/BATSIRAI, tracker: fixed_box, modes: [ci], profile: full, selection: values, coverage: [physical-level-selection]}
   - {id: arome_batsirai_prescribed_polar, dataset: AROME/BATSIRAI, tracker: prescribed_track, modes: [ci], profile: full, coverage: [stationary-reference-netcdf, exact-time-intersection, nearest-1d-grid]}
