@@ -31,7 +31,8 @@ DEFAULT_FULL_CASES = (
 def _benchmark_worker(case, root, output, mode, cache_size, completion):
     output, completion = Path(output), Path(completion)
     output.mkdir(parents=True, exist_ok=True)
-    with (output / "worker.log").open("w", encoding="utf-8", buffering=1) as stream:
+    (output / "logs").mkdir(parents=True, exist_ok=True)
+    with (output / "logs" / "worker.log").open("w", encoding="utf-8", buffering=1) as stream:
         os.dup2(stream.fileno(), 1)
         os.dup2(stream.fileno(), 2)
         started = perf_counter()
@@ -42,7 +43,7 @@ def _benchmark_worker(case, root, output, mode, cache_size, completion):
             from frameit.testing.catalog import resolve_case
             from frameit.testing.checks import check_products
 
-            resolved = resolve_case(case, Path(root), output / "products", mode=mode)
+            resolved = resolve_case(case, Path(root), output, mode=mode)
             if resolved["preflight"] != "READY":
                 raise ValueError(f"Benchmark case unavailable: {resolved['reason']}")
             config = copy.deepcopy(resolved["config"])

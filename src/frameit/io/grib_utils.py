@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -143,7 +144,7 @@ def concat_grib2ds_by_vert_coord(
     user_requested_variables_yaml: dict,
     tracker_requested_variables_by_method_yaml: dict,
     method: str | None = None,
-    index_dir: str | Path = ".cfgrib",
+    index_dir: str | Path = "cache",
     float_tol: float = 0.51,
     warn: bool = True,
     *,
@@ -169,7 +170,7 @@ def concat_grib2ds_by_vert_coord(
         Restrict tracker loading to this method only.  ``None`` loads all
         methods present in the tracker YAML.
     index_dir : str or Path, optional
-        Directory for cfgrib index files.  Created if absent. Default ".cfgrib".
+        Directory for cfgrib index files. Created if absent. Default "cache".
     float_tol : float, optional
         Tolerance for numeric vertical level matching. Default 0.51.
     warn : bool, optional
@@ -192,10 +193,12 @@ def concat_grib2ds_by_vert_coord(
     opened_per_file: dict[Path, list[xr.Dataset]] = {}
     dims_seen: set[str] = set()
     for f in files:
-        backend_kwargs = {"read_keys": ["uvRelativeToGrid"]}
-        dsets = cfgrib.open_datasets(
-            str(f), indexpath=str(idx_dir / (f.name + ".idx")), backend_kwargs=backend_kwargs
-        )
+        source_id = hashlib.sha256(str(f.resolve()).encode()).hexdigest()[:16]
+        backend_kwargs = {
+            "read_keys": ["uvRelativeToGrid"],
+            "indexpath": str(idx_dir / (f.name + f".{source_id}.{{short_hash}}.idx")),
+        }
+        dsets = cfgrib.open_datasets(str(f), backend_kwargs=backend_kwargs)
         for ds in dsets:
             resources.add(ds)
         opened_per_file[f] = dsets

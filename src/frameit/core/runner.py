@@ -215,7 +215,9 @@ class FrameitRunner:
             from frameit.io.grib_utils import concat_grib2ds_by_vert_coord
 
             logger.info("Loading GRIB files (%d files)...", len(files))
-            index_dir = Path(self.output_dir) / ".cfgrib"
+            from frameit.utils.output_paths import OutputPaths
+
+            index_dir = OutputPaths(self.output_dir).cache
 
             dict_user, dict_tracker = concat_grib2ds_by_vert_coord(
                 files,

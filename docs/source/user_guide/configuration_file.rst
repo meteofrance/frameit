@@ -228,7 +228,8 @@ Output directories
    Path where the raw model files are located.
 
 ``frameit_output_dir``
-   Path where FrameIt should write its outputs.
+   Run root. FrameIt writes NetCDF outputs in ``products/``, logs in ``logs/``,
+   and GRIB index caches in ``cache/`` beneath this directory.
 
 .. code-block:: yaml
 

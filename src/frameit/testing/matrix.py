@@ -443,7 +443,7 @@ def run_matrix(
     context = {"utrack_weights": str(utrack_weights) if utrack_weights is not None else None}
     planned = []
     for definition in definitions:
-        case_output = output / "cases" / definition["id"] / "products"
+        case_output = output / "cases" / definition["id"]
         try:
             case = resolve_case(
                 definition,

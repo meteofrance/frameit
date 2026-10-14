@@ -106,7 +106,6 @@ def load_cases(mode="ci", profile="full", patterns=()):
             y_boxsize_km=binding["box_km"],
             simulation_output_dir=definition["dataset"],
             frameit_output_dir="",
-            grib_index_dir=".cfgrib",
             requested_variables_user=user,
             compute_polar_proj=definition.get("polar", True),
             radial_resolution=dataset["resolution"],
@@ -626,7 +625,6 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
     config.update(
         simulation_output_dir=str(root / value["dataset_id"]),
         frameit_output_dir=str(output),
-        grib_index_dir=str(output / ".cfgrib"),
     )
     value.update(input_files=[], input_records=[], expected={}, preflight="READY", reason="")
     if value.get("excluded_reason"):

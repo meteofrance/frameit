@@ -134,8 +134,9 @@ class SimulationConfig:
     # Derived and runtime parameters
     simulation_parameter: dict[str, Any] = field(default_factory=dict)
 
-    # GRIB index directory
-    grib_index_dir: str = ".cfgrib"
+    # Legacy configuration field, retained for compatibility. Runtime indexes
+    # always live in output_dir/cache, including when the runner overrides it.
+    grib_index_dir: str = "cache"
 
     # -----------------------
     # Properties

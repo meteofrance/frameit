@@ -115,7 +115,7 @@ def setup_frameit_logging(
     Parameters
     ----------
     output_dir : str or Path
-        Directory where the log file will be created.  Created if absent.
+        Run root; the log file is created in its ``logs`` subdirectory.
     level : str, optional
         Log level string for both handlers (e.g. "INFO", "DEBUG"). Default "INFO".
     simu_name : str or None, optional
@@ -130,7 +130,9 @@ def setup_frameit_logging(
     Path
         Absolute path of the log file that was created.
     """
-    output_dir = Path(output_dir)
+    from frameit.utils.output_paths import OutputPaths
+
+    output_dir = OutputPaths(Path(output_dir)).logs
     output_dir.mkdir(parents=True, exist_ok=True)
 
     date_tag = datetime.now().strftime(date_fmt)

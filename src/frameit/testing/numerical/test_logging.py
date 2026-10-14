@@ -51,6 +51,7 @@ class LoggingTest(unittest.TestCase):
                         logger.info("Run complete")
                         raise RuntimeError("deliberate")
                 text = Path(path).read_text()
+                self.assertEqual(Path(path).parent, Path(directory) / "logs")
                 self.assertIn("WARNING | RuntimeWarning: Essential warning", text)
                 self.assertIn("INFO    | Run complete", text)
                 self.assertNotIn("test_logging.py", text)

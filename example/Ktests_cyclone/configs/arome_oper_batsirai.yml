@@ -38,7 +38,7 @@ y_boxsize_km: 500.0
 
 requested_variables_user: 
   heightAboveGround:
-    variables: ["u","v","t","w","r","tke"]
+    variables: ["u","v","t","r","tke"]
     level_selection: "indices"                # ou "values" "indices"; "all"
     level_values: []                          # if level_selection = "values" 
     level_indices: [0,2,5] 

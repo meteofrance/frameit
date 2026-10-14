@@ -532,7 +532,7 @@ def export_outputs(
     out_dir : Path or None, optional
         Root output directory.  Falls back to ``runner.output_dir`` when None.
     out_subdir : str, optional
-        Sub-directory appended to ``out_dir``.  Default "" (no sub-directory).
+        Sub-directory appended inside ``out_dir/products``. Default "".
     export_polar : bool, optional
         Write polar-projection datasets when available. Default True.
     export_cart : bool, optional
@@ -564,7 +564,10 @@ def export_outputs(
     conf = runner.conf
     simu_name = str(getattr(conf, "simulation_name", "UNKNOWN_SIMU"))
 
-    base_out = Path(out_dir) if out_dir is not None else Path(runner.output_dir)
+    from frameit.utils.output_paths import OutputPaths
+
+    root = Path(out_dir) if out_dir is not None else Path(runner.output_dir)
+    base_out = OutputPaths(root).products
     out_path = base_out / out_subdir if out_subdir else base_out
     out_path.mkdir(parents=True, exist_ok=True)
 

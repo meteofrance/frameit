@@ -28,7 +28,22 @@ The ``<group>`` token is the corresponding key of the dictionary (for example ``
 ``heightAboveGround``). The name is sanitized for filenames (any non-alphanumeric character is replaced by ``_``),
 but the original group name is preserved in the file metadata (see below).
 
-By default, files are written in the runner output directory: ``conf.frameit_output_dir`` (see :doc:`configuration_file`),
+``conf.frameit_output_dir`` is the run root (see :doc:`configuration_file`).
+Artifacts use the same layout for ordinary runs and each matrix case::
+
+    <output_dir>/
+        cache/       # GRIB index files
+        products/    # Track, Cartesian and polar NetCDF files
+        logs/        # Simulation logs
+
+GRIB indexes are stored in ``cache/``, never beside the input files. Cache
+filenames distinguish input paths and cfgrib indexing keys. Meso-NH NetCDF
+loading does not create disk indexes; its processing caches remain in memory.
+The legacy ``grib_index_dir`` configuration field is accepted for compatibility,
+but indexes always use the run's ``cache/`` directory.
+
+Previously, ordinary runs wrote products and logs directly into the run root.
+Existing files are not moved; new runs use the layout above.
 
 Produced files
 --------------
@@ -168,4 +183,3 @@ To disable some exports:
 
    # Disable only cartesian exports
    frameit run path/to/config.yml --no-export-cart
-
