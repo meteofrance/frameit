@@ -6,6 +6,7 @@ import copy
 import multiprocessing
 import os
 import signal
+import sys
 import time
 import traceback
 from dataclasses import dataclass
@@ -208,8 +209,29 @@ def _execute_case(case: dict, output: Path, log_level: str | None) -> dict:
     )
     try:
         process.start()
-        while process.is_alive():
-            process.join(timeout=0.2)
+        # Read incrementally rather than loading a potentially large case log.
+        # The worker flushes Python output line by line; native output shares
+        # the same file descriptors and is forwarded when it becomes available.
+        last_output = time.monotonic()
+        with log_path.open("r", encoding="utf-8", errors="replace") as stream:
+            while True:
+                process.join(timeout=0.2)
+                text = stream.read(64 * 1024)
+                if text:
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+                    last_output = time.monotonic()
+                alive = process.is_alive()
+                if not alive and not text:
+                    break
+                now = time.monotonic()
+                if alive and now - last_output >= 30:
+                    print(
+                        f"[WAIT] {case['id']} still running "
+                        f"({now - started:.0f}s elapsed); log: {log_path}",
+                        flush=True,
+                    )
+                    last_output = now
     except KeyboardInterrupt:
         _terminate_worker(process)
         raise
@@ -406,6 +428,14 @@ def run_matrix(
     deliberately a later service. Invalid call arguments raise ``ValueError``;
     resolved input/prerequisite failures are persisted and return an exit code.
     """
+    started = time.monotonic()
+    print(
+        f"[MATRIX] mode={'ci' if ci else 'full'} profile={profile} "
+        f"plan_only={plan_only}\n"
+        f"[MATRIX] data: {Path(data_root).expanduser().resolve()}\n"
+        f"[MATRIX] output: {Path(output).expanduser().resolve()}",
+        flush=True,
+    )
     from frameit.core.settings_class import SimulationConfig
     from frameit.testing.catalog import load_cases, resolve_case
     from frameit.testing.checks import check_products
@@ -424,6 +454,7 @@ def run_matrix(
     definitions = load_cases(mode=mode, profile=profile, patterns=tuple(cases))
     if not definitions:
         raise ValueError("No matrix cases match the requested mode/profile/selection")
+    print(f"[PLAN] Resolving {len(definitions)} cases", flush=True)
     output.mkdir(parents=True, exist_ok=True)
     (output / "configs").mkdir()
     started_at = utc_now()
@@ -436,13 +467,22 @@ def run_matrix(
             {case["dataset_id"] for case in definitions if not case.get("excluded_reason")}
         )
         if dataset_ids:
+            print("[PLAN] Verifying CI fixture", flush=True)
             try:
                 fixture = verify_ci_dataset(data_root, dataset_ids=dataset_ids)
             except (ValueError, OSError) as exc:
                 fixture_error = f"CI fixture verification failed: {exc}"
-    context = {"utrack_weights": str(utrack_weights) if utrack_weights is not None else None}
+    def progress(message):
+        print(f"[PLAN] {message} ({time.monotonic() - started:.1f}s elapsed)", flush=True)
+
+    context = {
+        "utrack_weights": str(utrack_weights) if utrack_weights is not None else None,
+        "progress": progress,
+    }
     planned = []
-    for definition in definitions:
+    for index, definition in enumerate(definitions, 1):
+        case_started = time.monotonic()
+        progress(f"Case {index}/{len(definitions)}: {definition['id']}")
         case_output = output / "cases" / definition["id"]
         try:
             case = resolve_case(
@@ -487,6 +527,10 @@ def run_matrix(
         )
         atomic_json(output / "configs" / f"{case['id']}.resolved.json", case["effective_config"])
         planned.append(case)
+        progress(
+            f"{case['id']}: {case['preflight']} "
+            f"({time.monotonic() - case_started:.1f}s); {case.get('reason', '')}"
+        )
     plan = ResolvedMatrixPlan(
         mode=mode,
         profile=profile,
@@ -501,6 +545,7 @@ def run_matrix(
         created_at=started_at,
     ).to_dict()
     atomic_json(output / "plan.json", plan)
+    progress(f"Plan saved: {output / 'plan.json'}")
     results = [_preflight_result(case, output, plan_only=plan_only) for case in planned]
     for result in results:
         atomic_json(output / "cases" / result["id"] / "result.json", result)

@@ -108,6 +108,12 @@ contracts, and cannot shorten the frozen CI fixture.
 
 Cases run sequentially, each in its own spawned worker. ``--keep-going`` is the
 default; ``--fail-fast`` leaves later cases explicitly not run after a failure.
+The terminal shows startup settings and planning progress, including each input
+file being inspected and elapsed time. All selected cases are planned before
+execution starts. Worker output is forwarded live to the terminal and retained in
+``cases/<case-id>/logs/frameit.log``. During execution, 30 seconds without worker
+output triggers an elapsed-time heartbeat with the log path; this is a progress
+indicator, not an execution timeout.
 ``--log-level`` follows the ordinary CLI convention. Use ``--utrack-weights`` for
 full-domain UTrack. UTrack is always excluded in CI, including when a checkpoint
 is supplied: the cropped fixture does not guarantee its search context or margins.

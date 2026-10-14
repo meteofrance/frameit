@@ -194,7 +194,7 @@ def file_record(path, *, content=False):
     return record
 
 
-def _grib_inventory(paths):
+def _grib_inventory(paths, progress=None):
     from datetime import datetime
 
     import eccodes as ec
@@ -202,7 +202,9 @@ def _grib_inventory(paths):
 
     records, coordinates, shape, geometry = [], None, None, None
     aliases = {"10u": "u10", "10v": "v10", "msl": "prmsl"}
-    for path in paths:
+    for index, path in enumerate(paths, 1):
+        if progress:
+            progress(f"Inspecting GRIB file {index}/{len(paths)}: {path}")
         fields, stamps = {}, set()
         message = 0
         with path.open("rb") as stream:
@@ -280,12 +282,14 @@ def _grib_inventory(paths):
     return _finish_inventory(records, shape, coordinates, "AROME")
 
 
-def _netcdf_inventory(paths):
+def _netcdf_inventory(paths, progress=None):
     import numpy as np
     from netCDF4 import Dataset, num2date
 
     records, shape, coordinates, levels, coordinate_metadata = [], None, None, {}, {}
-    for path in paths:
+    for index, path in enumerate(paths, 1):
+        if progress:
+            progress(f"Inspecting NetCDF file {index}/{len(paths)}: {path}")
         with Dataset(path) as dataset:
             if "time" not in dataset.variables or dataset["time"].dimensions != ("time",):
                 raise ValueError(f"{path.name}: expected time(time)")
@@ -652,6 +656,9 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
         key = (str(root), value["dataset_id"], config["file_name"])
         cache = context.setdefault("inventories", {})
         if key not in cache:
+            progress = context.get("progress")
+            if progress:
+                progress(f"Discovering inputs for {value['dataset_id']}")
             raw = SimulationConfig.from_mapping_with_model_preset(config)
             try:
                 paths = discover_input_files(raw)
@@ -666,12 +673,14 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
                 )
                 return value
             inventory = (
-                _grib_inventory(paths)
+                _grib_inventory(paths, progress=progress)
                 if config["atm_model"] == "AROME"
-                else _netcdf_inventory(paths)
+                else _netcdf_inventory(paths, progress=progress)
             )
             inventory["input_records"] = [file_record(r["path"]) for r in inventory["records"]]
             cache[key] = inventory
+            if progress:
+                progress(f"Inventory complete: {value['dataset_id']} ({len(paths)} files)")
         inventory = cache[key]
         value["input_files"] = [record["path"] for record in inventory["records"]]
         value["input_records"].extend(copy.deepcopy(inventory["input_records"]))
