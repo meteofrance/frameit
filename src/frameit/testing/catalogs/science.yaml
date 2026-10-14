@@ -45,7 +45,6 @@ fragments:
     surface: {variables: [u10, v10, prmsl, sshf, slhf]}
   arome_full:
     heightAboveGround: {variables: [u, v, t, r, tke], indices: [0, 2, 5]}
-    level: {variables: [u, v], indices: [0, 5, 10]}
     isobaricInhPa: {variables: [u, v], values: [1000, 850, 400]}
     surface: {variables: [u10, v10, prmsl, sshf, slhf]}
   mnh:
