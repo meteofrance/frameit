@@ -1,107 +1,29 @@
-# -----------------------------------------------------------------
-# ##### FRAMEIT Configuration File #####
-# ---------------------------------------
-# FrameIt example configuration file — replace all placeholder values before running.
-# This file controls the simulation details, tracking method, subdomain extraction, variable selection, and output paths.
-# For a full description of all parameters, refer to the documentation.
-
-simulation_name: "SIMU_NAME"
-
-# File name has to be written as  : file_name_prefix+file_name+’???’+file_name_suffix+file_type 
-# where the "???" stands for a number that represents the time step with the form 001... 999.
-file_name_prefix: ""
-file_name: ""
-file_name_suffix: ""
-file_type: ""                 # grib of nc (netcdf)
-
-# Simulation details
-# ------------------
-atm_model: "YOUR_ATM_MODEL"   # AROME or MNH
-ocean_model: "YOUR_OCE_MODEL" # Not mandatory
-wave_model: "YOUR_WAV_MODEL"  # Not mandatory
-resolution: XXXX              # in meter
-comment: "ANY COMMENT"
-
-# Debug flag
-# ----------
-DEBUG: true
-
-# Tracking option
-# ---------------
-tracking_method: "CHOOSE_A_METHOD" # wind_pressure, fixed_box, prescribed_track, utrack
-# Prescribed track 
-prescribed_track_file: "PATH/TO/NC/FILE"  # Only if tracking_method: " prescribed_track"
-
-# Utrack parameter (only if tracking_method: "utrack", check documentation)
-utrack_weights_file: "/path/to/model_latest.ckpt"
-utrack_use_gpu: false
-utrack_batch_size: 16
-
-# Subdomain definition
-# --------------------
-fix_subdomain_center: [0,0]   # Only if tracking_method: "fixed_box"
-# Box subdomain size (km) :  
-x_boxsize_km: XXX
-y_boxsize_km: XXX
-
-# Variables selection 
-# -------------------
-requested_variables_user: 
-  heightAboveGround:                    # level type
-    variables: ["var0","var1","var3"]
-    level_selection: "indices"          # "values" "indices"; "all"
-    level_values: []                    # if level_selection = "values" 
-    level_indices: [0,1,2,3,4,5]        # if level_selection = "indices"
-    
-  level:                                # level type
-    variables: ["var4","var5","var6"]
-    level_selection: "indices"          # "values" "indices"; "all"
-    level_values: []                    # if level_selection = "values" 
-    level_indices: [0,1,2,3,4,5]        # if level_selection = "indices"
-
-  isobaricInhPa:                        # level type
-    variables: ["var7","var8","var9"]
-    level_selection: "values"           # ou "values" "indices"; "all"
-    level_values: [1000,850,400]        # if level_selection = "values" 
-    level_indices: []                   # if level_selection = "indices"
-        
-  surface:                                          # level type
-    variables: ["surfvar0","surfvar1","surfvar2","surfvar3","surfvar4"]
-
-# Path for inputs and outputs
-simulation_output_dir: "PATH/TO/SIMULATION/FILES"
-frameit_output_dir: "PATH/FOR/FRAMEIT/OUTPUTS"
-
-# Polar projection parameter
-# --------------------------
-compute_polar_proj: true
-# Resolution
-radial_resolution: XXXX        # in meters
-# Output rr is in km; theta is in radians, theta_deg in degrees, with no duplicate endpoint.
-azimuthal_resolution: null     # automatic outer-ring spacing; or a step in degrees
-polar_n_theta: null            # alternatively specify an integer angular count
-polar_max_points: 2000000      # geometry points across all times
-polar_missing_data_policy: strict
-polar_min_valid_weight_fraction: 0.5  # only for renormalized interpolation
-polar_weight_zero_tolerance: 1.0e-14
-polar_source_halo_points: 1    # input support; Cartesian output extent is preserved
-polar_ellipsoid: WGS84
-polar_regrid_cache_size: 8
-polar_regrid_cache_max_bytes: 134217728
-polar_output_chunks: {}        # optional output chunk sizes; -1 means whole axis
-polar_profile: false           # optional graph-size and process-memory observations
-
-# Variables (all level are selected in the projection)
-polar_variables:
-  heightAboveGround:
-    variables: ["var0","var3"]
-  level:
-    variables: ["var4","var5"]
-  isobaricInhPa:
-    variables: ["var9"]
+# FrameIt schema v2. Adapt example paths and native variables to your dataset.
+# Paths are relative to this YAML file. Grid spacing is inferred automatically.
+schema_version: 2
+model: arome
+run:
+  name: BATSIRAI
+  description: AROME Batsirai analysis
+input:
+  directory: ./data/AROME/BATSIRAI
+  pattern: "arome_BATSIRAI_20220201+???0P.grib"
+tracking:
+  method: wind_pressure
+domain:
+  # Full widths in kilometres; omit size_km for the full domain.
+  size_km: {x: 500, y: 500}
+variables:
   surface:
-    variables: ["surfvar0","surfvar1"]
-
-field_orientation: "geodesic"
-# Use to add other parameters online from the simulation (left empty)
-simulation_parameter: {}
+    names: [u10, v10, prmsl]
+  # Native pressure-level values are hPa, not calculation units (Pa).
+  # isobaricInhPa:
+  #   names: [u, v]
+  #   levels: {values: [850, 700]}
+polar:
+  enabled: false
+  variables: all
+  # radial_step_m: 2500  # Metres; omitted means inferred native spacing.
+  # azimuth_count: 64   # Alternatively azimuth_step_deg; never both.
+output:
+  directory: ./output/BATSIRAI

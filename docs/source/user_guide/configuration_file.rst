@@ -1,336 +1,205 @@
-Configuration file (YAML)
-=========================
+Configuration file (YAML schema version 2)
+============================================
 
-FrameIt is configured through a YAML file that defines
+Create a model-specific, annotated configuration:
 
-i. the simulation metadata and input file naming convention,
-ii. tracking and subdomain options, 
-iii. the list of requested variables and their vertical selections, 
-iv. output paths 
-v. polar projection settings.
+.. code-block:: bash
 
-The configuration is typically passed to the main entry point (e.g., ``scripts/main.py``) and read by the simulation class.
+   frameit init arome
+   frameit init mesonh --output chido.yaml
+   frameit init arome --tracking prescribed_track
+   frameit init arome --full --output full.yaml
 
-General syntax
---------------
-
-- The file must be valid YAML (indentation is significant).
-- Lists use ``[a, b, c]`` or dash items.
-- Strings should be quoted when they contain special characters (e.g., ``+``).
-
-Simulation identification and input files
------------------------------------------
-
-``simulation_name``
-   Human-readable name of the case (used for logging and outputs).
-
-``atm_model``, ``ocean_model``, ``wave_model``
-   Identifiers of the model components. Use the string ``"None"`` if the component is not used except for ``atm_model`` which is mandatory.
-
-``resolution``
-   Horizontal grid spacing (in meters) of the atmospheric model output, used by FrameIt for diagnostics and gridding assumptions.
-
-``comment``
-   Free text field, intended for bookkeeping.
-
-File naming convention
-~~~~~~~~~~~~~~~~~~~~~~
-FrameIt expects input files to follow a strict naming pattern with a 3-digit timestep
-counter (``NNN``, e.g., ``001``, ``002``, ..., ``999``) inserted in the filename:
-
-.. code-block:: text
-
-   <file_name_prefix><file_name><NNN><file_name_suffix>.<file_type>
-
-.. note::
-   ``NNN`` is not a configuration parameter — it represents the 3-digit timestep counter
-   that FrameIt automatically matches using a wildcard. You only need to configure the
-   four parameters below so that the pattern correctly describes your files.
-
-Breaking down the example ``arome_BATSIRAI_20220201+0010P.grib``:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 30 45
-
-   * - Parameter
-     - Value
-     - Note
-   * - ``file_name_prefix``
-     - *(empty)*
-     - Optional, can be left empty
-   * - ``file_name``
-     - ``arome_BATSIRAI_20220201+``
-     - Core name; quote strings containing special characters such as ``+``
-   * - ``file_name_suffix``
-     - ``0P.``
-     - Optional, placed after the timestep counter and before the extension
-   * - ``file_type``
-     - ``grib``
-     - File extension without leading dot (e.g., ``grib``, ``nc``)
-
-The full sequence of files would then look like:
-
-.. code-block:: text
-
-   arome_BATSIRAI_20220201+0010P.grib
-   arome_BATSIRAI_20220201+0020P.grib
-   arome_BATSIRAI_20220201+0030P.grib
-   ...
-
-
-Debug flag
-----------
-
-``DEBUG``
-   Boolean flag controlling verbosity and extra checks.
-
+Short templates show essential settings. ``--full`` renders all supported keys
+and defaults from the same schema used by validation. ``--force`` is required to
+replace an existing file. Initialization does not open datasets or load AI weights.
 
 Minimal example
 ---------------
 
-.. code-block:: yaml
+.. literalinclude:: ../../../example/config_file/conf_example.yml
+   :language: yaml
 
-   simulation_name: "BASTSIRAI"
-   file_name_prefix: ""
-   file_name: "arome_BATSIRAI_20220201+"
-   file_name_suffix: "0P."
-   file_type: "grib"
-   atm_model: "AROME"
-   ocean_model: "None"
-   wave_model: "None"
-   resolution: 2500
-   comment: "TEST_GRIB - OPER-E"
-   DEBUG: true
+Paths are relative to the YAML file, including explicit input inventories and
+tracker auxiliary files. Model names are ``arome`` and ``mesonh``. Unknown keys,
+duplicate keys, invalid types, and conflicting selections are rejected.
 
-Tracking options
-----------------
-
-FrameIt supports multiple tracking approaches. The selected method is specified by:
-
-``tracking_method``
-   One of:
-
-   - ``"fixed_box"``: use a fixed analysis box, centered on a given location define by ``fix_subdomain_center`` (see :doc:`/tracker/fixed_box`).
-   - ``"prescribed_track"``: use an external track file created beforehand by the user (see :doc:`/tracker/prescribed_track`).
-   - ``"wind_pressure"``: track based on wind and pressure extrema (see :doc:`/tracker/pressure_wind_tracker`).
-   - ``"pressure_centroid"``: adaptive, storm-motion-relative 2-km pressure centroid (see :doc:`/tracker/pressure_centroid`).
-   - ``"u-track"``: AI based tracker (see :doc:`/tracker/utrack`).
-
-Prescribed track case
-~~~~~~~~~~~~~~~~~~~~~
-
-If ``tracking_method`` is set to ``"prescribed_track"``, you need to provide:
-
-``prescribed_track_file``
-   Absolute path to a NetCDF file containing the prescribed cyclone trajectory.
-
-.. code-block:: yaml
-
-   tracking_method: "prescribed_track"
-   prescribed_track_file: "/path/to/track_file.nc"
-
-More detail in the dedicated part : 
-
-Fixed subdomain case
-~~~~~~~~~~~~~~~~~~~~
-
-FrameIt can restrict computations to a moving or fixed subdomain (analysis box). \
-For a fixed-center box, specify:
-
-``fix_subdomain_center``
-   Center of the subdomain as ``[lat, lon]`` (in degrees).
-
-All cases
-~~~~~~~~~
-
-Whatever the track method you choose, you need to specify the horizontal dimension of the box you want to extract by filling 
-
-``x_boxsize_km``, ``y_boxsize_km``
-   Sides box size along zonal and meridional directions (in kilometers).
-
-Example :
-.. code-block:: yaml
-
-   fix_subdomain_center: [-17.5, 60]
-   x_boxsize_km: 200.0
-   y_boxsize_km: 200.0
-
-Requested variables (user)
---------------------------
-
-This part deals with the variables requested by the user.
-The variables are  stored into a dictionnary by vertical coordinate as follow:
-
-- ``heightAboveGround``
-- ``level``
-- ``isobaricInhPa``
-- ``surface``
-
-Each group defines:
-
-- ``variables``: list of variable names to extract.
-- a vertical coodinate selection strategy when relevant.
-
-Vertical selection keys
-~~~~~~~~~~~~~~~~~~~~~~~
-
-``level_selection``
-   Controls which vertical levels are extracted. Supported values:
-
-   - ``"all"``: extract all available levels.
-   - ``"indices"``: extract levels by index positions.
-   - ``"values"``: extract levels by physical values (e.g., pressure in hPa).
-
-``level_indices``
-   List of indices (0-based). Use only when ``level_selection: "indices"``.
-
-``level_values``
-   List of physical values. Use only when ``level_selection: "values"``.
-
-Example: variables on height above ground (selected by indices)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: yaml
-
-   requested_variables_user:
-     heightAboveGround:
-       variables: ["u", "v", "t", "r", "tke"]
-       level_selection: "indices"
-       level_values: []
-       level_indices: [0, 2, 5]
-
-Example: isobaric variables (selected by pressure values)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: yaml
-
-   requested_variables_user:
-     isobaricInhPa:
-       variables: ["u", "v"]
-       level_selection: "values"
-       level_values: [1000, 850, 400]
-       level_indices: []
-
-Example: surface or horizontal 2D variables (no vertical selection)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: yaml
-
-   requested_variables_user:
-     surface:
-       variables: ["u10", "v10", "prmsl", "sshf", "slhf"]
-
-Output directories
+Identity and input
 ------------------
 
-``simulation_output_dir``
-   Path where the raw model files are located.
+``schema_version`` must be ``2``. ``run.name`` names the analysis and exported
+products; ``run.description`` is optional. ``metadata.extra`` holds user
+annotations, not algorithm options. Optional ocean/wave identifiers belong in
+``metadata.ocean_model`` / ``metadata.wave_model``.
 
-``frameit_output_dir``
-   Run root. FrameIt writes NetCDF outputs in ``products/``, logs in ``logs/``,
-   and GRIB index caches in ``cache/`` beneath this directory.
+``input.directory`` contains model files. Supply exactly one of:
 
-.. code-block:: yaml
+* ``input.pattern``: a standard relative glob, or an exact filename;
+* ``input.files``: explicit file paths, retaining their declared order.
 
-   simulation_output_dir: "/path/to/simulation/files"
-   frameit_output_dir: "/path/to/FRAMEIT/outputs"
+``*`` matches text and ``?`` matches a single character; no timestep width is
+imposed. ``input.exclude`` lists glob exclusions. For MesoNH, exclude the exact
+000 timeseries filename where applicable rather than every filename containing
+``000``. Explicit inventories also apply explicit exclusions. Missing inventory
+entries fail rather than disappear. Discovery ordering is deterministic.
 
-Polar projection diagnostics (optional)
----------------------------------------
+Format is detected from file content. Optional ``input.format`` is ``grib`` or
+``netcdf``; mixed inputs and conflicting declarations fail. NetCDF defaults are
+``input.netcdf.engine: h5netcdf`` and ``input.netcdf.chunks: {}`` (backend-preferred
+lazy chunks). ``input.duplicate_time_policy`` is ``first`` or ``last``, default
+``first``. GRIB retains its existing backend time ordering.
 
-FrameIt can project the selected variable in a polar coordinate system around the cyclone center. \ Enable this feature with:
+Native grid geometry
+--------------------
 
-``compute_polar_proj``
-   Boolean switch to activate polar projection computations.
+Grid spacing is inferred before tracker construction. Explicit length units on
+native projected coordinates take precedence; otherwise WGS84 geodesic distances
+are sampled across both geographic axes. The report retains separate X/Y median
+spacings, variability, sources, and the scalar effective spacing.
 
-``radial_resolution``
-   Radial sampling step (in meters) used in the polar grid.
+Current scalar-spacing algorithms reject X/Y differences greater than 10% and
+within-axis spacing variation greater than 20%; these are implementation support
+limits, not claims about arbitrary curvilinear-grid accuracy. All selected inputs
+must have compatible geographic grids. Automatic inference can differ from the
+old nominal spacing and consequently change search windows and sampling.
 
-``azimuthal_resolution``
-   Maximum angular step in degrees, at most 120. The effective count is
-   ``ceil(360 / azimuthal_resolution)`` and spacing is exactly ``360/count``.
-   Omit it for an explicit count or automatic outer-ring spacing.
+Advanced ``input.grid_spacing_m`` supplies a nominal scalar override in metres.
+It does not bypass incompatible/anisotropic/nonuniform geometry checks. The
+effective value and its source are retained in run provenance.
 
-``polar_n_theta``
-   Optional integer angular count of at least 3. Conflicting count and step
-   requests are rejected. With neither set, the count is
-   ``max(3, ceil(2*pi*rmax_km/dr_km))``; there is no implicit 10-degree default.
+Tracking and extraction
+-----------------------
 
-``polar_max_points``
-   Maximum target geometry points across all times (default 2,000,000), checked
-   before allocation. Larger grids require an explicit increase.
-
-``polar_missing_data_policy``
-   ``strict`` (default) requires every contributing source value to be finite.
-   ``renormalize`` enables interpolation over valid weights with the support
-   threshold below; it does not extrapolate or reconstruct missing sectors.
-
-``polar_min_valid_weight_fraction``
-   Minimum support fraction for renormalized values, in [0, 1], default 0.5.
-   All-missing stencils remain invalid even with a zero threshold.
-
-``polar_weight_zero_tolerance``
-   Absolute numerical zero coefficient tolerance, default 1.0e-14, in
-   [0, 1.0e-6). Removed coefficients do not contribute to weighting or validity.
-
-``polar_source_halo_points``
-   Native points added to each actual extraction half-width for polar input,
-   default 1, at least 1. This does not enlarge Cartesian output products.
-
-``polar_ellipsoid``
-   Ellipsoid identifier accepted by pyproj Geod, default ``WGS84``. It defines
-   target geodesics; ESMF interpolation geometry is spherical longitude/latitude.
-
-``polar_regrid_cache_size`` / ``polar_regrid_cache_max_bytes``
-   In-memory plan LRU limits: default eight entries and 134217728 estimated
-   geometry/weight-array bytes. Zero disables retention. The key includes real
-   geometry/options, not just shape; dynamic masks are applied separately.
-
-``polar_output_chunks``
-   Optional dimension-to-size mapping for lazy output arrays, for example
-   ``{rr: 32, theta: -1, time: 1, level: 4}``. Sizes are positive or -1 for a
-   whole axis. Without overrides, backend blocks contain at most 32 whole rings.
-
-``polar_profile``
-   Optional graph-size and process RSS high-water observations, default false.
-   Plan counts and construction/application timings are always reported.
-
-``polar_variables``
-   List of variables to project on the polar grid.
+``tracking.method`` defaults to ``wind_pressure``. Supported alternatives are
+``fixed_box``, ``prescribed_track``, ``pressure_centroid`` (AROME only), and
+``utrack``. Method-specific controls belong under the matching section:
 
 .. code-block:: yaml
 
-   compute_polar_proj: true
-   radial_resolution: 2500
-   polar_n_theta: 64
-   polar_max_points: 2000000
-   polar_missing_data_policy: strict
-   polar_source_halo_points: 1
-   polar_variables:
-      heightAboveGround:
-         variables: [u, v, t]
-      surface:
-         variables: [u10, v10, prmsl]
+   tracking:
+     method: fixed_box
+     fixed_box:
+       center: {latitude: -18.0, longitude: 58.0}
 
-Analytical outputs contain one uniform cycle without a duplicate angular
-endpoint. See :doc:`/polar_projection/xESMF_proj` for plotting closure,
-azimuthal means, Fourier conventions and sampling diagnostics.
+Geographic centres use degrees north/east. Wind-pressure controls
+``search_half_width_km`` and ``refine_half_width_km`` default to 100 and 50 km:
+they describe square half-widths, not circular radii.
 
-Additional simulation parameters (optional)
--------------------------------------------
+``tracking.prescribed_track.file`` is required for prescribed tracking. Optional
+``time_name``, ``latitude_name``, and ``longitude_name`` default to ``time``,
+``latitude``, and ``longitude``. Matching is exact timestamp intersection;
+nearest/interpolated matching is not introduced by this schema.
 
-``simulation_parameter``
-   Free-form mapping to pass extra parameters not explicitly represented by the schema. Keep empty if not used.
+``tracking.utrack.weights_file`` is required for UTrack; ``use_gpu`` defaults to
+false and ``batch_size`` to 16. The pressure-centroid convergence, motion, and
+sampling controls are nested under ``tracking.pressure_centroid``; see
+:doc:`/tracker/pressure_centroid` and ``frameit init arome --tracking pressure_centroid --full``.
+
+``domain.size_km: {x: 500, y: 500}`` gives full box widths in kilometres. Omit
+``size_km`` for full-domain extraction. ``domain.edge_policy: pad_nan`` retains
+centred geometry and pads outside the source domain; other policies are not
+currently supported.
+
+Variables and vertical levels
+-----------------------------
+
+Native group/variable names are preserved:
 
 .. code-block:: yaml
 
-   simulation_parameter: {}
+   variables:
+     surface:
+       names: [u10, v10, prmsl]
+     isobaricInhPa:
+       names: [u, v]
+       levels: {values: [850, 700]}
 
-Common pitfalls
----------------
+``levels`` is ``all`` (also the omission default), ``{indices: [...]}``, or
+``{values: [...]}``. Select exactly one strategy. Indices are zero-based,
+nonnegative integers. Values and matching tolerances use the native vertical
+coordinate units, displayed by inspection. For a verified ``isobaricInhPa``
+coordinate, 850 means hPa even though pressure calculations normalize to Pa.
+Native selection precedes computational normalization. Contradictory pressure
+group/unit metadata is rejected.
 
-- **Case sensitivity**: variable group names and variable names may be case-sensitive depending on the backend reader.
-- **Indentation**: YAML indentation must be consistent (spaces only).
-- **Empty lists**: keep ``[]`` for unused keys to avoid ambiguity.
-- **Paths**: prefer absolute paths for ``prescribed_track_file`` and output directories in HPC environments.
+Polar computation
+-----------------
+
+``polar.enabled`` defaults to false; enabling requires a finite extraction box
+and selected polar variables. ``polar.variables: all`` means every variable
+selected for extraction, not every variable in source files. Alternatively use
+a native group mapping with ``names`` lists that are subsets of extraction
+requests. Polar processing inherits extracted levels.
+
+``polar.radial_step_m`` is metres and defaults to resolved native spacing.
+``polar.azimuth_step_deg`` is degrees; alternatively use integer
+``polar.azimuth_count``. The two are mutually exclusive; omit both for automatic
+outer-ring spacing. Analytical angles are endpoint-exclusive.
+
+Other controls include ``interpolation_method`` (``bilinear`` or ``nearest_s2d``),
+``missing_data_policy`` (``strict`` or ``renormalize``), weight-support thresholds,
+source halo, ellipsoid, geometry point budget, plan-cache limits, ``chunks``, and
+``profile``. ``--full`` exposes their authoritative defaults. Input chunks and
+polar computation chunks are separate; NetCDF storage chunks remain backend-selected.
+
+Units and scientific contracts
+------------------------------
+
+Unit-bearing keys accept numbers in the named units, not strings such as
+``"2.5 km"``. Conversions change values and metadata together. Scientific wind
+inputs normalize to ``m s-1``, calculation angles to radians, and pressure to Pa.
+Geopotential (``m2 s-2``) is distinct from height in metres. Polar output ``rr`` /
+``rr_km`` remain kilometres, ``theta`` radians, and ``theta_deg`` degrees.
+Cartesian distance offsets explicitly carry kilometre units; grid indices are
+dimensionless.
+
+Missing geographic/wind units follow documented AROME/MesoNH adapter contracts
+and are recorded. Unsupported or incompatible declarations fail. Geographic
+coordinates are normalized before tracking as well as polar projection.
+``input.wind_reference_frame`` defaults to earth-relative; explicit source
+metadata has precedence. Grid-relative winds require a valid rotation coordinate.
+Pass-through scalar fields preserve their source units; computationally prepared
+winds and derived products carry normalized units.
+
+Output, logging, and precedence
+----------------------------------
+
+``output.directory`` sets the run root. ``output.export.netcdf``, ``.cartesian``,
+and ``.polar`` default to true; writing still requires an available product.
+Polar computation is independent of polar export. Compression defaults to level
+1 with coordinate compression disabled. Other supported controls are ``engine``,
+``format``, ``unlimited_time``, ``overwrite``, ``max_workers``, and ``institution``.
+
+``logging.level`` defaults to ``INFO``. Explicit CLI overrides take precedence
+over YAML, which takes precedence over defaults. Omitted CLI flags do not reset
+YAML values. Products go under ``products/``, indexes under ``cache/``, and logs
+under the run root's logging layout. Each run saves a reloadable
+``resolved-config.yaml`` and ``run-provenance.yaml`` containing geometry, inputs,
+unit conversions/assumptions, and effective execution options.
+
+Inspection, validation, and migration
+----------------------------------------
+
+.. code-block:: bash
+
+   frameit validate                     # Defaults to frameit.yaml
+   frameit validate chido.yaml --schema-only
+   frameit inspect ./data --model mesonh
+   frameit config show --resolved
+   frameit run --dry-run
+   frameit run
+   frameit config migrate old.yml --output frameit.yaml --launch-directory /original/workdir
+
+Dataset preflight checks files, required variables/levels, units, geometry,
+geometry-dependent defaults, and output accessibility without computing scientific
+fields. Dry runs do not write products. Schema-only validation does not open data.
+
+Legacy flat YAML is rejected by ordinary loading with a migration instruction.
+Migration reconstructs exact filename globs/exclusions, preserves physical values
+and selections, resolves old paths against the original launch directory, and
+reports removed ineffective fields. It retains the old nominal resolution as an
+advanced override; remove that key deliberately to enable fully inferred spacing.
+Source-unit validation still requires dataset preflight.
+
+The internal Python ``SimulationConfig`` numerical interface retains flat field
+names for existing integrations; those names are not accepted as schema-v2 YAML.

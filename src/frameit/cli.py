@@ -75,7 +75,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # run
     pr = sub.add_parser("run", help="Run FrameIt from a YAML configuration file.")
-    pr.add_argument("config", type=Path, help="Path to the YAML configuration file")
+    pr.add_argument(
+        "config", nargs="?", default=Path("frameit.yaml"), type=Path,
+        help="YAML file (default: frameit.yaml)",
+    )
+    pr.add_argument(
+        "--dry-run", action="store_true",
+        help="Inspect inputs and preview the scientific plan without writing products",
+    )
     pr.add_argument(
         "--log-level",
         default=None,
@@ -93,39 +100,75 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-export-netcdf",
         dest="export_netcdf",
         action="store_false",
-        default=True,
+        default=None,
         help="Disable NetCDF export (enabled by default).",
     )
     pr.add_argument(
         "--no-export-polar",
         dest="export_polar",
         action="store_false",
-        default=True,
+        default=None,
         help="Disable polar export (enabled by default).",
     )
     pr.add_argument(
         "--no-export-cart",
         dest="export_cart",
         action="store_false",
-        default=True,
+        default=None,
         help="Disable cartesian export (enabled by default).",
     )
     pr.add_argument(
         "--compress-level",
         type=int,
-        default=1,
+        default=None,
         help="NetCDF compression level (0-9). Default: 1.",
     )
     pr.add_argument(
         "--institution",
         type=str,
-        default=_DEFAULT_INSTITUTION,
+        default=None,
         help="Institution string stored in exported files.",
     )
 
     # validate
     pv = sub.add_parser("validate", help="Load and validate the YAML configuration (lightweight).")
-    pv.add_argument("config", type=Path, help="Path to the YAML configuration file")
+    pv.add_argument(
+        "config", nargs="?", default=Path("frameit.yaml"), type=Path,
+        help="YAML file (default: frameit.yaml)",
+    )
+    pv.add_argument(
+        "--schema-only", action="store_true", help="Validate YAML without opening datasets"
+    )
+
+    pin = sub.add_parser("init", help="Create an annotated schema-v2 configuration")
+    pin.add_argument("model", choices=("arome", "mesonh"))
+    pin.add_argument("--output", type=Path, default=Path("frameit.yaml"))
+    pin.add_argument(
+        "--tracking", default="wind_pressure",
+        choices=("wind_pressure", "fixed_box", "prescribed_track", "pressure_centroid", "utrack"),
+    )
+    pin.add_argument("--full", action="store_true")
+    pin.add_argument("--force", action="store_true")
+
+    pc = sub.add_parser("config", help="Migrate or display configuration")
+    pcs = pc.add_subparsers(dest="config_command", required=True)
+    pcm = pcs.add_parser("migrate", help="Explicitly translate legacy flat YAML")
+    pcm.add_argument("config", type=Path)
+    pcm.add_argument("--output", type=Path, default=Path("frameit.yaml"))
+    pcm.add_argument(
+        "--launch-directory", type=Path, default=None,
+        help="Original launch directory for legacy relative paths (default: current directory)",
+    )
+    pcm.add_argument("--force", action="store_true")
+    pcs_show = pcs.add_parser("show", help="Show effective settings")
+    pcs_show.add_argument("config", nargs="?", type=Path, default=Path("frameit.yaml"))
+    pcs_show.add_argument(
+        "--resolved", action="store_true", help="Inspect datasets and geometry-dependent defaults"
+    )
+
+    pins = sub.add_parser("inspect", help="Inspect dataset metadata, units, and grid geometry")
+    pins.add_argument("directory", type=Path)
+    pins.add_argument("--model", required=True, choices=("arome", "mesonh"))
 
     # info (fusion of version and doctor, verbose by default)
     pi = sub.add_parser(
@@ -204,18 +247,18 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _cmd_validate(cfg_path: Path) -> int:
+def _cmd_validate(cfg_path: Path, *, schema_only=False) -> int:
     from frameit.core.settings_class import SimulationConfig
 
     conf = SimulationConfig.from_yaml_with_model_preset(cfg_path)
 
-    out_dir = Path(conf.frameit_output_dir)
-    if not out_dir.exists():
-        print(f"WARNING: output directory does not exist: {out_dir}")
-    elif not os.access(out_dir, os.W_OK):
-        print(f"WARNING: no write permission on output directory: {out_dir}")
+    if not schema_only:
+        from frameit.core.preflight import preflight
 
-    print("OK: configuration loaded successfully")
+        plan = preflight(conf)
+        print(f"OK: {len(plan['inputs'])} input file(s); grid spacing {conf.resolution:.3f} m")
+    else:
+        print("OK: schema validated")
     return 0
 
 
@@ -272,18 +315,69 @@ def _cmd_run(args: argparse.Namespace) -> int:
     from frameit.core.settings_class import SimulationConfig
 
     conf = SimulationConfig.from_yaml_with_model_preset(args.config)
+    options = ExecutionOptions.from_config(
+        conf, export_netcdf=args.export_netcdf, export_polar=args.export_polar,
+        export_cart=args.export_cart, compress_level=args.compress_level,
+        institution=args.institution, log_level=args.log_level,
+        no_hdf5_debug_pop=args.no_hdf5_debug_pop,
+    )
+    if args.dry_run:
+        from frameit.core.preflight import preflight
+
+        _print_yaml(preflight(conf, execution_options=options))
+        return 0
     execute_simulation(
         conf,
-        ExecutionOptions(
-            export_netcdf=args.export_netcdf,
-            export_polar=args.export_polar,
-            export_cart=args.export_cart,
-            compress_level=args.compress_level,
-            institution=args.institution,
-            log_level=args.log_level,
-            no_hdf5_debug_pop=args.no_hdf5_debug_pop,
-        ),
+        options,
     )
+    return 0
+
+
+def _print_yaml(value):
+    import yaml
+
+    print(yaml.safe_dump(value, sort_keys=False, allow_unicode=True))
+
+
+def _cmd_config(args):
+    from frameit.core.configuration import migrate_mapping, read_yaml
+
+    if args.config_command == "migrate":
+        if args.output.exists() and not args.force:
+            raise FileExistsError(f"Configuration exists: {args.output}; use --force")
+        config, reports = migrate_mapping(read_yaml(args.config), launch_dir=args.launch_directory)
+        import yaml
+
+        args.output.write_text(
+            yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8"
+        )
+        print(f"Migrated configuration: {args.output}")
+        for report in reports:
+            print(report)
+    else:
+        from frameit.core.settings_class import SimulationConfig
+
+        conf = SimulationConfig.from_yaml(args.config)
+        if args.resolved:
+            from frameit.core.preflight import preflight
+
+            _print_yaml(preflight(conf))
+        else:
+            _print_yaml(conf.yaml_config)
+    return 0
+
+
+def _cmd_inspect(args):
+    from frameit.core.preflight import preflight
+    from frameit.core.settings_class import SimulationConfig
+
+    conf = SimulationConfig.from_mapping_with_model_preset({
+        "schema_version": 2, "model": args.model,
+        "input": {"directory": str(args.directory.resolve()), "pattern": "*"},
+        "tracking": {"method": "fixed_box", "fixed_box": {
+            "center": {"latitude": 0., "longitude": 0.}}},
+    })
+    _print_yaml(preflight(conf, check_output=False))
     return 0
 
 
@@ -356,7 +450,22 @@ def main(argv: list[str] | None = None) -> None:
         if args.command == "run":
             code = _cmd_run(args)
         elif args.command == "validate":
-            code = _cmd_validate(args.config)
+            code = _cmd_validate(args.config, schema_only=args.schema_only)
+        elif args.command == "init":
+            from frameit.core.configuration import write_template
+
+            path = write_template(
+                args.model, args.output, full=args.full, tracking=args.tracking, force=args.force
+            )
+            print(
+                f"Created {path}. Edit the examples, then run 'frameit validate {path}' "
+                f"and 'frameit run {path}'."
+            )
+            code = 0
+        elif args.command == "config":
+            code = _cmd_config(args)
+        elif args.command == "inspect":
+            code = _cmd_inspect(args)
         elif args.command == "info":
             code = _cmd_info(short=bool(args.short))
         elif args.command == "prepare-ci-dataset":
@@ -377,7 +486,7 @@ def main(argv: list[str] | None = None) -> None:
             code = 2
     except KeyboardInterrupt:
         code = 130
-    except (ValueError, FileNotFoundError) as exc:
+    except (ValueError, FileNotFoundError, FileExistsError) as exc:
         logging.getLogger("frameit").error("%s", exc)
         code = 2 if args.command in (
             "prepare-ci-dataset", "run-matrix-test", "run-all-tests"

@@ -1,45 +1,30 @@
-# Full-domain AROME Batsirai example; edit the input/output directories.
-# The input must cover the entire 500-km environmental pressure ring.
-simulation_name: BATSIRAI_PRESSURE_CENTROID
-file_name_prefix: ""
-file_name: "arome_BATSIRAI_20220201+"
-file_name_suffix: "0P."
-file_type: grib
-atm_model: AROME
-ocean_model: "None"
-wave_model: "None"
-resolution: 2500
-comment: "Adaptive Nguyen pressure centroid, comparison script v1.4.1"
-simulation_output_dir: /path/to/AROME/BATSIRAI
-frameit_output_dir: /path/to/output/BATSIRAI_PRESSURE_CENTROID
-
-tracking_method: pressure_centroid
-pressure_centroid_max_iterations: 15
-pressure_centroid_tolerance_m: 250.0
-pressure_centroid_max_motion_iterations: 50
-pressure_centroid_motion_solver: aitken
-pressure_centroid_motion_relaxation: 0.25
-pressure_centroid_motion_tolerance_m: 250.0
-pressure_centroid_r80_max_km: 250.0
-pressure_centroid_dr_km: 2.5
-pressure_centroid_dtheta: 5.0
-
-x_boxsize_km: 500.0
-y_boxsize_km: 500.0
-requested_variables_user:
+# Full-domain AROME example: inputs must cover the 500-km reference ring.
+# Adapt paths; these relative paths are resolved from this YAML file.
+schema_version: 2
+model: arome
+run:
+  name: BATSIRAI_PRESSURE_CENTROID
+  description: Adaptive Nguyen pressure centroid, comparison script v1.4.1
+input:
+  directory: ./data/AROME/BATSIRAI
+  pattern: "arome_BATSIRAI_20220201+???0P.grib"
+tracking:
+  method: pressure_centroid
+  pressure_centroid:
+    convergence: {max_iterations: 15, tolerance_m: 250}
+    motion: {max_iterations: 50, solver: aitken, relaxation: 0.25, tolerance_m: 250}
+    sampling: {r80_max_distance_km: 250, radial_step_km: 2.5, azimuth_step_deg: 5}
+domain:
+  size_km: {x: 500, y: 500}
+variables:
   surface:
-    variables: [u10, v10, prmsl]
+    names: [u10, v10, prmsl]
   isobaricInhPa:
-    variables: [u, v]
-    level_selection: values
-    level_values: [850, 700]
-
-compute_polar_proj: true
-radial_resolution: 2500
-azimuthal_resolution: 10
-field_orientation: geodesic
-polar_variables:
-  surface:
-    variables: [u10, v10, prmsl]
-  isobaricInhPa:
-    variables: [u, v]
+    names: [u, v]
+    levels: {values: [850, 700]}
+polar:
+  enabled: true
+  variables: all
+  azimuth_step_deg: 10
+output:
+  directory: ./output/BATSIRAI_PRESSURE_CENTROID

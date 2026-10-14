@@ -9,7 +9,7 @@ import json
 import logging
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -118,6 +118,7 @@ class ExportMetadata:
     source: str
     conventions: str = "CF-1.8"
     frameit_version: str = frameit_version
+    user_metadata: dict[str, Any] = field(default_factory=dict)
 
     def base_attrs(self) -> dict[str, Any]:
         """
@@ -137,6 +138,8 @@ class ExportMetadata:
             "simulation_id": self.simulation_id,
             "frameit_version": self.frameit_version,
         }
+        if self.user_metadata:
+            attrs["frameit_user_metadata"] = self.user_metadata
         return attrs
 
 
@@ -193,6 +196,7 @@ def build_metadata_from_conf(
         institution=institution,
         source=source,
         frameit_version=frameit_version,
+        user_metadata=getattr(conf, "yaml_config", {}).get("metadata", {}).get("extra", {}),
     )
 
     logger.debug(

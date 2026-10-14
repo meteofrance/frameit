@@ -403,6 +403,10 @@ def _build_box_indexers(track_box: xr.Dataset, nx: int, ny: int, resolution_m: f
     res_km = resolution_m / 1000.0
     x_box_km = x_box * res_km
     y_box_km = y_box * res_km
+    x_box.attrs.update(units="1", long_name="x grid-point offset from extraction centre")
+    y_box.attrs.update(units="1", long_name="y grid-point offset from extraction centre")
+    x_box_km.attrs.update(units="km", long_name="x distance offset from extraction centre")
+    y_box_km.attrs.update(units="km", long_name="y distance offset from extraction centre")
 
     # Wrap as NumPy-backed DataArrays (no Dask in indexers)
     x_idx_da = xr.DataArray(
@@ -629,6 +633,13 @@ def _extract_box_for_dataset(
                     ds_out = ds_out.isel(y_box=slice(None, None, -1))
                     # 2) flip the sign of y_box to keep [-ny_half..+ny_half]
                     ds_out = ds_out.assign_coords(y_box=-ds_out["y_box"])
+                    ds_out = ds_out.assign_coords(y_box_km=-ds_out["y_box_km"])
+                    ds_out.y_box.attrs.update(
+                        units="1", long_name="y grid-point offset from extraction centre"
+                    )
+                    ds_out.y_box_km.attrs.update(
+                        units="km", long_name="y distance offset from extraction centre"
+                    )
         except Exception as exc:
             logger.warning(
                 "Failed to reorient y_box according to latitude: %s",

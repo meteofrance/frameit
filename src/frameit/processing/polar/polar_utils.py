@@ -10,26 +10,43 @@ import numpy as np
 import xarray as xr
 
 from frameit.processing.polar.sampling import angular_tolerance, uniform_periodic_angles
+from frameit.utils.units import convert_units
 
 
 def ensure_theta_rad_dim(ds: xr.Dataset, *, theta_deg: str = "theta_deg") -> xr.Dataset:
     """Normalize angle/radius metadata without changing the number of samples."""
     ds = ds.copy(deep=False)
     if theta_deg in ds.dims:
-        degrees = ds[theta_deg].values.astype(float)
+        degrees = convert_units(
+            ds[theta_deg], "angle", target="degree", assumed="degree"
+        ).values.astype(float)
+        if "theta" in ds.coords:
+            existing = convert_units(ds.theta, "angle", assumed="rad")
+            if not np.allclose(existing, np.deg2rad(degrees), rtol=1e-12, atol=1e-12):
+                raise ValueError("theta and theta_deg disagree physically")
         ds = ds.assign_coords(theta=(theta_deg, np.deg2rad(degrees)))
         ds = ds.swap_dims({theta_deg: "theta"})
         ds = ds.assign_coords(theta_deg=("theta", degrees))
     if "theta" in ds.coords:
-        units = ds.theta.attrs.get("units", "rad")
-        if units != "rad":
-            raise ValueError("theta must be in radians")
+        ds = ds.assign_coords(theta=convert_units(ds.theta, "angle", assumed="rad"))
         ds.theta.attrs.update(units="rad", long_name="launch azimuth clockwise from north")
     if "theta_deg" in ds.coords:
+        ds = ds.assign_coords(theta_deg=convert_units(
+            ds.theta_deg, "angle", target="degree", assumed="degree"))
+        if "theta" in ds.coords and not np.allclose(
+            ds.theta_deg, np.rad2deg(ds.theta), rtol=1e-12, atol=1e-10
+        ):
+            raise ValueError("theta and theta_deg disagree physically")
         ds.theta_deg.attrs.update(units="degree", long_name="launch azimuth clockwise from north")
     for radius in ("rr", "rr_km"):
         if radius in ds.coords:
+            ds = ds.assign_coords({radius: convert_units(
+                ds[radius], "distance", target="km", assumed="km")})
             ds[radius].attrs.update(units="km", long_name="radial distance from center")
+    if "rr" in ds.coords and "rr_km" in ds.coords and not np.allclose(
+        ds.rr, ds.rr_km, rtol=1e-12, atol=1e-12
+    ):
+        raise ValueError("rr and rr_km disagree physically")
     return ds
 
 

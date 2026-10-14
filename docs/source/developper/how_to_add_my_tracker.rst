@@ -14,7 +14,7 @@ All trackers inherit from the abstract base class ``TcTracker`` defined in
 ``src/frameit/tracking/tracker_core.py``. A tracker must:
 
 - be decorated with ``@register_tracker`` so the factory can discover it;
-- declare a ``name`` attribute that matches the value of ``tracking_method`` in the configuration;
+- declare a ``name`` attribute that matches YAML ``tracking.method`` (internal Python ``tracking_method``);
 - declare a ``logical_fields`` tuple listing the aliased physical fields it consumes;
 - implement ``from_config(cls, conf: SimulationConfig)`` to build itself from the global configuration;
 - implement ``_track_method(self, ds: xr.Dataset) -> xr.Dataset`` to perform the actual tracking.
@@ -37,7 +37,7 @@ Minimal skeleton::
 
     @register_tracker
     class MyTracker(TcTracker):
-        name = "my_tracker"                  # must match tracking_method in the config
+        name = "my_tracker"                  # must match YAML tracking.method
         logical_fields = ("u10m", "v10m")   # fields your method needs
 
         def __init__(self, var_aliases, **kwargs):

@@ -41,18 +41,15 @@ def _parse_and_normalize(yaml_req: dict | None, dims_seen: set[str]) -> dict[str
         dim = spec.get("dimension", None)
         if dim is None and group in dims_seen:
             dim = group
-        sel = str(spec.get("level_selection", "")).lower().strip()
-        all_levels = sel == "all"
-        if sel not in {"", "values", "indices", "all"}:
-            sel = "values" if spec.get("level_values") else "indices"
-        levels = list(spec.get("level_values", [])) if sel == "values" else []
-        idxs = list(spec.get("level_indices", [])) if sel == "indices" else []
+        from frameit.processing.requests import normalize_requests
+
+        normalized = normalize_requests({group: spec})[group]
         out[group] = {
             "dimension": dim,
             "variables": list(spec.get("variables", [])),
-            "all_levels": bool(all_levels),
-            "levels": levels,
-            "level_indices": idxs,
+            "all_levels": normalized["all_levels"],
+            "levels": normalized["levels"],
+            "level_indices": normalized["level_indices"],
         }
     return out
 
@@ -150,6 +147,7 @@ def concat_grib2ds_by_vert_coord(
     *,
     strict: bool = False,
     resources=None,
+    duplicate_time_policy="first",
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open a list of GRIB files and build per-group user and tracker Datasets.
@@ -324,16 +322,30 @@ def concat_grib2ds_by_vert_coord(
                     by_group_trk[m] = {}
                 by_group_trk[m]["surface"] = ds_geo
     else:
-        logger.warning(
-            "No user Dataset available to build coordinates for"
-            " 'fixed_box'/'prescribed_track' methods."
-            " No tracker block will be produced for these methods."
-        )
+        # Coordinate-only runs must not depend on an arbitrary user field.
+        geometry_parts = []
+        for dsets in opened_per_file.values():
+            reference = next((ds for ds in dsets if all(
+                name in ds.coords for name in ("latitude", "longitude", "valid_time")
+            )), None)
+            if reference is not None:
+                geometry_parts.append(xr.Dataset(coords={
+                    "time": np.atleast_1d(reference.valid_time.values),
+                    "latitude": reference.latitude.reset_coords(drop=True),
+                    "longitude": reference.longitude.reset_coords(drop=True),
+                }))
+        if geometry_parts:
+            ds_geo = xr.concat(geometry_parts, dim="time").sortby("time")
+            for m in methods:
+                if m in geo_methods:
+                    by_group_trk.setdefault(m, {})["surface"] = ds_geo
 
     # 6) Final deduplication
-    by_group_user = {g: drop_time_dupes(ds, keep="first") for g, ds in by_group_user.items()}
+    by_group_user = {
+        g: drop_time_dupes(ds, keep=duplicate_time_policy) for g, ds in by_group_user.items()
+    }
     by_group_trk = {
-        m: {g: drop_time_dupes(ds, keep="first") for g, ds in grp.items()}
+        m: {g: drop_time_dupes(ds, keep=duplicate_time_policy) for g, ds in grp.items()}
         for m, grp in by_group_trk.items()
     }
     return by_group_user, by_group_trk

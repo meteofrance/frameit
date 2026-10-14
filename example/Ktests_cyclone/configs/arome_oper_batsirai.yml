@@ -1,82 +1,28 @@
-# -----------------------------------------------------------------
-# ##### INIT YAML file to extract data from simulation #####
-# -----------------------------------------------------------------
-
-# Configuration yaml file for simulation class
-# -------------------------------------------------------
-
-# File name has to be written as  : file_name_prefix+file_name+’???’+file_name_suffix+file_type 
-# where the "???" stands for a number that represents the time step with the form 001... 999.
-
-simulation_name: "BATSIRAI"
-file_name_prefix: ""
-file_name: "arome_BATSIRAI_20220201+"
-file_name_suffix: "0P."
-file_type: "grib"
-atm_model: "AROME"
-ocean_model: "None"
-wave_model: "None"
-resolution: 2500
-comment: "TEST_GRIB - OPER-E"
-
-# Debug flag
-# --------------------------------------------
-
-DEBUG: false
-# Tracking option
-# ---------------
-tracking_method: "fixed_box" # wind_pressure, fixed_box, prescribed_track
-# Prescribed track 
-prescribed_track_file: "/home/souffletc/DIR_CYCLOPY/cyclopyv2/DRAFT/Tracking/test_prescribed_track_curved_batsirai.nc"
-
-# Subdomain definition
-# ------------------------------
-fix_subdomain_center: [-18,58]
-# Box subdomain size (km) :  
-x_boxsize_km: 500.0
-y_boxsize_km: 500.0
-
-requested_variables_user: 
+# Adapt paths and selections to the actual model files. Paths are YAML-relative.
+schema_version: 2
+model: arome
+run: {name: BATSIRAI, description: AROME Batsirai analysis}
+input:
+  directory: ./data/AROME/BATSIRAI
+  pattern: "arome_BATSIRAI_20220201+???0P.grib"
+tracking:
+  method: fixed_box
+  fixed_box:
+    center: {latitude: -18, longitude: 58}
+domain:
+  size_km: {x: 500, y: 500}  # Full widths in km
+variables:
   heightAboveGround:
-    variables: ["u","v","t","r","tke"]
-    level_selection: "indices"                # ou "values" "indices"; "all"
-    level_values: []                          # if level_selection = "values" 
-    level_indices: [0,2,5] 
-    
-  level:
-    variables: ["u","v"]
-    level_selection: "indices"                # ou "values" "indices"; "all"
-    level_values: []                          # if level_selection = "values" 
-    level_indices: [0, 5, 10]                 # if level_selection = "indices"
-
+    names: [u, v, t, r, tke]
+    levels: {indices: [0, 2, 5]}
   isobaricInhPa:
-    variables: ["u","v"]
-    level_selection: "values"                # ou "values" "indices"; "all"
-    level_values: [1000,850,400]             # if level_selection = "values" 
-    level_indices: []                        # if level_selection = "indices"
-                   # if level_selection = "indices"
+    names: [u, v]
+    levels: {values: [1000, 850, 400]}  # Native hPa
   surface:
-    variables: ["u10","v10","prmsl","sshf","slhf"]
-
-
-# Path for output
-simulation_output_dir: "/cnrm/mlac/NO_SAVE/souffletc/DONEE_TEST_CYCLOPY/AROME/BATSIRAI"
-frameit_output_dir: "/cnrm/mlac/NO_SAVE/souffletc/Ideal_CILIDA/SIMULATION/DATA_test_CYCLOPY/OUTPUT_CYCLOPY/BATSIRAI"
-
-# Polar projection parameter
-compute_polar_proj: true
-radial_resolution: 2500
-azimuthal_resolution: 10
-field_orientation: "geodesic"
-polar_variables:
-  heightAboveGround:
-    variables: ["u","v","t","r","tke"]
-  level:
-    variables: ["u","v"]
-  isobaricInhPa:
-    variables: ["u","v"]
-  surface:
-    variables: ["u10","v10","prmsl","sshf","slhf"]
-
-# Use to add other parameters online from the simulation (left empty)
-simulation_parameter: {}
+    names: [u10, v10, prmsl, sshf, slhf]
+polar:
+  enabled: true
+  variables: all
+  azimuth_step_deg: 10
+output:
+  directory: ./output/BATSIRAI

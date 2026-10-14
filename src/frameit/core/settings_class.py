@@ -24,8 +24,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
-
 from frameit.io.loader import load_config_with_model_presets, resolve_config_with_model_presets
 
 logger = logging.getLogger(__name__)
@@ -138,6 +136,23 @@ class SimulationConfig:
     # always live in output_dir/cache, including when the runner overrides it.
     grib_index_dir: str = "cache"
 
+    # Public nested YAML resolves into this internal numerical interface.
+    schema_version: int = 1
+    yaml_config: dict[str, Any] = field(default_factory=dict)
+    schema_sources: dict[str, str] = field(default_factory=dict)
+    infer_grid_geometry: bool = False
+    grid_geometry: dict[str, Any] = field(default_factory=dict)
+    input_pattern: str | None = None
+    input_files: list[str] | None = None
+    input_exclude: list[str] = field(default_factory=list)
+    duplicate_time_policy: str = "first"
+    netcdf_engine: str = "h5netcdf"
+    netcdf_chunks: dict[str, int] = field(default_factory=dict)
+    wind_pressure_search_half_width_km: float = 100.0
+    wind_pressure_refine_half_width_km: float = 50.0
+    polar_interpolation_method: str = "bilinear"
+    log_level: str | None = None
+
     # -----------------------
     # Properties
     # -----------------------
@@ -169,6 +184,8 @@ class SimulationConfig:
     def file_pattern(self) -> str:
         """File pattern as defined in the FrameIt documentation."""
         # file_name_prefix + file_name + '???' + file_name_suffix + file_type
+        if self.input_pattern is not None:
+            return self.input_pattern
         return f"{self.file_name_prefix}{self.file_name}???{self.file_name_suffix}{self.file_type}"
 
     # -----------------------
@@ -297,14 +314,19 @@ class SimulationConfig:
 
         if not isinstance(self.tracking_method, str):
             raise TypeError("tracking_method should be a string")
-        if not isinstance(self.resolution, int):
-            raise TypeError("resolution should be an integer (in metres)")
+        import math
+
+        if (isinstance(self.resolution, bool) or not isinstance(self.resolution, (int, float))
+                or not math.isfinite(self.resolution)):
+            raise TypeError("resolution must be a finite number (in metres)")
+        if self.resolution < 0:
+            raise ValueError("resolution must not be negative")
 
         self.file_name_prefix = self.file_name_prefix or ""
         self.file_name_suffix = self.file_name_suffix or ""
         self.file_type = self.file_type or ""
 
-        if self.compute_polar_proj:
+        if self.compute_polar_proj and not (self.infer_grid_geometry and not self.grid_geometry):
             if self.radial_resolution is not None and self.radial_resolution < 0:
                 raise ValueError(f"radial_resolution={self.radial_resolution} m must be positive.")
             if not self.radial_resolution:
@@ -346,14 +368,7 @@ class SimulationConfig:
         ValueError
             If the YAML content is not a key-value mapping.
         """
-        p = Path(path)
-        if not p.exists():
-            raise FileNotFoundError(f"YAML file not found: {p}")
-        with p.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        if not isinstance(data, dict):
-            raise ValueError("The YAML file must describe a key-value mapping")
-        return cls(**data)
+        return cls.from_yaml_with_model_preset(path)
 
     @classmethod
     def from_yaml_with_model_preset(
@@ -423,7 +438,7 @@ class SimulationConfig:
             True only when ``atm_model == "MNH"`` and the file name matches
             the "000" timeseries entry of the current file pattern.
         """
-        if self.atm_model != "MNH":
+        if self.schema_version == 2 or self.atm_model != "MNH":
             return False
 
         try:

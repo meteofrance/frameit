@@ -1,87 +1,28 @@
-# ----------------------------------------------------------------
-# INIT YAML file to extract data from simulation
-# ----------------------------------------------------------------
-
-# Configuration yaml file for simulation class
-# ------------------------------------------------------
-
-# File name has to be written as  : file_name_prefix+file_name+’???’+.file_name_suffix+file_type 
-# where the "???" stands for a number that represents the time step with the form 001... 999.
-
-simulation_name: "CHIDO_MNH"
-file_name_prefix: ""
-file_name: "3CH09.1.MXX30."
-file_name_suffix: "diag."
-file_type: "nc"
-atm_model: "MNH"
-ocean_model: "None"
-wave_model: "None"
-resolution: 3000
-comment: "Chido simulation MNH"
-
-# Debug flag
-# --------------------------------------------
-
-DEBUG: false
-
-# Tracking option
-# ---------------
-tracking_method: "wind_pressure" # wind_pressure, fixed_box, prescribed_track
-# Prescribed track 
-prescribed_track_file: "/home/souffletc/DIR_CYCLOPY/cyclopyv2/DRAFT/Tracking/test_prescribed_track_curved_chido.nc"
-
-# Subdomain definition
-#---------------------------
-
-fix_subdomain_center: [-10.3,55.0]
-
-# Box subdomain size (km) :  
-x_boxsize_km: 100.0
-y_boxsize_km: 100.0
-
-requested_variables_user: 
+# Adapt paths and native variables to the actual files. Paths are YAML-relative.
+schema_version: 2
+model: mesonh
+run: {name: CHIDO_MNH, description: Chido MesoNH simulation}
+input:
+  directory: ./data/MNH/CHIDO
+  pattern: "3CH09.1.MXX30.???diag.nc"
+  exclude: ["3CH09.1.MXX30.000diag.nc"]
+tracking:
+  method: wind_pressure
+domain:
+  size_km: {x: 100, y: 100}
+variables:
   level:
-    variables: ["UT","VT","THT","POVOT","test"]
-    level_selection: "indices"                # ou "values" "indices"; "all"
-    level_values: []                         # if level_selection = "values" 
-    level_indices: [0,1,2,3,4,5,6,7,8,9,10]  # if level_selection = "indices"
+    names: [UT, VT, THT, POVOT]
+    levels: {indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
   level_w:
-    variables: ["WT"]
-    level_selection: "indices"                # ou "values" "indices"; "all"
-    level_values: []                          # if level_selection = "values" 
-    level_indices: [0,1,2,3,4,5,6,7,8,9,10]   # if level_selection = "indices"
-
-  isobaricInhPa:
-    variables: ["v"]
-    level_selection: "values"                # ou "values" "indices"; "all"
-    level_values: [1000,850,400]             # if level_selection = "values" 
-    level_indices: []                        # if level_selection = "indices"
-  heightAboveGround:
-    variables: ["u"]
-    level_selection: "indices"                # ou "values" "indices"; "all"
-    level_values: []                          # if level_selection = "values" 
-    level_indices: [0,2,5]                    # if level_selection = "indices"
+    names: [WT]
+    levels: {indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
   surface:
-    variables: ["UM10","VM10","MSLP","LE","H"]
-
-
-# Path for output
-simulation_output_dir: "/cnrm/mlac/NO_SAVE/souffletc/DONEE_TEST_CYCLOPY/MNH/CHIDO"
-frameit_output_dir: "/cnrm/mlac/NO_SAVE/souffletc/Ideal_CILIDA/SIMULATION/DATA_test_CYCLOPY/OUTPUT_CYCLOPY/CHIDO/"
-
-
-# Polar projection parameter
-compute_polar_proj: true
-radial_resolution: 1000
-azimuthal_resolution: 3
-field_orientation: "geodesic"
-polar_variables: 
-  level:
-    variables: ["UT","VT","THT","POVOT","test"]
-  level_w:
-    variables: ["WT"]
-  surface:
-    variables: ["UM10","VM10","MSLP","LE","H"]
-
-# Use to add other parameters online from the simulation (left empty)
-simulation_parameter: {}
+    names: [UM10, VM10, MSLP, LE, H]
+polar:
+  enabled: true
+  variables: all
+  # Default radial spacing is inferred native spacing (not an oversampled 1 km).
+  azimuth_step_deg: 3
+output:
+  directory: ./output/CHIDO

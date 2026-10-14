@@ -24,6 +24,30 @@ class ExecutionOptions:
     no_hdf5_debug_pop: bool = False
     synchronous_export: bool = False
     benchmark: bool = False
+    engine: str = "netcdf4"
+    fmt: str = "NETCDF4"
+    overwrite: bool = True
+    compress_coords: bool = False
+    unlimited_time: bool = True
+    max_workers: int | None = None
+
+    @classmethod
+    def from_config(cls, config, **overrides):
+        output = config.yaml_config.get("output", {})
+        values = {
+            "export_netcdf": output.get("export", {}).get("netcdf", True),
+            "export_cart": output.get("export", {}).get("cartesian", True),
+            "export_polar": output.get("export", {}).get("polar", True),
+            "compress_level": output.get("compression", {}).get("level", 1),
+            "compress_coords": output.get("compression", {}).get("coordinates", False),
+            "institution": output.get("institution", DEFAULT_INSTITUTION),
+            "engine": output.get("engine", "netcdf4"), "fmt": output.get("format", "NETCDF4"),
+            "overwrite": output.get("overwrite", True),
+            "unlimited_time": output.get("unlimited_time", True),
+            "max_workers": output.get("max_workers"), "log_level": config.log_level,
+        }
+        values.update({k: v for k, v in overrides.items() if v is not None})
+        return cls(**values)
 
     def __post_init__(self):
         if not 0 <= int(self.compress_level) <= 9:
@@ -108,7 +132,7 @@ def execute_simulation(
     An explicit inventory is consumed verbatim; ordinary runs discover files
     through the runner. Errors propagate after input and logging cleanup.
     """
-    options = options or ExecutionOptions()
+    options = options or ExecutionOptions.from_config(config)
     if not options.no_hdf5_debug_pop:
         os.environ.pop("HDF5_DEBUG", None)
     level = options.log_level or ("DEBUG" if config.DEBUG else "INFO")
@@ -127,6 +151,29 @@ def execute_simulation(
 
             runner = FrameitRunner(config, input_files=input_files)
             result = runner.run(benchmark=True) if options.benchmark else runner.run()
+            if config.schema_version == 2:
+                import yaml
+
+                resolved_path = config.output_dir / "resolved-config.yaml"
+                if resolved_path.exists() and not options.overwrite:
+                    raise FileExistsError(f"File exists and overwrite=False: {resolved_path}")
+                from frameit.core.configuration import resolved_configuration, resolved_sources
+
+                resolved = resolved_configuration(config, options)
+                resolved_path.write_text(
+                    yaml.safe_dump(resolved, sort_keys=False, allow_unicode=True), encoding="utf-8"
+                )
+                (config.output_dir / "run-provenance.yaml").write_text(yaml.safe_dump({
+                        "grid_geometry": config.grid_geometry,
+                        "input_inventory": [str(p) for p in result.files],
+                        "unit_provenance": config.simulation_parameter.get("unit_provenance", []),
+                        "execution_options": asdict(options),
+                        "setting_sources": resolved_sources(config, options),
+                        "preset_provenance": {
+                            k: v for k, v in config.simulation_parameter.items()
+                            if k.startswith("preset_")
+                        },
+                    }, sort_keys=False, allow_unicode=True), encoding="utf-8")
             exports = {}
             if options.export_netcdf:
                 from frameit.io.netcdf_export import export_outputs
@@ -140,6 +187,10 @@ def execute_simulation(
                         export_cart=options.export_cart,
                         compress_level=options.compress_level,
                         synchronous=options.synchronous_export,
+                        engine=options.engine, fmt=options.fmt, overwrite=options.overwrite,
+                        compress_coords=options.compress_coords,
+                        unlimited_time=options.unlimited_time,
+                        max_workers=options.max_workers,
                     )
                 log.debug("NetCDF export finished")
             else:

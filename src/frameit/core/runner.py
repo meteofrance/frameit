@@ -61,7 +61,7 @@ class FrameitRunner:
             None  # Same as dict_crop_user but winds are collocated at cells mass point
         )
 
-        self.tracker = build_tracker_from_config(conf)
+        self.tracker = None
 
     def close(self):
         """Release original lazy input handles after computation/export."""
@@ -94,7 +94,8 @@ class FrameitRunner:
         if created:
             logger.debug("Output directory created")
 
-        if not self.conf.data_dir.exists():
+        if (self.input_files is None and self.conf.input_files is None
+                and not self.conf.data_dir.exists()):
             raise FileNotFoundError(f"Data dir not found: {self.conf.data_dir}")
         logger.debug("Input/output paths verified")
 
@@ -169,6 +170,11 @@ class FrameitRunner:
             If ``conf.file_type`` is not one of "nc", "netcdf", "grib", "grib2".
         """
         files = self.find_files()
+        if self.conf.infer_grid_geometry:
+            from frameit.core.preflight import preflight
+
+            self.preflight_report = preflight(self.conf, input_files=files)
+        self.tracker = build_tracker_from_config(self.conf)
         file_type = (self.conf.file_type or "").lower()
         time_dim = getattr(self.conf, "name_time_dim", None)
 
@@ -209,6 +215,9 @@ class FrameitRunner:
                 strict=self.input_files is not None,
                 resources=self.resources,
                 wind_conf=self.conf,
+                engine=self.conf.netcdf_engine,
+                chunks=self.conf.netcdf_chunks,
+                duplicate_time_policy=self.conf.duplicate_time_policy,
             )
 
         elif file_type in {"grib", "grib2"}:
@@ -229,11 +238,19 @@ class FrameitRunner:
                 warn=True,
                 strict=self.input_files is not None,
                 resources=self.resources,
+                duplicate_time_policy=self.conf.duplicate_time_policy,
             )
 
         else:
             raise ValueError(f"Unsupported file_type: {self.conf.file_type}")
 
+        from frameit.processing.derived.wind import normalize_winds
+        from frameit.utils.units import normalize_geography
+
+        dict_user = {g: normalize_geography(ds, self.conf) for g, ds in dict_user.items()}
+        dict_tracker = {m: {g: normalize_winds(normalize_geography(ds, self.conf), self.conf, g)
+                           for g, ds in groups.items()}
+                        for m, groups in dict_tracker.items()}
         dict_user = add_speed_from_uv_dict(dict_user, self.conf)
 
         # Check groups and variables
@@ -242,7 +259,8 @@ class FrameitRunner:
         logger.debug("Checking tracker datasets")
         req_trk = (requested_vars_tracker or {}).get(tracking_method, {})
         check_group_var(dict_tracker, req_trk)
-        check_resolution(dict_user, self.conf)
+        if not self.conf.infer_grid_geometry:
+            check_resolution(dict_user, self.conf)
         for group, dataset in dict_user.items():
             logger.info("  Loaded %s: %d field(s) · %s", group, len(dataset.data_vars),
                         ", ".join(f"{name}={size}" for name, size in dataset.sizes.items()))
@@ -264,6 +282,12 @@ class FrameitRunner:
             Track dataset containing at least ``cx``, ``cy``, ``lon``, ``lat``,
             ``heading_deg``, ``dist``, and ``speed``.
         """
+        if self.tracker is None:
+            if self.conf.infer_grid_geometry and not self.conf.grid_geometry:
+                from frameit.core.grid_geometry import resolve_geometry
+
+                resolve_geometry(self.conf, _iter_datasets(ds_tracker))
+            self.tracker = build_tracker_from_config(self.conf)
         logger.info("Running tracker %s", self.tracker.name)
         track = self.tracker(ds_tracker)
 
@@ -372,7 +396,7 @@ class FrameitRunner:
                 self.dict_polar_user, self.polar_report = polar_project(
                     src_dict,
                     conf=self.conf,
-                    method="bilinear",
+                    method=self.conf.polar_interpolation_method,
                     track=self.track,
                 )
             else:

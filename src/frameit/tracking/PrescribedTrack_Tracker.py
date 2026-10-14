@@ -158,52 +158,27 @@ class PrescribedTrack(TcTracker):
             dataset, if no common dates are found, or if ``atm_model`` is
             not ``"AROME"`` or ``"MNH"``.
         """
-        lat = ds.coords[self.lat_name]
-        lon = ds.coords[self.lon_name]
+        from frameit.io.track_file import load_track_coordinates
+        from frameit.utils.units import convert_units
+
+        lat = convert_units(ds.coords[self.lat_name], "angle",
+                            target="degrees_north", assumed="degrees_north")
+        lon = convert_units(ds.coords[self.lon_name], "angle",
+                            target="degrees_east", assumed="degrees_east")
         time_model = ds["time"].values
 
         # 1) Read the external track file
-        with xr.open_dataset(self.track_file) as trk:
-            if self.track_time_name not in trk.coords:
-                raise ValueError(
-                    f"PrescribedTrack: time coordinate {self.track_time_name!r} "
-                    "not found in the track file."
-                )
-            names = []
-            for requested, long_name, short_name in (
-                (self.track_lat_name, "latitude", "lat"),
-                (self.track_lon_name, "longitude", "lon"),
-            ):
-                name = requested
-                if name not in trk and name == long_name and short_name in trk:
-                    name = short_name
-                if name not in trk:
-                    raise ValueError(
-                        f"PrescribedTrack: variable {requested!r} not found in the track file."
-                    )
-                if trk[name].dims != (self.track_time_name,):
-                    raise ValueError(
-                        f"PrescribedTrack: {name!r} must be one-dimensional "
-                        f"along {self.track_time_name!r}"
-                    )
-                names.append(name)
-
-            time_trk = trk[self.track_time_name].values
-            if trk[self.track_time_name].dims != (self.track_time_name,):
-                raise ValueError("PrescribedTrack: time must be a one-dimensional coordinate")
-            if np.unique(time_trk).size != time_trk.size:
-                raise ValueError("PrescribedTrack: duplicate track times are ambiguous")
-            common_times = np.intersect1d(time_model, time_trk)
-            if common_times.size == 0:
-                raise ValueError(
-                    "PrescribedTrack: no common dates between the model Dataset and the track file."
-                )
-            trk_sel = trk.sel({self.track_time_name: common_times})
-            # Eagerly copy the small coordinate arrays before closing the file.
-            lat_trk = trk_sel[names[0]].values.copy()
-            lon_trk = trk_sel[names[1]].values.copy()
-            if not (np.isfinite(lat_trk).all() and np.isfinite(lon_trk).all()):
-                raise ValueError("PrescribedTrack: common-time track positions must be finite")
+        trk = load_track_coordinates(
+            self.track_file, time_name=self.track_time_name,
+            latitude_name=self.track_lat_name, longitude_name=self.track_lon_name,
+        )
+        common_times = np.intersect1d(time_model, trk.time.values)
+        if common_times.size == 0:
+            raise ValueError("PrescribedTrack: no common dates between model and track file")
+        trk_sel = trk.sel(time=common_times)
+        lat_trk, lon_trk = trk_sel.latitude.values, trk_sel.longitude.values
+        if not (np.isfinite(lat_trk).all() and np.isfinite(lon_trk).all()):
+            raise ValueError("PrescribedTrack: common-time track positions must be finite")
 
         ntime = common_times.size
         cy = np.empty(ntime, dtype="int64")

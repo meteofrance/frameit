@@ -41,6 +41,9 @@ class PressureCentroidTracker(TcTracker):
                    conf.name_longitude, conf.name_latitude)
 
     def _track_method(self, ds):
+        from frameit.processing.derived.wind import normalize_velocity_units
+        from frameit.utils.units import convert_units
+
         level_dim = "isobaricInhPa"
         mslp = self._field(ds, "mslp")
         if "time" not in mslp.dims or mslp.ndim != 3:
@@ -58,19 +61,14 @@ class PressureCentroidTracker(TcTracker):
         # Reject invalid chronology before loading the large vertical fields.
         motion_vectors([{"time": stamp} for stamp in ds.time.values],
                        [(0.0, 0.0)] * ds.sizes["time"])
-        units = str(data["geopot"].attrs.get("units", "")).replace(" ", "")
-        if units not in ("m**2s**-2", "m2s-2", "m2s**-2", "m^2s^-2", "m2/s2"):
-            raise ValueError(f"Unrecognized geopotential units: {units!r}")
+        data["geopot"] = convert_units(data["geopot"], "geopotential")
         for name in ("u", "v", "u10m", "v10m"):
             da = data[name]
-            if str(da.attrs.get("units", "")).replace(" ", "") not in (
-                    "ms**-1", "ms-1", "m/s", "ms^-1"):
-                raise ValueError(f"{name}: expected wind units m s-1")
+            data[name] = normalize_velocity_units(da, type("Model", (), {"atm_model": "AROME"})())
             if da.attrs.get("GRIB_uvRelativeToGrid") != 0:
                 raise ValueError("pressure_centroid requires earth-relative winds")
-        if str(mslp.attrs.get("units", "")).lower() not in ("pa", "hpa", "mbar"):
-            raise ValueError("Unrecognized MSLP units")
-        levels = np.asarray(ds[level_dim], float)
+        data["mslp"] = convert_units(data["mslp"], "pressure")
+        levels = np.asarray(convert_units(ds[level_dim], "pressure", assumed="hPa"), float)
         if levels.size < 2 or len(np.unique(levels)) != len(levels):
             raise ValueError("At least two distinct isobaric levels are required")
         records = []
@@ -95,12 +93,12 @@ class PressureCentroidTracker(TcTracker):
                       and np.array_equal(lat, reference_grid[1])):
                 raise ValueError("pressure_centroid requires the same native grid at all times")
             rec = dict(time=stamp, lon=reference_grid[0], lat=reference_grid[1],
-                       pressure_levels=levels, _grid_index=index)
+                       pressure_levels_pa=levels, pressure_units="Pa", _grid_index=index)
             for logical, key in (("u", "u"), ("v", "v"), ("geopot", "z")):
                 rec[key] = np.asarray(data[logical].isel(time=k), float)
             rec["z"] = rec["z"] / G0
             rec["h2000"] = interpolate_to_height(rec)
-            for key in ("u", "v", "z", "pressure_levels"):
+            for key in ("u", "v", "z", "pressure_levels_pa"):
                 del rec[key]
             pressure_index = min_index(np.asarray(data["mslp"].isel(time=k)),
                                        previous, self.half_search)

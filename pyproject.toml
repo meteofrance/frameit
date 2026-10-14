@@ -36,7 +36,7 @@ test = ["pytest>=7"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-frameit = ["presets/**/*.yaml", "testing/catalogs/*.yaml", "testing/recipes/*.yaml", "testing/ci_dataset/manifest.json", "testing/ci_dataset/**/*.grib", "testing/ci_dataset/**/*.nc"]
+frameit = ["presets/**/*.yaml", "templates/*.yaml", "testing/catalogs/*.yaml", "testing/recipes/*.yaml", "testing/ci_dataset/manifest.json", "testing/ci_dataset/**/*.grib", "testing/ci_dataset/**/*.nc"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

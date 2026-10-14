@@ -1,0 +1,19 @@
+schema_version: 2
+model: mesonh
+run:
+  name: analysis
+input:
+  directory: ./data
+  pattern: "*.nc"
+tracking:
+  method: wind_pressure
+domain:
+  size_km: {x: 500, y: 500}
+variables:
+  surface:
+    names: [UM10, VM10, MSLP]
+polar:
+  enabled: false
+  variables: all
+output:
+  directory: ./output

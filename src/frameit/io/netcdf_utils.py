@@ -30,6 +30,8 @@ def concat_nc2ds(
     parallel: bool = False,
     strict: bool = False,
     resources=None,
+    engine="h5netcdf",
+    chunks=None,
 ) -> xr.Dataset:
     """
     Open and concatenate a list of NetCDF files into a single Dataset.
@@ -72,7 +74,7 @@ def concat_nc2ds(
     variables = list(variables)
 
     # List variables from the first file (used to build drop_variables)
-    with xr.open_dataset(files[0], decode_cf=False, engine="h5netcdf") as t0:
+    with xr.open_dataset(files[0], decode_cf=False, engine=engine) as t0:
         all_vars = list(t0.data_vars)
         from frameit.processing.polar.metadata import coordinate_dependency_names
 
@@ -86,9 +88,9 @@ def concat_nc2ds(
         ds = resources.add(
             xr.open_dataset(
                 files[0],
-                engine="h5netcdf",
+                engine=engine,
                 drop_variables=drop_vars or None,
-                chunks={},  # lazy Dask loading — avoids immediate memory allocation
+                chunks={} if chunks is None else chunks,
             )
         )
     else:
@@ -103,7 +105,8 @@ def concat_nc2ds(
         opened = [
             resources.add(
                 xr.open_dataset(
-                    file, engine="h5netcdf", drop_variables=drop_vars or None, chunks={}
+                    file, engine=engine, drop_variables=drop_vars or None,
+                    chunks={} if chunks is None else chunks,
                 )
             )
             for file in files
@@ -146,6 +149,9 @@ def concat_nc2ds_by_vert_coord(
     float_tol: float | None = None,
     resources=None,
     wind_conf=None,
+    engine="h5netcdf",
+    chunks=None,
+    duplicate_time_policy="first",
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open the NetCDF files once then apply two independent requests.
@@ -196,7 +202,7 @@ def concat_nc2ds_by_vert_coord(
     # Automatically add geographic variables
     auto_geo = []
     if keep_geovars:
-        with xr.open_dataset(files[0], decode_cf=False, engine="h5netcdf") as t0:
+        with xr.open_dataset(files[0], decode_cf=False, engine=engine) as t0:
             present = set(t0.data_vars) | set(t0.coords)
         auto_geo = [name for name in geovar_candidates if name in present]
         if auto_geo:
@@ -211,6 +217,8 @@ def concat_nc2ds_by_vert_coord(
         parallel=parallel,
         strict=strict,
         resources=resources,
+        engine=engine,
+        chunks=chunks,
     )
 
     # Promote geographic variables to coordinates if needed
@@ -232,7 +240,7 @@ def concat_nc2ds_by_vert_coord(
     out_user: dict[str, xr.Dataset] = {}
     out_trk: dict[str, dict[str, xr.Dataset]] = {}
 
-    for g in ("level", "level_w", "surface"):
+    for g in user_req:
         if g in user_req:
             ds_u = build_group_ds(ds_user_native, user_req[g], g, concat_dimension, float_tol)
             if ds_u is not None:
@@ -271,7 +279,7 @@ def concat_nc2ds_by_vert_coord(
 
         else:
             # General case: go through build_group_ds
-            for g in ("level", "level_w", "surface"):
+            for g in blk:
                 if g in blk:
                     ds_t = build_group_ds(ds, blk[g], g, concat_dimension, float_tol)
                     if ds_t is not None:
@@ -281,9 +289,9 @@ def concat_nc2ds_by_vert_coord(
             out_trk[m] = grp_map
 
     # Final deduplication
-    out_user = {g: drop_time_dupes(ds, keep="first") for g, ds in out_user.items()}
+    out_user = {g: drop_time_dupes(ds, keep=duplicate_time_policy) for g, ds in out_user.items()}
     out_trk = {
-        m: {g: drop_time_dupes(ds, keep="first") for g, ds in grp.items()}
+        m: {g: drop_time_dupes(ds, keep=duplicate_time_policy) for g, ds in grp.items()}
         for m, grp in out_trk.items()
     }
 

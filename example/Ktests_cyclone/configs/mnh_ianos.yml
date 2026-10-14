@@ -1,87 +1,31 @@
-# ----------------------------------------------------------------
-# INIT YAML file to extract data from simulation
-# ----------------------------------------------------------------
-
-# Configuration yaml file for simulation class
-# ------------------------------------------------------
-
-# File name has to be written as  : file_name_prefix+file_name+’???’+.file_name_suffix+file_type 
-# where the "???" stands for a number that represents the time step with the form 001... 999.
-
-simulation_name: "IANOS_MNH_16"
-file_name_prefix: "OAV16.1."
-file_name: "TST00."
-file_name_suffix: "_sans_TPdiag."
-file_type: "nc"
-atm_model: "MNH"
-ocean_model: "CROCO"
-wave_model: "WW3"
-resolution: 1800
-comment: "IANOS simulation MNH"
-
-# Debug flag
-# --------------------------------------------
-
-DEBUG: true
-
-# Tracking option
-# ---------------
-tracking_method: "fixed_box" # wind_pressure, fixed_box, prescribed_track
-# Prescribed track 
-prescribed_track_file: "/home/souffletc/DIR_CYCLOPY/cyclopyv2/DRAFT/Tracking/test_prescribed_track_curved_ianos.nc"
-
-# Subdomain definition
-#---------------------------
-fix_subdomain_center: [37.5, 19.5]
-
-# Box subdomain size (km) :  
-x_boxsize_km: 300.0
-y_boxsize_km: 300.0
-
-
-requested_variables_user: 
+# Adapt paths and native variables to the actual files. Paths are YAML-relative.
+schema_version: 2
+model: mesonh
+run: {name: IANOS_MNH_16, description: Ianos MesoNH simulation}
+input:
+  directory: ./data/MNH/IANOS
+  pattern: "OAV16.1.TST00.???_sans_TPdiag.nc"
+  exclude: ["OAV16.1.TST00.000_sans_TPdiag.nc"]
+tracking:
+  method: fixed_box
+  fixed_box:
+    center: {latitude: 37.5, longitude: 19.5}
+domain:
+  size_km: {x: 300, y: 300}
+variables:
   level:
-    variables: ["UT","VT","THT","POVOT"]
-    level_selection: "indices"                # ou "values" "indices"; "all"
-    level_values: []                         # if level_selection = "values" 
-    level_indices: [0,1,2,3,4,5,6,7,8,9,10]  # if level_selection = "indices"
+    names: [UT, VT, THT, POVOT]
+    levels: {indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
   level_w:
-    variables: ["WT"]
-    level_selection: "indices"                # ou "values" "indices"; "all"
-    level_values: []                          # if level_selection = "values" 
-    level_indices: [0,1,2,3,4,5,6,7,8,9,10]   # if level_selection = "indices"
-
-  isobaricInhPa:
-    variables: ["v"]
-    level_selection: "values"                # ou "values" "indices"; "all"
-    level_values: [1000,850,400]             # if level_selection = "values" 
-    level_indices: []                        # if level_selection = "indices"
-  heightAboveGround:
-    variables: ["u"]
-    level_selection: "indices"                # ou "values" "indices"; "all"
-    level_values: []                          # if level_selection = "values" 
-    level_indices: [0,2,5]                    # if level_selection = "indices"
+    names: [WT]
+    levels: {indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
   surface:
-    variables: ["UM10","VM10","MSLP","LE","H"]
-
-
-# Path for output
-simulation_output_dir: "/cnrm/mlac/NO_SAVE/souffletc/DONEE_TEST_CYCLOPY/IANOS"
-frameit_output_dir: "/cnrm/mlac/NO_SAVE/souffletc/Ideal_CILIDA/SIMULATION/DATA_test_CYCLOPY/OUTPUT_CYCLOPY/IANOS/"
-
-
-# Polar projection parameter
-compute_polar_proj: true
-radial_resolution: 1800
-azimuthal_resolution: 10
-field_orientation: "geodesic"
-polar_variables: 
-  level:
-    variables: ["UT","VT","THT","POVOT"]
-  level_w:
-    variables: ["WT"]
-  surface:
-    variables: ["UM10","VM10","MSLP","LE","H"]
-
-# Use to add other parameters online from the simulation (left empty)
-simulation_parameter: {}
+    names: [UM10, VM10, MSLP, LE, H]
+polar:
+  enabled: true
+  variables: all
+  azimuth_step_deg: 10
+output:
+  directory: ./output/IANOS
+logging: {level: DEBUG}
+metadata: {ocean_model: CROCO, wave_model: WW3}

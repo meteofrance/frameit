@@ -4,7 +4,7 @@ Fixed-box method
 Overview
 --------
 
-The fixed-box tracker (``tracking_method: "fixed_box"``) defines a *time-independent* analysis center.
+The fixed-box tracker (``tracking.method: fixed_box``) defines a *time-independent* analysis center.
 At all time steps, FrameIt uses the same grid point as the cyclone center, computed once from a user-defined geographic location.
 
 This option is useful when:
@@ -33,10 +33,10 @@ Minimal configuration
 
 .. code-block:: yaml
 
-   tracking_method: "fixed_box"
-
-   # Fixed center location, [lat, lon] in degrees
-   fix_subdomain_center: [-17.5, 60.0]
+   tracking:
+     method: fixed_box
+     fixed_box:
+       center: {latitude: -17.5, longitude: 60.0}  # Degrees north/east
 
 Optional (recommended) parameters
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -44,16 +44,16 @@ Optional (recommended) parameters
 .. code-block:: yaml
 
    # Atmospheric model identifier used to interpret the latitude/longitude geometry
-   atm_model: "AROME"     # or "MNH"
+   model: arome     # or mesonh
 
 Key definitions
 ~~~~~~~~~~~~~~~
 
-``tracking_method``
+``tracking.method``
    Must be set to ``"fixed_box"``.
 
-``fix_subdomain_center``
-   Fixed center location given as ``[lat, lon]`` (degrees).
+``tracking.fixed_box.center``
+   Named ``latitude`` and ``longitude`` values in degrees.
 
 Algorithm
 ---------
@@ -65,7 +65,8 @@ The tracker reads the target point from the configuration:
 
 .. code-block:: text
 
-   (lat0, lon0) = fix_subdomain_center
+   lat0 = tracking.fixed_box.center.latitude
+   lon0 = tracking.fixed_box.center.longitude
 
 Step 2, locate the closest model grid point
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -107,20 +108,20 @@ Practical considerations and limitations
 - **Distance metric**: the method uses a squared Euclidean distance in (lat, lon) space, not a true geodesic distance. This is generally adequate for small domains.
 - **Masked coordinates**: if latitude/longitude contain NaNs (masked areas), the minimization must avoid all-NaN distance fields. If all candidate distances are NaN, the selection will fail.
 - **Fixed-box versus extraction box**: the fixed-box tracker defines the *center* used by FrameIt.
-  The extraction domain size is controlled separately (for example ``x_boxsize_km`` and ``y_boxsize_km``).
+  The extraction domain size is controlled separately by ``domain.size_km.x`` and ``.y``.
 
 Example
 -------
 
 .. code-block:: yaml
 
-   atm_model: "AROME"
-   tracking_method: "fixed_box"
-
-   fix_subdomain_center: [-18, 58.0]
-
-   x_boxsize_km: 500.0
-   y_boxsize_km: 500.0
+   model: arome
+   tracking:
+     method: fixed_box
+     fixed_box:
+       center: {latitude: -18, longitude: 58}
+   domain:
+     size_km: {x: 500, y: 500}
 
 
 Illustration
@@ -131,4 +132,3 @@ Here is an illustration for the tropical cyclone Batsirai, using the fixed box m
 .. figure:: ../_static/figures/Fig.FixedBox_Batsirai.png
    :width: 100%
    :align: center
-

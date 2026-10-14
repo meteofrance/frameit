@@ -21,7 +21,7 @@ General strategy
 
    The target grid is parameterised by:
 
-   - **radius** ``rr`` (km), from 0 to ``rmax_km = 0.5 * min(x_boxsize_km, y_boxsize_km)``
+   - **radius** ``rr`` (km), from 0 to half the smaller ``domain.size_km`` width
    - **azimuth** ``theta`` (radians), with ``theta_deg`` in degrees, clockwise from North:
      0° North, 90° East, 180° South, 270° West.
    - For each time step, the polar grid points are converted to geographic
@@ -44,7 +44,8 @@ Set the following flag in the YAML configuration:
 
 .. code-block:: yaml
 
-  compute_polar_proj: true
+  polar:
+    enabled: true
 
 Define the polar grid geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -52,40 +53,32 @@ The polar grid is derived from the extracted storm-centred box size and the requ
 
 .. code-block:: yaml
 
-  # Box size used during extraction/collocation (km)
-  x_boxsize_km: 100
-  y_boxsize_km: 100
-
-  # Radial resolution (meters).
-  radial_resolution: 5000
-
-
-  # Optional maximum angular step (degrees).
-  azimuthal_resolution: 2.0
-
-  # Alternatively omit the angular step and request an integer count:
-  # polar_n_theta: 180
-
-  # Allocation budget: target points across all output times.
-  polar_max_points: 2000000
+  domain:
+    size_km: {x: 100, y: 100}  # Full widths in kilometres
+  polar:
+    enabled: true
+    radial_step_m: 5000       # Metres; omission means resolved native spacing
+    azimuth_step_deg: 2       # Optional maximum angular step in degrees
+    # azimuth_count: 180      # Alternative; omit azimuth_step_deg when using count
+    max_points: 2000000       # Geometry budget across all output times
 
 Notes:
 
 - The last radius includes ``rmax_km``. Its preceding interval can be shorter
-  than ``radial_resolution``; use the actual radius coordinates for derivatives.
+  than ``polar.radial_step_m`` converted to km; use actual coordinates for derivatives.
 - ``theta`` contains exactly ``N`` samples at :math:`2\pi j/N`, with
   :math:`j=0,\ldots,N-1`. There is no duplicate endpoint at :math:`2\pi`.
 - An explicit angular step selects ``N = ceil(360 / step_deg)``. For example,
   7 degrees produces 52 uniformly spaced angles with an effective step of
   approximately 6.923 degrees, including the seam interval.
-- ``polar_n_theta`` must be an integer of at least 3. If both count and step
-  are provided, they must select the same count; conflicting requests fail.
+- ``polar.azimuth_count`` must be an integer of at least 3. Count and step are
+  mutually exclusive in YAML schema version 2.
 - Omitting both angular options, or setting both to null, selects
   ``N = max(3, ceil(2*pi*rmax_km/dr_km))``. This targets radial spacing at the
   outer ring, without a one-degree floor. The previous implicit 10-degree
   default is replaced by this automatic rule; explicitly setting 10 degrees
   retains that sampling choice, with 36 analytical angles.
-- ``polar_max_points`` is a positive integer, defaulting to 2,000,000. The
+- ``polar.max_points`` is a positive integer, defaulting to 2,000,000. The
   product of time count, radius count and angle count is checked before target
   coordinates are allocated. It bounds geometry points, not the memory of all
   variables and vertical levels. Increase it explicitly for a larger grid;
@@ -95,7 +88,7 @@ Storm tracking mode
 ^^^^^^^^^^^^^^^^^^^
 The behaviour differs depending on the tracking method:
 
-- ``tracking_method: fixed_box``
+- ``tracking.method: fixed_box``
   - The storm centre is taken at the first time step and kept fixed, the same polar grid is reused for all times.
 
 - Any other tracking method ``wind_pressure, prescribed_track...``
@@ -103,28 +96,31 @@ The behaviour differs depending on the tracking method:
 
 Selecting variables to project
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Polar projection is applied only to the variables listed in ``polar_variables``. The selection is organised by the same *groups* as the extraction outputs (for example ``surface``, ``level``, ``height`` depending on your configuration).
+Polar projection is applied to ``polar.variables``, organized by the same native
+groups as extraction outputs. Explicit selections must be subsets of extracted variables.
 
 Example:
 
 .. code-block:: yaml
 
-  polar_variables:
-    surface:
-      variables: [msl, u10, v10]
-    level:
-      variables: [u, v, t, q]
+  polar:
+    variables:
+      surface:
+        names: [prmsl, u10, v10]
+      isobaricInhPa:
+        names: [u, v]
 
 Shortcut to project all extracted variables:
 
 .. code-block:: yaml
 
-  polar_variables: all
+  polar:
+    variables: all
 
 Important behaviour:
 
-- If vertical selection keys are present inside ``polar_variables`` entries, they are ignored at this stage.
-- If a requested variable is missing in a group, it is skipped and reported in logs.
+- Vertical selection belongs only under ``variables``; polar selections inherit it.
+- Dataset preflight checks selected fields; per-file gaps remain visible in the inventory.
 
 Output structure
 ~~~~~~~~~~~~~~~~
@@ -340,7 +336,7 @@ and needs resampling before ordinary Fourier analysis.
 Derived wind components
 ~~~~~~~~~~~~~~~~~~~~~~~
 If the zonal (``u``) and meridional (``v``) wind components are included in
-``polar_variables``, FrameIt automatically computes the radial and tangential
+``polar.variables``, FrameIt automatically computes the radial and tangential
 wind components on the polar grid and adds them to the output dataset:
 
 - ``vrad``: radial wind component, positive **outward** from the storm centre.
@@ -427,7 +423,7 @@ Interpolation and physical interpretation
 Grid geometry constraints
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 - The maximum usable radius is limited by the extracted box size:
-  ``rmax_km = 0.5 * min(x_boxsize_km, y_boxsize_km)``.
+  ``rmax_km = 0.5 * min(domain.size_km.x, domain.size_km.y)``.
   If your need larger radii, increase the extraction box size accordingly.
 - The polar grid is computed using WGS84 geodesics, which is robust at regional scales, but it remains a sampling of geographic coordinates, not a true conformal map projection.
 
@@ -539,7 +535,7 @@ Software dependencies
 
 Recommendations for robust usage
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-- Choose ``radial_resolution`` (metres) comparable to, or slightly coarser than,
+- Choose ``polar.radial_step_m`` (metres) comparable to, or slightly coarser than,
   the native horizontal resolution of your input fields.
 - Check ``max_azimuthal_spacing_m`` and the effective angular step against the
   scales and azimuthal modes you want to analyse. Fine target spacing does not
@@ -551,11 +547,11 @@ Recommendations for robust usage
 Troubleshooting
 ~~~~~~~~~~~~~~~
 - **No output produced**
-  - Check ``compute_polar_proj: true`` and that ``polar_variables`` is defined.
+  - Check ``polar.enabled: true`` and that ``polar.variables`` selects extracted fields.
   - Ensure the requested group exists in the extracted outputs.
 
 - **Many NaNs on the polar grid**
-  - Increase the extraction box size, or reduce ``rmax_km`` by reducing ``x_boxsize_km`` and ``y_boxsize_km``.
+  - Adjust ``domain.size_km.x`` and ``.y`` to change the extraction extent and ``rmax_km``.
   - Verify the storm centre remains inside the extracted box for moving-centre configurations.
 
 - **ImportError for xESMF**

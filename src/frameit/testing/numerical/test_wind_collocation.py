@@ -153,7 +153,13 @@ def test_runner_loads_speed_only_native_dependencies(tmp_path, monkeypatch):
     native().to_netcdf(path, engine="h5netcdf")
     settings = conf()
     settings.file_type = "nc"
+    settings.infer_grid_geometry = False
+    settings.netcdf_engine = "h5netcdf"
+    settings.netcdf_chunks = {}
+    settings.duplicate_time_policy = "first"
     settings.name_time_dim = "time"
+    settings.name_latitude = "latitude"
+    settings.name_longitude = "longitude"
     settings.tracking_method = "fixed_box"
     settings.requested_variables_tracker = {"fixed_box": {}}
     settings.requested_variables_user = {
@@ -164,6 +170,7 @@ def test_runner_loads_speed_only_native_dependencies(tmp_path, monkeypatch):
     runner = object.__new__(FrameitRunner)
     runner.conf, runner.resources, runner.input_files = settings, DatasetResources(), None
     runner.find_files = lambda: [path]
+    monkeypatch.setattr("frameit.core.runner.build_tracker_from_config", lambda *args: None)
     # This fixture exercises loading/derivation, not nominal geographic grid
     # resolution (which has independent checks and real matrix fixtures).
     monkeypatch.setattr("frameit.core.runner.check_resolution", lambda *args: None)

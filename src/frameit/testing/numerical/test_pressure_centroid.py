@@ -34,6 +34,41 @@ def test_vertical_interpolation_and_missing_brackets():
     assert np.isnan(pc.interpolate_to_height(rec, height=4000)["p"]).all()
 
 
+def test_adapter_pressure_and_wind_units_preserve_centres_and_hpa_outputs():
+    lon, lat, pressure_hpa, u, v = vortex()
+    fraction = (np.log(pressure_hpa) - np.log(900.)) / (np.log(700.) - np.log(900.))
+    lower_height = 2000. - 1000. * fraction
+    height = np.stack([lower_height, lower_height + 1000.])
+    times = np.array(["2022-02-01", "2022-02-01T06:00"], dtype="datetime64[ns]")
+    horizontal = ("time", "latitude", "longitude")
+    vertical = ("time", "isobaricInhPa", "latitude", "longitude")
+    wind_attrs = {"units": "m s-1", "GRIB_uvRelativeToGrid": 0}
+    ds = xr.Dataset({
+        "prmsl": (horizontal, np.stack([pressure_hpa * 100] * 2), {"units": "Pa"}),
+        "u10": (horizontal, np.stack([u] * 2), wind_attrs),
+        "v10": (horizontal, np.stack([v] * 2), wind_attrs),
+        "u": (vertical, np.broadcast_to(u, (2, 2, *u.shape)), wind_attrs),
+        "v": (vertical, np.broadcast_to(v, (2, 2, *v.shape)), wind_attrs),
+        "z": (vertical, np.stack([height * pc.G0] * 2), {"units": "m2 s-2"}),
+    }, coords={"time": times, "latitude": lat[:, 0], "longitude": lon[0],
+               "isobaricInhPa": ("isobaricInhPa", [900., 700.], {"units": "hPa"})})
+    tracker = PressureCentroidTracker(
+        {"mslp": "prmsl", "u10m": "u10", "v10m": "v10", "u": "u", "v": "v",
+         "geopot": "z"}, 5000,
+    )
+    baseline = tracker._track_method(ds)
+    alternative = ds.copy()
+    alternative["prmsl"] = ds.prmsl / 100
+    alternative.prmsl.attrs = {"units": "hPa"}
+    for name in ("u", "v", "u10", "v10"):
+        alternative[name] = ds[name] * 3.6
+        alternative[name].attrs = {**wind_attrs, "units": "km/h"}
+    result = tracker._track_method(alternative)
+    xr.testing.assert_allclose(result, baseline, rtol=1e-10, atol=1e-8)
+    assert result.environment_hpa.attrs["units"] == "hPa"
+    np.testing.assert_allclose(result.environment_hpa, 800., atol=.001)
+
+
 @pytest.mark.parametrize("latitude", [-20, 20])
 def test_r80_hemisphere_and_translation(latitude):
     center = (60, latitude)
@@ -77,6 +112,9 @@ def test_invalid_options(kwargs):
 def test_factory_and_preset():
     conf = SimulationConfig.from_yaml_with_model_preset(
         "example/config_file/conf_pressure_centroid.yml")
+    # Schema parsing defers geometry-dependent tracker construction.
+    assert conf.infer_grid_geometry and conf.resolution == 0
+    conf.resolution = 2500
     tracker = build_tracker_from_config(conf)
     assert isinstance(tracker, PressureCentroidTracker)
     assert tracker.half_search == 40

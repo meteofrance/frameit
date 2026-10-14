@@ -85,6 +85,9 @@ def test_terminal_rotation_not_launch_rotation(latitude, leakage):
     angle = np.deg2rad(back + 180)
     u = xr.full_like(result.radial_bearing, 50 * np.cos(angle))
     v = xr.full_like(result.radial_bearing, -50 * np.sin(angle))
+    # full_like copies bearing metadata; these fixtures are velocities.
+    u.attrs = {"units": "m s-1"}
+    v.attrs = {"units": "m s-1"}
     radial, tangential = polar_wind_components(u, v, result.radial_bearing)
     np.testing.assert_allclose(radial.isel(rr=1), 0, atol=1e-10)
     np.testing.assert_allclose(tangential.isel(rr=1), 50, atol=1e-10)

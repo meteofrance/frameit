@@ -1,5 +1,23 @@
 # Changelog
 
+### 2026-10-14 — Unreleased — Versioned YAML and explicit scientific units
+
+- Introduce grouped YAML schema version 2 with strict key/type validation,
+  configuration-relative paths, ordinary globs, inventories, and explicit exclusions.
+- Add `init`, `inspect`, `config show`, `config migrate`, schema-only validation,
+  and `run --dry-run`; persist YAML export options with correct CLI precedence.
+- Infer native X/Y grid geometry before tracker construction, retain provenance,
+  and reject unsupported anisotropy/nonuniformity instead of silently averaging it.
+- Centralize lazy unit conversion; harmonize wind, radius, angle, pressure,
+  geopotential, and prescribed-track coordinate boundaries. Preserve native
+  vertical selections and existing physical output conventions.
+- Save reloadable resolved configuration and run provenance; update templates,
+  examples, documentation, and the scientific CI matrix to exercise schema v2.
+- **Migration required:** ordinary loading rejects legacy flat YAML. Use
+  `frameit config migrate old.yml --output frameit.yaml --launch-directory /original/workdir`.
+  The internal flat Python interface remains available; the misleading tracker
+  `resolution_km` keyword is deprecated with its original metre meaning preserved.
+
 ### 2026-10-14 — Unreleased — Correct full-domain AROME vertical requests
 
 **Issue:** Six AROME matrix cases failed preflight with `Missing requested vertical group level` and exit code 2.

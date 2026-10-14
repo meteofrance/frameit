@@ -1,0 +1,639 @@
+"""Version-2 YAML schema, explicit migration, and lightweight configuration tools.
+
+The nested public schema resolves to SimulationConfig's internal numerical
+interface. Legacy flat mappings are only accepted by explicit migration or the
+internal Python API, never by the ordinary YAML loader.
+"""
+
+from __future__ import annotations
+
+import copy
+import difflib
+import math
+from pathlib import Path
+
+import yaml
+
+DEFAULTS = {
+    "schema_version": 2,
+    "model": "arome",
+    "run": {"name": "analysis", "description": ""},
+    "input": {
+        "directory": "./data", "pattern": None, "files": None, "exclude": [],
+        "format": None, "grid_spacing_m": None, "duplicate_time_policy": "first",
+        "wind_reference_frame": "earth", "netcdf": {"engine": "h5netcdf", "chunks": {}},
+    },
+    "tracking": {
+        "method": "wind_pressure",
+        "wind_pressure": {"search_half_width_km": 100., "refine_half_width_km": 50.},
+        "fixed_box": {"center": {"latitude": None, "longitude": None}},
+        "prescribed_track": {"file": None, "time_name": "time",
+                             "latitude_name": "latitude", "longitude_name": "longitude"},
+        "utrack": {"weights_file": None, "use_gpu": False, "batch_size": 16},
+        "pressure_centroid": {
+            "convergence": {"max_iterations": 15, "tolerance_m": 250.},
+            "motion": {"max_iterations": 50, "solver": "aitken", "relaxation": .25,
+                       "tolerance_m": 250.},
+            "sampling": {"r80_max_distance_km": 250., "radial_step_km": 2.5,
+                         "azimuth_step_deg": 5.},
+        },
+    },
+    "domain": {"size_km": None, "edge_policy": "pad_nan"},
+    "variables": {},
+    "polar": {
+        "enabled": False, "variables": "all", "radial_step_m": None,
+        "azimuth_step_deg": None, "azimuth_count": None, "interpolation_method": "bilinear",
+        "missing_data_policy": "strict", "min_valid_weight_fraction": .5,
+        "weight_zero_tolerance": 1e-14, "source_halo_points": 1, "ellipsoid": "WGS84",
+        "max_points": 2_000_000, "plan_cache": {"entries": 8, "max_bytes": 128 * 1024**2},
+        "chunks": {}, "profile": False,
+    },
+    "output": {
+        "directory": "./output", "export": {"netcdf": True, "cartesian": True, "polar": True},
+        "compression": {"level": 1, "coordinates": False}, "engine": "netcdf4",
+        "format": "NETCDF4", "unlimited_time": True, "overwrite": True, "max_workers": None,
+        "institution": "LACy, Université de La Réunion, CNRS, Météo-France",
+    },
+    "logging": {"level": "INFO"},
+    "metadata": {"ocean_model": "", "wave_model": "", "extra": {}},
+}
+
+
+class UniqueLoader(yaml.SafeLoader):
+    """Reject duplicate keys, including duplicates hidden in nested sections."""
+
+    def construct_mapping(self, node, deep=False):
+        self.flatten_mapping(node)
+        result = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, str):
+                raise ValueError(f"YAML keys must be strings (line {key_node.start_mark.line + 1})")
+            if key in result:
+                raise ValueError(f"Duplicate key {key!r} at line {key_node.start_mark.line + 1}")
+            result[key] = self.construct_object(value_node, deep=deep)
+        return result
+
+
+def read_yaml(path):
+    path = Path(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+        data = yaml.load(text, Loader=UniqueLoader)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML in {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: expected a YAML mapping")
+    return data
+
+
+def _merge_checked(raw, defaults, prefix=""):
+    if not isinstance(raw, dict):
+        raise ValueError(f"{prefix or 'configuration'} must be a mapping")
+    result = copy.deepcopy(defaults)
+    errors = []
+    for key, value in raw.items():
+        location = f"{prefix}.{key}" if prefix else key
+        if key not in defaults:
+            suggestion = difflib.get_close_matches(key, defaults, n=1)
+            errors.append(f"Unknown key {location}" +
+                          (f"; did you mean {suggestion[0]}?" if suggestion else ""))
+            continue
+        if isinstance(defaults[key], dict) and defaults[key]:
+            try:
+                result[key] = _merge_checked(value, defaults[key], location)
+            except ValueError as exc:
+                errors.append(str(exc))
+        else:
+            result[key] = copy.deepcopy(value)
+    if errors:
+        raise ValueError("\n".join(errors))
+    return result
+
+
+def _positive(value, path, *, integer=False, allow_zero=False):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{path} must be a finite {'integer' if integer else 'number'}")
+    if (integer and not isinstance(value, int)) or value < 0 or (value == 0 and not allow_zero):
+        raise ValueError(f"{path} must be {'nonnegative' if allow_zero else 'positive'}" +
+                         (" integer" if integer else ""))
+
+
+def _requests(raw, path="variables", *, polar=False):
+    if polar and raw == "all":
+        return "all"
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path} must be a mapping" + (" or 'all'" if polar else ""))
+    result = {}
+    for group, spec in raw.items():
+        spec = _merge_checked(spec, {"names": [], **({} if polar else {"levels": "all"})},
+                              f"{path}.{group}")
+        names = spec["names"]
+        if not isinstance(names, list) or not names or any(not isinstance(n, str) for n in names):
+            raise ValueError(f"{path}.{group}.names must be a nonempty list of variable names")
+        result[group] = {"variables": names}
+        if polar:
+            continue
+        levels = spec["levels"]
+        if levels == "all":
+            result[group]["level_selection"] = "all"
+        elif isinstance(levels, dict) and len(levels) == 1 and set(levels) <= {"indices", "values"}:
+            strategy, values = next(iter(levels.items()))
+            if not isinstance(values, list) or not values:
+                raise ValueError(f"{path}.{group}.levels.{strategy} must be a nonempty list")
+            for value in values:
+                if strategy == "indices":
+                    _positive(
+                        value, f"{path}.{group}.levels.indices", integer=True, allow_zero=True
+                    )
+                else:
+                    _finite_level(value, group)
+            result[group].update(level_selection=strategy, **{f"level_{strategy}": values})
+        else:
+            raise ValueError(
+                f"{path}.{group}.levels requires one of indices or values, or 'all'"
+            )
+    return result
+
+
+def _finite_level(value, group):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"variables.{group}.levels.values must contain finite numbers")
+
+
+def resolve_schema(raw, *, base_dir=None):
+    if type(raw.get("schema_version")) is not int or raw.get("schema_version") != 2:
+        raise ValueError(
+            "Expected schema_version: 2. For legacy YAML use 'frameit config migrate'."
+        )
+    conf = _merge_checked(raw, DEFAULTS)
+    enum_paths = (
+        "model", "tracking.method", "input.format", "input.duplicate_time_policy",
+        "input.wind_reference_frame", "input.netcdf.engine", "domain.edge_policy",
+        "polar.interpolation_method", "polar.missing_data_policy", "polar.ellipsoid",
+        "output.engine", "output.format", "logging.level",
+        "tracking.pressure_centroid.motion.solver",
+    )
+    for path in enum_paths:
+        value = conf
+        for part in path.split("."):
+            value = value[part]
+        if not isinstance(value, str) and not (path == "input.format" and value is None):
+            raise ValueError(f"{path} must be a string")
+    if "model" not in raw or conf["model"] not in {"arome", "mesonh"}:
+        raise ValueError("model must be 'arome' or 'mesonh'")
+    base = Path(base_dir or Path.cwd()).resolve()
+    inp, trk, pol, out = (conf[n] for n in ("input", "tracking", "polar", "output"))
+    if bool(inp["pattern"]) == bool(inp["files"]):
+        raise ValueError("input requires exactly one of pattern or files")
+    for key in ("directory",):
+        if not isinstance(inp[key], str) or not inp[key]:
+            raise ValueError(f"input.{key} must be a nonempty path")
+    if inp["pattern"] is not None and (not isinstance(inp["pattern"], str) or
+                                      Path(inp["pattern"]).is_absolute()):
+        raise ValueError("input.pattern must be a relative glob or filename")
+    for key in ("exclude", "files"):
+        value = inp[key]
+        if value is not None and (not isinstance(value, list) or
+                                  any(not isinstance(v, str) for v in value)):
+            raise ValueError(f"input.{key} must be a list of paths/patterns")
+    if inp["format"] not in {None, "grib", "netcdf"}:
+        raise ValueError("input.format must be grib or netcdf")
+    if inp["duplicate_time_policy"] not in {"first", "last"}:
+        raise ValueError("input.duplicate_time_policy must be first or last")
+    if inp["wind_reference_frame"] not in {"earth", "grid"}:
+        raise ValueError("input.wind_reference_frame must be earth or grid")
+    if inp["grid_spacing_m"] is not None:
+        _positive(inp["grid_spacing_m"], "input.grid_spacing_m")
+    methods = {"wind_pressure", "pressure_centroid", "fixed_box", "prescribed_track", "utrack"}
+    if trk["method"] not in methods:
+        raise ValueError(f"tracking.method must be one of {sorted(methods)}")
+    if trk["method"] == "pressure_centroid" and conf["model"] != "arome":
+        raise ValueError("tracking.method pressure_centroid supports arome only")
+    for key, value in trk["wind_pressure"].items():
+        _positive(value, f"tracking.wind_pressure.{key}")
+    if trk["method"] == "fixed_box":
+        center = trk["fixed_box"]["center"]
+        for name, limit in (("latitude", 90), ("longitude", 180)):
+            value = center[name]
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or abs(value) > limit):
+                raise ValueError(
+                    f"tracking.fixed_box.center.{name} must be in [-{limit}, {limit}] degrees"
+                )
+    if trk["method"] == "prescribed_track" and not trk["prescribed_track"]["file"]:
+        raise ValueError("tracking.prescribed_track.file is required")
+    if trk["method"] == "utrack" and not trk["utrack"]["weights_file"]:
+        raise ValueError("tracking.utrack.weights_file is required")
+    _positive(trk["utrack"]["batch_size"], "tracking.utrack.batch_size", integer=True)
+    pc = trk["pressure_centroid"]
+    for section in ("convergence", "motion", "sampling"):
+        for name, value in pc[section].items():
+            if name != "solver":
+                _positive(value, f"tracking.pressure_centroid.{section}.{name}",
+                          integer=name == "max_iterations")
+    if pc["motion"]["solver"] not in {"aitken", "fixed"} or pc["motion"]["relaxation"] > 1:
+        raise ValueError("Invalid tracking.pressure_centroid.motion solver or relaxation")
+    if pc["sampling"]["azimuth_step_deg"] >= 180:
+        raise ValueError("tracking.pressure_centroid.sampling.azimuth_step_deg must be below 180")
+    size = conf["domain"]["size_km"]
+    if size is not None:
+        if not isinstance(size, dict) or set(size) != {"x", "y"}:
+            raise ValueError("domain.size_km requires x and y full widths")
+        for name, value in size.items():
+            _positive(value, f"domain.size_km.{name}")
+    if conf["domain"]["edge_policy"] != "pad_nan":
+        raise ValueError("domain.edge_policy currently supports pad_nan only")
+    if pol["enabled"] and size is None:
+        raise ValueError("polar.enabled requires domain.size_km")
+    if pol["azimuth_count"] is not None and pol["azimuth_step_deg"] is not None:
+        raise ValueError("polar.azimuth_count and polar.azimuth_step_deg are mutually exclusive")
+    for name in ("radial_step_m", "azimuth_step_deg", "azimuth_count", "max_points"):
+        if pol[name] is not None:
+            _positive(pol[name], f"polar.{name}", integer=name in {"azimuth_count", "max_points"})
+    if pol["azimuth_count"] is not None and pol["azimuth_count"] < 3:
+        raise ValueError("polar.azimuth_count must be at least 3")
+    if pol["azimuth_step_deg"] is not None and pol["azimuth_step_deg"] > 120:
+        raise ValueError("polar.azimuth_step_deg must be at most 120")
+    if pol["interpolation_method"] not in {"bilinear", "nearest_s2d"}:
+        raise ValueError("polar.interpolation_method must be bilinear or nearest_s2d")
+    if pol["missing_data_policy"] not in {"strict", "renormalize"}:
+        raise ValueError("polar.missing_data_policy must be strict or renormalize")
+    for key in ("min_valid_weight_fraction", "weight_zero_tolerance"):
+        _positive(pol[key], f"polar.{key}", allow_zero=True)
+        if pol[key] > 1:
+            raise ValueError(f"polar.{key} must not exceed 1")
+    if pol["weight_zero_tolerance"] >= 1e-6:
+        raise ValueError("polar.weight_zero_tolerance must be less than 1e-6")
+    _positive(pol["source_halo_points"], "polar.source_halo_points", integer=True)
+    for name, value in pol["plan_cache"].items():
+        _positive(value, f"polar.plan_cache.{name}", integer=True, allow_zero=True)
+    for path, chunks in (
+        ("input.netcdf.chunks", inp["netcdf"]["chunks"]), ("polar.chunks", pol["chunks"])
+    ):
+        if not isinstance(chunks, dict):
+            raise ValueError(f"{path} must be a mapping")
+        for name, value in chunks.items():
+            if value != -1:
+                _positive(value, f"{path}.{name}", integer=True)
+    for path, value in (("polar.enabled", pol["enabled"]), ("polar.profile", pol["profile"]),
+                        ("tracking.utrack.use_gpu", trk["utrack"]["use_gpu"]),
+                        ("output.unlimited_time", out["unlimited_time"]),
+                        ("output.overwrite", out["overwrite"]),
+                        ("output.compression.coordinates", out["compression"]["coordinates"]),
+                        *((f"output.export.{k}", v) for k, v in out["export"].items())):
+        if not isinstance(value, bool):
+            raise ValueError(f"{path} must be a YAML boolean")
+    _positive(
+        out["compression"]["level"], "output.compression.level", integer=True, allow_zero=True
+    )
+    if out["compression"]["level"] > 9:
+        raise ValueError("output.compression.level must be in [0, 9]")
+    if out["max_workers"] is not None:
+        _positive(out["max_workers"], "output.max_workers", integer=True)
+    if out["engine"] not in {"netcdf4", "h5netcdf"} or out["format"] != "NETCDF4":
+        raise ValueError("output supports netcdf4/h5netcdf engines with NETCDF4 format")
+    if inp["netcdf"]["engine"] not in {"h5netcdf", "netcdf4", "scipy"}:
+        raise ValueError("Unsupported input.netcdf.engine")
+    if conf["logging"]["level"] not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
+        raise ValueError("logging.level must be DEBUG, INFO, WARNING, or ERROR")
+    if not isinstance(conf["metadata"]["extra"], dict):
+        raise ValueError("metadata.extra must be a mapping")
+    for path, value in (
+        ("run.description", conf["run"]["description"]),
+        ("output.institution", out["institution"]),
+        ("metadata.ocean_model", conf["metadata"]["ocean_model"]),
+        ("metadata.wave_model", conf["metadata"]["wave_model"]),
+        *((f"tracking.prescribed_track.{key}", trk["prescribed_track"][key])
+          for key in ("time_name", "latitude_name", "longitude_name")),
+    ):
+        if not isinstance(value, str):
+            raise ValueError(f"{path} must be a string")
+    for section, key in (("prescribed_track", "file"), ("utrack", "weights_file")):
+        if trk[section][key] is not None and not isinstance(trk[section][key], str):
+            raise ValueError(f"tracking.{section}.{key} must be a path string")
+    for section, key in (("run", "name"), ("output", "directory")):
+        if not isinstance(conf[section][key], str) or not conf[section][key]:
+            raise ValueError(f"{section}.{key} must be a nonempty string")
+    name = conf["run"]["name"]
+    if "/" in name or "\\" in name or name in {".", ".."}:
+        raise ValueError("run.name must be an analysis identifier without path separators")
+    user = _requests(conf["variables"])
+    polar = _requests(pol["variables"], "polar.variables", polar=True)
+    if polar == "all":
+        polar = {g: {"variables": list(s["variables"])} for g, s in user.items()}
+    for group, spec in polar.items():
+        if group not in user or not set(spec["variables"]) <= set(user[group]["variables"]):
+            raise ValueError(f"polar.variables.{group} must be a subset of extracted variables")
+    if pol["enabled"] and not polar:
+        raise ValueError("polar.enabled requires selected polar variables")
+    for section, key in (("input", "directory"), ("output", "directory")):
+        conf[section][key] = str((base / conf[section][key]).resolve())
+    if inp["files"]:
+        inp["files"] = [str((base / p).resolve()) for p in inp["files"]]
+    for section, key in (("prescribed_track", "file"), ("utrack", "weights_file")):
+        if trk[section][key]:
+            trk[section][key] = str((base / trk[section][key]).resolve())
+    return conf, user, polar
+
+
+def to_runtime(raw, *, base_dir=None):
+    c, user, polar = resolve_schema(raw, base_dir=base_dir)
+    inp, trk, pol = (c[n] for n in ("input", "tracking", "polar"))
+    pc = trk["pressure_centroid"]
+    size = c["domain"]["size_km"] or {"x": 0, "y": 0}
+    return {
+        "schema_version": 2, "yaml_config": c, "schema_sources": setting_sources(raw, c),
+        "simulation_name": c["run"]["name"],
+        "comment": c["run"]["description"],
+        "atm_model": {"arome": "AROME", "mesonh": "MNH"}[c["model"]],
+        "ocean_model": c["metadata"]["ocean_model"], "wave_model": c["metadata"]["wave_model"],
+        "resolution": inp["grid_spacing_m"] or 0, "infer_grid_geometry": True,
+        "file_name_prefix": "", "file_name": "", "file_name_suffix": "",
+        "file_type": inp["format"] or "", "input_pattern": inp["pattern"],
+        "input_files": inp["files"], "input_exclude": inp["exclude"],
+        "simulation_output_dir": inp["directory"], "frameit_output_dir": c["output"]["directory"],
+        "duplicate_time_policy": inp["duplicate_time_policy"],
+        "netcdf_engine": inp["netcdf"]["engine"],
+        "netcdf_chunks": inp["netcdf"]["chunks"],
+        "wind_reference_frame": inp["wind_reference_frame"],
+        "tracking_method": trk["method"], "fix_subdomain_center": [
+            trk["fixed_box"]["center"]["latitude"], trk["fixed_box"]["center"]["longitude"]]
+            if trk["method"] == "fixed_box" else None,
+        "wind_pressure_search_half_width_km": trk["wind_pressure"]["search_half_width_km"],
+        "wind_pressure_refine_half_width_km": trk["wind_pressure"]["refine_half_width_km"],
+        "prescribed_track_file": trk["prescribed_track"]["file"] or "",
+        "prescribed_track_time_name": trk["prescribed_track"]["time_name"],
+        "prescribed_track_lat_name": trk["prescribed_track"]["latitude_name"],
+        "prescribed_track_lon_name": trk["prescribed_track"]["longitude_name"],
+        "utrack_weights_file": trk["utrack"]["weights_file"],
+        "utrack_use_gpu": trk["utrack"]["use_gpu"],
+        "utrack_batch_size": trk["utrack"]["batch_size"],
+        "pressure_centroid_max_iterations": pc["convergence"]["max_iterations"],
+        "pressure_centroid_tolerance_m": pc["convergence"]["tolerance_m"],
+        "pressure_centroid_max_motion_iterations": pc["motion"]["max_iterations"],
+        "pressure_centroid_motion_solver": pc["motion"]["solver"],
+        "pressure_centroid_motion_relaxation": pc["motion"]["relaxation"],
+        "pressure_centroid_motion_tolerance_m": pc["motion"]["tolerance_m"],
+        "pressure_centroid_r80_max_km": pc["sampling"]["r80_max_distance_km"],
+        "pressure_centroid_dr_km": pc["sampling"]["radial_step_km"],
+        "pressure_centroid_dtheta": pc["sampling"]["azimuth_step_deg"],
+        "requested_variables_user": user, "polar_variables": polar,
+        "x_boxsize_km": size["x"], "y_boxsize_km": size["y"], "compute_polar_proj": pol["enabled"],
+        "radial_resolution": pol["radial_step_m"] or 0,
+        "azimuthal_resolution": pol["azimuth_step_deg"],
+        "polar_n_theta": pol["azimuth_count"], "polar_max_points": pol["max_points"],
+        "polar_missing_data_policy": pol["missing_data_policy"],
+        "polar_min_valid_weight_fraction": pol["min_valid_weight_fraction"],
+        "polar_weight_zero_tolerance": pol["weight_zero_tolerance"],
+        "polar_source_halo_points": pol["source_halo_points"], "polar_ellipsoid": pol["ellipsoid"],
+        "polar_regrid_cache_size": pol["plan_cache"]["entries"],
+        "polar_regrid_cache_max_bytes": pol["plan_cache"]["max_bytes"],
+        "polar_output_chunks": pol["chunks"], "polar_profile": pol["profile"],
+        "polar_interpolation_method": pol["interpolation_method"],
+        "log_level": c["logging"]["level"],
+        "DEBUG": c["logging"]["level"] == "DEBUG",
+    }
+
+
+def setting_sources(raw, resolved, prefix=""):
+    sources = {}
+    for key, value in resolved.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict) and value:
+            child = raw.get(key, {})
+            sources.update(setting_sources(child if isinstance(child, dict) else {}, value, path))
+        else:
+            sources[path] = "yaml" if key in raw else "default"
+    return sources
+
+
+def resolved_configuration(conf, options=None):
+    """Reloadable public schema with inferred defaults and effective overrides."""
+    result = copy.deepcopy(conf.yaml_config)
+    result["input"]["grid_spacing_m"] = conf.resolution
+    result["input"]["format"] = conf.file_type or result["input"]["format"]
+    if conf.compute_polar_proj:
+        result["polar"]["radial_step_m"] = conf.radial_resolution
+    if options is not None:
+        out = result["output"]
+        out["export"] = {"netcdf": options.export_netcdf, "cartesian": options.export_cart,
+                         "polar": options.export_polar}
+        out["compression"] = {"level": options.compress_level,
+                              "coordinates": options.compress_coords}
+        for key in ("engine", "overwrite", "unlimited_time", "max_workers", "institution"):
+            out[key] = getattr(options, key)
+        out["format"] = options.fmt
+        result["logging"]["level"] = options.log_level or conf.log_level or "INFO"
+    return result
+
+
+def resolved_sources(conf, options=None):
+    sources = dict(conf.schema_sources)
+    sources["input.grid_spacing_m"] = conf.grid_geometry.get("effective_source", "unresolved")
+    sources["input.format"] = (
+        "inferred_from_content" if conf.yaml_config["input"]["format"] is None else "yaml"
+    )
+    if conf.yaml_config["polar"]["radial_step_m"] is None:
+        sources["polar.radial_step_m"] = "resolved_grid_spacing"
+    if options is not None:
+        from frameit.core.execution import ExecutionOptions
+
+        baseline = ExecutionOptions.from_config(conf)
+        for attribute, path in (
+            ("export_netcdf", "output.export.netcdf"), ("export_cart", "output.export.cartesian"),
+            ("export_polar", "output.export.polar"), ("compress_level", "output.compression.level"),
+            ("compress_coords", "output.compression.coordinates"),
+            ("institution", "output.institution"),
+            ("log_level", "logging.level"), ("engine", "output.engine"), ("fmt", "output.format"),
+            ("overwrite", "output.overwrite"), ("unlimited_time", "output.unlimited_time"),
+            ("max_workers", "output.max_workers"),
+        ):
+            if getattr(options, attribute) != getattr(baseline, attribute):
+                sources[path] = "execution_override"
+    return sources
+
+
+def load_runtime(path):
+    """Load strict YAML and add line locations to dotted-key diagnostics."""
+    path = Path(path)
+    raw = read_yaml(path)
+    try:
+        return to_runtime(raw, base_dir=path.resolve().parent)
+    except ValueError as exc:
+        locations = {}
+        def visit(node, prefix=""):
+            if isinstance(node, yaml.MappingNode):
+                for key, value in node.value:
+                    name = f"{prefix}.{key.value}" if prefix else key.value
+                    locations[name] = key.start_mark.line + 1
+                    visit(value, name)
+        visit(yaml.compose(path.read_text(encoding="utf-8")))
+        message = str(exc)
+        matches = [(name, line) for name, line in locations.items() if name in message]
+        if matches:
+            message += "\n" + ", ".join(f"{name}: line {line}" for name, line in matches)
+        raise ValueError(f"{path}: {message}") from exc
+
+
+def migrate_mapping(old, *, launch_dir=None):
+    """Translate flat settings explicitly, preserving physical units and paths."""
+    from dataclasses import fields
+
+    from frameit.core.settings_class import SimulationConfig
+
+    unknown = set(old) - {f.name for f in fields(SimulationConfig)}
+    if unknown:
+        raise ValueError(f"Unrecognized legacy fields: {sorted(unknown)}")
+    base = Path(launch_dir or Path.cwd()).resolve()
+    c = copy.deepcopy(DEFAULTS)
+    model = old.get("atm_model")
+    if model not in {"AROME", "MNH"}:
+        raise ValueError("Legacy atm_model must be AROME or MNH")
+    c["model"] = {"AROME": "arome", "MNH": "mesonh"}[model]
+    c["run"] = {
+        "name": old.get("simulation_name", "analysis"), "description": old.get("comment", "")
+    }
+    inp = c["input"]
+    inp["directory"] = str((base / old.get("simulation_output_dir", "data")).resolve())
+    inp["pattern"] = (
+        "".join(str(old.get(k) or "") for k in ("file_name_prefix", "file_name")) + "???"
+        + "".join(str(old.get(k) or "") for k in ("file_name_suffix", "file_type"))
+    )
+    inp["format"] = (
+        "netcdf" if old.get("file_type", "").lower() in {"nc", "netcdf", ".nc"} else "grib"
+    )
+    if model == "MNH":
+        inp["exclude"] = [inp["pattern"].replace("???", "000", 1)]
+    inp["grid_spacing_m"] = old.get("resolution") or None
+    inp["wind_reference_frame"] = old.get("wind_reference_frame", "earth")
+    c["output"]["directory"] = str((base / old.get("frameit_output_dir", "output")).resolve())
+    method = old.get("tracking_method", "wind_pressure")
+    c["tracking"]["method"] = method
+    center = old.get("fix_subdomain_center")
+    if center:
+        c["tracking"]["fixed_box"]["center"] = dict(
+            zip(("latitude", "longitude"), center, strict=True)
+        )
+    for old_name, section, key in (
+        ("prescribed_track_file", "prescribed_track", "file"),
+        ("prescribed_track_time_name", "prescribed_track", "time_name"),
+        ("prescribed_track_lat_name", "prescribed_track", "latitude_name"),
+        ("prescribed_track_lon_name", "prescribed_track", "longitude_name"),
+        ("utrack_weights_file", "utrack", "weights_file"),
+        ("utrack_use_gpu", "utrack", "use_gpu"), ("utrack_batch_size", "utrack", "batch_size"),
+    ):
+        if old_name in old and old[old_name] is not None:
+            value = old[old_name]
+            if key in {"file", "weights_file"} and value:
+                value = str((base / value).resolve())
+            c["tracking"][section][key] = value
+    pc = c["tracking"]["pressure_centroid"]
+    for old_name, section, key in (
+        ("max_iterations", "convergence", "max_iterations"),
+        ("tolerance_m", "convergence", "tolerance_m"),
+        ("max_motion_iterations", "motion", "max_iterations"),
+        ("motion_solver", "motion", "solver"),
+        ("motion_relaxation", "motion", "relaxation"),
+        ("motion_tolerance_m", "motion", "tolerance_m"),
+        ("r80_max_km", "sampling", "r80_max_distance_km"), ("dr_km", "sampling", "radial_step_km"),
+        ("dtheta", "sampling", "azimuth_step_deg"),
+    ):
+        if "pressure_centroid_" + old_name in old:
+            pc[section][key] = old["pressure_centroid_" + old_name]
+    if old.get("x_boxsize_km", 0) > 0 and old.get("y_boxsize_km", 0) > 0:
+        c["domain"]["size_km"] = {"x": old["x_boxsize_km"], "y": old["y_boxsize_km"]}
+    c["variables"] = {}
+    for group, spec in (old.get("requested_variables_user") or {}).items():
+        names = spec.get("variables", [])
+        levels = "all"
+        selection = spec.get("level_selection", "")
+        if selection == "indices" and spec.get("level_indices"):
+            levels = {"indices": spec["level_indices"]}
+        elif (selection != "all" and not spec.get("all_levels")
+              and (model == "MNH" or selection == "values")):
+            values = spec.get("level_values", spec.get("levels", []))
+            if values:
+                levels = {"values": values}
+        c["variables"][group] = {"names": names, "levels": levels}
+    pol = c["polar"]
+    for old_key, key in (
+        ("compute_polar_proj", "enabled"), ("radial_resolution", "radial_step_m"),
+        ("azimuthal_resolution", "azimuth_step_deg"), ("polar_n_theta", "azimuth_count"),
+        ("polar_max_points", "max_points"), ("polar_missing_data_policy", "missing_data_policy"),
+        ("polar_min_valid_weight_fraction", "min_valid_weight_fraction"),
+        ("polar_weight_zero_tolerance", "weight_zero_tolerance"),
+        ("polar_source_halo_points", "source_halo_points"), ("polar_ellipsoid", "ellipsoid"),
+        ("polar_output_chunks", "chunks"), ("polar_profile", "profile"),
+    ):
+        if old_key in old:
+            pol[key] = old[old_key]
+    if not pol["radial_step_m"]:
+        pol["radial_step_m"] = None
+    pol["plan_cache"] = {"entries": old.get("polar_regrid_cache_size", 8),
+                         "max_bytes": old.get("polar_regrid_cache_max_bytes", 128 * 1024**2)}
+    pv = old.get("polar_variables") or {}
+    pol["variables"] = {g: {"names": s.get("variables", []) if isinstance(s, dict) else s}
+                        for g, s in pv.items()}
+    c["logging"]["level"] = "DEBUG" if old.get("DEBUG") else "INFO"
+    c["metadata"].update(
+        ocean_model=old.get("ocean_model", ""), wave_model=old.get("wave_model", "")
+    )
+    runtime = old.get("simulation_parameter") or {}
+    c["metadata"]["extra"] = {k: v for k, v in runtime.items() if not k.startswith("preset_")}
+    # Drop inactive tracker blocks in the migrated user document.
+    c["tracking"] = {k: v for k, v in c["tracking"].items() if k in {"method", method}}
+    resolve_schema(c, base_dir=base)
+    reports = ["Paths resolved using original launch directory: " + str(base),
+               "Legacy resolution retained as input.grid_spacing_m; remove for inferred spacing.",
+               "Grid inspection and source-unit validation still require dataset preflight."]
+    for key in ("field_orientation", "grib_index_dir", "simulation_parameter"):
+        if key in old:
+            reports.append(f"Removed {key}; annotations moved to metadata.extra where applicable.")
+    reports.append("Preset-locked coordinate/tracker fields are supplied by model adapters.")
+    return c, reports
+
+
+def write_template(model, path, *, full=False, tracking="wind_pressure", force=False):
+    """Templates and reference defaults share the schema's source of truth."""
+    if model not in {"arome", "mesonh"}:
+        raise ValueError("model must be arome or mesonh")
+    from importlib import resources
+
+    template = yaml.safe_load(resources.files("frameit").joinpath(
+        f"templates/{model}.yaml").read_text(encoding="utf-8"))
+    c = _merge_checked(template, DEFAULTS)
+    c["model"] = model
+    c["input"]["pattern"] = "*.grib" if model == "arome" else "*.nc"
+    c["tracking"]["method"] = tracking
+    if tracking == "fixed_box":
+        c["tracking"]["fixed_box"]["center"] = {"latitude": -18., "longitude": 58.}
+    elif tracking == "prescribed_track":
+        c["tracking"]["prescribed_track"]["file"] = "./track.nc"
+    elif tracking == "utrack":
+        c["tracking"]["utrack"]["weights_file"] = "./weights.pt"
+    c["domain"]["size_km"] = {"x": 500, "y": 500}
+    resolve_schema(c)
+    if not full:
+        c["input"] = {"directory": "./data", "pattern": c["input"]["pattern"]}
+        c["tracking"] = {"method": tracking, **(
+            {tracking: c["tracking"][tracking]} if tracking != "wind_pressure" else {}
+        )}
+        c["domain"] = {"size_km": c["domain"]["size_km"]}
+        c["polar"] = {"enabled": False, "variables": "all"}
+        c["output"] = {"directory": "./output"}
+        c.pop("logging")
+        c.pop("metadata")
+    path = Path(path)
+    if path.exists() and not force:
+        raise FileExistsError(f"Configuration exists: {path}; use --force")
+    text = "# FrameIt schema v2. Adapt paths, variables, centres, and box sizes to your data.\n"
+    text += "# Paths are relative to this YAML. Spacing is inferred from native coordinates.\n"
+    text += "# domain.size_km contains full widths; omit it for full-domain extraction.\n"
+    text += "# polar.radial_step_m is metres; polar.azimuth_step_deg is degrees.\n"
+    text += "# Choose azimuth_step_deg OR azimuth_count; neither means automatic sampling.\n"
+    if model == "mesonh":
+        text += "# Exclude the exact MesoNH 000 timeseries name using input.exclude if needed.\n"
+    text += yaml.safe_dump(c, sort_keys=False, allow_unicode=True)
+    path.write_text(text, encoding="utf-8")
+    return path

@@ -4,7 +4,7 @@ Prescribed-track method
 Purpose
 -------
 
-The prescribed-track tracker (``tracking_method: "prescribed_track"``) uses an external NetCDF track file to locate, at each time step, the model grid point closest to the cyclone position provided in the track. The output is a time series of grid indices ``(cy, cx)`` defined on the set of timestamps common to both the model dataset and the track file.
+The prescribed-track tracker (``tracking.method: prescribed_track``) uses an external NetCDF track file to locate, at each time step, the model grid point closest to the cyclone position provided in the track. The output is a time series of grid indices ``(cy, cx)`` defined on the set of timestamps common to both the model dataset and the track file.
 
 This method is intended for reproducible diagnostics when a reliable cyclone trajectory is already available (e.g., produced by a prior workflow or an operational tracking).
 
@@ -43,16 +43,21 @@ Configuration keys
 
 To activate this tracker fill the following variables in the configuration file:
 
-``tracking_method:``
+``tracking.method``
    Tracking method : ``"prescribed_track"``
 
-``prescribed_track_file``
+``tracking.prescribed_track.file``
    Path to the external NetCDF file containing the prescribed cyclone trajectory.
 
 .. code-block:: yaml
 
-   tracking_method: "prescribed_track"
-   prescribed_track_file: "/path/to/prescribed_track.nc"
+   tracking:
+     method: prescribed_track
+     prescribed_track:
+       file: ./prescribed_track.nc
+       time_name: time
+       latitude_name: latitude
+       longitude_name: longitude
 
 
 Practical considerations and limitations

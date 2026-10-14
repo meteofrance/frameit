@@ -105,9 +105,27 @@ def resolve_input_files(files, *, strict=False):
 
 def discover_input_files(config):
     """Ordinary run discovery, shared with native matrix planning."""
-    files = sorted(config.data_dir.glob(config.build_pattern()))
+    inventory = getattr(config, "input_files", None)
+    files = ([Path(p) for p in inventory] if inventory is not None else
+             sorted(p for p in config.data_dir.glob(config.build_pattern()) if p.is_file()))
+    if inventory is not None:
+        resolve_input_files(files, strict=True)
+    files = [path for path in files if not input_path_excluded(path, config)]
     files = [path for path in files if not config.is_mnh_timeseries_name(path)]
     return resolve_input_files(files, strict=True)
+
+
+def input_path_excluded(path, config):
+    """Exclusions match names, absolute paths, or paths relative to input.directory."""
+    import fnmatch
+
+    candidates = [path.name, str(path)]
+    try:
+        candidates.append(path.relative_to(config.data_dir).as_posix())
+    except ValueError:
+        pass
+    return any(fnmatch.fnmatch(candidate, pattern)
+               for candidate in candidates for pattern in getattr(config, "input_exclude", []))
 
 
 def _load_yaml(p: Path) -> dict[str, Any]:
@@ -158,8 +176,10 @@ def load_config_with_model_presets(
     FileNotFoundError
         If the coordinate or tracker preset file for the model is not found.
     """
+    from frameit.core.configuration import load_runtime
+
     return resolve_config_with_model_presets(
-        _load_yaml(Path(run_yaml_path)), strict_locked=strict_locked
+        load_runtime(run_yaml_path), strict_locked=strict_locked
     )
 
 
@@ -170,6 +190,11 @@ def resolve_config_with_model_presets(
     if not isinstance(mapping, Mapping):
         raise ValueError("The configuration must be a key-value mapping")
     run = copy.deepcopy(dict(mapping))
+
+    if "schema_version" in run and "model" in run:
+        from frameit.core.configuration import to_runtime
+
+        run = to_runtime(run)
 
     model = run.get("atm_model")
     if not model:

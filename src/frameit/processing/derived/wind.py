@@ -10,6 +10,8 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
+from frameit.utils.units import convert_units
+
 
 def wind_names(conf: Any, group: str) -> tuple[str, str]:
     """Resolve surface aliases independently of the model-level pair."""
@@ -22,20 +24,10 @@ def wind_names(conf: Any, group: str) -> tuple[str, str]:
 
 def normalize_velocity_units(da: xr.DataArray, conf: Any) -> xr.DataArray:
     """Normalize units; missing units follow the AROME/MNH m/s model contract."""
-    units = str(da.attrs.get("units") or "").lower().replace(" ", "").replace("−", "-")
-    factors = {
-        "": 1.0, "m/s": 1.0, "ms-1": 1.0, "ms^-1": 1.0, "ms**-1": 1.0,
-        "km/h": 1.0 / 3.6, "kmh-1": 1.0 / 3.6, "knots": 0.5144444444444445,
-        "knot": 0.5144444444444445, "kt": 0.5144444444444445,
-        "cm/s": 0.01, "cms-1": 0.01, "cms**-1": 0.01,
-    }
-    if units not in factors:
-        raise ValueError(f"Unsupported wind units {da.attrs.get('units')!r} on {da.name}")
-    if not units and str(getattr(conf, "atm_model", "")).upper() not in {"AROME", "MNH"}:
-        raise ValueError(f"Wind units required for {da.name}")
-    result = da * factors[units]
-    result.attrs = dict(da.attrs)
-    result.attrs["units"] = "m s-1"
+    model = str(getattr(conf, "atm_model", "")).upper()
+    result = convert_units(da, "velocity", assumed="m s-1" if model in {"AROME", "MNH"} else None)
+    if not da.attrs.get("units"):
+        result.attrs["unit_assumption_source"] = f"{model}_input_contract"
     return result
 
 
@@ -85,9 +77,8 @@ def normalize_winds(ds: xr.Dataset, conf: Any, group: str) -> xr.Dataset:
     if frames == {"grid"}:
         if len(present) != 2 or "grid_rotation" not in ds:
             raise ValueError("Grid-relative winds require both components and grid_rotation")
-        angle = ds["grid_rotation"]
-        if angle.attrs.get("units") != "rad":
-            raise ValueError("grid_rotation must be in radians counterclockwise from east")
+        angle = convert_units(ds["grid_rotation"], "angle")
+        out = out.assign_coords(grid_rotation=angle)
         u, v = align_wind_pair(out[names[0]], out[names[1]])
         if not set(angle.dims) <= set(u.dims):
             raise ValueError("grid_rotation must be defined on the collocated wind grid")
@@ -109,8 +100,11 @@ def polar_wind_components(
     u: xr.DataArray, v: xr.DataArray, bearing: xr.DataArray
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """Rotate collocated east/north winds in m/s using a local bearing in radians."""
-    if bearing.attrs.get("units", "rad") != "rad":
-        raise ValueError("radial_bearing must be expressed in radians")
+    # This low-level numerical API historically accepts unitless canonical
+    # arrays (m/s and radians); explicitly declared alternative units convert.
+    u = convert_units(u, "velocity", assumed="m s-1")
+    v = convert_units(v, "velocity", assumed="m s-1")
+    bearing = convert_units(bearing, "angle", assumed="rad")
     u, v = align_wind_pair(u, v)
     u, v, bearing = xr.align(u, v, bearing, join="exact")
     if "rr" in bearing.coords:

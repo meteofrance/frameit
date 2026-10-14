@@ -1,7 +1,7 @@
 Adaptive pressure centroid
 ==========================
 
-Select ``tracking_method: pressure_centroid`` to use the adaptive pressure-deficit
+Select ``tracking.method: pressure_centroid`` to use the adaptive pressure-deficit
 centroid of Nguyen, Molinari and Thomas (2014), DOI
 ``10.1175/MWR-D-14-00044.1``. Numerical choices and the coupled motion solver
 follow the supplied ``compare_batsirai_centers_v1.4.1.py`` implementation. This
@@ -15,7 +15,8 @@ The AROME preset requests MSLP, 10-m winds, and U, V and geopotential at all
 available isobaric levels. At least two strictly increasing valid times are
 required. The grid must be stationary, uniformly spaced latitude/longitude;
 descending axes and longitude wrapping are supported. Winds must be
-earth-relative in metres per second. MNH inputs are currently unsupported.
+earth-relative and are normalized to metres per second. Pressure inputs normalize
+to Pa while exported ``environment_hpa`` remains hPa. MNH inputs are unsupported.
 
 U and V are interpolated linearly in geopotential height to 2,000 m;
 pressure is interpolated logarithmically. Geopotential is divided by
@@ -26,7 +27,7 @@ Method
 
 Initial guesses follow sequential 100-km MSLP search windows and 50-km
 wind-minimum refinement windows, converted to index half-widths using the
-configured model resolution. The 2-km pressure minimum is searched within
+resolved native grid spacing. The 2-km pressure minimum is searched within
 100 km in index space around each MSLP minimum.
 
 Each evaluation first converges a 100-km pressure-deficit centroid. Environmental
@@ -48,16 +49,19 @@ Configuration defaults
 
 .. code-block:: yaml
 
-   tracking_method: pressure_centroid
-   pressure_centroid_max_iterations: 15
-   pressure_centroid_tolerance_m: 250.0
-   pressure_centroid_max_motion_iterations: 50
-   pressure_centroid_motion_solver: aitken
-   pressure_centroid_motion_relaxation: 0.25
-   pressure_centroid_motion_tolerance_m: 250.0
-   pressure_centroid_r80_max_km: 250.0
-   pressure_centroid_dr_km: 2.5
-   pressure_centroid_dtheta: 5.0
+   tracking:
+     method: pressure_centroid
+     pressure_centroid:
+       convergence: {max_iterations: 15, tolerance_m: 250}
+       motion:
+         max_iterations: 50
+         solver: aitken
+         relaxation: 0.25
+         tolerance_m: 250
+       sampling:
+         r80_max_distance_km: 250
+         radial_step_km: 2.5
+         azimuth_step_deg: 5
 
 ``fixed`` selects fixed geodesic relaxation. ``aitken`` starts with a full
 update, clamps estimated relaxation to 0.15–1.5, guards residual growth,
@@ -87,7 +91,7 @@ forward differences. Global attributes record the implementation and settings.
 Dedicated verification
 ----------------------
 
-Run ``python -m pytest tests/test_pressure_centroid.py`` for synthetic-vortex,
+Run ``python -m pytest src/frameit/testing/numerical/test_pressure_centroid.py`` for synthetic-vortex,
 interpolation, solver and sub-grid integration checks. This tracker is not
 included in the matrix tests. Scientific comparisons require full-domain
 inputs covering the 500-km reference ring, rather than cropped CI fixtures.

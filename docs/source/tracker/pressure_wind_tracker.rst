@@ -4,7 +4,7 @@ Pressure-wind tracker
 Overview
 --------
 
-The pressure-wind tracker (``tracking_method: "wind_pressure"``) estimates the cyclone center at each time step using a sequential two-stage procedure combining:
+The pressure-wind tracker (``tracking.method: wind_pressure``) estimates the cyclone center at each time step using a sequential two-stage procedure combining:
 
 1. a *pressure-based first guess* from mean sea-level pressure (MSLP),
 2. a *wind-based refinement* using the 10 m wind speed magnitude.
@@ -93,23 +93,23 @@ both returned as integers and packaged in an ``xarray.Dataset``:
 
    xr.Dataset({"cy": cy, "cx": cx})
 
-Window sizes and conversion from physical radii
------------------------------------------------
+Window sizes and conversion from physical half-widths
+--------------------------------------------------------
 
-The tracker class defines two physical radii (in kilometers):
+The tracker uses two configurable square half-widths (in kilometres):
 
-- ``SEARCH_RADIUS_KM = 150.0``: MSLP search radius around the previous center,
-- ``REFINE_RADIUS_KM = 50.0``: wind refinement radius around the MSLP first guess.
+- ``tracking.wind_pressure.search_half_width_km = 100``: MSLP search,
+- ``tracking.wind_pressure.refine_half_width_km = 50``: wind refinement.
 
-These radii are converted into grid-point half-widths using the grid spacing provided
-in the simulation configuration.
+These windows are converted into grid-point half-widths using resolved native
+grid geometry. Grid spacing is inferred before tracker construction.
 
-Given the grid spacing ``resolution`` (assumed to be in meters in the configuration),
+Given the resolved grid spacing ``grid_spacing_m`` in metres,
 the tracker computes:
 
-- ``resolution_km = resolution / 1000``,
-- ``half_search = ceil(SEARCH_RADIUS_KM / resolution_km)``,
-- ``half_refine = ceil(REFINE_RADIUS_KM / resolution_km)``,
+- ``grid_spacing_km = grid_spacing_m / 1000``,
+- ``half_search = ceil(search_half_width_km / grid_spacing_km)``,
+- ``half_refine = ceil(refine_half_width_km / grid_spacing_km)``,
 
 and enforces a minimum value of 1 grid point for both.
 
@@ -120,13 +120,18 @@ To activate this tracker in the YAML configuration, set:
 
 .. code-block:: yaml
 
-   tracking_method: "wind_pressure"
+   tracking:
+     method: wind_pressure
+     wind_pressure:
+       search_half_width_km: 100
+       refine_half_width_km: 50
 
 
 Illustration
 ------------
 
-Here is an illustration for the tropical cyclone CHIDO, using the wind_pressure tracking method, and a box define by ``x_boxsize_km``: 50.0 and ``y_boxsize_km``: 75.0 
+Here is an illustration for tropical cyclone CHIDO, using wind-pressure tracking
+with ``domain.size_km: {x: 50, y: 75}`` (full widths in kilometres).
 The red line shows the extracted box.
 
 .. figure:: ../_static/figures/Fig.tracking_Chido.png
@@ -134,5 +139,3 @@ The red line shows the extracted box.
    :align: center
 
    Example of tracking and extraction using the wind_pressure tracking method.
-
-

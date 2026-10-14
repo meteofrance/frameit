@@ -12,7 +12,7 @@ Utrack (AI) tracker
 Overview
 --------
 
-The Utrack tracker (``tracking_method: "utrack"``) estimates the cyclone center at each time
+The Utrack tracker (``tracking.method: utrack``) estimates the cyclone center at each time
 step using a convolutional neural network based on the **U-Net architecture**, as introduced
 by `Raynaud, et al. (2024) <https://journals.ametsoc.org/view/journals/aies/3/2/AIES-D-23-0059.1.xml>`_.
 The model was designed to detect the TC wind structure — including the maximum wind speed area
@@ -54,16 +54,17 @@ both returned as integers and packaged in an ``xarray.Dataset``:
 Configuration and usage
 -----------------------
 
-To activate this tracker, set ``tracking_method: "utrack"`` in the YAML configuration and
+To activate this tracker, set ``tracking.method: utrack`` in the YAML configuration and
 provide the three parameters below.
 
 .. code-block:: yaml
 
-   tracking_method: "utrack"
-
-   utrack_weights_file: "/path/to/model_latest.ckpt"
-   utrack_use_gpu: false
-   utrack_batch_size: 16
+   tracking:
+     method: utrack
+     utrack:
+       weights_file: ./model_latest.ckpt
+       use_gpu: false
+       batch_size: 16
 
 .. list-table::
    :header-rows: 1
@@ -72,15 +73,15 @@ provide the three parameters below.
    * - Parameter
      - Default
      - Description
-   * - ``utrack_weights_file``
+   * - ``tracking.utrack.weights_file``
      - *(required)*
      - Path to the Utrack model checkpoint file. The simulation will raise a
        ``ValueError`` if this parameter is not set.
-   * - ``utrack_use_gpu``
+   * - ``tracking.utrack.use_gpu``
      - ``false``
      - Whether to run inference on GPU. Set to ``true`` if a CUDA-capable device is
        available.
-   * - ``utrack_batch_size``
+   * - ``tracking.utrack.batch_size``
      - ``16``
      - Number of time steps processed in a single forward pass. Reduce this value if
        GPU or CPU memory is limited.
@@ -105,8 +106,11 @@ Model weights
 
 A trained model checkpoint file is required. The weights are **not publicly distributed**;
 contact the model authors to obtain a copy. Once you have the file, set
-``utrack_weights_file`` in your configuration to its absolute path:
+``tracking.utrack.weights_file`` in your configuration (paths are YAML-relative):
 
 .. code-block:: yaml
 
-   utrack_weights_file: "/path/to/model_latest.ckpt"
+   tracking:
+     method: utrack
+     utrack:
+       weights_file: ./model_latest.ckpt

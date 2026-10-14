@@ -68,23 +68,40 @@ and the AROME/MNH integration matrix.
 
 ## Quick start
 
-1. Copy and edit the example configuration file:
+1. Create an annotated, model-specific configuration:
 
 ```bash
-cp example/conf_example.yml my_config.yaml
+frameit init arome
+# Or: frameit init mesonh --output chido.yaml
+# All supported settings: frameit init arome --full --output full.yaml
 ```
 
-2. Edit `my_config.yaml` to match your simulation setup
+2. Edit `frameit.yaml` to match your simulation setup
    (input files, tracking method, subdomain size, output paths).
 
-3. Run FrameIt:
+3. Validate, preview, and run FrameIt:
 
 ```bash
-frameit run my_config.yaml
+frameit validate
+frameit run --dry-run
+frameit run
 ```
 
 That's it! FrameIt will extract the subdomain, track the object and write
-normalized NetCDF outputs to the directory specified in `frameit_output_dir`.
+normalized NetCDF outputs under `output.directory`. Schema version 2 uses grouped
+settings, automatic native-grid spacing inference, and explicit units. Relative
+paths are resolved from the YAML file. Runs save `resolved-config.yaml` and
+`run-provenance.yaml` alongside products and logs.
+
+Existing flat YAML requires explicit migration:
+
+```bash
+frameit config migrate old.yml --output frameit.yaml --launch-directory /original/workdir
+```
+
+Inspect source variables, units, and geometry with
+`frameit inspect ./data --model mesonh`. Use `frameit validate --schema-only`
+for configuration checks without opening datasets.
 
 ## Documentation
 

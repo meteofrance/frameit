@@ -141,7 +141,12 @@ def _worker_entry(case: dict, log_path: str, completion_path: str, log_level: st
                     },
                 )
                 return
-            config = SimulationConfig.from_mapping_with_model_preset(case["config"])
+            from frameit.core.configuration import migrate_mapping
+
+            nested, _ = migrate_mapping(case["config"])
+            # Runtime consumes the frozen inventory verbatim; the public schema
+            # is exercised by every matrix case while nominal spacing is retained.
+            config = SimulationConfig.from_mapping_with_model_preset(nested)
             result = execute_simulation(
                 config,
                 ExecutionOptions(
@@ -512,7 +517,10 @@ def run_matrix(
             case.update(preflight="INVALID_INPUT", reason=fixture_error)
         _bind_fixture_hashes(case, fixture, data_root)
         try:
-            config = SimulationConfig.from_mapping_with_model_preset(case["config"])
+            from frameit.core.configuration import migrate_mapping
+
+            nested, _ = migrate_mapping(case["config"])
+            config = SimulationConfig.from_mapping_with_model_preset(nested)
             case["effective_config"] = config.to_dict(include_runtime=False)
             case["identity"] = case_identity(case, data_root)
         except (ValueError, TypeError, KeyError) as exc:
@@ -523,7 +531,9 @@ def run_matrix(
         # Save user mapping separately from the effective preset/default view.
         config_path = output / "configs" / f"{case['id']}.yaml"
         config_path.write_text(
-            yaml.safe_dump(json_value(case["config"]), sort_keys=False), encoding="utf-8"
+            yaml.safe_dump(
+                json_value(nested if case["effective_config"] else case["config"]), sort_keys=False
+            ), encoding="utf-8"
         )
         atomic_json(output / "configs" / f"{case['id']}.resolved.json", case["effective_config"])
         planned.append(case)

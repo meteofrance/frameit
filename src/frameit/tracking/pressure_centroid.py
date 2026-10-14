@@ -66,7 +66,9 @@ def interpolate_to_height(rec, height=HEIGHT_M):
     z = np.asarray(rec["z"], float)
     if z.ndim != 3 or z.shape[0] < 2:
         raise ValueError("At least two isobaric levels are required")
-    levels = np.asarray(rec["pressure_levels"], float)
+    # Legacy numerical records explicitly use hPa; adapters supply Pa records.
+    in_pa = "pressure_levels_pa" in rec
+    levels = np.asarray(rec["pressure_levels_pa"] if in_pa else rec["pressure_levels"], float)
     if not np.isfinite(levels).all() or np.any(levels <= 0):
         raise ValueError("Pressure levels must be finite and positive")
     ordering = np.argsort(z, axis=0)
@@ -81,14 +83,14 @@ def interpolate_to_height(rec, height=HEIGHT_M):
     za, zb = get(zs, lo), get(zs, hi)
     ok = (above > 0) & (above < zs.shape[0]) & np.isfinite(za) & np.isfinite(zb)
     frac = (height - za) / np.where(zb > za, zb - za, np.nan)
-    pressure = np.broadcast_to(levels[:, None, None] * 100, z.shape)
+    pressure = np.broadcast_to(levels[:, None, None] * (1 if in_pa else 100), z.shape)
     result = []
     for data in (rec["u"], rec["v"], np.log(pressure)):
         sorted_data = np.take_along_axis(data, ordering, axis=0)
         out = get(sorted_data, lo) * (1 - frac) + get(sorted_data, hi) * frac
         out[~ok] = np.nan
         result.append(out)
-    return dict(u=result[0], v=result[1], p=np.exp(result[2]) / 100)
+    return dict(u=result[0], v=result[1], p=np.exp(result[2]) / (1 if in_pa else 100))
 
 
 def make_interpolator(lon, lat, data):
@@ -337,7 +339,8 @@ def solve_motion_centroids(records, options):
             for rec, residual, velocity, diagnostic in zip(
                     records, residuals, velocities, diagnostics, strict=True):
                 r80, radius, env, count = diagnostic
-                rec.update(r80_km=r80, radius_km=radius, environment_hpa=env,
+                environment_hpa = env / 100 if rec.get("pressure_units") == "Pa" else env
+                rec.update(r80_km=r80, radius_km=radius, environment_hpa=environment_hpa,
                            iterations=count, motion_residual_m=residual,
                            motion_outer_iterations=cycle,
                            translation_u=velocity[0], translation_v=velocity[1])

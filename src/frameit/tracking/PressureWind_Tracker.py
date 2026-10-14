@@ -61,6 +61,13 @@ def pressure_wind_tracker(
         ``half_refine`` is less than 1.
     """
 
+    from frameit.utils.units import convert_units
+
+    # Unitless direct numerical inputs follow the documented m/s contract.
+    zonal_10m = convert_units(zonal_10m, "velocity", assumed="m s-1")
+    merid_10m = convert_units(merid_10m, "velocity", assumed="m s-1")
+    mslp, zonal_10m, merid_10m = xr.align(mslp, zonal_10m, merid_10m, join="exact")
+
     nix, njy = mslp.dims[-1], mslp.dims[-2]
     ny = mslp.sizes[njy]
     nx = mslp.sizes[nix]
@@ -202,22 +209,43 @@ class PressureWindTracker(TcTracker):
     SEARCH_RADIUS_KM: ClassVar[float] = 100.0
     REFINE_RADIUS_KM: ClassVar[float] = 50.0
 
-    def __init__(self, var_aliases, resolution_km: float):
+    def __init__(
+        self, var_aliases, grid_spacing_m: float | None = None, *,
+        search_half_width_km=100., refine_half_width_km=50., resolution_km=None,
+    ):
         """
         Parameters
         ----------
         var_aliases : Mapping[str, str]
             Variable alias mapping (logical name → native name in dataset).
-        resolution_km : float
+        grid_spacing_m : float
             Model grid spacing in **metres** (converted internally to km).
             Used to derive ``half_search`` and ``half_refine`` in grid points.
         """
         super().__init__(var_aliases=var_aliases)
 
-        self.resolution_km = float(resolution_km) / 1000.0
+        if resolution_km is not None:
+            import warnings
 
-        half_search = int(np.ceil(self.SEARCH_RADIUS_KM / self.resolution_km))
-        half_refine = int(np.ceil(self.REFINE_RADIUS_KM / self.resolution_km))
+            if grid_spacing_m is not None:
+                raise ValueError("Supply grid_spacing_m, not both spacing arguments")
+            warnings.warn(
+                "resolution_km historically means metres; use grid_spacing_m",
+                DeprecationWarning, stacklevel=2,
+            )
+            grid_spacing_m = resolution_km
+        if grid_spacing_m is None:
+            raise ValueError("grid_spacing_m is required")
+        for value in (search_half_width_km, refine_half_width_km):
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError("Search/refinement half-widths must be positive kilometres")
+
+        self.resolution_km = float(grid_spacing_m) / 1000.0
+        if not np.isfinite(self.resolution_km) or self.resolution_km <= 0:
+            raise ValueError("grid_spacing_m must be finite and positive")
+
+        half_search = int(np.ceil(search_half_width_km / self.resolution_km))
+        half_refine = int(np.ceil(refine_half_width_km / self.resolution_km))
 
         self.half_search_indices = max(1, half_search)
         self.half_refine_indices = max(1, half_refine)
@@ -238,8 +266,9 @@ class PressureWindTracker(TcTracker):
         PressureWindTracker
         """
         var_aliases = getattr(conf, "tracking_var_aliases", {}) or {}
-        resolution_km = conf.resolution  # in metres; converted to km below
-        return cls(var_aliases=var_aliases, resolution_km=resolution_km)
+        return cls(var_aliases=var_aliases, grid_spacing_m=conf.resolution,
+                   search_half_width_km=conf.wind_pressure_search_half_width_km,
+                   refine_half_width_km=conf.wind_pressure_refine_half_width_km)
 
     def _track_method(self, ds: xr.Dataset) -> xr.Dataset:
         """
