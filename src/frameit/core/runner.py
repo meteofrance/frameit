@@ -14,7 +14,7 @@ from frameit.io.loader import DatasetResources, discover_input_files, resolve_in
 from frameit.processing.derived.wind import add_speed_from_uv_dict, wind_names
 from frameit.processing.extraction import _iter_datasets, extract_data, polar_support_settings
 from frameit.processing.tracking.postprocess import enrich_track_with_kinematics
-from frameit.processing.wind_collocation import collocate_winds
+from frameit.processing.wind_collocation import select_vertical_velocity
 from frameit.tracking.tracker_core import build_tracker_from_config, make_tracking_dataset
 from frameit.utils.logging_helpers import (
     log_global_params_and_presets,
@@ -181,6 +181,7 @@ class FrameitRunner:
         requested_vars_user = getattr(self.conf, "requested_variables_user", None) or {}
         loading_requests = deepcopy(requested_vars_user)
         self._internal_wind_names = {}
+        self._native_cartesian_groups = {}
         polar_requests = getattr(self.conf, "polar_variables", {})
         for group, spec in loading_requests.items():
             variables = list(spec.get("variables", []))
@@ -189,13 +190,20 @@ class FrameitRunner:
                 polar_spec.get("variables", []) if isinstance(polar_spec, dict) else polar_spec
             )
             pair = wind_names(self.conf, group)
-            needs_grid_pair = (
-                getattr(self.conf, "wind_reference_frame", "earth") == "grid"
-                and any(name in variables for name in pair)
-            )
-            if "wind_speed" in variables or "wind_speed" in polar_names or needs_grid_pair:
-                self._internal_wind_names[group] = [name for name in pair if name not in variables]
-                spec["variables"] = list(dict.fromkeys(variables + list(pair)))
+            from frameit.processing.wind_reference import wind_pairs
+
+            pairs = [(p["u"], p["v"]) for p in wind_pairs(self.conf, group)] or [pair]
+            dependencies = []
+            for names in pairs:
+                if any(name in variables for name in names) or (
+                    names == pair and ("wind_speed" in variables or "wind_speed" in polar_names)
+                ):
+                    dependencies.extend(names)
+            if dependencies:
+                self._internal_wind_names[group] = [
+                    name for name in dict.fromkeys(dependencies) if name not in variables
+                ]
+                spec["variables"] = list(dict.fromkeys(variables + dependencies))
 
         tracking_method = getattr(self.conf, "tracking_method", None)
         requested_vars_tracker = getattr(self.conf, "requested_variables_tracker", None) or {}
@@ -218,6 +226,7 @@ class FrameitRunner:
                 engine=self.conf.netcdf_engine,
                 chunks=self.conf.netcdf_chunks,
                 duplicate_time_policy=self.conf.duplicate_time_policy,
+                native_output_groups=self._native_cartesian_groups,
             )
 
         elif file_type in {"grib", "grib2"}:
@@ -239,6 +248,8 @@ class FrameitRunner:
                 strict=self.input_files is not None,
                 resources=self.resources,
                 duplicate_time_policy=self.conf.duplicate_time_policy,
+                wind_conf=self.conf,
+                native_output_groups=self._native_cartesian_groups,
             )
 
         else:
@@ -256,6 +267,19 @@ class FrameitRunner:
                             for g, ds in groups.items()}
                         for m, groups in dict_tracker.items()}
         dict_user = add_speed_from_uv_dict(dict_user, self.conf)
+        # Record the effective per-component transformations, including direct
+        # Python API runs which did not call metadata preflight.
+        transformations = []
+        for group, dataset in dict_user.items():
+            for name, value in dataset.data_vars.items():
+                keys = ("source_wind_reference_frame", "wind_reference_frame",
+                        "wind_rotation_method", "wind_collocation", "w_target_mapping",
+                        "w_source_interface_values", "w_mass_target_values")
+                record = {key: value.attrs[key] for key in keys if key in value.attrs}
+                if record:
+                    transformations.append(dict(group=group, variable=name, **record))
+        if hasattr(self.conf, "add_parameter"):
+            self.conf.add_parameter("wind_transformations", transformations)
 
         # Check groups and variables
         logger.debug("Checking user datasets")
@@ -343,15 +367,30 @@ class FrameitRunner:
                 self.track.load()
         log.info("Tracking complete: %d time(s)", self.track.sizes.get("time", 0))
 
+        # Export representation is separate from the prepared analysis branch.
+        native_cart = getattr(self.conf, "cartesian_horizontal_winds", "mass_earth") == "native"
+        cart_source = self._native_cartesian_groups if native_cart else self.ds_user
+        cart_source = select_vertical_velocity(
+            cart_source, self.conf, getattr(self.conf, "cartesian_vertical_velocity", "interfaces")
+        )
+        if native_cart:
+            for group, spec in self.conf.requested_variables_user.items():
+                if "wind_speed" in spec.get("variables", []) and group in self.ds_user:
+                    speed = self.ds_user[group]["wind_speed"]
+                    if group not in cart_source:
+                        cart_source[group] = speed.to_dataset()
+                    else:
+                        cart_source[group]["wind_speed"] = speed
         # Extraction step
         log.info("Extracting Cartesian fields: %.1f × %.1f km · %.0f m grid",
                  self.conf.x_boxsize_km, self.conf.y_boxsize_km, self.conf.resolution)
         with self.timer.section("extraction"):
             self.track, self.dict_crop_user = extract_data(
                 conf=self.conf,
-                ds_user=self.ds_user,
+                ds_user=cart_source,
                 ds_tracker=self.ds_tracker,
                 track_ds=self.track,
+                native_winds=native_cart,
             )
             if benchmark:
                 self.track.load()
@@ -362,43 +401,23 @@ class FrameitRunner:
         if self.conf.compute_polar_proj:
             log.info("Projecting polar fields")
         with self.timer.section("polar_projection"):
-            atm_model = str(getattr(self.conf, "atm_model", "")).upper()
-            support_fields = self.dict_crop_user
+            self.dict_collocated_crop_user = {}
             if self.conf.compute_polar_proj:
                 support_conf = polar_support_settings(self.conf, self.track)
+                polar_source = select_vertical_velocity(
+                    self.ds_user, self.conf, getattr(self.conf, "polar_vertical_velocity", "mass")
+                )
                 _, support_fields = extract_data(
-                    conf=support_conf, ds_user=self.ds_user, ds_tracker=self.ds_tracker,
+                    conf=support_conf, ds_user=polar_source, ds_tracker=self.ds_tracker,
                     track_ds=self.track,
                 )
-
-            if atm_model == "MNH":
-                self.dict_collocated_crop_user = collocate_winds(
-                    self.dict_crop_user,
-                    conf=self.conf,
-                    policy="strict",
-                )
-                src_dict = (
-                    collocate_winds(support_fields, conf=self.conf, policy="strict")
-                    if self.conf.compute_polar_proj else self.dict_collocated_crop_user
-                )
-                self.dict_crop_user = {
-                    group: ds.drop_vars("_frameit_mass_w", errors="ignore")
-                    for group, ds in self.dict_crop_user.items()
-                }
-                for ds_group, ds in list(self.dict_crop_user.items()):
-                    mass_dim = self.conf.name_vertical_dim
-                    if ds_group == "level_w" and mass_dim in ds.dims and not any(
-                        mass_dim in da.dims for da in ds.data_vars.values()
-                    ):
-                        self.dict_crop_user[ds_group] = ds.drop_dims(mass_dim)
-            else:
-                src_dict = support_fields
+                self.dict_collocated_crop_user = support_fields
 
             if self.conf.compute_polar_proj:
                 from frameit.processing.polar.polar_proj import polar_project
 
                 self.dict_polar_user, self.polar_report = polar_project(
-                    src_dict,
+                    support_fields,
                     conf=self.conf,
                     method=self.conf.polar_interpolation_method,
                     track=self.track,
@@ -423,5 +442,21 @@ class FrameitRunner:
                 self.dict_crop_user[group] = self.dict_crop_user[group].drop_vars(
                     drop, errors="ignore"
                 )
+
+        for group, dataset in list(self.dict_crop_user.items()):
+            used = {dim for value in dataset.data_vars.values() for dim in value.dims}
+            private_axes = {f"{axis}_{suffix}_box" for axis in ("x", "y") for suffix in ("u", "v")}
+            private_axes |= {f"{axis}_{suffix}" for axis in (
+                self.conf.name_lon_dim, self.conf.name_lat_dim) for suffix in ("u", "v")}
+            unused = (set(dataset.dims) & private_axes) - used
+            if unused:
+                dataset = dataset.drop_dims(unused)
+            dataset.attrs.update(
+                horizontal_wind_representation=getattr(
+                    self.conf, "cartesian_horizontal_winds", "mass_earth"),
+                vertical_velocity_representation=getattr(
+                    self.conf, "cartesian_vertical_velocity", "interfaces"),
+            )
+            self.dict_crop_user[group] = dataset
 
         return RunResult(ok=True, n_files=len(files), output_dir=self.output_dir, files=files)

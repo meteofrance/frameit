@@ -13,7 +13,11 @@ import xarray as xr
 
 from frameit.check.check_functions import drop_time_dupes
 from frameit.io.loader import managed_loading, resolve_input_files
-from frameit.processing.requests import build_group_ds, normalize_requests
+from frameit.processing.requests import (
+    build_group_ds,
+    normalize_requests,
+    selected_native_indices,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +156,7 @@ def concat_nc2ds_by_vert_coord(
     engine="h5netcdf",
     chunks=None,
     duplicate_time_policy="first",
+    native_output_groups=None,
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open the NetCDF files once then apply two independent requests.
@@ -207,6 +212,41 @@ def concat_nc2ds_by_vert_coord(
         tracker_req_by_method["pressure_centroid"] = normalize_requests(mnh_fields.requests())
         wind_conf.requested_variables_tracker["pressure_centroid"] = mnh_fields.requests()
 
+    if len(files) > 1:
+        # Interpret units, basis and native brackets independently in each file.
+        # Concatenating first would retain only one file's interpretation.
+        users, trackers, natives = [], [], []
+        for path in files:
+            native = {} if native_output_groups is not None else None
+            user, tracker = concat_nc2ds_by_vert_coord(
+                [path], user_requested_variables_yaml, tracker_requested_variables_by_method_yaml,
+                method, concat_dimension=concat_dimension, parallel=parallel, strict=True,
+                keep_geovars=keep_geovars, geovar_candidates=geovar_candidates,
+                float_tol=float_tol, resources=resources, wind_conf=wind_conf, engine=engine,
+                chunks=chunks, duplicate_time_policy=duplicate_time_policy,
+                native_output_groups=native,
+            )
+            users.append(user)
+            trackers.append(tracker)
+            if native is not None:
+                natives.append(native)
+
+        def combine(parts):
+            result = {}
+            for group in dict.fromkeys(g for part in parts for g in part):
+                sequence = [part[group] for part in parts if group in part]
+                result[group] = drop_time_dupes(xr.concat(
+                    sequence, dim=concat_dimension, data_vars="minimal", coords="different",
+                    compat="equals", join="exact", combine_attrs="override",
+                ), keep=duplicate_time_policy)
+            return result
+
+        if native_output_groups is not None:
+            native_output_groups.update(combine(natives))
+        return combine(users), {
+            m: combine([tree.get(m, {}) for tree in trackers]) for m in methods
+        }
+
     # Minimal union of variables to read
     requested_vars_all: set[str] = set()
     for _, spec in user_req.items():
@@ -216,6 +256,24 @@ def concat_nc2ds_by_vert_coord(
             requested_vars_all.update(spec.get("variables", []))
     if mnh_fields is not None:
         requested_vars_all.update(mnh_fields.variables)
+
+    if wind_conf is not None:
+        from frameit.processing.derived.wind import wind_names
+        from frameit.processing.wind_reference import wind_pairs
+
+        for group in set(user_req) | {g for blk in tracker_req_by_method.values() for g in blk}:
+            pairs = wind_pairs(wind_conf, group)
+            names = [(p["u"], p["v"]) for p in pairs] or [wind_names(wind_conf, group)]
+            for pair in names:
+                if requested_vars_all.intersection(pair):
+                    requested_vars_all.update(pair)
+        for pair in getattr(wind_conf, "wind_pairs", []):
+            if requested_vars_all.intersection((pair["u"], pair["v"])):
+                rotation = pair.get("rotation") or {}
+                if rotation.get("method") == "coordinate":
+                    requested_vars_all.add(rotation["coordinate"])
+                if rotation.get("method") == "mesonh_projection":
+                    requested_vars_all.update(("BETA", "RPK", "LON0", "CARTESIAN"))
 
     # Automatically add geographic variables
     auto_geo = []
@@ -245,12 +303,47 @@ def concat_nc2ds_by_vert_coord(
         if keep_as_coords:
             ds = ds.set_coords(keep_as_coords)
 
+    if wind_conf is not None:
+        from frameit.processing.derived.wind import normalize_native_wind_units
+        from frameit.utils.units import normalize_geography
+
+        ds = normalize_geography(ds, wind_conf)
+        if str(wind_conf.atm_model).upper() == "MNH":
+            from frameit.utils.units import convert_units
+
+            for dim in (wind_conf.name_lon_dim, wind_conf.name_lat_dim):
+                for name in (dim, dim + "_u", dim + "_v"):
+                    if name in ds.coords and ds[name].attrs.get("units"):
+                        ds = ds.assign_coords({name: convert_units(ds[name], "distance")})
+        for group in set(user_req) | {g for blk in tracker_req_by_method.values() for g in blk}:
+            # Centroid field discovery is validated by its explicitly declared
+            # native adapter too; source units are canonical before concatenation.
+            declarations = wind_pairs(wind_conf, group)
+            pair_names = [p[c] for p in declarations for c in ("u", "v")]
+            if not declarations:
+                pair_names = wind_names(wind_conf, group)
+            if group == "surface" or any(
+                name in ds and group in ds[name].dims for name in pair_names
+            ):
+                ds = normalize_native_wind_units(ds, wind_conf, group)
+        w_name = wind_conf.velocity_aliases.get("w_velocity", "WT")
+        if w_name in ds:
+            from frameit.processing.derived.wind import normalize_velocity_units
+
+            ds[w_name] = normalize_velocity_units(ds[w_name], wind_conf)
+
     # Native collocation precedes both horizontal cropping and vertical selection.
     mass_w = None
     if wind_conf is not None and str(wind_conf.atm_model).upper() == "MNH":
         from frameit.processing.wind_collocation import prepare_native_mnh
 
         ds_user_native, mass_w = prepare_native_mnh(ds, wind_conf)
+    elif wind_conf is not None:
+        from frameit.processing.derived.wind import normalize_winds
+
+        ds_user_native = ds
+        for group in set(user_req) | {g for blk in tracker_req_by_method.values() for g in blk}:
+            ds_user_native = normalize_winds(ds_user_native, wind_conf, group)
     else:
         ds_user_native = ds
 
@@ -264,21 +357,48 @@ def concat_nc2ds_by_vert_coord(
             if ds_u is not None:
                 out_user[g] = ds_u
 
+    if native_output_groups is not None:
+        for group, req in user_req.items():
+            native = build_group_ds(ds, req, group, concat_dimension, float_tol)
+            if native is not None:
+                # Mass axes and geography define the cell-aligned crop even if
+                # every requested variable happens to be on staggered faces.
+                for name in ("ni", "nj", "latitude", "longitude"):
+                    if name in ds:
+                        native = native.assign_coords({name: ds[name]})
+                native_output_groups[group] = native
+
     if mass_w is not None and "level_w" in out_user:
         # Keep the requested native W product, but carry independently prepared
         # mass-point W through extraction for polar use. Trim this internal field
         # from Cartesian outputs in the runner after consuming it.
         if "level" in out_user:
             selected = mass_w.sel(level=out_user["level"]["level"])
+            target_policy = "selected_mass_fields"
+        elif user_req["level_w"].get("level_domain") == "physical":
+            positions = selected_native_indices(
+                ds, {"level_domain": "physical", "all_levels": True}, "level"
+            )
+            selected = mass_w.isel(level=positions)
+            target_policy = "physical_mass_range"
         elif user_req["level_w"]["all_levels"]:
             selected = mass_w
+            target_policy = "stored_mass_range"
         else:
             native_labels = out_user["level_w"]["level_w"].values
             indices = ds.indexes["level_w"].get_indexer(native_labels)
             if (indices < 0).any() or (indices >= mass_w.sizes["level"]).any():
                 raise ValueError("Requested W interfaces lack corresponding native mass levels")
             selected = mass_w.isel(level=indices)
+            target_policy = "corresponding_native_mass_indices"
+        selected.attrs = dict(selected.attrs, vertical_location="mass",
+                              w_target_mapping=target_policy,
+                              w_source_interface_values=str(
+                                  out_user["level_w"].level_w.values.tolist()),
+                              w_mass_target_values=str(selected.level.values.tolist()))
         out_user["level_w"]["_frameit_mass_w"] = selected
+        if native_output_groups is not None and "level_w" in native_output_groups:
+            native_output_groups["level_w"]["_frameit_mass_w"] = selected
 
     for m, blk in tracker_req_by_method.items():
         grp_map: dict[str, xr.Dataset] = {}
@@ -306,7 +426,7 @@ def concat_nc2ds_by_vert_coord(
             # General case: go through build_group_ds
             for g in blk:
                 if g in blk:
-                    ds_t = build_group_ds(ds, blk[g], g, concat_dimension, float_tol)
+                    ds_t = build_group_ds(ds_user_native, blk[g], g, concat_dimension, float_tol)
                     if ds_t is not None:
                         grp_map[g] = ds_t
 

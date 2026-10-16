@@ -105,7 +105,7 @@ currently supported.
 Variables and vertical levels
 -----------------------------
 
-Native group/variable names are preserved:
+Requests use native group/variable names:
 
 .. code-block:: yaml
 
@@ -116,13 +116,17 @@ Native group/variable names are preserved:
        names: [u, v]
        levels: {values: [850, 700]}
 
-``levels`` is ``all`` (also the omission default), ``{indices: [...]}``, or
-``{values: [...]}``. Select exactly one strategy. Indices are zero-based,
-nonnegative integers. Values and matching tolerances use the native vertical
+``levels`` is ``all`` (also the omission default), ``stored``, ``physical``,
+``{indices: [...]}``, or ``{values: [...]}``. Select exactly one strategy.
+Indices are zero-based, nonnegative integers. Values and matching tolerances
+use the native vertical
 coordinate units, displayed by inspection. For a verified ``isobaricInhPa``
 coordinate, 850 means hPa even though pressure calculations normalize to Pa.
 Native selection precedes computational normalization. Contradictory pressure
 group/unit metadata is rejected.
+
+The ``stored`` and ``physical`` strategies, original stored-index semantics,
+and W-to-mass target mapping are described in :ref:`wind-grid-contract`.
 
 Polar computation
 -----------------
@@ -158,10 +162,62 @@ dimensionless.
 Missing geographic/wind units follow documented AROME/MesoNH adapter contracts
 and are recorded. Unsupported or incompatible declarations fail. Geographic
 coordinates are normalized before tracking as well as polar projection.
-``input.wind_reference_frame`` defaults to earth-relative; explicit source
-metadata has precedence. Grid-relative winds require a valid rotation coordinate.
+Use pair-specific declarations below to make each scientific choice explicit.
+The legacy file-wide ``input.wind_reference_frame`` cannot describe mixed
+model-level grid winds and Earth-relative surface winds; replace it with
+``input.wind_pairs`` for such inputs.
 Pass-through scalar fields preserve their source units; computationally prepared
 winds and derived products carry normalized units.
+
+Explicit wind pairs and output representation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+See :ref:`wind-grid-contract` for diagrams, defaults and scientific meaning.
+This Meso-NH declaration distinguishes model-level grid winds from
+Earth-relative surface winds:
+
+.. code-block:: yaml
+
+   input:
+     wind_pairs:
+       - group: level
+         u: UT
+         v: VT
+         reference_frame: grid
+         rotation: {method: mesonh_projection}
+       - group: surface
+         u: UM10
+         v: VM10
+         reference_frame: earth
+   output:
+     cartesian:
+       horizontal_winds: mass_earth  # native | mass_earth
+       vertical_velocity: interfaces  # interfaces | mass
+     polar:
+       vertical_velocity: mass  # interfaces | mass
+
+``input.wind_pairs`` is a list of explicit pairs scoped by native ``group``.
+Choose ``reference_frame: earth`` or ``grid`` based on the actual source.
+Grid-relative pairs require one declared rotation method:
+
+* ``mesonh_projection``: use the angle
+  ``BETA - RPK * wrap(longitude - LON0)`` in degrees, with the longitude
+  difference wrapped to [-180, 180). This requires finite projection metadata
+  and excludes Meso-NH Cartesian geometry;
+* ``geolocation``: derive the grid basis from the geographic grid geometry;
+* ``coordinate``: use a named angle, for example
+  ``rotation: {method: coordinate, coordinate: grid_rotation}``.
+  The angle measures counterclockwise rotation from geographic east to grid x;
+  its units must be declared and convertible to radians.
+
+There is no ``auto`` frame or method. Validate the declaration against available
+GRIB component flags and CF wind metadata (including standard names). A conflict,
+inconsistent pair, missing angle, unsupported projection or unusable geometry
+must fail with the affected pair identified. Do not silently change reference
+frame or fall back from one rotation method to another. Earth-relative pairs
+need no grid-to-Earth rotation. Generated templates show explicit pair
+declarations for their selected winds and the three output defaults above.
+See :ref:`wind-preparation-method` for equations, axis checks and limitations.
 
 Output, logging, and precedence
 ----------------------------------

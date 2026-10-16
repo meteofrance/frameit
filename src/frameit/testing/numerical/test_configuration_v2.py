@@ -23,13 +23,16 @@ from frameit.utils.units import convert_units
 
 
 def document(tmp_path, **sections):
+    # This synthetic fixture defines UM10/VM10 as Earth-relative components.
+    wind_pairs = [{"group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
     value = {"schema_version": 2, "model": "mesonh",
-             "input": {"directory": str(tmp_path), "pattern": "*.nc"},
+             "input": {"directory": str(tmp_path), "pattern": "*.nc", "wind_pairs": wind_pairs},
              "output": {"directory": str(tmp_path / "output")},
              "tracking": {"method": "fixed_box", "fixed_box": {
                  "center": {"latitude": -20., "longitude": 60.}}},
              "variables": {"surface": {"names": ["UM10", "VM10", "MSLP"]}}}
     value.update(sections)
+    value["input"].setdefault("wind_pairs", wind_pairs)
     return value
 
 
@@ -66,6 +69,12 @@ def test_generated_templates(tmp_path, model, full, method):
     assert conf.resolution == 0
     assert conf.tracking_method == method
     assert conf.data_dir == tmp_path / "data"
+    assert conf.wind_pairs == [{"group": "surface", "u": "u10" if model == "arome" else "UM10",
+                                "v": "v10" if model == "arome" else "VM10",
+                                "reference_frame": "earth"}]
+    assert conf.cartesian_horizontal_winds == "mass_earth"
+    assert conf.cartesian_vertical_velocity == "interfaces"
+    assert conf.polar_vertical_velocity == "mass"
     with pytest.raises(FileExistsError):
         write_template(model, path)
 
@@ -114,6 +123,8 @@ def test_migration_preserves_patterns_paths_and_physical_values(tmp_path):
     assert c["input"]["exclude"] == ["3CH09.1.MXX30.000diag.nc"]
     assert c["input"]["directory"] == str(tmp_path / "data")
     assert c["input"]["grid_spacing_m"] == 2500
+    assert c["input"]["wind_reference_frame"] is None
+    assert c["input"]["wind_pairs"] == []
     assert c["polar"]["radial_step_m"] == 5000
     assert c["variables"]["level"]["levels"] == {"indices": [0, 2]}
     assert c["metadata"]["extra"] == {"author": "test"}
@@ -239,7 +250,11 @@ def test_unit_boundary_angle_consistency_and_grid_rotation(tmp_path):
                         "VM10": xr.DataArray(0., attrs={"units": "m/s"})},
                        coords={"grid_rotation": xr.DataArray(90., attrs={"units": "degree"})},
                        attrs={"wind_reference_frame": "grid"})
-    conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path))
+    raw = document(tmp_path)
+    raw["input"]["wind_pairs"] = [{"group": "surface", "u": "UM10", "v": "VM10",
+                                    "reference_frame": "grid", "rotation": {
+                                        "method": "coordinate", "coordinate": "grid_rotation"}}]
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
     result = normalize_winds(winds, conf, "surface")
     np.testing.assert_allclose(result.UM10, 0, atol=1e-12)
     np.testing.assert_allclose(result.VM10, 10, atol=1e-12)
@@ -395,6 +410,17 @@ def test_frozen_matrix_new_schema_matches_legacy_configuration(tmp_path, model):
     )
     case = resolve_case(case, root, tmp_path / "legacy")
     assert case["preflight"] == "READY", case["reason"]
+    # Both replay paths use the same explicit source conventions. This is a
+    # configuration-equivalence regression, not scientific validation of them.
+    case["config"]["wind_pairs"] = (
+        [{"group": group, "u": "u", "v": "v", "reference_frame": "earth"}
+         for group in ("heightAboveGround", "isobaricInhPa")]
+        + [{"group": "surface", "u": "u10", "v": "v10", "reference_frame": "earth"}]
+        if model == "AROME" else
+        [{"group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
+          "rotation": {"method": "geolocation"}},
+         {"group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
+    )
     legacy = SimulationConfig.from_mapping_with_model_preset(case["config"])
     nested, _ = migrate_mapping(case["config"])
     nested["output"]["directory"] = str(tmp_path / "nested")

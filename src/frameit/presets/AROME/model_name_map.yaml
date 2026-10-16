@@ -18,7 +18,8 @@ name_longitude: "longitude"
 velocity_aliases : 
   u_velocity: "u"
   v_velocity: "v"
-  w_velocity: "w"
+  # Geometric vertical velocity; w is pressure velocity (Pa/s), a scalar.
+  w_velocity: "wz"
 
 # Name of variables for trackers
 # -----------------------------

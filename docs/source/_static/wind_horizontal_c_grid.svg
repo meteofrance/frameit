@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 340" role="img" aria-labelledby="title desc">
+  <title id="title">Horizontal C-grid: sample locations and collocation</title>
+  <desc id="desc">U samples lie on the left and right faces, V samples on the bottom and top faces, and a mass sample at the centre. Midpoint U is the mean of face values 10 and 20, giving 15 metres per second. Symbols indicate locations, not wind direction.</desc>
+  <rect width="860" height="340" rx="12" fill="#f5f8fc"/>
+  <g font-family="sans-serif" fill="#192d45">
+    <text x="28" y="35" font-size="21" font-weight="bold">Horizontal C grid</text>
+    <text x="28" y="60" font-size="15">Markers show locations — not flow</text>
+    <path d="M110 100H350V260H110Z" fill="#fff" stroke="#8294aa" stroke-width="2"/>
+    <path d="M110 180H350M230 100V260" stroke="#c0cbd8" stroke-dasharray="5 5"/>
+    <g fill="#146b9b" stroke="#fff" stroke-width="2">
+      <rect x="102" y="172" width="16" height="16"/>
+      <rect x="342" y="172" width="16" height="16"/>
+    </g>
+    <g fill="#a14e13" stroke="#fff" stroke-width="2">
+      <path d="m230 90 10 10-10 10-10-10Z"/>
+      <path d="m230 250 10 10-10 10-10-10Z"/>
+    </g>
+    <circle cx="230" cy="180" r="9" fill="#247652" stroke="#fff" stroke-width="2"/>
+    <g font-size="16">
+      <text x="51" y="166" fill="#146b9b">U face</text>
+      <text x="51" y="207" fill="#146b9b">10</text>
+      <text x="359" y="166" fill="#146b9b">U face</text>
+      <text x="359" y="207" fill="#146b9b">20</text>
+      <text x="248" y="104" fill="#a14e13">V face</text>
+      <text x="248" y="267" fill="#a14e13">V face</text>
+      <text x="244" y="180" fill="#247652">Mass</text>
+    </g>
+    <text x="465" y="120" font-size="18" font-weight="bold">Collocate, then interpret the basis</text>
+    <text x="465" y="157" font-size="17">Midpoint U = (10 + 20) / 2 = 15 m s⁻¹</text>
+    <text x="465" y="193" font-size="16">V uses its own two face neighbours.</text>
+    <text x="465" y="225" font-size="16">Grid x/y and geographic east/north</text>
+    <text x="465" y="249" font-size="16">need not point in the same directions.</text>
+    <text x="28" y="315" font-size="15">Collocation changes location. Rotation changes basis. Neither subtracts storm motion.</text>
+  </g>
+</svg>

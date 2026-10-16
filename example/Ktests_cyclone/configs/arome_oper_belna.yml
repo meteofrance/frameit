@@ -5,6 +5,10 @@ run: {name: BELNA_OPER-E}
 input:
   directory: ./data/AROME/BELNA
   pattern: "arome_BELNA_20191206+???0P.grib"
+  wind_pairs:
+    - {group: heightAboveGround, u: u, v: v, reference_frame: earth}
+    - {group: isobaricInhPa, u: u, v: v, reference_frame: earth}
+    - {group: surface, u: u10, v: v10, reference_frame: earth}
 tracking:
   method: wind_pressure
 domain:
@@ -23,5 +27,7 @@ polar:
   variables: all
   azimuth_step_deg: 10
 output:
+  cartesian: {horizontal_winds: mass_earth, vertical_velocity: interfaces}
+  polar: {vertical_velocity: mass}
   directory: ./output/BELNA
 logging: {level: DEBUG}

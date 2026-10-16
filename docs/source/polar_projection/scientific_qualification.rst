@@ -113,6 +113,84 @@ Cropped CI data do not establish coverage of the pressure-centroid tracker's
 500-km reference ring; retain its dedicated tests and use full-domain inputs for
 that scientific comparison.
 
+.. _wind-preparation-method:
+
+Wind preparation method record
+------------------------------
+
+**Quantity and status.** Implemented preparation of physical horizontal velocity
+components and Meso-NH vertical W for extraction, tracking and polar sampling;
+this is not a new stable diagnostic. Location/basis choices and examples are in
+:ref:`wind-grid-contract`; declarations are in
+:doc:`/user_guide/configuration_file`.
+
+**Inputs and conventions.** Each pair declares its group, U/V names and Earth or
+grid basis; a grid pair declares exactly one rotation method. Components
+normalize to m s-1 per input file before concatenation. Collocation uses labelled,
+finite, strictly monotone native coordinates and actual mass targets, before
+cropping/subsetting removes neighbours. Linear interpolation between coordinates
+:math:`s_0,s_1` uses :math:`q(s)=(1-t)q_0+tq_1`,
+:math:`t=(s-s_0)/(s_1-s_0)`. No extrapolation or lone-neighbour substitution is
+used. Missing contributing values remain missing; an exact source-node target
+does not require the unused neighbour. Meso-NH vertical coordinates are model
+coordinates, not assumed constant geometric altitude. W-to-mass target selection
+and preservation of other interface fields follow :ref:`wind-grid-contract`.
+
+For angle :math:`a` counterclockwise from east to positive grid x:
+
+.. math::
+
+   u_E = u_g\cos a-v_g\sin a, \qquad
+   v_N = u_g\sin a+v_g\cos a.
+
+These are physical vector components: no map-factor scaling or storm-motion
+subtraction is applied. ``coordinate`` converts the named angle to radians.
+``mesonh_projection`` uses
+:math:`a=\mathrm{BETA}-\mathrm{RPK}\,\mathrm{wrap}(\lambda-\mathrm{LON0})`
+in degrees, wrapping to [-180, 180), then converts to radians. BETA/LON0 are
+degree-valued Meso-NH metadata; RPK must be in [-1, 1]. Cartesian Meso-NH geometry
+is excluded. ``geolocation`` estimates signed native-axis directions from local
+WGS84 neighbour bearings, including descending axes. It rejects degenerate,
+reflected or nonorthogonal geometry (absolute cosine of axis separation > 0.02)
+and sharp neighbour-direction changes (cosine < 0.99). These are implementation
+support thresholds, not universal scientific accuracy criteria.
+
+**References and departures.** The `Meso-NH grid documentation
+<https://mesonh.readthedocs.io/en/mnh-6-0/documentation/users_guide/grids.html>`_
+describes the Arakawa C-grid convention and cites Arakawa and Lamb (1977).
+Projection metadata are defined by `NAM_GRID_PRE
+<https://mesonh.readthedocs.io/en/mnh-6-0/documentation/users_guide/executables_namelists/namelists/nam_grid_pre.html>`_.
+The projection-angle sign follows the EPyGrAM software convention in
+`netCDFMNH._read_geometry
+<https://github.com/UMR-CNRM/EPyGrAM/blob/master/src/epygram/formats/netCDFMNH.py>`_
+and `ProjectedGeometry.compass_grid/reproject_wind_on_lonlat
+<https://github.com/UMR-CNRM/EPyGrAM/blob/master/src/epygram/geometries/ProjectedGeometry.py>`_,
+without optional map-factor correction. These source conventions and software
+references are not evidence of independent scientific sign-off. Geolocation is
+a local finite-neighbour approximation, not a conservative transformation.
+
+**Verification and tolerances.** Under ``src/frameit/testing/numerical/``,
+``test_wind_reference.py`` checks quarter-turn vector truth, metadata conflicts,
+idempotence and independently projected axes. Projection-sign tests use pyproj
+Mercator/Lambert/stereographic perturbations (north-component absolute tolerance
+2e-7 m/s); 100-m geolocation fixtures allow 5e-5 m/s for one-sided boundary
+direction error. ``test_wind_collocation.py`` and ``test_request_selection.py``
+check coordinate-based interpolation and level mappings.
+``test_native_extraction.py`` and ``test_grid_representations.py`` check labelled
+faces, field-specific W, per-file units, independent NetCDF reopening, and
+tracking/polar invariance under Cartesian choices. The latter's real-xESMF
+synthetic 1-km-cell vector check allows 2e-4 m/s for spherical-cell curvature.
+``test_wind_preflight.py`` checks declarations and shared tracker preparation.
+
+**Metadata and remaining limits.** Effective configuration/provenance records
+pair declarations and level choices; field metadata retains source basis,
+collocation, rotation method/parameters, units and target location. AROME omega
+and geometric vertical velocity remain distinct. Synthetic tests establish the
+stated numerical contracts, not all real-model regimes. Real-data qualification
+across Meso-NH releases/projections and independent scientific review remain
+outstanding; large or strongly curved cells need separate assessment. No stable
+diagnostic admission or general conservation claim follows from these checks.
+
 Migrating older numerical products
 ------------------------------------
 

@@ -8,12 +8,17 @@ Purpose
 ~~~~~~~
 FrameIt can regrid selected model fields onto a storm-centred polar grid defined by radius and azimuth. This is useful to compute azimuthal means, radial profiles, tangential and radial components, and to compare structures consistently along a track.
 
-FrameIt first prepares native MNH winds while their collocation neighbours are
-available, then extracts the requested fields on a storm-centred Cartesian box
+FrameIt prepares analysis winds while native collocation neighbours are
+available, then extracts analysis fields on a storm-centred Cartesian box
 (``x_box``, ``y_box``). It builds a geodesic polar target grid (``rr``, ``theta``)
 around the supplied continuous centre and interpolates the selected fields
 using `xESMF <https://xesmf.readthedocs.io/>`_. The extraction centre cell is
 used when no continuous centre is supplied.
+
+See :ref:`wind-grid-contract` for the illustrated distinction between native
+output and mass/Earth analysis winds, explicit input declarations, W choices,
+level mappings. Cartesian representation choices do not change polar sampling
+or tracking.
 
 General strategy
 ~~~~~~~~~~~~~~~~
@@ -29,12 +34,16 @@ General strategy
 
 
 2. **Interpolate fields onto the polar grid**
+
    - FrameIt uses xESMF in **LocStream output** mode, which treats the polar grid as a list of target points.
-   - Default interpolation is **bilinear**, other xESMF methods can be used if supported by your installation.
+   - Default interpolation is **bilinear**; ``nearest_s2d`` is an explicit alternative.
 
 3. **Preserve time and vertical dimensions**
-   - Interpolation is applied horizontally, vertical coordinates and levels present in the extracted datasets are preserved.
-   - FrameIt intentionally projects **all available vertical levels** for the selected variables, it does not apply vertical subsetting at this stage.
+
+   - Horizontal sampling retains selected vertical levels. W-to-mass preparation,
+     when selected, happens with native brackets available, before sparse subsetting.
+   - Polar requests inherit extraction-level selections; they do not select
+     additional vertical levels at this stage.
 
 Configuration
 ~~~~~~~~~~~~~
@@ -166,7 +175,7 @@ rectangular footprint; missing coordinates inside that footprint are rejected,
 not filled. Source and target latitude must be geographic latitude.
 
 Cartesian output extent and polar input support are separate. The runner adds
-``polar_source_halo_points`` native points to the actual rounded extraction
+``polar.source_halo_points`` native points to the actual rounded extraction
 half-widths before polar interpolation. The default is one point. Cartesian
 products retain their configured extent. At a true model boundary, unavailable
 targets remain unmapped; the requested radius is not assumed to have complete
@@ -176,15 +185,16 @@ geometry requires more support.
 
 .. code-block:: yaml
 
-   polar_missing_data_policy: strict
-   polar_min_valid_weight_fraction: 0.5
-   polar_weight_zero_tolerance: 1.0e-14
-   polar_source_halo_points: 1
-   polar_ellipsoid: WGS84
+   polar:
+     missing_data_policy: strict
+     min_valid_weight_fraction: 0.5
+     weight_zero_tolerance: 1.0e-14
+     source_halo_points: 1
+     ellipsoid: WGS84
 
 ``strict`` is the default: every contributing source value must be finite.
 ``renormalize`` explicitly enables valid-weight interpolation, provided its
-support fraction reaches ``polar_min_valid_weight_fraction``. All-missing
+support fraction reaches ``polar.min_valid_weight_fraction``. All-missing
 stencils and unmapped points remain NaN even if the threshold is zero. The
 threshold applies only to the renormalized policy.
 
@@ -208,7 +218,7 @@ stencils are not used to form a vector.
 These fractions describe **interpolation-weight support**, not area coverage or
 conservation. The current supported point methods are ``bilinear`` and explicit
 ``nearest_s2d``; negative-weight/high-order methods need a different support
-definition. The runner uses bilinear and introduces no nearest-neighbour fallback.
+definition. The default is bilinear; there is no nearest-neighbour fallback.
 The sparse linear-map interpretation follows Ullrich and Taylor (2015), Section
 2a, DOI ``10.1175/MWR-D-14-00343.1``.
 
@@ -357,14 +367,9 @@ surface winds use the separate 10-m aliases. At zero radius, the radial
 direction is undefined: ``vrad``, ``vtan`` and ``radial_bearing`` are NaN,
 while scalar values and horizontal speed remain available.
 
-MNH U and V are collocated independently on native mass coordinates before
-cropping or selecting vertical levels. This preserves their interpolation
-neighbours and avoids one-sided edge substitution. W is interpolated from
-native interfaces onto mass levels before subsampling. Cartesian W products
-retain the requested native interface values; polar W uses mass levels. A
-W-only polar request uses mass levels corresponding to the requested native
-interface indices. When mass-level fields are requested too, their selected
-mass levels define the polar W targets.
+Polar horizontal winds use collocated Earth-relative components on ``rr`` /
+``theta``. Their preparation and the independent vertical W interface/mass
+choice are explained once in :ref:`wind-grid-contract`.
 
 All trackers supplying continuous longitude/latitude centres define the polar
 origin at those coordinates. Integer extraction indices do not snap the polar
@@ -380,18 +385,12 @@ products. Velocity units are normalized to metres per second.
 Wind reference frame
 ~~~~~~~~~~~~~~~~~~~~
 Polar positions are storm-centred, but velocities remain **earth-relative**;
-no storm translation is subtracted. GRIB ``uvRelativeToGrid`` and explicit
-``wind_reference_frame`` metadata are checked. When metadata are absent,
-the AROME/MNH input contract is earth-relative winds in metres per second.
-The ``wind_reference_frame`` configuration setting defaults to ``earth``;
-set it to ``grid`` for inputs without metadata that violate that contract.
-
-Explicit grid-relative winds require both collocated components and a
-``grid_rotation`` coordinate, in radians counterclockwise from geographic
-east to the grid x direction. They are rotated into earth-relative winds
-before polar interpolation. Unsupported or missing rotation geometry raises
-an error rather than silently producing geographic diagnostics. This setting
-does not override explicit source metadata.
+no storm translation is subtracted. For pair-specific frame validation and
+declared rotation methods, see :doc:`/user_guide/configuration_file`; source
+references are in :doc:`/user_guide/input_files`. A declaration must agree with
+available GRIB component flags and CF metadata; no silent frame/method fallback
+is permitted. See :ref:`wind-preparation-method` for numerical conventions and
+qualification limits.
 
 Numerical verification
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -446,10 +445,10 @@ stencils and is part of the geometry signature.
 
 .. code-block:: yaml
 
-   polar_regrid_cache_size: 8
-   polar_regrid_cache_max_bytes: 134217728
-   polar_output_chunks: {rr: 32, theta: -1, time: 1}
-   polar_profile: false
+   polar:
+     plan_cache: {entries: 8, max_bytes: 134217728}
+     chunks: {rr: 32, theta: -1, time: 1}
+     profile: false
 
 The default cache holds at most eight plans and an estimated 128 MiB of
 geometry/weight arrays. Oversized plans are applied without retention. Setting
@@ -467,7 +466,7 @@ There is no automatic disk-weight persistence or shape-derived filename reuse.
 
 Dask field data remain lazy. Backend output blocks default to at most 32
 radial rings with the complete angular axis, avoiding tiny LocStream chunks
-inferred from the source's horizontal layout. ``polar_output_chunks`` can
+inferred from the source's horizontal layout. ``polar.chunks`` can
 override ``rr``, ``theta`` and relevant leading dimensions such as ``time``,
 ``level`` or ``heightAboveGround``. Sizes are positive integers or -1 for a
 whole axis. Unknown output dimensions fail clearly. NumPy inputs stay eager.
@@ -479,7 +478,7 @@ The projection report and ordinary execution result include
 normalization/fingerprinting time, weight-construction time, field-application
 time, and geometry signatures with row-sum/mapping diagnostics. Application
 time is NumPy computation or Dask graph construction; it does not silently
-include later lazy materialization. ``polar_profile: true`` additionally
+include later lazy materialization. ``polar.profile: true`` additionally
 records unique Dask task count and the process-lifetime RSS high-water mark.
 Graph inspection does not compute physical fields. RSS includes previous
 imports/loading and is not an incremental interpolation-only memory measure.

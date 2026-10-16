@@ -14,6 +14,9 @@ import xarray as xr
 
 from frameit.check.check_functions import drop_time_dupes
 from frameit.io.loader import managed_loading, resolve_input_files
+from frameit.processing.derived.wind import normalize_native_wind_units, normalize_winds
+from frameit.processing.polar.metadata import preserve_coordinate_dependencies
+from frameit.processing.wind_reference import wind_pairs
 
 logger = logging.getLogger(__name__)
 logging.getLogger("cfgrib").setLevel(logging.WARNING)
@@ -39,7 +42,9 @@ def _parse_and_normalize(yaml_req: dict | None, dims_seen: set[str]) -> dict[str
     for group, spec in yaml_req.items():
         spec = spec or {}
         dim = spec.get("dimension", None)
-        if dim is None and group in dims_seen:
+        # "surface" is a logical group spanning GRIB surface/meanSea/10-m
+        # blocks, not the scalar "surface" coordinate on some messages.
+        if dim is None and group != "surface" and group in dims_seen:
             dim = group
         from frameit.processing.requests import normalize_requests
 
@@ -47,6 +52,7 @@ def _parse_and_normalize(yaml_req: dict | None, dims_seen: set[str]) -> dict[str
         out[group] = {
             "dimension": dim,
             "variables": list(spec.get("variables", [])),
+            # GRIB pressure/height axes have no native halo levels.
             "all_levels": normalized["all_levels"],
             "levels": normalized["levels"],
             "level_indices": normalized["level_indices"],
@@ -78,6 +84,8 @@ def _collect_parts_for_req(
     req_map: dict[str, dict],
     float_tol: float,
     tag: str,  # "user variables dict" | "tracker variables dict"
+    *,
+    select_levels: bool = True,
 ) -> dict[str, list[xr.Dataset]]:
     """
     Filter GRIB dataset blocks for a single request map.
@@ -106,14 +114,18 @@ def _collect_parts_for_req(
     for ds in dsets:
         for g, req in req_map.items():
             dim = req.get("dimension")
-            if dim and dim not in ds.dims:
+            if dim and dim not in ds.dims and dim not in ds.coords:
                 continue
             sel = ds
+            if dim and dim not in sel.dims:
+                if sel[dim].ndim != 0:
+                    continue
+                sel = sel.expand_dims(dim)
             if "valid_time" in sel.coords:
                 sel = sel.assign_coords(time=sel["valid_time"])
 
             # Vertical selection
-            if dim and dim in sel.dims and not req.get("all_levels", False):
+            if select_levels and dim and dim in sel.dims and not req.get("all_levels", False):
                 if req.get("level_indices"):
                     idx_list = [int(i) for i in req["level_indices"]]
                     n = int(sel.sizes[dim])
@@ -130,9 +142,48 @@ def _collect_parts_for_req(
             # Variables
             keep = [v for v in req.get("variables", []) if v in sel.data_vars]
             if keep:
-                file_parts.setdefault(g, []).append(sel[keep])
+                file_parts.setdefault(g, []).append(
+                    preserve_coordinate_dependencies(sel, sel[keep]))
 
     return file_parts
+
+
+def _select_group_levels(ds, req, float_tol):
+    """Select only after the file's components have been merged and prepared."""
+    dim = req.get("dimension")
+    if not dim or req.get("all_levels", False):
+        return ds
+    if req.get("level_indices"):
+        n = ds.sizes[dim]
+        indices = [int(i) for i in req["level_indices"] if -n <= int(i) < n]
+        return ds.isel({dim: indices}) if indices else None
+    if req.get("levels"):
+        levels = _match_levels(ds[dim].values, req["levels"], tol=float_tol)
+        return ds.sel({dim: levels}) if levels else None
+    return ds
+
+
+def _retain_wind_geometry(ds, dsets, conf, group):
+    """Retain declared rotation inputs even when cfgrib puts them in another block."""
+    if conf is None:
+        return ds
+    names = {conf.name_latitude, conf.name_longitude}
+    for pair in wind_pairs(conf, group):
+        rotation = pair.get("rotation") or {}
+        if rotation.get("coordinate"):
+            names.add(rotation["coordinate"])
+        if rotation.get("method") == "mesonh_projection":
+            names.update(("BETA", "RPK", "LON0", "CARTESIAN"))
+    # The explicit scalar compatibility path names grid_rotation.
+    if getattr(conf, "wind_reference_frame", None) == "grid":
+        names.add("grid_rotation")
+    for source in dsets:
+        for name in names:
+            if name not in ds and name in source:
+                ds = ds.assign_coords({name: source[name]})
+            elif name not in ds and name not in ds.attrs and name in source.attrs:
+                ds = ds.assign_attrs({name: source.attrs[name]})
+    return ds
 
 
 @managed_loading
@@ -148,6 +199,8 @@ def concat_grib2ds_by_vert_coord(
     strict: bool = False,
     resources=None,
     duplicate_time_policy="first",
+    wind_conf=None,
+    native_output_groups: dict[str, xr.Dataset] | None = None,
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open a list of GRIB files and build per-group user and tracker Datasets.
@@ -174,6 +227,14 @@ def concat_grib2ds_by_vert_coord(
     warn : bool, optional
         Emit a warning when the requested tracking method is absent from the
         tracker YAML. Default True.
+    wind_conf : optional
+        Explicit wind declarations. Normalize each file's merged group to
+        Earth-relative m/s before vertical selection and time concatenation.
+        None preserves the historical unprepared loader API.
+    native_output_groups : mutable dict, optional
+        When supplied with wind_conf, populate user groups from the same source
+        pieces with m/s units but original names, locations and source vector
+        basis. Uses the same vertical/time selection, without derived speed.
 
     Returns
     -------
@@ -202,6 +263,7 @@ def concat_grib2ds_by_vert_coord(
         opened_per_file[f] = dsets
         for ds in dsets:
             dims_seen.update(ds.sizes.keys())
+            dims_seen.update(ds.coords)
 
     # 2) Normalisation YAML
     user_req = _parse_and_normalize(user_requested_variables_yaml, dims_seen)
@@ -233,8 +295,8 @@ def concat_grib2ds_by_vert_coord(
         for ds in dsets:
             for g, spec in all_groups.items():
                 dim = spec.get("dimension")
-                if dim and dim in ds.dims:
-                    global_depth[g] = max(global_depth[g], int(ds.sizes[dim]))
+                if dim and dim in ds.coords:
+                    global_depth[g] = max(global_depth[g], int(ds[dim].size))
                     try:
                         vals = np.asarray(ds[dim].values, dtype=float).ravel().tolist()
                     except Exception:
@@ -247,13 +309,17 @@ def concat_grib2ds_by_vert_coord(
     # Before: xr.concat([accumulated, ds_file], dim="time") at each iteration
     # After: list accumulation + single final concat
     parts_user_all: dict[str, list[xr.Dataset]] = {}
+    parts_native_all: dict[str, list[xr.Dataset]] = {}
     parts_trk_all: dict[str, dict[str, list[xr.Dataset]]] = {m: {} for m in methods}
 
     for _f, dsets in opened_per_file.items():
-        parts_user = _collect_parts_for_req(dsets, user_req, float_tol, tag="user variables dict")
+        parts_user = _collect_parts_for_req(
+            dsets, user_req, float_tol, tag="user variables dict", select_levels=False
+        )
         parts_trk_by_m: dict[str, dict[str, list[xr.Dataset]]] = {
             m: _collect_parts_for_req(
-                dsets, tracker_req_by_method[m], float_tol, tag=f"tracker variables dict:{m}"
+                dsets, tracker_req_by_method[m], float_tol, tag=f"tracker variables dict:{m}",
+                select_levels=False,
             )
             for m in methods
         }
@@ -262,14 +328,29 @@ def concat_grib2ds_by_vert_coord(
             ds_file = xr.merge(
                 parts, compat="override", join="outer", combine_attrs="drop_conflicts"
             )
-            parts_user_all.setdefault(g, []).append(ds_file)
+            ds_file = _retain_wind_geometry(ds_file, dsets, wind_conf, g)
+            if wind_conf is not None:
+                if native_output_groups is not None:
+                    native = normalize_native_wind_units(ds_file, wind_conf, g)
+                    native = _select_group_levels(native, user_req[g], float_tol)
+                    if native is not None:
+                        parts_native_all.setdefault(g, []).append(native)
+                ds_file = normalize_winds(ds_file, wind_conf, g)
+            ds_file = _select_group_levels(ds_file, user_req[g], float_tol)
+            if ds_file is not None:
+                parts_user_all.setdefault(g, []).append(ds_file)
 
         for m, parts_trk in parts_trk_by_m.items():
             for g, parts in parts_trk.items():
                 ds_file = xr.merge(
                     parts, compat="override", join="outer", combine_attrs="drop_conflicts"
                 )
-                parts_trk_all[m].setdefault(g, []).append(ds_file)
+                ds_file = _retain_wind_geometry(ds_file, dsets, wind_conf, g)
+                if wind_conf is not None:
+                    ds_file = normalize_winds(ds_file, wind_conf, g)
+                ds_file = _select_group_levels(ds_file, tracker_req_by_method[m][g], float_tol)
+                if ds_file is not None:
+                    parts_trk_all[m].setdefault(g, []).append(ds_file)
 
     # Concat unique en fin de boucle — une seule allocation par groupe
     by_group_user: dict[str, xr.Dataset] = {
@@ -348,4 +429,12 @@ def concat_grib2ds_by_vert_coord(
         m: {g: drop_time_dupes(ds, keep=duplicate_time_policy) for g, ds in grp.items()}
         for m, grp in by_group_trk.items()
     }
+    if native_output_groups is not None and wind_conf is not None:
+        native_output_groups.update({
+            g: drop_time_dupes(xr.concat(
+                parts, dim="time", compat="no_conflicts", data_vars="all", coords="different",
+                join="outer", combine_attrs="override",
+            ).sortby("time"), keep=duplicate_time_policy)
+            for g, parts in parts_native_all.items()
+        })
     return by_group_user, by_group_trk

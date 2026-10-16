@@ -20,6 +20,7 @@ def conf():
     return SimpleNamespace(
         atm_model="MNH", name_lon_dim="ni", name_lat_dim="nj", name_vertical_dim="level",
         velocity_aliases={"u_velocity": "UT", "v_velocity": "VT", "w_velocity": "WT"},
+        wind_reference_frame="earth",
     )
 
 
@@ -52,12 +53,16 @@ def native(reverse=False):
 def test_single_component_affine_native_collocation(component, reverse):
     source = native(reverse)
     paired, _ = prepare_native_mnh(source, conf())
-    alone, _ = prepare_native_mnh(source.drop_vars("VT" if component == "UT" else "UT"), conf())
-    xr.testing.assert_allclose(paired[component], alone[component])
-    direct = collocate_winds({"level": source.drop_vars(
+    companion = "VT" if component == "UT" else "UT"
+    with pytest.raises(ValueError, match="both components"):
+        prepare_native_mnh(source.drop_vars(companion), conf())
+    # Dependency loading prepares both components before user selection. The
+    # selected singleton must remain usable without deriving a vector magnitude.
+    direct = collocate_winds({"level": paired.drop_vars(
         ["WT", "VT" if component == "UT" else "UT"]
     )}, conf=conf())
     xr.testing.assert_allclose(direct["level"][component], paired[component])
+    assert "wind_speed" not in direct["level"]
     axis = "ni" if component == "UT" else "nj"
     expected = source[axis].broadcast_like(paired[component])
     np.testing.assert_allclose(paired[component], expected, atol=1e-12)
@@ -138,6 +143,7 @@ def test_native_and_surface_winds_use_source_grid_frame():
     source["VM10"] = xr.full_like(source.longitude, 4.)
     source.UM10.attrs["units"] = source.VM10.attrs["units"] = "m/s"
     settings = conf()
+    settings.wind_reference_frame = "grid"
     settings.tracking_var_aliases = {"u10m": "UM10", "v10m": "VM10"}
     result, _ = prepare_native_mnh(source, settings)
     np.testing.assert_allclose(result.UM10, -4, atol=1e-12)

@@ -14,6 +14,8 @@ from frameit.processing.derived.wind import (
     normalize_velocity_units,
     normalize_winds,
 )
+from frameit.processing.wind_reference import wind_pairs
+from frameit.utils.units import convert_units
 
 
 def interpolate_staggered(
@@ -27,7 +29,11 @@ def interpolate_staggered(
     """
     if source_dim not in da.coords or target.ndim != 1:
         raise ValueError(f"Native coordinates required to collocate {da.name} on {source_dim}")
-    values = np.asarray(da[source_dim].values, dtype=float)
+    source_coordinate, target_coordinate = da[source_dim], target
+    if source_coordinate.attrs.get("units") != target.attrs.get("units"):
+        source_coordinate = convert_units(source_coordinate, "distance", assumed="m")
+        target_coordinate = convert_units(target_coordinate, "distance", assumed="m")
+    values = np.asarray(source_coordinate.values, dtype=float)
     if values.size < 2 or not np.isfinite(values).all():
         raise ValueError(f"Invalid native coordinate {source_dim}")
     differences = np.diff(values)
@@ -42,7 +48,7 @@ def interpolate_staggered(
     if differences[0] < 0:
         order = order[::-1]
     sorted_values = values[order]
-    points = np.asarray(target.values, dtype=float)
+    points = np.asarray(target_coordinate.values, dtype=float)
     upper = np.searchsorted(sorted_values, points, side="right")
     lower = np.clip(upper - 1, 0, values.size - 1)
     upper = np.clip(upper, 0, values.size - 1)
@@ -52,8 +58,11 @@ def interpolate_staggered(
         out=np.zeros_like(points), where=denominator != 0,
     )
     index_coords = {target.dims[0]: target.values}
-    low = da.isel({source_dim: xr.DataArray(order[lower], dims=target.dims, coords=index_coords)})
-    high = da.isel({source_dim: xr.DataArray(order[upper], dims=target.dims, coords=index_coords)})
+    # Same-name indexers must not carry target labels until after gathering:
+    # xarray otherwise compares them with the original source labels in isel.
+    gather_coords = {} if source_dim == target.dims[0] else index_coords
+    low = da.isel({source_dim: xr.DataArray(order[lower], dims=target.dims, coords=gather_coords)})
+    high = da.isel({source_dim: xr.DataArray(order[upper], dims=target.dims, coords=gather_coords)})
     # Their auxiliary native-coordinate labels differ; only the mass labels
     # participate in arithmetic alignment.
     if source_dim != target.dims[0]:
@@ -73,6 +82,9 @@ def interpolate_staggered(
     if source_dim != target.dims[0] and source_dim in result.coords:
         result = result.drop_vars(source_dim)
     result.attrs = dict(da.attrs)
+    if "grid" in result.attrs:
+        result.attrs.setdefault("source_grid", result.attrs["grid"])
+        result.attrs["grid"] = 1
     result.attrs["wind_collocation"] = "native_coordinate_linear_strict"
     return result
 
@@ -84,24 +96,35 @@ def prepare_native_mnh(ds: xr.Dataset, conf) -> tuple[xr.Dataset, xr.DataArray |
     independently prepared counterpart is consumed by the polar pipeline.
     """
     out = ds.copy(deep=False)
+    # Horizontal coordinate units may differ between stored face/mass axes.
+    # Their physical positions, rather than their numeric labels, set brackets.
+    for dim in (conf.name_lon_dim, conf.name_lat_dim):
+        for name in (dim, dim + "_u", dim + "_v"):
+            if name in out.coords and out[name].attrs.get("units"):
+                out = out.assign_coords({name: convert_units(out[name], "distance")})
     aliases = conf.velocity_aliases
-    for name, suffix in (
-        (aliases.get("u_velocity", "UT"), "_u"),
-        (aliases.get("v_velocity", "VT"), "_v"),
-    ):
+    pairs = wind_pairs(conf, conf.name_vertical_dim)
+    components = [(p[c], suffix) for p in pairs for c, suffix in (("u", "_u"), ("v", "_v"))]
+    if not pairs:
+        components = [(aliases.get("u_velocity", "UT"), "_u"),
+                      (aliases.get("v_velocity", "VT"), "_v")]
+    for name, suffix in components:
         if name not in out:
             continue
         da = out[name].reset_coords(drop=True)
         for mass in (conf.name_lon_dim, conf.name_lat_dim):
             if mass + suffix in da.dims:
-                if mass not in ds.coords:
+                if mass not in out.coords:
                     raise ValueError(f"Missing native mass coordinate {mass}")
-                if np.array_equal(da[mass + suffix].values, ds[mass].values):
+                if np.array_equal(da[mass + suffix].values, out[mass].values):
                     da = da.rename({mass + suffix: mass})
                 else:
-                    da = interpolate_staggered(da, mass + suffix, ds[mass])
+                    da = interpolate_staggered(da, mass + suffix, out[mass])
             elif mass not in da.dims:
                 raise ValueError(f"Unrecognized native horizontal grid for {name}")
+        if "grid" in da.attrs:
+            da.attrs.setdefault("source_grid", da.attrs["grid"])
+            da.attrs["grid"] = 1
         out[name] = da
         out[name].attrs["wind_collocation"] = "native_coordinate_linear_strict"
     out = normalize_winds(out, conf, conf.name_vertical_dim)
@@ -109,7 +132,7 @@ def prepare_native_mnh(ds: xr.Dataset, conf) -> tuple[xr.Dataset, xr.DataArray |
     w_name = aliases.get("w_velocity", "WT")
     mass_w = None
     if w_name in ds:
-        out[w_name] = normalize_velocity_units(ds[w_name], conf)
+        out[w_name] = normalize_velocity_units(out[w_name], conf)
     if w_name in ds and "level_w" in ds[w_name].dims:
         if conf.name_vertical_dim not in ds.coords:
             raise ValueError("W collocation requires the native mass vertical coordinate")
@@ -163,22 +186,11 @@ def collocate_winds(
         raise ValueError("policy must be 'partial' or 'strict'")
     if str(conf.atm_model).upper() != "MNH":
         return dict(dico_user)
-    out = {key: ds.copy(deep=False) for key, ds in dico_user.items()}
+    out = select_vertical_velocity(
+        dico_user, conf, "mass", retain_interfaces=not drop_level_w_group)
     mass_group = conf.name_vertical_dim
     aliases = conf.velocity_aliases
     w_name = aliases.get("w_velocity", "WT")
-    for group, ds in list(out.items()):
-        if "_frameit_mass_w" in ds:
-            w = ds["_frameit_mass_w"].rename(w_name)
-            if mass_group not in out:
-                out[mass_group] = w.to_dataset()
-            else:
-                out[mass_group][w_name] = w.sel({mass_group: out[mass_group][mass_group]})
-            if drop_level_w_group:
-                out.pop(group)
-            else:
-                out[group] = ds.drop_vars("_frameit_mass_w")
-            break
     if mass_group not in out:
         if any(w_name in ds for ds in out.values()):
             raise ValueError("W-only polar preparation requires native mass-level dependencies")
@@ -198,7 +210,10 @@ def collocate_winds(
     ):
         if name not in ds or ds[name].attrs.get("wind_collocation"):
             continue
-        if mass + suffix in ds[name].dims and mass in ds.coords:
+        if all(d in ds[name].dims for d in (conf.name_lon_dim, conf.name_lat_dim)):
+            # Already mass-point inputs need no private preparation marker.
+            continue
+        elif mass + suffix in ds[name].dims and mass in ds.coords:
             ds[name] = interpolate_staggered(ds[name], mass + suffix, ds[mass])
         elif axis in ds[name].dims:
             ds[name] = _collocate_box_component(ds[name], ds, mass, mass + suffix, axis)
@@ -211,5 +226,47 @@ def collocate_winds(
                     source[w_name], zC_name=mass_group, zC_coord=ds[mass_group]
                 )
             if drop_level_w_group:
-                out.pop(key)
+                remaining = source.drop_vars(w_name)
+                if remaining.data_vars:
+                    out[key] = remaining
+                else:
+                    out.pop(key)
     return add_speed_from_uv_dict(out, conf)
+
+
+def select_vertical_velocity(groups, conf, location, *, retain_interfaces=False):
+    """Choose W's representation without changing other fields or vector bases.
+
+    The sidecar was interpolated on the complete source before selection. Only
+    W moves to the mass group; other interface quantities keep their own levels.
+    """
+    if location not in {"interfaces", "mass"}:
+        raise ValueError("vertical_velocity must be interfaces or mass")
+    out = {key: ds.copy(deep=False) for key, ds in groups.items()}
+    mass = conf.name_vertical_dim
+    w_name = conf.velocity_aliases.get("w_velocity", "WT")
+    for group, source in list(out.items()):
+        if "_frameit_mass_w" not in source:
+            continue
+        if location == "mass":
+            w = source["_frameit_mass_w"].rename(w_name)
+            w.attrs = dict(w.attrs, vertical_location="mass")
+            if mass in out:
+                w = w.sel({mass: out[mass][mass]})
+                out[mass][w_name] = w
+            else:
+                out[mass] = w.to_dataset()
+                out[mass].attrs = dict(source.attrs)
+        remove = ["_frameit_mass_w"]
+        if location == "mass" and not retain_interfaces:
+            remove.append(w_name)
+        remaining = source.drop_vars(remove, errors="ignore")
+        if mass in remaining.dims and group != mass and not any(
+            mass in value.dims for value in remaining.data_vars.values()
+        ):
+            remaining = remaining.drop_dims(mass)
+        if remaining.data_vars:
+            out[group] = remaining
+        else:
+            out.pop(group, None)
+    return out

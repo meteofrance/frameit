@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -23,17 +24,19 @@ def normalize_requests(raw: dict[str, dict[str, Any]] | None) -> dict[str, dict[
     Input schema (per group)
     ------------------------
     - variables: list[str]
-    - level_selection: "all" | "indices" | "values" (optional)
+    - level_selection: "all" | "stored" | "physical" | "indices" | "values" (optional)
     - level_indices: list[int] (used if selection == "indices")
     - level_values:  list[Any] (used if selection == "values")
     Legacy keys:
     - all_levels: bool
+    - level_domain: "stored" | "physical" (all is an alias for stored)
     - levels: list[Any] (alias of level_values)
 
     Output schema (per group)
     -------------------------
     - variables: list[str]
     - all_levels: bool
+    - level_domain: "stored" | "physical"
     - level_indices: list[int]
     - levels: list[Any]
     """
@@ -45,12 +48,21 @@ def normalize_requests(raw: dict[str, dict[str, Any]] | None) -> dict[str, dict[
         spec = spec or {}
         sel = str(spec.get("level_selection", "")).lower().strip()
 
-        all_levels = bool(spec.get("all_levels", False) or sel == "all")
+        if sel not in {"", "all", "stored", "physical", "indices", "values"}:
+            raise ValueError(f"Unknown level_selection {sel!r} for {group}")
+        domain = spec.get("level_domain", "physical" if sel == "physical" else "stored")
+        if domain not in {"stored", "physical"}:
+            raise ValueError(f"level_domain must be stored or physical for {group}")
+        if sel in {"all", "stored", "physical"} and domain != (
+            "physical" if sel == "physical" else "stored"
+        ):
+            raise ValueError(f"Conflicting level_selection and level_domain for {group}")
+        all_levels = bool(spec.get("all_levels", False) or sel in {"all", "stored", "physical"})
 
         level_indices: list[int] = []
         levels: list[Any] = []
 
-        if sel == "indices":
+        if sel == "indices" or (not sel and spec.get("level_indices")):
             level_indices = list(spec.get("level_indices", []) or [])
         elif sel in {"values", ""}:
             # "" means keep legacy behavior (values-based selection when provided)
@@ -62,11 +74,81 @@ def normalize_requests(raw: dict[str, dict[str, Any]] | None) -> dict[str, dict[
         out[group] = {
             "variables": list(spec.get("variables", []) or []),
             "all_levels": all_levels,
+            "level_domain": domain,
             "level_indices": level_indices,
             "levels": levels,
         }
 
     return out
+
+
+def selected_native_indices(ds: xr.Dataset, req: dict[str, Any], vert_dim: str) -> list[int]:
+    """Return positional indices without renumbering source levels.
+
+    COMODO ``c_grid_dynamic_range`` is one-based and inclusive on each axis.
+    An optional zero-based ``source_native_index`` (or axis-prefixed coordinate
+    ``<axis>_source_native_index``) maps a previously selected axis to its original
+    positions. Ordinary GRIB pressure/height axes have no vertical halo. MNH
+    physical selection requires explicit range evidence, never positive heights.
+    Value-based requests use exact matches here; :func:`build_group_ds` also
+    supports its explicit numeric matching tolerance.
+    """
+    n = ds.sizes[vert_dim]
+    domain = req.get("level_domain", "physical" if req.get("level_selection") == "physical"
+                     else "stored")
+    if domain not in {"stored", "physical"}:
+        raise ValueError("level_domain must be stored or physical")
+    positions = list(range(n))
+    if domain == "physical":
+        coord = ds.coords.get(vert_dim)
+        dynamic_range = None if coord is None else coord.attrs.get("c_grid_dynamic_range")
+        if dynamic_range is None:
+            if vert_dim not in {"isobaricInhPa", "isobaricInPa", "heightAboveGround",
+                                "heightAboveSea"}:
+                raise ValueError(
+                    f"Physical selection for {vert_dim} requires "
+                    f"{vert_dim}.c_grid_dynamic_range; stored levels remain available"
+                )
+        else:
+            if isinstance(dynamic_range, str):
+                match = re.fullmatch(r"\s*(\d+)\s*:\s*(\d+)\s*", dynamic_range)
+                bounds = [int(v) for v in match.groups()] if match else []
+            else:
+                # Object dtype preserves booleans for strict validation.
+                values = np.asarray(dynamic_range, dtype=object)
+                bounds = values.tolist() if values.shape == (2,) else []
+            if (len(bounds) != 2 or any(isinstance(v, bool) or not isinstance(
+                    v, (int, np.integer)) for v in bounds)
+                    or not 1 <= bounds[0] <= bounds[1]):
+                raise ValueError(f"Invalid {vert_dim}.c_grid_dynamic_range: {dynamic_range!r}")
+            native = np.arange(n)
+            for name in (f"{vert_dim}_source_native_index", "source_native_index"):
+                if name in ds.coords and ds[name].dims == (vert_dim,):
+                    native = np.asarray(ds[name].values)
+                    if (native.dtype.kind not in "iu" or np.any(native < 0)
+                            or len(np.unique(native)) != n):
+                        raise ValueError(f"{name} must contain unique nonnegative native indices")
+                    break
+            else:
+                if bounds[1] > n:
+                    raise ValueError(f"{vert_dim}.c_grid_dynamic_range exceeds axis size {n}")
+            positions = np.flatnonzero((native >= bounds[0] - 1) & (native < bounds[1])).tolist()
+            if not positions:
+                raise ValueError(f"No physical levels remain on {vert_dim}")
+    indices = req.get("level_indices")
+    if indices and not req.get("all_levels", False):
+        # Indices always address stored positions, not a renumbered physical axis.
+        positions = [int(i) % n for i in indices if -n <= int(i) < n
+                     and int(i) % n in positions]
+    elif not req.get("all_levels", False):
+        levels = req.get("level_values", req.get("levels", []))
+        if levels:
+            if vert_dim not in ds.coords:
+                raise ValueError(f"Value selection requires the {vert_dim} coordinate")
+            available = ds[vert_dim].values.tolist()
+            matched = _match_levels([available[i] for i in positions], levels, tol=None)
+            positions = [i for value in matched for i in positions if available[i] == value]
+    return positions
 
 
 def _is_number(x: Any) -> bool:
@@ -215,7 +297,9 @@ def build_group_ds(
                 da = da.expand_dims({concat_dimension: ds[concat_dimension]})
             var_map[v] = da
 
-        return preserve_coordinate_dependencies(ds, xr.Dataset(var_map)) if var_map else None
+        return preserve_coordinate_dependencies(
+            ds, xr.Dataset(var_map, attrs=dict(ds.attrs))
+        ) if var_map else None
 
     # vertical group
     vert_dim = group_key
@@ -224,9 +308,15 @@ def build_group_ds(
         return None
 
     var_map: dict[str, xr.DataArray] = {}
+    physical = req.get("level_domain") == "physical" or req.get("level_selection") == "physical"
+    native_positions = selected_native_indices(
+        ds, {"level_domain": "physical", "all_levels": True}, vert_dim
+    ) if physical else None
 
     for v in keep:
         da = ds[v]
+        if physical and (all_levels or not level_indices):
+            da = da.isel({vert_dim: native_positions})
 
         if not all_levels and vert_dim in da.dims:
             if level_indices is not None and len(level_indices) > 0:
@@ -240,6 +330,9 @@ def build_group_ds(
                         f"[requests._build_group_ds] indices out of range {bad} "
                         f"for size {n} (var={v}, dim={vert_dim})"
                     )
+
+                if physical:
+                    valid = [i for i in valid if i % n in native_positions]
 
                 if valid:
                     da = da.isel({vert_dim: valid})
@@ -274,4 +367,6 @@ def build_group_ds(
 
         var_map[v] = da
 
-    return preserve_coordinate_dependencies(ds, xr.Dataset(var_map)) if var_map else None
+    return preserve_coordinate_dependencies(
+        ds, xr.Dataset(var_map, attrs=dict(ds.attrs))
+    ) if var_map else None

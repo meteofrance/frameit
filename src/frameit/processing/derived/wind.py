@@ -10,16 +10,35 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
+from frameit.processing.wind_reference import (
+    declared_pair,
+    is_prepared,
+    pair_definition,
+    rotation_angle,
+    validate_pair_frame,
+    wind_pairs,
+)
 from frameit.utils.units import convert_units
 
 
 def wind_names(conf: Any, group: str) -> tuple[str, str]:
-    """Resolve surface aliases independently of the model-level pair."""
+    """Use a unique declaration; multiple pairs require diagnostic aliases."""
+    pairs = wind_pairs(conf, group)
+    if len(pairs) == 1:
+        return pairs[0]["u"], pairs[0]["v"]
     if group == "surface":
         aliases = getattr(conf, "tracking_var_aliases", {})
-        return aliases.get("u10m", "u10"), aliases.get("v10m", "v10")
-    aliases = getattr(conf, "velocity_aliases", {})
-    return aliases.get("u_velocity", "u"), aliases.get("v_velocity", "v")
+        keys = ("u10m", "v10m")
+        names = aliases.get("u10m", "u10"), aliases.get("v10m", "v10")
+    else:
+        aliases = getattr(conf, "velocity_aliases", {})
+        keys = ("u_velocity", "v_velocity")
+        names = aliases.get("u_velocity", "u"), aliases.get("v_velocity", "v")
+    if pairs and (not all(key in aliases for key in keys)
+                  or declared_pair(conf, group, names) is None):
+        raise ValueError(f"Ambiguous diagnostic wind pair in group {group!r}; "
+                         f"configured aliases {names} must identify a declared pair")
+    return names
 
 
 def normalize_velocity_units(da: xr.DataArray, conf: Any) -> xr.DataArray:
@@ -35,64 +54,125 @@ def align_wind_pair(u: xr.DataArray, v: xr.DataArray) -> tuple[xr.DataArray, xr.
     """Reject staggered/differently labelled pairs instead of broadcasting them."""
     if set(u.dims) != set(v.dims):
         raise ValueError("Wind components must be collocated on identical dimensions")
-    return xr.align(u, v, join="exact")
+    for dim in u.dims:
+        if u.sizes[dim] != v.sizes[dim] or (dim in u.coords) != (dim in v.coords):
+            raise ValueError("Wind components require identical dimension coordinates")
+    for name in set(u.coords) | set(v.coords):
+        coordinate = u.coords[name] if name in u.coords else v.coords[name]
+        relevant = coordinate.ndim > 0 or name in {
+            "latitude", "longitude", "time", "level", "heightAboveGround",
+        } or coordinate.attrs.get("standard_name") in {
+            "latitude", "longitude", "time", "altitude", "height",
+        }
+        if not relevant:
+            continue
+        if (name not in u.coords or name not in v.coords
+                or not u[name].variable.equals(v[name].variable)):
+            raise ValueError(f"Wind components require identical coordinate {name!r}")
+    for da in (u, v):
+        prepared = bool(da.attrs.get("wind_collocation"))
+        if not prepared and (
+            any(dim.endswith(("_u", "_v")) for dim in da.dims)
+            or da.attrs.get("grid") in {2, 3, 5, 6, 7, 8}
+            or da.attrs.get("location") in {"u", "v", "face", "edge"}
+            or da.attrs.get("stagger") not in {None, "", "mass", "center"}
+            or any(c.attrs.get("c_grid_axis_shift", 0) != 0 for c in da.coords.values())
+        ):
+            raise ValueError(
+                "Wind components have unresolved native point location; collocate first"
+            )
+    return xr.align(u, v.transpose(*u.dims), join="exact")
+
+
+def normalize_native_wind_units(ds: xr.Dataset, conf: Any, group: str) -> xr.Dataset:
+    """Normalize source units only, preserving native locations and vector basis.
+
+    For native export: no rotation, collocation, component renaming, or frame
+    relabelling. Wind values change only by the declared velocity unit scale.
+    """
+    out = ds.copy(deep=False)
+    pairs = wind_pairs(conf, group)
+    names_list = [(p["u"], p["v"]) for p in pairs] if pairs else [wind_names(conf, group)]
+    for names in names_list:
+        if not any(name in ds for name in names):
+            continue
+        pair = pair_definition(conf, group, names)
+        validate_pair_frame(ds, pair)
+        for name in names:
+            if name in ds:
+                out[name] = normalize_velocity_units(ds[name], conf)
+                if not is_prepared(ds[name]):
+                    out[name].attrs["wind_reference_frame"] = pair["reference_frame"]
+                    out[name].attrs["wind_reference_frame_source"] = "explicit_input_declaration"
+    return out
 
 
 def normalize_winds(ds: xr.Dataset, conf: Any, group: str) -> xr.Dataset:
-    """Normalize collocated components before interpolation.
+    """Convert every present declared mass-point pair to physical east/north m/s.
 
-    Explicit grid-relative vectors require a ``grid_rotation`` coordinate:
-    radians counterclockwise from geographic east to the grid x direction.
-    Missing frame metadata uses the supported models' earth-relative input
-    contract; set wind_reference_frame='grid' when that contract is not met.
+    Unknown fields and absent pairs do not create dependencies. A lone member
+    of an unprepared pair is an error. Prepared singletons may survive variable
+    selection. Repeated preparation is idempotent, including when original
+    metadata and dataset source markers are retained.
     """
-    names = wind_names(conf, group)
+    pairs = wind_pairs(conf, group)
+    names_list = [(p["u"], p["v"]) for p in pairs] if pairs else [wind_names(conf, group)]
     out = ds.copy(deep=False)
-    present = [name for name in names if name in ds]
-    frames = set()
-    for name in present:
-        da = ds[name]
-        flag = da.attrs.get("GRIB_uvRelativeToGrid")
-        frame = da.attrs.get("wind_reference_frame", ds.attrs.get("wind_reference_frame"))
-        if flag is not None:
-            if int(flag) not in {0, 1}:
-                raise ValueError(f"Invalid GRIB_uvRelativeToGrid on {name}: {flag!r}")
-            flag_frame = "grid" if int(flag) else "earth"
-            if frame is not None and frame != flag_frame:
-                raise ValueError(f"Conflicting wind reference metadata on {name}")
-            frame = flag_frame
-        if frame is None:
-            frame = getattr(conf, "wind_reference_frame", "earth")
-            frame_source = f"{conf.atm_model}_input_contract"
+    for names in names_list:
+        if not any(name in ds for name in names):
+            continue
+        pair = pair_definition(conf, group, names)
+        frame = validate_pair_frame(ds, pair)
+        present = [name for name in names if name in ds]
+        if len(present) == 1:
+            name = present[0]
+            out[name] = normalize_velocity_units(ds[name], conf)
+            continue
+        u, v = align_wind_pair(*(normalize_velocity_units(ds[name], conf) for name in names))
+        if all(is_prepared(ds[name]) for name in names):
+            out[names[0]], out[names[1]] = u, v
+            continue
+        method = "none"
+        angle = None
+        if frame == "grid":
+            angle = rotation_angle(ds, conf, pair)
+            method = pair["rotation"]["method"]
+            if pair.get("declaration") == "legacy_scalar":
+                method = "legacy_grid_rotation_coordinate"
+        if angle is not None:
+            if not set(angle.dims) <= set(u.dims):
+                raise ValueError("Wind rotation must be defined on the collocated wind grid")
+            u, v, angle = xr.align(u, v, angle, join="exact")
+            east = u * np.cos(angle) - v * np.sin(angle)
+            north = u * np.sin(angle) + v * np.cos(angle)
         else:
-            frame_source = "source_metadata"
-        if frame not in {"earth", "grid"}:
-            raise ValueError(f"Unknown wind reference frame {frame!r} on {name}")
-        frames.add(frame)
-        out[name] = normalize_velocity_units(da, conf)
-        out[name].attrs.setdefault("wind_reference_frame_source", frame_source)
-        out[name].attrs.setdefault("source_wind_reference_frame", frame)
-    if len(frames) > 1:
-        raise ValueError("Wind components have incompatible reference frames")
-    if frames == {"grid"}:
-        if len(present) != 2 or "grid_rotation" not in ds:
-            raise ValueError("Grid-relative winds require both components and grid_rotation")
-        angle = convert_units(ds["grid_rotation"], "angle")
-        out = out.assign_coords(grid_rotation=angle)
-        u, v = align_wind_pair(out[names[0]], out[names[1]])
-        if not set(angle.dims) <= set(u.dims):
-            raise ValueError("grid_rotation must be defined on the collocated wind grid")
-        u, v, angle = xr.align(u, v, angle, join="exact")
-        attrs_u, attrs_v = dict(u.attrs), dict(v.attrs)
-        out[names[0]] = u * np.cos(angle) - v * np.sin(angle)
-        out[names[1]] = u * np.sin(angle) + v * np.cos(angle)
-        out[names[0]].attrs, out[names[1]].attrs = attrs_u, attrs_v
-    for name in present:
-        out[name].attrs.update(wind_reference_frame="earth", units="m s-1")
-        if "GRIB_uvRelativeToGrid" in out[name].attrs:
-            out[name].attrs["GRIB_uvRelativeToGrid"] = 0
-    if present:
-        out.attrs.setdefault("source_wind_reference_frame", next(iter(frames)))
+            east, north = u, v
+        for name, value, standard in zip(names, (east, north),
+                                          ("eastward_wind", "northward_wind"), strict=True):
+            attrs = dict(ds[name].attrs)
+            attrs.update((u if name == names[0] else v).attrs)
+            for key in ("standard_name", "grid", "GRIB_uvRelativeToGrid", "uvRelativeToGrid"):
+                if key in attrs:
+                    attrs.setdefault("source_" + key, attrs[key])
+            attrs.update(units="m s-1", wind_reference_frame="earth",
+                         source_wind_reference_frame=pair["reference_frame"],
+                         wind_reference_frame_source=pair.get("declaration", "wind_pairs"),
+                         standard_name=standard, frameit_wind_prepared="earth",
+                         wind_rotation_method=method, wind_pair=",".join(names))
+            for key in ("GRIB_uvRelativeToGrid", "uvRelativeToGrid"):
+                if key in attrs:
+                    attrs[key] = 0
+            if "grid" in attrs:
+                # MNH mass-point grid indicator; original indicator remains source_grid.
+                attrs["grid"] = 1
+            if angle is not None:
+                attrs["wind_rotation_convention"] = "counterclockwise_from_east_to_grid_x"
+                if pair["rotation"].get("coordinate"):
+                    attrs["wind_rotation_coordinate"] = pair["rotation"]["coordinate"]
+                for key, item in angle.attrs.items():
+                    if key.startswith("rotation_"):
+                        attrs[key] = item
+            out[name] = value.assign_attrs(attrs)
     return out
 
 
@@ -127,12 +207,16 @@ def add_vrad_vtan_from_polar_dict(
 ) -> dict[str, xr.Dataset]:
     out = dict_polar_user
     for group, ds in out.items():
+        pairs = wind_pairs(conf, group)
+        if pairs and not any(p[component] in ds for p in pairs for component in ("u", "v")):
+            continue
+        ds = normalize_winds(ds, conf, group)
+        out[group] = ds
         u, v = wind_names(conf, group)
         if u not in ds or v not in ds:
             continue
         if "radial_bearing" not in ds:
             raise ValueError("Polar winds require terminal-forward radial_bearing")
-        ds = normalize_winds(ds, conf, group)
         radial, tangential = polar_wind_components(ds[u], ds[v], ds["radial_bearing"])
         out[group] = ds.assign(vrad=radial, vtan=tangential)
         out[group].attrs["wind_reference_frame"] = "earth"
@@ -144,10 +228,14 @@ def add_speed_from_uv_dict(
 ) -> dict[str, xr.Dataset]:
     out = dict_user
     for group, ds in out.items():
+        pairs = wind_pairs(conf, group)
+        if pairs and not any(p[component] in ds for p in pairs for component in ("u", "v")):
+            continue
+        ds = normalize_winds(ds, conf, group)
+        out[group] = ds
         u, v = wind_names(conf, group)
         if u not in ds or v not in ds:
             continue
-        ds = normalize_winds(ds, conf, group)
         u_da, v_da = align_wind_pair(ds[u], ds[v])
         speed = np.hypot(u_da, v_da)
         speed.attrs.update(

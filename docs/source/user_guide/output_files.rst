@@ -13,7 +13,7 @@ The output files are :
 Naming convention
 -----------------
 
-All files use the configuration field ``conf.simulation_name`` as a prefix (see :doc:`configuration_file`), referred to below as ``SIMU``.
+All files use ``run.name`` as a prefix (see :doc:`configuration_file`), referred to below as ``SIMU``.
 
 Track file:
 
@@ -75,20 +75,127 @@ Typical structure:
   ``y_box_km``) when available
 - Data variables depend on the YAML request (see :doc:`configuration_file`)
 
-Derived wind variables
-''''''''''''''''''''''
-If the zonal (``u``) and meridional (``v``) wind components are included in the
-requested variables, FrameIt automatically computes and appends ``wind_speed`` to
-the target group (``heightAboveGround`` for AROME, ``level`` for MNH):
-
-.. math::
-
-   \mathrm{wind\_speed} = \sqrt{u^2 + v^2}
-
-If ``u`` or ``v`` are absent from the group, the computation is silently skipped.
-
 If you export cartesian crops, you obtain one file per vertical group, which keeps the outputs modular
 and avoids mixing incompatible vertical coordinates in a single file.
+
+.. _wind-grid-contract:
+
+Wind locations, reference frames and output choices
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. note::
+
+   Defaults are Cartesian horizontal ``mass_earth``, Cartesian vertical
+   ``interfaces`` and polar vertical ``mass``. Generated templates show these
+   choices explicitly. Numerical conventions and qualification limits are in
+   :ref:`wind-preparation-method`; source references do not establish scientific
+   validation for every input grid.
+
+**Location is not direction.** On a Meso-NH C grid, U and V are sampled on
+different horizontal faces; scalars occupy mass points. Grid-relative components
+follow the model axes; Earth-relative components point east and north.
+Collocation changes sampling locations; rotation changes the vector basis.
+Neither operation subtracts storm motion.
+
+.. figure:: ../_static/wind_horizontal_c_grid.svg
+   :alt: Horizontal C-grid cell: U at left and right faces, V at bottom and top faces, and a mass point at the centre. U values 10 and 20 give 15 at the midpoint.
+   :width: 100%
+
+   Original schematic. Symbols mark sample locations, not flow arrows.
+   For a midpoint, U at the two faces (10 and 20 m s-1) gives mass-point
+   U = 15 m s-1. V is collocated along its own staggered axis.
+
+Choose Cartesian horizontal representation independently of vertical W:
+
+.. list-table:: Native versus mass-point products
+   :header-rows: 1
+   :widths: 22 39 39
+
+   * - Choice
+     - Benefit
+     - Trade-off
+   * - ``horizontal_winds: native``
+     - Preserves source staggering and declared vector basis; useful for
+       model-grid calculations. Velocity units are still normalized.
+     - U/V need their own coordinates; collocate and, when needed, rotate
+       before geographic vector analysis.
+   * - ``horizontal_winds: mass_earth`` (default)
+     - Collocated east/north components suit comparison and ordinary plotting.
+     - Interpolation can smooth gradients; original face samples are not retained.
+   * - ``vertical_velocity: interfaces``
+     - Retains W at native vertical interfaces (Cartesian default).
+     - W does not share mass-level locations with scalar fields.
+   * - ``vertical_velocity: mass``
+     - W shares mass-level locations (polar default).
+     - Requires bracketing interfaces and interpolation; not native W samples.
+
+Cartesian ``native`` output preserves source sample locations, staggering and
+declared basis, with normalized velocity units. A requested box uses distinct
+``(y_u_box, x_u_box)`` and ``(y_v_box, x_v_box)`` axes for U and V. Along a
+staggered direction, N mass cells have N+1 bounding faces; unavailable faces are
+NaN. Source coordinates, including face geolocation, remain auxiliary coordinates
+on these box axes. Full-domain native output without a crop retains original
+dimensions. Read each field's coordinates rather than assuming literal source
+dimension names survive a crop.
+
+Tracking and polar processing use a separate mass-point, Earth-relative analysis
+representation: changing the Cartesian output switch does not change the track
+or polar result. NetCDF inputs normalize units per file before concatenation;
+tracker and user-field preparation share the declared frame/rotation contract.
+
+Requested ``wind_speed`` uses collocated mass-point horizontal components,
+:math:`\sqrt{u_m^2+v_m^2}`, even beside native Cartesian U/V. Taking ``hypot`` of
+U and V face arrays combines different locations and is not a point wind speed.
+Polar horizontal winds are always collocated, Earth-relative samples on
+``(rr, theta)``; speed is computed from the interpolated components, not by
+interpolating native scalar speed. A speed-only request loads the declared pair
+internally without exporting internal-only components. For polar products,
+retaining native staggering applies only to **vertical W interfaces**, never to
+horizontal U/V faces or their basis.
+
+Vertical W and level selection
+''''''''''''''''''''''''''''''
+
+.. figure:: ../_static/wind_vertical_w.svg
+   :alt: Vertical column with W equal to 0 metres per second at the lower interface coordinate 0 metres and 2 at the upper interface coordinate 10 metres. Linear interpolation gives W equal to 1 at mass coordinate 5 metres.
+   :width: 100%
+
+   Original one-column example: lower W = 0 m s-1 at coordinate 0 m,
+   upper W = 2 m s-1 at 10 m, giving mass W = 1 m s-1 at 5 m.
+   These are illustrative model-coordinate values, not a constant-altitude grid.
+
+Interpolate using actual native coordinate positions, before sparse selection
+removes neighbours. Coordinates and compatible auxiliaries must describe the
+new sampling locations too: changing only the W dimension label is insufficient.
+Terrain-following mass/interface coordinates do not imply fixed geometric
+altitudes; this operation is not interpolation onto constant-altitude surfaces.
+W and its internal mass-point carrier are handled field by field. Choosing mass
+W moves W to the mass-level group, removes its internal carrier from exports,
+and does not move or discard other interface variables or their coordinates.
+
+Level selection follows these rules:
+
+* ``levels: all`` and ``levels: stored`` retain the original stored levels,
+  including stored extra levels; neither means physical-domain trimming.
+* ``levels: physical`` uses adapter-validated physical mass and interface ranges,
+  separately. Missing or ambiguous ranges fail; no universal first/last-level
+  trimming is assumed.
+* ``levels: {indices: [...]}`` uses zero-based **original stored indexing**,
+  not indexing renumbered after physical-range selection. Value selections use
+  the native coordinate and its units.
+* If mass-level fields are explicitly selected, their selected mass levels set
+  the W-to-mass targets. Otherwise, physical W selection targets the validated
+  physical mass levels, not the physical interface range. For legacy sparse
+  interface-index requests, interface index ``k`` maps to the same native mass
+  index ``k``; the source-interface/target-mass mapping is reported.
+  This compatibility map is not an assertion that their coordinates coincide.
+
+AROME ``w`` is pressure vertical velocity :math:`\omega=Dp/Dt` in Pa s-1;
+``wz`` is geometric vertical velocity in m s-1. They remain distinct quantities.
+There is no implicit hydrostatic conversion or substitution between them, and
+the Meso-NH W staggering choices do not turn omega into geometric velocity.
+See :doc:`input_files` for authoritative model/GRIB definitions and
+:doc:`configuration_file` for explicit pair and rotation declarations.
 
 SIMU.polar.<group>.nc
 ~~~~~~~~~~~~~~~~~~~~~
@@ -98,12 +205,12 @@ They are typically created after the cartesian extraction, using the polar proje
 
 Typical structure:
 
-- Dimensions: ``time``, radial coordinate (``r``), angular coordinate (``theta``),
+- Dimensions: ``time``, radial coordinate (``rr``), angular coordinate (``theta``),
   plus optional vertical dimension depending on the group
 - Coordinates may include:
-  - Polar grid axes: ``r`` and ``theta`` (and optionally a degree representation such as ``theta_deg``)
+  - Polar grid axes: ``rr`` (km) and ``theta`` (radians), with ``theta_deg`` in degrees
   - Derived cartesian coordinates on the polar grid: ``x_km`` and ``y_km``
-  - Geolocation: ``latitude(time, r, theta)``, ``longitude(time, r, theta)``
+  - Geolocation: ``lat(time, rr, theta)``, ``lon(time, rr, theta)``
 - Data variables depend on the requested fields (see :doc:`configuration_file`).
 
 The polar files also include a set of attributes that document the angular convention (for example the
@@ -116,7 +223,7 @@ FrameIt adds a minimal set of global attributes to each file:
 
 - ``Conventions`` (currently ``CF-1.8``)
 - ``title``, ``summary``, ``institution``, ``source``
-- ``simulation_id`` (from ``conf.simulation_name``)
+- ``simulation_id`` (from ``run.name``)
 - ``FRAMEIT_version`` (from the installed FrameIt package)
 
 Additional export-specific attributes:
@@ -150,15 +257,10 @@ Notes:
 - Higher compression levels reduce size but increase CPU cost during export.
 - Export time is also controlled by dask materialization, because writing triggers computation of lazy arrays.
 
-Coordinates are not compressed by default. You can enable coordinate compression using ``compress_coords=True``.
-
-You may want to tune compression, then launch frameit with ``--compress-level`` option:
-
-.. code-block:: bash
-
-   frameit run path/to/config.yml --compress-level 2
-
-Default value is compress-level=1
+Coordinates are not compressed by default. Configure storage with
+``output.compression: {level: 2, coordinates: false}``. The default level is 1;
+storage chunks are backend-selected. Compression does not change wind sampling
+or vector definitions.
 
 NetCDF exports
 --------------
@@ -169,19 +271,13 @@ By default, the CLI runs NetCDF exports at the end of the pipeline:
 - Polar export: enabled by default
 - Cartesian export: enabled by default
 
-To disable some exports:
+Writing requires an available product; polar computation is enabled separately
+with ``polar.enabled``. Set exports explicitly in YAML, for example:
 
-.. code-block:: bash
+.. code-block:: yaml
 
-   # Disable all NetCDF exports
-   frameit run path/to/config.yml --no-export-netcdf
+   output:
+     export: {netcdf: true, cartesian: true, polar: false}
 
-.. code-block:: bash
-
-   # Disable only polar exports
-   frameit run path/to/config.yml --no-export-polar
-
-.. code-block:: bash
-
-   # Disable only cartesian exports
-   frameit run path/to/config.yml --no-export-cart
+Set ``netcdf: false`` to disable all NetCDF writing, or ``cartesian: false`` to
+omit Cartesian products. See :doc:`configuration_file` for precedence.

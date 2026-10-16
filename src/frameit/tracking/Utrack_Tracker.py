@@ -13,6 +13,41 @@ from .tracker_core import TcTracker, register_tracker
 logger = logging.getLogger(__name__)
 
 
+def _common_input_grid(u, v, absv, lat, lon):
+    """Validate labelled collocation before stripping labels for the ML API."""
+    horizontal = set(u.dims) - {"time"}
+    if len(horizontal) != 2 or "time" not in u.dims:
+        raise ValueError("UTrack winds require time and exactly two horizontal dimensions")
+    if set(v.dims) != set(u.dims) or set(absv.dims) != set(u.dims):
+        raise ValueError("UTrack winds and absolute vorticity must share common grid locations")
+    if any(d not in a.coords for a in (u, v, absv) for d in horizontal):
+        raise ValueError("UTrack requires labelled horizontal coordinates to verify locations")
+    for geo in (lat, lon):
+        if not set(geo.dims) <= set(u.dims) or not (set(geo.dims) & horizontal):
+            raise ValueError("UTrack geography must share the wind grid locations")
+    if (set(lat.dims) | set(lon.dims)) - {"time"} != horizontal:
+        raise ValueError("UTrack geography must span both wind horizontal axes")
+    try:
+        xr.align(u, v, absv, lat, lon, join="exact")
+    except ValueError as exc:
+        raise ValueError("UTrack wind/vorticity/geography coordinates must match exactly") from exc
+    # Reject per-field location declarations that disagree even if dimensions
+    # happen to have the same lengths/labels.
+    positions = {a.attrs.get("grid_position", "mass_aligned") for a in (u, v, absv)}
+    if len(positions) != 1 or any("face" in p for p in positions):
+        raise ValueError("UTrack requires collocated mass-grid wind/vorticity inputs")
+    if lat.ndim == 1:
+        y = lat.dims[0]
+    else:
+        candidates = [d for d in horizontal if d in {"nj", "y", "latitude", "lat"}
+                      or u[d].attrs.get("axis") == "Y"]
+        if len(candidates) != 1:
+            raise ValueError("UTrack requires an identifiable named y axis")
+        y = candidates[0]
+    x, = horizontal - {y}
+    return tuple(a.transpose("time", y, x) for a in (u, v, absv))
+
+
 @register_tracker
 class UtrackTracker(TcTracker):
     """
@@ -112,6 +147,11 @@ class UtrackTracker(TcTracker):
         v10 = self._field(ds, "v10m")
         absv = self._field(ds, "absv").isel(isobaricInhPa=0)
         lat = get_latitude(ds)
+        lon_name = next((n for n in ("longitude", "lon") if n in ds), None)
+        if lon_name is None:
+            raise ValueError("UTrack requires longitude to verify common geographic locations")
+        u10, v10, absv = _common_input_grid(u10, v10, absv, lat, ds[lon_name])
+        lat = lat.transpose(*(d for d in u10.dims if d in lat.dims))
 
         time_da = ds["time"]
 

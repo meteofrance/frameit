@@ -165,17 +165,18 @@ def test_grid_relative_rotation_units_and_missing_metadata_contract():
     for name in ("u", "v"):
         ds[name].attrs.update(units="km/h", GRIB_uvRelativeToGrid=1)
     ds.grid_rotation.attrs["units"] = "rad"
-    rotated = normalize_winds(ds, conf(), "heightAboveGround")
+    settings = conf(wind_reference_frame="grid")
+    rotated = normalize_winds(ds, settings, "heightAboveGround")
     np.testing.assert_allclose(rotated.u, 0, atol=1e-10)
     np.testing.assert_allclose(rotated.v, 10, atol=1e-10)
     assert rotated.u.attrs["GRIB_uvRelativeToGrid"] == 0
     assert rotated.u.attrs["units"] == "m s-1"
-    with pytest.raises(ValueError, match="both components and grid_rotation"):
-        normalize_winds(ds.drop_vars("grid_rotation"), conf(), "heightAboveGround")
-    with pytest.raises(ValueError, match="incompatible reference"):
+    with pytest.raises(ValueError, match="named coordinate"):
+        normalize_winds(ds.drop_vars("grid_rotation"), settings, "heightAboveGround")
+    with pytest.raises(ValueError, match="Conflicting wind reference"):
         inconsistent = ds.copy(deep=True)
         inconsistent.v.attrs["GRIB_uvRelativeToGrid"] = 0
-        normalize_winds(inconsistent, conf(), "heightAboveGround")
+        normalize_winds(inconsistent, settings, "heightAboveGround")
 
 
 def vortex_source(n):

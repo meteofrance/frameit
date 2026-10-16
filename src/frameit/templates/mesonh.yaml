@@ -5,6 +5,9 @@ run:
 input:
   directory: ./data
   pattern: "*.nc"
+  # UM10/VM10 are declared Earth-relative; adapt this to your source diagnostics.
+  wind_pairs:
+    - {group: surface, u: UM10, v: VM10, reference_frame: earth}
 tracking:
   method: wind_pressure
 domain:
@@ -17,3 +20,5 @@ polar:
   variables: all
 output:
   directory: ./output
+  cartesian: {horizontal_winds: mass_earth, vertical_velocity: interfaces}
+  polar: {vertical_velocity: mass}

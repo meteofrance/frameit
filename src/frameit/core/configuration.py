@@ -21,7 +21,8 @@ DEFAULTS = {
     "input": {
         "directory": "./data", "pattern": None, "files": None, "exclude": [],
         "format": None, "grid_spacing_m": None, "duplicate_time_policy": "first",
-        "wind_reference_frame": "earth", "netcdf": {"engine": "h5netcdf", "chunks": {}},
+        "wind_reference_frame": None, "wind_pairs": [],
+        "netcdf": {"engine": "h5netcdf", "chunks": {}},
     },
     "tracking": {
         "method": "wind_pressure",
@@ -49,6 +50,8 @@ DEFAULTS = {
         "chunks": {}, "profile": False,
     },
     "output": {
+        "cartesian": {"horizontal_winds": "mass_earth", "vertical_velocity": "interfaces"},
+        "polar": {"vertical_velocity": "mass"},
         "directory": "./output", "export": {"netcdf": True, "cartesian": True, "polar": True},
         "compression": {"level": 1, "coordinates": False}, "engine": "netcdf4",
         "format": "NETCDF4", "unlimited_time": True, "overwrite": True, "max_workers": None,
@@ -135,8 +138,9 @@ def _requests(raw, path="variables", *, polar=False):
         if polar:
             continue
         levels = spec["levels"]
-        if levels == "all":
-            result[group]["level_selection"] = "all"
+        if isinstance(levels, str) and levels in {"all", "stored", "physical"}:
+            domain = "physical" if levels == "physical" else "stored"
+            result[group].update(level_selection=domain, level_domain=domain)
         elif isinstance(levels, dict) and len(levels) == 1 and set(levels) <= {"indices", "values"}:
             strategy, values = next(iter(levels.items()))
             if not isinstance(values, list) or not values:
@@ -151,7 +155,7 @@ def _requests(raw, path="variables", *, polar=False):
             result[group].update(level_selection=strategy, **{f"level_{strategy}": values})
         else:
             raise ValueError(
-                f"{path}.{group}.levels requires one of indices or values, or 'all'"
+                f"{path}.{group}.levels requires indices or values, or all/stored/physical"
             )
     return result
 
@@ -159,6 +163,63 @@ def _requests(raw, path="variables", *, polar=False):
 def _finite_level(value, group):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise ValueError(f"variables.{group}.levels.values must contain finite numbers")
+
+
+def validate_wind_pairs(pairs):
+    """Validate explicit source-component declarations without discovering winds."""
+    if not isinstance(pairs, list):
+        raise ValueError("input.wind_pairs must be a list")
+    seen = set()
+    for index, pair in enumerate(pairs):
+        path = f"input.wind_pairs[{index}]"
+        required = {"group", "u", "v", "reference_frame"}
+        if not isinstance(pair, dict) or not required <= set(pair) or set(pair) - (
+            required | {"rotation"}
+        ):
+            raise ValueError(f"{path} requires group, u, v, reference_frame; optional rotation")
+        for key in required:
+            if not isinstance(pair[key], str) or not pair[key].strip():
+                raise ValueError(f"{path}.{key} must be a nonempty string")
+        if pair["reference_frame"] not in {"earth", "grid"}:
+            raise ValueError(f"{path}.reference_frame must be earth or grid")
+        if pair["u"] == pair["v"]:
+            raise ValueError(f"{path} u and v must be distinct components")
+        for name in (pair["u"], pair["v"]):
+            identity = (pair["group"], name)
+            if identity in seen:
+                raise ValueError(f"{path}: duplicate wind component {identity}")
+            seen.add(identity)
+        rotation = pair.get("rotation")
+        if "rotation" not in pair:
+            if pair["reference_frame"] == "grid":
+                raise ValueError(f"{path}.rotation is required for grid-relative winds")
+            continue
+        if (not isinstance(rotation, dict) or "method" not in rotation
+                or set(rotation) - {"method", "coordinate"}):
+            raise ValueError(f"{path}.rotation requires method and optional coordinate")
+        method = rotation["method"]
+        if not isinstance(method, str) or method not in {
+            "coordinate", "geolocation", "mesonh_projection"
+        }:
+            raise ValueError(
+                f"{path}.rotation.method must be coordinate/geolocation/mesonh_projection"
+            )
+        if "coordinate" in rotation and (
+            not isinstance(rotation["coordinate"], str) or not rotation["coordinate"].strip()
+        ):
+            raise ValueError(f"{path}.rotation.coordinate must be a nonempty string")
+        if method == "coordinate" and "coordinate" not in rotation:
+            raise ValueError(f"{path}.rotation.coordinate is required for method coordinate")
+
+
+def validate_output_selections(horizontal, cartesian_vertical, polar_vertical):
+    for path, value, choices in (
+        ("output.cartesian.horizontal_winds", horizontal, {"native", "mass_earth"}),
+        ("output.cartesian.vertical_velocity", cartesian_vertical, {"interfaces", "mass"}),
+        ("output.polar.vertical_velocity", polar_vertical, {"interfaces", "mass"}),
+    ):
+        if not isinstance(value, str) or value not in choices:
+            raise ValueError(f"{path} must be one of {sorted(choices)}")
 
 
 def resolve_schema(raw, *, base_dir=None):
@@ -178,7 +239,9 @@ def resolve_schema(raw, *, base_dir=None):
         value = conf
         for part in path.split("."):
             value = value[part]
-        if not isinstance(value, str) and not (path == "input.format" and value is None):
+        if not isinstance(value, str) and not (
+            path in {"input.format", "input.wind_reference_frame"} and value is None
+        ):
             raise ValueError(f"{path} must be a string")
     if "model" not in raw or conf["model"] not in {"arome", "mesonh"}:
         raise ValueError("model must be 'arome' or 'mesonh'")
@@ -201,8 +264,12 @@ def resolve_schema(raw, *, base_dir=None):
         raise ValueError("input.format must be grib or netcdf")
     if inp["duplicate_time_policy"] not in {"first", "last"}:
         raise ValueError("input.duplicate_time_policy must be first or last")
-    if inp["wind_reference_frame"] not in {"earth", "grid"}:
-        raise ValueError("input.wind_reference_frame must be earth or grid")
+    if inp["wind_reference_frame"] not in {None, "earth", "grid"}:
+        raise ValueError("input.wind_reference_frame must be earth or grid, or null")
+    validate_wind_pairs(inp["wind_pairs"])
+    validate_output_selections(out["cartesian"]["horizontal_winds"],
+                               out["cartesian"]["vertical_velocity"],
+                               out["polar"]["vertical_velocity"])
     if inp["grid_spacing_m"] is not None:
         _positive(inp["grid_spacing_m"], "input.grid_spacing_m")
     methods = {"wind_pressure", "pressure_centroid", "fixed_box", "prescribed_track", "utrack"}
@@ -355,6 +422,10 @@ def to_runtime(raw, *, base_dir=None):
         "netcdf_engine": inp["netcdf"]["engine"],
         "netcdf_chunks": inp["netcdf"]["chunks"],
         "wind_reference_frame": inp["wind_reference_frame"],
+        "wind_pairs": inp["wind_pairs"],
+        "cartesian_horizontal_winds": c["output"]["cartesian"]["horizontal_winds"],
+        "cartesian_vertical_velocity": c["output"]["cartesian"]["vertical_velocity"],
+        "polar_vertical_velocity": c["output"]["polar"]["vertical_velocity"],
         "tracking_method": trk["method"], "fix_subdomain_center": [
             trk["fixed_box"]["center"]["latitude"], trk["fixed_box"]["center"]["longitude"]]
             if trk["method"] == "fixed_box" else None,
@@ -504,7 +575,15 @@ def migrate_mapping(old, *, launch_dir=None):
     if model == "MNH":
         inp["exclude"] = [inp["pattern"].replace("???", "000", 1)]
     inp["grid_spacing_m"] = old.get("resolution") or None
-    inp["wind_reference_frame"] = old.get("wind_reference_frame", "earth")
+    inp["wind_reference_frame"] = old.get("wind_reference_frame")
+    inp["wind_pairs"] = copy.deepcopy(old.get("wind_pairs", []))
+    for old_key, section, key in (
+        ("cartesian_horizontal_winds", "cartesian", "horizontal_winds"),
+        ("cartesian_vertical_velocity", "cartesian", "vertical_velocity"),
+        ("polar_vertical_velocity", "polar", "vertical_velocity"),
+    ):
+        if old_key in old:
+            c["output"][section][key] = old[old_key]
     c["output"]["directory"] = str((base / old.get("frameit_output_dir", "output")).resolve())
     method = old.get("tracking_method", "wind_pressure")
     c["tracking"]["method"] = method
@@ -546,7 +625,9 @@ def migrate_mapping(old, *, launch_dir=None):
         names = spec.get("variables", [])
         levels = "all"
         selection = spec.get("level_selection", "")
-        if selection == "indices" and spec.get("level_indices"):
+        if selection in {"stored", "physical"}:
+            levels = selection
+        elif selection == "indices" and spec.get("level_indices"):
             levels = {"indices": spec["level_indices"]}
         elif (selection != "all" and not spec.get("all_levels")
               and (model == "MNH" or selection == "values")):
@@ -613,13 +694,15 @@ def write_template(model, path, *, full=False, tracking="wind_pressure", force=F
     c["domain"]["size_km"] = {"x": 500, "y": 500}
     resolve_schema(c)
     if not full:
-        c["input"] = {"directory": "./data", "pattern": c["input"]["pattern"]}
+        c["input"] = {"directory": "./data", "pattern": c["input"]["pattern"],
+                      "wind_pairs": c["input"]["wind_pairs"]}
         c["tracking"] = {"method": tracking, **(
             {tracking: c["tracking"][tracking]} if tracking != "wind_pressure" else {}
         )}
         c["domain"] = {"size_km": c["domain"]["size_km"]}
         c["polar"] = {"enabled": False, "variables": "all"}
-        c["output"] = {"directory": "./output"}
+        c["output"] = {"directory": "./output", "cartesian": c["output"]["cartesian"],
+                       "polar": c["output"]["polar"]}
         c.pop("logging")
         c.pop("metadata")
     path = Path(path)

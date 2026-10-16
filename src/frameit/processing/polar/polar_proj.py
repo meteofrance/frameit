@@ -112,20 +112,26 @@ def _reshape_locstream_dataset(ds_loc, *, r_km, theta_deg, loc_dim="locations", 
     return xr.Dataset(fields)
 
 
-def _projection_jobs(requests, inputs, report):
+def _projection_jobs(requests, inputs, report, conf=None):
     """Combine requests sharing an output so wind pairs share source stencils."""
     jobs = {}
     for requested, spec in requests.items():
-        output = "level" if requested == "level_w" else requested
-        source = "level" if requested == "level_w" and "level" in inputs else requested
-        if source not in inputs:
-            report["skipped"].append({"group": requested, "reason": "missing source group"})
-            continue
-        if requested == "level_w":
-            report["redirects"].append({"from": requested, "to": source})
-        job = jobs.setdefault((output, source), {"groups": [], "variables": []})
-        job["groups"].append(requested)
-        job["variables"] = list(dict.fromkeys(job["variables"] + spec["variables"]))
+        w_name = getattr(conf, "velocity_aliases", {}).get("w_velocity", "WT")
+        for name in spec["variables"]:
+            redirect = (requested == "level_w" and name == w_name
+                        and getattr(conf, "polar_vertical_velocity", "mass") == "mass"
+                        and name in inputs.get("level", {}))
+            source = output = "level" if redirect else requested
+            if source not in inputs:
+                report["skipped"].append({"group": requested, "reason": "missing source group"})
+                continue
+            if redirect:
+                report["redirects"].append({"from": requested, "to": source, "variable": name})
+            job = jobs.setdefault((output, source), {"groups": [], "variables": []})
+            if requested not in job["groups"]:
+                job["groups"].append(requested)
+            if name not in job["variables"]:
+                job["variables"].append(name)
     return jobs
 
 
@@ -291,7 +297,7 @@ def polar_project(
     outputs = {}
     plan_diagnostics = {}
     projection_work = []
-    for (output, source_name), job in _projection_jobs(requests, inputs, report).items():
+    for (output, source_name), job in _projection_jobs(requests, inputs, report, conf).items():
         source = inputs[source_name]
         requested = job["variables"]
         pair = wind_names(conf, output)

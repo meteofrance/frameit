@@ -14,6 +14,7 @@ import importlib
 import importlib.util
 from importlib.resources import files
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 
@@ -113,6 +114,8 @@ def load_cases(mode="ci", profile="full", patterns=()):
             field_orientation="geodesic",
             polar_variables=polar,
             simulation_parameter={},
+            wind_pairs=copy.deepcopy(catalog["wind_pairs"][model]),
+            **catalog["output_conventions"],
         )
         result.append(
             dict(
@@ -412,13 +415,6 @@ def _selected_levels(case, inventory):
 def _check_fields(case, inventory, selected):
     requests = copy.deepcopy(case["config"]["requested_variables_user"])
     model = inventory["model"]
-    # A derived-speed-only request still needs both native components. Keep
-    # these dependencies in preflight without expanding the exported contract.
-    for request in requests.values():
-        if "wind_speed" in request["variables"]:
-            native_winds = ["u", "v"] if model == "AROME" else ["UT", "VT"]
-            request["variables"] = [v for v in request["variables"] if v != "wind_speed"]
-            request["variables"].extend(native_winds)
     tracker = case["tracker"]
     if tracker in {"wind_pressure", "utrack"}:
         names = ["u10", "v10", "prmsl"] if model == "AROME" else ["UM10", "VM10", "MSLP"]
@@ -427,6 +423,13 @@ def _check_fields(case, inventory, selected):
             requests.setdefault("isobaricInhPa", {"variables": []})["variables"].append("absv")
         surface = requests.setdefault("surface", {"variables": []})
         surface["variables"] = list(set(surface["variables"]) | set(names))
+    from frameit.core.preflight import wind_dependencies
+
+    requests, _ = wind_dependencies(SimpleNamespace(
+        wind_pairs=case["config"]["wind_pairs"], wind_reference_frame=None,
+    ), requests)
+    for request in requests.values():
+        request["variables"] = [n for n in request["variables"] if n != "wind_speed"]
     gaps = []
     for index, record in enumerate(inventory["records"]):
         for group, request in requests.items():

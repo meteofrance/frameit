@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased
+
+- Require explicit wind-pair frames and grid-rotation methods; validate against
+  GRIB/CF metadata, with no automatic selection or silent method/frame fallback.
+- Make Cartesian native/mass-Earth winds and Cartesian/polar interface/mass W
+  selectable; retain defaults `mass_earth`/`interfaces`/`mass`. Native box products
+  use distinct U/V axes and bounding faces; tracking/polar analysis stays separate.
+- Add stored/physical level selection with original stored indexing, validated
+  mass/interface ranges and reported sparse W mapping; preserve other interface fields.
+- Normalize NetCDF velocity units per file; share tracker wind preparation and
+  enforce coordinate/axis checks, retaining source-frame and transformation metadata.
+- Keep AROME pressure velocity `w` (Pa/s) distinct from geometric `wz` (m/s),
+  without implicit hydrostatic conversion.
+- Add original C-grid/W SVGs, concise configuration/output guides and a numerical
+  method record with source references, tests and scientific qualification limits.
+
+### 2026-10-16 — `207b6e8` — Conditional Meso-NH pressure-centroid support
+
+- Extend `pressure_centroid` tracking to Meso-NH native-level NetCDF inputs on
+  stationary regional structured grids, including projected grids with 2-D
+  geographic coordinates.
+- Resolve and validate absolute pressure, physical altitude, model-level winds,
+  and required surface fields across every input file. Collocate and rotate
+  native winds as needed; interpolate winds linearly and pressure logarithmically
+  to 2,000 m geometric altitude above mean sea level without extrapolation.
+- Add native-quadrilateral sampling and WGS84 nodal-area weighting; record input
+  choices, height reference, wind frames, and transformations in track metadata
+  and run provenance. Existing output names, dimensions, units, and encodings
+  are retained.
+- Document MNH DIAG preparation, explicit failure conditions, and the full
+  500-km reference-ring coverage requirement; add an example configuration and
+  synthetic numerical, failure-path, and NetCDF reopening tests.
+- **Qualification limit:** full-domain real-MNH qualification and independent
+  scientific review remain outstanding. MNH geometric altitude and AROME
+  geopotential height are distinct definitions, not assumed equivalent.
+
+### 2026-10-16 — `aeae9e8` — Remove example visualization notebook
+
+- Remove `example/Ktests_cyclone/viz.ipynb`.
+
+### 2026-10-16 — `4ec3936` — Correct near-stationary heading threshold units
+
+- Convert the metre-valued `min_step_m` threshold to kilometres before comparing
+  it with track step distances, so heading retention uses the intended threshold.
+
+### 2026-10-14 — `014329f` — Fit the BELNA moving-track extraction box
+
+- Allow per-case X/Y box-size overrides in the scientific test catalogue.
+- Set the full-domain BELNA pressure-wind case to a 200-km by 40-km box because
+  its initial centre is only nine grid points from the input domain's Y boundary.
+
 ### 2026-10-14 — `d2a6755` — Versioned YAML and explicit scientific units
 
 - Introduce grouped YAML schema version 2 with strict key/type validation,

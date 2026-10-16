@@ -12,10 +12,19 @@ import xarray as xr
 logger = logging.getLogger(__name__)
 
 
+def horizontal_axes(conf):
+    """Named mass and Meso-NH alias axes; never infer geometry from array order."""
+    x = getattr(conf, "name_lon_dim", None) or "ni"
+    y = getattr(conf, "name_lat_dim", None) or "nj"
+    return (y, x), {y: "y", x: "x", "nj_u": "y", "ni_u": "x",
+                    "nj_v": "y", "ni_v": "x"}
+
+
 def _normalize_dataset_dims(
     ds: xr.Dataset,
     time_dim: str,
     vertical_dims: Iterable[str],
+    conf=None,
 ) -> xr.Dataset:
     """
     Reorder data variable dimensions to ``(time, vertical..., horizontal...)``.
@@ -55,7 +64,11 @@ def _normalize_dataset_dims(
         # 3) Remaining dimensions (typically horizontal and possibly others)
         other_part = [d for d in dims if d not in time_part and d not in vert_part]
 
-        new_order = time_part + vert_part + other_part
+        axes = horizontal_axes(conf)[1]
+        horizontal = [d for axis in ("y", "x") for d in other_part
+                      if axes.get(d) == axis]
+        independent = [d for d in other_part if d not in horizontal]
+        new_order = time_part + vert_part + independent + horizontal
 
         if new_order != dims:
             if logger.isEnabledFor(logging.DEBUG):
@@ -134,6 +147,7 @@ def normalize_dims_for_extraction(
             ds,
             time_dim=time_dim,
             vertical_dims=vertical_dims,
+            conf=conf,
         )
 
     return out

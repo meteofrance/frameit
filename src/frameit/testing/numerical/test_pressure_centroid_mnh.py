@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -68,10 +69,22 @@ def native_vortex(*, moving=False, n=141):
     return ds, centers
 
 
+def wind_settings(*, grid_native=False):
+    """Analytic ZM vectors are east/north; raw rotated native vectors are grid-based."""
+    return SimpleNamespace(wind_reference_frame=None, wind_pairs=[
+        dict(group="level", u="UT" if grid_native else "UT_ZM",
+             v="VT" if grid_native else "VT_ZM",
+             reference_frame="grid" if grid_native else "earth",
+             **({"rotation": {"method": "geolocation"}} if grid_native else {})),
+        dict(group="surface", u="UM10", v="VM10", reference_frame="earth"),
+    ])
+
+
 def config(tmp_path):
     return SimulationConfig.from_mapping_with_model_preset({
         "schema_version": 2, "model": "mesonh",
-        "input": {"directory": str(tmp_path), "pattern": "native*.nc"},
+        "input": {"directory": str(tmp_path), "pattern": "native*.nc",
+                  "wind_pairs": wind_settings().wind_pairs},
         "tracking": {"method": "pressure_centroid"},
         "domain": {"size_km": {"x": 100, "y": 100}},
         "variables": {"surface": {"names": ["MSLP"]}},
@@ -146,7 +159,7 @@ def test_missing_inputs_give_mnh_recipe_and_file_time(tmp_path):
 
 def test_formula_height_pressure_units_and_level_halos():
     source, _ = native_vortex(n=9)
-    baseline = prepare_mnh_inputs(source)
+    baseline = prepare_mnh_inputs(source, wind_settings())
     alternative = source.drop_vars("ALT").rename(PABST="PRES")
     alternative["PRES"] = (source.PABST / 100).assign_attrs(units="hPa")
     # Build the exact documented terrain-following formula, not an inference
@@ -156,7 +169,7 @@ def test_formula_height_pressure_units_and_level_halos():
     alternative.level.attrs.update(formula_definition=HEIGHT_FORMULA,
                                    computed_standard_name="altitude",
                                    formula_terms="s: level height: ZTOP orog: ZS")
-    result = prepare_mnh_inputs(alternative)
+    result = prepare_mnh_inputs(alternative, wind_settings())
     np.testing.assert_allclose(result.height.isel(nj=0, ni=0), [1000, 3000])
     xr.testing.assert_allclose(result.pressure, baseline.pressure)
     for key in ("u", "v", "u10m", "v10m"):
@@ -168,9 +181,10 @@ def test_formula_height_pressure_units_and_level_halos():
         resolve_mnh_fields(unsupported)
     halo = source.isel(level=[0, 0, 1, 1]).assign_coords(level=[-100., 1000., 3000., 5000.])
     halo.level.attrs.update(units="m", c_grid_dynamic_range="2:3")
-    assert prepare_mnh_inputs(halo).sizes["level"] == 2
+    assert prepare_mnh_inputs(halo, wind_settings()).sizes["level"] == 2
     with pytest.raises(ValueError, match="AGL"):
-        prepare_mnh_inputs(source.assign(ALT=source.ALT.assign_attrs(standard_name="height")))
+        prepare_mnh_inputs(source.assign(ALT=source.ALT.assign_attrs(standard_name="height")),
+                           wind_settings())
 
 
 def test_raw_staggered_wind_rotation_and_surface_basis():
@@ -191,16 +205,17 @@ def test_raw_staggered_wind_rotation_and_surface_basis():
                 {"units": "m s-1", "standard_name": "y_wind"})
     ds["UM10"] = xr.full_like(ds.MSLP, 7.).assign_attrs(units="m/s")
     ds["VM10"] = xr.full_like(ds.MSLP, 8.).assign_attrs(units="m/s")
-    prepared = prepare_mnh_inputs(ds)
+    prepared = prepare_mnh_inputs(ds, wind_settings(grid_native=True))
     np.testing.assert_allclose(prepared.u, -4, atol=1e-7)
     np.testing.assert_allclose(prepared.v, 3, atol=1e-7)
     np.testing.assert_allclose(prepared.u10m, 7)
     np.testing.assert_allclose(prepared.v10m, 8)
     assert prepared.u.dims == ("time", "level", "nj", "ni")
-    assert prepared.attrs["pressure_centroid_wind_rotation"] == "WGS84_native_axis_direction"
+    assert prepared.attrs["pressure_centroid_wind_rotation"] == "geolocation"
     # Mass and staggered coordinates may declare different compatible units.
     mixed = ds.assign_coords(ni_u=(ds.ni_u / 1000).assign_attrs(units="km"))
-    xr.testing.assert_allclose(prepare_mnh_inputs(mixed).u, prepared.u)
+    xr.testing.assert_allclose(prepare_mnh_inputs(mixed, wind_settings(grid_native=True)).u,
+                               prepared.u)
 
 
 def test_loader_preserves_tracker_levels_and_checks_later_files(tmp_path):
@@ -226,7 +241,7 @@ def test_loader_preserves_tracker_levels_and_checks_later_files(tmp_path):
 @pytest.mark.parametrize("moving", [False, True])
 def test_projected_native_vortex_centres_and_motion(moving):
     source, centers = native_vortex(moving=moving)
-    tracker = PressureCentroidTracker({}, 10_000, model="MNH")
+    tracker = PressureCentroidTracker({}, 10_000, model="MNH", conf=wind_settings())
     result = tracker({"pressure_centroid": {"native": source.chunk({"time": 1})}})
     _, _, error = GEOD.inv(result.lon.values, result.lat.values,
                            np.array(centers)[:, 0], np.array(centers)[:, 1])
@@ -292,7 +307,7 @@ def test_cli_schema_and_mnh_diagnostic_failure(tmp_path, caplog):
 
 def test_missing_vertical_brackets_and_reference_ring_fail_explicitly():
     source, _ = native_vortex()
-    tracker = PressureCentroidTracker({}, 10_000, model="MNH")
+    tracker = PressureCentroidTracker({}, 10_000, model="MNH", conf=wind_settings())
     too_high = source.assign(ALT=source.ALT + 3000)
     too_high.ALT.attrs["units"] = "m"
     with pytest.raises(ValueError, match="bracket 2,000 m"):
@@ -312,7 +327,7 @@ def test_inconsistent_sequence_units_and_frames_are_not_silently_combined():
         inspect_mnh_sequence([("first.nc", source), ("second.nc", changed)])
     contradictory = source.assign(UT_ZM=source.UT_ZM.assign_attrs(wind_reference_frame="grid"))
     with pytest.raises(ValueError, match="incompatible reference frames"):
-        prepare_mnh_inputs(contradictory)
+        prepare_mnh_inputs(contradictory, wind_settings())
 
 
 def test_formula_dependencies_survive_loading(tmp_path):
@@ -332,7 +347,7 @@ def test_formula_dependencies_survive_loading(tmp_path):
             [path], {}, conf.requests_tracker(), method="pressure_centroid", wind_conf=conf,
             resources=resources,
         )
-        prepared = prepare_mnh_inputs(tree["pressure_centroid"]["native"])
+        prepared = prepare_mnh_inputs(tree["pressure_centroid"]["native"], wind_settings())
         assert hasattr(prepared.u.data, "dask")
         np.testing.assert_allclose(
             prepared.height.broadcast_like(prepared.pressure).isel(time=0, nj=0, ni=0),

@@ -12,7 +12,7 @@ import numpy as np
 import xarray as xr
 
 from .derived.wind import add_speed_from_uv_dict
-from .dims_utils import normalize_dims_for_extraction
+from .dims_utils import horizontal_axes, normalize_dims_for_extraction
 from .polar.metadata import preserve_coordinate_dependencies
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,11 @@ def infer_domain_shape_from_tracker(
         if lat_name in ds.coords and lon_name in ds.coords:
             lat = ds[lat_name]
             lon = ds[lon_name]
+            (y, x), _ = horizontal_axes(conf)
+            if {y, x} <= set(lat.dims) and {y, x} <= set(lon.dims):
+                if any(lat.sizes[d] != lon.sizes[d] for d in (y, x)):
+                    raise ValueError("Latitude and longitude horizontal sizes must match")
+                return lat.sizes[x], lat.sizes[y]
 
             # 1D case (AROME-type)
             if lat.ndim == 1 and lon.ndim == 1:
@@ -489,8 +494,8 @@ def _extract_box_for_dataset(
 
     Notes
     -----
-    The last two dimensions of each data variable are assumed to be (y, x) in
-    that order (enforced by :func:`normalize_dims_for_extraction` upstream).
+    Horizontal axes are selected by name, including for bounds and independent
+    fields whose last dimensions need not be horizontal.
     """
 
     time_dim = getattr(conf, "name_time", "time")
@@ -502,25 +507,29 @@ def _extract_box_for_dataset(
     # 1) Extract data variables
     # ------------------------------------------------------------------
     data_vars_out: dict[str, xr.DataArray] = {}
+    (y_dim, x_dim), _ = horizontal_axes(conf)
 
     for name, da in ds.data_vars.items():
         dims = da.dims
 
         # Variables with no horizontal structure: copied as-is
-        if len(dims) < 2:
+        indexers = {d: idx for d, idx in ((y_dim, y_idx), (x_dim, x_idx)) if d in dims}
+        if not indexers:
             data_vars_out[name] = da
             continue
-
-        # Assumption: the last two dimensions are (y, x)
-        y_dim, x_dim = dims[-2], dims[-1]
 
         # Extraction with vectorized indexers
         # x_idx: (time, x_box), y_idx: (time, y_box)
         # da:   (..., y_dim, x_dim)
-        da_box = da.isel({y_dim: y_idx, x_dim: x_idx})
+        da_box = da.isel(indexers)
 
         # Application du masque NaN pour les points hors domaine
-        da_box = da_box.where(mask_box)
+        mask = mask_box
+        if y_dim not in indexers:
+            mask = mask.any("y_box")
+        if x_dim not in indexers:
+            mask = mask.any("x_box")
+        da_box = da_box.where(mask)
 
         data_vars_out[name] = da_box
 
@@ -677,8 +686,126 @@ def _extract_box_for_dataset(
     # Extra vertex dimensions prevent vertical bounds from being carried by
     # individual field DataArrays during spatial indexing.
     ds_out = preserve_coordinate_dependencies(ds, ds_out)
+    ds_out = _clean_cropped_metadata(ds_out)
 
     return ds_out
+
+
+def _clean_cropped_metadata(ds):
+    """Remove source-domain validity/bounds claims that no longer describe a box."""
+    ds = ds.copy(deep=False)
+    for value in [ds, *(ds[name] for name in ds.variables)]:
+        attrs = dict(value.attrs)
+        if "c_grid_dynamic_range" in attrs:
+            attrs["source_c_grid_dynamic_range"] = str(attrs.pop("c_grid_dynamic_range"))
+        if attrs.get("bounds") and attrs["bounds"] not in ds:
+            attrs["source_bounds"] = attrs.pop("bounds")
+        value.attrs = attrs
+    return ds
+
+
+def _native_axis_indexer(ds, dim, mass_dim, axis, track_box, conf):
+    """Match labelled regular native positions to requested mass-cell support.
+
+    Face coordinates must lie on half-integer mass indices. Equal-N storage
+    can omit either outer face; N+1 storage can supply both. Missing positions
+    are masked, never synthesized. Axes may independently ascend or descend.
+    Local offsets follow source mass-index orientation, including on reversed
+    axes; native extraction does not rotate/reorient the vector basis.
+    """
+    if dim not in ds.coords or mass_dim not in ds.coords:
+        raise ValueError(f"Native extraction requires labelled {dim!r} and {mass_dim!r} axes")
+    mass, native = ds[mass_dim], ds[dim]
+    if mass.dims != (mass_dim,) or native.dims != (dim,):
+        raise ValueError("Native extraction requires one-dimensional labelled horizontal axes")
+    if mass.attrs.get("units") != native.attrs.get("units"):
+        from frameit.utils.units import convert_units
+
+        mass = convert_units(mass, "distance", assumed="m")
+        native = convert_units(native, "distance", assumed="m")
+    m, n = np.asarray(mass, dtype=float), np.asarray(native, dtype=float)
+    delta = np.diff(m)
+    if len(delta) == 0 or not n.size or not np.isfinite(m).all() or not np.isfinite(n).all():
+        raise ValueError("Native extraction requires finite horizontal geometry and >=2 mass cells")
+    step = delta[0]
+    if step == 0 or not np.allclose(delta, step, rtol=1e-7, atol=abs(step) * 1e-9):
+        raise ValueError("Native extraction requires regular monotone mass axes")
+    p = (n - m[0]) / step
+    nd = np.diff(p)
+    if len(nd) and not (np.allclose(nd, 1, atol=1e-7) or np.allclose(nd, -1, atol=1e-7)):
+        raise ValueError(f"Native axis {dim!r} must have the mass-grid spacing")
+    face = not np.allclose(p, np.rint(p), rtol=0, atol=1e-7)
+    if face and not np.allclose(p - .5, np.rint(p - .5), rtol=0, atol=1e-7):
+        raise ValueError(f"Native axis {dim!r} is neither cell-aligned nor half-cell staggered")
+    count = track_box.attrs[f"box_n{axis}_points"]
+    half = track_box.attrs[f"box_half_width_{axis}_points"]
+    offsets = np.arange(count + int(face), dtype=float) - half - (.5 if face else 0)
+    suffix = dim.rsplit("_", 1)[-1] if dim != mass_dim else None
+    local = f"{axis}_{suffix}_box" if suffix in {"u", "v"} else f"{axis}_box"
+    minimum = track_box[f"i{axis}_min"]
+    targets = np.asarray(minimum)[:, None] + offsets[None, :] + half
+    direction = nd[0] if len(nd) else 1.
+    raw = np.rint((targets - p[0]) / direction).astype(np.int64)
+    valid = (raw >= 0) & (raw < len(p))
+    clipped = np.clip(raw, 0, len(p) - 1)
+    valid &= np.isclose(p[clipped], targets, rtol=0, atol=1e-7)
+    coord = xr.DataArray(offsets, dims=local, attrs={
+        "units": "1", "long_name": f"native {axis} offset in signed mass-grid index units",
+        "grid_position": f"{axis}_face" if face else "mass_aligned",
+    })
+    coords = {minimum.dims[0]: minimum.coords[minimum.dims[0]].variable, local: coord}
+    indexer = xr.DataArray(clipped, dims=(minimum.dims[0], local), coords=coords)
+    mask = xr.DataArray(valid, dims=indexer.dims, coords=coords)
+    return indexer, mask, face
+
+
+def _extract_native_box(ds, x_idx, y_idx, mask_box, conf, x_box, y_box,
+                        x_box_km, y_box_km, track_box):
+    """Crop native values and geography together on each labelled source grid.
+
+    Output uses x_u_box/y_u_box and x_v_box/y_v_box for aliases (even when
+    perpendicular positions coincide with mass cells), and x_box/y_box for
+    mass fields. Face axes contain N+1 samples. No collocation, basis rotation,
+    speed calculation or data extrapolation is performed.
+    """
+    (y, x), axes = horizontal_axes(conf)
+    indexers, masks, faces = {}, {}, {}
+    for dim in ds.dims:
+        if dim not in axes:
+            continue
+        axis = axes[dim]
+        idx, mask, face = _native_axis_indexer(
+            ds, dim, x if axis == "x" else y, axis, track_box, conf)
+        indexers[dim], masks[dim], faces[dim] = idx, mask, face
+    cropped = ds.isel(indexers)
+    out = xr.Dataset(attrs=dict(ds.attrs))
+    for name, da in ds.variables.items():
+        value = cropped[name]
+        relevant = [dim for dim in da.dims if dim in masks]
+        # Drop automatically attached source coordinates before constructing the
+        # result: each coordinate is independently cropped/masked below.
+        clean = xr.DataArray(value.variable)
+        for dim in relevant:
+            clean = clean.where(masks[dim])
+        clean.attrs = dict(da.attrs)
+        if relevant:
+            position = [f"{axes[d]}_face" for d in relevant if faces[d]]
+            clean.attrs["grid_position"] = " ".join(position) or "mass_aligned"
+        if name in ds.coords:
+            out = out.assign_coords({name: clean})
+        else:
+            out[name] = clean
+    for idx in indexers.values():
+        local = idx.dims[-1]
+        out = out.assign_coords({local: idx[local]})
+        distance = idx[local] * float(conf.resolution) / 1000
+        distance.attrs = dict(units="km", long_name=f"{local} signed mass-index distance offset")
+        out = out.assign_coords({f"{local}_km": distance})
+    out.attrs.update(track_box.attrs)
+    out.attrs["native_horizontal_extraction"] = (
+        "source mass-index orientation; labelled cell/face support; unavailable faces NaN; "
+        "native vector basis unchanged")
+    return _clean_cropped_metadata(out)
 
 
 def extract_data(
@@ -686,6 +813,8 @@ def extract_data(
     ds_user: dict[str, xr.Dataset],
     ds_tracker: dict[str, xr.Dataset] | xr.Dataset,
     track_ds: xr.Dataset,
+    *,
+    native_winds: bool = False,
 ):
     """
     High-level extraction: compute box bounds and crop all user datasets.
@@ -701,6 +830,10 @@ def extract_data(
         Tracker datasets used to infer the domain shape (nx, ny).
     track_ds : xr.Dataset
         Track dataset containing at least ``cx(time)`` and ``cy(time)``.
+    native_winds : bool, optional
+        Preserve normalized native U/V samples and basis without computing
+        speed. Labelled native face axes use N+1 bounding samples (NaN where
+        unavailable), on x_u_box/y_u_box and x_v_box/y_v_box dimensions.
 
     Returns
     -------
@@ -722,6 +855,17 @@ def extract_data(
     x_box = float(getattr(conf, "x_boxsize_km", 0.0) or 0.0)
     y_box = float(getattr(conf, "y_boxsize_km", 0.0) or 0.0)
     resolution_m = float(getattr(conf, "resolution", 0.0) or 0.0)
+
+    # Reject raw staggering before any spatial coordinates can be discarded.
+    if not native_winds:
+        mass, axes = horizontal_axes(conf)
+        for ds in ds_user.values():
+            for name, da in ds.data_vars.items():
+                if any(d in axes and d not in mass for d in da.dims):
+                    raise ValueError(
+                        f"{name}: unprepared native staggering; prepare mass/Earth winds "
+                        "before extraction or use native_winds=True"
+                    )
 
     # Always normalize dims so the rest of the pipeline can rely on the convention
     ds_user_norm = normalize_dims_for_extraction(ds_user, conf=conf)
@@ -789,7 +933,8 @@ def extract_data(
         if "time" in ds.dims:
             ds = ds.sel(time=track_box["time"].values)
         logger.debug("Extracting cyclone-centred box for ds_user[%s]", key)
-        extracted[key] = _extract_box_for_dataset(
+        extractor = _extract_native_box if native_winds else _extract_box_for_dataset
+        extracted[key] = extractor(
             ds=ds,
             x_idx=x_idx,
             y_idx=y_idx,
@@ -802,6 +947,7 @@ def extract_data(
             track_box=track_box,
         )
     # Add total wind speed here :
-    extracted = add_speed_from_uv_dict(extracted, conf)
+    if not native_winds:
+        extracted = add_speed_from_uv_dict(extracted, conf)
 
     return track_box, extracted

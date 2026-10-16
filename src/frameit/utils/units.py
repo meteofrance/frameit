@@ -54,8 +54,21 @@ def convert_units(da, quantity, *, target=None, assumed=None):
 def normalize_geography(ds, conf):
     """Supported model adapters use degrees when geographic units are absent."""
     out = ds.copy(deep=False)
-    for name, units in ((conf.name_latitude, "degrees_north"),
-                        (conf.name_longitude, "degrees_east")):
+    geography = {getattr(conf, "name_latitude", "latitude"): "degrees_north",
+                 getattr(conf, "name_longitude", "longitude"): "degrees_east"}
+    # Native exports retain each face's geography. Normalize these before files
+    # are combined too, rather than labelling later radian values as degrees.
+    for name, value in ds.variables.items():
+        standard = str(value.attrs.get("standard_name", ""))
+        if name in {"latitude_u", "latitude_v", "lat_u", "lat_v"} or standard in {
+            "latitude", "latitude_at_u_location", "latitude_at_v_location"
+        }:
+            geography[name] = "degrees_north"
+        elif name in {"longitude_u", "longitude_v", "lon_u", "lon_v"} or standard in {
+            "longitude", "longitude_at_u_location", "longitude_at_v_location"
+        }:
+            geography[name] = "degrees_east"
+    for name, units in geography.items():
         if name in out:
             converted = convert_units(out[name], "angle", target=units, assumed=units)
             if not ds[name].attrs.get("units"):

@@ -17,7 +17,14 @@ from frameit.io.loader import (
     input_path_excluded,
     resolve_input_files,
 )
-from frameit.utils.units import convert_units
+from frameit.processing.requests import normalize_requests, selected_native_indices
+from frameit.processing.wind_reference import (
+    pair_definition,
+    rotation_angle,
+    validate_pair_frame,
+    wind_pairs,
+)
+from frameit.utils.units import convert_units, unit_key
 
 
 def open_metadata(files, conf, resources):
@@ -82,6 +89,8 @@ def _grib_metadata(path):
                 attrs = {"units": str(get("units"))}
                 if ec.codes_is_defined(handle, "uvRelativeToGrid"):
                     attrs["GRIB_uvRelativeToGrid"] = int(get("uvRelativeToGrid"))
+                if name in entry["fields"] and entry["fields"][name].attrs != attrs:
+                    raise ValueError(f"{path}: inconsistent units/wind flags on {group}.{name}")
                 entry["fields"][name] = xr.DataArray(0., attrs=attrs)
                 entry["levels"].add(float(get("level")))
                 date = f"{int(get('validityDate')):08d}{int(get('validityTime')):04d}"
@@ -158,13 +167,93 @@ def _belongs_to_group(ds, name, group):
     return not (set(ds[name].dims) & vertical)
 
 
+def wind_dependencies(conf, requests):
+    """Expand identified horizontal pairs, including single-component requests."""
+    from frameit.processing.derived.wind import wind_names
+
+    expanded = deepcopy(requests)
+    pairs = []
+    for group, spec in expanded.items():
+        variables = spec.setdefault("variables", [])
+        definitions = wind_pairs(conf, group)
+        if "wind_speed" in variables:
+            names = wind_names(conf, group)
+            variables.extend(n for n in names if n not in variables)
+        aliases = getattr(conf, "tracking_var_aliases" if group == "surface"
+                          else "velocity_aliases", {})
+        keys = ("u10m", "v10m") if group == "surface" else ("u_velocity", "v_velocity")
+        alias_names = tuple(aliases.get(k) for k in keys)
+        if (all(alias_names) and set(alias_names) & set(variables)
+                and not any((p["u"], p["v"]) == alias_names for p in definitions)):
+            definitions.append(pair_definition(conf, group, alias_names))
+        if not definitions:
+            names = wind_names(conf, group)
+            if set(names) & set(variables) or "wind_speed" in variables:
+                definitions = [pair_definition(conf, group, names)]
+        for declaration in definitions:
+            names = declaration["u"], declaration["v"]
+            if not set(names) & set(variables):
+                continue
+            pair = pair_definition(conf, group, names)
+            pairs.append(pair)
+            variables.extend(n for n in names if n not in variables)
+    return expanded, pairs
+
+
+def inspect_wind_pairs(datasets, conf, pairs, path):
+    """Check headers and declared geometry only; never evaluate velocity arrays."""
+    records = []
+    for pair in pairs:
+        group = pair["group"]
+        candidates = [ds for ds in datasets if any(
+            n in ds and _belongs_to_group(ds, n, group) for n in (pair["u"], pair["v"]))]
+        for ds in candidates:
+            frame = validate_pair_frame(ds, pair)
+            if frame == "grid":
+                geometry = ds.copy(deep=False)
+                for other in datasets:
+                    for name in (conf.name_latitude, conf.name_longitude):
+                        if name not in geometry and name in other:
+                            geometry = geometry.assign_coords({name: other[name]})
+                angle = rotation_angle(geometry, conf, pair)
+                # Native MNH winds are checked on their eventual mass grid.
+                dims = set(ds[pair["u"]].dims)
+                if conf.atm_model == "MNH":
+                    dims = {d.removesuffix("_u").removesuffix("_v") for d in dims}
+                if ds[pair["u"]].ndim and not set(angle.dims) <= dims:
+                    raise ValueError(f"{path}: wind rotation must use the collocated wind grid")
+            records.append({"file": str(path), **deepcopy(pair),
+                            "rotation_method": (pair["rotation"]["method"]
+                                                if frame == "grid" else "none")})
+    return records
+
+
+def selected_level_records(datasets, requests, path):
+    """Record selected labels and original zero-based native positions."""
+    records = []
+    for group, req in normalize_requests(requests).items():
+        for ds in datasets:
+            if group == "surface" or group not in ds.dims:
+                continue
+            positions = selected_native_indices(ds, req, group)
+            native = next((ds[n].values for n in (f"{group}_source_native_index",
+                                                 "source_native_index")
+                           if n in ds.coords and ds[n].dims == (group,)),
+                          np.arange(ds.sizes[group]))
+            records.append({"file": str(path), "group": group,
+                            "level_domain": req["level_domain"],
+                            "source_native_indices": np.asarray(native)[positions].tolist(),
+                            "values": ds[group].values[positions].tolist()})
+    return records
+
+
 def preflight(conf, *, input_files=None, check_output=True, execution_options=None):
     files = (discover_input_files(conf) if input_files is None
              else resolve_input_files(input_files, strict=True))
     conf.file_type = infer_format(files, conf.file_type or None)
     inventory = []
     unit_records = []
-    from frameit.processing.derived.wind import wind_names
+    wind_records, selected_levels = [], []
     from frameit.tracking.pressure_centroid_inputs import (
         inspect_mnh_sequence,
         is_mnh_centroid,
@@ -177,17 +266,10 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
     if mnh_centroid and conf.file_type != "netcdf":
         raise ValueError("Meso-NH pressure_centroid requires native-level NetCDF inputs")
 
-    user_dependencies = deepcopy(conf.requests_user())
-    for group, spec in user_dependencies.items():
-        if "wind_speed" in spec.get("variables", []):
-            spec["variables"] = list(
-                dict.fromkeys(spec["variables"] + list(wind_names(conf, group)))
-            )
     with DatasetResources() as resources:
         grids = []
         for path, datasets in open_metadata(files, conf, resources):
             grids.extend(datasets)
-            user = conf.requests_user()
             tracker = conf.requests_tracker().get(conf.tracking_method, {})
             layout = None
             if mnh_centroid:
@@ -197,24 +279,35 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 layout = resolve_mnh_fields(header, f"{path}; time={stamps}")
                 tracker = layout.requests()
                 mnh_records.append((path, header))
+            user_dependencies, user_pairs = wind_dependencies(conf, conf.requests_user())
+            tracker_dependencies, tracker_pairs = wind_dependencies(conf, tracker)
+            pairs = []
+            for pair in user_pairs + tracker_pairs:
+                if pair not in pairs:
+                    pairs.append(pair)
+            wind_records.extend(inspect_wind_pairs(datasets, conf, pairs, path))
+            selected_levels.extend(selected_level_records(datasets, user_dependencies, path))
+            tracker_level_requests = deepcopy(tracker_dependencies)
+            if (layout is not None
+                    and datasets[0].level.attrs.get("c_grid_dynamic_range") is not None):
+                tracker_level_requests["level"]["level_selection"] = "physical"
+            selected_levels.extend(
+                {**r, "purpose": "tracking"}
+                for r in selected_level_records(datasets, tracker_level_requests, path)
+            )
             variables = {}
             levels = {}
             times = []
-            velocity_names = set(conf.velocity_aliases.values()) | {
-                conf.tracking_var_aliases.get(k) for k in ("u", "v", "u10m", "v10m")}
+            velocity_names = {p[k] for p in pairs for k in ("u", "v")}
+            velocity_names.add(conf.velocity_aliases.get("w_velocity"))
             if layout is not None:
                 velocity_names.update((layout.u, layout.v))
             requested_names = {
-                v for s in (*user.values(), *tracker.values()) for v in s.get("variables", [])
+                v for s in (*user_dependencies.values(), *tracker_dependencies.values())
+                for v in s.get("variables", [])
             }
             if layout is not None:
                 requested_names.update(layout.variables)
-                frames = mnh_wind_frames(datasets[0], layout, conf)
-            if any("wind_speed" in s.get("variables", []) for s in user.values()):
-                for group, spec in user.items():
-                    if "wind_speed" in spec.get("variables", []):
-                        for name in wind_names(conf, group):
-                            requested_names.add(name)
             for ds in datasets:
                 variables.update({name: da.attrs.get("units") for name, da in ds.data_vars.items()})
                 for name in ds.coords:
@@ -230,6 +323,15 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                     if name not in ds:
                         continue
                     quantity = None
+                    if conf.atm_model == "AROME" and name == "w":
+                        if unit_key(ds[name].attrs.get("units")) not in {
+                            "pa/s", "pas-1", "pas**-1", "pas^-1",
+                        }:
+                            raise ValueError(f"{path}: w requires pressure velocity units Pa s-1")
+                        unit_records.append({"file": str(path), "variable": name,
+                                             "source_units": ds[name].attrs["units"],
+                                             "calculation_units": "Pa s-1", "assumed": False})
+                        continue
                     if name in velocity_names:
                         quantity = "velocity"
                     elif name in {conf.name_latitude, conf.name_longitude}:
@@ -252,24 +354,6 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                             target=("degrees_north" if name == conf.name_latitude
                                     else "degrees_east") if quantity == "angle" else None,
                         )
-                        if quantity == "velocity":
-                            flag = ds[name].attrs.get("GRIB_uvRelativeToGrid")
-                            frame = ds[name].attrs.get(
-                                "wind_reference_frame",
-                                ds.attrs.get("wind_reference_frame", conf.wind_reference_frame),
-                            )
-                            if layout is not None and name in frames:
-                                frame = frames[name]
-                            if flag is not None:
-                                if int(flag) not in {0, 1}:
-                                    raise ValueError(f"{path}: invalid wind reference on {name}")
-                                frame = "grid" if int(flag) else "earth"
-                            if frame == "grid" and "grid_rotation" not in ds and not (
-                                layout is not None and name in frames
-                            ):
-                                raise ValueError(
-                                    f"{path}: grid-relative {name} requires grid_rotation"
-                                )
                         unit_records.append({"file": str(path), "variable": name,
                                              "source_units": ds[name].attrs.get("units"),
                                              "calculation_units": normalized.attrs["units"],
@@ -299,7 +383,7 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             })
         else:
             _check_requests(
-                grids, conf.requests_tracker().get(conf.tracking_method, {}),
+                grids, tracker_dependencies,
                 Path("selected-inputs"), tolerance=tolerance,
             )
         geometry = resolve_geometry(conf, grids)
@@ -374,6 +458,7 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             )
     plan = {"configuration": resolved, "grid_geometry": geometry,
             "inputs": inventory, "unit_provenance": unit_records,
+            "wind_provenance": wind_records, "selected_levels": selected_levels,
             "excluded_inputs": excluded, "planned_products": products,
             "setting_sources": resolved_sources(conf, options),
             "tracking_method": conf.tracking_method, "track_time_count": nt,
@@ -394,5 +479,7 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                               for v in (conf.x_boxsize_km, conf.y_boxsize_km)]
     conf.add_parameter("input_inventory", [str(p) for p in files])
     conf.add_parameter("unit_provenance", unit_records)
+    conf.add_parameter("wind_provenance", wind_records)
+    conf.add_parameter("selected_levels", selected_levels)
     conf.add_parameter("resolved_config", conf.yaml_config)
     return plan

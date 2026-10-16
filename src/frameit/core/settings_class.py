@@ -127,7 +127,11 @@ class SimulationConfig:
     polar_profile: bool = False
     polar_variables: dict[str, dict[str, Any]] = field(default_factory=dict)
     field_orientation: str = "geodesic"
-    wind_reference_frame: str = "earth"
+    wind_reference_frame: str | None = None
+    wind_pairs: list[dict[str, Any]] = field(default_factory=list)
+    cartesian_horizontal_winds: str = "mass_earth"
+    cartesian_vertical_velocity: str = "interfaces"
+    polar_vertical_velocity: str = "mass"
 
     # Derived and runtime parameters
     simulation_parameter: dict[str, Any] = field(default_factory=dict)
@@ -302,8 +306,17 @@ class SimulationConfig:
         validate_sampling_options(
             self.polar_n_theta, self.azimuthal_resolution, self.polar_max_points
         )
-        if self.wind_reference_frame not in {"earth", "grid"}:
-            raise ValueError("wind_reference_frame must be 'earth' or 'grid'")
+        from frameit.core.configuration import validate_output_selections, validate_wind_pairs
+
+        validate_wind_pairs(self.wind_pairs)
+        validate_output_selections(self.cartesian_horizontal_winds,
+                                   self.cartesian_vertical_velocity,
+                                   self.polar_vertical_velocity)
+        if self.wind_reference_frame is not None and (
+            not isinstance(self.wind_reference_frame, str)
+            or self.wind_reference_frame not in {"earth", "grid"}
+        ):
+            raise ValueError("wind_reference_frame must be 'earth', 'grid', or None")
         if self.atm_model not in ("AROME", "MNH"):
             raise ValueError("atm_model must be 'AROME' or 'MNH'")
 

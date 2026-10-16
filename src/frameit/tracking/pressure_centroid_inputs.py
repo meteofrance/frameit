@@ -11,10 +11,10 @@ from types import SimpleNamespace
 import numpy as np
 import xarray as xr
 
+from frameit.processing.requests import selected_native_indices
 from frameit.processing.wind_collocation import prepare_native_mnh
+from frameit.processing.wind_reference import pair_definition, rotation_angle, validate_pair_frame
 from frameit.utils.units import convert_units, normalize_geography
-
-from .pressure_centroid import GEOD
 
 HEIGHT_FORMULA = "z(n,k,j,i)=s(k)*(height-orog(j,i))/height+orog(j,i)"
 
@@ -192,79 +192,28 @@ def inspect_mnh_sequence(records):
     return reference[0]
 
 
-def _wind_frame(da, ds, default):
-    flag = da.attrs.get("GRIB_uvRelativeToGrid")
-    intrinsic = da.name in {"UT_ZM", "VT_ZM", "UM10", "VM10"}
-    frame = da.attrs.get("wind_reference_frame")
-    if frame is None and not intrinsic:
-        frame = ds.attrs.get("wind_reference_frame")
-    if flag is not None:
-        if flag not in (0, 1) or (frame is not None and frame != ("grid" if flag else "earth")):
-            raise ValueError(f"Conflicting/invalid wind reference metadata on {da.name}")
-        frame = "grid" if flag else "earth"
-    if frame is None and da.attrs.get("standard_name") in {"eastward_wind", "northward_wind"}:
-        frame = "earth"
-    frame = frame or default
-    if frame not in {"grid", "earth"}:
-        raise ValueError(f"Unknown wind reference frame {frame!r} on {da.name}")
-    return frame
-
-
 def mnh_wind_frames(ds, fields, conf=None):
-    """Resolve the native and surface vector bases independently."""
-    default_native = "earth" if fields.u.endswith("_ZM") else "grid"
-    if not fields.u.endswith("_ZM") and conf is not None and getattr(
-        conf, "schema_sources", {}).get("input.wind_reference_frame") == "yaml":
-        default_native = conf.wind_reference_frame
+    """Validate declared native/surface bases, never infer them from field names.
+
+    The lightweight ``conf=None`` numerical API takes canonical Earth-relative
+    physical vectors for *both* pairs. Grid-relative fixtures must pass explicit
+    pair declarations and rotation settings, just as production callers do.
+    """
+    if conf is None:
+        conf = SimpleNamespace(wind_reference_frame="earth")
     result = {}
-    for pair, default in (((fields.u, fields.v), default_native), (("UM10", "VM10"), "earth")):
-        frames = {_wind_frame(ds[name], ds, default) for name in pair}
-        if len(frames) != 1:
-            raise input_error("Dataset", [
-                f"Wind components {pair} have incompatible reference frames"])
-        frame = frames.pop()
-        if pair[0].endswith("_ZM") and frame != "earth":
-            raise input_error("Dataset", ["UT_ZM/VT_ZM contradict their earth-relative definition"])
-        result.update(dict.fromkeys(pair, frame))
+    for group, names in (("level", (fields.u, fields.v)), ("surface", ("UM10", "VM10"))):
+        pair = pair_definition(conf, group, names)
+        try:
+            frame = validate_pair_frame(ds, pair)
+        except ValueError as exc:
+            raise ValueError(
+                f"Wind components {names} have incompatible reference frames: {exc}"
+            ) from exc
+        if frame == "grid":
+            rotation_angle(ds, conf, pair)
+        result.update(dict.fromkeys(names, pair["reference_frame"]))
     return result
-
-
-def _grid_rotation(ds):
-    """Local geographic direction of increasing native x, at native mass points."""
-    lon, lat = xr.broadcast(ds.longitude, ds.latitude)
-    if "time" in lon.dims:
-        lon, lat = lon.isel(time=0), lat.isel(time=0)
-    lon, lat = (np.asarray(a.transpose("nj", "ni"), float) for a in (lon, lat))
-    if min(lon.shape) < 2:
-        raise ValueError("Wind rotation requires at least two horizontal mass points per axis")
-    angles = []
-    for axis in (1, 0):
-        forward = np.minimum(np.arange(lon.shape[axis]) + 1, lon.shape[axis] - 1)
-        backward = np.maximum(np.arange(lon.shape[axis]) - 1, 0)
-        azf = GEOD.inv(lon, lat, np.take(lon, forward, axis=axis),
-                      np.take(lat, forward, axis=axis))[0]
-        azb = GEOD.inv(lon, lat, np.take(lon, backward, axis=axis),
-                      np.take(lat, backward, axis=axis))[0] + 180
-        indices = np.arange(lon.shape[axis])
-        shape = [1, 1]
-        shape[axis] = len(indices)
-        azf = np.where((indices == len(indices) - 1).reshape(shape), azb, azf)
-        azb = np.where((indices == 0).reshape(shape), azf, azb)
-        # Negative native coordinates reverse both vector axes.
-        coordinate = np.asarray(ds["ni" if axis == 1 else "nj"], float)
-        if np.all(np.diff(coordinate) < 0):
-            azf, azb = azf + 180, azb + 180
-        elif not np.all(np.diff(coordinate) > 0):
-            raise ValueError("Native coordinates must be strictly monotone for wind rotation")
-        a, b = np.deg2rad(azf), np.deg2rad(azb)
-        angles.append(np.arctan2(np.sin(a) + np.sin(b), np.cos(a) + np.cos(b)))
-    if not np.isfinite(angles).all() or np.max(np.abs(np.cos(angles[0] - angles[1]))) > .02:
-        raise ValueError("Native wind rotation requires an approximately orthogonal grid")
-    # Grid y must be to the left of grid x, not a reflected vector basis.
-    if np.any(np.sin(angles[0] - angles[1]) <= 0):
-        raise ValueError("Native wind grid has an inconsistent vector orientation")
-    return xr.DataArray(np.pi / 2 - angles[0], dims=("nj", "ni"),
-                        coords={d: ds[d] for d in ("nj", "ni")}, attrs={"units": "rad"})
 
 
 def prepare_mnh_inputs(ds, conf=None):
@@ -274,7 +223,13 @@ def prepare_mnh_inputs(ds, conf=None):
         atm_model="MNH", name_lon_dim="ni", name_lat_dim="nj", name_vertical_dim="level",
         name_latitude="latitude", name_longitude="longitude",
         velocity_aliases={"u_velocity": fields.u, "v_velocity": fields.v},
-        tracking_var_aliases={"u10m": "UM10", "v10m": "VM10"}, wind_reference_frame="earth",
+        tracking_var_aliases={"u10m": "UM10", "v10m": "VM10"},
+        wind_pairs=[pair_definition(
+            conf if conf is not None else SimpleNamespace(wind_reference_frame="earth"),
+            group, names,
+        ) for group, names in (("level", (fields.u, fields.v)),
+                               ("surface", ("UM10", "VM10")))],
+        wind_reference_frame=None,
     )
     source = normalize_geography(ds, settings)
     source = source.assign_coords({
@@ -282,15 +237,10 @@ def prepare_mnh_inputs(ds, conf=None):
         for name in _horizontal_coordinates(source, fields)
     })
     try:
-        frames = mnh_wind_frames(source, fields, conf)
-        for name, frame in frames.items():
-            source[name] = source[name].assign_attrs(wind_reference_frame=frame)
-        rotation = "none"
-        if "grid" in frames.values():
-            rotation = ("source_grid_rotation" if "grid_rotation" in source
-                        else "WGS84_native_axis_direction")
-            if "grid_rotation" not in source:
-                source = source.assign_coords(grid_rotation=_grid_rotation(source))
+        frames = mnh_wind_frames(source, fields, settings)
+        rotation = ",".join(dict.fromkeys(
+            p["rotation"]["method"] for p in settings.wind_pairs
+            if p["reference_frame"] == "grid")) or "none"
         source, _ = prepare_native_mnh(source, settings)
         if fields.height == ("ALT",):
             height = convert_units(source.ALT, "distance")
@@ -310,11 +260,10 @@ def prepare_mnh_inputs(ds, conf=None):
         # Native backup files can contain nonphysical bottom/top levels. Respect
         # MNH's one-based inclusive dynamic range when it is explicitly supplied.
         physical = source.level.attrs.get("c_grid_dynamic_range")
-        if physical:
-            first, last = (int(v) for v in physical.split(":"))
-            if not 1 <= first <= last <= source.level.size:
-                raise ValueError("level.c_grid_dynamic_range is incompatible with the input levels")
-            result = result.isel(level=slice(first - 1, last))
+        if physical is not None:
+            positions = selected_native_indices(
+                source, {"level_domain": "physical", "all_levels": True}, "level")
+            result = result.isel(level=positions)
         if result.sizes["level"] < 2:
             raise ValueError("At least two physical native levels are required")
     except ValueError as exc:
