@@ -222,7 +222,7 @@ def enrich_track_with_kinematics(
 
     # Guard against near-stationary steps, keep previous heading when possible
     if min_step_m is not None and float(min_step_m) > 0.0:
-        bad = d_m < float(min_step_m)
+        bad = d_m < float(min_step_m) / 1000.0
         if np.any(bad):
             for i in range(1, nt):
                 if bad[i]:
