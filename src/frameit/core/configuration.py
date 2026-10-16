@@ -38,6 +38,19 @@ DEFAULTS = {
             "sampling": {"r80_max_distance_km": 250., "radial_step_km": 2.5,
                          "azimuth_step_deg": 5.},
         },
+        "multifield_vortex": {
+            "profile": "all_no_thick", "on_track_loss": "stop",
+            "seed": {"latitude": None, "longitude": None, "time": None,
+                     "motion_u_m_s": None, "motion_v_m_s": None},
+            "mnh_gravity_m_s2": None,
+            "numerics": {"analysis_step_km": 25., "refinement_km": 2.5,
+                         "max_iterations": 20, "minimum_support": .8,
+                         "minimum_samples": 16},
+            "quality": {"minimum_parameters": 2, "pressure_rise_pa": 50.,
+                        "vt850_min_m_s": 1.5, "max_separation_km": 425.,
+                        "max_speed_m_s": 30.866666666666667,
+                        "speed_check_interval_hours": 6.},
+        },
     },
     "domain": {"size_km": None, "edge_policy": "pad_nan"},
     "variables": {},
@@ -234,6 +247,7 @@ def resolve_schema(raw, *, base_dir=None):
         "polar.interpolation_method", "polar.missing_data_policy", "polar.ellipsoid",
         "output.engine", "output.format", "logging.level",
         "tracking.pressure_centroid.motion.solver",
+        "tracking.multifield_vortex.profile", "tracking.multifield_vortex.on_track_loss",
     )
     for path in enum_paths:
         value = conf
@@ -272,7 +286,8 @@ def resolve_schema(raw, *, base_dir=None):
                                out["polar"]["vertical_velocity"])
     if inp["grid_spacing_m"] is not None:
         _positive(inp["grid_spacing_m"], "input.grid_spacing_m")
-    methods = {"wind_pressure", "pressure_centroid", "fixed_box", "prescribed_track", "utrack"}
+    methods = {"wind_pressure", "pressure_centroid", "multifield_vortex", "fixed_box",
+               "prescribed_track", "utrack"}
     if trk["method"] not in methods:
         raise ValueError(f"tracking.method must be one of {sorted(methods)}")
     for key, value in trk["wind_pressure"].items():
@@ -290,6 +305,30 @@ def resolve_schema(raw, *, base_dir=None):
         raise ValueError("tracking.prescribed_track.file is required")
     if trk["method"] == "utrack" and not trk["utrack"]["weights_file"]:
         raise ValueError("tracking.utrack.weights_file is required")
+    if trk["method"] == "multifield_vortex":
+        mf = trk["multifield_vortex"]
+        if mf["profile"] != "all_no_thick" or mf["on_track_loss"] not in {"stop", "error"}:
+            raise ValueError(
+                "multifield_vortex requires profile all_no_thick and on_track_loss stop/error")
+        for name in ("latitude", "longitude", "motion_u_m_s", "motion_v_m_s"):
+            value = mf["seed"][name]
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value)):
+                raise ValueError(
+                    f"tracking.multifield_vortex.seed.{name} must be explicitly supplied")
+        if not 0 < abs(mf["seed"]["latitude"]) < 90 or abs(mf["seed"]["longitude"]) > 180:
+            raise ValueError("multifield_vortex seed needs a non-equatorial/nonpolar latitude "
+                             "and longitude in [-180,180]")
+        if mf["seed"]["time"] is not None and not isinstance(mf["seed"]["time"], str):
+            raise ValueError("multifield_vortex.seed.time must be an ISO timestamp string or null")
+        if mf["mnh_gravity_m_s2"] is not None:
+            _positive(mf["mnh_gravity_m_s2"], "tracking.multifield_vortex.mnh_gravity_m_s2")
+        if conf["model"] == "mesonh" and mf["mnh_gravity_m_s2"] is None:
+            raise ValueError("multifield_vortex with MNH requires an explicit mnh_gravity_m_s2 "
+                             "for the model's geometric-to-geopotential height convention")
+        from frameit.tracking.multifield_vortex import VortexOptions
+
+        VortexOptions(**mf["numerics"], **mf["quality"])
     _positive(trk["utrack"]["batch_size"], "tracking.utrack.batch_size", integer=True)
     pc = trk["pressure_centroid"]
     for section in ("convergence", "motion", "sampling"):
@@ -447,6 +486,7 @@ def to_runtime(raw, *, base_dir=None):
         "pressure_centroid_r80_max_km": pc["sampling"]["r80_max_distance_km"],
         "pressure_centroid_dr_km": pc["sampling"]["radial_step_km"],
         "pressure_centroid_dtheta": pc["sampling"]["azimuth_step_deg"],
+        "multifield_vortex": trk["multifield_vortex"],
         "requested_variables_user": user, "polar_variables": polar,
         "x_boxsize_km": size["x"], "y_boxsize_km": size["y"], "compute_polar_proj": pol["enabled"],
         "radial_resolution": pol["radial_step_m"] or 0,
@@ -586,6 +626,10 @@ def migrate_mapping(old, *, launch_dir=None):
             c["output"][section][key] = old[old_key]
     c["output"]["directory"] = str((base / old.get("frameit_output_dir", "output")).resolve())
     method = old.get("tracking_method", "wind_pressure")
+    if old.get("multifield_vortex"):
+        c["tracking"]["multifield_vortex"] = _merge_checked(
+            old["multifield_vortex"], DEFAULTS["tracking"]["multifield_vortex"],
+            "tracking.multifield_vortex")
     c["tracking"]["method"] = method
     center = old.get("fix_subdomain_center")
     if center:
@@ -691,6 +735,17 @@ def write_template(model, path, *, full=False, tracking="wind_pressure", force=F
         c["tracking"]["prescribed_track"]["file"] = "./track.nc"
     elif tracking == "utrack":
         c["tracking"]["utrack"]["weights_file"] = "./weights.pt"
+    elif tracking == "multifield_vortex":
+        mf = c["tracking"]["multifield_vortex"]
+        mf["seed"].update(latitude=-20., longitude=60., motion_u_m_s=0., motion_v_m_s=0.)
+        if model == "mesonh":
+            mf["mnh_gravity_m_s2"] = 9.80665
+            c["input"]["wind_pairs"].append({"group": "level", "u": "UT", "v": "VT",
+                                           "reference_frame": "grid",
+                                           "rotation": {"method": "geolocation"}})
+        else:
+            c["input"]["wind_pairs"].append({"group": "isobaricInhPa", "u": "u", "v": "v",
+                                           "reference_frame": "earth"})
     c["domain"]["size_km"] = {"x": 500, "y": 500}
     resolve_schema(c)
     if not full:
@@ -718,6 +773,10 @@ def write_template(model, path, *, full=False, tracking="wind_pressure", force=F
         if tracking == "pressure_centroid":
             text += "# MNH DIAG: LTPZH, LVAR_RS, LWIND_ZM, LMSLP; include UM10/VM10.\n"
             text += "# Keep native levels bracketing 2000 m ASL and a full 500-km reference ring.\n"
+    if tracking == "multifield_vortex":
+        text += "# Experimental multi-field adaptation: real-case/NOAA qualification is pending.\n"
+        text += "# Replace the example seed/motion and verify MNH gravity and wind declarations.\n"
+        text += "# Winds at 850/700/500 hPa and 1000-km steering support are required.\n"
     text += yaml.safe_dump(c, sort_keys=False, allow_unicode=True)
     path.write_text(text, encoding="utf-8")
     return path

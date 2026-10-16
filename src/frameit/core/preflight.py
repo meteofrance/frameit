@@ -85,7 +85,8 @@ def _grib_metadata(path):
                 group = str(get("typeOfLevel"))
                 if name in {"u10", "v10", "prmsl"} or group in {"surface", "meanSea"}:
                     group = "surface"
-                entry = groups.setdefault(group, {"fields": {}, "levels": set(), "times": set()})
+                entry = groups.setdefault(group, {"fields": {}, "levels": set(), "times": set(),
+                                                  "coverage": {}})
                 attrs = {"units": str(get("units"))}
                 if ec.codes_is_defined(handle, "uvRelativeToGrid"):
                     attrs["GRIB_uvRelativeToGrid"] = int(get("uvRelativeToGrid"))
@@ -94,13 +95,17 @@ def _grib_metadata(path):
                 entry["fields"][name] = xr.DataArray(0., attrs=attrs)
                 entry["levels"].add(float(get("level")))
                 date = f"{int(get('validityDate')):08d}{int(get('validityTime')):04d}"
-                entry["times"].add(np.datetime64(datetime.strptime(date, "%Y%m%d%H%M"), "ns"))
+                stamp = np.datetime64(datetime.strptime(date, "%Y%m%d%H%M"), "ns")
+                entry["times"].add(stamp)
+                entry["coverage"].setdefault(name, []).append((float(get("level")), str(stamp)))
             finally:
                 ec.codes_release(handle)
     if geometry is None:
         raise ValueError(f"{path}: no GRIB messages")
     datasets = [geometry]
     for group, entry in groups.items():
+        for name, value in entry["fields"].items():
+            value.attrs["_frameit_level_times"] = entry["coverage"][name]
         coords = {"valid_time": sorted(entry["times"])}
         if group != "surface":
             units = {"isobaricInhPa": "hPa", "isobaricInPa": "Pa",
@@ -262,9 +267,11 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
     )
 
     mnh_centroid = is_mnh_centroid(conf)
+    multifield = conf.tracking_method == "multifield_vortex"
+    vortex_inputs = []
     mnh_records = []
-    if mnh_centroid and conf.file_type != "netcdf":
-        raise ValueError("Meso-NH pressure_centroid requires native-level NetCDF inputs")
+    if (mnh_centroid or multifield and conf.atm_model == "MNH") and conf.file_type != "netcdf":
+        raise ValueError(f"Meso-NH {conf.tracking_method} requires native-level NetCDF inputs")
 
     with DatasetResources() as resources:
         grids = []
@@ -272,6 +279,18 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             grids.extend(datasets)
             tracker = conf.requests_tracker().get(conf.tracking_method, {})
             layout = None
+            if multifield:
+                from frameit.tracking.multifield_inputs import inspect_inputs, resolve_mnh
+
+                report = inspect_inputs(datasets, conf, str(path))
+                if conf.atm_model == "MNH" and vortex_inputs and any(
+                    report[key] != vortex_inputs[0][key] for key in ("pressure", "height", "winds")
+                ):
+                    raise ValueError(f"multifield_vortex: inconsistent source fields in {path}")
+                vortex_inputs.append({"file": Path(path).name, **report})
+                if conf.atm_model == "MNH":
+                    layout = resolve_mnh(datasets[0], conf, str(path))
+                    tracker = layout.requests()
             if mnh_centroid:
                 header = datasets[0]
                 stamps = (", ".join(str(t) for t in header.time.values)
@@ -337,10 +356,10 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                     elif name in {conf.name_latitude, conf.name_longitude}:
                         quantity = "angle"
                     elif (name == conf.tracking_var_aliases.get("geopot")
-                          and conf.tracking_method == "pressure_centroid"):
+                          and conf.tracking_method in {"pressure_centroid", "multifield_vortex"}):
                         quantity = "geopotential"
                     elif (name == conf.tracking_var_aliases.get("mslp")
-                           and conf.tracking_method == "pressure_centroid"):
+                           and conf.tracking_method in {"pressure_centroid", "multifield_vortex"}):
                         quantity = "pressure"
                     elif layout is not None and name == layout.pressure:
                         quantity = "pressure"
@@ -348,7 +367,9 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                         quantity = "distance"
                     assumed = "m s-1" if quantity == "velocity" else "degree"
                     if quantity:
-                        normalized = convert_units(
+                        from frameit.utils.units import unit_metadata
+
+                        normalized = unit_metadata(
                             ds[name], quantity,
                             assumed=assumed if quantity in {"velocity", "angle"} else None,
                             target=("degrees_north" if name == conf.name_latitude
@@ -356,7 +377,7 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                         )
                         unit_records.append({"file": str(path), "variable": name,
                                              "source_units": ds[name].attrs.get("units"),
-                                             "calculation_units": normalized.attrs["units"],
+                                             "calculation_units": normalized["units"],
                                              "assumed": not bool(ds[name].attrs.get("units"))})
                 for group, expected in (("isobaricInhPa", "hPa"), ("isobaricInPa", "Pa")):
                     if group in ds.coords:
@@ -381,12 +402,43 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 "height": list(layout.height), "height_reference": "above_mean_sea_level",
                 "wind_reference_frames": mnh_wind_frames(mnh_records[0][1], layout, conf),
             })
+        elif multifield and conf.atm_model == "MNH":
+            conf.requested_variables_tracker["multifield_vortex"] = layout.requests()
         else:
             _check_requests(
                 grids, tracker_dependencies,
                 Path("selected-inputs"), tolerance=tolerance,
             )
         geometry = resolve_geometry(conf, grids)
+        if multifield:
+            from frameit.tracking.multifield_vortex import VortexGrid, VortexOptions
+
+            settings = conf.multifield_vortex
+            options = VortexOptions(**settings["numerics"], **settings["quality"])
+            seed = settings["seed"]
+            # Header/coordinate inspection only: no pressure or wind field is evaluated.
+            spatial = next(ds for ds in grids if conf.name_latitude in ds and
+                           conf.name_longitude in ds)
+            from frameit.utils.units import normalize_geography
+
+            spatial = normalize_geography(spatial, conf)
+            lon, lat = xr.broadcast(spatial[conf.name_longitude], spatial[conf.name_latitude])
+            if "time" in lon.dims:
+                lon, lat = lon.isel(time=0), lat.isel(time=0)
+            grid = VortexGrid(np.asarray(lon), np.asarray(lat), conf.resolution, options)
+            if not np.isfinite(grid.footprint(seed["longitude"], seed["latitude"])):
+                raise ValueError("multifield_vortex seed is outside the input grid")
+            conf.add_parameter("multifield_inputs", {
+                "files": vortex_inputs, "profile": settings["profile"], "seed": seed,
+                "required_pressure_levels_hpa": [850, 700, 500],
+                "barnes_efolding_km": grid.efolding_km,
+                "barnes_influence_km": grid.influence_km,
+                "search_radius_km": grid.search_km,
+                "steering_efolding_km": 500., "steering_influence_km": 1000.,
+                "seed_has_full_steering_footprint": grid.disk_supported(
+                    (seed["longitude"], seed["latitude"]), 1000.),
+                "qualification": "experimental_native_grid_adaptation",
+            })
     for name in ("prescribed_track_file", "utrack_weights_file"):
         value = getattr(conf, name)
         if value and not Path(value).is_file():
@@ -397,6 +449,18 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
         raise ValueError("tracking.method utrack requires the utrack package")
     model_times = {np.datetime64(t, "ns") for item in inventory for t in item["times"]}
     nt = len(model_times)
+    if multifield:
+        seed_time = conf.multifield_vortex["seed"]["time"]
+        if not nt or any(np.isnat(t) for t in model_times):
+            raise ValueError("multifield_vortex requires valid model timestamps")
+        if seed_time is not None:
+            try:
+                stamp = np.datetime64(seed_time, "ns")
+            except ValueError as exc:
+                raise ValueError(
+                    "multifield_vortex seed.time must be a valid ISO timestamp") from exc
+            if np.isnat(stamp) or stamp != min(model_times):
+                raise ValueError("multifield_vortex seed.time must equal the first model timestamp")
     if conf.tracking_method == "prescribed_track":
         from frameit.io.track_file import load_track_coordinates
 
@@ -465,6 +529,8 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             "output_directory": str(conf.output_dir)}
     if mnh_centroid:
         plan["tracking_inputs"] = conf.simulation_parameter["pressure_centroid_inputs"]
+    if multifield:
+        plan["tracking_inputs"] = conf.simulation_parameter["multifield_inputs"]
     if conf.compute_polar_proj:
         from frameit.processing.polar.sampling import sampling_axes
 

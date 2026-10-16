@@ -3,6 +3,7 @@
 # See LICENSE file or http://www.apache.org/licenses/LICENSE-2.0
 
 from .FixedBox_Tracker import FixedBoxTracker  # noqa: F401
+from .MultifieldVortex_Tracker import MultifieldVortexTracker  # noqa: F401
 from .PrescribedTrack_Tracker import PrescribedTrack  # noqa: F401
 from .PressureCentroid_Tracker import PressureCentroidTracker  # noqa: F401
 

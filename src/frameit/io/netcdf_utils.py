@@ -197,6 +197,21 @@ def concat_nc2ds_by_vert_coord(
     mnh_centroid = wind_conf is not None and wind_conf.atm_model == "MNH" and (
         method == "pressure_centroid" or (method is None and "pressure_centroid" in methods))
     mnh_fields = None
+    vortex_fields = None
+    if wind_conf is not None and wind_conf.atm_model == "MNH" and (
+        method == "multifield_vortex" or (method is None and "multifield_vortex" in methods)
+    ):
+        from frameit.tracking.multifield_inputs import inspect_inputs, mnh_loading_fields
+
+        for path in files:
+            with xr.open_dataset(path, engine=engine) as header:
+                inspect_inputs([header], wind_conf, str(path))
+                fields, requests = mnh_loading_fields(header, wind_conf)
+                if vortex_fields is not None and fields != vortex_fields:
+                    raise ValueError(f"multifield_vortex: inconsistent source fields in {path}")
+                vortex_fields = fields
+        tracker_req_by_method["multifield_vortex"] = normalize_requests(requests)
+        wind_conf.requested_variables_tracker["multifield_vortex"] = requests
     if mnh_centroid:
         from frameit.tracking.pressure_centroid_inputs import inspect_mnh_sequence
 
@@ -256,6 +271,8 @@ def concat_nc2ds_by_vert_coord(
             requested_vars_all.update(spec.get("variables", []))
     if mnh_fields is not None:
         requested_vars_all.update(mnh_fields.variables)
+    if vortex_fields is not None:
+        requested_vars_all.update(vortex_fields.variables)
 
     if wind_conf is not None:
         from frameit.processing.derived.wind import wind_names
@@ -403,7 +420,13 @@ def concat_nc2ds_by_vert_coord(
     for m, blk in tracker_req_by_method.items():
         grp_map: dict[str, xr.Dataset] = {}
 
-        if m == "pressure_centroid" and mnh_fields is not None:
+        if m == "multifield_vortex" and vortex_fields is not None:
+            from frameit.tracking.multifield_inputs import canonical_inputs
+
+            # Prepare each file independently before concatenation: pressure,
+            # altitude and vector conventions must not inherit the first file's units.
+            grp_map["native"] = canonical_inputs(ds[list(vortex_fields.variables)], wind_conf)
+        elif m == "pressure_centroid" and mnh_fields is not None:
             # Keep all native neighbours and physical-height dependencies. The
             # model adapter collocates/rotates before any vertical selection;
             # raw tracker vectors must not pass through generic normalization.

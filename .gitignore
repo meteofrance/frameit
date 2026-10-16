@@ -235,16 +235,6 @@ DRAFT/
 # Superseded dependency files
 old/
 
-# Test suite and generated test artefacts
-#!tests/*
-#!tests/test_pressure_centroid.py
-#!tests/test_polar_wind.py
-#!tests/test_wind_collocation.py
-#!tests/test_polar_axes.py
-#!tests/test_polar_periodic_diagnostics.py
-#!tests/test_polar_contracts.py
-#!tests/test_polar_coverage.py
-
 # Claude Code local settings
 .claude/
 

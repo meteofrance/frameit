@@ -4,6 +4,12 @@
 #  => lev 0 is not physic in MNH
 
 requested_variables_by_method:
+  multifield_vortex:
+    surface:
+      variables: ["UM10", "VM10", "MSLP"]
+    level:
+      variables: ["PABST", "ALT", "UT", "VT"]
+      level_selection: "all"
   pressure_centroid:
     # Resolved against each file: PABST/PRES, diagnostic/native wind pairs,
     # ALT or the explicitly documented terrain-following level formula.

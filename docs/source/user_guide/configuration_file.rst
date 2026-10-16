@@ -72,7 +72,11 @@ Tracking and extraction
 
 ``tracking.method`` defaults to ``wind_pressure``. Supported alternatives are
 ``fixed_box``, ``prescribed_track``, ``pressure_centroid`` (AROME and Meso-NH), and
-``utrack``. Method-specific controls belong under the matching section:
+``utrack``. An experimental ``multifield_vortex`` native-grid adaptation of
+Marchok's ALL_NO_THICK configuration supports both models; see
+:doc:`/tracker/multifield_vortex` for its required seed, initial motion,
+500/700/850-hPa inputs, MNH height convention and qualification limits.
+Method-specific controls belong under the matching section:
 
 .. code-block:: yaml
 

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Add an experimental built-in `multifield_vortex` tracker for AROME and Meso-NH,
+  using the nine-parameter ALL_NO_THICK selection from Marchok (2021): Barnes
+  mass/vorticity fixes, wind-circulation fixes, weighted combination, steering
+  and explicit structural/continuity quality checks. Require a declared seed
+  position/motion and record per-parameter fixes, weights and rejection flags.
+- Prepare MNH native fields on 850/700/500-hPa surfaces without extrapolation;
+  require an explicit model-gravity convention for geometric-to-geopotential
+  height conversion. Validate inputs per file and document MNH diagnostic settings.
+- Export accepted track prefixes under an explicit stop policy, retaining failed
+  attempts and termination diagnostics; expose requested-time coverage separately
+  from processing success in execution results and run provenance.
+- Validate GRIB variable/level/time coverage, align single-cycle multi-step files
+  on valid time, and expose canonical MSLP/wind aliases while retaining originals.
+- Add AROME/MNH configuration examples, method/provenance documentation, analytic
+  kernel and hemisphere tests, GRIB/NetCDF integration, and independent-reader checks.
+  **Qualification limit:** native-grid adaptations are experimental; unrounded
+  NOAA-reference comparisons, real landfall qualification and scientific review
+  remain outstanding. No landfall-accuracy or stable-method claim is made.
+
 - Require explicit wind-pair frames and grid-rotation methods; validate against
   GRIB/CF metadata, with no automatic selection or silent method/frame fallback.
 - Make Cartesian native/mass-Earth winds and Cartesian/polar interface/mass W

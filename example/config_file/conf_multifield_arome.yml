@@ -1,0 +1,27 @@
+# Experimental native-grid multi-field tracker. Edit paths, seed and initial motion.
+# Retain winds at 850/700/500 hPa, geopotential at 850/700 hPa and broad steering coverage.
+schema_version: 2
+model: arome
+run:
+  name: AROME_MULTIFIELD
+input:
+  directory: ./data/AROME
+  pattern: "*.grib"
+  wind_pairs:
+    - {group: surface, u: u10, v: v10, reference_frame: earth}
+    - {group: isobaricInhPa, u: u, v: v, reference_frame: earth}
+tracking:
+  method: multifield_vortex
+  multifield_vortex:
+    profile: all_no_thick
+    seed: {latitude: -20.0, longitude: 60.0, motion_u_m_s: 0.0, motion_v_m_s: 0.0}
+    on_track_loss: stop
+domain:
+  size_km: {x: 500, y: 500}
+variables:
+  surface:
+    names: [prmsl, u10, v10]
+polar:
+  enabled: false
+output:
+  directory: ./output/AROME_MULTIFIELD

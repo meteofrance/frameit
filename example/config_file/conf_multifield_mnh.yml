@@ -1,0 +1,30 @@
+# Experimental native-grid multi-field tracker. Edit paths, seed and initial motion.
+# Verify the model's constant gravity; it converts geometric altitude to geopotential height.
+# MNH 6.0 DIAG: LTPZH, LVAR_RS, LWIND_ZM, LMSLP; retain UM10/VM10 surface diagnostics.
+# 850/700/500-hPa surfaces and the 1000-km steering footprint must be available.
+schema_version: 2
+model: mesonh
+run:
+  name: MNH_MULTIFIELD
+input:
+  directory: ./data/MNH
+  pattern: "*diag.nc"
+  wind_pairs:
+    - {group: surface, u: UM10, v: VM10, reference_frame: earth}
+    - {group: level, u: UT_ZM, v: VT_ZM, reference_frame: earth}
+tracking:
+  method: multifield_vortex
+  multifield_vortex:
+    profile: all_no_thick
+    seed: {latitude: -20.0, longitude: 60.0, motion_u_m_s: 0.0, motion_v_m_s: 0.0}
+    mnh_gravity_m_s2: 9.80665
+    on_track_loss: stop
+domain:
+  size_km: {x: 500, y: 500}
+variables:
+  surface:
+    names: [MSLP, UM10, VM10]
+polar:
+  enabled: false
+output:
+  directory: ./output/MNH_MULTIFIELD

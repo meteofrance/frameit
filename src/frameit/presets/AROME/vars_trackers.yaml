@@ -3,6 +3,13 @@
 
 
 requested_variables_by_method:
+  multifield_vortex:
+    surface:
+      variables: ["u10", "v10", "prmsl"]
+    isobaricInhPa:
+      variables: ["u", "v", "z"]
+      level_selection: "values"
+      level_values: [850, 700, 500]
   pressure_centroid:
     surface:
       variables: ["u10", "v10", "prmsl"]
@@ -38,7 +45,6 @@ requested_variables_by_method:
       level_selection: "values"                # ou "values" "indices"; "all"
       level_values:  [850]         # if level_selection = "values" 
       level_indices: []  
-
 
 
 

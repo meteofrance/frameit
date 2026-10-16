@@ -37,6 +37,7 @@ FrameIt |release| documentation
    tracker/prescribed_track
    tracker/pressure_wind_tracker
    tracker/pressure_centroid
+   tracker/multifield_vortex
    tracker/utrack
    tracker/fixed_box
 

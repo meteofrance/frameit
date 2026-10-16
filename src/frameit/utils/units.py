@@ -51,6 +51,14 @@ def convert_units(da, quantity, *, target=None, assumed=None):
     return result
 
 
+def unit_metadata(da, quantity, **options):
+    """Validate a unit declaration without evaluating a backend field array."""
+    import xarray as xr
+
+    probe = xr.DataArray(0., name=da.name, attrs=dict(da.attrs))
+    return convert_units(probe, quantity, **options).attrs
+
+
 def normalize_geography(ds, conf):
     """Supported model adapters use degrees when geographic units are absent."""
     out = ds.copy(deep=False)

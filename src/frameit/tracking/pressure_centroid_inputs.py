@@ -14,7 +14,7 @@ import xarray as xr
 from frameit.processing.requests import selected_native_indices
 from frameit.processing.wind_collocation import prepare_native_mnh
 from frameit.processing.wind_reference import pair_definition, rotation_angle, validate_pair_frame
-from frameit.utils.units import convert_units, normalize_geography
+from frameit.utils.units import convert_units, normalize_geography, unit_metadata
 
 HEIGHT_FORMULA = "z(n,k,j,i)=s(k)*(height-orog(j,i))/height+orog(j,i)"
 
@@ -139,13 +139,13 @@ def resolve_mnh_fields(ds, context="Dataset"):
         raise input_error(context, problems)
     try:
         for name in (pressure, "MSLP"):
-            convert_units(ds[name], "pressure")
+            unit_metadata(ds[name], "pressure")
         for name in (*pair, "UM10", "VM10"):
-            convert_units(ds[name], "velocity", assumed="m s-1")
+            unit_metadata(ds[name], "velocity", assumed="m s-1")
         for name in height:
-            convert_units(ds[name], "distance")
+            unit_metadata(ds[name], "distance")
         for name in _horizontal_coordinates(ds, fields):
-            convert_units(ds[name], "distance", assumed="m")
+            unit_metadata(ds[name], "distance", assumed="m")
     except ValueError as exc:
         raise input_error(context, [str(exc)]) from exc
     return fields

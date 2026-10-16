@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 # Restricted types for a few key fields
 ModelName = Literal["AROME", "MNH"]
 TrackingMethod = Literal[
-    "wind_pressure", "pressure_centroid", "fixed_box", "prescribed_track", "utrack"
+    "wind_pressure", "pressure_centroid", "multifield_vortex", "fixed_box",
+    "prescribed_track", "utrack"
 ]
 
 
@@ -98,6 +99,7 @@ class SimulationConfig:
     pressure_centroid_r80_max_km: float = 250.0
     pressure_centroid_dr_km: float = 2.5
     pressure_centroid_dtheta: float = 5.0
+    multifield_vortex: dict[str, Any] = field(default_factory=dict)
 
     # Variables requested by the user
     requested_variables_user: dict[str, dict[str, Any]] = field(default_factory=dict)

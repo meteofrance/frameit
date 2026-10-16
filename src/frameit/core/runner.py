@@ -262,7 +262,8 @@ class FrameitRunner:
         from frameit.tracking.pressure_centroid_inputs import is_mnh_centroid
 
         dict_tracker = {m: {g: (normalize_geography(ds, self.conf) if
-                               is_mnh_centroid(self.conf) and m == "pressure_centroid" else
+                               ((is_mnh_centroid(self.conf) and m == "pressure_centroid") or
+                                (self.conf.atm_model == "MNH" and m == "multifield_vortex")) else
                                normalize_winds(normalize_geography(ds, self.conf), self.conf, g))
                             for g, ds in groups.items()}
                         for m, groups in dict_tracker.items()}

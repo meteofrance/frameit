@@ -16,6 +16,7 @@ from atmospheric and oceanic model outputs.
   - Prescribed track
   - Pressure-wind algorithm
   - Adaptive pressure centroid (AROME isobaric and Meso-NH native-level inputs)
+  - Experimental seeded multi-field vortex tracker (AROME and Meso-NH; scientific qualification pending)
   - Fixed box
   - AI-based tracking (utrack)
 - **Normalized outputs** — standardized NetCDF outputs to facilitate inter-model and inter-simulation comparisons, 

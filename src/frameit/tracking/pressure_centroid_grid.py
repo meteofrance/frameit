@@ -16,7 +16,7 @@ class StructuredGrid:
     and polygon areas use WGS84. Only the last target stencil is retained.
     """
 
-    def __init__(self, lon, lat):
+    def __init__(self, lon, lat, *, compute_area=True):
         lon, lat = np.asarray(lon, float), np.asarray(lat, float)
         if lon.ndim != 2 or lon.shape != lat.shape or min(lon.shape) < 2:
             raise ValueError("MNH pressure_centroid requires a two-dimensional structured grid")
@@ -49,6 +49,9 @@ class StructuredGrid:
         self.radius = np.max(np.linalg.norm(corners - centers[:, None], axis=-1)) * (1 + 1e-10)
         self.tree = cKDTree(centers)
         self._last = None
+        self.area = None
+        if not compute_area:
+            return
         # Nodal quadrature: each native quadrilateral distributes a quarter of
         # its ellipsoidal area to each mass point. Boundary nodes get half/quarter
         # support; no latitude-only metric is imposed on a projected mesh.

@@ -145,7 +145,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pin.add_argument("--output", type=Path, default=Path("frameit.yaml"))
     pin.add_argument(
         "--tracking", default="wind_pressure",
-        choices=("wind_pressure", "fixed_box", "prescribed_track", "pressure_centroid", "utrack"),
+        choices=("wind_pressure", "fixed_box", "prescribed_track", "pressure_centroid",
+                 "multifield_vortex", "utrack"),
     )
     pin.add_argument("--full", action="store_true")
     pin.add_argument("--force", action="store_true")

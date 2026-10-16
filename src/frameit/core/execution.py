@@ -67,6 +67,8 @@ class SimulationExecutionResult:
     timing_sections_s: dict[str, float] = field(default_factory=dict)
     computation_s: float = 0.0
     regrid_performance: dict = field(default_factory=dict)
+    tracking_complete: bool = True
+    tracking_termination_reason: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -172,7 +174,12 @@ def execute_simulation(
                             "wind_transformations", []),
                         "selected_levels": config.simulation_parameter.get("selected_levels", []),
                         "tracking_inputs": config.simulation_parameter.get(
-                            "pressure_centroid_inputs", {}),
+                            "multifield_inputs", config.simulation_parameter.get(
+                                "pressure_centroid_inputs", {})),
+                        "tracking_summary": {
+                            k: v for k, v in runner.track.attrs.items()
+                            if k.startswith("tracking_")
+                        },
                         "execution_options": asdict(options),
                         "setting_sources": resolved_sources(config, options),
                         "preset_provenance": {
@@ -222,6 +229,9 @@ def execute_simulation(
                 regrid_performance=getattr(runner, "polar_report", {}).get(
                     "regrid_performance", {}
                 ),
+                tracking_complete=bool(runner.track.attrs.get("tracking_complete", True)),
+                tracking_termination_reason=runner.track.attrs.get(
+                    "tracking_termination_reason", ""),
             )
         except BaseException:
             log.exception("Simulation execution failed")

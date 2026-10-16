@@ -122,7 +122,13 @@ def _collect_parts_for_req(
                     continue
                 sel = sel.expand_dims(dim)
             if "valid_time" in sel.coords:
+                valid_dims = sel["valid_time"].dims
+                if len(valid_dims) > 1:
+                    raise ValueError("GRIB inputs with multiple forecast initializations and "
+                                     "lead-time axes require an explicit single-cycle selection")
                 sel = sel.assign_coords(time=sel["valid_time"])
+                if valid_dims and valid_dims != ("time",):
+                    sel = sel.swap_dims({valid_dims[0]: "time"})
 
             # Vertical selection
             if select_levels and dim and dim in sel.dims and not req.get("all_levels", False):
@@ -260,6 +266,12 @@ def concat_grib2ds_by_vert_coord(
         dsets = cfgrib.open_datasets(str(f), backend_kwargs=backend_kwargs)
         for ds in dsets:
             resources.add(ds)
+        # Match the canonical aliases already used by metadata preflight, while
+        # retaining original variables for callers that request native names.
+        aliases = {"msl": "prmsl", "10u": "u10", "10v": "v10"}
+        dsets = [ds.assign({new: ds[old].assign_attrs(source_variable_name=old)
+                            for old, new in aliases.items() if old in ds and new not in ds})
+                 for ds in dsets]
         opened_per_file[f] = dsets
         for ds in dsets:
             dims_seen.update(ds.sizes.keys())
