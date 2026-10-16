@@ -4,6 +4,14 @@
 #  => lev 0 is not physic in MNH
 
 requested_variables_by_method:
+  pressure_centroid:
+    # Resolved against each file: PABST/PRES, diagnostic/native wind pairs,
+    # ALT or the explicitly documented terrain-following level formula.
+    surface:
+      variables: ["UM10", "VM10", "MSLP"]
+    level:
+      variables: ["PABST", "ALT", "UT_ZM", "VT_ZM"]
+      level_selection: "all"
   wind_pressure:
     surface:
       variables: ["UM10", "VM10", "MSLP"]
@@ -33,4 +41,3 @@ requested_variables_by_method:
   utrack:
     surface:
       variables: ["UM10", "VM10"]
-

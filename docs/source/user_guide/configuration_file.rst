@@ -71,7 +71,7 @@ Tracking and extraction
 -----------------------
 
 ``tracking.method`` defaults to ``wind_pressure``. Supported alternatives are
-``fixed_box``, ``prescribed_track``, ``pressure_centroid`` (AROME only), and
+``fixed_box``, ``prescribed_track``, ``pressure_centroid`` (AROME and Meso-NH), and
 ``utrack``. Method-specific controls belong under the matching section:
 
 .. code-block:: yaml
@@ -94,6 +94,8 @@ nearest/interpolated matching is not introduced by this schema.
 false and ``batch_size`` to 16. The pressure-centroid convergence, motion, and
 sampling controls are nested under ``tracking.pressure_centroid``; see
 :doc:`/tracker/pressure_centroid` and ``frameit init arome --tracking pressure_centroid --full``.
+For native-level Meso-NH input use ``frameit init mesonh --tracking pressure_centroid``;
+the tracker documentation lists required fields and version-specific DIAG settings.
 
 ``domain.size_km: {x: 500, y: 500}`` gives full box widths in kilometres. Omit
 ``size_km`` for full-domain extraction. ``domain.edge_policy: pad_nan`` retains

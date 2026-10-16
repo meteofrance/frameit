@@ -65,12 +65,26 @@ def interpolate_to_height(rec, height=HEIGHT_M):
     """Linear wind and log-pressure interpolation; no vertical extrapolation."""
     z = np.asarray(rec["z"], float)
     if z.ndim != 3 or z.shape[0] < 2:
-        raise ValueError("At least two isobaric levels are required")
+        raise ValueError("At least two vertical levels are required")
     # Legacy numerical records explicitly use hPa; adapters supply Pa records.
-    in_pa = "pressure_levels_pa" in rec
-    levels = np.asarray(rec["pressure_levels_pa"] if in_pa else rec["pressure_levels"], float)
-    if not np.isfinite(levels).all() or np.any(levels <= 0):
-        raise ValueError("Pressure levels must be finite and positive")
+    native = "pressure_field_pa" in rec
+    in_pa = native or "pressure_levels_pa" in rec
+    if native:
+        pressure = np.asarray(rec["pressure_field_pa"], float)
+        if pressure.shape != z.shape:
+            raise ValueError("Native pressure and physical height must have identical shapes")
+        if np.any(np.isfinite(pressure) & (pressure <= 0)):
+            raise ValueError("Absolute pressure must be positive")
+        differences = np.diff(z, axis=0)
+        finite_columns = np.isfinite(z).all(axis=0)
+        monotone = np.all(differences > 0, axis=0) | np.all(differences < 0, axis=0)
+        if np.any(finite_columns & ~monotone):
+            raise ValueError("Physical height must be strictly monotone in every native column")
+    else:
+        levels = np.asarray(rec["pressure_levels_pa"] if in_pa else rec["pressure_levels"], float)
+        if not np.isfinite(levels).all() or np.any(levels <= 0):
+            raise ValueError("Pressure levels must be finite and positive")
+        pressure = np.broadcast_to(levels[:, None, None] * (1 if in_pa else 100), z.shape)
     ordering = np.argsort(z, axis=0)
     zs = np.take_along_axis(z, ordering, axis=0)
     above = np.sum(zs < height, axis=0)
@@ -81,13 +95,16 @@ def interpolate_to_height(rec, height=HEIGHT_M):
         return np.take_along_axis(a, idx[None], axis=0)[0]
 
     za, zb = get(zs, lo), get(zs, hi)
-    ok = (above > 0) & (above < zs.shape[0]) & np.isfinite(za) & np.isfinite(zb)
+    ok = (height >= zs[0]) & (height <= zs[-1]) & np.isfinite(za) & np.isfinite(zb)
+    if native:
+        ok &= finite_columns
     frac = (height - za) / np.where(zb > za, zb - za, np.nan)
-    pressure = np.broadcast_to(levels[:, None, None] * (1 if in_pa else 100), z.shape)
     result = []
     for data in (rec["u"], rec["v"], np.log(pressure)):
         sorted_data = np.take_along_axis(data, ordering, axis=0)
-        out = get(sorted_data, lo) * (1 - frac) + get(sorted_data, hi) * frac
+        lower, upper = get(sorted_data, lo), get(sorted_data, hi)
+        out = np.where(frac == 0, lower, np.where(frac == 1, upper,
+                       lower * (1 - frac) + upper * frac))
         out[~ok] = np.nan
         result.append(out)
     return dict(u=result[0], v=result[1], p=np.exp(result[2]) / (1 if in_pa else 100))
@@ -139,12 +156,15 @@ def reference_pressure(center, sample_p):
 
 
 class LocalGridIndex:
-    def __init__(self, lon, lat):
+    def __init__(self, lon, lat, area=None):
         self.lon = np.asarray(lon, float).ravel()
         self.lat = np.asarray(lat, float).ravel()
         lr, br = np.deg2rad(self.lon), np.deg2rad(self.lat)
         cb = np.cos(br)
-        self.area = np.maximum(cb, 0)
+        self.area = np.maximum(cb, 0) if area is None else np.asarray(area, float).ravel()
+        if (self.area.shape != self.lon.shape or not np.isfinite(self.area).all()
+                or np.any(self.area <= 0)):
+            raise ValueError("Invalid native integration areas")
         xyz = np.column_stack((cb * np.cos(lr), cb * np.sin(lr), np.sin(br)))
         if not np.isfinite(xyz).all() or np.any(np.abs(self.lat) > 90):
             raise ValueError("Invalid grid coordinates")
@@ -238,8 +258,11 @@ def calculate_r80(center, sample_u, sample_v, translation,
 def adaptive_centroid(rec, initial, translation, options):
     p = rec["h2000"]["p"]
     if "_interpolators" not in rec:
-        rec["_interpolators"] = tuple(make_interpolator(rec["lon"], rec["lat"],
-                                      rec["h2000"][name]) for name in ("p", "u", "v"))
+        factory = rec.get("_sampler_factory")
+        rec["_interpolators"] = tuple(
+            factory(rec["h2000"][name]) if factory is not None else
+            make_interpolator(rec["lon"], rec["lat"], rec["h2000"][name])
+            for name in ("p", "u", "v"))
     sp, su, sv = rec["_interpolators"]
     index = rec["_grid_index"]
     center, env = centroid_iteration(initial, INITIAL_RADIUS_KM, p, sp, index)

@@ -165,6 +165,17 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
     inventory = []
     unit_records = []
     from frameit.processing.derived.wind import wind_names
+    from frameit.tracking.pressure_centroid_inputs import (
+        inspect_mnh_sequence,
+        is_mnh_centroid,
+        mnh_wind_frames,
+        resolve_mnh_fields,
+    )
+
+    mnh_centroid = is_mnh_centroid(conf)
+    mnh_records = []
+    if mnh_centroid and conf.file_type != "netcdf":
+        raise ValueError("Meso-NH pressure_centroid requires native-level NetCDF inputs")
 
     user_dependencies = deepcopy(conf.requests_user())
     for group, spec in user_dependencies.items():
@@ -178,14 +189,27 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             grids.extend(datasets)
             user = conf.requests_user()
             tracker = conf.requests_tracker().get(conf.tracking_method, {})
+            layout = None
+            if mnh_centroid:
+                header = datasets[0]
+                stamps = (", ".join(str(t) for t in header.time.values)
+                          if "time" in header else "unknown")
+                layout = resolve_mnh_fields(header, f"{path}; time={stamps}")
+                tracker = layout.requests()
+                mnh_records.append((path, header))
             variables = {}
             levels = {}
             times = []
             velocity_names = set(conf.velocity_aliases.values()) | {
                 conf.tracking_var_aliases.get(k) for k in ("u", "v", "u10m", "v10m")}
+            if layout is not None:
+                velocity_names.update((layout.u, layout.v))
             requested_names = {
                 v for s in (*user.values(), *tracker.values()) for v in s.get("variables", [])
             }
+            if layout is not None:
+                requested_names.update(layout.variables)
+                frames = mnh_wind_frames(datasets[0], layout, conf)
             if any("wind_speed" in s.get("variables", []) for s in user.values()):
                 for group, spec in user.items():
                     if "wind_speed" in spec.get("variables", []):
@@ -214,8 +238,12 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                           and conf.tracking_method == "pressure_centroid"):
                         quantity = "geopotential"
                     elif (name == conf.tracking_var_aliases.get("mslp")
-                          and conf.tracking_method == "pressure_centroid"):
+                           and conf.tracking_method == "pressure_centroid"):
                         quantity = "pressure"
+                    elif layout is not None and name == layout.pressure:
+                        quantity = "pressure"
+                    elif layout is not None and name in layout.height:
+                        quantity = "distance"
                     assumed = "m s-1" if quantity == "velocity" else "degree"
                     if quantity:
                         normalized = convert_units(
@@ -230,11 +258,15 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                                 "wind_reference_frame",
                                 ds.attrs.get("wind_reference_frame", conf.wind_reference_frame),
                             )
+                            if layout is not None and name in frames:
+                                frame = frames[name]
                             if flag is not None:
                                 if int(flag) not in {0, 1}:
                                     raise ValueError(f"{path}: invalid wind reference on {name}")
                                 frame = "grid" if int(flag) else "earth"
-                            if frame == "grid" and "grid_rotation" not in ds:
+                            if frame == "grid" and "grid_rotation" not in ds and not (
+                                layout is not None and name in frames
+                            ):
                                 raise ValueError(
                                     f"{path}: grid-relative {name} requires grid_rotation"
                                 )
@@ -257,10 +289,19 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
         # visible and the loader retains its established NaN/time alignment.
         tolerance = .51 if conf.file_type == "grib" else .5
         _check_requests(grids, user_dependencies, Path("selected-inputs"), tolerance=tolerance)
-        _check_requests(
-            grids, conf.requests_tracker().get(conf.tracking_method, {}),
-            Path("selected-inputs"), tolerance=tolerance,
-        )
+        if mnh_centroid:
+            layout = inspect_mnh_sequence(mnh_records)
+            conf.requested_variables_tracker["pressure_centroid"] = layout.requests()
+            conf.add_parameter("pressure_centroid_inputs", {
+                "pressure": layout.pressure, "winds": [layout.u, layout.v],
+                "height": list(layout.height), "height_reference": "above_mean_sea_level",
+                "wind_reference_frames": mnh_wind_frames(mnh_records[0][1], layout, conf),
+            })
+        else:
+            _check_requests(
+                grids, conf.requests_tracker().get(conf.tracking_method, {}),
+                Path("selected-inputs"), tolerance=tolerance,
+            )
         geometry = resolve_geometry(conf, grids)
     for name in ("prescribed_track_file", "utrack_weights_file"):
         value = getattr(conf, name)
@@ -337,6 +378,8 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             "setting_sources": resolved_sources(conf, options),
             "tracking_method": conf.tracking_method, "track_time_count": nt,
             "output_directory": str(conf.output_dir)}
+    if mnh_centroid:
+        plan["tracking_inputs"] = conf.simulation_parameter["pressure_centroid_inputs"]
     if conf.compute_polar_proj:
         from frameit.processing.polar.sampling import sampling_axes
 

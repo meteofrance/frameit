@@ -167,6 +167,8 @@ def execute_simulation(
                         "grid_geometry": config.grid_geometry,
                         "input_inventory": [str(p) for p in result.files],
                         "unit_provenance": config.simulation_parameter.get("unit_provenance", []),
+                        "tracking_inputs": config.simulation_parameter.get(
+                            "pressure_centroid_inputs", {}),
                         "execution_options": asdict(options),
                         "setting_sources": resolved_sources(config, options),
                         "preset_provenance": {

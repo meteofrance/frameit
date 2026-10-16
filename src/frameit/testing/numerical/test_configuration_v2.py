@@ -60,10 +60,6 @@ def dataset(tmp_path, name="native.nc", *, dx=2500, dy=2500, units="m s-1", spee
 )
 def test_generated_templates(tmp_path, model, full, method):
     path = tmp_path / "frameit.yaml"
-    if model == "mesonh" and method == "pressure_centroid":
-        with pytest.raises(ValueError, match="arome"):
-            write_template(model, path, full=full, tracking=method)
-        return
     write_template(model, path, full=full, tracking=method)
     conf = SimulationConfig.from_yaml(path)
     assert conf.schema_version == 2 and conf.infer_grid_geometry

@@ -121,8 +121,7 @@ def test_factory_and_preset():
     assert conf.requested_variables_tracker["pressure_centroid"]["isobaricInhPa"][
         "level_selection"] == "all"
     conf.atm_model = "MNH"
-    with pytest.raises(ValueError, match="AROME"):
-        build_tracker_from_config(conf)
+    assert build_tracker_from_config(conf).model == "MNH"
 
 
 def test_centroid_invalid_integrals():

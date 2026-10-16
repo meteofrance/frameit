@@ -208,8 +208,6 @@ def resolve_schema(raw, *, base_dir=None):
     methods = {"wind_pressure", "pressure_centroid", "fixed_box", "prescribed_track", "utrack"}
     if trk["method"] not in methods:
         raise ValueError(f"tracking.method must be one of {sorted(methods)}")
-    if trk["method"] == "pressure_centroid" and conf["model"] != "arome":
-        raise ValueError("tracking.method pressure_centroid supports arome only")
     for key, value in trk["wind_pressure"].items():
         _positive(value, f"tracking.wind_pressure.{key}")
     if trk["method"] == "fixed_box":
@@ -634,6 +632,9 @@ def write_template(model, path, *, full=False, tracking="wind_pressure", force=F
     text += "# Choose azimuth_step_deg OR azimuth_count; neither means automatic sampling.\n"
     if model == "mesonh":
         text += "# Exclude the exact MesoNH 000 timeseries name using input.exclude if needed.\n"
+        if tracking == "pressure_centroid":
+            text += "# MNH DIAG: LTPZH, LVAR_RS, LWIND_ZM, LMSLP; include UM10/VM10.\n"
+            text += "# Keep native levels bracketing 2000 m ASL and a full 500-km reference ring.\n"
     text += yaml.safe_dump(c, sort_keys=False, allow_unicode=True)
     path.write_text(text, encoding="utf-8")
     return path

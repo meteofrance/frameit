@@ -248,8 +248,12 @@ class FrameitRunner:
         from frameit.utils.units import normalize_geography
 
         dict_user = {g: normalize_geography(ds, self.conf) for g, ds in dict_user.items()}
-        dict_tracker = {m: {g: normalize_winds(normalize_geography(ds, self.conf), self.conf, g)
-                           for g, ds in groups.items()}
+        from frameit.tracking.pressure_centroid_inputs import is_mnh_centroid
+
+        dict_tracker = {m: {g: (normalize_geography(ds, self.conf) if
+                               is_mnh_centroid(self.conf) and m == "pressure_centroid" else
+                               normalize_winds(normalize_geography(ds, self.conf), self.conf, g))
+                            for g, ds in groups.items()}
                         for m, groups in dict_tracker.items()}
         dict_user = add_speed_from_uv_dict(dict_user, self.conf)
 

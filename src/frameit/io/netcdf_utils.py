@@ -188,6 +188,25 @@ def concat_nc2ds_by_vert_coord(
         m: normalize_requests(tracker_yaml.get(m, {})) for m in methods
     }
 
+    files = resolve_input_files(files, strict=strict)
+    mnh_centroid = wind_conf is not None and wind_conf.atm_model == "MNH" and (
+        method == "pressure_centroid" or (method is None and "pressure_centroid" in methods))
+    mnh_fields = None
+    if mnh_centroid:
+        from frameit.tracking.pressure_centroid_inputs import inspect_mnh_sequence
+
+        def headers():
+            for path in files:
+                with xr.open_dataset(path, engine=engine) as header:
+                    yield path, header
+
+        mnh_fields = inspect_mnh_sequence(headers())
+        logger.info("MNH pressure_centroid inputs: pressure=%s, winds=%s/%s, height=%s",
+                    mnh_fields.pressure, mnh_fields.u, mnh_fields.v,
+                    ",".join(mnh_fields.height))
+        tracker_req_by_method["pressure_centroid"] = normalize_requests(mnh_fields.requests())
+        wind_conf.requested_variables_tracker["pressure_centroid"] = mnh_fields.requests()
+
     # Minimal union of variables to read
     requested_vars_all: set[str] = set()
     for _, spec in user_req.items():
@@ -195,9 +214,8 @@ def concat_nc2ds_by_vert_coord(
     for _m, blk in tracker_req_by_method.items():
         for _, spec in blk.items():
             requested_vars_all.update(spec.get("variables", []))
-
-    # Prepare the file list
-    files = resolve_input_files(files, strict=strict)
+    if mnh_fields is not None:
+        requested_vars_all.update(mnh_fields.variables)
 
     # Automatically add geographic variables
     auto_geo = []
@@ -265,8 +283,15 @@ def concat_nc2ds_by_vert_coord(
     for m, blk in tracker_req_by_method.items():
         grp_map: dict[str, xr.Dataset] = {}
 
+        if m == "pressure_centroid" and mnh_fields is not None:
+            # Keep all native neighbours and physical-height dependencies. The
+            # model adapter collocates/rotates before any vertical selection;
+            # raw tracker vectors must not pass through generic normalization.
+            names = list(mnh_fields.variables)
+            grp_map["native"] = ds[names]
+
         # Special cases: fixed_box and prescribed_track
-        if m in {"fixed_box", "prescribed_track"}:
+        elif m in {"fixed_box", "prescribed_track"}:
             # Minimal Dataset: no data_vars, coordinates only (time, latitude, longitude, etc.)
             data_vars = list(ds.data_vars)
             if data_vars:

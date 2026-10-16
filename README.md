@@ -15,6 +15,7 @@ from atmospheric and oceanic model outputs.
   with multiple tracking methods:
   - Prescribed track
   - Pressure-wind algorithm
+  - Adaptive pressure centroid (AROME isobaric and Meso-NH native-level inputs)
   - Fixed box
   - AI-based tracking (utrack)
 - **Normalized outputs** — standardized NetCDF outputs to facilitate inter-model and inter-simulation comparisons, 
