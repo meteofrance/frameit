@@ -1,0 +1,19 @@
+# Base NetCDF processing and compact qualification tests; no developer/GUI stack.
+# Add cfgrib/eccodes for GRIB, xesmf/esmpy for polar processing, as documented.
+name: frameit_hpc
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - numpy
+  - scipy
+  - xarray
+  - dask
+  - pyyaml
+  - pyproj
+  - netcdf4
+  - h5netcdf
+  - h5py
+  - threadpoolctl
+  - pip
+  - pytest

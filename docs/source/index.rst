@@ -19,6 +19,7 @@ FrameIt |release| documentation
 
    getting_started/installation
    getting_started/quick_start
+   getting_started/hpc
 
 .. toctree::
    :maxdepth: 2

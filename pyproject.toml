@@ -7,6 +7,10 @@ name = "frameit"
 version = "1.1.0"
 requires-python = ">=3.10"
 description = "Focused Regional Analysis of Modeled Events with Integrated Tracking"
+dependencies = [
+    "numpy", "scipy", "xarray", "dask[array]", "PyYAML", "pyproj",
+    "netCDF4", "h5netcdf", "h5py", "threadpoolctl>=3",
+]
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -31,6 +35,8 @@ frameit = "frameit.cli:main"
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
+grib = ["cfgrib", "eccodes"]
+polar = ["xesmf"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

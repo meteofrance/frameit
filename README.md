@@ -29,8 +29,10 @@ from atmospheric and oceanic model outputs.
 
 ## Installation
 
-FrameIt requires **conda** to manage dependencies, as some packages (e.g. `xesmf`) 
-are not available via pip.
+Conda/mamba is recommended for the native scientific stack, particularly
+ESMF/ESMPy for optional polar processing. Core NetCDF processing also declares
+pip-installable runtime dependencies. The `grib` extra adds cfgrib/ecCodes;
+the `polar` extra adds xESMF but still requires a compatible ESMF installation.
 
 1. Clone the repository
 ```bash
@@ -51,7 +53,7 @@ pip install .
 ## Requirements
 
 - Python 3.10+
-- conda (via Miniconda or Anaconda)
+- A compatible scientific Python/native-library environment (conda/mamba recommended)
 - Compatible with AROME and MesoNH model outputs
 
 ## Scientific qualification and analytical example
@@ -94,6 +96,18 @@ normalized NetCDF outputs under `output.directory`. Schema version 2 uses groupe
 settings, automatic native-grid spacing inference, and explicit units. Relative
 paths are resolved from the YAML file. Runs save `resolved-config.yaml` and
 `run-provenance.yaml` alongside products and logs.
+An atomic `run-status.yaml` records final completion and the product inventory.
+Concurrent runs in the same output root are rejected.
+
+### HPC / Slurm
+
+Use one task on one node per configuration. `environment-hpc.yaml` provides a
+base NetCDF/test environment; add GRIB and polar dependencies only when needed.
+Portable launchers and an independent output checker are in `example/slurm/`.
+See [the Belenos/Slurm qualification procedure](docs/source/getting_started/hpc.rst)
+for environment setup, resource limits, isolated attempts, cancellation behavior,
+and the results to collect. Site account/partition/module names must be supplied
+from the current HPC documentation.
 
 Existing flat YAML requires explicit migration:
 

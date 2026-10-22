@@ -230,7 +230,26 @@ Output, logging, and precedence
 and ``.polar`` default to true; writing still requires an available product.
 Polar computation is independent of polar export. Compression defaults to level
 1 with coordinate compression disabled. Other supported controls are ``engine``,
-``format``, ``unlimited_time``, ``overwrite``, ``max_workers``, and ``institution``.
+``format``, ``unlimited_time``, ``overwrite``, ``max_workers``,
+``synchronous_export`` (default false), and ``institution``.
+
+``execution.dask_scheduler`` is ``threads`` (default) or ``synchronous``.
+``execution.dask_workers`` defaults to one effective worker;
+``execution.native_threads`` defaults to one. ``output.max_workers: null``
+resolves to the CPU budget divided by Dask/native thread counts. The strictest
+machine, affinity and ``SLURM_CPUS_PER_TASK`` limit wins. Explicit requests that
+exceed this budget fail; when a Slurm job omits CPUs per task, the budget uses
+the conservative Slurm default of one CPU. Group export additionally caps
+process count to group count and uses spawn. Synchronous export creates no pool.
+These operational defaults can change performance relative to older releases;
+they do not select scientific methods. Other optional backends may have their
+own resource controls. See :doc:`/getting_started/hpc` for qualification.
+
+``execution.require_complete_tracking`` defaults to false to retain existing
+accepted-prefix behavior. When true, an incomplete tracker result fails before
+export. The CLI exposes ``--require-complete-tracking``, ``--synchronous-export``,
+``--max-workers``, ``--no-overwrite`` and ``--output-directory``. The output
+override is relative to the launch directory; YAML paths remain YAML-relative.
 
 ``logging.level`` defaults to ``INFO``. Explicit CLI overrides take precedence
 over YAML, which takes precedence over defaults. Omitted CLI flags do not reset
@@ -238,6 +257,9 @@ YAML values. Products go under ``products/``, indexes under ``cache/``, and logs
 under the run root's logging layout. Each run saves a reloadable
 ``resolved-config.yaml`` and ``run-provenance.yaml`` containing geometry, inputs,
 unit conversions/assumptions, and effective execution options.
+Exclusive run-directory ownership rejects concurrent writers even with overwrite
+enabled. ``--no-overwrite`` rejects prior artifacts before computation.
+``run-status.yaml`` records completion separately from provenance.
 
 Inspection, validation, and migration
 ----------------------------------------

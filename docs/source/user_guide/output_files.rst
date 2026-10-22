@@ -37,6 +37,8 @@ Artifacts use the same layout for ordinary runs and each matrix case::
         logs/        # Simulation logs
         resolved-config.yaml  # Reloadable effective schema-v2 configuration
         run-provenance.yaml   # Geometry, inputs, units, and execution settings
+        run-status.yaml       # Completion state, runtime/resources, product inventory
+        .frameit-run.lock     # Present while an attempt owns this root
 
 GRIB indexes are stored in ``cache/``, never beside the input files. Cache
 filenames distinguish input paths and cfgrib indexing keys. Meso-NH NetCDF
@@ -46,6 +48,20 @@ indexes always use the run's ``cache/`` directory.
 
 Previously, ordinary runs wrote products and logs directly into the run root.
 Existing files are not moved; new runs use the layout above.
+
+Normal execution atomically publishes each complete NetCDF/YAML file through a
+same-directory temporary file. Interrupted attempts can retain complete earlier
+products or hidden ``*.partial`` files. The authoritative completion record is
+``run-status.yaml`` (schema version 1), written last after export and input cleanup.
+It lists relative product paths, byte sizes, tracking completeness, execution
+limits, package/native-backend versions and selected Slurm metadata. Scientific
+provenance also records versions and code revision/dirty state when available.
+Sizes and paths are not content checksums. See :doc:`/getting_started/hpc` for
+state meanings and retry policy.
+
+Product names, dimensions, units, compression and precision are retained.
+``metadata.extra`` is serialized as the JSON global attribute
+``frameit_user_metadata_json`` for ordinary NetCDF readers.
 
 Produced files
 --------------

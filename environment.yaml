@@ -21,7 +21,7 @@
 #    conda env remove -n frameit_env
 #    conda env create -f environment.yaml
 #
-# Python 3.10 is recommended for compatibility.
+# This environment targets Python 3.13. Freeze its resolved packages after testing.
 # This file is recommended for users with conda.
 # Once the environment is activated, install frameit with:
 #    pip install frameit
@@ -30,7 +30,7 @@ name: frameit_env
 channels:
   - conda-forge
 dependencies:
-  - python=3.14
+  - python=3.13
   - xarray
   - dask
   - numpy
@@ -44,6 +44,7 @@ dependencies:
   - netcdf4
   - h5netcdf
   - h5py
+  - threadpoolctl
   - pip
 # For developpers : 
   - ruff

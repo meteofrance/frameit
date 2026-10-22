@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import multiprocessing
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -17,6 +18,7 @@ import numpy as np
 import xarray as xr
 
 from frameit._version import __version__ as frameit_version
+from frameit.utils.atomic import atomic_output
 
 logger = logging.getLogger(__name__)
 
@@ -300,7 +302,7 @@ def write_dataset_netcdf(
     for name in list(ds_out.data_vars) + list(ds_out.coords):
         ds_out[name].attrs = _sanitize_attrs(ds_out[name].attrs)
 
-    ds_out.attrs.update(metadata.base_attrs())
+    ds_out.attrs.update(_sanitize_attrs(metadata.base_attrs()))
     ds_out.attrs["product_type"] = str(product_type)
     if group is not None:
         ds_out.attrs["group"] = str(group)
@@ -321,14 +323,15 @@ def write_dataset_netcdf(
     if unlimited_dims is not None:
         logger.debug("Unlimited dims: %s", unlimited_dims)
 
-    ds_out.to_netcdf(
-        path,
-        mode="w",
-        engine=engine,
-        format=fmt,
-        encoding=encoding,
-        unlimited_dims=unlimited_dims,
-    )
+    with atomic_output(path, overwrite=overwrite) as temporary:
+        ds_out.to_netcdf(
+            temporary,
+            mode="w",
+            engine=engine,
+            format=fmt,
+            encoding=encoding,
+            unlimited_dims=unlimited_dims,
+        )
 
     logger.debug("NetCDF written: %s", str(path))
     return path
@@ -388,6 +391,9 @@ def write_group_dict(
     unlimited_time: bool = True,
     max_workers: int | None = None,
     synchronous: bool = False,
+    dask_scheduler: str = "threads",
+    dask_workers: int = 1,
+    native_threads: int = 1,
 ) -> list[Path]:
     """
     Write a dictionary of Datasets to individual NetCDF files, optionally in parallel.
@@ -422,8 +428,8 @@ def write_group_dict(
     unlimited_time : bool, optional
         Declare the "time" dimension unlimited. Default True.
     max_workers : int or None, optional
-        Maximum number of parallel worker processes.  ``None`` lets Python
-        choose based on available CPU cores. Default None.
+        Maximum parallel worker processes, also capped by group count and CPU
+        budget. Default None resolves from the allocation/affinity.
 
     Returns
     -------
@@ -444,10 +450,14 @@ def write_group_dict(
 
     # Build the list of argument tuples for each worker
     tasks_args = []
+    destinations = set()
     for group, ds in ds_dict.items():
         group_token = _sanitize_filename_token(str(group))
         fn = f"{simu_name}.{grid}.{group_token}.nc"
         out_path = out_dir / fn
+        if out_path in destinations:
+            raise ValueError(f"Group names map to the same NetCDF destination: {out_path}")
+        destinations.add(out_path)
 
         logger.debug(
             "Queuing group=%s -> %s (vars=%s, dims=%s).",
@@ -460,7 +470,7 @@ def write_group_dict(
         tasks_args.append(
             (
                 group,
-                ds.compute() if hasattr(ds, "dask") else ds,
+                ds,
                 out_path,
                 grid,
                 metadata,
@@ -480,7 +490,20 @@ def write_group_dict(
         return [_write_single_group(args) for args in tasks_args]
 
     written: list[Path] = []
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    if not tasks_args:
+        return written
+    from frameit.core.runtime import cpu_budget, initialize_export_worker
+
+    cpus, _ = cpu_budget()
+    per_process = (1 if dask_scheduler == "synchronous" else dask_workers) * native_threads
+    if per_process > cpus:
+        raise ValueError("Export thread counts exceed CPU budget")
+    workers = min(max_workers or cpus // per_process, len(tasks_args), cpus // per_process)
+    with ProcessPoolExecutor(
+        max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
+        initializer=initialize_export_worker,
+        initargs=(dask_scheduler, dask_workers, native_threads),
+    ) as executor:
         futures = {
             executor.submit(_write_single_group, args): args[0]  # args[0] = group name
             for args in tasks_args
@@ -516,6 +539,9 @@ def export_outputs(
     unlimited_time: bool = True,
     max_workers: int | None = None,
     synchronous: bool = False,
+    dask_scheduler: str = "threads",
+    dask_workers: int = 1,
+    native_threads: int = 1,
 ) -> dict[str, Path | list[Path]]:
     """
     Export all FrameIt products (track, polar, Cartesian) from a completed run.
@@ -629,6 +655,7 @@ def export_outputs(
             unlimited_time=unlimited_time,
             max_workers=max_workers,
             synchronous=synchronous,
+            dask_scheduler=dask_scheduler, dask_workers=dask_workers, native_threads=native_threads,
         )
     else:
         logger.debug(
@@ -655,6 +682,7 @@ def export_outputs(
             unlimited_time=unlimited_time,
             max_workers=max_workers,
             synchronous=synchronous,
+            dask_scheduler=dask_scheduler, dask_workers=dask_workers, native_threads=native_threads,
         )
     else:
         logger.debug(

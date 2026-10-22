@@ -498,6 +498,9 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
     from frameit.io.netcdf_export import _sanitize_filename_token
 
     options = execution_options or ExecutionOptions.from_config(conf)
+    from frameit.core.runtime import resolve_execution_resources
+
+    options, resources = resolve_execution_resources(options)
     from frameit.core.configuration import resolved_configuration, resolved_sources
 
     resolved = resolved_configuration(conf, options)
@@ -526,7 +529,7 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             "excluded_inputs": excluded, "planned_products": products,
             "setting_sources": resolved_sources(conf, options),
             "tracking_method": conf.tracking_method, "track_time_count": nt,
-            "output_directory": str(conf.output_dir)}
+            "output_directory": str(conf.output_dir), "execution_resources": resources}
     if mnh_centroid:
         plan["tracking_inputs"] = conf.simulation_parameter["pressure_centroid_inputs"]
     if multifield:

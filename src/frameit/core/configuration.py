@@ -68,8 +68,11 @@ DEFAULTS = {
         "directory": "./output", "export": {"netcdf": True, "cartesian": True, "polar": True},
         "compression": {"level": 1, "coordinates": False}, "engine": "netcdf4",
         "format": "NETCDF4", "unlimited_time": True, "overwrite": True, "max_workers": None,
+        "synchronous_export": False,
         "institution": "LACy, Université de La Réunion, CNRS, Météo-France",
     },
+    "execution": {"dask_scheduler": "threads", "dask_workers": None, "native_threads": 1,
+                  "require_complete_tracking": False},
     "logging": {"level": "INFO"},
     "metadata": {"ocean_model": "", "wave_model": "", "extra": {}},
 }
@@ -384,6 +387,9 @@ def resolve_schema(raw, *, base_dir=None):
                         ("tracking.utrack.use_gpu", trk["utrack"]["use_gpu"]),
                         ("output.unlimited_time", out["unlimited_time"]),
                         ("output.overwrite", out["overwrite"]),
+                        ("output.synchronous_export", out["synchronous_export"]),
+                        ("execution.require_complete_tracking",
+                         conf["execution"]["require_complete_tracking"]),
                         ("output.compression.coordinates", out["compression"]["coordinates"]),
                         *((f"output.export.{k}", v) for k, v in out["export"].items())):
         if not isinstance(value, bool):
@@ -395,6 +401,12 @@ def resolve_schema(raw, *, base_dir=None):
         raise ValueError("output.compression.level must be in [0, 9]")
     if out["max_workers"] is not None:
         _positive(out["max_workers"], "output.max_workers", integer=True)
+    execution = conf["execution"]
+    if execution["dask_scheduler"] not in {"threads", "synchronous"}:
+        raise ValueError("execution.dask_scheduler must be threads or synchronous")
+    if execution["dask_workers"] is not None:
+        _positive(execution["dask_workers"], "execution.dask_workers", integer=True)
+    _positive(execution["native_threads"], "execution.native_threads", integer=True)
     if out["engine"] not in {"netcdf4", "h5netcdf"} or out["format"] != "NETCDF4":
         raise ValueError("output supports netcdf4/h5netcdf engines with NETCDF4 format")
     if inp["netcdf"]["engine"] not in {"h5netcdf", "netcdf4", "scipy"}:
@@ -530,9 +542,13 @@ def resolved_configuration(conf, options=None):
                          "polar": options.export_polar}
         out["compression"] = {"level": options.compress_level,
                               "coordinates": options.compress_coords}
-        for key in ("engine", "overwrite", "unlimited_time", "max_workers", "institution"):
+        for key in ("engine", "overwrite", "unlimited_time", "max_workers", "institution",
+                    "synchronous_export"):
             out[key] = getattr(options, key)
         out["format"] = options.fmt
+        result["execution"] = {
+            key: getattr(options, key) for key in DEFAULTS["execution"]
+        }
         result["logging"]["level"] = options.log_level or conf.log_level or "INFO"
     return result
 
@@ -557,6 +573,8 @@ def resolved_sources(conf, options=None):
             ("log_level", "logging.level"), ("engine", "output.engine"), ("fmt", "output.format"),
             ("overwrite", "output.overwrite"), ("unlimited_time", "output.unlimited_time"),
             ("max_workers", "output.max_workers"),
+            ("synchronous_export", "output.synchronous_export"),
+            *((key, f"execution.{key}") for key in DEFAULTS["execution"]),
         ):
             if getattr(options, attribute) != getattr(baseline, attribute):
                 sources[path] = "execution_override"

@@ -129,6 +129,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Institution string stored in exported files.",
     )
+    pr.add_argument("--output-directory", type=Path, default=None,
+                    help="Override output.directory (relative to the launch directory)")
+    pr.add_argument("--no-overwrite", dest="overwrite", action="store_false", default=None,
+                    help="Refuse an output directory containing previous run artifacts")
+    pr.add_argument("--synchronous-export", action="store_true", default=None,
+                    help="Write groups in the controlling process without an export pool")
+    pr.add_argument("--max-workers", type=int, default=None,
+                    help="Maximum export processes (must fit the CPU allocation)")
+    pr.add_argument("--require-complete-tracking", action="store_true", default=None,
+                    help="Fail if the selected tracker returns an incomplete trajectory")
 
     # validate
     pv = sub.add_parser("validate", help="Load and validate the YAML configuration (lightweight).")
@@ -316,22 +326,29 @@ def _cmd_run(args: argparse.Namespace) -> int:
     from frameit.core.settings_class import SimulationConfig
 
     conf = SimulationConfig.from_yaml_with_model_preset(args.config)
+    if args.output_directory is not None:
+        destination = str(args.output_directory.resolve())
+        conf.frameit_output_dir = destination
+        conf.yaml_config["output"]["directory"] = destination
+        conf.schema_sources["output.directory"] = "execution_override"
     options = ExecutionOptions.from_config(
         conf, export_netcdf=args.export_netcdf, export_polar=args.export_polar,
         export_cart=args.export_cart, compress_level=args.compress_level,
         institution=args.institution, log_level=args.log_level,
         no_hdf5_debug_pop=args.no_hdf5_debug_pop,
+        overwrite=args.overwrite, synchronous_export=args.synchronous_export,
+        max_workers=args.max_workers, require_complete_tracking=args.require_complete_tracking,
     )
     if args.dry_run:
         from frameit.core.preflight import preflight
 
         _print_yaml(preflight(conf, execution_options=options))
         return 0
-    execute_simulation(
-        conf,
-        options,
-    )
-    return 0
+    from frameit.core.runtime import termination_scope
+
+    with termination_scope():
+        result = execute_simulation(conf, options)
+    return 0 if result.ok else 1
 
 
 def _print_yaml(value):

@@ -163,3 +163,5 @@ A typical Slurm wrapper may look like:
    frameit run /path/to/config.yml
 
 This example is intentionally minimal. Adapt resources and modules according to your HPC environment and workload.
+For bounded execution, isolated attempts, completion manifests and a repeatable
+compute-node test procedure, see :doc:`hpc` and ``example/slurm/``.
