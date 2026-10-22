@@ -8,7 +8,8 @@ from frameit.utils.units import convert_units
 
 def load_track_coordinates(path, *, time_name="time", latitude_name="latitude",
                            longitude_name="longitude"):
-    with xr.open_dataset(path) as source:
+    # Explicit selection also avoids importing unrelated xarray backend plugins.
+    with xr.open_dataset(path, engine="netcdf4") as source:
         if time_name not in source.coords or source[time_name].dims != (time_name,):
             raise ValueError(f"PrescribedTrack: {time_name!r} must be a time coordinate")
         times = source[time_name].values.copy()

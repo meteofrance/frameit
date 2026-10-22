@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import difflib
 import math
+import re
 from pathlib import Path
 
 import yaml
@@ -23,8 +24,12 @@ DEFAULTS = {
         "format": None, "grid_spacing_m": None, "duplicate_time_policy": "first",
         "wind_reference_frame": None, "wind_pairs": [],
         "netcdf": {"engine": "h5netcdf", "chunks": {}},
+        "fa": {"profile": None, "subdomain": "CI", "earth_radius_m": None,
+               "field_metadata": {}, "max_points": 20_000_000, "timeout_seconds": 120.},
+        "sources": {}, "time_alignment": "common",
     },
     "tracking": {
+        "source": None,
         "method": "wind_pressure",
         "wind_pressure": {"search_half_width_km": 100., "refine_half_width_km": 50.},
         "fixed_box": {"center": {"latitude": None, "longitude": None}},
@@ -238,6 +243,95 @@ def validate_output_selections(horizontal, cartesian_vertical, polar_vertical):
             raise ValueError(f"{path} must be one of {sorted(choices)}")
 
 
+def validate_fa_options(options, selected=False):
+    """No field identity, unit or temporal meaning is guessed from a record name."""
+    if ((options["profile"] is not None and not isinstance(options["profile"], str))
+            or options["profile"] not in {None, "arome_history", "surfex_history"}):
+        raise ValueError("input.fa.profile must be arome_history or surfex_history")
+    if selected and options["profile"] is None:
+        raise ValueError("input.format fa requires input.fa.profile")
+    if not isinstance(options["subdomain"], str) or options["subdomain"] not in {"CI", "C"}:
+        raise ValueError("input.fa.subdomain must be CI or C (extension zones are excluded)")
+    if options["earth_radius_m"] is not None:
+        _positive(options["earth_radius_m"], "input.fa.earth_radius_m")
+    _positive(options["max_points"], "input.fa.max_points", integer=True)
+    _positive(options["timeout_seconds"], "input.fa.timeout_seconds")
+    if not isinstance(options["field_metadata"], dict):
+        raise ValueError("input.fa.field_metadata must be a mapping")
+    for name, definition in options["field_metadata"].items():
+        if (not isinstance(name, str) or not name.isascii() or not 1 <= len(name) <= 16):
+            raise ValueError("FA identifiers must contain 1–16 ASCII characters")
+        if not isinstance(definition, dict) or set(definition) - {
+            "units", "kind", "temporal_kind", "allow_unscaled", "long_name", "standard_name"
+        }:
+            raise ValueError(f"input.fa.field_metadata.{name}: invalid metadata keys")
+        if not isinstance(definition.get("units"), str) or not definition["units"].strip():
+            raise ValueError(f"{name}: explicit source units are required")
+        if (not isinstance(definition.get("kind"), str)
+                or definition["kind"] not in {"continuous", "categorical"}):
+            raise ValueError(f"{name}: kind must be continuous or categorical")
+        if definition.get("temporal_kind") != "instantaneous":
+            raise ValueError(f"{name}: only explicit instantaneous FA fields are supported; "
+                             "no accumulation interval is inferred from the file header")
+        if type(definition.get("allow_unscaled", False)) is not bool:
+            raise ValueError(f"{name}: allow_unscaled must be a boolean")
+        for key in ("long_name", "standard_name"):
+            if key in definition and not isinstance(definition[key], str):
+                raise ValueError(f"{name}: {key} must be a string")
+
+
+def source_document(parent, name):
+    """Resolve one source using ordinary schema/presets, without nesting runs.
+
+    Secondary sources receive a coordinate-only loader request. Its internal
+    fixed-box placeholder is never executed: the coupled runner supplies the
+    geographical track from tracking.source explicitly.
+    """
+    source = parent["input"]["sources"][name]
+    document = {key: copy.deepcopy(value) for key, value in parent.items()
+                if key not in {"model", "input", "variables", "polar"}}
+    document.update(model=source["model"], input=copy.deepcopy(source["input"]),
+                    variables=copy.deepcopy(source["variables"]),
+                    polar=copy.deepcopy(source["polar"]))
+    if name != parent["tracking"]["source"]:
+        document["tracking"] = {"method": "fixed_box", "fixed_box": {
+            "center": {"latitude": 0., "longitude": 0.}}}
+    else:
+        document["tracking"]["source"] = None
+    return document
+
+
+def _resolve_sources(raw, conf, base):
+    sources = conf["input"]["sources"]
+    if not isinstance(sources, dict):
+        raise ValueError("input.sources must be a mapping of named sources")
+    if not sources:
+        if conf["tracking"]["source"] is not None:
+            raise ValueError("tracking.source requires input.sources")
+        return
+    if set(raw.get("input", {})) - {"sources", "time_alignment"}:
+        raise ValueError("With input.sources, input settings belong inside each source.input")
+    if conf["variables"] or conf["polar"]["variables"] != "all":
+        raise ValueError("Coupled variables and polar variable selection belong to each source")
+    if not isinstance(conf["tracking"]["source"], str) or conf["tracking"]["source"] not in sources:
+        raise ValueError("tracking.source must name one of input.sources")
+    for name, spec in list(sources.items()):
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name):
+            raise ValueError("Source IDs must start with a letter and contain letters/digits/_/-")
+        checked = _merge_checked(spec, {"model": conf["model"], "input": {}, "variables": {},
+                                        "polar": {}}, f"input.sources.{name}")
+        if not isinstance(checked["input"], dict) or checked["input"].get("sources"):
+            raise ValueError(f"input.sources.{name}.input cannot contain nested sources")
+        checked["polar"] = _merge_checked(checked["polar"], conf["polar"],
+                                           f"input.sources.{name}.polar")
+        sources[name] = checked
+    for name in sources:
+        child, _, _ = resolve_schema(source_document(conf, name), base_dir=base)
+        sources[name] = {key: child[key] for key in ("model", "input", "variables", "polar")}
+    if sources[conf["tracking"]["source"]]["model"] != conf["model"]:
+        raise ValueError("model must match input.sources[tracking.source].model")
+
+
 def resolve_schema(raw, *, base_dir=None):
     if type(raw.get("schema_version")) is not int or raw.get("schema_version") != 2:
         raise ValueError(
@@ -246,6 +340,7 @@ def resolve_schema(raw, *, base_dir=None):
     conf = _merge_checked(raw, DEFAULTS)
     enum_paths = (
         "model", "tracking.method", "input.format", "input.duplicate_time_policy",
+        "input.time_alignment",
         "input.wind_reference_frame", "input.netcdf.engine", "domain.edge_policy",
         "polar.interpolation_method", "polar.missing_data_policy", "polar.ellipsoid",
         "output.engine", "output.format", "logging.level",
@@ -264,7 +359,7 @@ def resolve_schema(raw, *, base_dir=None):
         raise ValueError("model must be 'arome' or 'mesonh'")
     base = Path(base_dir or Path.cwd()).resolve()
     inp, trk, pol, out = (conf[n] for n in ("input", "tracking", "polar", "output"))
-    if bool(inp["pattern"]) == bool(inp["files"]):
+    if not inp["sources"] and bool(inp["pattern"]) == bool(inp["files"]):
         raise ValueError("input requires exactly one of pattern or files")
     for key in ("directory",):
         if not isinstance(inp[key], str) or not inp[key]:
@@ -277,8 +372,17 @@ def resolve_schema(raw, *, base_dir=None):
         if value is not None and (not isinstance(value, list) or
                                   any(not isinstance(v, str) for v in value)):
             raise ValueError(f"input.{key} must be a list of paths/patterns")
-    if inp["format"] not in {None, "grib", "netcdf"}:
-        raise ValueError("input.format must be grib or netcdf")
+    if inp["format"] not in {None, "grib", "netcdf", "fa"}:
+        raise ValueError("input.format must be grib, netcdf or fa")
+    if inp["time_alignment"] not in {"common", "strict"}:
+        raise ValueError("input.time_alignment must be common or strict")
+    validate_fa_options(inp["fa"], inp["format"] == "fa")
+    if inp["format"] == "fa" and conf["model"] != "arome":
+        raise ValueError("Current FA profiles require model: arome; declare the FA source's "
+                         "model explicitly when coupling to Meso-NH NetCDF")
+    if inp["format"] == "fa" and trk["method"] not in {"fixed_box", "prescribed_track"}:
+        raise ValueError("FA tracking requires fixed_box/prescribed_track, or a separate "
+                         "GRIB/NetCDF tracking source")
     if inp["duplicate_time_policy"] not in {"first", "last"}:
         raise ValueError("input.duplicate_time_policy must be first or last")
     if inp["wind_reference_frame"] not in {None, "earth", "grid"}:
@@ -435,13 +539,20 @@ def resolve_schema(raw, *, base_dir=None):
     if "/" in name or "\\" in name or name in {".", ".."}:
         raise ValueError("run.name must be an analysis identifier without path separators")
     user = _requests(conf["variables"])
+    if inp["format"] == "fa":
+        if set(user) - {"surface"}:
+            raise ValueError("FA 2-D records must be selected in variables.surface")
+        levels = conf["variables"].get("surface", {}).get("levels", "all")
+        if not isinstance(levels, str) or levels not in {"all", "stored"}:
+            raise ValueError("FA layer/patch selection uses explicit native record names; "
+                             "variables.surface.levels cannot select a vertical axis")
     polar = _requests(pol["variables"], "polar.variables", polar=True)
     if polar == "all":
         polar = {g: {"variables": list(s["variables"])} for g, s in user.items()}
     for group, spec in polar.items():
         if group not in user or not set(spec["variables"]) <= set(user[group]["variables"]):
             raise ValueError(f"polar.variables.{group} must be a subset of extracted variables")
-    if pol["enabled"] and not polar:
+    if pol["enabled"] and not polar and not inp["sources"]:
         raise ValueError("polar.enabled requires selected polar variables")
     for section, key in (("input", "directory"), ("output", "directory")):
         conf[section][key] = str((base / conf[section][key]).resolve())
@@ -450,6 +561,7 @@ def resolve_schema(raw, *, base_dir=None):
     for section, key in (("prescribed_track", "file"), ("utrack", "weights_file")):
         if trk[section][key]:
             trk[section][key] = str((base / trk[section][key]).resolve())
+    _resolve_sources(raw, conf, base)
     return conf, user, polar
 
 
@@ -466,7 +578,10 @@ def to_runtime(raw, *, base_dir=None):
         "ocean_model": c["metadata"]["ocean_model"], "wave_model": c["metadata"]["wave_model"],
         "resolution": inp["grid_spacing_m"] or 0, "infer_grid_geometry": True,
         "file_name_prefix": "", "file_name": "", "file_name_suffix": "",
-        "file_type": inp["format"] or "", "input_pattern": inp["pattern"],
+        "file_type": "coupled" if inp["sources"] else inp["format"] or "",
+        "input_pattern": inp["pattern"],
+        "input_sources": inp["sources"], "time_alignment": inp["time_alignment"],
+        "tracking_source": trk["source"], "fa_options": inp["fa"],
         "input_files": inp["files"], "input_exclude": inp["exclude"],
         "simulation_output_dir": inp["directory"], "frameit_output_dir": c["output"]["directory"],
         "duplicate_time_policy": inp["duplicate_time_policy"],
@@ -532,9 +647,12 @@ def setting_sources(raw, resolved, prefix=""):
 def resolved_configuration(conf, options=None):
     """Reloadable public schema with inferred defaults and effective overrides."""
     result = copy.deepcopy(conf.yaml_config)
-    result["input"]["grid_spacing_m"] = conf.resolution
-    result["input"]["format"] = conf.file_type or result["input"]["format"]
-    if conf.compute_polar_proj:
+    if conf.input_sources:
+        result["input"] = {key: result["input"][key] for key in ("sources", "time_alignment")}
+    else:
+        result["input"]["grid_spacing_m"] = conf.resolution
+        result["input"]["format"] = conf.file_type or result["input"]["format"]
+    if conf.compute_polar_proj and not conf.input_sources:
         result["polar"]["radial_step_m"] = conf.radial_resolution
     if options is not None:
         out = result["output"]
@@ -555,11 +673,12 @@ def resolved_configuration(conf, options=None):
 
 def resolved_sources(conf, options=None):
     sources = dict(conf.schema_sources)
-    sources["input.grid_spacing_m"] = conf.grid_geometry.get("effective_source", "unresolved")
-    sources["input.format"] = (
-        "inferred_from_content" if conf.yaml_config["input"]["format"] is None else "yaml"
-    )
-    if conf.yaml_config["polar"]["radial_step_m"] is None:
+    if not conf.input_sources:
+        sources["input.grid_spacing_m"] = conf.grid_geometry.get("effective_source", "unresolved")
+        sources["input.format"] = (
+            "inferred_from_content" if conf.yaml_config["input"]["format"] is None else "yaml"
+        )
+    if not conf.input_sources and conf.yaml_config["polar"]["radial_step_m"] is None:
         sources["polar.radial_step_m"] = "resolved_grid_spacing"
     if options is not None:
         from frameit.core.execution import ExecutionOptions

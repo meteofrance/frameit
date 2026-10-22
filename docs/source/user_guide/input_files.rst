@@ -1,8 +1,10 @@
 Input files
 ===========
 
-FrameIt accepts NetCDF and GRIB files (only GRIB for the AROME model; other GRIB files have
-not been tested yet) as input. The following input formats are supported:
+FrameIt accepts NetCDF and GRIB files, plus selected native AROME/SURFEX FA
+histories through an optional isolated reader. See :doc:`fa_inputs` for the exact
+FA scope, declarations and coupled-source configuration. Other GRIB model
+conventions have not been generally qualified. Ordinary inventories include:
 
 - A single NetCDF file containing all time steps.
 - A list of files (NetCDF or GRIB), each representing a single time step.
@@ -14,7 +16,9 @@ Selection uses ``input.pattern`` (a standard glob or exact filename) or
 ``input.files`` (an ordered explicit inventory), with optional ``input.exclude``
 globs. Relative paths are resolved from the YAML file. Content-based format
 detection rejects mixed inputs; ``input.format`` may explicitly specify ``grib``
-or ``netcdf``. See :doc:`configuration_file` for schema-v2 examples, units,
+or ``netcdf`` (and explicit ``fa`` with its required profile/declarations).
+Mixed formats require separate named sources, not a mixed ordinary inventory.
+See :doc:`configuration_file` for schema-v2 examples, units,
 native-grid inference, and migration from the old filename fragments.
 
 Wind metadata to check

@@ -116,7 +116,13 @@ def _collect_parts_for_req(
             dim = req.get("dimension")
             if dim and dim not in ds.dims and dim not in ds.coords:
                 continue
-            sel = ds
+            keep = [v for v in req.get("variables", []) if v in ds.data_vars]
+            if not keep:
+                continue
+            # Expanding an unchunked backend can materialize its variables.
+            # Restrict first: unrelated atmospheric fields are not dependencies
+            # of a small coupled-source extraction.
+            sel = preserve_coordinate_dependencies(ds, ds[keep])
             if dim and dim not in sel.dims:
                 if sel[dim].ndim != 0:
                     continue
@@ -207,6 +213,7 @@ def concat_grib2ds_by_vert_coord(
     duplicate_time_policy="first",
     wind_conf=None,
     native_output_groups: dict[str, xr.Dataset] | None = None,
+    filter_requested: bool = False,
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open a list of GRIB files and build per-group user and tracker Datasets.
@@ -263,7 +270,66 @@ def concat_grib2ds_by_vert_coord(
             "read_keys": ["uvRelativeToGrid"],
             "indexpath": str(idx_dir / (f.name + f".{source_id}.{{short_hash}}.idx")),
         }
-        dsets = cfgrib.open_datasets(str(f), backend_kwargs=backend_kwargs)
+        selectors = None
+        if filter_requested:
+            import eccodes as ec
+
+            blocks = [user_requested_variables_yaml]
+            tracker_blocks = tracker_requested_variables_by_method_yaml or {}
+            blocks.extend(block for key, block in tracker_blocks.items()
+                          if method is None or key == method)
+            wanted = {name for block in blocks for spec in block.values()
+                      for name in spec.get("variables", []) if name != "wind_speed"}
+            if wind_conf is not None:
+                if wind_conf.wind_reference_frame == "grid":
+                    wanted.add("grid_rotation")
+                for pair in wind_conf.wind_pairs:
+                    if wanted.intersection((pair["u"], pair["v"])):
+                        rotation = pair.get("rotation") or {}
+                        if rotation.get("coordinate"):
+                            wanted.add(rotation["coordinate"])
+            if wanted:
+                selectors = set()
+                with Path(f).open("rb") as stream:
+                    while True:
+                        handle = ec.codes_grib_new_from_file(stream, headers_only=True)
+                        if handle is None:
+                            break
+                        try:
+                            short = str(ec.codes_get(handle, "shortName"))
+                            try:
+                                canonical = str(ec.codes_get(handle, "cfVarName"))
+                            except ec.CodesInternalError:
+                                canonical = short
+                            aliases = {"msl": "prmsl", "10u": "u10", "10v": "v10"}
+                            if short not in {"unknown", "undef", ""} and wanted.intersection(
+                                {short, canonical, aliases.get(short, short)}
+                            ):
+                                selectors.add(short)
+                        finally:
+                            ec.codes_release(handle)
+            else:
+                # Coordinate-only coupled requests need no arbitrary data field.
+                from frameit.core.preflight import _grib_metadata
+
+                metadata = _grib_metadata(f)[0]
+                lat, lon = metadata.latitude.values, metadata.longitude.values
+                if not (np.allclose(lat, lat[:, :1], rtol=0, atol=1.e-12)
+                        and np.allclose(lon, lon[:1, :], rtol=0, atol=1.e-12)):
+                    raise ValueError("Coordinate-only coupled GRIB requires a regular lon/lat grid")
+                dsets = [xr.Dataset(coords={
+                    "latitude": ("latitude", lat[:, 0], {"units": "degrees_north"}),
+                    "longitude": ("longitude", lon[0], {"units": "degrees_east"}),
+                    "valid_time": metadata.valid_time.variable,
+                })]
+                selectors = set()
+        if selectors is None:
+            dsets = cfgrib.open_datasets(str(f), backend_kwargs=backend_kwargs)
+        elif wanted:
+            dsets = []
+            for short in sorted(selectors):
+                dsets.extend(cfgrib.open_datasets(str(f), backend_kwargs={
+                    **backend_kwargs, "filter_by_keys": {"shortName": short}}))
         for ds in dsets:
             resources.add(ds)
         # Match the canonical aliases already used by metadata preflight, while

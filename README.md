@@ -22,6 +22,8 @@ from atmospheric and oceanic model outputs.
 - **Normalized outputs** — standardized NetCDF outputs to facilitate inter-model and inter-simulation comparisons, 
   and enable AI dataset creation
 - **Data reduction** — reduce data volume for easier manipulation and sharing with partners
+- **Coupled inputs** — named GRIB/NetCDF and native AROME/SURFEX FA sources, shared
+  geographical tracking, independent source grids and reported exact-time alignment
 - **Polar sampling** — storm-centred geodesic polar sampling, bilinear scalar interpolation,
   and radial/tangential winds in the local geodesic basis
 - **Modular architecture** — plug in custom trackers and diagnostics
@@ -33,6 +35,10 @@ Conda/mamba is recommended for the native scientific stack, particularly
 ESMF/ESMPy for optional polar processing. Core NetCDF processing also declares
 pip-installable runtime dependencies. The `grib` extra adds cfgrib/ecCodes;
 the `polar` extra adds xESMF but still requires a compatible ESMF installation.
+The reference conda environment targets Python 3.13 and includes the published
+`falfilfa4py` wheel. The optional `fa` extra enables the isolated native reader.
+FA supports explicitly defined instantaneous 2-D gridpoint records on qualified
+regional headers; spectral transformations are not implicit.
 
 1. Clone the repository
 ```bash
@@ -118,6 +124,13 @@ frameit config migrate old.yml --output frameit.yaml --launch-directory /origina
 Inspect source variables, units, and geometry with
 `frameit inspect ./data --model mesonh`. Use `frameit validate --schema-only`
 for configuration checks without opening datasets.
+
+For atmospheric GRIB/NetCDF coupled to SURFEX FA, start from
+[`example/config_file/coupled_fa.yaml`](example/config_file/coupled_fa.yaml).
+`input.time_alignment: common` selects exact common times by default, warns for
+each source losing times and records all exclusions in provenance/final status.
+Choose `strict` to fail on unequal source times. Each source retains its own
+grid; FA geometry and field meaning/scaling need explicit declarations.
 
 ## Documentation
 

@@ -33,3 +33,29 @@ jobs:
         with:
           name: batch-runtime-python-${{ matrix.python-version }}
           path: hpc-tests.xml
+
+  fa-coupling:
+    runs-on: ubuntu-latest
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install published native FA wheel and GRIB reader
+        run: python -m pip install -e '.[test,grib,fa]'
+      - name: Verify isolated native readers and coupled time/grid contracts
+        run: >-
+          python -m pytest -q
+          src/frameit/testing/numerical/test_fa_io.py
+          src/frameit/testing/numerical/test_fa_geometry.py
+          src/frameit/testing/numerical/test_fa_pipeline.py
+          --junitxml=fa-tests.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fa-coupling-python-3.13
+          path: fa-tests.xml

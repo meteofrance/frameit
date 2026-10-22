@@ -21,7 +21,8 @@
 #    conda env remove -n frameit_env
 #    conda env create -f environment.yaml
 #
-# This environment targets Python 3.13. Freeze its resolved packages after testing.
+# Python 3.13 provides published falfilfa4py wheels; revisit 3.14 when supported.
+# Freeze resolved packages after testing.
 # This file is recommended for users with conda.
 # Once the environment is activated, install frameit with:
 #    pip install frameit
@@ -29,6 +30,7 @@
 name: frameit_env
 channels:
   - conda-forge
+  - nodefaults
 dependencies:
   - python=3.13
   - xarray
@@ -54,3 +56,5 @@ dependencies:
   - sphinx-autodoc-typehints
   - pip:
     - pytest
+    # The wheel bundles ecCodes; isolate FA decoding from the conda GRIB reader.
+    - falfilfa4py==1.3.0

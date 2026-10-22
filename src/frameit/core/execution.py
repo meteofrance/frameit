@@ -116,9 +116,13 @@ def _product_descriptors(exports, runner):
         }
         for path in paths:
             path = Path(path)
-            products.append(
-                {"role": role, "group": filenames.get(path.name), "path": str(path.resolve())}
-            )
+            product = {"role": role, "group": filenames.get(path.name),
+                       "path": str(path.resolve())}
+            dataset = groups.get(filenames.get(path.name))
+            if dataset is not None and "source_id" in dataset.attrs:
+                product.update(source=dataset.attrs["source_id"],
+                               source_group=dataset.attrs["source_group"])
+            products.append(product)
     return products
 
 
@@ -225,6 +229,8 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
             status["tracking_termination_reason"] = runner.track.attrs.get(
                 "tracking_termination_reason", ""
             )
+            if config.input_sources:
+                status["time_alignment"] = config.simulation_parameter["time_alignment"]
             if config.schema_version == 2:
                 from frameit.utils.atomic import write_yaml_atomic
 
@@ -235,6 +241,9 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
                 write_yaml_atomic(resolved_path, resolved, overwrite=options.overwrite)
                 provenance = {
                         "runtime": runtime, "execution_resources": status["resources"],
+                        "time_alignment": config.simulation_parameter.get("time_alignment", {}),
+                        "sources": config.simulation_parameter.get("source_provenance", {}),
+                        "fa_inputs": config.simulation_parameter.get("fa_inputs", []),
                         "grid_geometry": config.grid_geometry,
                         "input_inventory": [str(p) for p in result.files],
                         "unit_provenance": config.simulation_parameter.get("unit_provenance", []),
@@ -320,4 +329,13 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
             finally:
                 runtime["loaded_backends"] = _loaded_backend_versions()
                 if provenance is not None:
+                    from frameit.io.fa_backend import collect_fa_diagnostics
+
+                    if provenance["fa_inputs"]:
+                        provenance["fa_decoder"] = collect_fa_diagnostics(
+                            config.output_dir, provenance["fa_inputs"])
+                    for source in provenance["sources"].values():
+                        if source["fa_inputs"]:
+                            source["fa_decoder"] = collect_fa_diagnostics(
+                                config.output_dir, source["fa_inputs"])
                     write_yaml_atomic(config.output_dir / "run-provenance.yaml", provenance)

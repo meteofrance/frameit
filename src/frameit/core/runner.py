@@ -62,6 +62,7 @@ class FrameitRunner:
         )
 
         self.tracker = None
+        self.preflight_report = None
 
     def close(self):
         """Release original lazy input handles after computation/export."""
@@ -94,7 +95,8 @@ class FrameitRunner:
         if created:
             logger.debug("Output directory created")
 
-        if (self.input_files is None and self.conf.input_files is None
+        if (not self.conf.input_sources and self.input_files is None
+                and self.conf.input_files is None
                 and not self.conf.data_dir.exists()):
             raise FileNotFoundError(f"Data dir not found: {self.conf.data_dir}")
         logger.debug("Input/output paths verified")
@@ -170,7 +172,7 @@ class FrameitRunner:
             If ``conf.file_type`` is not one of "nc", "netcdf", "grib", "grib2".
         """
         files = self.find_files()
-        if self.conf.infer_grid_geometry:
+        if self.conf.infer_grid_geometry and self.preflight_report is None:
             from frameit.core.preflight import preflight
 
             self.preflight_report = preflight(self.conf, input_files=files)
@@ -229,6 +231,16 @@ class FrameitRunner:
                 native_output_groups=self._native_cartesian_groups,
             )
 
+        elif file_type == "fa":
+            from frameit.io.fa_utils import concat_fa2ds_by_vert_coord
+
+            dict_user, dict_tracker = concat_fa2ds_by_vert_coord(
+                files, loading_requests, requested_vars_tracker, method=tracking_method,
+                strict=True, resources=self.resources, wind_conf=self.conf,
+                duplicate_time_policy=self.conf.duplicate_time_policy,
+                native_output_groups=self._native_cartesian_groups,
+            )
+
         elif file_type in {"grib", "grib2"}:
             from frameit.io.grib_utils import concat_grib2ds_by_vert_coord
 
@@ -250,6 +262,7 @@ class FrameitRunner:
                 duplicate_time_policy=self.conf.duplicate_time_policy,
                 wind_conf=self.conf,
                 native_output_groups=self._native_cartesian_groups,
+                filter_requested=bool(self.conf.simulation_parameter.get("coupled_source_id")),
             )
 
         else:
@@ -342,6 +355,10 @@ class FrameitRunner:
         RunResult
             ``ok=True`` with the number of processed files and the output directory.
         """
+        if self.conf.input_sources:
+            from frameit.core.coupled import run_coupled
+
+            return run_coupled(self, benchmark=benchmark)
         log = logging.getLogger("frameit")
 
         log.info("Simulation: %s", self.conf.simulation_name)
@@ -361,12 +378,18 @@ class FrameitRunner:
                 for dataset in _iter_datasets((dict_user, dict_tracker)):
                     dataset.load()
 
+        return self.process_loaded(files, benchmark=benchmark)
+
+    def process_loaded(self, files, *, track=None, benchmark=False):
+        """Process prepared groups, optionally with centres supplied by a source."""
+        log = logging.getLogger("frameit")
         # Tracking step
         with self.timer.section("tracking"):
-            self.track = self.run_tracking(self.ds_tracker)
+            self.track = self.run_tracking(self.ds_tracker) if track is None else track
             if benchmark:
                 self.track.load()
-        log.info("Tracking complete: %d time(s)", self.track.sizes.get("time", 0))
+        log.info("%s: %d time(s)", "Tracking complete" if track is None else
+                 "Using supplied geographical centres", self.track.sizes.get("time", 0))
 
         # Export representation is separate from the prepared analysis branch.
         native_cart = getattr(self.conf, "cartesian_horizontal_winds", "mass_earth") == "native"

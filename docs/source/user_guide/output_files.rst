@@ -40,6 +40,11 @@ Artifacts use the same layout for ordinary runs and each matrix case::
         run-status.yaml       # Completion state, runtime/resources, product inventory
         .frameit-run.lock     # Present while an attempt owns this root
 
+Coupled sources keep this layout with source-qualified groups, for example
+``SIMU.cart.surfex.surface.nc``. The shared track records per-source indices;
+Cartesian grids are not implicitly regridded. Exact-time exclusions and native
+FA diagnostics are reported in provenance/final status. See :doc:`fa_inputs`.
+
 GRIB indexes are stored in ``cache/``, never beside the input files. Cache
 filenames distinguish input paths and cfgrib indexing keys. Meso-NH NetCDF
 loading does not create disk indexes; its processing caches remain in memory.

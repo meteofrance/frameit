@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add optional isolated AROME/SURFEX FA input for explicitly defined instantaneous
+  2-D gridpoint records, typed metadata, declared geometry, masks and bounded native
+  decoding. Spectral and unsupported encodings remain actionable failures.
+- Couple named GRIB/NetCDF/FA sources with one geographical track and independent
+  source-grid extraction. Default to exact common times with warnings and complete
+  exclusion reports; offer strict exact-time equality as a user choice.
+- Export source-qualified products, per-source track indices and native helper
+  provenance/diagnostics through existing atomic/final-status handling. Use Python
+  3.13 and a published falfilfa4py wheel in the reference environment.
+
 - Add an experimental built-in `multifield_vortex` tracker for AROME and Meso-NH,
   using the nine-parameter ALL_NO_THICK selection from Marchok (2021): Barnes
   mass/vorticity fixes, wind-circulation fixes, weighted combination, steering

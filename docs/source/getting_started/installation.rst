@@ -32,6 +32,12 @@ You should end up with a structure similar to:
    └── src
 
 The file ``environment.yaml`` define the dependencies required by **FrameIt**.
+The reference environment uses Python 3.13 to install a published
+``falfilfa4py`` wheel. The optional ``fa`` pip extra exposes the same dependency
+on platforms/Python versions supported by its publisher. FrameIt isolates native
+FA decoding from conda's GRIB/ecCodes reader automatically; matching version
+numbers alone did not resolve their observed same-process native-library conflict.
+See :doc:`../user_guide/fa_inputs` for the implemented scope and declarations.
 
 3. Create and activate the Python environment using a conda/mamba environment
 -----------------------------------------------------------------------------

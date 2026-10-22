@@ -29,8 +29,32 @@ from frameit.utils.units import convert_units, unit_key
 
 def open_metadata(files, conf, resources):
     """Open lazily with no disk indexes, closing originals on all error paths."""
+    fa_geometries = {}
     for path in files:
-        if conf.file_type == "grib":
+        if conf.file_type == "fa":
+            from frameit.io.fa_geometry import fa_geometry, geometry_signature
+            from frameit.io.fa_utils import (
+                fa_field_names,
+                fa_metadata_dataset,
+                inspect_fa_inputs,
+            )
+
+            dependencies, _ = wind_dependencies(conf, conf.requests_user())
+            info = inspect_fa_inputs(path, conf, fa_field_names(dependencies))
+            signature = geometry_signature(info["geometry"], conf.fa_options)
+            if signature not in fa_geometries:
+                fa_geometries[signature] = fa_geometry(info["geometry"], conf.fa_options)
+            datasets = [fa_metadata_dataset(info, conf.fa_options, fa_geometries[signature])]
+            records = conf.simulation_parameter.setdefault("fa_inventory", [])
+            records.append({"source_id": path.name, "valid_time": info["valid_time"],
+                            "reference_time": info["reference_time"],
+                            "backend_versions": info["backend_versions"],
+                            "fields": info["field_definitions"], "encoding": info["fields"],
+                            "producer_metadata": info["surfex_metadata"],
+                            "profile": conf.fa_options["profile"],
+                            "subdomain": conf.fa_options["subdomain"],
+                            "earth_radius_m": conf.fa_options["earth_radius_m"]})
+        elif conf.file_type == "grib":
             datasets = _grib_metadata(path)
         else:
             datasets = [xr.open_dataset(path, engine=conf.netcdf_engine)]
@@ -47,6 +71,7 @@ def _grib_metadata(path):
 
     aliases = {"10u": "u10", "10v": "v10", "msl": "prmsl"}
     groups, geometry, signature = {}, None, None
+    unmapped, all_times = [], set()
     with Path(path).open("rb") as stream:
         while (handle := ec.codes_grib_new_from_file(stream)) is not None:
             try:
@@ -83,10 +108,18 @@ def _grib_metadata(path):
                     name = short
                 name = aliases.get(name, aliases.get(short, name))
                 group = str(get("typeOfLevel"))
+                date = f"{int(get('validityDate')):08d}{int(get('validityTime')):04d}"
+                stamp = np.datetime64(datetime.strptime(date, "%Y%m%d%H%M"), "ns")
+                all_times.add(stamp)
+                if name in {"unknown", "undef", ""}:
+                    unmapped.append({"param_id": int(get("paramId")), "short_name": short,
+                                     "type_of_level": group, "level": float(get("level")),
+                                     "valid_time": str(stamp)})
+                    continue
                 if name in {"u10", "v10", "prmsl"} or group in {"surface", "meanSea"}:
                     group = "surface"
                 entry = groups.setdefault(group, {"fields": {}, "levels": set(), "times": set(),
-                                                  "coverage": {}})
+                                                  "coverage": {}, "references": set()})
                 attrs = {"units": str(get("units"))}
                 if ec.codes_is_defined(handle, "uvRelativeToGrid"):
                     attrs["GRIB_uvRelativeToGrid"] = int(get("uvRelativeToGrid"))
@@ -94,14 +127,17 @@ def _grib_metadata(path):
                     raise ValueError(f"{path}: inconsistent units/wind flags on {group}.{name}")
                 entry["fields"][name] = xr.DataArray(0., attrs=attrs)
                 entry["levels"].add(float(get("level")))
-                date = f"{int(get('validityDate')):08d}{int(get('validityTime')):04d}"
-                stamp = np.datetime64(datetime.strptime(date, "%Y%m%d%H%M"), "ns")
+                basis = f"{int(get('dataDate')):08d}{int(get('dataTime')):04d}"
+                entry["references"].add(str(np.datetime64(
+                    datetime.strptime(basis, "%Y%m%d%H%M"), "ns")))
                 entry["times"].add(stamp)
                 entry["coverage"].setdefault(name, []).append((float(get("level")), str(stamp)))
             finally:
                 ec.codes_release(handle)
     if geometry is None:
         raise ValueError(f"{path}: no GRIB messages")
+    geometry = geometry.assign_coords(valid_time=("valid_time", sorted(all_times)))
+    geometry.attrs["_frameit_unmapped_grib_records"] = unmapped
     datasets = [geometry]
     for group, entry in groups.items():
         for name, value in entry["fields"].items():
@@ -111,12 +147,17 @@ def _grib_metadata(path):
             units = {"isobaricInhPa": "hPa", "isobaricInPa": "Pa",
                      "heightAboveGround": "m"}.get(group)
             coords[group] = (group, sorted(entry["levels"]), {"units": units})
-        datasets.append(xr.Dataset(entry["fields"], coords=coords,
-                                   attrs={"_frameit_vertical_group": group}))
+        datasets.append(xr.Dataset(entry["fields"], coords=coords, attrs={
+            "_frameit_vertical_group": group,
+            "_frameit_forecast_reference_times": sorted(entry["references"])}))
     return datasets
 
 
 def infer_format(files, declared=None):
+    if declared == "fa":
+        # Native FA is structurally verified by the isolated metadata reader;
+        # no extension guess or attempt to send unknown bytes to NetCDF.
+        return "fa"
     formats = set()
     for path in files:
         with Path(path).open("rb") as handle:
@@ -253,9 +294,18 @@ def selected_level_records(datasets, requests, path):
 
 
 def preflight(conf, *, input_files=None, check_output=True, execution_options=None):
+    if conf.input_sources:
+        if input_files is not None:
+            raise ValueError("Coupled inventories are specified per input.sources entry")
+        from frameit.core.coupled import prepare_sources
+
+        return prepare_sources(conf, check_output=check_output,
+                               execution_options=execution_options)[0]
     files = (discover_input_files(conf) if input_files is None
              else resolve_input_files(input_files, strict=True))
     conf.file_type = infer_format(files, conf.file_type or None)
+    if conf.file_type == "fa":
+        conf.simulation_parameter["fa_inventory"] = []
     inventory = []
     unit_records = []
     wind_records, selected_levels = [], []
@@ -333,6 +383,9 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                     spatial_time = {
                         conf.name_latitude, conf.name_longitude, "time", "valid_time", "step"
                     }
+                    if conf.file_type == "fa":
+                        spatial_time.update({"x", "y", "source_i", "source_j", "crs",
+                                             "forecast_reference_time", "forecast_period"})
                     if name not in spatial_time and ds[name].ndim <= 1:
                         levels[name] = {"values": np.atleast_1d(ds[name].values).tolist(),
                                         "units": ds[name].attrs.get("units")}
@@ -387,8 +440,15 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                             raise ValueError(
                                 f"{path}: {group} contradicts declared coordinate units"
                             )
+            calendars = {str(ds[name].encoding.get("calendar", ds[name].attrs.get(
+                "calendar", "standard"))) for ds in datasets
+                for name in ("time", "valid_time") if name in ds.coords}
             inventory.append({"path": str(path), "variables": variables, "levels": levels,
-                              "times": sorted(set(times))})
+                               "times": sorted(set(times)), "calendars": sorted(calendars)})
+            unmapped = [entry for ds in datasets for entry in ds.attrs.get(
+                "_frameit_unmapped_grib_records", [])]
+            if unmapped:
+                inventory[-1]["unmapped_grib_records"] = unmapped
         # Some AROME diagnostics legitimately begin after the initial record.
         # Validate availability across the inventory; per-file gaps remain
         # visible and the loader retains its established NaN/time alignment.
@@ -550,5 +610,7 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
     conf.add_parameter("unit_provenance", unit_records)
     conf.add_parameter("wind_provenance", wind_records)
     conf.add_parameter("selected_levels", selected_levels)
+    if conf.file_type == "fa":
+        plan["fa_inputs"] = conf.simulation_parameter["fa_inventory"]
     conf.add_parameter("resolved_config", conf.yaml_config)
     return plan

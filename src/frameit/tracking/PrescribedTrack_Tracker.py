@@ -26,7 +26,7 @@ class PrescribedTrack(TcTracker):
 
     The track file must contain at minimum ``time(time)``, a latitude
     variable, and a longitude variable (names configurable via conf).
-    Both AROME (1-D lat/lon) and MNH (2-D lat/lon) grids are supported.
+    Static 1-D axes and 2-D geography are supported independently of model/format.
     """
 
     name = "prescribed_track"
@@ -42,6 +42,7 @@ class PrescribedTrack(TcTracker):
         track_time_name: str = "time",
         track_lat_name: str = "latitude",
         track_lon_name: str = "longitude",
+        horizontal_dims: tuple[str, str] | None = None,
     ) -> None:
         """
         Parameters
@@ -74,6 +75,7 @@ class PrescribedTrack(TcTracker):
 
         self.lat_name = lat_name
         self.lon_name = lon_name
+        self.horizontal_dims = horizontal_dims
 
         self.track_time_name = track_time_name
         self.track_lat_name = track_lat_name
@@ -129,6 +131,8 @@ class PrescribedTrack(TcTracker):
             track_time_name=track_time_name,
             track_lat_name=track_lat_name,
             track_lon_name=track_lon_name,
+            horizontal_dims=(conf.name_lat_dim, conf.name_lon_dim) if
+            getattr(conf, "name_lat_dim", None) and getattr(conf, "name_lon_dim", None) else None,
         )
 
     # ------------- tracking method core -------------
@@ -155,8 +159,7 @@ class PrescribedTrack(TcTracker):
         ------
         ValueError
             If required coordinates are missing from the track file or model
-            dataset, if no common dates are found, or if ``atm_model`` is
-            not ``"AROME"`` or ``"MNH"``.
+            dataset, if no common dates are found, or geography is unsupported.
         """
         from frameit.io.track_file import load_track_coordinates
         from frameit.utils.units import convert_units
@@ -184,58 +187,11 @@ class PrescribedTrack(TcTracker):
         cy = np.empty(ntime, dtype="int64")
         cx = np.empty(ntime, dtype="int64")
 
-        model = self.atm_model
+        from .geographic import nearest_grid_point
 
-        # 3) Calcul des indices (cy, cx) pour chaque date
-
-        # AROME case: 1D lat (nj), 1D lon (ni)
-        if model == "AROME":
-            if not (lat.ndim == 1 and lon.ndim == 1):
-                raise ValueError(
-                    f"PrescribedTrack (AROME): expected 1D lat/lon, got "
-                    f"lat.ndim={lat.ndim}, lon.ndim={lon.ndim}"
-                )
-
-            lat_vals = lat.values
-            lon_vals = lon.values
-
-            for k in range(ntime):
-                lat0 = float(lat_trk[k])
-                lon0 = float(lon_trk[k])
-
-                j = int(np.nanargmin((lat_vals - lat0) ** 2))
-                i = int(np.nanargmin((lon_vals - lon0) ** 2))
-
-                cy[k] = j
-                cx[k] = i
-
-        # MNH case: 2D lat (nj, ni), 2D lon (nj, ni)
-        elif model == "MNH":
-            if not (lat.ndim == 2 and lon.ndim == 2):
-                raise ValueError(
-                    f"PrescribedTrack (MNH): expected 2D lat/lon, got "
-                    f"lat.ndim={lat.ndim}, lon.ndim={lon.ndim}"
-                )
-            if lat.shape != lon.shape:
-                raise ValueError(
-                    "PrescribedTrack (MNH): 2D latitude and longitude must have the same shape"
-                )
-
-            for k in range(ntime):
-                lat0 = float(lat_trk[k])
-                lon0 = float(lon_trk[k])
-
-                dlat = lat - lat0
-                dlon = lon - lon0
-                dist2 = dlat * dlat + dlon * dlon
-
-                dist_vals = dist2.values
-                j_flat, i_flat = np.unravel_index(int(np.nanargmin(dist_vals)), dist_vals.shape)
-                cy[k] = int(j_flat)
-                cx[k] = int(i_flat)
-
-        else:
-            raise ValueError(f"PrescribedTrack: unsupported atmospheric model {model!r}")
+        for k in range(ntime):
+            cy[k], cx[k] = nearest_grid_point(lat, lon, float(lat_trk[k]), float(lon_trk[k]),
+                                             axes=self.horizontal_dims)
 
         # 4) Construction du Dataset de sortie
         time_da = xr.DataArray(common_times, dims=("time",), name="time")

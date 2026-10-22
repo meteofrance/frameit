@@ -1,0 +1,61 @@
+# Paths are relative to this YAML. Adapt them and review the field declarations.
+schema_version: 2
+model: arome
+run:
+  name: coupled-surface
+input:
+  # Default: exact intersection, with warnings and a complete exclusion report.
+  # Choose strict to require identical source times instead.
+  time_alignment: common
+  sources:
+    atmosphere:
+      model: arome
+      input:
+        directory: ./data/atmosphere
+        pattern: "*.grib"
+        format: grib
+      variables:
+        heightAboveGround:
+          names: [t2m]
+          levels: {values: [2]}
+    surfex:
+      model: arome
+      input:
+        directory: ./data/surfex
+        pattern: "historic.surfex*.fa"
+        format: fa
+        fa:
+          profile: surfex_history
+          subdomain: CI
+          # Explicit source-geometry declaration, NOT a universal FA default.
+          # Obtain the actual Earth model from the producer before scientific use.
+          earth_radius_m: 6371229.0
+          max_points: 20000000
+          timeout_seconds: 120
+          field_metadata:
+            SFX.T2M:
+              units: K
+              long_name: "2 metre air temperature (explicit source declaration)"
+              kind: continuous
+              temporal_kind: instantaneous
+              # Permits the native decoder's identity-scaling fallback for this
+              # otherwise unregistered field. Verify with producer definitions;
+              # this opt-in and native warnings are recorded, not validated away.
+              allow_unscaled: true
+      variables:
+        surface:
+          names: [SFX.T2M]
+tracking:
+  source: atmosphere
+  method: fixed_box
+  fixed_box:
+    center: {latitude: -15.0, longitude: 50.15}
+domain:
+  size_km: {x: 40, y: 40}
+polar:
+  enabled: false
+  # To request the same polar target, set a shared radial_step_m no finer than
+  # the coarsest source spacing.
+output:
+  directory: ./output/coupled-surface
+  overwrite: false

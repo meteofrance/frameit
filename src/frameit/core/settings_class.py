@@ -43,7 +43,7 @@ class SimulationConfig:
     file_name_prefix: str
     file_name: str
     file_name_suffix: str
-    file_type: str  # "grib" or "nc"
+    file_type: str  # grib/netcdf/fa, or internal coupled dispatch
 
     # Models and metadata
     atm_model: ModelName
@@ -154,6 +154,10 @@ class SimulationConfig:
     duplicate_time_policy: str = "first"
     netcdf_engine: str = "h5netcdf"
     netcdf_chunks: dict[str, int] = field(default_factory=dict)
+    input_sources: dict[str, Any] = field(default_factory=dict)
+    time_alignment: str = "common"
+    tracking_source: str | None = None
+    fa_options: dict[str, Any] = field(default_factory=dict)
     wind_pressure_search_half_width_km: float = 100.0
     wind_pressure_refine_half_width_km: float = 50.0
     polar_interpolation_method: str = "bilinear"
@@ -283,6 +287,23 @@ class SimulationConfig:
     # Validation
     # -----------------------
     def __post_init__(self):
+        if self.file_type == "fa":
+            if self.atm_model != "AROME":
+                raise ValueError("Current FA profiles require atm_model='AROME'")
+            from frameit.core.configuration import (
+                DEFAULTS,
+                _merge_checked,
+                validate_fa_options,
+            )
+
+            self.fa_options = _merge_checked(self.fa_options, DEFAULTS["input"]["fa"], "input.fa")
+            validate_fa_options(self.fa_options, selected=True)
+            for name, value in (("name_time_dim", "time"), ("name_lat_dim", "y"),
+                                ("name_lon_dim", "x"), ("name_latitude", "latitude"),
+                                ("name_longitude", "longitude")):
+                if getattr(self, name) not in {None, value}:
+                    raise ValueError(f"FA adapter requires canonical {name}={value!r}")
+                setattr(self, name, value)
         from frameit.processing.polar.coverage import validate_mask_options
         from frameit.processing.polar.regrid_plan import validate_execution_options
         from frameit.processing.polar.sampling import sampling_axes, validate_sampling_options

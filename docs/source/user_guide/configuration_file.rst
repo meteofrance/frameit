@@ -1,6 +1,12 @@
 Configuration file (YAML schema version 2)
 ============================================
 
+For named atmospheric/surface sources, native FA settings and the selectable
+``common`` (default) / ``strict`` exact-time policies, see :doc:`fa_inputs` and
+``example/config_file/coupled_fa.yaml``. Single-source schema-v2 documents retain
+their existing structure. Coupled runs require ``tracking.source`` and keep
+variables within each source rather than a shared top-level block.
+
 Create a model-specific, annotated configuration:
 
 .. code-block:: bash

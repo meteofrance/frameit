@@ -37,6 +37,7 @@ frameit = "frameit.cli:main"
 test = ["pytest>=7"]
 grib = ["cfgrib", "eccodes"]
 polar = ["xesmf"]
+fa = ["falfilfa4py==1.3.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

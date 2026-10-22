@@ -132,6 +132,7 @@ def runtime_provenance():
     for name in (
         "numpy", "scipy", "xarray", "dask", "PyYAML", "pyproj", "netCDF4", "h5netcdf",
         "h5py", "cfgrib", "eccodes", "xesmf", "esmpy", "threadpoolctl",
+        "falfilfa4py", "ctypesForFortran",
     ):
         try:
             packages[name] = version(name)

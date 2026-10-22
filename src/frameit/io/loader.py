@@ -210,6 +210,9 @@ def resolve_config_with_model_presets(
         raise FileNotFoundError(f"tracker preset not found for {model}: {tracker_p}")
 
     coords = _load_yaml(coords_p)
+    if run.get("file_type") == "fa":
+        # Native FA geometry differs from the AROME GRIB sampling contract.
+        coords.update(name_time_dim="time", name_lat_dim="y", name_lon_dim="x")
     tracker_yaml_raw = _load_yaml(tracker_p)
 
     # Wrap the tracker content under a dedicated key for the dataclass.
@@ -247,6 +250,10 @@ def resolve_config_with_model_presets(
     sp["preset_coords_path"] = str(coords_p)
     sp["preset_tracker_path"] = str(tracker_p)
     sp["preset_fields_coords_dims"] = {k: merged[k] for k in sorted(coords_keys)}
+    if run.get("file_type") == "fa":
+        sp["preset_input_format"] = "fa"
+        sp["preset_fa_profile"] = run.get("fa_options", {}).get("profile")
+        sp["preset_coordinate_override"] = "FA adapter: labelled time/y/x; geographic auxiliaries"
     sp["preset_fields_tracker"] = {
         k: merged[k] for k in sorted(tracker_keys)
     }  # -> requested_variables_tracker

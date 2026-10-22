@@ -180,6 +180,11 @@ def _build_parser() -> argparse.ArgumentParser:
     pins = sub.add_parser("inspect", help="Inspect dataset metadata, units, and grid geometry")
     pins.add_argument("directory", type=Path)
     pins.add_argument("--model", required=True, choices=("arome", "mesonh"))
+    pins.add_argument("--format", choices=("grib", "netcdf", "fa"), default=None)
+    pins.add_argument("--pattern", default="*", help="Explicit input glob (default: *)")
+    pins.add_argument("--fa-profile", choices=("arome_history", "surfex_history"), default=None)
+    pins.add_argument("--fa-fields", nargs="+", default=[],
+                      help="Probe native FA encoding flags without decoding values")
 
     # info (fusion of version and doctor, verbose by default)
     pi = sub.add_parser(
@@ -312,6 +317,10 @@ def _cmd_info(short: bool) -> int:
             if m["error"]:
                 print(f"    error: {m['error']}")
 
+    fa_version = _package_version("falfilfa4py")
+    print("  falfilfa4py: " + (f"installed {fa_version}; isolated native reader (not probed)"
+                                    if fa_version else "optional, not installed"))
+
     critical_missing = [k for k in ("numpy", "xarray") if not modules[k]["ok"]]
     if critical_missing:
         print(f"Overall: FAIL (missing critical modules: {', '.join(critical_missing)})")
@@ -386,12 +395,26 @@ def _cmd_config(args):
 
 
 def _cmd_inspect(args):
+    if args.format == "fa":
+        from frameit.io.fa_backend import inspect_fa
+
+        paths = sorted(path for path in args.directory.glob(args.pattern) if path.is_file())
+        if not paths:
+            raise FileNotFoundError("No FA inspection inputs match the selected pattern")
+        _print_yaml({"format": "fa", "inputs": [{"path": str(path), **inspect_fa(
+            path, args.fa_profile, args.fa_fields, validate_selection=False)} for path in paths],
+            "interpretation": "Raw native metadata; scientific field definitions and "
+                              "projected Earth shape must be declared before execution"})
+        return 0
+    if args.fa_profile is not None or args.fa_fields:
+        raise ValueError("--fa-profile/--fa-fields require --format fa")
     from frameit.core.preflight import preflight
     from frameit.core.settings_class import SimulationConfig
 
     conf = SimulationConfig.from_mapping_with_model_preset({
         "schema_version": 2, "model": args.model,
-        "input": {"directory": str(args.directory.resolve()), "pattern": "*"},
+        "input": {"directory": str(args.directory.resolve()), "pattern": args.pattern,
+                  "format": args.format},
         "tracking": {"method": "fixed_box", "fixed_box": {
             "center": {"latitude": 0., "longitude": 0.}}},
     })
