@@ -240,6 +240,55 @@ separately. The process-lifetime RSS high-water mark includes imports/earlier
 cases. Single-run first-use initialization is not a controlled performance
 benchmark or a universal speedup claim.
 
+Initial measured observations
+----------------------------------------
+
+A local run of code revision ``ef257b6`` in ``frameit_env`` (xESMF 0.9.2,
+ESMPy 8.9.1) passed 408 analytical checks and all four native CI cases. At
+1-km source spacing, component-wise bilinear had lower pointwise vector RMS
+error than component-wise ESMF patch in all six manufactured fixtures:
+
+.. list-table:: Selected finest-source vector RMS errors, in m/s
+   :header-rows: 1
+
+   * - Fixture
+     - Bilinear components
+     - Bilinear transport
+     - Patch components
+     - Patch transport
+   * - Broad southern swirl
+     - 0.005918
+     - 0.005918
+     - 0.011349
+     - 0.011349
+   * - Compact northern inflow
+     - 0.036232
+     - 0.036233
+     - 0.070038
+     - 0.070038
+   * - Sharp lognormal eyewall
+     - 0.086179
+     - 0.086179
+     - 0.167814
+     - 0.167814
+
+Patch's vector RMS was approximately 1.9 times bilinear's in these finest cases.
+Transport changes were small and not consistently beneficial at the tested
+regional resolutions. Individual phase/coefficient metrics were not uniformly
+ordered, so this is not a claim that every metric favored the same method.
+All finest sampled-RMW differences were zero on the 1-km target grid, while
+the sharp case's peak mean tangential wind was underestimated by about 0.319 m/s
+with bilinear and 0.653 m/s with patch. Thus agreement in sampled RMW does not
+establish agreement in intensity or subgrid peak structure.
+
+All candidates met the engineering gates, but meeting a gate is not evidence
+of superiority. These results support retaining the current bilinear default
+for this tested task; they do not establish general physical accuracy across
+models, resolutions, noise regimes or grid conventions. Native CI comparisons
+remain differences between reconstructions because no real-field truth was
+supplied. Full numerical reports and point values are retained by the command,
+rather than reducing the comparison to these selected examples.
+
 Remaining gaps and review status
 --------------------------------
 
