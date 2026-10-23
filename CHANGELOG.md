@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Extend the optional BATSIRAI polar-cell experiment to accumulated `sshf`/`slhf`
+  through `polar_cell_comparison --ci-heat-fluxes`. Preserve source signs and time
+  bounds, integrate J/m2 to J, and compare independent per-cell energy overlaps
+  using an absolute-contribution scale that remains meaningful under cancellation.
+  Retain separate reports/NetCDF products, reconstruction comparisons and failure
+  reporting for both quantities; ordinary processing defaults are unchanged.
+
 - Exercise experimental polar cells on the matrix's frozen BATSIRAI accumulated
   rain (`tirf`) records through `polar_cell_comparison --ci`. Preserve source
   accumulation bounds and GRIB sphere, declare midpoint analysis-cell semantics,

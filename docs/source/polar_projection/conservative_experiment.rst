@@ -299,6 +299,92 @@ equally; they are not area-weighted norms. Clipped and masked cases focus on the
 independent conservative coverage contract rather than assigning an unsupported
 full-cell bilinear average.
 
+Accumulated sensible and latent surface heat exchange
+------------------------------------------------------
+
+The same opt-in pilot also selects the two accumulated surface heat quantities
+already present in the frozen BATSIRAI GRIB files:
+
+.. code-block:: bash
+
+   python -m frameit.testing.polar_cell_comparison --ci-heat-fluxes --output ./runs/polar-heat-ci
+
+This selection is mutually exclusive with the rainfall ``--ci`` selection. It
+creates ``sshf/`` and ``slhf/`` subdirectories, each with five NetCDF products and
+a detailed ``comparison.json``, plus an outer completion/failure report. The
+rainfall command and its mass/product names remain available. The shared code
+handles only these three explicitly declared accumulated scalars; it is not a
+generic variable-meaning inference mechanism.
+
+**Quantity contract.** ``sshf`` is parameter 146 (time-integrated surface sensible
+heat net flux); ``slhf`` is parameter 147 (time-integrated surface latent heat net
+flux). Require surface ``accum`` records in J/m2, with statistical processing
+type 1, hour-valued steps starting at zero and the expected recipe end time.
+J/m2 remains J/m2 in means; its area integral is **joules**, not watts or joules
+per kilogram. The original 0--6/12/18/24-hour bounds are retained. No division by
+duration, deaccumulation, density/heat-capacity conversion or summation of the
+overlapping cumulative intervals is performed. Missing time-zero records are
+reported separately for each quantity; missing positive-lead records fail.
+
+**Signs and physical interpretation.** All finite source signs are preserved.
+In this fixture, ``slhf`` is negative everywhere and ``sshf`` includes both
+positive and negative values. Neither is clipped to zero or silently inverted.
+The outputs describe source-signed cumulative surface heat exchange within each
+footprint, not atmospheric/oceanic heat content, nor a complete energy budget.
+The producer's physical upward/downward sign interpretation has not been
+independently established here; no directional conversion or heat-loss/gain
+claim follows from the signs alone. As with rainfall, moving footprints are
+snapshot integration domains, not accumulations following a storm trajectory.
+
+**Geometry and coverage.** Use the same declared midpoint analysis cells,
+GRIB sphere and fixed/moving/coarse/clipped/synthetic-mask cases as rainfall.
+No new claim that the postprocessed fields are native-model cell means is made.
+Masked or unmapped integrals stay NaN; valid-overlap means and areas remain
+distinct from full-cell means. Source files are checksum-verified before and
+after each quantity's pilot. Ordinary xarray/NetCDF readers check both values
+and original temporal metadata, and direct netCDF4 tests independently check
+energy units, negative values, coverage and time bounds.
+
+**Signed numerical verification.** A small signed domain total can result from
+large opposing contributions. Check each cell, not only the total. Let
+
+.. math::
+
+   E_j^*=\sum_i A_{ji}q_i,\qquad C_j=\sum_i A_{ji}|q_i|.
+
+Here :math:`q_i` is the stored accumulated J/m2 scalar, :math:`A_{ji}` is the
+independently clipped valid overlap in m2, and both :math:`E_j^*` and :math:`C_j`
+are energies in joules. Require
+
+.. math::
+
+   |E_j-E_j^*| < 1\ \mathrm{J} + 2\times10^{-7} C_j.
+
+This engineering tolerance controls error relative to the absolute input
+contributions even when the net is zero. Positive and negative errors in
+different output cells cannot hide each other. For nonnegative rainfall this
+reduces to the original absolute-plus-relative per-cell tolerance. The report
+also includes :math:`\sum_j|E_j-E_j^*|/\max(\sum_j C_j,1\ \mathrm{J})`, named
+``integral_l1_normalized_error``, and the net-to-absolute integral ratio to expose
+cancellation. Net-relative differences are descriptive, not the acceptance gate;
+they can be ill-conditioned for nearly cancelled totals.
+
+Fixed/coarse cases retain bilinear midpoint and integrated-bilinear comparisons
+on identical stored values, including integration-order 4/8 sensitivity.
+Local differences have units J/m2 and equally weight polar cells. Comparisons
+are against the declared analysis-cell reconstruction, not continuous physical
+truth. An initial local ESMPy 8.9.1/xESMF 0.9.2 run passed all 40 snapshots, with
+maximum L1-normalized overlap discrepancies approximately ``7e-14`` for each
+quantity. This establishes numerical agreement for this fixture under the stated
+geometry/representation, not a physical-accuracy guarantee or default promotion.
+
+Both child reports and the outer report record failures. A failed second
+quantity retains the first quantity's completed product inventory while leaving
+the overall run failed, never successfully complete. The heat-energy tests also
+exercise signed cancellation and reject instantaneous/averaged W/m2 records in
+this accumulated-energy path. Synthetic sign/cancellation checks and this single
+regional case do not establish validity for all model conventions or regimes.
+
 Initial observations and promotion decision
 -------------------------------------------
 

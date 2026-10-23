@@ -84,6 +84,8 @@ bilinear reconstruction and independent spherical overlap/analytical truth:
 python -m frameit.testing.polar_cell_comparison --output ./runs/polar-cell-comparison
 # Real accumulated rain from the same bundled BATSIRAI fixture as the --ci matrix:
 python -m frameit.testing.polar_cell_comparison --ci --output ./runs/polar-cell-ci
+# Source-signed accumulated sensible/latent surface heat exchange:
+python -m frameit.testing.polar_cell_comparison --ci-heat-fluxes --output ./runs/polar-heat-ci
 ```
 
 It retains explicit areas and coverage; ordinary polar defaults are unchanged.

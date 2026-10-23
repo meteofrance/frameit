@@ -1,4 +1,4 @@
-"""Experimental rain-mass pilot on the matrix's read-only AROME/BATSIRAI fixture.
+"""Experimental accumulated-scalar pilots on the read-only AROME/BATSIRAI fixture.
 
 This declares midpoint analysis cells on the stored GRIB regular_ll grid. It
 does not assert that postprocessed GRIB values are native-model cell means.
@@ -6,6 +6,7 @@ does not assert that postprocessed GRIB values are native-model cell means.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from importlib import resources
 from pathlib import Path
@@ -25,13 +26,42 @@ FOOTPRINT_MEANING = (
     "cumulative rain within each snapshot footprint, not a storm-following accumulation")
 
 
+@dataclass(frozen=True)
+class _Quantity:
+    parameter_id: int
+    short_name: str
+    field_units: str
+    integral_units: str
+    integral_name: str
+    metric_suffix: str
+    description: str
+    nonnegative: bool = False
+
+    @property
+    def footprint_meaning(self):
+        if self.short_name == "tirf":
+            return FOOTPRINT_MEANING
+        return ("source-signed cumulative surface heat exchange within each snapshot footprint; "
+                "not heat content or a storm-following accumulation")
+
+
+_QUANTITIES = {
+    "tirf": _Quantity(PARAM_ID, "tirf", "kg m-2", "kg", "mass", "kg_m2",
+                      "time integral of rain flux", nonnegative=True),
+    "sshf": _Quantity(146, "sshf", "J m-2", "J", "energy", "J_m2",
+                      "time-integrated surface sensible heat net flux"),
+    "slhf": _Quantity(147, "slhf", "J m-2", "J", "energy", "J_m2",
+                      "time-integrated surface latent heat net flux"),
+}
+
+
 def _midpoint_edges(values):
     values = np.asarray(values, dtype=float)
     differences = np.diff(values)
     if values.ndim != 1 or len(values) < 2 or not np.isfinite(values).all() or not (
         np.all(differences > 0) or np.all(differences < 0)
     ) or not np.allclose(differences, differences[0], rtol=0, atol=1e-9):
-        raise ValueError("CI rainfall requires finite, monotone, uniform regular_ll axes")
+        raise ValueError("CI scalar pilot requires finite, monotone, uniform regular_ll axes")
     return np.concatenate(([values[0] - differences[0]/2],
                            (values[:-1]+values[1:])/2, [values[-1] + differences[-1]/2]))
 
@@ -43,7 +73,7 @@ def _analysis_grid(longitude, latitude):
     if not np.allclose(longitude, longitude[:1, :], rtol=0, atol=1e-10) or not np.allclose(
         latitude, latitude[:, :1], rtol=0, atol=1e-10
     ):
-        raise ValueError("CI rainfall supports only rectilinear regular_ll geography")
+        raise ValueError("CI scalar pilot supports only rectilinear regular_ll geography")
     lon_b, lat_b = np.meshgrid(_midpoint_edges(longitude[0]), _midpoint_edges(latitude[:, 0]))
     result = xr.Dataset({"lon": (("y", "x"), longitude), "lat": (("y", "x"), latitude),
                          "lon_b": (("y_b", "x_b"), lon_b),
@@ -58,16 +88,19 @@ def _analysis_grid(longitude, latitude):
     return result
 
 
-def _accumulation_times(metadata):
-    if metadata["paramId"] != PARAM_ID or metadata["shortName"] != "tirf" or (
+def _accumulation_times(metadata, *, quantity="tirf"):
+    spec = _QUANTITIES[quantity]
+    accepted_units = {spec.field_units, spec.field_units.replace("m-2", "m**-2")}
+    if metadata["paramId"] != spec.parameter_id or metadata["shortName"] != spec.short_name or (
         metadata["typeOfLevel"] != "surface" or metadata["stepType"] != "accum"
         or metadata["typeOfStatisticalProcessing"] != 1
-        or metadata["units"] not in {"kg m**-2", "kg m-2"}
+        or metadata["units"] not in accepted_units
         or metadata["stepUnits"] != 1 or metadata["startStep"] != 0
         or metadata["endStep"] <= 0
     ):
         raise ValueError(
-            "Expected surface tirf (235015), kg/m2, accumulated from hour zero in hours")
+            f"Expected surface {quantity} ({spec.parameter_id}), {spec.field_units}, "
+            "accumulated from hour zero in hours")
     reference = datetime.strptime(f"{metadata['dataDate']:08d}{metadata['dataTime']:04d}",
                                   "%Y%m%d%H%M")
     end = reference + timedelta(hours=metadata["endStep"])
@@ -75,13 +108,19 @@ def _accumulation_times(metadata):
 
 
 def read_rainfall(path, expected_time):
-    """Read only parameter 235015, failing on ambiguity or incompatible metadata.
+    """Compatibility entry point for the original rainfall-only experiment."""
+    return read_accumulated_scalar(path, expected_time, quantity="tirf")
+
+
+def read_accumulated_scalar(path, expected_time, *, quantity):
+    """Read one explicitly selected scalar with its source sign and time bounds.
 
     No cfgrib index or other cache is written alongside source files. A missing
     field is returned explicitly; only the preset's time-zero absence is allowed.
     """
     import eccodes as ec
 
+    spec = _QUANTITIES[quantity]
     keys = ("paramId", "shortName", "units", "typeOfLevel", "stepType", "stepUnits",
             "startStep", "endStep", "typeOfStatisticalProcessing", "dataDate", "dataTime",
             "gridType", "Ni", "Nj", "shapeOfTheEarth", "radius", "jPointsAreConsecutive",
@@ -90,18 +129,19 @@ def read_rainfall(path, expected_time):
     with Path(path).open("rb") as stream:
         while (handle := ec.codes_grib_new_from_file(stream)) is not None:
             try:
-                if ec.codes_get(handle, "paramId") != PARAM_ID:
+                if ec.codes_get(handle, "paramId") != spec.parameter_id:
                     continue
                 if selected is not None:
-                    raise ValueError(f"Ambiguous tirf records in {Path(path).name}")
+                    raise ValueError(f"Ambiguous {quantity} records in {Path(path).name}")
                 metadata = {key: ec.codes_get(handle, key) for key in keys}
-                start, end = _accumulation_times(metadata)
+                start, end = _accumulation_times(metadata, quantity=quantity)
                 if end != np.datetime64(expected_time, "ns"):
-                    raise ValueError("Rainfall accumulation end does not match the CI recipe time")
+                    raise ValueError("Scalar accumulation end does not match the CI recipe time")
                 if metadata["gridType"] != "regular_ll" or metadata["shapeOfTheEarth"] != 6:
-                    raise ValueError("CI rainfall requires regular_ll on the declared GRIB sphere")
+                    raise ValueError(
+                        "CI scalar pilot requires regular_ll on the declared GRIB sphere")
                 if metadata["jPointsAreConsecutive"] or metadata["alternativeRowScanning"]:
-                    raise ValueError("Unsupported GRIB scanning order for CI rainfall")
+                    raise ValueError("Unsupported GRIB scanning order for CI scalar pilot")
                 shape = (int(metadata["Nj"]), int(metadata["Ni"]))
                 longitude = ec.codes_get_array(handle, "longitudes").reshape(shape)
                 latitude = ec.codes_get_array(handle, "latitudes").reshape(shape)
@@ -111,14 +151,17 @@ def read_rainfall(path, expected_time):
                 if int((~bitmap).sum()) != metadata["numberOfMissing"]:
                     raise ValueError("GRIB bitmap and missing-value count disagree")
                 values = np.where(bitmap, values, np.nan)
-                if not np.isfinite(values[bitmap]).all() or np.any(values[bitmap] < 0):
+                if not np.isfinite(values[bitmap]).all():
+                    raise ValueError("Accumulated scalar must be finite where the bitmap is valid")
+                if spec.nonnegative and np.any(values[bitmap] < 0):
                     raise ValueError(
-                        "Accumulated rain must be finite/nonnegative where the bitmap is valid")
+                        "Accumulated rain must be nonnegative where the bitmap is valid")
                 grid = _analysis_grid(longitude, latitude)
                 field = xr.DataArray(values, dims=("y", "x"), coords={"y": grid.y, "x": grid.x},
-                                     name="tirf", attrs={"units": "kg m-2",
-                                     "long_name": "time integral of rain flux",
-                                     "cell_methods": "time: sum", "GRIB_paramId": PARAM_ID})
+                                     name=quantity, attrs={"units": spec.field_units,
+                                     "long_name": spec.description,
+                                     "cell_methods": "time: sum",
+                                     "GRIB_paramId": spec.parameter_id})
                 selected = {"grid": grid, "field": field, "metadata": metadata,
                             "start": start, "end": end, "source_file": Path(path).name}
             finally:
@@ -136,7 +179,8 @@ def _presets():
     )
 
 
-def _combine_products(pieces, records):
+def _combine_products(pieces, records, *, quantity="tirf"):
+    spec = _QUANTITIES[quantity]
     static_names = ("radius_bounds", "azimuth_bounds", "subcell_owner")
     static = pieces[0][list(static_names)].reset_coords(drop=True)
     dynamic = []
@@ -162,39 +206,42 @@ def _combine_products(pieces, records):
     product["accumulation_end_hour"] = ("time", [r["metadata"]["endStep"] for r in records],
                                          {"units": "h"})
     for name in ("cell_mean", "covered_area_mean"):
-        product[name].attrs.update(units="kg m-2", cell_methods="time: sum area: mean")
-    product.covered_area_integral.attrs.update(units="kg", cell_methods="time: sum area: sum",
-        long_name="accumulated rain mass over valid input-grid overlap at this footprint")
+        product[name].attrs.update(units=spec.field_units, cell_methods="time: sum area: mean")
+    product.covered_area_integral.attrs.update(
+        units=spec.integral_units, cell_methods="time: sum area: sum",
+        long_name=f"accumulated {spec.integral_name} over valid input-grid overlap")
     # Geometry varies in time; authoritative centres/signatures are coordinates/
     # variables above, never a misleading first-time global attribute.
     for name in ("center_lon", "center_lat", "geometry_sha256", "construction_s"):
         product.attrs.pop(name, None)
     product.attrs.update(
         bounds_policy=BOUNDS_POLICY, source_spatial_interpretation=SPATIAL_INTERPRETATION,
-        footprint_meaning=FOOTPRINT_MEANING, GRIB_paramId=PARAM_ID,
-        temporal_processing="source cumulative intervals retained; no deaccumulation")
+        footprint_meaning=spec.footprint_meaning, GRIB_paramId=spec.parameter_id,
+        temporal_processing="source cumulative intervals retained; no deaccumulation",
+        source_sign_policy="stored GRIB signs preserved; no direction conversion or clipping")
     return product
 
 
-def _check_reopened(path, expected):
+def _check_reopened(path, expected, *, quantity="tirf"):
     """Use an ordinary reader, including values, time bounds and area metadata."""
     with xr.open_dataset(path) as saved:
         for name in expected.variables:
             xr.testing.assert_allclose(saved[name], expected[name])
         if saved.time.attrs.get("bounds") != "time_bounds":
             raise ValueError("Reload lost accumulation bounds")
-        if saved.covered_area_integral.attrs.get("units") != "kg":
-            raise ValueError("Reload lost accumulated-mass units")
+        if saved.covered_area_integral.attrs.get("units") != _QUANTITIES[quantity].integral_units:
+            raise ValueError("Reload lost accumulated-integral units")
         if saved.attrs.get("source_spatial_interpretation") != SPATIAL_INTERPRETATION:
             raise ValueError("Reload lost the declared spatial interpretation")
 
 
-def _compare_reconstructions(source, field, cells, reference_mass):
+def _compare_reconstructions(source, field, cells, reference_integral, *, quantity="tirf"):
     """Same stored input, different reconstructions; no physical accuracy oracle."""
     import xesmf as xe
 
     from frameit.testing.polar_cell_comparison import bilinear_cell_average
 
+    spec = _QUANTITIES[quantity]
     target = xr.Dataset({"lon": ("locations", cells.lon.values.ravel()),
                          "lat": ("locations", cells.lat.values.ravel())})
     point = xe.Regridder(source, target, "bilinear", locstream_out=True,
@@ -204,43 +251,59 @@ def _compare_reconstructions(source, field, cells, reference_mass):
     common = cells.full_cell_valid.values.astype(bool) & np.isfinite(average) & np.isfinite(point)
     if not common.all():
         raise ValueError("Fixed/coarse comparison requires complete common interpolation support")
-    cells["bilinear_point_sample"] = (cells.cell_mean.dims, point, {"units": "kg m-2",
+    cells["bilinear_point_sample"] = (cells.cell_mean.dims, point, {"units": spec.field_units,
         "cell_methods": "time: sum",
         "long_name": "point reconstruction at the interval midpoint, not a cell mean"})
-    cells["bilinear_area_average"] = (cells.cell_mean.dims, average, {"units": "kg m-2",
+    cells["bilinear_area_average"] = (cells.cell_mean.dims, average, {"units": spec.field_units,
         "cell_methods": "time: sum area: mean", "cell_measures": "area: cell_area"})
-    reference = float(reference_mass.sum())
-    area_mass = float(np.sum(average*cells.cell_area.values))
-    midpoint_mass = float(np.sum(point*cells.cell_area.values))
+    reference = float(reference_integral.sum())
+    area_integral = float(np.sum(average*cells.cell_area.values))
+    midpoint_integral = float(np.sum(point*cells.cell_area.values))
     return {"interpretation": "input-cell reconstruction differences, not physical truth errors",
             "local_difference_norm": "unweighted RMS over full polar cells",
-            "bilinear_cell_mean_difference_rms_kg_m2": float(np.sqrt(np.mean(
+            f"bilinear_cell_mean_difference_rms_{spec.metric_suffix}": float(np.sqrt(np.mean(
                 (average - cells.cell_mean.values)**2))),
             "bilinear_area_budget_relative_difference": (
-                area_mass/reference - 1 if reference else None),
+                area_integral/reference - 1 if reference else None),
             "bilinear_midpoint_budget_relative_difference": (
-                midpoint_mass/reference - 1 if reference else None),
-            "bilinear_quadrature_max_difference_kg_m2": float(np.max(abs(average-finer_average)))}
+                midpoint_integral/reference - 1 if reference else None),
+            f"bilinear_quadrature_max_difference_{spec.metric_suffix}": float(
+                np.max(abs(average-finer_average)))}
+
+
+def _integral_errors(actual, expected, absolute_contributions):
+    """Check each signed cell against absolute source contributions, not its net."""
+    error = abs(actual - expected)
+    np.testing.assert_array_less(error, 1. + 2e-7*absolute_contributions)
+    return error
 
 
 def run_ci_rainfall(output, *, data_root=None):
-    """Execute the documented, opt-in CI analysis-cell reconstruction preset."""
+    """Execute the original, opt-in rain-mass CI preset."""
+    return run_ci_scalar(output, quantity="tirf", data_root=data_root)
+
+
+def run_ci_scalar(output, *, quantity, data_root=None):
+    """Execute one of the three declared accumulated-scalar CI presets."""
     from frameit.io.netcdf_export import ExportMetadata, write_dataset_netcdf
     from frameit.processing.polar.conservative import ConservativePolarPlan
     from frameit.processing.polar.performance import process_peak_rss_bytes
     from frameit.testing.polar_cell_comparison import independent_overlap_sparse
 
+    spec = _QUANTITIES[quantity]
+    rain = quantity == "tirf"
     root = (Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
             if data_root is None else Path(data_root)).resolve()
     output = Path(output).expanduser().resolve()
     if output == root or root in output.parents or output in root.parents:
         raise ValueError("CI inputs and pilot outputs must not overlap")
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
-        raise ValueError("CI rainfall output must be fresh or empty")
+        raise ValueError("CI scalar output must be fresh or empty")
     fixture = verify_ci_dataset(root, dataset_ids=[DATASET_ID])
     recipe = load_ci_recipe()["datasets"][DATASET_ID]
     output.mkdir(parents=True, exist_ok=True)
-    report = {"artifact_type": "polar_rainfall_ci", "maturity": "experimental",
+    report = {"artifact_type": "polar_rainfall_ci" if rain else "polar_accumulated_scalar_ci",
+              "quantity": quantity, "maturity": "experimental",
               "status": "RUNNING", "passed": False, "environment": environment_metadata(),
               "fixture_identity": fixture["identity"],
               "fixture_manifest_sha256": fixture["manifest_sha256"],
@@ -248,32 +311,42 @@ def run_ci_rainfall(output, *, data_root=None):
                                for r in fixture["files"]],
               "bounds_policy": BOUNDS_POLICY,
               "source_spatial_interpretation": SPATIAL_INTERPRETATION,
-              "footprint_meaning": FOOTPRINT_MEANING, "excluded": [], "cases": [], "products": [],
-              "settings": {"parameter_id": PARAM_ID, "rmax_m": 60000., "max_arc_step_deg": 2.5,
-                           "presets": list(_presets()), "mass_relative_tolerance": 2e-7,
-                           "mass_absolute_tolerance_kg": 1.,
+              "footprint_meaning": spec.footprint_meaning,
+              "source_sign_policy": (
+                  "stored GRIB signs preserved; no direction conversion or clipping"),
+              "excluded": [], "cases": [], "products": [],
+              "settings": {"parameter_id": spec.parameter_id, "rmax_m": 60000.,
+                           "max_arc_step_deg": 2.5, "presets": list(_presets()),
+                           "integral_relative_tolerance": 2e-7,
+                           "integral_absolute_tolerance": 1., "integral_units": spec.integral_units,
+                           "tolerance_scale": "per-cell overlap integral of absolute source values",
                            "fixed_center_lat_lon": recipe["fixed_center_lat_lon"],
                            "moving_longitude_offsets_deg": [-.15, -.05, .05, .15],
                            "clipped_longitude_offset_deg": .85,
                            "synthetic_mask": {"axis": "x", "initial_start": 30,
                                               "width": 5, "shift_per_time": 1}},
               "checks": []}
+    if rain:
+        report["settings"].update(mass_relative_tolerance=2e-7, mass_absolute_tolerance_kg=1.)
     atomic_json(output / "comparison.json", report)
     started = perf_counter()
     try:
         records = []
         for index, (name, stamp) in enumerate(zip(recipe["files"], recipe["times"], strict=True)):
-            record = read_rainfall(root / DATASET_ID / name, stamp)
+            record = (read_rainfall(root / DATASET_ID / name, stamp) if rain else
+                      read_accumulated_scalar(root / DATASET_ID / name, stamp, quantity=quantity))
             if record is None:
                 if index != 0:
-                    raise ValueError(f"Required accumulated rainfall is absent: {name}")
+                    label = "rainfall" if rain else quantity
+                    raise ValueError(f"Required accumulated {label} is absent: {name}")
                 report["excluded"].append({"source_file": name, "time": stamp,
-                    "reason": "parameter 235015 absent at time zero; no zero value fabricated"})
+                    "reason": f"parameter {spec.parameter_id} absent at time zero; "
+                    "no zero value fabricated"})
             else:
                 records.append(record)
         if len(records) != 4:
             raise ValueError(
-                "CI preset requires the four positive-lead cumulative rainfall records")
+                "CI preset requires the four positive-lead cumulative scalar records")
         report["source_metadata"] = [r["metadata"] for r in records]
         lat0, lon0 = recipe["fixed_center_lat_lon"]
         for preset in _presets():
@@ -297,11 +370,14 @@ def run_ci_rainfall(output, *, data_root=None):
                 oracle_started = perf_counter()
                 overlap = independent_overlap_sparse(record["grid"], plan.geometry)
                 finite = np.isfinite(field.values.ravel())
-                expected_mass = np.asarray(overlap @ np.where(finite, field.values.ravel(), 0))
+                observed = np.where(finite, field.values.ravel(), 0)
+                expected_integral = np.asarray(overlap @ observed)
+                absolute_integral = np.asarray(overlap @ abs(observed))
                 expected_valid_area = np.asarray(overlap @ finite.astype(float))
-                actual_mass = cells.covered_area_integral.fillna(0).values.ravel()
+                actual_integral = cells.covered_area_integral.fillna(0).values.ravel()
                 # Per-cell agreement prevents cancellation hiding remapping errors.
-                np.testing.assert_allclose(actual_mass, expected_mass, rtol=2e-7, atol=1.)
+                error_by_cell = _integral_errors(actual_integral, expected_integral,
+                                                 absolute_integral)
                 np.testing.assert_allclose(cells.valid_area.values.ravel(), expected_valid_area,
                                            rtol=2e-7, atol=.05)
                 oracle_s = perf_counter() - oracle_started
@@ -309,16 +385,22 @@ def run_ci_rainfall(output, *, data_root=None):
                 comparison_started = perf_counter()
                 if preset["id"] in {"fixed", "coarse"}:
                     alternative = _compare_reconstructions(record["grid"], field, cells,
-                                                            expected_mass)
-                total = float(expected_mass.sum())
-                error = abs(float(actual_mass.sum()) - total)
+                                                            expected_integral, quantity=quantity)
+                total = float(expected_integral.sum())
+                actual_total = float(actual_integral.sum())
+                error = abs(actual_total - total)
                 rows.append({"source_file": record["source_file"],
                     "accumulation_start": str(record["start"]),
                     "accumulation_end": str(record["end"]),
                     "center_lon": longitude, "center_lat": lat0,
-                    "independent_input_overlap_mass_kg": total,
-                    "polar_valid_overlap_mass_kg": float(actual_mass.sum()),
-                    "mass_relative_error": error/max(abs(total), 1.),
+                    f"independent_input_overlap_{spec.integral_name}_{spec.integral_units}": total,
+                    f"polar_valid_overlap_{spec.integral_name}_{spec.integral_units}": actual_total,
+                    f"{spec.integral_name}_relative_error": error/max(abs(total), 1.),
+                    "absolute_source_overlap_integral": float(absolute_integral.sum()),
+                    "integral_l1_normalized_error": float(error_by_cell.sum()) / max(
+                        float(absolute_integral.sum()), 1.),
+                    "net_to_absolute_integral_ratio": abs(total) / float(absolute_integral.sum())
+                    if absolute_integral.sum() else None,
                     "geometry_coverage_min": float(cells.geometry_coverage.min()),
                     "valid_area_fraction_min": float(cells.valid_area_fraction.min()),
                     "build_s": plan.geometry.attrs["construction_s"], "apply_s": apply_s,
@@ -330,19 +412,20 @@ def run_ci_rainfall(output, *, data_root=None):
                         + plan.weights.data.nbytes + plan.weights.indices.nbytes
                         + plan.weights.indptr.nbytes)})
                 pieces.append(cells)
-            product = _combine_products(pieces, records)
+            product = _combine_products(pieces, records, quantity=quantity)
             product.attrs.update(case_id=preset["id"], fixture_identity=fixture["identity"],
                 source_mask_policy=("synthetic missing column strip shifted by one cell per time"
                                     if preset["id"] == "masked" else "stored GRIB bitmap"),
                 centre_policy=("prescribed +/-0.15 degree longitude trajectory; not a tracker"
                                if preset["id"] == "moving" else "declared fixed footprint"))
-            path = output / f"batsirai-rain-{preset['id']}.nc"
+            prefix = "rain" if rain else quantity
+            path = output / f"batsirai-{prefix}-{preset['id']}.nc"
             report["pending_product"] = path.name
             write_dataset_netcdf(product, path, product_type="polar", metadata=ExportMetadata(
-                "batsirai-rainfall-ci", "Experimental accumulated rain analysis cells",
-                FOOTPRINT_MEANING, "FrameIt", "Frozen AROME/BATSIRAI GRIB fixture"),
+                f"batsirai-{prefix}-ci", f"Experimental accumulated {quantity} analysis cells",
+                spec.footprint_meaning, "FrameIt", "Frozen AROME/BATSIRAI GRIB fixture"),
                 overwrite=False)
-            _check_reopened(path, product)
+            _check_reopened(path, product, quantity=quantity)
             report.pop("pending_product")
             report["products"].append(path.name)
             report["cases"].append({"id": preset["id"], "times": rows,
@@ -363,5 +446,45 @@ def run_ci_rainfall(output, *, data_root=None):
     except Exception as exc:
         report.update(status="FAILED", passed=False, reason=f"{type(exc).__name__}: {exc}",
                       duration_s=perf_counter()-started)
+        atomic_json(output / "comparison.json", report)
+        raise
+
+
+def run_ci_heat_fluxes(output, *, data_root=None):
+    """Explicitly select the two source-signed accumulated surface-energy presets."""
+    root = (Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
+            if data_root is None else Path(data_root)).resolve()
+    output = Path(output).expanduser().resolve()
+    if output == root or root in output.parents or output in root.parents:
+        raise ValueError("CI inputs and pilot outputs must not overlap")
+    if output.exists() and (not output.is_dir() or any(output.iterdir())):
+        raise ValueError("CI heat-flux output must be fresh or empty")
+    output.mkdir(parents=True, exist_ok=True)
+    report = {"artifact_type": "polar_heat_flux_ci", "maturity": "experimental",
+              "status": "RUNNING", "passed": False, "environment": environment_metadata(),
+              "source_spatial_interpretation": SPATIAL_INTERPRETATION,
+              "quantities": {}}
+    atomic_json(output / "comparison.json", report)
+    try:
+        for quantity in ("sshf", "slhf"):
+            report["pending_quantity"] = quantity
+            atomic_json(output / "comparison.json", report)
+            result = run_ci_scalar(output / quantity, quantity=quantity, data_root=root)
+            if not result["passed"]:
+                raise ValueError(f"Accumulated {quantity} pilot did not pass")
+            report["quantities"][quantity] = {
+                "report": f"{quantity}/comparison.json", "passed": True,
+                "fixture_identity": result["fixture_identity"],
+                "products": [f"{quantity}/{path}" for path in result["products"]],
+                "max_integral_l1_normalized_error": max(
+                    row["integral_l1_normalized_error"]
+                    for case in result["cases"] for row in case["times"]),
+            }
+        report.pop("pending_quantity")
+        report.update(status="PASS", passed=True)
+        atomic_json(output / "comparison.json", report)
+        return report
+    except Exception as exc:
+        report.update(status="FAILED", passed=False, reason=f"{type(exc).__name__}: {exc}")
         atomic_json(output / "comparison.json", report)
         raise

@@ -322,10 +322,17 @@ def compare(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--ci", action="store_true",
-                        help="Run the experimental BATSIRAI rain pilot on bundled CI data.")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--ci", action="store_true",
+                           help="Run the experimental BATSIRAI rain pilot on bundled CI data.")
+    selection.add_argument("--ci-heat-fluxes", action="store_true",
+                           help="Run the source-signed sshf/slhf accumulated-energy CI pilots.")
     args = parser.parse_args()
-    if args.ci:
+    if args.ci_heat_fluxes:
+        from frameit.testing.polar_rainfall_ci import run_ci_heat_fluxes
+
+        report = run_ci_heat_fluxes(args.output)
+    elif args.ci:
         from frameit.testing.polar_rainfall_ci import run_ci_rainfall
 
         report = run_ci_rainfall(args.output)
