@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add an opt-in wind point-method comparison separating bilinear/ESMF patch
+  weights from component-wise/WGS84 geodesic-transport vector treatment. Retain
+  strict joint masks (including signed patch stencils), independent vector/peak/
+  RMW/harmonic errors, centre/angular sweeps and production-bilinear parity.
+- Add analytical broad/compact/sharp/curvilinear/high-latitude/dateline fixtures,
+  optional Earth-relative BATSIRAI CI winds, portable profiles/complex coefficients,
+  independent transport/phase oracles, numerical gates and method documentation.
+  Candidates remain experimental; ordinary wind defaults and flux semantics are unchanged.
+
 - Add an optional `--ci-thermodynamics` polar-cell comparison for instantaneous
   BATSIRAI temperature, relative humidity and specific TKE at 100/750 m above
   ground. Compare geometric area and equal-cell/sample weighting, conservative

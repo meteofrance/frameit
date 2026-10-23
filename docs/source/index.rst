@@ -50,6 +50,7 @@ FrameIt |release| documentation
    polar_projection/xESMF_proj
    polar_projection/scientific_qualification
    polar_projection/conservative_experiment
+   polar_projection/wind_method_comparison
 
 .. toctree::
    :maxdepth: 2

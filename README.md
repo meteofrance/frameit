@@ -92,6 +92,14 @@ python -m frameit.testing.polar_cell_comparison --ci-thermodynamics --output ./r
 
 It retains explicit areas and coverage; ordinary polar defaults are unchanged.
 
+The [experimental wind-method comparison](docs/source/polar_projection/wind_method_comparison.rst)
+separately evaluates bilinear/ESMF patch weights and component/geodesic-transport
+representations against independent vortex truth, with optional real CI winds:
+
+```bash
+python -m frameit.testing.polar_wind_comparison --ci --output ./runs/wind-methods-ci
+```
+
 ## Quick start
 
 1. Create an annotated, model-specific configuration:
