@@ -90,7 +90,10 @@ python -m frameit.testing.polar_cell_comparison --ci-heat-fluxes --output ./runs
 python -m frameit.testing.polar_cell_comparison --ci-thermodynamics --output ./runs/polar-thermo-ci
 ```
 
-It retains explicit areas and coverage; ordinary polar defaults are unchanged.
+Production polar sampling defaults to **bilinear for every continuous variable**,
+without an area-budget conservation guarantee. Conservative, patch and additional
+vector transport remain experimental. Categorical data require an explicit
+appropriate method, such as `nearest_s2d`.
 
 The [experimental wind-method comparison](docs/source/polar_projection/wind_method_comparison.rst)
 separately evaluates bilinear/ESMF patch weights and component/geodesic-transport
