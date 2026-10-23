@@ -388,6 +388,9 @@ regional case do not establish validity for all model conventions or regimes.
 Initial observations and promotion decision
 -------------------------------------------
 
+The sections below distinguish analytical references from real-data reconstruction
+comparisons; neither supplies a universal best interpolation method.
+
 One local run with ESMPy 8.9.1/xESMF 0.9.2 observed:
 
 .. list-table:: Manufactured rainfall; errors in cell averages are millimetres
@@ -423,6 +426,120 @@ the midpoint budget estimate: at 5-km source spacing its smooth-truth budget err
 was about +0.00229%. It still does not enforce source-cell integral preservation.
 These observations support keeping both representations scientifically explicit;
 they do not support a universal conservative default.
+
+Instantaneous temperature, relative humidity and TKE
+------------------------------------------------------------
+
+Select the third opt-in preset to compare representations and geometric weighting
+of the actual BATSIRAI CI thermodynamic fields:
+
+.. code-block:: bash
+
+   python -m frameit.testing.polar_cell_comparison --ci-thermodynamics --output ./runs/polar-thermo-ci
+
+This is mutually exclusive with ``--ci`` and ``--ci-heat-fluxes`` and remains an
+experimental data-representation comparison, not a stable diagnostic. Existing
+rain/energy presets and ordinary processing defaults remain available. The same
+input manifest, sphere, analysis-cell construction and independent spherical
+overlap machinery are reused; no extra dependencies are introduced.
+
+**Field and temporal contract.** Explicitly select temperature ``t`` (GRIB 130,
+K), relative humidity ``r`` (157, percent), and specific turbulent kinetic energy
+``tke`` (260155, J/kg), at exactly 100 and 750 m above ground. These are two height
+slices, not vertically integrated layers or pressure surfaces. Require
+``heightAboveGround``, ``instant``, hour-valued equal start/end steps, expected
+units and the exact recipe valid time. The reader rejects ambiguous duplicate
+records, mismatched source grids/reference cycles, missing required levels and
+invalid finite-value metadata. It does not infer another field or interpolate
+vertically to replace a missing selection.
+
+Temperature and humidity retain all five times, including forecast hour zero.
+TKE is absent at hour zero and retains its four available positive leads with an
+explicit exclusion record. A missing later TKE record or a partial height pair
+fails; the other variables are not silently truncated to TKE's time axis.
+Outputs have instantaneous valid times and no accumulation bounds or
+``time: sum`` metadata. All statistics retain the two heights separately.
+
+**Values and interpretation.** Preserve the original values and units. Relative
+humidity is not specific humidity or a water mixing ratio. Values above 100% in
+the stored 750-m fields are retained, not capped, and their physical cause is not
+inferred. Report humidity differences in **percentage points**, not relative
+percent errors. TKE remains a specific energy in J/kg; no post-processing floor
+is introduced. Input values for these selected quantities must be finite where
+their bitmap is valid and nonnegative; invalid required inputs fail rather than
+being clipped. Range checks require finite remapped values to remain inside the
+observed source range, allowing numerical roundoff of ``1e-9`` times the larger
+of one source-unit and the source magnitudes. That check is not a validation of
+the source physics or an instruction to enforce an arbitrary humidity ceiling.
+
+**Weighting choices.** With :math:`q_j` the mean over valid overlap in polar cell
+:math:`j`, and :math:`A_j^v` its valid geographical area, export both
+
+.. math::
+
+   \bar q_A=\frac{\sum_j A_j^v q_j}{\sum_j A_j^v},\qquad
+   \bar q_{equal}=\frac{1}{N_{observed}}\sum_{j:A_j^v>0}q_j.
+
+Areas refer to the declared sphere's horizontal geographic footprint, not a
+terrain-following surface area, an altitude-adjusted shell area or a layer volume.
+The first is a geometric area-weighted mean over the observed footprint. The
+second gives every observed cell equal weight, including partial cells. These
+are different definitions. Equal weights over regularly spaced radial bins
+emphasize the inner region relative to its area; a partial sliver also gets the
+same cell weight as a fully observed cell. Neither definition reconstructs
+missing data. ``observed_area`` and ``observed_cell_count`` expose the support;
+an empty weighted set has an undefined mean, not zero.
+
+Fixed/coarse cases also report equal-weight polar midpoint samples,
+cell-area-weighted midpoint quadrature, and integrated-bilinear area means, all
+using the same stored values. The independent reference is the declared
+piecewise-constant source-cell reconstruction, not continuous physical truth.
+Reports separate local point/cell differences, regional representation
+differences, and equal-weight versus area-weight differences in natural units.
+Local RMS gives equal weight to target cells. Integrated-bilinear orders 4 and
+8 are compared both locally and in their area-weighted regional mean; residual
+quadrature sensitivity must be considered before drawing accuracy conclusions.
+
+**Independent verification.** For each height and mask, independently clip the
+source/target polygons and divide the weighted numerator by valid area. Check
+every covered cell mean and the regional area mean with absolute tolerance
+``1e-7 * max(observed source range, one source-unit)``. This numerical criterion
+is scaled by variation rather than the large Kelvin offset; it is not a
+scientific accuracy threshold. Valid areas use ``rtol=2e-7`` and ``atol=0.05 m2``.
+Check source-range preservation, leading-height axis handling, and ordinary
+xarray/netCDF4 reopening of values, units, vertical reference and time semantics.
+Synthetic cases separately distinguish known area/equal-weight answers, preserve
+constant values above 100%, and retain undefined empty-support means.
+
+**Physical weighting remains explicit and unresolved.** Geometric area weights
+are not air-mass weights. These two height slices supply no declared layer air
+masses/volumes. This preset therefore records mass weighting as unavailable and
+does not infer density, layer thickness or heat capacity, nor convert relative
+humidity to water content. A temperature area mean is not heat content; a
+relative-humidity mean is not water mass; an area mean of J/kg is not total TKE.
+Producer-verified definitions and the required thermodynamic/vertical inputs
+would be needed for those separate operations. No implicit fallback from a
+requested physical budget to an area statistic is provided.
+
+**Cases and artifacts.** The five fixed/moving/coarse/clipped/synthetic-mask cases
+are reused. The moving longitude offsets are -0.15, -0.075, 0, +0.075, +0.15
+degrees on the five recipe times, shared by all fields present at each time.
+The synthetic missing strip uses x indices ``30+i:35+i`` at recipe time index
+``i``, on both heights; it is not an observed coast mask. There are 70 field/time
+applications and 140 height-slice comparisons, sharing 25 geometries and
+independent overlap matrices across compatible fields/heights.
+
+Fifteen NetCDF files contain the selected field's own time axis, height
+coordinates, actual geometry and coverage, conservative cell means, available
+point/integrated-bilinear reconstructions, and named regional weighting results.
+The raw geometric integral is labelled ``area_weighted_numerator`` with units
+such as K m2 or J/kg m2, explicitly **not a physical budget**. Its ratio to summed
+valid area reproduces the regional area mean without FrameIt. Each product
+records instantaneous semantics, the experimental source-cell assumption and
+mass-weighting limitation. The JSON report contains per-height comparisons and
+a compact ``comparison_summary`` with maximum absolute differences across
+fixed/coarse times and heights. Source content hashes are checked again at
+completion. Failed runs retain a failed report and completed-product inventory.
 
 **Remaining gaps and review status.** Producer-verified native-model bounds and
 field-mean semantics, sharp/discontinuous analytical precipitation, observed

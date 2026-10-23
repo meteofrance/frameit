@@ -54,6 +54,9 @@ _QUANTITIES = {
                       "time-integrated surface latent heat net flux"),
 }
 
+_GRID_KEYS = ("gridType", "Ni", "Nj", "shapeOfTheEarth", "radius", "jPointsAreConsecutive",
+              "alternativeRowScanning", "numberOfMissing")
+
 
 def _midpoint_edges(values):
     values = np.asarray(values, dtype=float)
@@ -107,6 +110,25 @@ def _accumulation_times(metadata, *, quantity="tirf"):
     return np.datetime64(reference, "ns"), np.datetime64(end, "ns")
 
 
+def _decode_regular_ll(ec, handle, metadata):
+    """Read-only common geometry/bitmap decoding for the explicit CI scalar pilots."""
+    if metadata["gridType"] != "regular_ll" or metadata["shapeOfTheEarth"] != 6:
+        raise ValueError("CI scalar pilot requires regular_ll on the declared GRIB sphere")
+    if metadata["jPointsAreConsecutive"] or metadata["alternativeRowScanning"]:
+        raise ValueError("Unsupported GRIB scanning order for CI scalar pilot")
+    shape = (int(metadata["Nj"]), int(metadata["Ni"]))
+    longitude = ec.codes_get_array(handle, "longitudes").reshape(shape)
+    latitude = ec.codes_get_array(handle, "latitudes").reshape(shape)
+    values = ec.codes_get_values(handle).reshape(shape)
+    bitmap = (ec.codes_get_array(handle, "bitmap").reshape(shape).astype(bool)
+              if ec.codes_get(handle, "bitmapPresent") else np.ones(shape, dtype=bool))
+    if int((~bitmap).sum()) != metadata["numberOfMissing"]:
+        raise ValueError("GRIB bitmap and missing-value count disagree")
+    if not np.isfinite(values[bitmap]).all():
+        raise ValueError("Scalar must be finite where the bitmap is valid")
+    return _analysis_grid(longitude, latitude), np.where(bitmap, values, np.nan)
+
+
 def read_rainfall(path, expected_time):
     """Compatibility entry point for the original rainfall-only experiment."""
     return read_accumulated_scalar(path, expected_time, quantity="tirf")
@@ -123,8 +145,7 @@ def read_accumulated_scalar(path, expected_time, *, quantity):
     spec = _QUANTITIES[quantity]
     keys = ("paramId", "shortName", "units", "typeOfLevel", "stepType", "stepUnits",
             "startStep", "endStep", "typeOfStatisticalProcessing", "dataDate", "dataTime",
-            "gridType", "Ni", "Nj", "shapeOfTheEarth", "radius", "jPointsAreConsecutive",
-            "alternativeRowScanning", "numberOfMissing")
+            *_GRID_KEYS)
     selected = None
     with Path(path).open("rb") as stream:
         while (handle := ec.codes_grib_new_from_file(stream)) is not None:
@@ -137,26 +158,10 @@ def read_accumulated_scalar(path, expected_time, *, quantity):
                 start, end = _accumulation_times(metadata, quantity=quantity)
                 if end != np.datetime64(expected_time, "ns"):
                     raise ValueError("Scalar accumulation end does not match the CI recipe time")
-                if metadata["gridType"] != "regular_ll" or metadata["shapeOfTheEarth"] != 6:
-                    raise ValueError(
-                        "CI scalar pilot requires regular_ll on the declared GRIB sphere")
-                if metadata["jPointsAreConsecutive"] or metadata["alternativeRowScanning"]:
-                    raise ValueError("Unsupported GRIB scanning order for CI scalar pilot")
-                shape = (int(metadata["Nj"]), int(metadata["Ni"]))
-                longitude = ec.codes_get_array(handle, "longitudes").reshape(shape)
-                latitude = ec.codes_get_array(handle, "latitudes").reshape(shape)
-                values = ec.codes_get_values(handle).reshape(shape)
-                bitmap = (ec.codes_get_array(handle, "bitmap").reshape(shape).astype(bool)
-                          if ec.codes_get(handle, "bitmapPresent") else np.ones(shape, dtype=bool))
-                if int((~bitmap).sum()) != metadata["numberOfMissing"]:
-                    raise ValueError("GRIB bitmap and missing-value count disagree")
-                values = np.where(bitmap, values, np.nan)
-                if not np.isfinite(values[bitmap]).all():
-                    raise ValueError("Accumulated scalar must be finite where the bitmap is valid")
-                if spec.nonnegative and np.any(values[bitmap] < 0):
+                grid, values = _decode_regular_ll(ec, handle, metadata)
+                if spec.nonnegative and np.any(values[np.isfinite(values)] < 0):
                     raise ValueError(
                         "Accumulated rain must be nonnegative where the bitmap is valid")
-                grid = _analysis_grid(longitude, latitude)
                 field = xr.DataArray(values, dims=("y", "x"), coords={"y": grid.y, "x": grid.x},
                                      name=quantity, attrs={"units": spec.field_units,
                                      "long_name": spec.description,
@@ -179,15 +184,15 @@ def _presets():
     )
 
 
-def _combine_products(pieces, records, *, quantity="tirf"):
-    spec = _QUANTITIES[quantity]
+def _combine_snapshots(pieces, times, source_files):
+    """Join fixed-axis polar geometry while retaining time-varying coordinates."""
     static_names = ("radius_bounds", "azimuth_bounds", "subcell_owner")
     static = pieces[0][list(static_names)].reset_coords(drop=True)
     dynamic = []
-    for piece, record in zip(pieces, records, strict=True):
-        item = piece.drop_vars(list(static_names)).expand_dims(time=[record["end"]])
-        item = item.assign_coords(lon=piece.lon.expand_dims(time=[record["end"]]),
-                                  lat=piece.lat.expand_dims(time=[record["end"]]))
+    for piece, stamp in zip(pieces, times, strict=True):
+        item = piece.drop_vars(list(static_names)).expand_dims(time=[stamp])
+        item = item.assign_coords(lon=piece.lon.expand_dims(time=[stamp]),
+                                  lat=piece.lat.expand_dims(time=[stamp]))
         item["center_lon"] = ("time", [piece.attrs["center_lon"]], {"units": "degrees_east"})
         item["center_lat"] = ("time", [piece.attrs["center_lat"]], {"units": "degrees_north"})
         item["geometry_signature"] = ("time", [piece.attrs["geometry_sha256"]])
@@ -195,6 +200,16 @@ def _combine_products(pieces, records, *, quantity="tirf"):
     product = xr.concat(dynamic, dim="time", data_vars="all", coords="minimal", compat="equals",
                         join="exact", combine_attrs="drop_conflicts")
     product = xr.merge([product, static], compat="equals")
+    product["source_file"] = ("time", source_files)
+    for name in ("center_lon", "center_lat", "geometry_sha256", "construction_s"):
+        product.attrs.pop(name, None)
+    return product
+
+
+def _combine_products(pieces, records, *, quantity="tirf"):
+    spec = _QUANTITIES[quantity]
+    product = _combine_snapshots(pieces, [r["end"] for r in records],
+                                 [r["source_file"] for r in records])
     product["time_bounds"] = (("time", "bounds"),
                                np.array([[r["start"], r["end"]] for r in records]))
     product.time.attrs.update(bounds="time_bounds", standard_name="time",
@@ -202,7 +217,6 @@ def _combine_products(pieces, records, *, quantity="tirf"):
     units = "hours since " + np.datetime_as_string(records[0]["start"], unit="s").replace("T", " ")
     for name in ("time", "time_bounds"):
         product[name].encoding.update(units=units, calendar="proleptic_gregorian")
-    product["source_file"] = ("time", [r["source_file"] for r in records])
     product["accumulation_end_hour"] = ("time", [r["metadata"]["endStep"] for r in records],
                                          {"units": "h"})
     for name in ("cell_mean", "covered_area_mean"):
@@ -210,10 +224,6 @@ def _combine_products(pieces, records, *, quantity="tirf"):
     product.covered_area_integral.attrs.update(
         units=spec.integral_units, cell_methods="time: sum area: sum",
         long_name=f"accumulated {spec.integral_name} over valid input-grid overlap")
-    # Geometry varies in time; authoritative centres/signatures are coordinates/
-    # variables above, never a misleading first-time global attribute.
-    for name in ("center_lon", "center_lat", "geometry_sha256", "construction_s"):
-        product.attrs.pop(name, None)
     product.attrs.update(
         bounds_policy=BOUNDS_POLICY, source_spatial_interpretation=SPATIAL_INTERPRETATION,
         footprint_meaning=spec.footprint_meaning, GRIB_paramId=spec.parameter_id,

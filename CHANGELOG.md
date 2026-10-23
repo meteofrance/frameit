@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add an optional `--ci-thermodynamics` polar-cell comparison for instantaneous
+  BATSIRAI temperature, relative humidity and specific TKE at 100/750 m above
+  ground. Compare geometric area and equal-cell/sample weighting, conservative
+  means and bilinear reconstructions against independent overlap means; retain
+  quadrature sensitivity, valid coverage, source ranges and original units.
+- Preserve humidity above 100% and original TKE values without clipping/floors;
+  retain time-zero temperature/humidity while reporting absent TKE separately.
+  Export instantaneous metadata and area-mean numerators explicitly distinguished
+  from physical budgets; mark mass weighting unavailable without layer air masses.
+
 - Extend the optional BATSIRAI polar-cell experiment to accumulated `sshf`/`slhf`
   through `polar_cell_comparison --ci-heat-fluxes`. Preserve source signs and time
   bounds, integrate J/m2 to J, and compare independent per-cell energy overlaps

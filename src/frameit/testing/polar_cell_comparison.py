@@ -151,9 +151,12 @@ def bilinear_cell_average(source, point_field, geometry, *, order=4):
     lon, lat = inverse.transform(*np.concatenate(sites).T)
     target = xr.Dataset({"lon": ("locations", lon), "lat": ("locations", lat)})
     samples = xe.Regridder(source, target, "bilinear", locstream_out=True)(point_field).values
-    totals = np.bincount(np.concatenate(owners), weights=samples * np.concatenate(areas),
-                         minlength=geometry.cell_area.size)
-    return totals.reshape(geometry.cell_area.shape) / geometry.cell_area.values
+    leading_shape = samples.shape[:-1]
+    flat = samples.reshape(-1, samples.shape[-1])
+    owners, areas = np.concatenate(owners), np.concatenate(areas)
+    totals = np.stack([np.bincount(owners, weights=row*areas,
+                                   minlength=geometry.cell_area.size) for row in flat])
+    return totals.reshape((*leading_shape, *geometry.cell_area.shape)) / geometry.cell_area.values
 
 
 def compact_wind_experiment():
@@ -327,8 +330,14 @@ def main():
                            help="Run the experimental BATSIRAI rain pilot on bundled CI data.")
     selection.add_argument("--ci-heat-fluxes", action="store_true",
                            help="Run the source-signed sshf/slhf accumulated-energy CI pilots.")
+    selection.add_argument("--ci-thermodynamics", action="store_true",
+                           help="Compare instantaneous temperature, relative humidity and TKE.")
     args = parser.parse_args()
-    if args.ci_heat_fluxes:
+    if args.ci_thermodynamics:
+        from frameit.testing.polar_thermodynamics_ci import run_ci_thermodynamics
+
+        report = run_ci_thermodynamics(args.output)
+    elif args.ci_heat_fluxes:
         from frameit.testing.polar_rainfall_ci import run_ci_heat_fluxes
 
         report = run_ci_heat_fluxes(args.output)
