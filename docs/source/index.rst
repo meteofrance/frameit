@@ -49,6 +49,7 @@ FrameIt |release| documentation
 
    polar_projection/xESMF_proj
    polar_projection/scientific_qualification
+   polar_projection/conservative_experiment
 
 .. toctree::
    :maxdepth: 2

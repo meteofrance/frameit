@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add an opt-in experimental conservative polar-cell scalar API with supplied
+  source bounds, float64 ESMPy spherical overlaps, explicit areas and separate
+  full/covered means and integrals. Keep ordinary point products/defaults.
+- Add independent overlap, mask, Dask and NetCDF checks, a reproducible rainfall
+  point/cell/integrated-bilinear comparison, compact-vortex baseline and method
+  record. Real-model/vector qualification and scientific review remain open.
+
 - Add optional isolated AROME/SURFEX FA input for explicitly defined instantaneous
   2-D gridpoint records, typed metadata, declared geometry, masks and bounded native
   decoding. Spectral and unsupported encodings remain actionable failures.

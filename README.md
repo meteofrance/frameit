@@ -76,6 +76,16 @@ coverage and export checks. The example writes a NetCDF vortex and truth/error/
 harmonic diagnostic plots. `run-all-tests` also runs the packaged numerical tests
 and the AROME/MNH integration matrix.
 
+An opt-in [experimental polar-cell comparison](docs/source/polar_projection/conservative_experiment.rst)
+evaluates conservative scalar cell means against point sampling, integrated
+bilinear reconstruction and independent spherical overlap/analytical truth:
+
+```bash
+python -m frameit.testing.polar_cell_comparison --output ./runs/polar-cell-comparison
+```
+
+It retains explicit areas and coverage; ordinary polar defaults are unchanged.
+
 ## Quick start
 
 1. Create an annotated, model-specific configuration:
