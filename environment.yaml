@@ -42,6 +42,7 @@ dependencies:
   - pyyaml
   - pyproj
   - xesmf
+  - shapely>=2
   - matplotlib
   - netcdf4
   - h5netcdf

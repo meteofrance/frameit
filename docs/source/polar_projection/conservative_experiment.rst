@@ -196,6 +196,109 @@ existing default encoding; no new compression, precision or chunking contract is
 introduced. Ordinary xarray/NetCDF readers suffice. Existing point mean/Fourier
 helpers intentionally do not accept these cell dimensions.
 
+Bundled BATSIRAI accumulated-rain pilot
+---------------------------------------------
+
+The existing ``--ci`` matrix fixture contains accumulated rain even though its
+ordinary matrix cases request other fields. Select the dedicated experimental
+preset explicitly:
+
+.. code-block:: bash
+
+   python -m frameit.testing.polar_cell_comparison --ci --output ./runs/polar-cell-ci
+
+This uses the same packaged ``AROME/BATSIRAI`` files and recipe/manifest as the
+matrix, verified with the existing content-checksum mechanism. It requires the
+optional GRIB and polar dependencies, including Shapely 2 for the spatially indexed
+independent oracle. It does not change ``frameit run-matrix-test --ci`` cases or
+ordinary processing defaults. Packaged numerical tests exercise the complete pilot
+when these dependencies and the fixture are present, so ``run-all-tests`` includes
+that check through its numerical suite. The command above retains the detailed
+JSON and NetCDF evidence in a designated directory.
+
+**Quantity and time contract.** Select only surface GRIB parameter 235015,
+``tirf`` (time integral of rain flux), accumulated from forecast hour zero in
+``kg m-2``. The four positive leads retain their original 0--6, 0--12, 0--18 and
+0--24-hour intervals as ``time_bounds(time,bounds)``. Time labels are interval ends;
+no deaccumulation, hourly-rate calculation or density conversion occurs. The
+absent time-zero record is reported as an exclusion, not filled with zero. Missing
+later records, multiple candidate records or incompatible units/time metadata
+fail the pilot. These overlapping cumulative intervals must not be summed as
+independent time increments.
+
+**Spatial assumption, not a producer-validated claim.** The stored input is an
+81-by-81 regular geographic grid at 0.025-degree spacing, not a documented native
+AROME control-volume mesh. This selected preset explicitly reconstructs analysis
+cells around stored centres using adjacent-coordinate midpoints and half a grid
+interval at the cropped edges. Both descending latitude storage and data order
+are preserved. It interprets the stored scalar as a piecewise-constant mean on
+those declared analysis cells. This is an experimental numerical representation;
+producer evidence that the values are native-model cell means remains absent.
+Metadata records that limitation in every product and the report. There is no
+implicit general midpoint-bound inference in the conservative core API.
+
+The GRIB-declared sphere, radius 6,371,229 m, is used for distances and areas.
+Source-cell edges are great-circle segments between the constructed corners,
+not exact constant-latitude small-circle arcs. Conservation is assessed for that
+documented polygon reconstruction, not asserted for native-model rain mass or
+ellipsoidal physical area. Missing source data follow the GRIB bitmap.
+
+**Five cases, four times each.** All use a 60-km target radius and at most
+2.5-degree arc segments:
+
+* ``fixed``: the recipe centre (17.5 S, 60 E), 10-km radial cells and 24 sectors;
+* ``moving``: the same latitude with prescribed longitude offsets
+  -0.15, -0.05, +0.05 and +0.15 degrees; this is a sensitivity trajectory inside
+  the fixture, not a storm tracker or a claim of optimal cyclone centres;
+* ``coarse``: the fixed centre, 20-km radial cells and 12 sectors;
+* ``clipped``: fixed longitude 60.85 E, exposing the true cropped-input edge;
+* ``masked``: the fixed case with an explicitly synthetic five-column missing
+  strip, initially x indices 30--34 and shifted one column per successive time.
+  This tests changing support; it is not described as an observed coast mask.
+
+The moving product means **cumulative rain inside each snapshot footprint**, not
+rain accumulated along a moving storm domain. No differences between moving
+footprint totals are interpreted as rain rates or transport.
+
+**Verification and artifacts.** Independent gnomonic clipping computes each
+input analysis cell's overlap with the actual target subcells. Compare accumulated
+rain mass in **kg** and valid area per target cell, with ``rtol=2e-7`` and absolute
+tolerances 1 kg and 0.05 m2 respectively. Per-cell checks prevent cancellation
+from hiding errors in a domain sum. These tolerances allow geometric roundoff;
+they are not observational or model-physics accuracy thresholds. No finite native
+input is replaced by zero except inside masked sums defining valid overlap.
+Unobserved integrals remain NaN in exported products.
+
+Each of the five NetCDF files contains four times, original accumulation bounds,
+portable source identifiers, time-varying geographic geometry, representative
+centres and geometry signatures, coverage, means and masses. Actual subcell
+vertices/areas and static parent indices remain independently readable. Source
+content hashes are checked again after execution. ``comparison.json`` retains
+the effective preset, source metadata/hashes, exclusions, per-cell-check outcome,
+total-mass comparisons, and build/application/oracle times. Memory observations
+separate retained plan-array estimates from the process-lifetime RSS high-water
+mark, which includes imports and previous cases and is not incremental per-case
+memory. This is a bounded 20-snapshot pilot, not a production-performance claim.
+
+An initial report has status ``RUNNING``/``passed=false``. Errors retain a
+``FAILED`` report and identify previously completed products; only completion
+of all checks and source-integrity verification yields ``PASS``. Outputs must be
+fresh and outside the input tree. Ordinary NetCDF reopening verifies values,
+time bounds, units and the declared spatial interpretation. A pass establishes
+the numerical reconstruction contract on this fixture, not general scientific
+validation or admission as a stable method.
+
+The fully covered ``fixed`` and ``coarse`` cases additionally apply bilinear point
+sampling and integrated-bilinear reconstruction to the **same stored rain
+values**. Their exported fields and reported budget/local differences are
+compared to the declared input-cell reconstruction, not to unknown continuous
+rainfall truth. Integration-order 4/8 differences are retained. This quantifies
+the effect of choosing a reconstruction without claiming either input
+interpretation is producer-verified. Local RMS differences weight each polar cell
+equally; they are not area-weighted norms. Clipped and masked cases focus on the
+independent conservative coverage contract rather than assigning an unsupported
+full-cell bilinear average.
+
 Initial observations and promotion decision
 -------------------------------------------
 
@@ -235,8 +338,9 @@ was about +0.00229%. It still does not enforce source-cell integral preservation
 These observations support keeping both representations scientifically explicit;
 they do not support a universal conservative default.
 
-**Remaining gaps and review status.** Real-model bounds and field-meaning
-qualification, sharp/discontinuous precipitation, land/coast masks, ellipsoidal
+**Remaining gaps and review status.** Producer-verified native-model bounds and
+field-mean semantics, sharp/discontinuous analytical precipitation, observed
+land/coast masks, ellipsoidal
 physical-area treatment, larger workload memory measurements, vector/flux
 methods, repeated isolated performance runs, and independent scientific review
 remain outstanding. There is no stable promotion or default change. The next

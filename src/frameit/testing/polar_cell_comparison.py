@@ -59,22 +59,34 @@ def independent_overlap(source, geometry):
     Area is evaluated independently with PROJ on the same sphere, after inverse
     projection of each intersection. This is an oracle for small regional cases.
     """
+    return independent_overlap_sparse(source, geometry).toarray()
+
+
+def independent_overlap_sparse(source, geometry):
+    """Spatially indexed oracle; bound storage by actual polygon intersections."""
+    from scipy.sparse import coo_matrix
+    from shapely import STRtree
     from shapely.geometry import Polygon
 
     radius = geometry.attrs["earth_radius_m"]
     forward, inverse = chart(geometry.attrs["center_lon"], geometry.attrs["center_lat"], radius)
     geod = Geod(a=radius, b=radius)
-    sources = [Polygon(np.column_stack(forward.transform(*ring.T))) for ring in source_rings(source)]
-    overlap = np.zeros((geometry.cell_area.size, len(sources)))
+    sources = [Polygon(np.column_stack(forward.transform(*ring.T)))
+               for ring in source_rings(source)]
+    tree = STRtree(sources)
+    rows, columns, areas = [], [], []
     for ring, owner in zip(target_rings(geometry), geometry.subcell_owner.values, strict=True):
         target = Polygon(np.column_stack(forward.transform(*ring.T)))
-        for index, polygon in enumerate(sources):
-            intersection = target.intersection(polygon)
+        for index in tree.query(target, predicate="intersects"):
+            intersection = target.intersection(sources[index])
             if intersection.is_empty or intersection.area == 0:
                 continue
             lon, lat = inverse.transform(*np.asarray(intersection.exterior.coords).T)
-            overlap[owner, index] += abs(geod.polygon_area_perimeter(lon, lat)[0])
-    return overlap
+            rows.append(owner)
+            columns.append(index)
+            areas.append(abs(geod.polygon_area_perimeter(lon, lat)[0]))
+    return coo_matrix((areas, (rows, columns)),
+                      shape=(geometry.cell_area.size, len(sources))).tocsr()
 
 
 def polygon_quadrature(ring, forward, *, radius=EARTH_RADIUS_M, order=10):
@@ -168,10 +180,10 @@ def compact_wind_experiment():
 
 
 def compare(output):
+    import xesmf as xe
+
     from frameit.io.netcdf_export import ExportMetadata, write_dataset_netcdf
     from frameit.processing.polar.conservative import ConservativePolarPlan
-
-    import xesmf as xe
 
     output = Path(output).expanduser().resolve()
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
@@ -292,7 +304,8 @@ def compare(output):
         checks.append({"name": f"refinement_{name}",
                        "ok": report["cases"][-1][name] < report["cases"][0][name]})
     report["compact_wind_point_baseline"] = compact_wind_experiment()
-    coarse, fine = report["compact_wind_point_baseline"][0], report["compact_wind_point_baseline"][-1]
+    wind_rows = report["compact_wind_point_baseline"]
+    coarse, fine = wind_rows[0], wind_rows[-1]
     for name in ("vrad", "vtan", "wind_speed"):
         checks.append({"name": f"compact_wind_refinement_{name}",
                        "ok": fine["metrics"][name]["rms"] < coarse["metrics"][name]["rms"]})
@@ -300,7 +313,8 @@ def compare(output):
                    "value": fine["rmw"]["error_km"], "ok": fine["rmw"]["error_km"] <= .5})
     report["checks"] = checks
     report["passed"] = all(check["ok"] for check in checks)
-    report["promotion_status"] = "No default change; real-model and vector qualification outstanding"
+    report["promotion_status"] = (
+        "No default change; real-model and vector qualification outstanding")
     atomic_json(output / "comparison.json", report)
     return report
 
@@ -308,8 +322,15 @@ def compare(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--ci", action="store_true",
+                        help="Run the experimental BATSIRAI rain pilot on bundled CI data.")
     args = parser.parse_args()
-    report = compare(args.output)
+    if args.ci:
+        from frameit.testing.polar_rainfall_ci import run_ci_rainfall
+
+        report = run_ci_rainfall(args.output)
+    else:
+        report = compare(args.output)
     print(f"Polar cell experiment: {'PASS' if report['passed'] else 'FAIL'}")
     return 0 if report["passed"] else 1
 

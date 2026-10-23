@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Exercise experimental polar cells on the matrix's frozen BATSIRAI accumulated
+  rain (`tirf`) records through `polar_cell_comparison --ci`. Preserve source
+  accumulation bounds and GRIB sphere, declare midpoint analysis-cell semantics,
+  verify per-cell rain mass against independent overlap and reopen fixed/moving,
+  coarse, clipped and explicitly masked NetCDF products. Report missing time zero,
+  verified fixture identity, resource observations and failed/partial attempts.
+
 - Add an opt-in experimental conservative polar-cell scalar API with supplied
   source bounds, float64 ESMPy spherical overlaps, explicit areas and separate
   full/covered means and integrals. Keep ordinary point products/defaults.
