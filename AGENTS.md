@@ -170,6 +170,11 @@ Documentation MUST distinguish implemented capabilities, planned work, experimen
 
 ## 11. Completion and handover
 
+Completed, verified changes MUST be committed locally in focused commits before
+handover, unless the user explicitly requests otherwise. Review status and diffs,
+stage only task-related files, and preserve unrelated work. Never push commits
+unless the user explicitly requests a push. Report the resulting commit IDs.
+
 Before marking work complete, review the diff and verify:
 
 - [ ] The requested problem is addressed without unrelated features or rewrites.
