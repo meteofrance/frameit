@@ -87,6 +87,41 @@ def test_observed_layout_does_not_match_another_or_unidentified_release():
     assert layout_definition({**SOURCE, "MASDEV": 49}) is None
 
 
+def test_raw_vertical_header_survives_without_coordinate_or_field_assumptions():
+    header = {"KTYPTR": -11, "KNLATI": 7, "KNXLON": 9, "KNIVER": 2, "PREFER": 100000.,
+              "PAHYBR": [0., 100., 200.], "PBHYBR": [0., .4, 1.]}
+    raw = native_descriptor("S002RESEARCH", 63, {"exists": True, "spectral": False},
+                            {}, header, {}, {})
+    resolved = resolve_descriptor(raw, DECLARATION)
+    sampling = resolved["sampling"]
+    assert sampling["native_vertical_header"] == {
+        "KNIVER": 2, "PREFER": 100000., "PAHYBR": [0., 100., 200.], "PBHYBR": [0., .4, 1.]}
+    assert sampling["physical_location"] is None and sampling["vector_basis"] is None
+    assert sampling["vertical_interpretation"].startswith("unqualified;")
+    assert resolved["native"]["shape"] == [7, 9]  # the selected record remains 2-D
+    assert resolved["eligibility"]["diagnostic"] == "blocked"
+    header["PAHYBR"][1] = -999.
+    assert raw["sampling"]["native_vertical_header"]["PAHYBR"][1] == 100.
+    assert json.loads(json.dumps(resolved, allow_nan=False)) == resolved
+
+
+@pytest.mark.parametrize("group, levels", [
+    ("level", "all"), ("surface", "physical"), ("surface", {"indices": [0]}),
+    ("surface", {"values": [850]}),
+])
+def test_native_atmospheric_cubes_and_vertical_selectors_remain_gated(tmp_path, group, levels):
+    path = tmp_path / "unopened.fa"
+    raw = single_fa_document(tmp_path, [path])
+    raw["input"]["fa"].update(profile="arome_history",
+                             field_metadata={"CLSTEMPERATURE": DECLARATION})
+    raw["variables"] = {group: {"names": ["CLSTEMPERATURE"], "levels": levels}}
+    message = ("FA 2-D records must be selected in variables.surface" if group == "level"
+               else "variables.surface.levels cannot select a vertical axis")
+    with pytest.raises(ValueError, match=message):
+        SimulationConfig.from_mapping_with_model_preset(raw)
+    assert not path.exists() and not (tmp_path / "run").exists()
+
+
 def test_typed_words_are_reinterpreted_not_cast_and_unknowns_never_read():
     # Independent raw word truth, including an integer not exactly representable
     # in float64. No native codec round trip is the oracle for these conversions.

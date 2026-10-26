@@ -28,50 +28,80 @@ real_check:
     scaling_policy: allow_unscaled=false
     result: blocked by missing native scaling metadata; no value accepted or product certified
   sources_size_mtime_unchanged: true
+followup_check:
+  checked_on: '2026-10-26'
+  baseline_revision: 82a7f79
+  identity_strategy: size/mtime_ns before and after on all three P0 files; no content checksums
+  atmosphere:
+    record_count: 1345
+    sfx_namespace_records: 0
+    encoding_probes: [CLSTEMPERATURE, SURFPRESSION, S001TEMPERATURE]
+    results: {CLSTEMPERATURE: gridpoint_120_16, SURFPRESSION: native_error_-91,
+              S001TEMPERATURE: spectral_103_18}
+    physical_fields_decoded: 0
+  grib: {headers: 574, header_ceiling: 600, physical_fields_decoded: 0}
+  surface:
+    encoding_probes: [SFX.T2M, SFX.SST, SFX.HU2M, SFX.TSRAD, SFX.TG1P1, SFX.WG1P1]
+    directory_result: complete AROME PACK=0 dense X1; unchanged from real_check
+    selected_physical_probe: SFX.T2M
+    max_points: 6300000
+    allow_unscaled: false
+    result: blocked by missing native scaling metadata; no values accepted
+  all_three_source_stats_match_p0: true
+  scientific_admission: none; no independent physical/geometry reference supplied
 priority_inputs:
-  - quantity: mean sea level pressure
+  - priority: 1
+    quantity: mean sea level pressure
     record: GRIB prmsl / meanSea
     native_units: Pa
     temporal_support: instant at valid time
     status: observed metadata; existing GRIB path, not a new independent physical validation
-  - quantity: near-surface horizontal winds
+  - priority: 1
+    quantity: near-surface horizontal winds
     record: GRIB 10u, 10v / heightAboveGround=10
     native_units: m s**-1
     vector_flag: uvRelativeToGrid=0
     temporal_support: instant at valid time
     status: observed metadata; preserve Earth-relative definition
-  - quantity: pressure-level winds, temperature, relative humidity, geopotential
+  - priority: 1
+    quantity: pressure-level winds, temperature, relative humidity, geopotential
     record: GRIB u, v, t, r, z / isobaricInhPa
     selected_levels_available_hPa: [850, 700, 500]
     native_units: {u: m s**-1, v: m s**-1, t: K, r: '%', z: m**2 s**-2}
     temporal_support: instant at valid time
     status: observed metadata; no inferred physical vertical conversion
-  - quantity: near-surface temperature and relative humidity
+  - priority: 2
+    quantity: near-surface temperature and relative humidity
     record: GRIB 2t, 2r / heightAboveGround=2
     native_units: {2t: K, 2r: '%'}
     temporal_support: instant at valid time
     status: observed metadata; RH is not specific humidity
-  - quantity: requested surface SST / near-surface temperature / humidity / radiative state
+  - priority: 1
+    quantity: requested surface SST / near-surface temperature / humidity / radiative state
     records: [SFX.SST, SFX.T2M, SFX.HU2M, SFX.TSRAD]
     support_labels: {SFX.SST: SEA, SFX.T2M: FULL, SFX.HU2M: FULL, SFX.TSRAD: FULL}
     native_encoding: gridpoint, packing=120, bits=24
     status: metadata observed; physical units/scaling/time definitions need release-matched evidence
-  - quantity: selected native soil layer / patch states
+  - priority: 3
+    quantity: selected native soil layer / patch states
     records: [SFX.TG1P1, SFX.WG1P1]
     support_labels: NATURE
     native_encoding: dense gridpoint, packing=120, bits=24
     status: individually named 2-D records only; no inferred depth, patch axis or averaging
-  - quantity: latent/sensible surface heat exchange and radiation
+  - priority: 3
+    quantity: latent/sensible surface heat exchange and radiation
     records: [slhf, sshf, ssrd, strd]
     native_units: J m**-2
     temporal_support: GRIB accum, hours 0-12
     status: accumulated energy metadata observed; not W m-2, no automatic rate or sign conversion
-  - quantity: rain amount
+  - priority: 3
+    quantity: rain amount
     record: GRIB tirf, Time integral of rain flux
     native_units: kg m**-2
     temporal_support: GRIB accum, hours 0-12
     status: metadata observed; no automatic deaccumulation or diagnostic selection
-  - quantity: surface turbulent stresses
+  - priority: 3
+    quantity: surface turbulent stresses
     records: [iews, inss]
     native_units: N m**-2
     temporal_support: GRIB stepType=accum, hours 0-12
@@ -94,5 +124,10 @@ synthetic_qualification:
   - separate synchronous/spawn exports and ordinary-reader coordinate/value/mask checks
   - dense multi-field FA, reordered directory, SEA/NATURE labels, IEEE NaNs and valid zeros
   - one original layer/patch record selected without other physical decodes
+  - independent dense full/point/strided/reversed truth; no sparse support-map admission
+  - categorical X1 codes/NaNs/zeros, ordinary-reader units/type and explicit nearest_s2d gate
+  - missing directory/source records remain inspectable but cannot bypass either execution profile
+  - inconsistent dense dimensions and X0/X2/N1/L1/C1 physical layouts remain blocked
+  - raw native vertical headers retained; atmospheric cubes and vertical selectors remain gated
   - conflicting target settings, actual-coordinate mismatch and disabled-polar/no-FA cases
   - unqualified producer/PACK/X2 rows fail without weakening reader gates

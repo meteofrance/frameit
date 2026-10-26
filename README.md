@@ -39,6 +39,9 @@ The reference conda environment targets Python 3.13 and includes the published
 `falfilfa4py` wheel. The optional `fa` extra enables the isolated native reader.
 FA supports explicitly defined instantaneous 2-D gridpoint records on qualified
 regional headers; spectral transformations are not implicit.
+SURFEX execution requires a complete AROME source/directory with `PACK=0` and
+dense horizontal `X1` records. Native vertical-header facts remain inspectable
+provenance, without inferred layer axes or atmospheric 3-D processing.
 The [P0 baseline and family matrix](docs/source/user_guide/fa_baseline.rst)
 separate current evidence from blocked capabilities; full FA compatibility is
 not claimed.

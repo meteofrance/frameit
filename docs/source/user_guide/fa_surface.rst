@@ -156,6 +156,18 @@ valid zeros, IEEE NaNs, read-only bytes, serializable lazy loading and ordinary
 NetCDF reopening on a shared moving target. Raw packing-0 fixtures preserve
 IEEE NaNs directly; that encoding does not carry the explicit undefined flag/
 sentinel. No sentinel-recognition heuristic was added to the production reader.
+``SFX.PACK=0`` describes the SURFEX layout; it is distinct from the native FA
+codec's packing number (0 in these raw fixtures, 120 on the supplied selected
+real fields). A dense directory does not resolve missing codec scaling.
+
+Full-array, individual-point, strided and reversed selections are checked against
+independently specified asymmetric values, including missing values and real
+zeros. These are selections from **dense storage**, not qualified sparse/packed
+support-map reconstruction. Categorical X1 values retain their original codes,
+NaNs, declared units/kind and float64 decoded representation through ordinary
+NetCDF readers. Categorical polar selection requires explicit ``nearest_s2d``;
+the default bilinear method fails before payload reads. This does not admit N1,
+L1 or C1 physical arrays: those, X0/X2 and inconsistent DIM1/DIM2 remain blocked.
 
 The support label is retained separately from actual finite/missing samples.
 There is no guessed sparse support map or conversion of absent surface types to
@@ -163,8 +175,30 @@ zero. Native record identities survive as individual 2-D variables, not invented
 soil-depth, tile or atmospheric-level axes. Other producers, ``PACK!=0`` and
 unqualified X2/typed physical layouts remain actionable failures, while their
 directories can still be inspected. A partial SURFEX directory cannot be relabelled
-as atmospheric FA to bypass producer/layout checks; its index and known producer
-fact remain inspectable. New producer/container adapters are outside this phase.
+as atmospheric FA to bypass producer/layout checks, including when PROGRAM and
+all directory records have been lost. Any surviving ``SFX.*`` namespace requires
+the existing complete source/directory contract. Missing NAME/TYPE/MASK/SIZE,
+dimension arrays or required source tags are reported as
+``surfex_metadata.missing_records`` in raw inspection; available producer facts
+are retained. The private inspector with ``profile=None`` and
+``validate_selection=False`` can probe available encoding flags without physical
+decodes; its field descriptors explicitly block physical execution on incomplete
+sources. Validated profile inventory also rejects the source before loading,
+even without selected fields. New producer/container adapters are outside this phase.
+
+The qualified engineering operations are selected 2-D decode/dataset/native
+extraction/export and explicitly selected eligible polar sampling on the compact
+dense fixtures. Individual layer/patch names remain separate 2-D records.
+No new YAML keys, product names, dimensions, units, encodings or dependencies
+are introduced by this follow-up. Descriptor-v1 sampling metadata is additive.
+Malformed sources now fail earlier; changing their profile cannot repair their
+missing native source/directory records.
+
+Atmospheric native vertical-header facts are carried forward in the P1
+descriptors (see :doc:`fa_contracts`) and checked on ordinary-reader native-pair
+outputs. No field-level sampling location, hybrid units, native vertical index
+or full/interface meaning is assigned from that header or a record-name pattern.
+Native atmospheric cube and vertical-selector acceptance remains P5 work.
 
 The native FA/FA starting example is
 ``example/config_file/coupled_arome_fa_polar.yaml``; the AROME GRIB/FA variant is
@@ -311,3 +345,87 @@ documentation build pass. The separate no-FA/no-xESMF environment ran
 **13 passed, 22 dependency-specific skips**. The new AROME base case executes
 without either optional dependency. No source archive was modified, no new
 producer adapter was added and no scientific admission gate was removed.
+
+Dense-admission follow-up
+--------------------------
+
+Starting revision: ``82a7f79``. The existing untracked ``opencode.json`` was
+preserved. Baseline regression: **567 passed, 2 subtests passed**, 722 existing
+cfgrib/xarray warnings, 272.23 seconds. Four newly strengthened malformed-source
+cases failed before the repair: profile inventory with no selected fields could
+pass, and losing all original detector records erased the SURFEX classification.
+The repaired checks cover six incomplete-source cases as well as unqualified
+physical types/dimensions. Existing common-target, time-policy, native-grid,
+sync/spawn and optional-dependency tests remain applicable.
+
+The supplied corpus was rechecked read-only after compact-fixture qualification:
+574 GRIB headers (600-header ceiling); atmospheric FA index plus three encoding
+probes, no atmospheric physical decode; six surface encoding probes; and one
+guarded SFX.T2M native decode attempt (6,300,000-point ceiling, one returned
+storage point requested). The atmospheric index has 1345 records and **no SFX
+namespace records**; the tightened directory check preserves its classification.
+SURFPRESSION still returns -91, S001TEMPERATURE is still spectral, and SFX.T2M
+still fails missing native scaling with fallback disabled. The GRIB priority
+records and stress-label/interval conflict are unchanged. All three source
+sizes/mtime_ns match the P0/P3 manifest. No real values were accepted, geometry
+reference supplied or scientific capability promoted. The finite field-priority
+table and recheck facts are retained in ``testing/catalogs/fa_p3.yaml``.
+
+To repeat the added atmospheric index/encoding check, with ``ATMOSPHERE_FA`` set
+to the supplied source, use the isolated backend (no physical array read):
+
+.. code-block:: python
+
+   import os
+   from frameit.io.fa_backend import inspect_fa
+   info = inspect_fa(os.environ["ATMOSPHERE_FA"], None,
+                     ["CLSTEMPERATURE", "SURFPRESSION", "S001TEMPERATURE"],
+                     validate_selection=False)
+   print(info["record_count"], info["fields"])
+   print([name for name in info["records"] if name.startswith("SFX.")])
+
+The surface guarded-decode reproduction above and P0 upstream probe remain
+applicable. Coordinate identity only qualifies the shared sampling target;
+independently supplied geometry/scaling/field definitions are still required.
+
+Follow-up verification used Python 3.13.16. Native commands used the local conda
+launcher for ``frameit_env``; the existing separate no-FA/no-xESMF environment
+provided the optionality check and Ruff:
+
+.. code-block:: bash
+
+   conda run -n frameit_env python -m pytest -q
+   conda run -n frameit_env python -m pytest -q \
+       src/frameit/testing/numerical/test_fa_contracts.py \
+       src/frameit/testing/numerical/test_fa_surface.py \
+       src/frameit/testing/numerical/test_arome_fa_coupling.py \
+       src/frameit/testing/numerical/test_coupled_shared_polar.py \
+       src/frameit/testing/numerical/test_fa_pipeline.py
+   /tmp/opencode/frameit-hpc-venv/bin/python -m pytest -q \
+       src/frameit/testing/numerical/test_fa_contracts.py \
+       src/frameit/testing/numerical/test_fa_baseline.py \
+       src/frameit/testing/numerical/test_arome_fa_coupling.py \
+       src/frameit/testing/numerical/test_coupled_shared_polar.py \
+       src/frameit/testing/numerical/test_fa_surface.py \
+       src/frameit/testing/numerical/test_fa_pipeline.py::test_coupled_netcdf_sources_do_not_need_fa_backend
+   /tmp/opencode/frameit-hpc-venv/bin/ruff check \
+       src/frameit/io/fa_worker.py src/frameit/io/fa_contracts.py \
+       src/frameit/testing/fa_fixture.py \
+       src/frameit/testing/numerical/test_fa_surface.py \
+       src/frameit/testing/numerical/test_fa_contracts.py \
+       src/frameit/testing/numerical/test_arome_fa_coupling.py
+   conda run -n frameit_env frameit validate example/config_file/coupled_arome_fa_polar.yaml --schema-only
+   conda run -n frameit_env frameit validate example/config_file/coupled_cyclone_polar.yaml --schema-only
+   conda run -n frameit_env frameit validate example/config_file/coupled_fa.yaml --schema-only
+   LC_ALL=C LANG=C conda run -n frameit_env sphinx-build -q -W --keep-going \
+       -b html docs/source /tmp/opencode/frameit-p3-dense-followup-docs
+   git diff --check
+
+Results: **585 passed, 2 subtests passed**, 722 existing cfgrib/xarray warnings,
+285.49 seconds; focused suite **67 passed**, 50.74 seconds; optionality suite
+**28 passed, 37 dependency-only skips**, 2.56 seconds. GRIB was installed in the
+optionality environment; this is not a no-GRIB qualification. Ruff, all three
+schema examples and strict Sphinx checks passed. Dense data ordering and codes
+are checked exactly; shared target coordinates are checked exactly, while polar
+scalar values use the existing absolute ``1e-9`` interpolation tolerance.
+Neither agreement criterion is independent scientific validation of real fields.

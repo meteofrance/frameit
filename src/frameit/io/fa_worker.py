@@ -114,27 +114,32 @@ def _inspect(fa, lfi, unit, header, request):
             raise ValueError(f"Duplicate FA record {name!r}")
         records[name] = int(length)
     profile = request["profile"]
-    surface = "SFX._FBUF_NAME" in records
+    # A surviving SFX namespace is not evidence of an atmospheric history when
+    # directory/source records are missing. Raw inventory must retain that gap.
+    surface = any(name.startswith("SFX.") for name in records)
     descriptors, metadata = {}, {}
-    if "SFX.PROGRAM" in records:
-        metadata["PROGRAM"] = _text(_words(lfi, unit, records, "SFX.PROGRAM"))
-    directory_records = {"SFX._FBUF_" + key for key in ("SIZE", "TYPE", "MASK", "DIM1", "DIM2")}
-    if not surface and ("SFX.PROGRAM" in records or directory_records.intersection(records)):
-        metadata["layout_status"] = "incomplete_surfex_directory"
-        if request.get("fields") and request.get("validate_selection", True):
-            raise ValueError("Incomplete SURFEX source: the required SFX._FBUF_NAME directory "
-                             "is missing; it cannot be selected as an atmospheric history")
-    if profile is not None and surface != (profile == "surfex_history"):
-        raise ValueError(f"FA record layout conflicts with profile {profile!r}")
+    required = {"SFX._FBUF_" + key for key in ("SIZE", "NAME", "TYPE", "MASK", "DIM1", "DIM2")}
+    required.update("SFX." + key for key in (
+        "PROGRAM", "GRID_TYPE", "VERSION", "BUG", "PACK", "DIM_FULL", "IMAX", "JMAX"))
+    missing = sorted(required - records.keys()) if surface else []
     if surface:
         for key in ("PROGRAM", "GRID_TYPE"):
-            if key not in metadata:
+            if "SFX." + key in records:
                 metadata[key] = _text(_words(lfi, unit, records, "SFX." + key))
-        for key in ("VERSION", "BUG", "PACK", "DIM_FULL", "IMAX", "JMAX"):
-            metadata[key] = _integer(lfi, unit, records, "SFX." + key)
-        for key in ("MASDEV", "BUGFIX"):
+        for key in ("VERSION", "BUG", "PACK", "DIM_FULL", "IMAX", "JMAX", "MASDEV", "BUGFIX"):
             if "SFX." + key in records:
                 metadata[key] = _integer(lfi, unit, records, "SFX." + key)
+    if missing:
+        metadata["layout_status"] = "incomplete_surfex_directory"
+        metadata["missing_records"] = missing
+        if request.get("validate_selection", True) and (
+            profile is not None or request.get("fields")
+        ):
+            raise ValueError(f"Incomplete SURFEX source: missing required records {missing}; "
+                             "it cannot be selected as an atmospheric or SURFEX history")
+    if profile is not None and surface != (profile == "surfex_history"):
+        raise ValueError(f"FA record layout conflicts with profile {profile!r}")
+    if surface and not missing:
         if "SFX.DTCUR" in records:
             current = _words(lfi, unit, records, "SFX.DTCUR")
             if current.size != 4:

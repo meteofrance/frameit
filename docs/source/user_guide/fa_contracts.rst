@@ -30,6 +30,17 @@ existing wrapper's physical-array result type, not a claim about source packing
 precision. A source directory type is retained verbatim. Native word count is
 not used as a decoded spectral or physical shape.
 
+P3 additionally retains the already inspected ``KNIVER``, ``PREFER``, ``PAHYBR``
+and ``PBHYBR`` words in ``sampling.native_vertical_header``. This additive
+descriptor-v1 metadata is copied as native header facts, including on surface
+records sharing that header. ``sampling.vertical_interpretation`` explicitly
+marks the interpretation unqualified: no per-record level association, coefficient
+units, reference-pressure convention or full/interface definition is inferred.
+``physical_location`` and ``vector_basis`` remain unresolved. These values pass
+through lazy descriptors, per-file run provenance and the representative NetCDF
+JSON attribute; they do not create a vertical axis, cube, pressure or height.
+Native atmospheric cubes and vertical selectors remain gated for P5.
+
 ``available`` inspection or typed ``metadata_decode`` does not imply physical
 ``decode`` eligibility. Structural metadata stays blocked for physical-array
 decoding even after its selected typed value has been read. ``conditional``

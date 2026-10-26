@@ -67,6 +67,8 @@ def native_descriptor(name, length, encoding, directory, geometry, metadata, clo
             reasons.append("nonregional grid representation is not qualified")
     else:
         reasons.append("native encoding not probed or unknown")
+    if metadata.get("layout_status") == "incomplete_surfex_directory":
+        reasons.append("incomplete SURFEX directory/source metadata; physical execution is blocked")
     if metadata and (metadata.get("PROGRAM") != "AROME" or metadata.get("PACK") != 0):
         reasons.append("only AROME SURFEX PACK=0 execution is admitted")
     if directory and (directory.get("TYPE") != "X1" or directory.get("DIM2") != -1
@@ -82,7 +84,12 @@ def native_descriptor(name, length, encoding, directory, geometry, metadata, clo
                    "directory": deepcopy(directory), "representation": representation,
                    "shape": shape, "decoded_dtype": dtype, "encoding": deepcopy(encoding)},
         "sampling": {"layout": "native_storage_y_x" if shape and len(shape) == 2 else None,
-                     "physical_location": None, "vector_basis": None},
+                     "physical_location": None, "vector_basis": None,
+                     "native_vertical_header": {
+                         key: deepcopy(geometry[key]) for key in (
+                             "KNIVER", "PREFER", "PAHYBR", "PBHYBR") if key in geometry},
+                     "vertical_interpretation": "unqualified; no field-level association or "
+                                                "full/interface/physical-coordinate definition"},
         "units": {"value": None, "origin": "unresolved"},
         "scaling": {"status": "inapplicable_raw_metadata" if spec else "not_exposed",
                     "multiplier": None, "offset": None,

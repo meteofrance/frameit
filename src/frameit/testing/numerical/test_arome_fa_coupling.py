@@ -249,6 +249,13 @@ with xr.open_dataset(p['atmosphere']) as a, xr.open_dataset(p['surface']) as s:
     for name in ('time','rr','theta','longitude','latitude','center_lon','center_lat'):
         np.testing.assert_array_equal(a[name], s[name])
     assert a.attrs['common_polar_target_id'] == s.attrs['common_polar_target_id']
+    descriptor = json.loads(a.CLSTEMPERATURE.attrs['fa_field_descriptor'])
+    sampling = descriptor['sampling']
+    assert sampling['native_vertical_header'] == {
+        'KNIVER': 1, 'PREFER': 101325., 'PAHYBR': [0.,0.], 'PBHYBR': [0.,1.]}
+    assert sampling['physical_location'] is None
+    assert sampling['vertical_interpretation'].startswith('unqualified;')
+    assert 'level' not in a.dims
     np.testing.assert_allclose(a.CLSTEMPERATURE.isel(rr=0), [[280.]*9,[280.5]*9], atol=1.e-9)
     np.testing.assert_allclose(s['SFX.T2M'].isel(rr=0), [[300.]*9,[300.5]*9], atol=1.e-9)
 with xr.open_dataset(p['track']) as t:
@@ -258,6 +265,12 @@ assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
 """, json.dumps(paths)], capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
     assert all(path.read_bytes() == content for path, content in originals.items())
+    provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+    for entry in provenance["sources"]["atmosphere"]["fa_inputs"]:
+        sampling = entry["field_descriptors"]["CLSTEMPERATURE"]["sampling"]
+        assert sampling["native_vertical_header"] == {
+            "KNIVER": 1, "PREFER": 101325., "PAHYBR": [0., 0.], "PBHYBR": [0., 1.]}
+        assert sampling["physical_location"] is None
     restored = SimulationConfig.from_yaml(conf.output_dir / "resolved-config.yaml")
     assert restored.input_sources["surface"]["model"] == "arome"
     assert restored.input_sources["surface"]["polar"]["radial_step_m"] == 3000.

@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+
 import numpy as np
 import pytest
+import yaml
 
+from frameit.core.execution import execute_simulation
+from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.fa_backend import inspect_fa
 from frameit.io.fa_utils import concat_fa2ds_by_vert_coord
@@ -16,7 +23,7 @@ pytestmark = pytest.mark.skipif(not NATIVE, reason="optional falfilfa4py wheel n
 
 def test_dense_directory_order_single_native_layer_masks_and_zero(tmp_path, monkeypatch):
     y, x = np.indices((7, 9))
-    moisture = (.01 * (x + y)).astype(float)
+    moisture = (x + 10 * y).astype(float) / 1000.
     moisture[2, 3] = np.nan
     fields = [
         {"name": "TG2P1", "mask": "NATURE", "values": (290. + y + x).tolist()},
@@ -55,6 +62,17 @@ def test_dense_directory_order_single_native_layer_masks_and_zero(tmp_path, monk
     assert calls == [["SFX.WG1P1"]]
     assert actual.attrs["surfex_support_mask"] == "NATURE"
     assert actual.dims == ("time", "y", "x")  # no invented soil-depth/patch coordinate
+    # Independent point/strided truth on the dense layout, not a packed support
+    # map or an oracle made by slicing the reader's own full result.
+    selected = fa_utils.inspect_fa_inputs(path, conf, ["SFX.WG1P1"])
+    array = fa_utils.FaArray(path, "SFX.WG1P1", selected, conf.fa_options, [0, 9, 0, 7])
+    np.testing.assert_array_equal(array[1:6:2, 2:8:3],
+                                  [[.012, .015], [.032, .035], [.052, .055]])
+    np.testing.assert_array_equal(array[::-2, 6:0:-3],
+                                  [[.066, .063], [.046, .043], [.026, np.nan], [.006, .003]])
+    assert np.isnan(array[2, 3])
+    assert array[1:1, :].shape == (0, 9)
+    assert calls == [["SFX.WG1P1"]] * 4
     assert path.read_bytes() == before
 
 
@@ -66,43 +84,123 @@ def test_unqualified_packing_or_producer_does_not_bypass_dense_gate(tmp_path, op
         inspect_fa(path, "surfex_history", ["SFX.T2M"])
 
 
-def test_unqualified_array_layout_remains_inventory_only(tmp_path):
+@pytest.mark.parametrize("layout", [
+    {"type": "X0"}, {"type": "X2"}, {"type": "N1"}, {"type": "L1"}, {"type": "C1"},
+    {"dim1": 62}, {"dim2": 1},
+])
+def test_unqualified_array_layout_remains_inventory_only(tmp_path, layout):
     path = fa_files(tmp_path, profile="surfex_history", surface_fields=[{
-        "name": "TESTLAYOUT", "type": "X2", "mask": "NATURE",
+        "name": "TESTLAYOUT", "mask": "NATURE", **layout,
         "values": np.ones((7, 9)).tolist()}])[0]
-    assert inspect_fa(path, None)["field_directory"]["SFX.TESTLAYOUT"]["TYPE"] == "X2"
+    info = inspect_fa(path, None, ["SFX.TESTLAYOUT"], validate_selection=False)
+    assert info["field_directory"]["SFX.TESTLAYOUT"]["TYPE"] == layout.get("type", "X1")
+    assert info["field_descriptors"]["SFX.TESTLAYOUT"]["eligibility"]["decode"] == "blocked"
     with pytest.raises(ValueError, match="unsupported SURFEX field type/dimensions"):
         inspect_fa(path, "surfex_history", ["SFX.TESTLAYOUT"])
 
 
-@pytest.mark.parametrize("remove_program", [False, True])
-def test_incomplete_surface_directory_cannot_bypass_profile_checks(tmp_path, remove_program):
-    import subprocess
-    import sys
-
+@pytest.mark.parametrize("damage", [
+    "name", "name_program", "directory_program", "only_field", "type", "pack",
+])
+def test_incomplete_surface_directory_cannot_bypass_profile_checks(tmp_path, damage):
     path = fa_files(tmp_path, profile="surfex_history", program="OTHER")[0]
+    original = inspect_fa(path, None)["records"]
+    removed = ["SFX._FBUF_NAME"]
+    if damage in {"name_program", "directory_program"}:
+        removed.append("SFX.PROGRAM")
+    if damage == "directory_program":
+        removed.extend(name for name in original if name.startswith("SFX._FBUF_"))
+    if damage == "only_field":
+        removed = [name for name in original if name.startswith("SFX.") and name != "SFX.T2M"]
+    if damage in {"type", "pack"}:
+        removed = ["SFX._FBUF_TYPE" if damage == "type" else "SFX.PACK"]
     # Corrupt only our generated negative fixture, in a separate native process.
     script = """
-import sys
+import json, sys
 from uuid import uuid4
 from falfilfa4py import FA, LFI
 unit = FA.wfaitou(sys.argv[1], 'OLD', uuid4().hex[:16])
 try:
-    LFI.wlfisup(unit, 'SFX._FBUF_NAME')
-    if sys.argv[2] == 'true':
-        LFI.wlfisup(unit, 'SFX.PROGRAM')
+    for name in json.loads(sys.argv[2]):
+        LFI.wlfisup(unit, name)
 finally:
     FA.wfairme(unit, 'KEEP')
 """
-    result = subprocess.run([sys.executable, "-c", script, str(path), str(remove_program).lower()],
-                            capture_output=True,
-                            text=True, timeout=30)
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(path), json.dumps(sorted(set(removed)))],
+        capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     info = inspect_fa(path, None, validate_selection=False)
-    if not remove_program:
+    if damage == "name":
         assert info["surfex_metadata"]["PROGRAM"] == "OTHER"
     assert info["surfex_metadata"]["layout_status"] == "incomplete_surfex_directory"
+    assert set(info["surfex_metadata"]["missing_records"]) >= set(removed) & {
+        "SFX._FBUF_NAME", "SFX.PROGRAM", "SFX._FBUF_TYPE", "SFX.PACK"}
     assert "SFX.T2M" in info["records"]
-    with pytest.raises(ValueError, match="Incomplete SURFEX source"):
-        inspect_fa(path, "arome_history", ["SFX.T2M"])
+    for profile, fields in (("arome_history", []), ("arome_history", ["SFX.T2M"]),
+                            ("surfex_history", ["SFX.T2M"])):
+        with pytest.raises(ValueError, match="Incomplete SURFEX source"):
+            inspect_fa(path, profile, fields)
+    descriptor = inspect_fa(path, None, ["SFX.T2M"], validate_selection=False)[
+        "field_descriptors"]["SFX.T2M"]
+    assert descriptor["eligibility"]["decode"] == "blocked"
+    assert any("incomplete SURFEX" in reason for reason in descriptor["eligibility"]["reasons"])
     assert "falfilfa4py" not in sys.modules
+
+
+def categorical_document(tmp_path):
+    classes = np.tile([0., 0., 2., 2., 5., np.nan, 0., 2., 0.], (7, 1))
+    path = fa_files(tmp_path, profile="surfex_history", surface_fields=[{
+        "name": "COVERCLASS", "mask": "FULL", "values": classes.tolist()}])[0]
+    raw = single_fa_document(tmp_path, [path])
+    raw["variables"] = {"surface": {"names": ["SFX.COVERCLASS"]}}
+    raw["input"]["fa"]["field_metadata"] = {"SFX.COVERCLASS": {
+        "units": "1", "kind": "categorical", "temporal_kind": "instantaneous"}}
+    return raw
+
+
+def test_categorical_selection_rejects_bilinear_before_payload_reads(tmp_path, monkeypatch):
+    raw = categorical_document(tmp_path)
+    raw["polar"] = {"enabled": True}
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("categorical method validation must precede physical decoding")
+
+    monkeypatch.setattr("frameit.io.fa_utils.request_fa", forbidden)
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    with pytest.raises(ValueError, match="categorical FA fields require explicit nearest_s2d"):
+        preflight(conf)
+    assert not conf.output_dir.exists()
+
+
+@pytest.mark.parametrize("polar", [False, True])
+def test_dense_x1_categories_keep_codes_and_masks_in_ordinary_outputs(tmp_path, polar):
+    if polar:
+        pytest.importorskip("xesmf")
+    raw = categorical_document(tmp_path)
+    raw["polar"] = {"enabled": polar, "interpolation_method": "nearest_s2d",
+                    "radial_step_m": 2000., "azimuth_count": 8}
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    result = execute_simulation(conf)
+    assert result.ok
+    paths = {item["role"]: item["path"] for item in result.products}
+    check = subprocess.run([sys.executable, "-c", """
+import json, sys, numpy as np, xarray as xr
+paths = json.loads(sys.argv[1])
+with xr.open_dataset(paths['cart']) as native:
+    v = native['SFX.COVERCLASS']
+    np.testing.assert_array_equal(v[0], np.tile([2., 2., 5., np.nan, 0.], (5, 1)))
+    assert v.attrs['kind'] == 'categorical' and v.attrs['units'] == '1'
+    d = json.loads(v.attrs['fa_field_descriptor'])
+    assert d['native']['type'] == 'X1' and d['native']['decoded_dtype'] == 'float64'
+    assert d['mask']['support_map'] is None
+if 'polar' in paths:
+    with xr.open_dataset(paths['polar']) as target:
+        values = target['SFX.COVERCLASS'].values
+        assert set(values[np.isfinite(values)]) <= {0., 2., 5.}
+        assert np.any(values == 0.) and np.isnan(values).any()
+assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
+""", json.dumps(paths)], capture_output=True, text=True, timeout=30)
+    assert check.returncode == 0, check.stdout + check.stderr
+    provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+    assert provenance["fa_inputs"][0]["fields"]["SFX.COVERCLASS"]["kind"] == "categorical"

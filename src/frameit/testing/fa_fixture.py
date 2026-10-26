@@ -99,8 +99,8 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
             ):
                 text("_FBUF_" + column, "".join(value.ljust(width) for value in entries),
                      len(fields) * width)
-            words("_FBUF_DIM1", [nx * ny] * len(fields))
-            words("_FBUF_DIM2", [-1] * len(fields))
+            words("_FBUF_DIM1", [f.get("dim1", nx * ny) for f in fields])
+            words("_FBUF_DIM2", [f.get("dim2", -1) for f in fields])
             current = np.array([2026, 1, 1, 0], dtype="int64")
             current.view(np.float64)[3] = 3600. * (hours if state_hours is None else state_hours)
             words("DTCUR", current)
