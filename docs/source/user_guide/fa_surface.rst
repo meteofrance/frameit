@@ -15,8 +15,8 @@ The scope repair adds direct two-time AROME-FA/SURFEX-FA qualification on 1-km
 and 3-km native grids, with a 54-point common target under a 60-point budget.
 The same target can be replayed from resolved YAML. A 53-point budget, too-fine
 sampling, anisotropic source geometry and ambiguous source clocks still fail.
-Source metadata and geometry are checked before allocation is deferred; no
-scientific safeguard is disabled to make a target fit.
+Source metadata and geometry are checked while target allocation is deferred;
+no scientific safeguard is disabled to make a target fit.
 
 Common target, independent sources
 -----------------------------------
