@@ -6,6 +6,10 @@ For named atmospheric/surface sources, native FA settings and the selectable
 ``example/config_file/coupled_fa.yaml``. Single-source schema-v2 documents retain
 their existing structure. Coupled runs require ``tracking.source`` and keep
 variables within each source rather than a shared top-level block.
+Set top-level ``polar.shared_target: true`` for the verified common-target
+contract in :doc:`fa_surface`; its default is false for compatibility. Enabled,
+selected sources inherit the target from ``tracking.source`` and must agree on
+its geometry. Sampling methods and physical masks remain source-specific.
 
 Create a model-specific, annotated configuration:
 

@@ -17,7 +17,8 @@ import numpy as np
 
 def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_history", packing=0,
                   state_hours=None, source_version=8, source_bug=1, program="AROME",
-                  extra_metadata=False, projection_latitude=None):
+                  extra_metadata=False, projection_latitude=None, surface_fields=None,
+                  surface_pack=0):
     from falfilfa4py import FA, LFI
 
     if path.exists():
@@ -62,8 +63,14 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
         FA.wfandax(unit, date)
         FA.wfagote(unit, packing, 24, 24, 0, 0, 0)
         field = "CLSTEMPERATURE"
+        y, x = np.indices((ny, nx))
+        values = (280. + offset + 10 * y + x).astype("float64")
+        fields = [{"name": field, "values": values, "mask": "FULL"}]
         if profile == "surfex_history":
             field = "SFX.T2M"
+            fields = [{"name": "T2M", "values": values, "mask": "FULL"}]
+            if surface_fields is not None:
+                fields = surface_fields
 
             def words(name, values):
                 values = np.asarray(values, dtype="int64")
@@ -74,16 +81,21 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
 
             text("PROGRAM", program, 40)
             text("GRID_TYPE", "LONLAT", 40)
-            for name, value in (("VERSION", source_version), ("BUG", source_bug), ("PACK", 0),
+            for name, value in (("VERSION", source_version), ("BUG", source_bug),
+                                ("PACK", surface_pack),
                                 ("MASDEV", 47), ("BUGFIX", 0),
                                 ("DIM_FULL", nx * ny), ("IMAX", nx), ("JMAX", ny),
-                                ("_FBUF_SIZE", 1)):
+                                ("_FBUF_SIZE", len(fields))):
                 words(name, [value])
-            text("_FBUF_NAME", "T2M", 32)
-            text("_FBUF_TYPE", "X1", 2)
-            text("_FBUF_MASK", "FULL", 16)
-            words("_FBUF_DIM1", [nx * ny])
-            words("_FBUF_DIM2", [-1])
+            for column, width, entries in (
+                ("NAME", 32, [f["name"] for f in fields]),
+                ("TYPE", 2, [f.get("type", "X1") for f in fields]),
+                ("MASK", 16, [f["mask"] for f in fields]),
+            ):
+                text("_FBUF_" + column, "".join(value.ljust(width) for value in entries),
+                     len(fields) * width)
+            words("_FBUF_DIM1", [nx * ny] * len(fields))
+            words("_FBUF_DIM2", [-1] * len(fields))
             current = np.array([2026, 1, 1, 0], dtype="int64")
             current.view(np.float64)[3] = 3600. * (hours if state_hours is None else state_hours)
             words("DTCUR", current)
@@ -91,9 +103,17 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
                 words("L1D", [0])
                 words("L2D", [1])
                 words("LAT0", np.array([-20.25], dtype="float64").view("int64"))
-        y, x = np.indices((ny, nx))
-        values = (280. + offset + 10 * y + x).astype("float64")
-        FA.wfaieno(unit, field[:4], 0, field[4:], values.size, values.ravel(), False, False, 1.e20)
+        for item in fields:
+            field = ("SFX." + item["name"] if profile == "surfex_history" else item["name"])
+            values = np.asarray(item["values"], dtype="float64")
+            if values.shape != (ny, nx):
+                raise ValueError("Fixture field must match the declared native grid")
+            undefined = bool(np.any(~np.isfinite(values)))
+            # Raw packing-0 does not encode the undefined flag/sentinel. Preserve
+            # IEEE NaNs there, rather than writing an unflagged physical 1e20.
+            encoded = values if packing == 0 else np.where(np.isfinite(values), values, 1.e20)
+            FA.wfaieno(unit, field[:4], 0, field[4:], encoded.size, encoded.ravel(),
+                       False, undefined and packing != 0, 1.e20)
     finally:
         FA.wfairme(unit, "KEEP")
 

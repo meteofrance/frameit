@@ -231,6 +231,9 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
             )
             if config.input_sources:
                 status["time_alignment"] = config.simulation_parameter["time_alignment"]
+                if config.simulation_parameter.get("common_polar_target") is not None:
+                    status["common_polar_target"] = config.simulation_parameter[
+                        "common_polar_target"]
             if config.schema_version == 2:
                 from frameit.utils.atomic import write_yaml_atomic
 
@@ -243,6 +246,8 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
                         "runtime": runtime, "execution_resources": status["resources"],
                         "time_alignment": config.simulation_parameter.get("time_alignment", {}),
                         "sources": config.simulation_parameter.get("source_provenance", {}),
+                        "common_polar_target": config.simulation_parameter.get(
+                            "common_polar_target"),
                         "fa_inputs": config.simulation_parameter.get("fa_inputs", []),
                         "grid_geometry": config.grid_geometry,
                         "input_inventory": [str(p) for p in result.files],

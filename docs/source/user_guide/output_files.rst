@@ -50,6 +50,11 @@ are retained in run provenance and decoder logs; see :doc:`fa_contracts`.
 Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
 ``lat``/``lon`` remain requested centres; see :doc:`fa_geometry` for conventions.
+With ``polar.shared_target: true``, separate source-qualified polar products share
+a verified target ID and exactly matching time/radius/azimuth/lat/lon coordinates.
+Source masks and variable meanings remain independent. Vertical-group separation
+is retained (several atmospheric groups can still produce several atmosphere
+files). See :doc:`fa_surface`; no CROCO/WW3 compatibility is implied.
 
 GRIB indexes are stored in ``cache/``, never beside the input files. Cache
 filenames distinguish input paths and cfgrib indexing keys. Meso-NH NetCDF

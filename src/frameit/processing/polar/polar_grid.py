@@ -234,7 +234,8 @@ class PolarLonLatGrid:
 
         return lon0, lat0
 
-    def build(self, ds_surface: xr.Dataset, *, track: xr.Dataset | None = None) -> xr.Dataset:
+    def build(self, ds_surface: xr.Dataset, *, track: xr.Dataset | None = None,
+              track_centres_authoritative: bool = False) -> xr.Dataset:
         """
         Compute the polar lon/lat grid for all time steps in ``ds_surface``.
 
@@ -245,6 +246,10 @@ class PolarLonLatGrid:
             cyclone center coordinates.
         track : xr.Dataset or None, optional
             Continuous lon(time)/lat(time) centres, overriding the box centre.
+        track_centres_authoritative : bool, optional
+            Coupled-source orchestration selects this to honor every supplied
+            reference centre, including on internally fixed-box secondary sources.
+            The default preserves standalone fixed-box freezing at the first fix.
 
         Returns
         -------
@@ -260,8 +265,8 @@ class PolarLonLatGrid:
 
         Notes
         -----
-        When ``tracking_method == "fixed_box"``, the center is taken at ``t=0``
-        and broadcast to all time steps, producing a static polar grid.
+        In standalone fixed-box mode the centre at ``t=0`` is broadcast. Coupled
+        orchestration can explicitly make supplied per-time centres authoritative.
         """
         if track is not None:
             if "lon" not in track or "lat" not in track:
@@ -309,7 +314,11 @@ class PolarLonLatGrid:
                 )
             return float(lon0.values), float(lat0.values)
 
-        if self.tracking_method == "fixed_box":
+        static_fixed = self.tracking_method == "fixed_box" and (
+            not track_centres_authoritative or track is None
+            or (np.all(lon0.values == lon0.values[0])
+                              and np.all(lat0.values == lat0.values[0])))
+        if static_fixed:
             lon_c, lat_c = _center_as_float(0)
             logger.debug(
                 "fixed_box mode: using center from it=0: lon=%.6f, lat=%.6f.", lon_c, lat_c

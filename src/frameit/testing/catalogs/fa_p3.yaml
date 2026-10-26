@@ -1,0 +1,94 @@
+# P3 observation/qualification manifest, not an automatically selected field preset.
+schema_version: 1
+checked_on: '2026-10-26'
+baseline_revision: 6c735efe6bbdf54a2a28ef21522313cda7e9b50d
+scope: separate atmosphere/surface products; explicit shared polar target; dense FA only
+scientific_approval: not established by this engineering increment
+real_check:
+  identity_strategy: size/mtime_ns before and after; no archive content checksums
+  grib:
+    basename: grid.arome-forecast.indienxl0025+0012:00.grib
+    bytes: 416057156
+    mtime_ns: 1792569642000000000
+    headers: 574
+    native_eccodes: 2.50.0
+    interval_step_units: 1  # GRIB/ecCodes hour code, checked on selected accumulated records
+    reference_time: '2026-10-21T00:00:00'
+    valid_time: '2026-10-21T12:00:00'
+    physical_fields_decoded: 0
+  surface:
+    basename: historic.surfex.indienxl-01km30+0012:00.fa
+    bytes: 213098496
+    mtime_ns: 1792569892000000000
+    source: {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0, PACK: 0}
+    storage_y_x: [2048, 3072]
+    directory_encoding: dense X1, DIM1=6291456, DIM2=-1
+    selected_probe: SFX.T2M
+    probe_budget: one native horizontal decode, one selected output point, 6300000 max_points
+    scaling_policy: allow_unscaled=false
+    result: blocked by missing native scaling metadata; no value accepted or product certified
+  sources_size_mtime_unchanged: true
+priority_inputs:
+  - quantity: mean sea level pressure
+    record: GRIB prmsl / meanSea
+    native_units: Pa
+    temporal_support: instant at valid time
+    status: observed metadata; existing GRIB path, not a new independent physical validation
+  - quantity: near-surface horizontal winds
+    record: GRIB 10u, 10v / heightAboveGround=10
+    native_units: m s**-1
+    vector_flag: uvRelativeToGrid=0
+    temporal_support: instant at valid time
+    status: observed metadata; preserve Earth-relative definition
+  - quantity: pressure-level winds, temperature, relative humidity, geopotential
+    record: GRIB u, v, t, r, z / isobaricInhPa
+    selected_levels_available_hPa: [850, 700, 500]
+    native_units: {u: m s**-1, v: m s**-1, t: K, r: '%', z: m**2 s**-2}
+    temporal_support: instant at valid time
+    status: observed metadata; no inferred physical vertical conversion
+  - quantity: near-surface temperature and relative humidity
+    record: GRIB 2t, 2r / heightAboveGround=2
+    native_units: {2t: K, 2r: '%'}
+    temporal_support: instant at valid time
+    status: observed metadata; RH is not specific humidity
+  - quantity: requested surface SST / near-surface temperature / humidity / radiative state
+    records: [SFX.SST, SFX.T2M, SFX.HU2M, SFX.TSRAD]
+    support_labels: {SFX.SST: SEA, SFX.T2M: FULL, SFX.HU2M: FULL, SFX.TSRAD: FULL}
+    native_encoding: gridpoint, packing=120, bits=24
+    status: metadata observed; physical units/scaling/time definitions need release-matched evidence
+  - quantity: selected native soil layer / patch states
+    records: [SFX.TG1P1, SFX.WG1P1]
+    support_labels: NATURE
+    native_encoding: dense gridpoint, packing=120, bits=24
+    status: individually named 2-D records only; no inferred depth, patch axis or averaging
+  - quantity: latent/sensible surface heat exchange and radiation
+    records: [slhf, sshf, ssrd, strd]
+    native_units: J m**-2
+    temporal_support: GRIB accum, hours 0-12
+    status: accumulated energy metadata observed; not W m-2, no automatic rate or sign conversion
+  - quantity: rain amount
+    record: GRIB tirf, Time integral of rain flux
+    native_units: kg m**-2
+    temporal_support: GRIB accum, hours 0-12
+    status: metadata observed; no automatic deaccumulation or diagnostic selection
+  - quantity: surface turbulent stresses
+    records: [iews, inss]
+    native_units: N m**-2
+    temporal_support: GRIB stepType=accum, hours 0-12
+    status: blocked interpretation; native names say instantaneous but temporal keys say accumulated
+not_found_under_requested_exact_sfx_ids: [SFX.H, SFX.LE, SFX.FMU, SFX.FMV, SFX.RAIN]
+required_gaps:
+  - release-matched units/scaling/temporal definitions and trusted decodes for real SFX records
+  - producer Earth model and independent real geographic checkpoints
+  - multi-time real corpus and interval/reset references
+  - packed maps, X2 layouts, typed physical arrays and independent layer/tile definitions
+  - actual Meso-NH native containers and companions; no LFI or Meso-NH FA adapter added
+  - native atmospheric -91/spectral/3-D contracts remain separate P0/P4/P5 gates
+  - CROCO/WW3 adapters excluded; third NetCDF fixture tests orchestration only
+synthetic_qualification:
+  - moving two-time target on three independent NetCDF grids
+  - separate synchronous/spawn exports and ordinary-reader coordinate/value/mask checks
+  - dense multi-field FA, reordered directory, SEA/NATURE labels, IEEE NaNs and valid zeros
+  - one original layer/patch record selected without other physical decodes
+  - conflicting target settings, actual-coordinate mismatch and disabled-polar/no-FA cases
+  - unqualified producer/PACK/X2 rows fail without weakening reader gates

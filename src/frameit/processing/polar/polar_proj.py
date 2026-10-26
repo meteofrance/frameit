@@ -289,7 +289,8 @@ def polar_project(
                             geographic_degrees(reference[conf.name_latitude]))
     reference = reference.assign_coords({conf.name_longitude: lon, conf.name_latitude: lat})
     grid = PolarLonLatGrid.from_conf(conf, ellps=getattr(conf, "polar_ellipsoid", "WGS84"))
-    geometry = grid.build(reference, track=track)
+    geometry = grid.build(reference, track=track, track_centres_authoritative=bool(
+        getattr(conf, "simulation_parameter", {}).get("coupled_source_id")))
     target_static = all(
         all(np.array_equal(geometry[name].isel(time=0), geometry[name].isel(time=index))
             for name in ("lon", "lat")) for index in range(1, len(time))

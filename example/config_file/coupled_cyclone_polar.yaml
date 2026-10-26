@@ -1,0 +1,71 @@
+# Separate atmosphere/surface products on one explicitly selected polar target.
+# Adapt paths, centre and selections. This is not a scientific qualification preset.
+schema_version: 2
+model: arome
+run:
+  name: cyclone-coupled-polar
+input:
+  time_alignment: common
+  sources:
+    atmosphere:
+      model: arome
+      input:
+        directory: ./data/atmosphere
+        pattern: "*.grib"
+        format: grib
+      variables:
+        surface:
+          names: [prmsl, u10, v10]
+        isobaricInhPa:
+          names: [u, v, t, r, z]
+          levels: {values: [850, 700, 500]}
+    surface:
+      model: arome
+      input:
+        directory: ./data/surface
+        pattern: "historic.surfex*.fa"
+        format: fa
+        fa:
+          profile: surfex_history
+          subdomain: CI
+          expected_source: {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0}
+          # Inspection declaration only: confirm the actual producer Earth model.
+          earth_radius_m: 6371229.0
+          field_metadata:
+            # These are explicit source-unit/time declarations requiring review.
+            # Labels do not repair native codec scaling. The supplied real T2M
+            # currently fails the missing-scaling guard; no fallback is enabled.
+            SFX.T2M:
+              units: K
+              kind: continuous
+              temporal_kind: instantaneous
+              allow_unscaled: false
+            SFX.SST:
+              units: K
+              kind: continuous
+              temporal_kind: instantaneous
+              allow_unscaled: false
+      variables:
+        surface:
+          names: [SFX.T2M, SFX.SST]
+tracking:
+  source: atmosphere
+  method: fixed_box
+  fixed_box:
+    # Engineering example centre, not a cyclone fix inferred from filenames.
+    center: {latitude: -15.0, longitude: 50.15}
+domain:
+  size_km: {x: 40, y: 40}
+polar:
+  enabled: true
+  shared_target: true
+  # Common target must be no finer than any participating source's native spacing.
+  radial_step_m: 4000
+  azimuth_count: 72
+  interpolation_method: bilinear
+  missing_data_policy: strict
+output:
+  directory: ./output/cyclone-coupled-polar
+  overwrite: false
+  max_workers: 1
+  synchronous_export: true

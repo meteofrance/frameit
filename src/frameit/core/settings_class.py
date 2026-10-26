@@ -114,6 +114,7 @@ class SimulationConfig:
 
     # Polar projection
     compute_polar_proj: bool = False
+    polar_shared_target: bool = False
     radial_resolution: float = 0
     azimuthal_resolution: float | None = None
     polar_n_theta: int | None = None
@@ -289,6 +290,8 @@ class SimulationConfig:
     # Validation
     # -----------------------
     def __post_init__(self):
+        if type(self.polar_shared_target) is not bool:
+            raise ValueError("polar_shared_target must be a boolean")
         if self.file_type == "fa":
             if self.atm_model != "AROME":
                 raise ValueError("Current FA profiles require atm_model='AROME'")

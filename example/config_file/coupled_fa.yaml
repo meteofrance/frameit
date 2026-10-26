@@ -62,6 +62,8 @@ domain:
   size_km: {x: 40, y: 40}
 polar:
   enabled: false
+  # Opt in when enabling polar output to guarantee a common atmosphere/surface target.
+  shared_target: true
   # To request the same polar target, set a shared radial_step_m no finer than
   # the coarsest source spacing.
 output:

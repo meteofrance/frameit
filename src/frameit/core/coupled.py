@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from copy import copy
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +15,95 @@ from frameit.core.settings_class import SimulationConfig
 from frameit.io.loader import DatasetResources, discover_input_files
 
 log = logging.getLogger(__name__)
+
+
+def _shared_polar_target(conf, children, plans, requested, time_count):
+    """Resolve one explicitly selected target; native grids and masks stay separate."""
+    from frameit.processing.polar.sampling import check_point_budget, sampling_axes
+
+    participants = {name: child for name, child in children.items()
+                    if child.compute_polar_proj and any(
+                        spec.get("variables") for spec in child.polar_variables.values())}
+    if not conf.polar_shared_target or not participants:
+        return None
+    if conf.tracking_source not in participants:
+        raise ValueError("polar.shared_target requires polar fields on tracking.source")
+    reference = participants[conf.tracking_source]
+    explicit = {float(requested[name]["radial_step_m"]) for name in participants
+                if requested[name]["radial_step_m"] is not None}
+    if len(explicit) > 1:
+        raise ValueError("polar.shared_target: conflicting source radial_step_m declarations")
+    radial = next(iter(explicit)) if explicit else max(c.resolution for c in participants.values())
+    if any(radial < c.resolution for c in participants.values()):
+        raise ValueError("polar.shared_target radial_step_m is finer than "
+                         "a participating native grid")
+    reference_sampling = copy(reference)
+    reference_sampling.radial_resolution = radial
+    reference_sampling.polar_n_theta = requested[conf.tracking_source]["azimuth_count"]
+    reference_sampling.azimuthal_resolution = requested[conf.tracking_source]["azimuth_step_deg"]
+    radii, angles, metadata = sampling_axes(reference_sampling)
+    for name, child in participants.items():
+        candidate = copy(child)
+        candidate.radial_resolution = radial
+        candidate.polar_n_theta = requested[name]["azimuth_count"]
+        candidate.azimuthal_resolution = requested[name]["azimuth_step_deg"]
+        if candidate.polar_n_theta is None and candidate.azimuthal_resolution is None:
+            candidate.polar_n_theta = len(angles)
+        other_radii, other_angles, _ = sampling_axes(candidate)
+        if (not np.array_equal(other_radii, radii) or not np.array_equal(other_angles, angles)
+                or child.polar_ellipsoid != reference.polar_ellipsoid):
+            raise ValueError(f"polar.shared_target: source {name} conflicts with tracking-source "
+                             "radius/azimuth/ellipsoid; declare common target settings")
+        check_point_budget(time_count * len(radii) * len(angles), child.polar_max_points)
+    for name, child in participants.items():
+        child.radial_resolution = radial
+        child.polar_n_theta, child.azimuthal_resolution = len(angles), None
+        child.yaml_config["polar"].update(radial_step_m=radial, azimuth_count=len(angles),
+                                         azimuth_step_deg=None)
+        plans[name]["polar_sampling"] = {
+            **metadata, "shared_target": True, "reference_source": conf.tracking_source,
+            "radial_count": len(radii), "estimated_points_per_time": len(radii) * len(angles),
+            "estimated_time_count": time_count,
+        }
+    return {
+        "schema_version": 1, "reference_source": conf.tracking_source,
+        "participants": list(participants), "radial_step_m": float(radial),
+        "radial_step_origin": "explicit" if explicit else "coarsest_participating_native_grid",
+        "maximum_radius_km": float(radii[-1]), "radial_count": len(radii),
+        "azimuth_count": len(angles), "ellipsoid": reference.polar_ellipsoid,
+        "native_spacing_m": {name: child.resolution for name, child in participants.items()},
+        "requested_sampling": {name: requested[name] for name in participants},
+        "centre_definition": "continuous_tracking_source_centres",
+        "verification": "pending_exact_output_coordinates",
+    }
+
+
+def _polar_target_signature(dataset, child, track):
+    """Hash only target coordinates; do not materialize fields or equate source masks."""
+    import hashlib
+
+    centres = (("time", track.time), ("center_lon", track.lon), ("center_lat", track.lat))
+    for name, expected in centres:
+        if name not in dataset or not np.array_equal(dataset[name].values, expected.values):
+            raise ValueError(f"Shared polar target {name} disagrees with "
+                             "continuous reference track")
+    digest = hashlib.sha256()
+    for canonical, name in (("time", "time"), ("radius", "rr"), ("azimuth", "theta"),
+                            ("longitude", child.name_longitude), ("latitude", child.name_latitude)):
+        if name not in dataset.coords:
+            raise ValueError(f"Shared polar target missing coordinate {name}")
+        coordinate = dataset[name]
+        if canonical in {"longitude", "latitude"}:
+            coordinate = coordinate.transpose("time", "rr", "theta")
+        values = (np.asarray(coordinate, dtype="datetime64[ns]").view("int64")
+                  if canonical == "time" else np.asarray(coordinate, dtype="float64"))
+        if canonical != "time" and not np.isfinite(values).all():
+            raise ValueError(f"Shared polar target contains nonfinite {name}")
+        digest.update(canonical.encode())
+        digest.update(str(values.shape).encode())
+        digest.update(np.ascontiguousarray(values).tobytes())
+    digest.update(child.polar_ellipsoid.encode())
+    return digest.hexdigest()
 
 
 def _stamps(values, context):
@@ -109,6 +199,10 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
 
     children = {name: SimulationConfig.from_mapping_with_model_preset(
         source_document(conf.yaml_config, name)) for name in conf.input_sources}
+    requested_polar = conf.simulation_parameter.setdefault("coupled_polar_requests", {
+        name: {key: child.yaml_config["polar"][key] for key in (
+            "radial_step_m", "azimuth_count", "azimuth_step_deg", "ellipsoid")}
+        for name, child in children.items()})
     inventories = {name: _inventory(child) for name, child in children.items()}
     track_times = None
     if conf.tracking_method == "prescribed_track":
@@ -133,13 +227,16 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
         child.input_files = [entry["path"] for entry in entries]
         plans[name] = preflight(child, input_files=child.input_files, check_output=False,
                                 execution_options=execution_options)
-        resolved = resolved_configuration(child)
-        conf.yaml_config["input"]["sources"][name] = {
-            key: resolved[key] for key in ("model", "input", "variables", "polar")}
     if known_cycles and any(cycle != known_cycles[0][1] for _, cycle in known_cycles):
         raise ValueError(f"Coupled forecast cycles disagree: {known_cycles}")
     if conf.tracking_method == "pressure_centroid" and len(selected) < 2:
         raise ValueError("pressure_centroid requires at least two exact common times")
+    shared = _shared_polar_target(conf, children, plans, requested_polar, len(selected))
+    conf.add_parameter("common_polar_target", shared)
+    for name, child in children.items():
+        resolved = resolved_configuration(child)
+        conf.yaml_config["input"]["sources"][name] = {
+            key: resolved[key] for key in ("model", "input", "variables", "polar")}
     if check_output:
         parent = conf.output_dir
         while not parent.exists():
@@ -189,6 +286,8 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
             "sources": {name: {key: value for key, value in plans[name].items()
                                 if key not in {"configuration", "setting_sources"}}
                         for name in children}, "planned_products": products}
+    if shared is not None:
+        plan["common_polar_target"] = shared
     return plan, children, plans
 
 
@@ -321,11 +420,25 @@ def run_coupled(runner, *, benchmark=False):
         time_alignment_skipped_count=sum(len(v["skipped_times"])
                                          for v in plan["time_alignment"]["sources"].values()))
     runner.dict_crop_user, runner.dict_polar_user, runner.polar_report = {}, {}, {}
+    shared = conf.simulation_parameter.get("common_polar_target")
     for name, consumer in consumers.items():
         geometry = make_tracking_dataset(consumer.ds_tracker, consumer.conf.tracking_method)
         source_track = (track if name == conf.tracking_source else
                         _mapped_track(track, geometry, consumer.conf))
         consumer.process_loaded(files=[], track=source_track, benchmark=benchmark)
+        if shared is not None and name in shared["participants"]:
+            if not consumer.dict_polar_user:
+                raise ValueError(f"Shared polar target source {name} produced "
+                                 "no requested polar fields")
+            for group, dataset in consumer.dict_polar_user.items():
+                signature = _polar_target_signature(dataset, consumer.conf, track)
+                if shared.get("target_signature", signature) != signature:
+                    raise ValueError(f"Shared polar target mismatch for source {name}, "
+                                     f"group {group}")
+                shared["target_signature"] = signature
+                dataset.attrs.update(common_polar_target_id=signature,
+                                     common_polar_reference_source=conf.tracking_source,
+                                     common_polar_tracking_method=conf.tracking_method)
         for section in ("extraction", "polar_projection"):
             runner.timer.sections[section] = (runner.timer.sections.get(section, 0.)
                                               + consumer.timer.sections.get(section, 0.))
@@ -364,4 +477,6 @@ def run_coupled(runner, *, benchmark=False):
             "wind_transformations", [])
         source_provenance["fa_inputs"] = consumer.conf.simulation_parameter.get(
             "fa_inputs", source_provenance["fa_inputs"])
+    if shared is not None:
+        shared["verification"] = "exact_time_radius_azimuth_longitude_latitude"
     return RunResult(ok=True, n_files=len(files), output_dir=runner.output_dir, files=files)

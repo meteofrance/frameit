@@ -161,6 +161,11 @@ For atmospheric GRIB/NetCDF coupled to SURFEX FA, start from
 each source losing times and records all exclusions in provenance/final status.
 Choose `strict` to fail on unequal source times. Each source retains its own
 grid; FA geometry and field meaning/scaling need explicit declarations.
+For separate atmospheric/surface products with identical polar target coordinates,
+select `polar.shared_target: true`. See the
+[cyclone coupled-polar example](example/config_file/coupled_cyclone_polar.yaml) and
+[P3 field/evidence notes](docs/source/user_guide/fa_surface.rst). Source masks and
+physical definitions remain independent. Marine-model adapters are future work.
 
 ## Documentation
 

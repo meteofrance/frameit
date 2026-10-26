@@ -50,6 +50,8 @@ The :doc:`fa_contracts` describes the P1 private descriptors, typed structural
 metadata, optional exact source-version assertions and declaration precedence.
 The :doc:`fa_geometry` records the P2 native-axis lookup repair, numerical
 compatibility change, snapping metadata and remaining geometry gates.
+The :doc:`fa_surface` records the P3 shared atmosphere/surface polar contract,
+selected dense/layer-name tests, cyclone-field priorities and remaining blockers.
 
 Use ``input.format: fa`` for FA-only extraction or named sources for coupling.
 Do not put atmospheric and SURFEX companion files into an undifferentiated FA
@@ -136,9 +138,12 @@ record ``source_id``, ``source_model``, ``source_format`` and ``source_group``. 
 variables retain native names, declarations, source indices, masks, packing and
 producer metadata. Existing single-source naming/defaults are preserved.
 
-Polar sampling stays optional. For common target axes, explicitly set common
-domain/sampling options, including a radial step no finer than the coarsest
-source. Otherwise native-spacing defaults can give different radial axes.
+Polar sampling stays optional. ``polar.shared_target: true`` opts into one target
+for participating sources: common exact times, continuous centres, radius/azimuth
+and ellipsoid, with exact output-coordinate verification. Explicit radial steps
+must agree and be no finer than the coarsest source; otherwise this mode resolves
+the coarsest participating native spacing and records that choice. With the
+default ``false``, per-source sampling remains independently configurable.
 Categorical FA fields selected for polar sampling require ``nearest_s2d``;
 different methods are not silently assigned to individual fields. Point sampling
 is not conservation or area averaging.

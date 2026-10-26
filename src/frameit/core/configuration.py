@@ -61,7 +61,7 @@ DEFAULTS = {
     "domain": {"size_km": None, "edge_policy": "pad_nan"},
     "variables": {},
     "polar": {
-        "enabled": False, "variables": "all", "radial_step_m": None,
+        "enabled": False, "shared_target": False, "variables": "all", "radial_step_m": None,
         "azimuth_step_deg": None, "azimuth_count": None, "interpolation_method": "bilinear",
         "missing_data_policy": "strict", "min_valid_weight_fraction": .5,
         "weight_zero_tolerance": 1e-14, "source_halo_points": 1, "ellipsoid": "WGS84",
@@ -333,6 +333,9 @@ def _resolve_sources(raw, conf, base):
             raise ValueError(f"input.sources.{name}.input cannot contain nested sources")
         checked["polar"] = _merge_checked(checked["polar"], conf["polar"],
                                            f"input.sources.{name}.polar")
+        if checked["polar"]["shared_target"] != conf["polar"]["shared_target"]:
+            raise ValueError("polar.shared_target is a coupled-run setting; "
+                             "source declarations must agree with the top-level value")
         sources[name] = checked
     for name in sources:
         child, _, _ = resolve_schema(source_document(conf, name), base_dir=base)
@@ -496,7 +499,9 @@ def resolve_schema(raw, *, base_dir=None):
         for name, value in chunks.items():
             if value != -1:
                 _positive(value, f"{path}.{name}", integer=True)
-    for path, value in (("polar.enabled", pol["enabled"]), ("polar.profile", pol["profile"]),
+    for path, value in (("polar.enabled", pol["enabled"]),
+                        ("polar.shared_target", pol["shared_target"]),
+                        ("polar.profile", pol["profile"]),
                         ("tracking.utrack.use_gpu", trk["utrack"]["use_gpu"]),
                         ("output.unlimited_time", out["unlimited_time"]),
                         ("output.overwrite", out["overwrite"]),
@@ -625,6 +630,7 @@ def to_runtime(raw, *, base_dir=None):
         "multifield_vortex": trk["multifield_vortex"],
         "requested_variables_user": user, "polar_variables": polar,
         "x_boxsize_km": size["x"], "y_boxsize_km": size["y"], "compute_polar_proj": pol["enabled"],
+        "polar_shared_target": pol["shared_target"],
         "radial_resolution": pol["radial_step_m"] or 0,
         "azimuthal_resolution": pol["azimuth_step_deg"],
         "polar_n_theta": pol["azimuth_count"], "polar_max_points": pol["max_points"],
@@ -827,7 +833,8 @@ def migrate_mapping(old, *, launch_dir=None):
         c["variables"][group] = {"names": names, "levels": levels}
     pol = c["polar"]
     for old_key, key in (
-        ("compute_polar_proj", "enabled"), ("radial_resolution", "radial_step_m"),
+        ("compute_polar_proj", "enabled"), ("polar_shared_target", "shared_target"),
+        ("radial_resolution", "radial_step_m"),
         ("azimuthal_resolution", "azimuth_step_deg"), ("polar_n_theta", "azimuth_count"),
         ("polar_max_points", "max_points"), ("polar_missing_data_policy", "missing_data_policy"),
         ("polar_min_valid_weight_fraction", "min_valid_weight_fraction"),
