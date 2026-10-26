@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add an optional, isolated P4 ecTrans 1.6.0 candidate probe with independent
+  Fourier-mode/sign/normalization/truncation checks, bounded failure handling and
+  atomic evidence reports. Preserve native spectral header facts as unresolved
+  contracts and reject coefficient-shaped read responses at the parent boundary.
+  Native spectral FA execution remains gated: no coefficient encoding or trusted
+  real-field transformation is qualified by the library-only tests.
+
 - Add an opt-in wind point-method comparison separating bilinear/ESMF patch
   weights from component-wise/WGS84 geodesic-transport vector treatment. Retain
   strict joint masks (including signed patch stencils), independent vector/peak/

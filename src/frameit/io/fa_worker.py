@@ -20,6 +20,7 @@ import numpy as np
 
 from frameit.io.fa_contracts import (
     PROTOCOL_VERSION,
+    SPECTRAL_GATE,
     SURFEX_METADATA,
     check_expected_source,
     layout_definition,
@@ -195,8 +196,13 @@ def _inspect(fa, lfi, unit, header, request):
                 continue
             raise ValueError(f"{name}: unsupported native encoding ({exc}); "
                              "not metadata fallback") from exc
-        if request.get("validate_selection", True) and (not flags[0] or flags[1]):
-            raise ValueError(f"{name}: spectral or unknown FA records require a separate transform")
+        if request.get("validate_selection", True):
+            if flags[1]:
+                raise ValueError(f"{name}: {SPECTRAL_GATE}; native packing={flags[2]}, "
+                                 f"bits={flags[3]}. Installing a transform does not "
+                                 "qualify decoding")
+            if not flags[0]:
+                raise ValueError(f"{name}: unknown FA record representation")
         names = "exists", "spectral", "packing", "bits", "truncation", "laplacian"
         fields[name] = dict(zip(names, flags, strict=True))
         if surface:

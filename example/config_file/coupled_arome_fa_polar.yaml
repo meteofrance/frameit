@@ -1,5 +1,7 @@
 # Native AROME atmospheric FA + AROME-produced SURFEX FA, separate products.
 # Explicit instantaneous gridpoint scalars only; spectral/3-D fields are gated.
+# The optional fa-spectral-test extra evaluates ecTrans; it does not enable
+# S001 spectral fields here. See docs/source/user_guide/fa_spectral.rst for gates.
 # Native vertical-header facts are retained as provenance, not pressure/height axes.
 # Adapt paths/centre and confirm the source units and producer Earth model.
 schema_version: 2

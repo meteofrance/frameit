@@ -13,6 +13,10 @@ from copy import deepcopy
 PROTOCOL_VERSION = 1
 DESCRIPTOR_VERSION = 1
 SURFEX_LAYOUT = "arome-47-surfex-8.1-observed-v1"
+SPECTRAL_GATE = (
+    "spectral-to-grid execution is gated: an encoding-qualified coefficient contract "
+    "and independent native-grid reference are required (see FA P4 spectral method notes)"
+)
 
 # Only small structural metadata whose raw-word layout is evidenced by P0 and
 # the existing fixture recipe. X1 physical fields are never read as raw words.
@@ -60,7 +64,7 @@ def native_descriptor(name, length, encoding, directory, geometry, metadata, clo
         representation = "spectral" if encoding["spectral"] else "gridpoint"
         dtype = "float64"  # native wrapper's decoded dtype, not on-disk precision
         if representation == "spectral":
-            reasons.append("spectral coefficient layout/transform is not qualified")
+            reasons.append(SPECTRAL_GATE)
         elif geometry["KTYPTR"] < 0:
             shape = [geometry["KNLATI"], geometry["KNXLON"]]
         else:
@@ -76,13 +80,24 @@ def native_descriptor(name, length, encoding, directory, geometry, metadata, clo
                       or directory.get("DIM1") != shape[0] * shape[1]):
         reasons.append("SURFEX physical execution requires dense horizontal X1 dimensions")
     status = "blocked" if reasons else "conditional"
+    native = {"word_count": length, "type": directory.get("TYPE"),
+              "directory": deepcopy(directory), "representation": representation,
+              "shape": shape, "decoded_dtype": dtype, "encoding": deepcopy(encoding)}
+    if representation == "spectral":
+        native["spectral_contract"] = {
+            "native_header": {key: deepcopy(geometry[key]) for key in (
+                "KTYPTR", "KTRONC") if key in geometry},
+            "coefficient_count": None, "coefficient_order": None,
+            "space": None, "normalization": None, "transform_truncation": None,
+            "dimension_evidence": "unresolved; indexed word count and grid shape "
+                                  "are not coefficient dimensions",
+            "status": "blocked_unqualified_fa_contract",
+        }
     return {
         "schema_version": DESCRIPTOR_VERSION, "native_id": name,
         "source": {"container": "FA", "producer_metadata": deepcopy(metadata),
                    "layout_definition": layout},
-        "native": {"word_count": length, "type": directory.get("TYPE"),
-                   "directory": deepcopy(directory), "representation": representation,
-                   "shape": shape, "decoded_dtype": dtype, "encoding": deepcopy(encoding)},
+        "native": native,
         "sampling": {"layout": "native_storage_y_x" if shape and len(shape) == 2 else None,
                      "physical_location": None, "vector_basis": None,
                      "native_vertical_header": {

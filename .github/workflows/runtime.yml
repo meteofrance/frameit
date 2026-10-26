@@ -30,6 +30,7 @@ jobs:
           src/frameit/testing/numerical/test_fa_baseline.py
           src/frameit/testing/numerical/test_fa_contracts.py
           src/frameit/testing/numerical/test_fa_mapping.py
+          src/frameit/testing/numerical/test_fa_spectral.py
           src/frameit/testing/numerical/test_coupled_shared_polar.py
           src/frameit/testing/numerical/test_arome_fa_coupling.py
           --junitxml=hpc-tests.xml
@@ -61,6 +62,7 @@ jobs:
           src/frameit/testing/numerical/test_fa_baseline.py
           src/frameit/testing/numerical/test_fa_contracts.py
           src/frameit/testing/numerical/test_fa_mapping.py
+          src/frameit/testing/numerical/test_fa_spectral.py
           src/frameit/testing/numerical/test_fa_surface.py
           src/frameit/testing/numerical/test_coupled_shared_polar.py
           src/frameit/testing/numerical/test_arome_fa_coupling.py
@@ -70,3 +72,29 @@ jobs:
         with:
           name: fa-coupling-python-3.13
           path: fa-tests.xml
+
+  fa-spectral-candidate:
+    runs-on: ubuntu-latest
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install pinned optional transform candidate and isolated FA/GRIB readers
+        run: python -m pip install -e '.[test,grib,fa,fa-spectral-test]'
+      - name: Evaluate independent modes, admission gates and unchanged gridpoint behavior
+        run: >-
+          python -m pytest -q
+          src/frameit/testing/numerical/test_fa_spectral.py
+          src/frameit/testing/numerical/test_fa_io.py
+          src/frameit/testing/numerical/test_fa_pipeline.py
+          --junitxml=fa-spectral-tests.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fa-spectral-candidate-python-3.13
+          path: fa-spectral-tests.xml

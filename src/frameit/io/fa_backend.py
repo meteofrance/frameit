@@ -107,6 +107,10 @@ def request_fa(request):
             descriptor = info.get("field_descriptors", {}).get(request["fields"][0])
             if descriptor is None:
                 raise ValueError(f"Missing FA decoded field descriptor for {context}")
+            if (descriptor["native"]["representation"] != "gridpoint"
+                    or descriptor["eligibility"]["decode"] == "blocked"):
+                raise ValueError(f"FA transfer is not a qualified gridpoint field: {context}; "
+                                 "coefficients cannot be returned as values")
             if descriptor["native"]["decoded_dtype"] != info["dtype"]:
                 raise ValueError(f"FA decoded dtype contradicts field descriptor for {context}")
             # 1.3.0 exposes no structured multiplier query. Absence of this

@@ -261,3 +261,8 @@ The :doc:`fa_geometry` records a subsequent bounded P2 repair of already admitte
 modern regional headers and Lambert index lookup. Additional projections, Earth
 models require references before new AROME/SURFEX variants are admitted.
 Global/reduced active metadata belongs to a future, separately scoped reader.
+
+The :doc:`fa_spectral` evaluates a pinned optional ecTrans candidate against
+independent regional Fourier modes. No P0 spectral coefficient encoding or real
+field is promoted by those library-only tests; this matrix's spectral decode,
+dataset, extraction and polar gates remain blocked.

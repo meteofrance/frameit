@@ -47,6 +47,9 @@ FA diagnostics are reported in provenance/final status. See :doc:`fa_inputs`.
 FA variables additionally carry a JSON ``fa_field_descriptor`` input snapshot
 and its explicit scope. Per-file descriptors and post-decode scaling/mask facts
 are retained in run provenance and decoder logs; see :doc:`fa_contracts`.
+Spectral FA coefficients have no admitted output contract and cannot be returned
+as gridpoint values. The separate P4 candidate evaluation writes an atomic JSON
+report, not a physical-field NetCDF product; see :doc:`fa_spectral`.
 Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
 ``lat``/``lon`` remain requested centres; see :doc:`fa_geometry` for conventions.

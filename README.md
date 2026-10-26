@@ -45,6 +45,9 @@ provenance, without inferred layer axes or atmospheric 3-D processing.
 The [P0 baseline and family matrix](docs/source/user_guide/fa_baseline.rst)
 separate current evidence from blocked capabilities; full FA compatibility is
 not claimed.
+The optional [P4 ecTrans candidate evaluation](docs/source/user_guide/fa_spectral.rst)
+checks independent regional Fourier modes in an isolated helper; native spectral
+FA execution remains gated pending verified coefficient and real-field references.
 
 1. Clone the repository
 ```bash

@@ -55,6 +55,8 @@ The :doc:`fa_geometry` records the P2 native-axis lookup repair, numerical
 compatibility change, snapping metadata and remaining geometry gates.
 The :doc:`fa_surface` records the P3 shared atmosphere/surface polar contract,
 selected dense/layer-name tests, cyclone-field priorities and remaining blockers.
+The :doc:`fa_spectral` records the P4 optional ecTrans candidate evaluation,
+independent Fourier modes and the still-blocked native spectral admission gates.
 
 Use ``input.format: fa`` for FA-only extraction or named sources for coupling.
 Do not put atmospheric and SURFEX companion files into an undifferentiated FA
