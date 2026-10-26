@@ -1,4 +1,6 @@
 # Paths are relative to this YAML. Adapt them and review the field declarations.
+# Limited dense instantaneous scalar example, not full FA qualification.
+# Evidence/gaps: docs/source/user_guide/fa_baseline.rst (including SFX scaling).
 schema_version: 2
 model: arome
 run:

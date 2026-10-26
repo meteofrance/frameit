@@ -27,6 +27,7 @@ jobs:
           python -m pytest -q
           src/frameit/testing/numerical/test_hpc_execution.py
           src/frameit/testing/numerical/test_logging.py
+          src/frameit/testing/numerical/test_fa_baseline.py
           --junitxml=hpc-tests.xml
       - uses: actions/upload-artifact@v4
         if: always()
@@ -53,6 +54,7 @@ jobs:
           src/frameit/testing/numerical/test_fa_io.py
           src/frameit/testing/numerical/test_fa_geometry.py
           src/frameit/testing/numerical/test_fa_pipeline.py
+          src/frameit/testing/numerical/test_fa_baseline.py
           --junitxml=fa-tests.xml
       - uses: actions/upload-artifact@v4
         if: always()

@@ -44,6 +44,9 @@ flags or native errors without decoding data. Raw inspection does not select
 units or infer an Earth model. An atmospheric record rejected with native error
 -91 is not automatically treated as harmless metadata.
 
+The :doc:`fa_baseline` records the current P0 corpus, finite family/operation
+matrix, native -91 reproducer, missing references and P1 admission gates.
+
 Use ``input.format: fa`` for FA-only extraction or named sources for coupling.
 Do not put atmospheric and SURFEX companion files into an undifferentiated FA
 inventory: they are complementary streams, not duplicate observations.

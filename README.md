@@ -39,6 +39,9 @@ The reference conda environment targets Python 3.13 and includes the published
 `falfilfa4py` wheel. The optional `fa` extra enables the isolated native reader.
 FA supports explicitly defined instantaneous 2-D gridpoint records on qualified
 regional headers; spectral transformations are not implicit.
+The [P0 baseline and family matrix](docs/source/user_guide/fa_baseline.rst)
+separate current evidence from blocked capabilities; full FA compatibility is
+not claimed.
 
 1. Clone the repository
 ```bash

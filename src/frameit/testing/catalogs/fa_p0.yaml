@@ -1,0 +1,103 @@
+# Evidence manifest, not a reader profile, field definition table or support switch.
+schema_version: 1
+checked_on: '2026-10-26'
+baseline_revision: 06a9d62ae70ed6462e7a1251d50d2af687364087
+initial_worktree: clean
+identity_strategy: size/mtime_ns before and after probes; no production-content checksum
+redistribution: external samples not retained; permission for real fixtures not established
+runtime:
+  python: 3.13.16
+  frameit: 1.1.0
+  falfilfa4py: 1.3.0
+  ctypesForFortran: 2.2.1
+  numpy: 2.5.4
+  FA_ecCodes_C: 2.48.0
+  python_eccodes_distribution: 2.48.0
+  FA_native_source_revision: unknown
+  inspected_FA_py_sha256: dc6f67b8ac36dad95f3388d030d5d2eafb17e3d68da95ea4dbf4022f095bc6da
+  definitions: wheel MEMFS; parent GRIB overrides excluded in child
+shared_fa_header:
+  identifier: ALD
+  header_version: not independently identified; KNIVER is a level count, not a version
+  KTYPTR: -1535
+  KTRONC: 1023
+  KNIVER: 90
+  PREFER: 101325.0
+  storage_y_x: [2048, 3072]
+  KNLOPA_first8: [0, 1, 1, 3061, 1, 2037, 16, 16]
+  spacing_x_y_m: [1300, 1300]
+  ci_y_x: [2037, 3061]
+  c_y_x: [2005, 3029]
+  geometry_evidence: modern regional projected header; producer Earth model/checkpoints missing
+  reference_time: '2026-10-21T00:00:00'
+  valid_time: '2026-10-21T12:00:00'
+  lead_seconds: 43200
+  header_interval_start_seconds: 39600
+  temporal_support: header clock only; not field-specific intervals
+samples:
+  - id: atmosphere-fa
+    basename: historic.arome.indienxl-01km30+0012:00.fa
+    container: FA (native open, header, date and LFI index succeed)
+    producer: AROME attribution supplied by owner; ALD does not establish producer/release
+    producer_release: unknown
+    bytes: 16008388608
+    mtime_ns: 1792569910000000000
+    records: 1345
+    observations:
+      CLSTEMPERATURE: {representation: gridpoint, packing: 120, bits: 16}
+      S001TEMPERATURE: {representation: spectral, packing: 103, bits: 18}
+      S001WIND.U.PHYS: {representation: spectral, packing: 103, bits: 18}
+      SURFPRESSION: {length_words: 1410925, native_error: -91, representation: unresolved}
+      S090TEMPERATURE: {length_words: 1411016, native_error: -91, representation: unresolved}
+      S090WIND.U.PHYS: {length_words: 1411016, native_error: -91, representation: unresolved}
+    trusted_physical_decode: missing
+  - id: surfex-fa
+    basename: historic.surfex.indienxl-01km30+0012:00.fa
+    container: FA (native open, header, date and LFI index succeed)
+    producer: SFX.PROGRAM=AROME
+    producer_release: SFX.VERSION=8, SFX.BUG=1; complete build identity missing
+    bytes: 213098496
+    mtime_ns: 1792569892000000000
+    records: 122
+    directory_entries: 108
+    directory_types: [C0, L0, N0, T0, X0, X1]
+    directory_supports: ['', FULL, SEA, WATER, NATURE, TOWN]
+    PACK: 0
+    DIM_FULL: 6235257
+    state_time: '2026-10-21T12:00:00'
+    state_matches_header: true
+    observations:
+      SFX.T2M: {representation: gridpoint, packing: 120, bits: 24, type: X1, support: FULL, dim1: 6291456, dim2: -1}
+      SFX.SST: {representation: gridpoint, packing: 120, bits: 24, type: X1, support: SEA, dim1: 6291456, dim2: -1}
+    trusted_physical_decode: missing; historical native scaling warnings remain unresolved
+  - id: atmosphere-grib
+    basename: grid.arome-forecast.indienxl0025+0012:00.grib
+    container: GRIB2 (574 ecCodes message headers read)
+    producer: centre=lfpw; AROME attribution supplied by owner
+    producer_release: unknown
+    bytes: 416057156
+    mtime_ns: 1792569642000000000
+    grid: {type: regular_ll, y_x: [899, 1395], first_lat_lon: [-3.45, 32.75], last_lat_lon: [-25.9, 67.6], increment_degrees: 0.025, scanningMode: 0}
+    reference_time: '2026-10-21T00:00:00'
+    valid_time: '2026-10-21T12:00:00'
+    step_types: {instant: 547, accum: 19, max: 4, min: 3, avg: 1}
+    packing_counts: {second_order_16: 276, second_order_12: 258, second_order_6: 31, second_order_8: 4, simple_0: 5}
+    reference_limit: distinct grid/product; not a native FA value oracle
+missing_external_cases:
+  - multi-time FA sequences and reset/cycle examples
+  - actual Meso-NH native containers, including plain LFI and any claimed FA
+  - Meso-NH NetCDF companion to the supplied FA corpus (synthetic NetCDF tests exist)
+  - packed SURFEX, additional releases, independent layer/tile/support definitions
+  - older/additional regional headers, global/reduced FA (broad-scope decision required)
+  - static/PREP/state examples with authoritative validity semantics
+  - independent native decode, masks, geometry checkpoints and producer definitions
+synthetic_fixtures:
+  generator: frameit.testing.fa_fixture
+  storage_y_x: [7, 9]
+  truth: '280 + offset + 10*y + x; offset=hours*0.5'
+  reference_time: '2026-01-01T00:00:00'
+  tested_hours: [0, 1, 2]
+  profiles: [arome_history, surfex_history]
+  packing: 0
+  limits: analytical values only; no real producer, spectral or -91 codec validation
+  tests: [test_fa_io.py, test_fa_geometry.py, test_fa_pipeline.py, test_fa_baseline.py]

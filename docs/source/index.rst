@@ -27,6 +27,7 @@ FrameIt |release| documentation
 
    user_guide/input_files
    user_guide/fa_inputs
+   user_guide/fa_baseline
    user_guide/configuration_file
    user_guide/output_files
    user_guide/matrix_testing
