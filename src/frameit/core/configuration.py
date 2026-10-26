@@ -25,7 +25,8 @@ DEFAULTS = {
         "wind_reference_frame": None, "wind_pairs": [],
         "netcdf": {"engine": "h5netcdf", "chunks": {}},
         "fa": {"profile": None, "subdomain": "CI", "earth_radius_m": None,
-               "field_metadata": {}, "max_points": 20_000_000, "timeout_seconds": 120.},
+               "field_metadata": {}, "expected_source": {},
+               "max_points": 20_000_000, "timeout_seconds": 120.},
         "sources": {}, "time_alignment": "common",
     },
     "tracking": {
@@ -256,6 +257,14 @@ def validate_fa_options(options, selected=False):
         _positive(options["earth_radius_m"], "input.fa.earth_radius_m")
     _positive(options["max_points"], "input.fa.max_points", integer=True)
     _positive(options["timeout_seconds"], "input.fa.timeout_seconds")
+    expected = options["expected_source"]
+    if not isinstance(expected, dict) or set(expected) - {"PROGRAM", "VERSION", "BUG",
+                                                        "MASDEV", "BUGFIX"}:
+        raise ValueError("input.fa.expected_source accepts PROGRAM, VERSION, BUG, MASDEV, BUGFIX")
+    for key, value in expected.items():
+        if ((key == "PROGRAM" and (not isinstance(value, str) or not value.strip()))
+                or (key != "PROGRAM" and (type(value) is not int or value < 0))):
+            raise ValueError(f"input.fa.expected_source.{key}: invalid native source assertion")
     if not isinstance(options["field_metadata"], dict):
         raise ValueError("input.fa.field_metadata must be a mapping")
     for name, definition in options["field_metadata"].items():

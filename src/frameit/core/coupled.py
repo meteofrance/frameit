@@ -43,6 +43,7 @@ def _inventory(conf):
             from frameit.io.fa_backend import inspect_fa
 
             info = inspect_fa(path, conf.fa_options["profile"],
+                              expected_source=conf.fa_options["expected_source"],
                               timeout_seconds=conf.fa_options["timeout_seconds"])
             times = _stamps([np.datetime64(info["valid_time"])], str(path))
             references = {info["reference_time"]}

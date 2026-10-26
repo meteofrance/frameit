@@ -245,6 +245,8 @@ def test_netcdf_fa_two_grids_time_intersection_independent_reopening(tmp_path, s
     atmosphere = atmospheric_file(tmp_path)
     surface = fa_files(tmp_path, (1, 2), profile="surfex_history")
     raw = document(tmp_path, atmosphere, surface, synchronous=synchronous)
+    raw["input"]["sources"]["surfex"]["input"]["fa"]["expected_source"] = {
+        "PROGRAM": "AROME", "MASDEV": 47, "VERSION": 8, "BUG": 1, "BUGFIX": 0}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan = preflight(conf)
     assert plan["track_time_count"] == 1
@@ -267,6 +269,11 @@ with xr.open_dataset(products['surfex'], engine='netcdf4') as s:
     assert s['SFX.T2M'].attrs['units'] == 'K'
     assert s.attrs['source_id'] == 'surfex'
     assert s['SFX.T2M'].attrs['source_variable_name'] == 'SFX.T2M'
+    descriptor = json.loads(s['SFX.T2M'].attrs['fa_field_descriptor'])
+    assert descriptor['schema_version'] == 1
+    assert descriptor['native']['shape'] == [7,9]
+    assert descriptor['units'] == {'value':'K','origin':'explicit_input.fa.field_metadata'}
+    assert descriptor['mask']['undefined'] == 'not_read'  # decode facts are in the run manifest
 assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
 """, json.dumps(products)], capture_output=True, text=True)
     assert check.returncode == 0, check.stdout + check.stderr
@@ -288,7 +295,17 @@ assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
     assert provenance["sources"]["surfex"]["fa_decoder"]["decode_requests"] > 0
     versions = provenance["sources"]["surfex"]["fa_decoder"]["backend_versions"]
     assert versions["falfilfa4py"] == "1.3.0"
-    SimulationConfig.from_yaml(conf.output_dir / "resolved-config.yaml")
+    source = provenance["sources"]["surfex"]
+    assert source["fa_inputs"][0]["field_descriptors"]["SFX.T2M"]["schema_version"] == 1
+    observed = next(iter(source["fa_decoder"]["field_observations"].values()))["SFX.T2M"]
+    assert observed["mask"]["undefined"]["present"] is False
+    # Packing-0 native fixtures do not exercise the missing GRIB-scaling warning.
+    assert observed["scaling"]["status"] == "not_exposed"
+    assert observed["scaling"]["fallback"] is None
+    assert observed["units"]["origin"] == "explicit_input.fa.field_metadata"
+    restored = SimulationConfig.from_yaml(conf.output_dir / "resolved-config.yaml")
+    assert resolved_configuration(restored)["input"]["sources"]["surfex"]["input"]["fa"][
+        "expected_source"]["MASDEV"] == 47
     strict = copy.deepcopy(raw)
     strict["input"]["time_alignment"] = "strict"
     with pytest.raises(ValueError, match="Strict source time alignment"):

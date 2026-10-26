@@ -252,3 +252,12 @@ decode or upstream-supported resolution first. Typed/scalar metadata may inform
 P1 contracts without admitting packed, spectral, 3-D, vector or interval
 execution. Permission to retain/redistribute real reduced fixtures and human
 review of scientific conventions remain open. No scientific approval is claimed.
+
+P1 follow-up
+-------------
+
+The :doc:`fa_contracts` adds versioned descriptors and selected typed structural
+metadata on the observed AROME-47/SURFEX-8.1 branch. It does not promote any
+blocked physical family in this frozen P0 matrix. In particular, the -91,
+release-matched scientific definitions, trusted decodes and multi-time real-data
+gaps remain unresolved.

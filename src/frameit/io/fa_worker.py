@@ -18,8 +18,19 @@ from uuid import uuid4
 
 import numpy as np
 
+from frameit.io.fa_contracts import (
+    PROTOCOL_VERSION,
+    SURFEX_METADATA,
+    check_expected_source,
+    layout_definition,
+    native_descriptor,
+    resolve_descriptor,
+)
+
 
 def _words(lfi, unit, records, name):
+    if name not in records or not 0 < records[name] <= 100_000:
+        raise ValueError(f"{name}: missing or oversized required FA metadata record")
     return lfi.wlfilec(unit, name, records[name], False)
 
 
@@ -27,6 +38,51 @@ def _text(words):
     if np.any((words < 0) | (words > 127)):
         raise ValueError("Invalid ASCII in FA character metadata")
     return "".join(chr(int(value)) for value in words).rstrip(" \x00")
+
+
+def _integer(lfi, unit, records, name):
+    words = _words(lfi, unit, records, name)
+    if words.size != 1:
+        raise ValueError(f"{name}: expected one native integer word")
+    return int(words[0])
+
+
+def _typed_metadata(lfi, unit, records, name, metadata, directory):
+    """Explicit small structural reads only; never interpret physical raw words."""
+    spec = SURFEX_METADATA.get(name.removeprefix("SFX.")) if name.startswith("SFX.") else None
+    if layout_definition(metadata) is None or spec is None:
+        raise ValueError(f"{name}: no evidenced release-specific typed metadata definition")
+    kind, count = spec
+    native_type = directory.get(name, {}).get("TYPE")
+    expected_type = {"character": "C0", "integer": "N0", "logical": "L0", "real": "X0",
+                     "date_time": "T0", "integer_array": "N1"}[kind]
+    if native_type is not None and native_type != expected_type:
+        raise ValueError(f"{name}: native directory type {native_type} contradicts "
+                         f"{layout_definition(metadata)} definition {expected_type}")
+    if name not in records or records[name] > 4096:
+        raise ValueError(f"{name}: typed metadata missing or exceeds 4096-word budget")
+    words = _words(lfi, unit, records, name)
+    if count is not None and words.size != count:
+        raise ValueError(f"{name}: inconsistent typed metadata length; expected {count}")
+    if kind == "character":
+        value = _text(words)
+    elif kind == "integer":
+        value = int(words[0])
+    elif kind == "integer_array":
+        value = words.tolist()
+    elif kind == "logical":
+        if int(words[0]) not in (0, 1):
+            raise ValueError(f"{name}: unsupported logical word (only evidenced 0/1 admitted)")
+        value = bool(words[0])
+    elif kind == "real":
+        real = float(words.view(np.float64)[0])
+        value = real if np.isfinite(real) else {"nonfinite": str(real)}
+    else:  # DTCUR: three integer date words and one IEEE floating seconds word.
+        seconds = float(words.view(np.float64)[3])
+        if not np.isfinite(seconds):
+            raise ValueError(f"{name}: nonfinite state timestamp")
+        value = {"date": words[:3].tolist(), "seconds": seconds}
+    return {"type": kind, "value": value, "evidence": layout_definition(metadata)}
 
 
 def _inspect(fa, lfi, unit, header, request):
@@ -66,7 +122,10 @@ def _inspect(fa, lfi, unit, header, request):
         for key in ("PROGRAM", "GRID_TYPE"):
             metadata[key] = _text(_words(lfi, unit, records, "SFX." + key))
         for key in ("VERSION", "BUG", "PACK", "DIM_FULL", "IMAX", "JMAX"):
-            metadata[key] = int(_words(lfi, unit, records, "SFX." + key)[0])
+            metadata[key] = _integer(lfi, unit, records, "SFX." + key)
+        for key in ("MASDEV", "BUGFIX"):
+            if "SFX." + key in records:
+                metadata[key] = _integer(lfi, unit, records, "SFX." + key)
         if "SFX.DTCUR" in records:
             current = _words(lfi, unit, records, "SFX.DTCUR")
             if current.size != 4:
@@ -82,7 +141,9 @@ def _inspect(fa, lfi, unit, header, request):
             metadata["PROGRAM"] != "AROME" or metadata["PACK"] != 0
         ):
             raise ValueError("Only AROME SURFEX histories with SFX.PACK=0 are supported")
-        count = int(_words(lfi, unit, records, "SFX._FBUF_SIZE")[0])
+        count = _integer(lfi, unit, records, "SFX._FBUF_SIZE")
+        if not 0 < count <= 3125:
+            raise ValueError("SURFEX field directory exceeds 100000-word metadata budget")
         columns = {}
         for key, width in (("NAME", 32), ("TYPE", 2), ("MASK", 16)):
             words = _words(lfi, unit, records, "SFX._FBUF_" + key)
@@ -95,7 +156,10 @@ def _inspect(fa, lfi, unit, header, request):
                 raise ValueError(f"Inconsistent SURFEX field directory {key}")
             columns[key] = values.tolist()
         for i, name in enumerate(columns["NAME"]):
+            if not name or "SFX." + name in descriptors:
+                raise ValueError("Empty or duplicate SURFEX directory name")
             descriptors["SFX." + name] = {key: columns[key][i] for key in columns if key != "NAME"}
+    check_expected_source(metadata, request.get("expected_source", {}))
     fields = {}
     for name in request.get("fields", []):
         if name not in records:
@@ -105,6 +169,10 @@ def _inspect(fa, lfi, unit, header, request):
             if (descriptor.get("TYPE") != "X1" or descriptor.get("DIM2") != -1
                     or descriptor.get("DIM1") != geometry["KNXLON"] * geometry["KNLATI"]):
                 raise ValueError(f"{name}: unsupported SURFEX field type/dimensions {descriptor}")
+        if (layout_definition(metadata) and name.startswith("SFX.")
+                and name[4:] in SURFEX_METADATA):
+            fields[name] = {"record_kind": "typed_metadata"}
+            continue
         try:
             flags = fa.wfanion(unit, name[:4], 0, name[4:])
         except RuntimeError as exc:
@@ -118,13 +186,27 @@ def _inspect(fa, lfi, unit, header, request):
         names = "exists", "spectral", "packing", "bits", "truncation", "laplacian"
         fields[name] = dict(zip(names, flags, strict=True))
         if surface:
-            fields[name]["surfex_descriptor"] = descriptors[name]
+            fields[name]["surfex_descriptor"] = descriptors.get(name, {})
+    typed = {name: _typed_metadata(lfi, unit, records, name, metadata, descriptors)
+             for name in request.get("metadata_fields", [])}
+    clocks = {"reference_time": basis.isoformat(), "valid_time": valid.isoformat(),
+              "lead_seconds": int(stamp[14]),
+              "header_interval_start_seconds": int(stamp[15])}
+    contracts = {name: native_descriptor(name, records[name], fields.get(name, {}),
+                                         descriptors.get(name, {}), geometry, metadata, clocks)
+                 for name in dict.fromkeys([*fields, *typed])}
+    for contract in contracts.values():
+        contract["source"].update(profile=profile,
+                                 expected_source=request.get("expected_source", {}))
+        if contract["native_id"] in typed:
+            contract["eligibility"]["metadata_decode"] = "available"
     return {"geometry": geometry, "reference_time": basis.isoformat(),
             "valid_time": valid.isoformat(), "lead_seconds": int(stamp[14]),
             "header_interval_start_seconds": int(stamp[15]),
             "identifier": fa.wfalsif(unit).strip(), "record_count": len(records),
             "records": records, "fields": fields, "surfex_metadata": metadata,
-            "field_directory": descriptors}
+            "field_directory": descriptors, "field_descriptors": contracts,
+            "typed_metadata": typed}
 
 
 def handle(request, destination):
@@ -148,8 +230,19 @@ def handle(request, destination):
             if grid["KNXLON"] * grid["KNLATI"] > request.get("max_points", 20_000_000):
                 raise ValueError("FA decoded record exceeds the declared "
                                  "max_points resource budget")
+            descriptor = info["field_descriptors"][name]
+            if descriptor["eligibility"]["decode"] == "blocked":
+                raise ValueError(f"{name}: " + "; ".join(descriptor["eligibility"]["reasons"]))
+            if request.get("field_declaration") is not None:
+                descriptor = resolve_descriptor(descriptor, request["field_declaration"])
             values, undefined, sentinel = FA.wfacilo(
                 grid["KNXLON"] * grid["KNLATI"], unit, name[:4], 0, name[4:], False)
+            descriptor["mask"]["undefined"] = {
+                "present": bool(undefined),
+                "sentinel": (float(sentinel) if np.isfinite(sentinel) else str(float(sentinel)))
+                if undefined else None,
+                "normalization": "native undefined values to NaN; valid zeros retained",
+            }
             if undefined:
                 if np.isnan(sentinel):
                     values[np.isnan(values)] = np.nan
@@ -164,7 +257,8 @@ def handle(request, destination):
             if values.ndim:
                 values = np.ascontiguousarray(values)
             np.save(destination / "values.npy", values, allow_pickle=False)
-            info = {"shape": list(values.shape), "dtype": str(values.dtype)}
+            info = {"shape": list(values.shape), "dtype": str(values.dtype),
+                    "field_descriptors": {name: descriptor}}
         library = ctypes.CDLL(falfilfa4py.shared_objects_library)
         native_version = library.codes_get_api_version
         native_version.restype = ctypes.c_int
@@ -177,6 +271,7 @@ def handle(request, destination):
             "FA_definition_policy": "wheel_MEMFS; parent GRIB definition/sample overrides excluded",
         }
         info["identity"] = identity
+        info["protocol_version"] = PROTOCOL_VERSION
     finally:
         if unit is not None:
             FA.wfairme(unit, "KEEP")
@@ -191,6 +286,9 @@ def main():
     destination = Path(sys.argv[1])
     try:
         request = json.load(sys.stdin)
+        if (type(request.get("protocol_version")) is not int
+                or request.get("protocol_version") != PROTOCOL_VERSION):
+            raise ValueError("Unsupported FA worker protocol_version")
         if request.get("operation") not in {"inspect", "read"}:
             raise ValueError("Unknown FA worker operation")
         if request["operation"] == "read":

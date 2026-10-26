@@ -28,6 +28,10 @@ input:
         format: fa
         fa:
           profile: surfex_history
+          # Optional exact assertions, not overrides or scientific definitions.
+          # E.g. {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0}
+          # only after checking the actual source metadata.
+          expected_source: {}
           subdomain: CI
           # Explicit source-geometry declaration, NOT a universal FA default.
           # Obtain the actual Earth model from the producer before scientific use.

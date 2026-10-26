@@ -16,7 +16,8 @@ import numpy as np
 
 
 def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_history", packing=0,
-                  state_hours=None):
+                  state_hours=None, source_version=8, source_bug=1, program="AROME",
+                  extra_metadata=False):
     from falfilfa4py import FA, LFI
 
     if path.exists():
@@ -53,9 +54,10 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
             def text(name, value, width):
                 words(name, [ord(c) for c in value.ljust(width)])
 
-            text("PROGRAM", "AROME", 40)
+            text("PROGRAM", program, 40)
             text("GRID_TYPE", "LONLAT", 40)
-            for name, value in (("VERSION", 8), ("BUG", 1), ("PACK", 0),
+            for name, value in (("VERSION", source_version), ("BUG", source_bug), ("PACK", 0),
+                                ("MASDEV", 47), ("BUGFIX", 0),
                                 ("DIM_FULL", nx * ny), ("IMAX", nx), ("JMAX", ny),
                                 ("_FBUF_SIZE", 1)):
                 words(name, [value])
@@ -67,6 +69,10 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
             current = np.array([2026, 1, 1, 0], dtype="int64")
             current.view(np.float64)[3] = 3600. * (hours if state_hours is None else state_hours)
             words("DTCUR", current)
+            if extra_metadata:
+                words("L1D", [0])
+                words("L2D", [1])
+                words("LAT0", np.array([-20.25], dtype="float64").view("int64"))
         y, x = np.indices((ny, nx))
         values = (280. + offset + 10 * y + x).astype("float64")
         FA.wfaieno(unit, field[:4], 0, field[4:], values.size, values.ravel(), False, False, 1.e20)

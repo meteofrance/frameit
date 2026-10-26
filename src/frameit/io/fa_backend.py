@@ -13,6 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
+from frameit.io.fa_contracts import PROTOCOL_VERSION, validate_descriptor
+
 log = logging.getLogger(__name__)
 _REQUEST_LOCK = threading.Lock()
 
@@ -31,7 +33,8 @@ def _record_diagnostics(request, info):
 
 def collect_fa_diagnostics(output_dir, inputs):
     """Summarize child-native diagnostics after all spawned exporters complete."""
-    summary = {"decode_requests": 0, "warnings": [], "backend_versions": {}}
+    summary = {"decode_requests": 0, "warnings": [], "backend_versions": {},
+               "field_observations": {}}
     warnings = set()
     for relative in sorted({item["decoder_log"] for item in inputs if item.get("decoder_log")}):
         path = Path(output_dir) / relative
@@ -42,6 +45,9 @@ def collect_fa_diagnostics(output_dir, inputs):
                 record = json.loads(line)
                 summary["decode_requests"] += 1
                 summary["backend_versions"].update(record.get("backend_versions", {}))
+                if record.get("field_descriptors"):
+                    summary["field_observations"].setdefault(record["source_file"], {}).update(
+                        record["field_descriptors"])
                 if record.get("diagnostics"):
                     warnings.add(record["diagnostics"])
     summary["warnings"] = sorted(warnings)
@@ -55,6 +61,10 @@ def request_fa(request):
     is decoded, and native cropping precedes binary transfer. This deliberately
     favors deterministic cleanup over a persistent service; startup cost is real.
     """
+    if (type(request.get("protocol_version", PROTOCOL_VERSION)) is not int
+            or request.get("protocol_version", PROTOCOL_VERSION) != PROTOCOL_VERSION):
+        raise ValueError("Unsupported FA worker protocol_version")
+    request = {**request, "protocol_version": PROTOCOL_VERSION}
     environment = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
                        MKL_NUM_THREADS="1", PYTHONNOUSERSITE="1")
     # The wheel's private ecCodes uses its own matching MEMFS definitions.
@@ -84,14 +94,35 @@ def request_fa(request):
             _record_diagnostics(request, {"diagnostics": diagnostics, "error": payload["error"]})
             raise ValueError(f"FA input {context}: {payload['error']}\n{diagnostics[-4000:]}")
         info = payload["result"]
-        if request["operation"] == "read":
-            _record_diagnostics(request, {"diagnostics": diagnostics,
-                                          "backend_versions": info["backend_versions"]})
+        if (type(info.get("protocol_version")) is not int
+                or info.get("protocol_version") != PROTOCOL_VERSION):
+            raise ValueError(f"Unsupported FA response protocol_version for {context}")
+        for name, descriptor in info.get("field_descriptors", {}).items():
+            validate_descriptor(descriptor)
+            if descriptor["native_id"] != name:
+                raise ValueError(f"FA descriptor native identity mismatch for {context}")
         if diagnostics:
             log.warning("FA decoder %s: %s", context, diagnostics)
         if request["operation"] == "read":
-            if ("has no encoded FMULTM and FMULTE" in diagnostics
-                    and not request.get("allow_unscaled")):
+            descriptor = info.get("field_descriptors", {}).get(request["fields"][0])
+            if descriptor is None:
+                raise ValueError(f"Missing FA decoded field descriptor for {context}")
+            if descriptor["native"]["decoded_dtype"] != info["dtype"]:
+                raise ValueError(f"FA decoded dtype contradicts field descriptor for {context}")
+            # 1.3.0 exposes no structured multiplier query. Absence of this
+            # warning is NOT independent scaling verification or identity proof.
+            missing = "has no encoded FMULTM and FMULTE" in diagnostics
+            descriptor["scaling"].update(
+                status="missing" if missing else "not_exposed",
+                evidence="native_diagnostic_text" if missing else "no_structured_native_query",
+                fallback="identity_explicit_opt_in" if missing and request.get(
+                    "allow_unscaled") else None,
+            )
+            _record_diagnostics(request, {"diagnostics": diagnostics,
+                                          "backend_versions": info["backend_versions"],
+                                          "protocol_version": PROTOCOL_VERSION,
+                                          "field_descriptors": info["field_descriptors"]})
+            if missing and not request.get("allow_unscaled"):
                 raise ValueError(f"{context}: missing native scaling metadata; explicitly declare "
                                  "field_metadata.<record>.allow_unscaled: true only when justified")
             values = np.load(Path(directory) / "values.npy", allow_pickle=False)
@@ -102,8 +133,11 @@ def request_fa(request):
         return info
 
 
-def inspect_fa(path, profile, fields=(), *, validate_selection=True, timeout_seconds=120.):
+def inspect_fa(path, profile, fields=(), *, validate_selection=True, timeout_seconds=120.,
+              expected_source=None, metadata_fields=()):
     return request_fa({"operation": "inspect", "path": str(path), "profile": profile,
                        "fields": list(dict.fromkeys(fields)),
                        "validate_selection": validate_selection,
+                       "expected_source": expected_source or {},
+                       "metadata_fields": list(dict.fromkeys(metadata_fields)),
                        "timeout_seconds": timeout_seconds})

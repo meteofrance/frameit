@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from copy import deepcopy
 from uuid import uuid4
 
 import dask.array as da
@@ -13,6 +14,7 @@ import xarray as xr
 
 from frameit.check.check_functions import drop_time_dupes
 from frameit.io.fa_backend import inspect_fa, request_fa
+from frameit.io.fa_contracts import resolve_descriptor, validate_descriptor
 from frameit.io.fa_geometry import fa_geometry, geometry_signature
 from frameit.io.loader import managed_loading, resolve_input_files
 from frameit.processing.requests import build_group_ds, normalize_requests
@@ -28,7 +30,8 @@ def fa_field_names(requests):
 def inspect_fa_inputs(path, conf, fields):
     """Read metadata in a clean native process and validate selected meaning."""
     options = conf.fa_options
-    info = inspect_fa(path, options["profile"], fields, timeout_seconds=options["timeout_seconds"])
+    info = inspect_fa(path, options["profile"], fields, timeout_seconds=options["timeout_seconds"],
+                      expected_source=options["expected_source"])
     if set(conf.requests_user()) - {"surface"}:
         raise ValueError("FA currently supports explicit 2-D records in variables.surface only; "
                          "native layer/patch record identities are retained")
@@ -43,6 +46,9 @@ def inspect_fa_inputs(path, conf, fields):
                 and conf.polar_interpolation_method != "nearest_s2d"):
             raise ValueError(f"{name}: categorical FA fields require explicit nearest_s2d sampling")
     info["field_definitions"] = {name: dict(options["field_metadata"][name]) for name in fields}
+    info["field_descriptors"] = {
+        name: resolve_descriptor(info["field_descriptors"][name], info["field_definitions"][name])
+        for name in fields}
     return info
 
 
@@ -54,7 +60,12 @@ def fa_metadata_dataset(info, options, geometry=None):
                           forecast_period=("time", [np.timedelta64(info["lead_seconds"], "s")]))
     for name, definition in info.get("field_definitions", {}).items():
         ds[name] = xr.DataArray(0., attrs={**definition, "source_variable_name": name,
-                                         "grid_mapping": "crs"})
+                                          "grid_mapping": "crs",
+                                          "fa_field_descriptor_scope": (
+                                              "representative input record; per-file descriptors "
+                                              "and decode observations in run provenance"),
+                                          "fa_field_descriptor": json.dumps(
+                                              info["field_descriptors"][name], sort_keys=True)})
     ds.attrs.update(_frameit_vertical_group="surface", source_format="fa",
                     fa_profile=options["profile"], fa_identifier=info["identifier"])
     if info["surfex_metadata"]:
@@ -72,9 +83,11 @@ class FaArray:
 
     def __init__(self, path, field, info, options, zone, diagnostics_path=None):
         self.path, self.field = str(path), field
-        self.identity, self.options = info["identity"], options
-        self.zone = zone
+        self.identity, self.options = list(info["identity"]), deepcopy(options)
+        self.zone = list(zone)
         self.diagnostics_path = diagnostics_path
+        self.descriptor = deepcopy(info["field_descriptors"][field])
+        validate_descriptor(self.descriptor)
         self.shape = zone[3] - zone[2], zone[1] - zone[0]
 
     def __getitem__(self, key):
@@ -95,6 +108,8 @@ class FaArray:
         return request_fa({
             "operation": "read", "path": self.path, "identity": self.identity,
             "profile": self.options["profile"], "fields": [self.field],
+            "expected_source": self.options["expected_source"],
+            "field_declaration": self.descriptor["declaration"],
             "zone": self.zone, "key": encoded,
             "allow_unscaled": self.options["field_metadata"][self.field].get(
                 "allow_unscaled", False),
@@ -169,7 +184,10 @@ def concat_fa2ds_by_vert_coord(
                            "backend_versions": info["backend_versions"],
                            "decoder_log": (str(decoder_log.relative_to(wind_conf.output_dir))
                                            if decoder_log is not None else None),
-                           "fields": info["field_definitions"], "encoding": info["fields"]})
+                           "fields": info["field_definitions"], "encoding": info["fields"],
+                           "protocol_version": info["protocol_version"],
+                           "field_descriptors": info["field_descriptors"],
+                           "expected_source": wind_conf.fa_options["expected_source"]})
         provenance[-1]["producer_metadata"] = info["surfex_metadata"]
     if len(geometries) != 1:
         raise ValueError("Selected FA inputs have incompatible horizontal geometry")

@@ -44,6 +44,9 @@ Coupled sources keep this layout with source-qualified groups, for example
 ``SIMU.cart.surfex.surface.nc``. The shared track records per-source indices;
 Cartesian grids are not implicitly regridded. Exact-time exclusions and native
 FA diagnostics are reported in provenance/final status. See :doc:`fa_inputs`.
+FA variables additionally carry a JSON ``fa_field_descriptor`` input snapshot
+and its explicit scope. Per-file descriptors and post-decode scaling/mask facts
+are retained in run provenance and decoder logs; see :doc:`fa_contracts`.
 
 GRIB indexes are stored in ``cache/``, never beside the input files. Cache
 filenames distinguish input paths and cfgrib indexing keys. Meso-NH NetCDF

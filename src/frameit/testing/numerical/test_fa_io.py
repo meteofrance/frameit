@@ -10,7 +10,8 @@ import sys
 import numpy as np
 import pytest
 
-from frameit.io.fa_backend import inspect_fa, request_fa
+from frameit.io.fa_backend import collect_fa_diagnostics, inspect_fa, request_fa
+from frameit.io.fa_contracts import native_descriptor
 
 NATIVE = importlib.util.find_spec("falfilfa4py") is not None
 
@@ -80,16 +81,26 @@ def test_worker_death_and_unscaled_warning_are_actionable(tmp_path, monkeypatch)
         destination = Path(argv[-1])
         np.save(destination / "values.npy", np.array([[np.nan, 0.]]))
         (destination / "response.json").write_text(json.dumps({
-            "ok": True, "result": {"shape": [1, 2], "backend_versions": {}}}))
+            "ok": True, "result": {"shape": [1, 2], "dtype": "float64", "backend_versions": {},
+                                    "protocol_version": 1,
+                                    "field_descriptors": {"SFX.T2M": native_descriptor(
+                                        "SFX.T2M", 2, {"exists": True, "spectral": False}, {},
+                                        {"KTYPTR": -1, "KNLATI": 1, "KNXLON": 2}, {}, {})}}}))
         return subprocess.CompletedProcess(
             argv, 0, stdout="has no encoded FMULTM and FMULTE", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake)
-    request = {"operation": "read", "path": "native.fa", "fields": ["SFX.T2M"]}
+    request = {"operation": "read", "path": "native.fa", "fields": ["SFX.T2M"],
+               "diagnostics_path": str(tmp_path / "decoder.jsonl")}
     with pytest.raises(ValueError, match="missing native scaling metadata"):
         request_fa(request)
     values = request_fa({**request, "allow_unscaled": True})["values"]
     assert np.isnan(values[0, 0]) and values[0, 1] == 0
+    summary = collect_fa_diagnostics(tmp_path, [{"decoder_log": "decoder.jsonl"}])
+    scaling = summary["field_observations"]["native.fa"]["SFX.T2M"]["scaling"]
+    assert scaling["status"] == "missing" and scaling["multiplier"] is None
+    assert scaling["fallback"] == "identity_explicit_opt_in"
+    assert summary["decode_requests"] == 2 and summary["warnings"]
     monkeypatch.setattr(subprocess, "run", lambda argv, **kw:
                         subprocess.CompletedProcess(argv, -11, stdout="", stderr="native crash"))
     with pytest.raises(ValueError, match=r"process failed \(-11\).*native crash"):

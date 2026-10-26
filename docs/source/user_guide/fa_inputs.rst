@@ -46,6 +46,8 @@ units or infer an Earth model. An atmospheric record rejected with native error
 
 The :doc:`fa_baseline` records the current P0 corpus, finite family/operation
 matrix, native -91 reproducer, missing references and P1 admission gates.
+The :doc:`fa_contracts` describes the P1 private descriptors, typed structural
+metadata, optional exact source-version assertions and declaration precedence.
 
 Use ``input.format: fa`` for FA-only extraction or named sources for coupling.
 Do not put atmospheric and SURFEX companion files into an undifferentiated FA
@@ -187,6 +189,10 @@ Run provenance records inventories, geometry, units, winds, time alignment,
 FA declarations/encoding and child-native versions separately from the parent
 ecCodes version. Diagnostics are retained in ``logs/fa-decoder-*.jsonl`` and
 summarized after exporters complete. Size/mtime freshness is not checksum proof.
+Per-file versioned field descriptors retain unresolved facts explicitly. Decode
+logs and ``fa_decoder.field_observations`` add observed undefined-value and
+scaling-warning/fallback facts. A representative input descriptor is also stored
+as a JSON variable attribute; it does not replace per-file run provenance.
 
 Existing atomic publication, exclusive run ownership and final ``run-status.yaml``
 handle helper/export failures. Failed required sources never publish a completed
