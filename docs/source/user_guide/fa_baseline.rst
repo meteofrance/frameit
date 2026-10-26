@@ -6,6 +6,9 @@ Evidence date: **2026-10-26**. Starting revision:
 FrameIt 1.1.0. This is the P0 evidence freeze, **not full FA compatibility**.
 Every target below is either limited by named evidence or explicitly blocked.
 The initial 2026-10-22 handover is historical evidence, not today's test result.
+The active phase is now scoped to AROME atmospheric and AROME-produced SURFEX FA.
+Other producer/native-container integrations and global/reduced FA are outside
+this phase's acceptance matrix; adding them is not a completion prerequisite.
 
 Current checks and corpus
 ------------------------------------------------------------
@@ -14,8 +17,8 @@ The supplied directory contains exactly two FA histories and one GRIB product.
 Native FA open/header/date/index operations succeed for both histories; GRIB
 message headers identify the third container. No supplied plain LFI or NetCDF
 case is present. FA is an overlay on LFI: a successful LFI index alone cannot
-identify FA, producer, scientific quantities or release. No Meso-NH FA profile
-is qualified. Unknown files must not be identified by their suffix alone.
+identify FA, producer, scientific quantities or release. Unknown files must not
+be identified by their suffix alone.
 
 The manifest below retains basenames, stat freshness, native header facts,
 selected encoding probes, clocks, runtime and missing references. Source paths,
@@ -43,8 +46,9 @@ Operations are **I** inspect, **D** decode, **X** labelled dataset,
 ``V`` means verified only on the named synthetic scope, ``L`` means
 implemented-limited or native metadata observed, ``B`` means blocked by the
 listed missing evidence/implementation. No real-producer row is fully verified.
-``--`` means inapplicable to the stated operation. Blocked rows remain required
-work, including the conditional global/reduced target until scope is decided.
+``--`` means inapplicable to the stated operation. The later AROME/SURFEX science
+rows remain explicit admission gates; new producer/container and global-grid
+extensions are not part of this phase.
 
 .. list-table:: P0 operation eligibility (not an execution configuration)
    :header-rows: 1
@@ -94,15 +98,6 @@ work, including the conditional global/reduced target until scope is decided.
      - B B B B B B
      - No additional sample or header mapping. Request versioned headers,
        Earth models, anchors/orientations and independent geographic checkpoints.
-   * - Global/reduced FA (conditional broad scope)
-     - B B B B B B
-     - No sample/reference or rectangular-core contract. Request explicit scope
-       decision and native point/row/active spectral metadata reference.
-   * - Meso-NH-related native inputs
-     - B B B B B B
-     - No actual native sample. Request producer/release and container evidence,
-       companions and trusted decode. Plain LFI requires a distinct contract.
-       Existing Meso-NH NetCDF adapter is separate; synthetic coupling passes.
    * - Static/PREP/state products
      - L B B B -- B
      - SFX state timestamp inspected in history only, not a PREP qualification.
@@ -246,7 +241,7 @@ branch. Before promoting any real family, obtain its producer/release and native
 build identity, authoritative types/scaling/units/time/sampling definitions,
 independent decoded values/masks and geographic checkpoints with justified
 tolerances. Obtain at least two times per real stream and explicit cycle/reset
-examples; obtain actual Meso-NH FA/LFI/NetCDF containers and any companions.
+examples for the AROME/SURFEX families being admitted.
 For the -91 branch, obtain the native header/error specification and trusted
 decode or upstream-supported resolution first. Typed/scalar metadata may inform
 P1 contracts without admitting packed, spectral, 3-D, vector or interval
@@ -264,4 +259,5 @@ gaps remain unresolved.
 
 The :doc:`fa_geometry` records a subsequent bounded P2 repair of already admitted
 modern regional headers and Lambert index lookup. Additional projections, Earth
-models and global/reduced active metadata still lack references and remain gated.
+models require references before new AROME/SURFEX variants are admitted.
+Global/reduced active metadata belongs to a future, separately scoped reader.

@@ -195,10 +195,11 @@ def align_source_times(inventories, policy="common", track_times=None):
 
 def prepare_sources(conf, *, check_output=True, execution_options=None):
     """Discover times first; scientifically validate only the selected records."""
-    from frameit.core.preflight import preflight
+    from frameit.core.preflight import polar_sampling_plan, preflight
 
     children = {name: SimulationConfig.from_mapping_with_model_preset(
-        source_document(conf.yaml_config, name)) for name in conf.input_sources}
+        source_document(conf.yaml_config, name),
+        _defer_polar_sampling=conf.polar_shared_target) for name in conf.input_sources}
     requested_polar = conf.simulation_parameter.setdefault("coupled_polar_requests", {
         name: {key: child.yaml_config["polar"][key] for key in (
             "radial_step_m", "azimuth_count", "azimuth_step_deg", "ellipsoid")}
@@ -234,6 +235,16 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
     shared = _shared_polar_target(conf, children, plans, requested_polar, len(selected))
     conf.add_parameter("common_polar_target", shared)
     for name, child in children.items():
+        if child.simulation_parameter.pop("_defer_polar_sampling", False):
+            # All native-input, units, frame and grid checks have run. Validate
+            # the resolved target now, never an unused fine-grid intermediate.
+            child.__post_init__()
+            if child.compute_polar_proj:
+                count = len(selected) if shared is not None and name in shared[
+                    "participants"] else plans[name]["track_time_count"]
+                sampling = polar_sampling_plan(child, count)
+                plans[name]["polar_sampling"] = {
+                    **plans[name].get("polar_sampling", {}), **sampling}
         resolved = resolved_configuration(child)
         conf.yaml_config["input"]["sources"][name] = {
             key: resolved[key] for key in ("model", "input", "variables", "polar")}

@@ -6,6 +6,8 @@ protocol version **1** and field descriptor schema version **1** describe select
 records without admitting new physical representations. The :doc:`fa_baseline`
 family matrix remains the qualification boundary. Existing explicit
 ``input.fa.field_metadata`` declarations continue to work; no migration is needed.
+This phase covers AROME atmospheric FA and AROME-produced SURFEX FA; other
+producer or native-container adapters are not prerequisites for its completion.
 Python 3.13, optional native dependencies and FA/GRIB process isolation remain
 the reference runtime. EPyGrAM is not installed or imported by this path.
 

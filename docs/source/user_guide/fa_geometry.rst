@@ -3,9 +3,10 @@ FA P2 regional geometry repair and remaining gates
 
 This bounded repair starts from clean revision
 ``abce667bb5e791f39baa657968c415a69edbb47d``. It implements P2's native-grid
-association on the evidenced modern regional branch. It does **not** complete
-the roadmap's additional-header/global geometry targets or establish full FA
-compatibility. The :doc:`fa_baseline` missing-corpus requests remain applicable.
+association on the evidenced modern regional AROME/SURFEX branch. Additional
+AROME/SURFEX headers need separate admission evidence; global/reduced grids and
+other producers are outside this phase. This is not full FA compatibility.
+The :doc:`fa_baseline` in-scope missing-corpus requests remain applicable.
 
 Repair and numerical compatibility
 ------------------------------------
@@ -130,12 +131,13 @@ Qualification and blockers
      - Blocked: no demonstrated native examples with authoritative versioned
        header mappings, Earth models, anchor/scan/zone conventions and independent
        checkpoints. Request those exact inputs before admitting each variant.
-   * - Global/reduced/spectral active geometry metadata
-     - Blocked: no agreed broad-grid requirement, native reference corpus or
-       verified active-buffer extents/truncation contract. The worker still
+   * - Global/reduced active geometry metadata
+     - Outside this regional AROME/SURFEX phase. A future broader reader requires
+       a native reference corpus and verified active-buffer extents. The worker still
        retains only the qualified regional prefixes, not full active Gaussian/
        spectral arrays. Request authoritative active counts/layouts and trusted
        reference headers first; no rectangular reshape or processing is admitted.
+       Regional spectral transforms remain the separately gated P4 capability.
    * - Real private corpus geometry
      - P0/P1 metadata facts only. Producer Earth model and independent geographic
        checkpoints remain missing; no large qualification run was performed.

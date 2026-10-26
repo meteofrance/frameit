@@ -2,7 +2,7 @@
 schema_version: 1
 checked_on: '2026-10-26'
 baseline_revision: 6c735efe6bbdf54a2a28ef21522313cda7e9b50d
-scope: separate atmosphere/surface products; explicit shared polar target; dense FA only
+scope: AROME atmospheric FA / AROME-produced SURFEX FA, separate products and shared target
 scientific_approval: not established by this engineering increment
 real_check:
   identity_strategy: size/mtime_ns before and after; no archive content checksums
@@ -82,10 +82,14 @@ required_gaps:
   - producer Earth model and independent real geographic checkpoints
   - multi-time real corpus and interval/reset references
   - packed maps, X2 layouts, typed physical arrays and independent layer/tile definitions
-  - actual Meso-NH native containers and companions; no LFI or Meso-NH FA adapter added
   - native atmospheric -91/spectral/3-D contracts remain separate P0/P4/P5 gates
-  - CROCO/WW3 adapters excluded; third NetCDF fixture tests orchestration only
+outside_current_phase:
+  - other atmospheric producers and new native-container adapters
+  - global/reduced FA processing
+  - CROCO/WW3 adapters; generic NetCDF fixtures test orchestration only
 synthetic_qualification:
+  - paired native AROME FA / SURFEX FA with different projected spacings and source indices
+  - effective 54-point shared target under a 60-point per-source budget; genuine excess still rejected
   - moving two-time target on three independent NetCDF grids
   - separate synchronous/spawn exports and ordinary-reader coordinate/value/mask checks
   - dense multi-field FA, reordered directory, SEA/NATURE labels, IEEE NaNs and valid zeros

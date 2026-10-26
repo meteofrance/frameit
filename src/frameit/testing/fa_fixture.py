@@ -18,7 +18,7 @@ import numpy as np
 def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_history", packing=0,
                   state_hours=None, source_version=8, source_bug=1, program="AROME",
                   extra_metadata=False, projection_latitude=None, surface_fields=None,
-                  surface_pack=0):
+                  surface_pack=0, projected_spacing_m=1000., field_values=None):
     from falfilfa4py import FA, LFI
 
     if path.exists():
@@ -34,20 +34,23 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
     p[12:16] = [p[4] - (nx - 1) * p[6] / 2, p[5] - (ny - 1) * p[7] / 2,
                  p[4] + (nx - 1) * p[6] / 2, p[5] + (ny - 1) * p[7] / 2]
     if projection_latitude is not None:
+        if not np.isfinite(projected_spacing_m) or projected_spacing_m <= 0:
+            raise ValueError("Fixture projected spacing must be finite and positive")
         # Independent spherical equations, not FrameIt's pyproj geometry builder.
         phi0, lam0 = np.deg2rad([projection_latitude, 50.])
         n = np.sin(phi0)
         f = np.cos(phi0) * np.tan(np.pi / 4 + phi0 / 2)**n / n
         rho0 = 6371229. * f / np.tan(np.pi / 4 + phi0 / 2)**n
-        xx = np.array([-1., 1.]) * (nx - 1) * 500.
-        yy = np.array([-1., 1.]) * (ny - 1) * 500.
+        xx = np.array([-1., 1.]) * (nx - 1) * projected_spacing_m / 2
+        yy = np.array([-1., 1.]) * (ny - 1) * projected_spacing_m / 2
         rho = np.sign(n) * np.hypot(xx, rho0 - yy)
         theta = np.arctan2(np.sign(n) * xx, np.sign(n) * (rho0 - yy))
         corners_lon = lam0 + theta / n
         corners_lat = 2 * np.arctan((6371229. * f / rho)**(1 / n)) - np.pi / 2
         p[1] = abs(n)
         p[2:6] = lam0, phi0, lam0, phi0
-        p[6:10] = 1000., 1000., nx * 1000., ny * 1000.
+        p[6:10] = (projected_spacing_m, projected_spacing_m,
+                    nx * projected_spacing_m, ny * projected_spacing_m)
         p[12:16] = corners_lon[0], corners_lat[0], corners_lon[1], corners_lat[1]
         k[1] = 1
     header = uuid4().hex[:16]
@@ -65,6 +68,8 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
         field = "CLSTEMPERATURE"
         y, x = np.indices((ny, nx))
         values = (280. + offset + 10 * y + x).astype("float64")
+        if field_values is not None:
+            values = np.asarray(field_values, dtype="float64") + offset
         fields = [{"name": field, "values": values, "mask": "FULL"}]
         if profile == "surfex_history":
             field = "SFX.T2M"

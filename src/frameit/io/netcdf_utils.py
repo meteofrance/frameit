@@ -251,7 +251,7 @@ def concat_nc2ds_by_vert_coord(
             for group in dict.fromkeys(g for part in parts for g in part):
                 sequence = [part[group] for part in parts if group in part]
                 result[group] = drop_time_dupes(xr.concat(
-                    sequence, dim=concat_dimension, data_vars="minimal", coords="different",
+                    sequence, dim="time", data_vars="minimal", coords="different",
                     compat="equals", join="exact", combine_attrs="override",
                 ), keep=duplicate_time_policy)
             return result
@@ -313,6 +313,16 @@ def concat_nc2ds_by_vert_coord(
         engine=engine,
         chunks=chunks,
     )
+    # Input presets name the source axis; the grouped processing contract uses
+    # canonical time, just like the GRIB/FA adapters. Do this before selection
+    # and deduplication, including each leaf of a multi-file inventory.
+    if concat_dimension != "time" and concat_dimension in ds.dims:
+        if "time" in ds:
+            raise ValueError(f"NetCDF time coordinate 'time' conflicts with configured "
+                             f"dimension {concat_dimension!r}; provide an unambiguous "
+                             "source schema")
+        ds = ds.rename({concat_dimension: "time"})
+        concat_dimension = "time"
 
     # Promote geographic variables to coordinates if needed
     if auto_geo:

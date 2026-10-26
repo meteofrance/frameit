@@ -390,8 +390,8 @@ def resolve_schema(raw, *, base_dir=None):
         raise ValueError("input.time_alignment must be common or strict")
     validate_fa_options(inp["fa"], inp["format"] == "fa")
     if inp["format"] == "fa" and conf["model"] != "arome":
-        raise ValueError("Current FA profiles require model: arome; declare the FA source's "
-                         "model explicitly when coupling to Meso-NH NetCDF")
+        raise ValueError("Current FA profiles require model: arome; declare the actual "
+                         "AROME producer explicitly for each FA source")
     if inp["format"] == "fa" and trk["method"] not in {"fixed_box", "prescribed_track"}:
         raise ValueError("FA tracking requires fixed_box/prescribed_track, or a separate "
                          "GRIB/NetCDF tracking source")

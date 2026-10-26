@@ -157,6 +157,10 @@ for configuration checks without opening datasets.
 
 For atmospheric GRIB/NetCDF coupled to SURFEX FA, start from
 [`example/config_file/coupled_fa.yaml`](example/config_file/coupled_fa.yaml).
+The active native-FA integration phase is **AROME atmospheric FA + AROME-produced
+SURFEX FA**. The existing AROME GRIB route remains available; other producer or
+native-container integrations are outside this phase. A native FA/FA example is
+[`example/config_file/coupled_arome_fa_polar.yaml`](example/config_file/coupled_arome_fa_polar.yaml).
 `input.time_alignment: common` selects exact common times by default, warns for
 each source losing times and records all exclusions in provenance/final status.
 Choose `strict` to fail on unequal source times. Each source retains its own

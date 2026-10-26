@@ -298,6 +298,18 @@ def selected_level_records(datasets, requests, path):
     return records
 
 
+def polar_sampling_plan(conf, time_count):
+    """Validate only the effective target, including the full time allocation."""
+    from frameit.processing.polar.sampling import sampling_axes
+
+    radii, angles, metadata = sampling_axes(conf)
+    if time_count * len(radii) * len(angles) > conf.polar_max_points:
+        raise ValueError("Polar geometry across all times exceeds polar.max_points")
+    return {**metadata, "radial_count": len(radii),
+            "estimated_points_per_time": len(radii) * len(angles),
+            "estimated_time_count": time_count}
+
+
 def preflight(conf, *, input_files=None, check_output=True, execution_options=None):
     if conf.input_sources:
         if input_files is not None:
@@ -599,15 +611,9 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
         plan["tracking_inputs"] = conf.simulation_parameter["pressure_centroid_inputs"]
     if multifield:
         plan["tracking_inputs"] = conf.simulation_parameter["multifield_inputs"]
-    if conf.compute_polar_proj:
-        from frameit.processing.polar.sampling import sampling_axes
-
-        radii, angles, metadata = sampling_axes(conf)
-        plan["polar_sampling"] = {**metadata, "radial_count": len(radii),
-                                  "estimated_points_per_time": len(radii) * len(angles),
-                                  "estimated_time_count": nt}
-        if nt * len(radii) * len(angles) > conf.polar_max_points:
-            raise ValueError("Polar geometry across all times exceeds polar.max_points")
+    if (conf.compute_polar_proj
+            and not conf.simulation_parameter.get("_defer_polar_sampling", False)):
+        plan["polar_sampling"] = polar_sampling_plan(conf, nt)
     if conf.x_boxsize_km and conf.y_boxsize_km:
         plan["box_points"] = [int(2 * np.rint(v * 1000 / (2 * conf.resolution)) + 1)
                               for v in (conf.x_boxsize_km, conf.y_boxsize_km)]

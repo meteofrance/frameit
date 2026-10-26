@@ -58,7 +58,7 @@ def test_dense_directory_order_single_native_layer_masks_and_zero(tmp_path, monk
     assert path.read_bytes() == before
 
 
-@pytest.mark.parametrize("options", [{"surface_pack": 1}, {"program": "MESONH"}])
+@pytest.mark.parametrize("options", [{"surface_pack": 1}, {"program": "OTHER"}])
 def test_unqualified_packing_or_producer_does_not_bypass_dense_gate(tmp_path, options):
     path = fa_files(tmp_path, profile="surfex_history", **options)[0]
     assert inspect_fa(path, None, validate_selection=False)["field_directory"]
@@ -73,3 +73,36 @@ def test_unqualified_array_layout_remains_inventory_only(tmp_path):
     assert inspect_fa(path, None)["field_directory"]["SFX.TESTLAYOUT"]["TYPE"] == "X2"
     with pytest.raises(ValueError, match="unsupported SURFEX field type/dimensions"):
         inspect_fa(path, "surfex_history", ["SFX.TESTLAYOUT"])
+
+
+@pytest.mark.parametrize("remove_program", [False, True])
+def test_incomplete_surface_directory_cannot_bypass_profile_checks(tmp_path, remove_program):
+    import subprocess
+    import sys
+
+    path = fa_files(tmp_path, profile="surfex_history", program="OTHER")[0]
+    # Corrupt only our generated negative fixture, in a separate native process.
+    script = """
+import sys
+from uuid import uuid4
+from falfilfa4py import FA, LFI
+unit = FA.wfaitou(sys.argv[1], 'OLD', uuid4().hex[:16])
+try:
+    LFI.wlfisup(unit, 'SFX._FBUF_NAME')
+    if sys.argv[2] == 'true':
+        LFI.wlfisup(unit, 'SFX.PROGRAM')
+finally:
+    FA.wfairme(unit, 'KEEP')
+"""
+    result = subprocess.run([sys.executable, "-c", script, str(path), str(remove_program).lower()],
+                            capture_output=True,
+                            text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    info = inspect_fa(path, None, validate_selection=False)
+    if not remove_program:
+        assert info["surfex_metadata"]["PROGRAM"] == "OTHER"
+    assert info["surfex_metadata"]["layout_status"] == "incomplete_surfex_directory"
+    assert "SFX.T2M" in info["records"]
+    with pytest.raises(ValueError, match="Incomplete SURFEX source"):
+        inspect_fa(path, "arome_history", ["SFX.T2M"])
+    assert "falfilfa4py" not in sys.modules

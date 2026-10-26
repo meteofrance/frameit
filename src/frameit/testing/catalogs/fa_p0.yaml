@@ -3,6 +3,7 @@ schema_version: 1
 checked_on: '2026-10-26'
 baseline_revision: 06a9d62ae70ed6462e7a1251d50d2af687364087
 initial_worktree: clean
+active_scope: AROME atmospheric FA and AROME-produced SURFEX FA histories
 identity_strategy: size/mtime_ns before and after probes; no production-content checksum
 redistribution: external samples not retained; permission for real fixtures not established
 runtime:
@@ -85,12 +86,13 @@ samples:
     reference_limit: distinct grid/product; not a native FA value oracle
 missing_external_cases:
   - multi-time FA sequences and reset/cycle examples
-  - actual Meso-NH native containers, including plain LFI and any claimed FA
-  - Meso-NH NetCDF companion to the supplied FA corpus (synthetic NetCDF tests exist)
   - packed SURFEX, additional releases, independent layer/tile/support definitions
-  - older/additional regional headers, global/reduced FA (broad-scope decision required)
+  - references for admission of additional AROME/SURFEX regional headers
   - static/PREP/state examples with authoritative validity semantics
   - independent native decode, masks, geometry checkpoints and producer definitions
+outside_current_phase:
+  - other atmospheric producers and new native-container adapters
+  - global/reduced FA processing
 synthetic_fixtures:
   generator: frameit.testing.fa_fixture
   storage_y_x: [7, 9]

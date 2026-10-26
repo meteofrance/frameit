@@ -367,7 +367,9 @@ class SimulationConfig:
         self.file_name_suffix = self.file_name_suffix or ""
         self.file_type = self.file_type or ""
 
-        if self.compute_polar_proj and not (self.infer_grid_geometry and not self.grid_geometry):
+        if (self.compute_polar_proj
+                and not self.simulation_parameter.get("_defer_polar_sampling", False)
+                and not (self.infer_grid_geometry and not self.grid_geometry)):
             if self.radial_resolution is not None and self.radial_resolution < 0:
                 raise ValueError(f"radial_resolution={self.radial_resolution} m must be positive.")
             if not self.radial_resolution:
@@ -439,10 +441,16 @@ class SimulationConfig:
 
     @classmethod
     def from_mapping_with_model_preset(
-        cls, mapping: dict[str, Any], *, strict_locked: bool = True
+        cls, mapping: dict[str, Any], *, strict_locked: bool = True,
+        _defer_polar_sampling: bool = False,
     ) -> SimulationConfig:
         """Resolve an in-memory run mapping with the ordinary model presets."""
-        return cls(**resolve_config_with_model_presets(mapping, strict_locked=strict_locked))
+        resolved = resolve_config_with_model_presets(mapping, strict_locked=strict_locked)
+        if _defer_polar_sampling:
+            # Coupled discovery validates inputs/geometry first. Its target is
+            # resolved only after every participating native spacing is known.
+            resolved.setdefault("simulation_parameter", {})["_defer_polar_sampling"] = True
+        return cls(**resolved)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SimulationConfig:

@@ -1,12 +1,22 @@
 P3 coupled cyclone inputs and shared polar products
 ====================================================
 
-The immediate contract is **separate atmosphere and surface products on the same
-explicit polar target**. Existing native Cartesian products and vertical-group
+The active phase is **AROME atmospheric FA + AROME-produced SURFEX FA**, with
+separate atmosphere and surface products on the same explicit polar target.
+The existing AROME GRIB atmospheric route remains compatible. Other atmospheric
+producers and new native-container adapters are outside this phase.
+Existing native Cartesian products and vertical-group
 file separation remain. This bounded P3 repair uses admitted dense SURFEX
 histories; missing packed/layered/native-container references remain gates, not
 permission to guess their meaning. See :doc:`fa_baseline`, :doc:`fa_contracts`
 and :doc:`fa_geometry` for the earlier evidence and limitations.
+
+The scope repair adds direct two-time AROME-FA/SURFEX-FA qualification on 1-km
+and 3-km native grids, with a 54-point common target under a 60-point budget.
+The same target can be replayed from resolved YAML. A 53-point budget, too-fine
+sampling, anisotropic source geometry and ambiguous source clocks still fail.
+Source metadata and geometry are checked before allocation is deferred; no
+scientific safeguard is disabled to make a target fit.
 
 Common target, independent sources
 -----------------------------------
@@ -34,9 +44,14 @@ participating native grid. Without an explicit step, this selected mode resolves
 the **coarsest participating native spacing** and records that origin. Unspecified
 secondary angles inherit the reference target; explicit conflicting axes or
 ellipsoids fail. Source interpolation methods, masks, support thresholds, grids,
-vertical coordinates and units remain independent. Tight sampling budgets still
-apply during source preflight; declare an explicit coarse step for large plans
-rather than expecting the common-target option to bypass resource checks.
+vertical coordinates and units remain independent. Source metadata, units,
+vector frames and native geometry are validated first. Then common sampling is
+resolved and the **effective** per-source and complete-time point budgets are
+checked. An unused fine-grid intermediate cannot reject a valid common target;
+the 54-point common-target/60-point-budget regression verifies this ordering.
+Invalid native grids, too-fine requested steps and genuinely oversized targets
+still fail. The private deferred-planning marker is cleared before processing
+and never enters resolved YAML or data graphs.
 
 Secondary-source extraction is internally geometric/fixed-box, but a supplied
 moving atmospheric track now controls its polar origin at **every** time.
@@ -82,8 +97,8 @@ The source/target/export boundary is independent of FA: a three-source synthetic
 NetCDF test exercises the same contract and separate files. This establishes an
 orchestration basis for later ocean/wave adapters, **not CROCO/WW3 compatibility**.
 Those need their actual grids, masks, staggering, vertical coordinates and field
-conventions. Current model validation remains AROME/Meso-NH; do not relabel a
-marine NetCDF file as one of these models just to open it.
+conventions. Do not relabel a marine NetCDF file as a supported atmospheric
+producer just to open it. Such extensions are not active FA-phase requirements.
 
 Cyclone-analysis field priorities and supplied-corpus evidence
 --------------------------------------------------------------
@@ -147,11 +162,13 @@ There is no guessed sparse support map or conversion of absent surface types to
 zero. Native record identities survive as individual 2-D variables, not invented
 soil-depth, tile or atmospheric-level axes. Other producers, ``PACK!=0`` and
 unqualified X2/typed physical layouts remain actionable failures, while their
-directories can still be inspected. Plain LFI and Meso-NH-produced FA are not
-admitted by removing existing profile checks.
+directories can still be inspected. A partial SURFEX directory cannot be relabelled
+as atmospheric FA to bypass producer/layout checks; its index and known producer
+fact remain inspectable. New producer/container adapters are outside this phase.
 
-The schema-only starting example is
-``example/config_file/coupled_cyclone_polar.yaml``. Its SFX unit/time and radius
+The native FA/FA starting example is
+``example/config_file/coupled_arome_fa_polar.yaml``; the AROME GRIB/FA variant is
+``example/config_file/coupled_cyclone_polar.yaml``. Their SFX unit/time and radius
 entries are explicit declarations requiring confirmation, not new producer
 defaults. It intentionally leaves ``allow_unscaled`` false and therefore does
 not conceal the supplied native-scaling blocker. Replace paths/centre and review
@@ -163,9 +180,10 @@ Remaining phase gates
 
 Packed layouts need actual release-specific support maps/order/coverage and
 trusted scatter/gather values. Full layered/tiled axes need producer indices,
-bounds, fractions and masking conventions. Actual Meso-NH native inputs need
-container evidence and companions. Those P3 rows remain blocked, not silently
-qualified by the dense branch. Producer Earth model and independent geographic
+bounds, fractions and masking conventions. Those future AROME/SURFEX admissions
+are not silently qualified by the dense branch. Other producers, plain-LFI
+adapters and global/reduced grids are outside the current phase. Producer Earth
+model and independent geographic
 checkpoints also remain open from P2.
 
 P4 requires readable native encodings first (including resolution of required
@@ -174,8 +192,8 @@ a maintained optional transform library with independent reference cases. A
 shared target does not decode coefficients or qualify native 3-D atmospheric
 fields, vectors, intervals or new diagnostics. No scientific approval is claimed.
 
-Verification record
----------------------
+Initial P3 verification record
+--------------------------------
 
 Starting revision: ``6c735efe6bbdf54a2a28ef21522313cda7e9b50d``, clean.
 The separate architecture repository had unrelated deleted/untracked work;
@@ -246,3 +264,50 @@ Observed failure: ``SFX.T2M: missing native scaling metadata``. The accompanying
 GRIB check used ecCodes ``codes_grib_new_from_file(..., headers_only=True)``;
 selected interval records explicitly reported ``stepUnits=1`` (hours). This
 bounded corpus investigation was separate from synthetic numerical qualification.
+
+Scope-repair checks
+--------------------
+
+The current in-scope regression is ``test_arome_fa_coupling.py``: actual generated
+atmospheric FA and SURFEX FA streams, different native spacings/indices, moving
+centres, exact separate-product coordinates and independently specified constant
+fields. AROME-schema NetCDF cases additionally verify planning/replay and the
+source ``valid_time`` to internal ``time`` contract, including multi-file order
+and explicit failure on ambiguous time names. The base NetCDF case runs without
+FA or polar dependencies. These are AROME workflow checks; other-producer
+integration is neither a phase requirement nor claimed from these fixtures.
+
+Malformed SURFEX sources retain their inspectable index and available producer/
+layout facts but cannot
+bypass source/profile checks by losing the field directory. The production
+reader still rejects unqualified packing, representation and scaling. The
+native source datasets remain read-only; no new real-data scientific approval
+or native codec implementation follows from the scope repair.
+
+Scope-repair verification used the same Python-3.13 reference environment:
+
+.. code-block:: bash
+
+   conda run -n frameit_env python -m pytest -q
+   conda run -n frameit_env ruff check \
+       src/frameit/core/settings_class.py src/frameit/core/configuration.py \
+       src/frameit/core/preflight.py src/frameit/core/coupled.py \
+       src/frameit/io/netcdf_utils.py src/frameit/io/fa_worker.py \
+       src/frameit/testing/fa_fixture.py \
+       src/frameit/testing/numerical/test_arome_fa_coupling.py \
+       src/frameit/testing/numerical/test_fa_surface.py
+   conda run -n frameit_env frameit validate example/config_file/coupled_arome_fa_polar.yaml --schema-only
+   conda run -n frameit_env frameit validate example/config_file/coupled_cyclone_polar.yaml --schema-only
+   conda run -n frameit_env frameit validate example/config_file/coupled_fa.yaml --schema-only
+   LC_ALL=C LANG=C conda run -n frameit_env sphinx-build -q -W --keep-going \
+       -b html docs/source /tmp/opencode/frameit-fa-scope-repair-docs
+   git diff --check
+
+Full regression: **567 passed, 2 subtests passed**, 722 existing cfgrib/xarray
+future warnings, 279.63 seconds. Ruff, all three schema examples and the strict
+documentation build pass. The separate no-FA/no-xESMF environment ran
+``test_arome_fa_coupling.py``, ``test_coupled_shared_polar.py``,
+``test_fa_surface.py`` and the existing no-FA coupled-NetCDF base case:
+**13 passed, 22 dependency-specific skips**. The new AROME base case executes
+without either optional dependency. No source archive was modified, no new
+producer adapter was added and no scientific admission gate was removed.

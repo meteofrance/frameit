@@ -6,6 +6,9 @@ AROME and AROME-produced SURFEX FA histories. It can also process these alongsid
 atmospheric GRIB or NetCDF inputs in one run, using one geographical track and
 each source's own grid. This is a limited input adapter, not a complete FA
 diagnostic catalogue or qualification of every producer's scientific fields.
+The active implementation phase is specifically **AROME atmospheric FA plus
+AROME-produced SURFEX FA**, with the existing AROME GRIB atmospheric route
+preserved. Other producer/native-container integrations are outside this phase.
 
 Installation and native isolation
 ----------------------------------------
@@ -71,8 +74,8 @@ With ``input.sources``:
   settings. Discovery/exclusion/NetCDF/wind conventions are the same as ordinary
   inputs. Relative paths use the parent YAML's directory.
 * Top-level ``model`` must match ``tracking.source``'s model. Current FA profiles
-  require ``model: arome``; a Meso-NH NetCDF atmosphere can still be coupled to an
-  explicitly declared AROME FA source.
+  require ``model: arome``. This phase's atmospheric and SURFEX sources both use
+  the actual AROME producer conventions.
 * ``tracking.source`` chooses the existing tracker and atmospheric requirements.
   It must name a configured source. FA itself currently supports ``fixed_box`` or
   ``prescribed_track`` tracking; use GRIB/NetCDF for other atmospheric methods.
@@ -86,6 +89,9 @@ For an atmospheric NetCDF source, use its actual model conventions, an explicit
 inventory/pattern, ``format: netcdf`` and ordinary ``input.netcdf`` settings inside
 that source. AROME NetCDF must already follow the adapter's time/coordinate
 conventions; a matching file format does not establish schema compatibility.
+Its configured ``valid_time`` dimension is normalized to internal ``time``
+without changing timestamps. Conflicting ``time``/``valid_time`` names fail
+instead of guessing whether one is a forecast reference clock.
 
 Time choice: common or strict
 -----------------------------
