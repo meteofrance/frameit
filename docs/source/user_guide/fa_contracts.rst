@@ -40,6 +40,9 @@ units, reference-pressure convention or full/interface definition is inferred.
 through lazy descriptors, per-file run provenance and the representative NetCDF
 JSON attribute; they do not create a vertical axis, cube, pressure or height.
 Native atmospheric cubes and vertical selectors remain gated for P5.
+The later :doc:`fa_atmosphere` admits explicit gridpoint cube associations through
+an optional EPyGrAM backend, with checked header coefficients and declared sampling.
+The original native backend and unresolved real-producer evidence remain distinct.
 
 ``available`` inspection or typed ``metadata_decode`` does not imply physical
 ``decode`` eligibility. Structural metadata stays blocked for physical-array

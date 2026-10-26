@@ -29,6 +29,7 @@ jobs:
           src/frameit/testing/numerical/test_logging.py
           src/frameit/testing/numerical/test_fa_baseline.py
           src/frameit/testing/numerical/test_fa_contracts.py
+          src/frameit/testing/numerical/test_fa_cubes.py
           src/frameit/testing/numerical/test_fa_mapping.py
           src/frameit/testing/numerical/test_fa_spectral.py
           src/frameit/testing/numerical/test_coupled_shared_polar.py
@@ -61,6 +62,7 @@ jobs:
           src/frameit/testing/numerical/test_fa_pipeline.py
           src/frameit/testing/numerical/test_fa_baseline.py
           src/frameit/testing/numerical/test_fa_contracts.py
+          src/frameit/testing/numerical/test_fa_cubes.py
           src/frameit/testing/numerical/test_fa_mapping.py
           src/frameit/testing/numerical/test_fa_spectral.py
           src/frameit/testing/numerical/test_fa_surface.py
@@ -98,3 +100,29 @@ jobs:
         with:
           name: fa-spectral-candidate-python-3.13
           path: fa-spectral-tests.xml
+
+  fa-epygram-cubes:
+    runs-on: ubuntu-latest
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install the alternative EPyGrAM stack
+        run: python -m pip install -e '.[test,fa-epygram]'
+      - name: Verify cubes, independent columns/vectors, isolated readers and export
+        run: >-
+          python -m pytest -q
+          src/frameit/testing/numerical/test_fa_cubes.py
+          src/frameit/testing/numerical/test_fa_io.py
+          src/frameit/testing/numerical/test_fa_pipeline.py
+          --junitxml=fa-epygram-tests.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fa-epygram-cubes-python-3.13
+          path: fa-epygram-tests.xml

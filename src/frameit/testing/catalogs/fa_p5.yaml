@@ -1,0 +1,52 @@
+# Qualification evidence, not a producer field preset or automatic admission switch.
+schema_version: 1
+baseline_revision: 7258b9e01a0387c58fa666e9f2aaa2f6cc6d074b
+checked_on: '2026-10-26'
+scope_change: user explicitly authorized optional EPyGrAM integration for P5
+scientific_approval: not established
+backend:
+  epygram: 2.1.0
+  falfilfa4py: 1.2.1
+  ctypesForFortran: 1.3.0
+  FA_native_ecCodes: 2.44.0
+  python: 3.13.16
+  source: unmodified publisher wheel; CeCILL-C; no vendored implementation or tables
+  operations: FA readfield metadata/gridpoint reads only, no sp2gp or physical vertical diagnosis
+  isolation: disposable FA-only worker, private HOME/config, no Python GRIB/ecTrans imports
+  compatibility: alternative extra; existing fa extra retains falfilfa4py 1.3.0
+fixtures:
+  generator: frameit.testing.fa_fixture
+  storage_y_x: [7, 9]
+  hemispheres: [-20.0, 20.0]
+  times_hours: [0, 1]
+  encoding: gridpoint packing-0
+  mass_labels: [1, 2, 3]
+  interface_labels: [1, 2, 3, 4]
+  normalized_A: [0.0, 0.1, 0.2, 0.0]
+  B: [0.0, 0.2, 0.6, 1.0]
+  reference_pressure_Pa: 100000.0
+  expected_pressure_valued_A_Pa: [0.0, 10000.0, 20000.0, 0.0]
+  temperature_truth: 280 + 10*k + 10*j + i + 0.5*hour; explicit NaN/zero cases
+  wind_truth: constant Earth-relative [3,4] m/s rotated independently using spherical convergence
+  wind_tolerance: 5e-4 m/s for the declared finite-neighbour WGS84 method and compact workload
+  coefficient_and_native_scalar_tolerance: exact known packing-0 values
+  polar_scope: bilinear scalar sampling on stored levels with retained interface metadata
+families:
+  - id: declared-native-gridpoint-cubes
+    status: verified-limited synthetic assembly/extraction/export
+    constraints: explicit units, native records and mass/interface/center sampling declarations
+    real_producer_qualification: conditional; independent field/sampling/scaling evidence still needed
+  - id: collocated-physical-horizontal-vectors
+    status: verified-limited synthetic both-hemisphere rotation/native branch and idempotence
+    constraints: explicit wind pair, matching basis/physical_velocity, selected existing rotation
+  - id: spectral-or-native-error-records
+    status: unchanged P0/P4 gates; no production spectral decoding or error-code metadata fallback
+  - id: physical-vertical-coordinates-and-trackers
+    status: gated; no pressure/height diagnosis, collocation, extrapolation or FA atmospheric tracker
+  - id: alternate-interface-numbering-and-staggered-map-scaled-vectors
+    status: gated pending authoritative producer sampling/coordinate/reference evidence
+next_prerequisites:
+  - real release-matched units/scaling and field-level mass/interface/vector sampling references
+  - P4 coefficient decodes and independent transformed fields before admitting spectral cubes
+  - explicitly selected independently verified methods before physical-coordinate calculations
+  - P6 interval definitions and independent real references; P7 production resource measurements

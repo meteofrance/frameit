@@ -69,18 +69,23 @@ def request_fa(request):
                        MKL_NUM_THREADS="1", PYTHONNOUSERSITE="1")
     # The wheel's private ecCodes uses its own matching MEMFS definitions.
     # Parent GRIB overrides remain untouched and must not change child decoding.
-    for key in ("ECCODES_DEFINITION_PATH", "ECCODES_SAMPLES_PATH"):
+    for key in ("ECCODES_DEFINITION_PATH", "ECCODES_SAMPLES_PATH",
+                "GRIB_DEFINITION_PATH", "GRIB_SAMPLES_PATH"):
         environment.pop(key, None)
     with _REQUEST_LOCK, tempfile.TemporaryDirectory(prefix="frameit-fa-") as directory:
         try:
             result = subprocess.run(
-                [sys.executable, "-m", "frameit.io.fa_worker", directory],
+                [request.get("python_executable") or sys.executable,
+                 "-m", "frameit.io.fa_worker", directory],
                 input=json.dumps(request), capture_output=True, text=True, errors="replace",
                 env=environment, check=False, timeout=request.get("timeout_seconds", 120.),
             )
         except subprocess.TimeoutExpired as exc:
             raise ValueError(f"FA request timed out for {Path(request['path']).name}; "
                              "review input.fa.timeout_seconds and source availability") from exc
+        except OSError as exc:
+            raise ValueError("Cannot launch the FA helper; check input.fa.python_executable "
+                             "and install FrameIt with the selected FA extra there") from exc
         diagnostics = (result.stdout + result.stderr).strip()
         response = Path(directory) / "response.json"
         context = f"{Path(request['path']).name}: {', '.join(request.get('fields', []))}"
@@ -138,10 +143,13 @@ def request_fa(request):
 
 
 def inspect_fa(path, profile, fields=(), *, validate_selection=True, timeout_seconds=120.,
-              expected_source=None, metadata_fields=()):
+              expected_source=None, metadata_fields=(), backend="native", python_executable=None,
+              earth_radius_m=None):
     return request_fa({"operation": "inspect", "path": str(path), "profile": profile,
                        "fields": list(dict.fromkeys(fields)),
                        "validate_selection": validate_selection,
                        "expected_source": expected_source or {},
                        "metadata_fields": list(dict.fromkeys(metadata_fields)),
+                       "backend": backend, "python_executable": python_executable,
+                       "earth_radius_m": earth_radius_m,
                        "timeout_seconds": timeout_seconds})

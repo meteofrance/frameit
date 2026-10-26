@@ -38,6 +38,8 @@ test = ["pytest>=7"]
 grib = ["cfgrib", "eccodes"]
 polar = ["xesmf", "shapely>=2"]
 fa = ["falfilfa4py==1.3.0"]
+# Alternative to the fa extra: EPyGrAM supplies its own pinned native stack.
+fa-epygram = ["epygram==2.1.0"]
 # Candidate evaluation only; installing this extra does not admit spectral FA execution.
 fa-spectral-test = ["ectrans4py==1.6.0", "ctypesForFortran==1.3.0"]
 

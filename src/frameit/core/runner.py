@@ -280,7 +280,17 @@ class FrameitRunner:
                                normalize_winds(normalize_geography(ds, self.conf), self.conf, g))
                             for g, ds in groups.items()}
                         for m, groups in dict_tracker.items()}
-        dict_user = add_speed_from_uv_dict(dict_user, self.conf)
+        if file_type == "fa" and self.conf.fa_options["native_cubes"]:
+            # New FA cubes prepare selected vector components, while magnitude
+            # remains an explicitly requested diagnostic. Legacy loaders retain
+            # their established output contract.
+            dict_user = {g: normalize_winds(ds, self.conf, g) for g, ds in dict_user.items()}
+            speed_groups = {g for g, spec in requested_vars_user.items()
+                            if "wind_speed" in spec.get("variables", [])}
+            requested_speed = {g: ds for g, ds in dict_user.items() if g in speed_groups}
+            dict_user.update(add_speed_from_uv_dict(requested_speed, self.conf))
+        else:
+            dict_user = add_speed_from_uv_dict(dict_user, self.conf)
         # Record the effective per-component transformations, including direct
         # Python API runs which did not call metadata preflight.
         transformations = []

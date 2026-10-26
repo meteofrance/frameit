@@ -42,6 +42,11 @@ regional headers; spectral transformations are not implicit.
 SURFEX execution requires a complete AROME source/directory with `PACK=0` and
 dense horizontal `X1` records. Native vertical-header facts remain inspectable
 provenance, without inferred layer axes or atmospheric 3-D processing.
+The optional `fa-epygram` extra provides an alternative isolated backend for
+[explicit native atmospheric cubes](docs/source/user_guide/fa_atmosphere.rst),
+retaining full/interface indices and checked hybrid coefficients. It uses its
+own upstream native pins; choose it separately from the `fa` extra. Native
+extraction does not require pressure or height diagnosis.
 The [P0 baseline and family matrix](docs/source/user_guide/fa_baseline.rst)
 separate current evidence from blocked capabilities; full FA compatibility is
 not claimed.

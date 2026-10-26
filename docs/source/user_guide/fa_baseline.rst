@@ -266,3 +266,7 @@ The :doc:`fa_spectral` evaluates a pinned optional ecTrans candidate against
 independent regional Fourier modes. No P0 spectral coefficient encoding or real
 field is promoted by those library-only tests; this matrix's spectral decode,
 dataset, extraction and polar gates remain blocked.
+
+The subsequent :doc:`fa_atmosphere` verifies selected synthetic gridpoint cubes
+through an optional EPyGrAM backend. It does not promote the frozen P0 real spectral,
+scaling, producer-sampling or native-error rows to independently verified status.

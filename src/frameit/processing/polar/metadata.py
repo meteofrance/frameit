@@ -115,7 +115,13 @@ def source_auxiliaries(source, lon_name, lat_name, *, field_names):
         coord.attrs["bounds"] for name, coord in coordinates.items()
         if name not in excluded and coord.attrs.get("bounds")
     }
-    for name in set(coordinates) | references:
+    # Selected native cubes can reference complete interface coefficient arrays
+    # on an independent axis. Preserve those non-horizontal auxiliaries without
+    # implicitly interpolating additional physical fields or source-cell bounds.
+    dependencies = {name for name in coordinate_dependency_names(
+        source, field_names, coordinates=coordinates
+    ) if not HORIZONTAL_DIMS.intersection(source[name].dims)}
+    for name in set(coordinates) | references | dependencies:
         if name in excluded or name not in source:
             continue
         value = source[name]

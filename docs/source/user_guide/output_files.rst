@@ -50,6 +50,9 @@ are retained in run provenance and decoder logs; see :doc:`fa_contracts`.
 Spectral FA coefficients have no admitted output contract and cannot be returned
 as gridpoint values. The separate P4 candidate evaluation writes an atomic JSON
 report, not a physical-field NetCDF product; see :doc:`fa_spectral`.
+Opt-in P5 native cubes add separate ``level``/``level_w`` axes, original record
+coordinates and pressure-valued/normalized interface coefficients, without
+diagnosing physical coordinates; see :doc:`fa_atmosphere`.
 Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
 ``lat``/``lon`` remain requested centres; see :doc:`fa_geometry` for conventions.

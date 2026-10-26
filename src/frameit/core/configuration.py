@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import difflib
 import math
+import os
 import re
 from pathlib import Path
 
@@ -26,6 +27,7 @@ DEFAULTS = {
         "netcdf": {"engine": "h5netcdf", "chunks": {}},
         "fa": {"profile": None, "subdomain": "CI", "earth_radius_m": None,
                "field_metadata": {}, "expected_source": {},
+               "backend": "native", "python_executable": None, "native_cubes": {},
                "max_points": 20_000_000, "timeout_seconds": 120.},
         "sources": {}, "time_alignment": "common",
     },
@@ -246,6 +248,13 @@ def validate_output_selections(horizontal, cartesian_vertical, polar_vertical):
 
 def validate_fa_options(options, selected=False):
     """No field identity, unit or temporal meaning is guessed from a record name."""
+    if not isinstance(options["backend"], str) or options["backend"] not in {"native", "epygram"}:
+        raise ValueError("input.fa.backend must be native or epygram")
+    executable = options["python_executable"]
+    if executable is not None and (not isinstance(executable, str) or not executable.strip()):
+        raise ValueError("input.fa.python_executable must be a nonempty interpreter path")
+    if options["backend"] == "epygram" and options["profile"] not in {None, "arome_history"}:
+        raise ValueError("The EPyGrAM backend currently admits arome_history only")
     if ((options["profile"] is not None and not isinstance(options["profile"], str))
             or options["profile"] not in {None, "arome_history", "surfex_history"}):
         raise ValueError("input.fa.profile must be arome_history or surfex_history")
@@ -287,6 +296,45 @@ def validate_fa_options(options, selected=False):
         for key in ("long_name", "standard_name"):
             if key in definition and not isinstance(definition[key], str):
                 raise ValueError(f"{name}: {key} must be a string")
+    cubes = options["native_cubes"]
+    if not isinstance(cubes, dict):
+        raise ValueError("input.fa.native_cubes must be a mapping")
+    if cubes and (options["backend"] != "epygram" or options["profile"] != "arome_history"):
+        raise ValueError("FA native_cubes require backend: epygram and profile: arome_history")
+    records_seen = set()
+    for name, cube in cubes.items():
+        if (not isinstance(name, str) or not name.isidentifier() or len(name) > 16
+                or not name.isascii() or name.startswith("fa_")
+                or name in {"time", "x", "y", "level", "level_w", "latitude", "longitude", "crs",
+                            "source_i", "source_j", "forecast_period", "wind_speed"}
+                or name not in options["field_metadata"]):
+            raise ValueError("Each native cube needs a 1-16 character variable identifier "
+                             "and explicit field_metadata")
+        required = {"records", "vertical_position", "sampling"}
+        if (not isinstance(cube, dict) or not required <= cube.keys()
+                or cube.keys() - (required | {"vector_basis", "component_scaling"})):
+            raise ValueError(f"native_cubes.{name}: requires records, vertical_position, sampling")
+        if (not isinstance(cube["vertical_position"], str)
+                or cube["vertical_position"] not in {"mass", "interface"}):
+            raise ValueError(f"native_cubes.{name}.vertical_position must be mass or interface")
+        if cube["sampling"] != "center":
+            raise ValueError(f"native_cubes.{name}: only collocated center sampling is admitted")
+        if (cube.get("vector_basis") is not None and (
+            not isinstance(cube["vector_basis"], str)
+            or cube["vector_basis"] not in {"earth", "grid"}
+        )):
+            raise ValueError(f"native_cubes.{name}.vector_basis must be earth or grid")
+        if cube.get("component_scaling") not in (None, "physical_velocity"):
+            raise ValueError(f"native_cubes.{name}: map-scaled/unknown component scaling is gated")
+        records = cube["records"]
+        if not isinstance(records, list) or not records:
+            raise ValueError(f"native_cubes.{name}.records must be a nonempty exact record list")
+        for record in records:
+            if (not isinstance(record, str) or not 4 <= len(record) <= 16
+                    or not record.isascii() or any(c in record for c in "*?[]")
+                    or record in records_seen or record == name):
+                raise ValueError(f"native_cubes.{name}: invalid or repeated native record")
+            records_seen.add(record)
 
 
 def source_document(parent, name):
@@ -554,12 +602,26 @@ def resolve_schema(raw, *, base_dir=None):
         raise ValueError("run.name must be an analysis identifier without path separators")
     user = _requests(conf["variables"])
     if inp["format"] == "fa":
-        if set(user) - {"surface"}:
+        cubes = inp["fa"]["native_cubes"]
+        if not cubes and set(user) - {"surface"}:
             raise ValueError("FA 2-D records must be selected in variables.surface")
         levels = conf["variables"].get("surface", {}).get("levels", "all")
         if not isinstance(levels, str) or levels not in {"all", "stored"}:
             raise ValueError("FA layer/patch selection uses explicit native record names; "
                              "variables.surface.levels cannot select a vertical axis")
+        for group, spec in user.items():
+            if group not in {"surface", "level", "level_w"}:
+                raise ValueError("FA native groups are surface, level and level_w")
+            if spec.get("level_domain") == "physical":
+                raise ValueError("FA physical-coordinate selection is gated; select stored indices")
+            for variable in spec["variables"]:
+                if variable == "wind_speed":
+                    continue
+                cube = cubes.get(variable)
+                expected = ("surface" if cube is None else
+                            "level" if cube["vertical_position"] == "mass" else "level_w")
+                if expected != group:
+                    raise ValueError(f"FA variable {variable}: select in variables.{expected}")
     polar = _requests(pol["variables"], "polar.variables", polar=True)
     if polar == "all":
         polar = {g: {"variables": list(s["variables"])} for g, s in user.items()}
@@ -570,6 +632,10 @@ def resolve_schema(raw, *, base_dir=None):
         raise ValueError("polar.enabled requires selected polar variables")
     for section, key in (("input", "directory"), ("output", "directory")):
         conf[section][key] = str((base / conf[section][key]).resolve())
+    if inp["fa"]["python_executable"] is not None:
+        # Resolving a venv's python symlink would silently select the base
+        # interpreter and lose that environment's optional native dependencies.
+        inp["fa"]["python_executable"] = os.path.abspath(base / inp["fa"]["python_executable"])
     if inp["files"]:
         inp["files"] = [str((base / p).resolve()) for p in inp["files"]]
     for section, key in (("prescribed_track", "file"), ("utrack", "weights_file")):

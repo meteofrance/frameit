@@ -18,7 +18,8 @@ import numpy as np
 def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_history", packing=0,
                   state_hours=None, source_version=8, source_bug=1, program="AROME",
                   extra_metadata=False, projection_latitude=None, surface_fields=None,
-                  surface_pack=0, projected_spacing_m=1000., field_values=None):
+                  surface_pack=0, projected_spacing_m=1000., field_values=None,
+                  atmospheric_fields=None, hybrid_header=None):
     from falfilfa4py import FA, LFI
 
     if path.exists():
@@ -54,10 +55,15 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
         p[12:16] = corners_lon[0], corners_lat[0], corners_lon[1], corners_lat[1]
         k[1] = 1
     header = uuid4().hex[:16]
+    hybrid = hybrid_header or {"a_normalized": [0., 0.], "b": [0., 1.],
+                               "reference_pressure_pa": 101325.}
+    a, b = (np.asarray(hybrid[key], dtype="float64") for key in ("a_normalized", "b"))
+    if a.ndim != 1 or a.shape != b.shape or not 2 <= len(a) <= 200:
+        raise ValueError("Fixture hybrid header requires N+1 one-dimensional A/B arrays")
     FA.wfacade(header, -11 if projection_latitude is None else -5, 0., 0., 0., 0.,
                11 if projection_latitude is None else 3, ny, nx,
-               len(k), k, len(z), z, len(p), p, 1, 101325.,
-               np.array([0., 0.]), np.array([0., 1.]), False)
+               len(k), k, len(z), z, len(p), p, len(a) - 1, hybrid["reference_pressure_pa"],
+               a, b, False)
     unit = FA.wfaitou(str(path), "NEW", header)
     try:
         FA.wfautif(unit, "ALD")
@@ -71,6 +77,10 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
         if field_values is not None:
             values = np.asarray(field_values, dtype="float64") + offset
         fields = [{"name": field, "values": values, "mask": "FULL"}]
+        if atmospheric_fields is not None:
+            if profile != "arome_history":
+                raise ValueError("atmospheric_fields requires the atmospheric fixture profile")
+            fields = atmospheric_fields
         if profile == "surfex_history":
             field = "SFX.T2M"
             fields = [{"name": "T2M", "values": values, "mask": "FULL"}]

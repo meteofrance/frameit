@@ -134,6 +134,9 @@ def _inventory(conf):
 
             info = inspect_fa(path, conf.fa_options["profile"],
                               expected_source=conf.fa_options["expected_source"],
+                              backend=conf.fa_options["backend"],
+                              python_executable=conf.fa_options["python_executable"],
+                              earth_radius_m=conf.fa_options["earth_radius_m"],
                               timeout_seconds=conf.fa_options["timeout_seconds"])
             times = _stamps([np.datetime64(info["valid_time"])], str(path))
             references = {info["reference_time"]}

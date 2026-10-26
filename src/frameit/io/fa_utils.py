@@ -15,6 +15,15 @@ import xarray as xr
 from frameit.check.check_functions import drop_time_dupes
 from frameit.io.fa_backend import inspect_fa, request_fa
 from frameit.io.fa_contracts import resolve_descriptor, validate_descriptor
+from frameit.io.fa_cubes import (
+    HYBRID_AUXILIARIES,
+    add_cube_coordinates,
+    cube_layouts,
+    hybrid_contract,
+    record_selection,
+    validate_cube_requests,
+    vertical_signature,
+)
 from frameit.io.fa_geometry import fa_geometry, geometry_signature
 from frameit.io.loader import managed_loading, resolve_input_files
 from frameit.processing.requests import build_group_ds, normalize_requests
@@ -30,11 +39,11 @@ def fa_field_names(requests):
 def inspect_fa_inputs(path, conf, fields):
     """Read metadata in a clean native process and validate selected meaning."""
     options = conf.fa_options
-    info = inspect_fa(path, options["profile"], fields, timeout_seconds=options["timeout_seconds"],
-                      expected_source=options["expected_source"])
-    if set(conf.requests_user()) - {"surface"}:
-        raise ValueError("FA currently supports explicit 2-D records in variables.surface only; "
-                         "native layer/patch record identities are retained")
+    records, owners = record_selection(options, fields)
+    info = inspect_fa(path, options["profile"], records, timeout_seconds=options["timeout_seconds"],
+                      expected_source=options["expected_source"], backend=options["backend"],
+                      python_executable=options["python_executable"],
+                      earth_radius_m=options["earth_radius_m"])
     for name in fields:
         metadata = options["field_metadata"].get(name)
         if metadata is None:
@@ -47,27 +56,53 @@ def inspect_fa_inputs(path, conf, fields):
             raise ValueError(f"{name}: categorical FA fields require explicit nearest_s2d sampling")
     info["field_definitions"] = {name: dict(options["field_metadata"][name]) for name in fields}
     info["field_descriptors"] = {
-        name: resolve_descriptor(info["field_descriptors"][name], info["field_definitions"][name])
-        for name in fields}
+        record: resolve_descriptor(info["field_descriptors"][record],
+                                   info["field_definitions"][owners[record]])
+        for record in records}
+    info["native_cubes"] = cube_layouts(info, options, fields)
+    if info["native_cubes"]:
+        info["hybrid_contract"] = hybrid_contract(info["geometry"])
+        validate_cube_requests(info, normalize_requests(conf.requests_user()), conf)
     return info
 
 
 def fa_metadata_dataset(info, options, geometry=None):
+    """Label geometry/field shapes with lazy NaNs, without physical payload reads."""
     ds = (fa_geometry(info["geometry"], options) if geometry is None else geometry).copy(deep=False)
     stamp = np.datetime64(info["valid_time"], "ns")
     ds = ds.assign_coords(time=("time", [stamp]),
                           forecast_reference_time=np.datetime64(info["reference_time"], "ns"),
-                          forecast_period=("time", [np.timedelta64(info["lead_seconds"], "s")]))
+                           forecast_period=("time", [np.timedelta64(info["lead_seconds"], "s")]))
+    ds = add_cube_coordinates(ds, info)
     for name, definition in info.get("field_definitions", {}).items():
-        ds[name] = xr.DataArray(0., attrs={**definition, "source_variable_name": name,
-                                          "grid_mapping": "crs",
-                                          "fa_field_descriptor_scope": (
-                                              "representative input record; per-file descriptors "
-                                              "and decode observations in run provenance"),
-                                          "fa_field_descriptor": json.dumps(
-                                              info["field_descriptors"][name], sort_keys=True)})
+        layout = info.get("native_cubes", {}).get(name)
+        record = layout["records"][0] if layout else name
+        shape = (ds.sizes["y"], ds.sizes["x"])
+        ds[name] = xr.DataArray(da.full(shape, np.nan, chunks=shape), dims=("y", "x"),
+                               attrs={**definition, "source_variable_name": name,
+                                      "grid_mapping": "crs",
+                                      "fa_field_descriptor_scope": (
+                                          "representative input record; per-file descriptors "
+                                          "and decode observations in run provenance"),
+                                      "fa_field_descriptor": json.dumps(
+                                          info["field_descriptors"][record], sort_keys=True)})
+        if layout:
+            attrs = dict(ds[name].attrs,
+                         ancillary_variables=" ".join((*HYBRID_AUXILIARIES,
+                                                        f"{name}_native_record")),
+                         fa_vertical_position=layout["vertical_position"],
+                         fa_sampling_origin="explicit input.fa.native_cubes",
+                         fa_physical_coordinates="not computed")
+            if layout.get("vector_basis"):
+                attrs.update(wind_reference_frame=layout["vector_basis"],
+                             fa_component_scaling=layout.get("component_scaling"))
+            shape = (len(layout["levels"]), ds.sizes["y"], ds.sizes["x"])
+            ds[name] = xr.DataArray(da.full(shape, np.nan, chunks=(1, *shape[1:])),
+                                    dims=(layout["group"], "y", "x"), attrs=attrs)
     ds.attrs.update(_frameit_vertical_group="surface", source_format="fa",
                     fa_profile=options["profile"], fa_identifier=info["identifier"])
+    if info.get("native_cubes"):
+        ds.attrs.pop("_frameit_vertical_group")
     if info["surfex_metadata"]:
         ds.attrs.update(surfex_program=info["surfex_metadata"]["PROGRAM"],
                         surfex_version=info["surfex_metadata"]["VERSION"],
@@ -108,11 +143,14 @@ class FaArray:
         return request_fa({
             "operation": "read", "path": self.path, "identity": self.identity,
             "profile": self.options["profile"], "fields": [self.field],
+            "backend": self.options["backend"],
+            "python_executable": self.options["python_executable"],
+            "earth_radius_m": self.options["earth_radius_m"],
             "expected_source": self.options["expected_source"],
             "field_declaration": self.descriptor["declaration"],
+            "cube_association": self.descriptor["sampling"].get("native_cube"),
             "zone": self.zone, "key": encoded,
-            "allow_unscaled": self.options["field_metadata"][self.field].get(
-                "allow_unscaled", False),
+            "allow_unscaled": self.descriptor["declaration"].get("allow_unscaled", False),
             "diagnostics_path": self.diagnostics_path,
             "timeout_seconds": self.options["timeout_seconds"],
             "max_points": self.options["max_points"],
@@ -127,10 +165,10 @@ def concat_fa2ds_by_vert_coord(
 ):
     """Gridpoint instantaneous records only; spectral transforms are not implicit."""
     requests = normalize_requests(user_requested_variables_yaml)
-    if set(requests) - {"surface"} or any(
+    if not wind_conf.fa_options["native_cubes"] and (set(requests) - {"surface"} or any(
         req["level_indices"] or req["levels"] or req["level_domain"] != "stored"
         for req in requests.values()
-    ):
+    )):
         raise ValueError("FA selection uses 2-D native record names in the surface group, "
                          "not an inferred vertical axis")
     methods = ([method] if method is not None else
@@ -139,19 +177,25 @@ def concat_fa2ds_by_vert_coord(
         raise ValueError("FA tracking currently supports fixed_box or prescribed_track; "
                          "use a GRIB/NetCDF tracking source for coupled atmospheric tracking")
     names = fa_field_names(requests)
-    parts, geometries, provenance = [], {}, []
+    parts, geometries, provenance, vertical_signatures = [], {}, [], set()
     log_directory = wind_conf.output_dir / "logs"
     decoder_log = (log_directory / f"fa-decoder-{uuid4().hex}.jsonl"
                    if log_directory.is_dir() else None)
     for path in resolve_input_files(files, strict=strict):
         info = inspect_fa_inputs(path, wind_conf, names)
+        validate_cube_requests(info, requests, wind_conf)
+        if info.get("native_cubes"):
+            vertical_signatures.add(vertical_signature(info))
+            if len(vertical_signatures) != 1:
+                raise ValueError("Selected FA inputs have incompatible native vertical definitions")
         # Only the active horizontal header entries define source sampling.
         signature = geometry_signature(info["geometry"], wind_conf.fa_options)
         if signature not in geometries:
             geometries[signature] = fa_geometry(info["geometry"], wind_conf.fa_options)
         geometry = geometries[signature]
         ds = fa_metadata_dataset(info, wind_conf.fa_options, geometry)
-        for name in names:
+        arrays = {}
+        for name in info["field_descriptors"]:
             array = FaArray(path, name, info, wind_conf.fa_options, ds.attrs["fa_zone_indices"],
                             str(decoder_log) if decoder_log is not None else None)
             token = hashlib.sha256(json.dumps({
@@ -160,16 +204,23 @@ def concat_fa2ds_by_vert_coord(
             }, sort_keys=True).encode()).hexdigest()
             values = da.from_array(array, chunks=array.shape, asarray=False, fancy=False,
                                    name="fa-" + token, meta=np.empty((0, 0), dtype="float64"))
+            arrays[name] = values
+        for name in names:
+            layout = info["native_cubes"].get(name)
+            record = layout["records"][0] if layout else name
+            values = (da.stack([arrays[r] for r in layout["records"]], axis=0) if layout
+                      else arrays[name])
             attrs = {**ds[name].attrs, "source_units": ds[name].attrs["units"],
-                     "fa_packing": info["fields"][name]["packing"],
-                     "fa_bits": info["fields"][name]["bits"],
+                     "fa_packing": info["fields"][record]["packing"],
+                     "fa_bits": info["fields"][record]["bits"],
                      "field_definition_source": "explicit_input.fa.field_metadata",
                      "cell_methods": "time: point"}
-            if "surfex_descriptor" in info["fields"][name]:
-                descriptor = info["fields"][name]["surfex_descriptor"]
+            if "surfex_descriptor" in info["fields"][record]:
+                descriptor = info["fields"][record]["surfex_descriptor"]
                 attrs.update(surfex_support_mask=descriptor["MASK"],
                              surfex_native_type=descriptor["TYPE"])
-            ds[name] = xr.DataArray(values[None, ...], dims=("time", "y", "x"), attrs=attrs)
+            dims = ("time", layout["group"], "y", "x") if layout else ("time", "y", "x")
+            ds[name] = xr.DataArray(values[None, ...], dims=dims, attrs=attrs)
             if attrs.get("allow_unscaled"):
                 log.warning("%s: %s permits native identity-scaling fallback "
                             "by explicit declaration", path.name, name)
@@ -189,7 +240,10 @@ def concat_fa2ds_by_vert_coord(
                            "fields": info["field_definitions"], "encoding": info["fields"],
                            "protocol_version": info["protocol_version"],
                            "field_descriptors": info["field_descriptors"],
-                           "expected_source": wind_conf.fa_options["expected_source"]})
+                            "expected_source": wind_conf.fa_options["expected_source"]})
+        provenance[-1].update(native_cubes=info["native_cubes"],
+                              hybrid_contract=info.get("hybrid_contract"),
+                              backend=wind_conf.fa_options["backend"])
         provenance[-1]["producer_metadata"] = info["surfex_metadata"]
     if len(geometries) != 1:
         raise ValueError("Selected FA inputs have incompatible horizontal geometry")

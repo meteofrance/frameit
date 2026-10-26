@@ -17,6 +17,11 @@ SPECTRAL_GATE = (
     "spectral-to-grid execution is gated: an encoding-qualified coefficient contract "
     "and independent native-grid reference are required (see FA P4 spectral method notes)"
 )
+CUBE_VERTICAL_INTERPRETATION = (
+    "native labels and interface A/B/reference checked against EPyGrAM; "
+    "mass/interface and vector sampling explicitly declared by user; "
+    "no physical-coordinate diagnosis or independent producer qualification"
+)
 
 # Only small structural metadata whose raw-word layout is evidenced by P0 and
 # the existing fixture recipe. X1 physical fields are never read as raw words.

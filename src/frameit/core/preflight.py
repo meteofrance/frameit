@@ -30,6 +30,7 @@ from frameit.utils.units import convert_units, unit_key
 def open_metadata(files, conf, resources):
     """Open lazily with no disk indexes, closing originals on all error paths."""
     fa_geometries = {}
+    fa_vertical_signature = None
     for path in files:
         if conf.file_type == "fa":
             from frameit.io.fa_geometry import fa_geometry, geometry_signature
@@ -41,6 +42,14 @@ def open_metadata(files, conf, resources):
 
             dependencies, _ = wind_dependencies(conf, conf.requests_user())
             info = inspect_fa_inputs(path, conf, fa_field_names(dependencies))
+            if info["native_cubes"]:
+                from frameit.io.fa_cubes import vertical_signature
+
+                current = vertical_signature(info)
+                if fa_vertical_signature is not None and current != fa_vertical_signature:
+                    raise ValueError("Selected FA inputs have incompatible "
+                                     "native vertical definitions")
+                fa_vertical_signature = current
             signature = geometry_signature(info["geometry"], conf.fa_options)
             if signature not in fa_geometries:
                 fa_geometries[signature] = fa_geometry(info["geometry"], conf.fa_options)
@@ -59,6 +68,9 @@ def open_metadata(files, conf, resources):
                             "earth_radius_m": conf.fa_options["earth_radius_m"]})
             records[-1]["horizontal_header_signature"] = signature
             records[-1]["grid_lookup"] = fa_geometries[signature].attrs["fa_grid_lookup"]
+            records[-1].update(native_cubes=info["native_cubes"],
+                               hybrid_contract=info.get("hybrid_contract"),
+                               backend=conf.fa_options["backend"])
         elif conf.file_type == "grib":
             datasets = _grib_metadata(path)
         else:
@@ -322,6 +334,9 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
              else resolve_input_files(input_files, strict=True))
     conf.file_type = infer_format(files, conf.file_type or None)
     if conf.file_type == "fa":
+        if conf.tracking_method not in {"fixed_box", "prescribed_track"}:
+            raise ValueError("FA atmospheric trackers remain gated; use fixed_box/prescribed_track "
+                             "or a qualified GRIB/NetCDF tracking source")
         conf.simulation_parameter["fa_inventory"] = []
     inventory = []
     unit_records = []
@@ -596,7 +611,8 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 for g in conf.requests_user()
             )
         if options.export_polar and conf.compute_polar_proj:
-            groups = {conf.name_vertical_dim if g == "level_w" else g for g in conf.polar_variables}
+            groups = {conf.name_vertical_dim if g == "level_w" and conf.atm_model == "MNH" else g
+                      for g in conf.polar_variables}
             products.extend(
                 str(prefix) + f".polar.{_sanitize_filename_token(g)}.nc" for g in sorted(groups)
             )

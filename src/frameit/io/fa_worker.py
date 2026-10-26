@@ -19,6 +19,7 @@ from uuid import uuid4
 import numpy as np
 
 from frameit.io.fa_contracts import (
+    CUBE_VERTICAL_INTERPRETATION,
     PROTOCOL_VERSION,
     SPECTRAL_GATE,
     SURFEX_METADATA,
@@ -231,6 +232,14 @@ def _inspect(fa, lfi, unit, header, request):
 
 def handle(request, destination):
     # Importing here keeps even worker-module discovery free of native FA state.
+    backend = request.get("backend", "native")
+    if backend not in {"native", "epygram"}:
+        raise ValueError("Unknown FA backend")
+    epygram = None
+    if backend == "epygram":
+        from frameit.io.fa_epygram import initialize
+
+        epygram = initialize(destination, request.get("earth_radius_m"))
     import falfilfa4py
     from falfilfa4py import FA, LFI
 
@@ -239,11 +248,21 @@ def handle(request, destination):
     identity = [before.st_size, before.st_mtime_ns]
     if request.get("identity") is not None and request["identity"] != identity:
         raise ValueError("FA input changed since inventory (size/mtime freshness check)")
-    unit = None
+    unit, epy_resource = None, None
     try:
         header = uuid4().hex[:16]
         unit = FA.wfaitou(str(path), "OLD", header)
         info = _inspect(FA, LFI, unit, header, request)
+        if epygram is not None:
+            from frameit.io.fa_epygram import field_metadata
+
+            if request["profile"] != "arome_history":
+                raise ValueError("EPyGrAM backend currently admits arome_history only")
+            epy_resource = epygram.formats.resource(str(path), openmode="r", fmt="FA")
+            for name, descriptor in info["field_descriptors"].items():
+                if descriptor["native"]["representation"] == "gridpoint":
+                    descriptor["sampling"]["epygram"] = field_metadata(
+                        epy_resource, name, info["geometry"])
         if request["operation"] == "read":
             name = request["fields"][0]
             grid = info["geometry"]
@@ -255,8 +274,18 @@ def handle(request, destination):
                 raise ValueError(f"{name}: " + "; ".join(descriptor["eligibility"]["reasons"]))
             if request.get("field_declaration") is not None:
                 descriptor = resolve_descriptor(descriptor, request["field_declaration"])
-            values, undefined, sentinel = FA.wfacilo(
-                grid["KNXLON"] * grid["KNLATI"], unit, name[:4], 0, name[4:], False)
+            if request.get("cube_association") is not None:
+                descriptor["sampling"]["native_cube"] = request["cube_association"]
+                descriptor["sampling"]["vertical_interpretation"] = CUBE_VERTICAL_INTERPRETATION
+            if epy_resource is None:
+                values, undefined, sentinel = FA.wfacilo(
+                    grid["KNXLON"] * grid["KNLATI"], unit, name[:4], 0, name[4:], False)
+            else:
+                from frameit.io.fa_epygram import read_values
+
+                values, undefined = read_values(
+                    epy_resource, name, (grid["KNLATI"], grid["KNXLON"]))
+                sentinel = np.nan
             descriptor["mask"]["undefined"] = {
                 "present": bool(undefined),
                 "sentinel": (float(sentinel) if np.isfinite(sentinel) else str(float(sentinel)))
@@ -290,9 +319,20 @@ def handle(request, destination):
             "FA_python": sys.version.split()[0],
             "FA_definition_policy": "wheel_MEMFS; parent GRIB definition/sample overrides excluded",
         }
+        if epygram is not None:
+            if any(name in sys.modules for name in ("eccodes", "cfgrib", "epygram.formats.GRIB")):
+                raise ValueError("EPyGrAM FA worker unexpectedly initialized a Python GRIB backend")
+            if "ectrans4py" in sys.modules:
+                raise ValueError("EPyGrAM gridpoint worker unexpectedly loaded spectral transforms")
+            info["backend_versions"].update(
+                EPyGrAM=version("epygram"),
+                EPyGrAM_policy="FA-only private child configuration; no personal tables/plugins; "
+                               "gridpoint read only, no spectral/vertical/vector derivation")
         info["identity"] = identity
         info["protocol_version"] = PROTOCOL_VERSION
     finally:
+        if epy_resource is not None:
+            epy_resource.close()
         if unit is not None:
             FA.wfairme(unit, "KEEP")
     after = path.stat()

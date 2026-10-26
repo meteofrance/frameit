@@ -1,0 +1,70 @@
+# P5 explicit cube associations for admitted instantaneous GRIDPOINT records.
+# This is an annotated mapping, not a release-qualified AROME field catalogue.
+# Verify source encodings, units, level locations and physical wind basis first.
+# Spectral/-91 records remain gated even when EPyGrAM is installed.
+schema_version: 2
+model: arome
+run:
+  name: native-atmosphere
+input:
+  directory: ./data/atmosphere
+  pattern: "historic.arome*.fa"
+  format: fa
+  fa:
+    backend: epygram
+    profile: arome_history
+    # Optional: select a separate environment containing FrameIt[fa-epygram].
+    # python_executable: /path/to/epygram-env/bin/python
+    earth_radius_m: 6371229.0  # User declaration; verify the producer Earth model.
+    subdomain: CI
+    field_metadata:
+      temperature: {units: K, kind: continuous, temporal_kind: instantaneous}
+      u: {units: m s-1, kind: continuous, temporal_kind: instantaneous}
+      v: {units: m s-1, kind: continuous, temporal_kind: instantaneous}
+    native_cubes:
+      temperature:
+        records: [S001TEMPERATURE, S002TEMPERATURE, S003TEMPERATURE]
+        vertical_position: mass
+        sampling: center
+      u:
+        records: [S001WIND.U.PHYS, S002WIND.U.PHYS, S003WIND.U.PHYS]
+        vertical_position: mass
+        sampling: center
+        vector_basis: grid       # Explicit declaration, not inferred from the name.
+        component_scaling: physical_velocity
+      v:
+        records: [S001WIND.V.PHYS, S002WIND.V.PHYS, S003WIND.V.PHYS]
+        vertical_position: mass
+        sampling: center
+        vector_basis: grid
+        component_scaling: physical_velocity
+  wind_pairs:
+    - group: level
+      u: u
+      v: v
+      reference_frame: grid
+      rotation: {method: geolocation}  # Explicit existing finite-neighbour approximation.
+variables:
+  level:
+    names: [temperature, u, v]
+    levels: {indices: [0, 2]}  # Positions in the declared native axis; labels stay 1 and 3.
+# For independently evidenced interface records, declare another cube with
+# vertical_position: interface and select it in variables.level_w. This branch
+# uses one-based native labels 1..N+1, retaining zero-based source indices too.
+# No W interface position, pressure/height or unit is inferred from a record name.
+tracking:
+  method: fixed_box
+  fixed_box:
+    center: {latitude: -15.0, longitude: 50.15}
+domain:
+  size_km: {x: 40, y: 40}
+polar:
+  enabled: false
+output:
+  directory: ./output/native-atmosphere
+  overwrite: false
+  synchronous_export: true
+  max_workers: 1
+  cartesian:
+    horizontal_winds: native
+    vertical_velocity: interfaces

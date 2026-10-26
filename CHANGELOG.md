@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Integrate optional EPyGrAM 2.1.0 behind the isolated FA boundary, with an
+  alternative extra, explicit backend/helper selection and FA-only private configuration.
+- Assemble declared gridpoint records into native full/interface cubes, retaining
+  original labels/indices/record IDs and verified PREFER-scaled hybrid coefficients.
+  Preserve sparse selection, native/analysis wind branches and polar auxiliaries;
+  require declared collocated physical-vector basis and explicitly requested magnitude.
+- Add independent column/vector, failure, optionality and sync/spawn ordinary-reader
+  tests. Spectral, physical-coordinate, map-scaled/staggered and FA atmospheric-tracker
+  admission remains gated by the documented missing evidence.
+
 - Add an optional, isolated P4 ecTrans 1.6.0 candidate probe with independent
   Fourier-mode/sign/normalization/truncation checks, bounded failure handling and
   atomic evidence reports. Preserve native spectral header facts as unresolved
