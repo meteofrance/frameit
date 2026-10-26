@@ -48,6 +48,8 @@ The :doc:`fa_baseline` records the current P0 corpus, finite family/operation
 matrix, native -91 reproducer, missing references and P1 admission gates.
 The :doc:`fa_contracts` describes the P1 private descriptors, typed structural
 metadata, optional exact source-version assertions and declaration precedence.
+The :doc:`fa_geometry` records the P2 native-axis lookup repair, numerical
+compatibility change, snapping metadata and remaining geometry gates.
 
 Use ``input.format: fa`` for FA-only extraction or named sources for coupling.
 Do not put atmospheric and SURFEX companion files into an undifferentiated FA
@@ -235,10 +237,13 @@ this threshold does not permit fitting another CRS. The supplied 1300-metre
 history also agrees with its encoded corners under an explicit inspection
 radius; that is not independent proof of the producer's Earth model.
 
-**Sampling/exclusions:** lookup retains regional squared-degree nearest-point
-selection, matches equivalent longitudes modulo 360 and uses named 2-D axes.
-It is not a geodesic-distance minimizer. Grids, zones, masks, units and intervals
-remain distinct. Existing transformations retain their own method records.
+**Sampling/exclusions:** P2 uses source-CRS/native-axis point selection on the
+admitted FA Lambert branch, after checking every geographic sample against its
+axes/CRS. Other inputs, including regular lon/lat FA, retain squared-degree
+selection. Both conventions handle equivalent longitudes and neither claims a
+geodesic-distance minimum. Requested centres, selected points and projected
+snapping offsets are distinguished; see :doc:`fa_geometry`. Grids, zones, masks,
+units and intervals remain distinct.
 
 **Scope/gaps:** generated fixtures verify known values, typed metadata, dates,
 readonly bytes, native isolation, multiple times, distinct-grid crops, optional

@@ -75,6 +75,7 @@ def inspect_grid(ds, conf):
                           "min_m": float(np.min(values)), "max_m": float(np.max(values))})
         sources.append(source)
     return {"x": distances[0], "y": distances[1], "sources": sources,
+            "index_lookup": ds.attrs.get("fa_grid_lookup"),
             "shape": [ds.sizes[ydim], ds.sizes[xdim]],
             "coordinate_names": [conf.name_latitude, conf.name_longitude],
             "sample_lon": lon.tolist(), "sample_lat": lat.tolist()}

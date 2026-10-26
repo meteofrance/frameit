@@ -199,7 +199,17 @@ def _select_times(tree, times):
 
 
 def _mapped_track(track, source, conf):
-    from frameit.tracking.geographic import nearest_grid_point
+    from frameit.tracking.geographic import (
+        clear_grid_observations,
+        locate_track,
+        nearest_grid_point,
+        uses_native_fa_lookup,
+    )
+
+    if uses_native_fa_lookup(source):
+        return locate_track(track, source, axes=(conf.name_lat_dim, conf.name_lon_dim),
+                            lat_name=conf.name_latitude, lon_name=conf.name_longitude,
+                            require_inside=True)
 
     lat, lon = source[conf.name_latitude], source[conf.name_longitude]
     for dim in ("time", conf.name_time_dim):
@@ -210,7 +220,7 @@ def _mapped_track(track, source, conf):
     if lat.ndim == lon.ndim == 2:
         axes = conf.name_lat_dim, conf.name_lon_dim
         lat, lon = lat.transpose(*axes), lon.transpose(*axes)
-    result = track.copy(deep=False)
+    result = clear_grid_observations(track)
     cy, cx = [], []
     for latitude, longitude in zip(track.lat.values, track.lon.values, strict=True):
         if not _inside_grid(lat, lon, float(latitude), float(longitude), source, conf):
@@ -264,6 +274,7 @@ def _inside_grid(lat, lon, latitude, longitude, source, conf):
 
 def run_coupled(runner, *, benchmark=False):
     from frameit.core.runner import FrameitRunner, RunResult
+    from frameit.tracking.geographic import SNAP_VARIABLES
     from frameit.tracking.tracker_core import make_tracking_dataset
 
     conf = runner.conf
@@ -318,15 +329,18 @@ def run_coupled(runner, *, benchmark=False):
         for section in ("extraction", "polar_projection"):
             runner.timer.sections[section] = (runner.timer.sections.get(section, 0.)
                                               + consumer.timer.sections.get(section, 0.))
-        for axis in ("cx", "cy", "valid_box", "ix_min", "ix_max", "iy_min", "iy_max"):
+        snapping = SNAP_VARIABLES
+        for axis in ("cx", "cy", "valid_box", "ix_min", "ix_max", "iy_min", "iy_max", *snapping):
             if axis not in consumer.track:
                 continue
             variable = f"{name}_{axis}"
             if variable in runner.track:
                 raise ValueError(f"Source index name conflicts with track variable {variable}")
-            runner.track[variable] = consumer.track[axis].assign_attrs(
-                source_id=name,
-                long_name=f"{axis} in {name}'s selected source grid (indices zero-based)")
+            attributes = {"source_id": name}
+            if axis not in snapping:
+                attributes["long_name"] = (
+                    f"{axis} in {name}'s selected source grid (indices zero-based)")
+            runner.track[variable] = consumer.track[axis].assign_attrs(**attributes)
         for attribute in ("dict_crop_user", "dict_polar_user"):
             for group, dataset in getattr(consumer, attribute).items():
                 dataset = dataset.assign_attrs(source_id=name, source_group=group,
@@ -337,6 +351,15 @@ def run_coupled(runner, *, benchmark=False):
                 getattr(runner, attribute)[f"{name}.{group}"] = dataset
         runner.polar_report[name] = consumer.polar_report
         source_provenance = conf.simulation_parameter["source_provenance"][name]
+        if "tracking_grid_lookup" in source_track.attrs:
+            source_provenance["grid_lookup"] = {
+                "method": source_track.attrs["tracking_grid_lookup"],
+                "offset_convention": source_track.attrs["tracking_snap_convention"],
+                "requested_centres": "track.lat / track.lon",
+                "selected_centres": f"track.{name}_grid_selected_latitude / "
+                                    f"track.{name}_grid_selected_longitude",
+                "offsets": [f"track.{name}_{key}" for key in snapping[2:]],
+            }
         source_provenance["wind_transformations"] = consumer.conf.simulation_parameter.get(
             "wind_transformations", [])
         source_provenance["fa_inputs"] = consumer.conf.simulation_parameter.get(

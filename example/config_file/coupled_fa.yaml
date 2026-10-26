@@ -33,6 +33,8 @@ input:
           # only after checking the actual source metadata.
           expected_source: {}
           subdomain: CI
+          # Admitted projected FA uses its source CRS/native axes for index lookup.
+          # Track products record requested vs selected centres and snapping offsets.
           # Explicit source-geometry declaration, NOT a universal FA default.
           # Obtain the actual Earth model from the producer before scientific use.
           earth_radius_m: 6371229.0

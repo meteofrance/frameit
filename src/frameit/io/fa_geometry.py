@@ -12,32 +12,64 @@ import numpy as np
 import xarray as xr
 from pyproj import CRS, Transformer
 
+NATIVE_LOOKUP = "fa_source_crs_native_axes_v1"
+
+
+def _regional_header(header):
+    """Validate the evidenced modern header; ignore inactive work-buffer tails."""
+    p = np.asarray(header["PSINLA"][:16], dtype=float)
+    k = np.asarray(header["KNLOPA"][:8], dtype=float)
+    if p.size != 16 or k.size != 8 or not np.isfinite(p).all() or not np.isfinite(k).all():
+        raise ValueError("FA requires finite active modern rectangular header entries")
+    if p[0] != -1 or header["KTYPTR"] >= 0:
+        raise ValueError("FA requires a supported modern rectangular header")
+    if (header["PCODIL"] != 0 or any(header.get(key, 0) != 0
+                                     for key in ("PSLAPO", "PCLOPO", "PSLOPO"))):
+        raise ValueError("Rotated/stretched/academic FA header conventions are not qualified")
+    if not np.equal(k, np.floor(k)).all() or np.any(k[6:8] < 0):
+        raise ValueError("FA domain indices and I-zone widths must be nonnegative integers")
+    for key in ("KNXLON", "KNLATI"):
+        if not np.isfinite(header[key]) or int(header[key]) != header[key] or header[key] < 2:
+            raise ValueError("FA requires integer rectangular dimensions of at least two points")
+    if p[1] < -1 and p[1] != -9:
+        raise ValueError("Unsupported FA regular-grid header discriminator")
+    return p, k.astype(int)
+
 
 def geometry_signature(header, options):
     import json
 
+    p, k = _regional_header(header)
     return json.dumps({"options": {k: options[k] for k in ("subdomain", "earth_radius_m")},
-                       "header": {key: value for key, value in header.items()
-                                  if key not in {"PAHYBR", "PBHYBR", "KNIVER", "PREFER"}}},
-                      sort_keys=True, allow_nan=False)
+                       "header": {"KTYPTR": header["KTYPTR"], "PCODIL": header["PCODIL"],
+                                  "KNXLON": header["KNXLON"], "KNLATI": header["KNLATI"],
+                                  "KNLOPA": k.tolist(), "PSINLA": p.tolist()}},
+                       sort_keys=True, allow_nan=False)
 
 
 def fa_geometry(header, options):
+    p, k = _regional_header(header)
     nx, ny = int(header["KNXLON"]), int(header["KNLATI"])
     if nx * ny > options.get("max_points", 20_000_000):
         raise ValueError("Native FA storage grid exceeds input.fa.max_points; "
                          "raise the declared resource budget explicitly if appropriate")
-    p, k = header["PSINLA"], header["KNLOPA"]
-    if min(nx, ny) < 2 or header["KTYPTR"] > 0 or int(p[0]) == 0:
-        raise ValueError("FA requires a supported modern rectangular header")
-    regular = int(p[1]) == -9
+    if options["subdomain"] not in {"CI", "C"}:
+        raise ValueError("FA subdomain must be CI or C")
+    regular = p[1] == -9
     if regular:
         if options["subdomain"] != "CI":
             raise ValueError("Regular lon/lat FA supports the complete CI grid only")
+        if list(k[2:6]) != [1, nx, 1, ny] or p[6] == 0 or p[7] == 0:
+            raise ValueError("Regular FA requires complete CI bounds and nonzero angular steps")
         x0, x1, y0, y1 = 0, nx, 0, ny
         anchor_i, anchor_j = (nx - 1) / 2, (ny - 1) / 2
         longitude = np.rad2deg(p[4] + (np.arange(nx) - anchor_i) * p[6])
         latitude = np.rad2deg(p[5] + (np.arange(ny) - anchor_j) * p[7])
+        difference = np.array([longitude[0], latitude[0], longitude[-1], latitude[-1]])
+        difference -= np.rad2deg(p[12:16])
+        difference[[0, 2]] = (difference[[0, 2]] + 180) % 360 - 180
+        if np.max(np.abs(difference)) > 2.e-5:
+            raise ValueError("FA regular geometry contradicts encoded CI corners")
         ds = xr.Dataset(coords={
             "x": ("x", longitude, {"units": "degrees_east", "axis": "X"}),
             "y": ("y", latitude, {"units": "degrees_north", "axis": "Y"}),
@@ -49,6 +81,8 @@ def fa_geometry(header, options):
         radius = options.get("earth_radius_m")
         if radius is None:
             raise ValueError("Projected FA requires an explicit input.fa.earth_radius_m")
+        if not np.isfinite(radius) or radius <= 0:
+            raise ValueError("FA earth_radius_m must be finite and positive")
         if not 0 < abs(p[1]) < 1 or int(header["PCODIL"]) == -1:
             raise ValueError("Only spherical tangent Lambert projected FA is supported")
         if k[1] not in (0, 1, -1):
@@ -106,5 +140,6 @@ def fa_geometry(header, options):
     ds = ds.assign_coords(crs=xr.DataArray(0, attrs=mapping),
                           source_i=("x", np.arange(x0, x1)), source_j=("y", np.arange(y0, y1)))
     ds.attrs.update(fa_subdomain=options["subdomain"], fa_native_shape=[ny, nx],
-                    fa_zone_indices=[x0, x1, y0, y1])
+                    fa_zone_indices=[x0, x1, y0, y1],
+                    fa_grid_lookup=NATIVE_LOOKUP if not regular else "legacy_squared_degrees")
     return ds

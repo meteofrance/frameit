@@ -57,6 +57,8 @@ def open_metadata(files, conf, resources):
                             "profile": conf.fa_options["profile"],
                             "subdomain": conf.fa_options["subdomain"],
                             "earth_radius_m": conf.fa_options["earth_radius_m"]})
+            records[-1]["horizontal_header_signature"] = signature
+            records[-1]["grid_lookup"] = fa_geometries[signature].attrs["fa_grid_lookup"]
         elif conf.file_type == "grib":
             datasets = _grib_metadata(path)
         else:

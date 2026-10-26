@@ -47,6 +47,9 @@ FA diagnostics are reported in provenance/final status. See :doc:`fa_inputs`.
 FA variables additionally carry a JSON ``fa_field_descriptor`` input snapshot
 and its explicit scope. Per-file descriptors and post-decode scaling/mask facts
 are retained in run provenance and decoder logs; see :doc:`fa_contracts`.
+Projected FA tracking adds selected-grid latitude/longitude and source-CRS
+snapping offsets to the track, source-prefixed in coupled products. Continuous
+``lat``/``lon`` remain requested centres; see :doc:`fa_geometry` for conventions.
 
 GRIB indexes are stored in ``cache/``, never beside the input files. Cache
 filenames distinguish input paths and cfgrib indexing keys. Meso-NH NetCDF

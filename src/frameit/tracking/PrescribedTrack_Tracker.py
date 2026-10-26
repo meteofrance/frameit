@@ -183,23 +183,11 @@ class PrescribedTrack(TcTracker):
         if not (np.isfinite(lat_trk).all() and np.isfinite(lon_trk).all()):
             raise ValueError("PrescribedTrack: common-time track positions must be finite")
 
-        ntime = common_times.size
-        cy = np.empty(ntime, dtype="int64")
-        cx = np.empty(ntime, dtype="int64")
-
-        from .geographic import nearest_grid_point
-
-        for k in range(ntime):
-            cy[k], cx[k] = nearest_grid_point(lat, lon, float(lat_trk[k]), float(lon_trk[k]),
-                                             axes=self.horizontal_dims)
-
         # 4) Construction du Dataset de sortie
         time_da = xr.DataArray(common_times, dims=("time",), name="time")
 
         out = xr.Dataset(
             data_vars={
-                "cy": xr.DataArray(cy, dims=("time",), coords={"time": time_da}),
-                "cx": xr.DataArray(cx, dims=("time",), coords={"time": time_da}),
                 "lon": xr.DataArray(
                     lon_trk, dims=("time",), coords={"time": time_da},
                     attrs={"units": "degrees_east", "long_name": "prescribed cyclone longitude"},
@@ -211,4 +199,8 @@ class PrescribedTrack(TcTracker):
             },
             coords={"time": time_da},
         )
-        return out
+        from .geographic import locate_track
+
+        geography = ds.assign_coords({self.lat_name: lat, self.lon_name: lon})
+        return locate_track(out, geography, axes=self.horizontal_dims,
+                            lat_name=self.lat_name, lon_name=self.lon_name)

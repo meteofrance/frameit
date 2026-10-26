@@ -181,6 +181,8 @@ def concat_fa2ds_by_vert_coord(
                            "profile": wind_conf.fa_options["profile"],
                            "subdomain": wind_conf.fa_options["subdomain"],
                            "earth_radius_m": wind_conf.fa_options["earth_radius_m"],
+                           "horizontal_header_signature": signature,
+                           "grid_lookup": geometry.attrs["fa_grid_lookup"],
                            "backend_versions": info["backend_versions"],
                            "decoder_log": (str(decoder_log.relative_to(wind_conf.output_dir))
                                            if decoder_log is not None else None),

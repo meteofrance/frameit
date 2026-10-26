@@ -261,3 +261,7 @@ metadata on the observed AROME-47/SURFEX-8.1 branch. It does not promote any
 blocked physical family in this frozen P0 matrix. In particular, the -91,
 release-matched scientific definitions, trusted decodes and multi-time real-data
 gaps remain unresolved.
+
+The :doc:`fa_geometry` records a subsequent bounded P2 repair of already admitted
+modern regional headers and Lambert index lookup. Additional projections, Earth
+models and global/reduced active metadata still lack references and remain gated.

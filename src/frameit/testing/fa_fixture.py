@@ -17,7 +17,7 @@ import numpy as np
 
 def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_history", packing=0,
                   state_hours=None, source_version=8, source_bug=1, program="AROME",
-                  extra_metadata=False):
+                  extra_metadata=False, projection_latitude=None):
     from falfilfa4py import FA, LFI
 
     if path.exists():
@@ -31,9 +31,27 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
     p[4:8] = np.deg2rad([60., -20., .01064, .01])
     p[8:10] = p[6] * (nx - 1), p[7] * (ny - 1)
     p[12:16] = [p[4] - (nx - 1) * p[6] / 2, p[5] - (ny - 1) * p[7] / 2,
-                p[4] + (nx - 1) * p[6] / 2, p[5] + (ny - 1) * p[7] / 2]
+                 p[4] + (nx - 1) * p[6] / 2, p[5] + (ny - 1) * p[7] / 2]
+    if projection_latitude is not None:
+        # Independent spherical equations, not FrameIt's pyproj geometry builder.
+        phi0, lam0 = np.deg2rad([projection_latitude, 50.])
+        n = np.sin(phi0)
+        f = np.cos(phi0) * np.tan(np.pi / 4 + phi0 / 2)**n / n
+        rho0 = 6371229. * f / np.tan(np.pi / 4 + phi0 / 2)**n
+        xx = np.array([-1., 1.]) * (nx - 1) * 500.
+        yy = np.array([-1., 1.]) * (ny - 1) * 500.
+        rho = np.sign(n) * np.hypot(xx, rho0 - yy)
+        theta = np.arctan2(np.sign(n) * xx, np.sign(n) * (rho0 - yy))
+        corners_lon = lam0 + theta / n
+        corners_lat = 2 * np.arctan((6371229. * f / rho)**(1 / n)) - np.pi / 2
+        p[1] = abs(n)
+        p[2:6] = lam0, phi0, lam0, phi0
+        p[6:10] = 1000., 1000., nx * 1000., ny * 1000.
+        p[12:16] = corners_lon[0], corners_lat[0], corners_lon[1], corners_lat[1]
+        k[1] = 1
     header = uuid4().hex[:16]
-    FA.wfacade(header, -11, 0., 0., 0., 0., 11, ny, nx,
+    FA.wfacade(header, -11 if projection_latitude is None else -5, 0., 0., 0., 0.,
+               11 if projection_latitude is None else 3, ny, nx,
                len(k), k, len(z), z, len(p), p, 1, 101325.,
                np.array([0., 0.]), np.array([0., 1.]), False)
     unit = FA.wfaitou(str(path), "NEW", header)

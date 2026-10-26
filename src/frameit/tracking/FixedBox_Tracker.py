@@ -157,28 +157,9 @@ class FixedBoxTracker(TcTracker):
         time_coord = ds["time"]
         nt = time_coord.size
 
-        lat = ds[self.lat_name]
-        lon = ds[self.lon_name]
-        from .geographic import nearest_grid_point
+        from .geographic import locate_track, nearest_grid_point, uses_native_fa_lookup
 
-        cy_scalar, cx_scalar = nearest_grid_point(lat, lon, self.lat0, self.lon0,
-                                                 axes=self.horizontal_dims)
-
-        # Replicate over the time dimension
-        cy = xr.DataArray(
-            np.full(nt, cy_scalar, dtype=int),
-            dims=("time",),
-            coords={"time": time_coord},
-            name="cy",
-        )
-        cx = xr.DataArray(
-            np.full(nt, cx_scalar, dtype=int),
-            dims=("time",),
-            coords={"time": time_coord},
-            name="cx",
-        )
-
-        out = xr.Dataset({"cy": cy, "cx": cx})
+        out = xr.Dataset(coords={"time": time_coord})
         out["lon"] = xr.DataArray(
             np.full(nt, self.lon0), dims=("time",), coords={"time": time_coord},
             attrs={"units": "degrees_east", "long_name": "declared fixed centre longitude"},
@@ -187,4 +168,11 @@ class FixedBoxTracker(TcTracker):
             np.full(nt, self.lat0), dims=("time",), coords={"time": time_coord},
             attrs={"units": "degrees_north", "long_name": "declared fixed centre latitude"},
         )
+        if uses_native_fa_lookup(ds):
+            return locate_track(out, ds, axes=self.horizontal_dims,
+                                lat_name=self.lat_name, lon_name=self.lon_name)
+        # Preserve the legacy fixed-box single scan, not one full-grid scan per time.
+        j, i = nearest_grid_point(ds[self.lat_name], ds[self.lon_name], self.lat0, self.lon0,
+                                   axes=self.horizontal_dims)
+        out["cy"], out["cx"] = ("time", np.full(nt, j)), ("time", np.full(nt, i))
         return out
