@@ -14,19 +14,24 @@ metadata to qualified library APIs, preserving source indices and CF origins.
 The :doc:`fa_epygram_c3` qualifies the multi-time GRIB/EPyGrAM coupled engine with
 distinct grids, moving centres, optional shared targets and independent exports.
 It does not establish real-producer units/scaling/support or scientific approval.
-The :doc:`fa_epygram_c0` remains the historical baseline/API evidence and cleanup
-ledger. Other producer/native-container integrations are outside this increment.
+The :doc:`fa_epygram_c4` closes the cleanup ledger, removes the parallel raw reader
+and documents the default/alias/installation migration. The :doc:`fa_epygram_c0`
+remains historical baseline/API evidence. Other producer/native-container
+integrations are outside this increment.
 
 Installation and native isolation
 ----------------------------------------
 
-The reference ``environment.yaml`` uses Python 3.13 and installs the published
-``falfilfa4py==1.3.0`` wheel. A minimal installation may use the optional ``fa``
-extra on a platform/Python version supported by that package. The optional
-``fa-epygram`` extra supplies the maintained SURFEX path and atmospheric cube
-support (see :doc:`fa_atmosphere`). It requires EPyGrAM 2.1.0's unmodified upstream
-pins and the qualified ctypesForFortran 1.3.0 bridge. Choose it separately from
-``fa``; ``input.fa.python_executable`` can select a coherent Python-3.13 helper.
+The reference ``environment.yaml`` uses Python 3.13 for the GRIB/ESMF parent and
+documents a separate maintained optional ``fa`` helper: EPyGrAM 2.1.0's unmodified
+upstream pins and the qualified ctypesForFortran 1.3.0 bridge. ``fa-epygram`` is an
+installation alias with identical
+dependencies; combining these extras is supported. ``input.fa.python_executable``
+can select a coherent Python-3.13 helper containing FrameIt and this stack.
+``backend: epygram`` is the default for all FA operations. Legacy ``backend: native``
+remains accepted as a deprecated, warned alias with requested/effective provenance.
+It cannot select the retired decoder or bypass admission checks. Existing YAML
+settings retain their scientific/resource meaning; see :doc:`fa_epygram_c4`.
 Ordinary NetCDF/GRIB processing and schema-only validation do not
 require the FA package.
 
@@ -69,7 +74,7 @@ The :doc:`fa_surface` records the P3 shared atmosphere/surface polar contract,
 selected dense/layer-name tests, cyclone-field priorities and remaining blockers.
 The :doc:`fa_spectral` records the P4 optional ecTrans candidate evaluation,
 independent Fourier modes and the still-blocked native spectral admission gates.
-The :doc:`fa_atmosphere` adds the optional isolated EPyGrAM backend and explicitly
+The :doc:`fa_atmosphere` describes the isolated EPyGrAM reader and explicitly
 associated native full/interface cubes, without implicit physical-coordinate diagnosis.
 
 Use ``input.format: fa`` for FA-only extraction or named sources for coupling.
@@ -185,7 +190,7 @@ retained, not averaged or assembled into an invented vertical coordinate. Use
 the logical ``surface`` group for individually selected 2-D records; this does
 not label every quantity as a physical ground-surface variable.
 
-For ``backend: epygram``, C1 additionally requires the evidenced source tags
+The maintained reader requires the evidenced source tags
 ``PROGRAM=AROME, VERSION=8, BUG=1, MASDEV=47, BUGFIX=0``, a complete FBUF
 directory, matching CI dimensions and a matching DTCUR/header state clock.
 Unmatched releases remain inspectable but require independent structural/type
@@ -214,7 +219,7 @@ Projected inputs require explicit ``earth_radius_m``. ``subdomain: CI`` (default
 keeps central plus intermediate points; ``C`` excludes the declared I-zone widths.
 The spectral extension zone is excluded. Shape/zone indices, angles, radius and
 CRS are retained; there is no fitting or guessed Earth-shape default.
-With ``backend: epygram``, qualified library axes/CRS/zones define the labelled
+Qualified library axes/CRS/zones define the labelled
 grid; original header flags/corners remain admission evidence. C2 records the
 library-to-existing-CF origin translation and explicit Earth-model origin.
 Dateline-crossing/polar FA grids and unsupported projections fail explicitly.
@@ -238,9 +243,13 @@ Per-file versioned field descriptors retain unresolved facts explicitly. Decode
 logs and ``fa_decoder.field_observations`` add observed undefined-value and
 scaling-warning/fallback facts. A representative input descriptor is also stored
 as a JSON variable attribute; it does not replace per-file run provenance.
-On the EPyGrAM path, ``geometry_contract`` records library axes/CRS/native zones
+``geometry_contract`` records library axes/CRS/native zones
 and origin evidence. ``horizontal_header_signature`` retains its key but now has
-a library-derived JSON value, not the legacy raw-header layout.
+a library-derived JSON value, not the legacy raw-header layout. C4 applies this
+contract to the default and legacy alias too. ``backend`` / ``FA_backend`` identify
+the effective ``epygram`` implementation; ``requested_backend`` /
+``FA_backend_requested`` retain the request. ``FA_backend_migration`` records a
+legacy alias and its replacement, in addition to visible deprecation warnings.
 
 Existing atomic publication, exclusive run ownership and final ``run-status.yaml``
 handle helper/export failures. Failed required sources never publish a completed

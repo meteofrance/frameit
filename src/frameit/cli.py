@@ -185,7 +185,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pins.add_argument("--fa-profile", choices=("arome_history", "surfex_history"), default=None)
     pins.add_argument("--fa-fields", nargs="+", default=[],
                       help="Probe native FA encoding flags without decoding values")
-    pins.add_argument("--fa-backend", choices=("native", "epygram"), default="native")
+    pins.add_argument("--fa-backend", choices=("epygram", "native"), default=None,
+                      help="FA decoder: epygram (default); native is a deprecated alias")
     pins.add_argument("--fa-python", default=None,
                       help="Optional path to the FA helper's Python interpreter")
 
@@ -406,12 +407,13 @@ def _cmd_inspect(args):
             raise FileNotFoundError("No FA inspection inputs match the selected pattern")
         _print_yaml({"format": "fa", "inputs": [{"path": str(path), **inspect_fa(
             path, args.fa_profile, args.fa_fields, validate_selection=False,
-            backend=args.fa_backend, python_executable=args.fa_python)} for path in paths],
+            backend=args.fa_backend or "epygram", python_executable=args.fa_python)}
+            for path in paths],
             "interpretation": "Raw native metadata; scientific field definitions and "
                               "projected Earth shape must be declared before execution"})
         return 0
     if (args.fa_profile is not None or args.fa_fields
-            or args.fa_backend != "native" or args.fa_python):
+            or args.fa_backend is not None or args.fa_python):
         raise ValueError("--fa-profile/--fa-fields/--fa-backend/--fa-python require --format fa")
     from frameit.core.preflight import preflight
     from frameit.core.settings_class import SimulationConfig

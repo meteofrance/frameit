@@ -13,7 +13,7 @@ import pytest
 from frameit.io.fa_backend import collect_fa_diagnostics, inspect_fa, request_fa
 from frameit.io.fa_contracts import native_descriptor
 
-NATIVE = importlib.util.find_spec("falfilfa4py") is not None
+NATIVE = importlib.util.find_spec("epygram") is not None
 
 
 def fa_files(directory, hours=(0,), *, profile="arome_history", **options):

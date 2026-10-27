@@ -20,7 +20,7 @@ from frameit.testing.numerical.test_fa_cubes import NATIVE as EPYGRAM
 from frameit.testing.numerical.test_fa_io import NATIVE, fa_files
 from frameit.testing.numerical.test_fa_pipeline import single_fa_document
 
-pytestmark = pytest.mark.skipif(not NATIVE, reason="optional falfilfa4py wheel not installed")
+pytestmark = pytest.mark.skipif(not NATIVE, reason="optional EPyGrAM FA stack not installed")
 
 
 @pytest.fixture(params=["native", pytest.param("epygram", marks=EPYGRAM)])
@@ -226,6 +226,7 @@ assert not {'frameit', 'falfilfa4py', 'epygram'} & sys.modules.keys()
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
     assert provenance["fa_inputs"][0]["fields"]["SFX.COVERCLASS"]["kind"] == "categorical"
     versions = provenance["fa_inputs"][0]["backend_versions"]
-    assert versions["FA_backend"] == backend_options["backend"]
-    if backend_options["backend"] == "epygram":
-        assert provenance["fa_decoder"]["backend_versions"]["EPyGrAM"] == "2.1.0"
+    assert versions["FA_backend"] == "epygram"
+    assert versions["FA_backend_requested"] == backend_options["backend"]
+    assert bool(versions["FA_backend_migration"]) == (backend_options["backend"] == "native")
+    assert provenance["fa_decoder"]["backend_versions"]["EPyGrAM"] == "2.1.0"

@@ -71,7 +71,8 @@ def open_metadata(files, conf, resources):
             records[-1]["geometry_contract"] = info["geometry"].get("epygram")
             records[-1].update(native_cubes=info["native_cubes"],
                                hybrid_contract=info.get("hybrid_contract"),
-                               backend=conf.fa_options["backend"])
+                               backend=info["backend_versions"]["FA_backend"],
+                               requested_backend=conf.fa_options["backend"])
         elif conf.file_type == "grib":
             datasets = _grib_metadata(path)
         else:

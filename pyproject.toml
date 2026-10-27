@@ -37,9 +37,8 @@ frameit = "frameit.cli:main"
 test = ["pytest>=7"]
 grib = ["cfgrib", "eccodes"]
 polar = ["xesmf", "shapely>=2"]
-fa = ["falfilfa4py==1.3.0"]
-# Alternative to fa until C4 parity/migration. Unmodified upstream requirements;
-# pin the evaluated bridge too (its newer major is not native-qualified here).
+fa = ["epygram==2.1.0", "ctypesForFortran==1.3.0"]
+# Compatibility installation alias for fa; identical unmodified upstream stack.
 fa-epygram = ["epygram==2.1.0", "ctypesForFortran==1.3.0"]
 # Candidate evaluation only; installing this extra does not admit spectral FA execution.
 fa-spectral-test = ["ectrans4py==1.6.0", "ctypesForFortran==1.3.0"]

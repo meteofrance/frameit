@@ -35,20 +35,25 @@ Conda/mamba is recommended for the native scientific stack, particularly
 ESMF/ESMPy for optional polar processing. Core NetCDF processing also declares
 pip-installable runtime dependencies. The `grib` extra adds cfgrib/ecCodes;
 the `polar` extra adds xESMF but still requires a compatible ESMF installation.
-The reference conda environment targets Python 3.13 and includes the published
-`falfilfa4py` wheel. The optional `fa` extra enables the isolated native reader.
+The reference conda environment targets Python 3.13 for the GRIB/ESMF parent;
+its comments describe a separate maintained EPyGrAM 2.1.0 FA helper.
+The optional `fa` extra enables the isolated FA reader;
+`fa-epygram` remains an installation alias for the identical dependencies.
 FA supports explicitly defined instantaneous 2-D gridpoint records on qualified
 regional headers; spectral transformations are not implicit.
 SURFEX execution requires a complete AROME source/directory with `PACK=0` and
 dense horizontal `X1` records. Native vertical-header facts remain inspectable
 provenance, without inferred layer axes or atmospheric 3-D processing.
-The optional `fa-epygram` extra supplies the maintained EPyGrAM 2.1.0 path for
+The maintained EPyGrAM path handles
 [evidenced dense SURFEX histories](docs/source/user_guide/fa_epygram_c1.rst) and
 [explicit native atmospheric cubes](docs/source/user_guide/fa_atmosphere.rst),
-retaining full/interface indices and checked hybrid coefficients. Select
-`input.fa.backend: epygram`; its upstream native pins and the qualified
-ctypesForFortran 1.3.0 bridge must be installed separately from the `fa` extra.
-`input.fa.python_executable` can select that coherent Python-3.13 helper. Native
+retaining full/interface indices and checked hybrid coefficients.
+`input.fa.backend: epygram` is now the default. Legacy `backend: native` is a
+deprecated alias, with warnings and requested/effective backend provenance;
+it selects the same reader. Install the unmodified upstream stack and qualified
+ctypesForFortran 1.3.0 bridge in a coherent environment. See the
+[C4 cleanup ledger and migration guide](docs/source/user_guide/fa_epygram_c4.rst).
+`input.fa.python_executable` can select that Python-3.13 helper. Native
 extraction does not require pressure or height diagnosis.
 The [C2 geometry/metadata adapter](docs/source/user_guide/fa_epygram_c2.rst) uses
 qualified EPyGrAM axes/CRS/zones while preserving native indices, explicit Earth

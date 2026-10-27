@@ -64,6 +64,14 @@ These post-call observations supplement configured backend labels and actual hel
 versions. Decoder JSONL logs retain individual requests; the manifest consolidates
 observations per file/field. Scaling admission is still checked separately and may
 fail after the library call. This is execution evidence, not producer-scaling proof.
+C4 makes these library observations universal for FA, including the deprecated
+``native`` alias. Per-input ``backend`` and ``backend_versions.FA_backend`` record
+the effective ``epygram`` reader; ``requested_backend`` / ``FA_backend_requested``
+retain the request and ``FA_backend_migration`` explains an alias. The default
+now also records library geometry/CRS/zone origins and returned-mask provenance.
+Scientific variable/dimension names, source/vertical groups, values, units, masks,
+precision and storage encoding retain their established contracts; see
+:doc:`fa_epygram_c4` for compatibility evidence and remaining limits.
 Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
 ``lat``/``lon`` remain requested centres; see :doc:`fa_geometry` for conventions.

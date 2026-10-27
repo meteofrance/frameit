@@ -6,6 +6,8 @@ path's horizontal interpretation to EPyGrAM 2.1.0, following :doc:`fa_epygram_c1
 Qualification covers compact modern regular-lon/lat CI and spherical tangent
 Lambert CI/C fixtures, dense evidenced SURFEX histories and the existing declared
 atmospheric full/interface cubes. Real-producer scientific approval remains open.
+This is the C2 stage record. :doc:`fa_epygram_c4` completes retirement and migration;
+the legacy-backend/extra and future-stage statements below describe the C2 checkpoint.
 
 Geometry, Earth model and source identity
 ------------------------------------------

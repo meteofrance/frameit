@@ -298,9 +298,7 @@ assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
         "2026-01-01T02:00:00.000000000"]
     assert provenance["sources"]["surfex"]["fa_decoder"]["decode_requests"] > 0
     versions = provenance["sources"]["surfex"]["fa_decoder"]["backend_versions"]
-    # The native extra and EPyGrAM's alternative extra pin different wrappers.
-    # This case uses the current interpreter, so provenance must identify the
-    # installed distribution actually used, independently of either pin.
+    # Provenance must identify the installed distribution actually used.
     assert versions["falfilfa4py"] == version("falfilfa4py")
     source = provenance["sources"]["surfex"]
     assert source["fa_inputs"][0]["field_descriptors"]["SFX.T2M"]["schema_version"] == 1

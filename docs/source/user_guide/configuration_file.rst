@@ -11,6 +11,14 @@ contract in :doc:`fa_surface`; its default is false for compatibility. Enabled,
 selected sources inherit the target from ``tracking.source`` and must agree on
 its geometry. Sampling methods and physical masks remain source-specific.
 
+``input.fa.backend`` now defaults to ``epygram``. Legacy ``native`` remains an
+accepted, deprecated alias for that same reader and emits migration warnings.
+``resolved-config.yaml`` preserves an explicit alias for replay; inventories and
+decoder provenance record both requested and effective backend. All profile,
+Earth-model, field/cube, helper, timeout and point-budget settings still apply.
+Both ``fa`` and compatibility ``fa-epygram`` installation extras now select the
+same stack. See :doc:`fa_epygram_c4` before replaying a former raw-reader setup.
+
 Create a model-specific, annotated configuration:
 
 .. code-block:: bash

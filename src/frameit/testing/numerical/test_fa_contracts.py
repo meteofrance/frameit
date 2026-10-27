@@ -7,7 +7,6 @@ import json
 import pickle
 import subprocess
 import sys
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -23,8 +22,8 @@ from frameit.io.fa_contracts import (
     resolve_descriptor,
     validate_descriptor,
 )
+from frameit.io.fa_epygram import typed_metadata
 from frameit.io.fa_utils import FaArray, inspect_fa_inputs
-from frameit.io.fa_worker import _typed_metadata
 from frameit.testing.numerical.test_fa_io import NATIVE, fa_files
 from frameit.testing.numerical.test_fa_pipeline import single_fa_document
 
@@ -122,7 +121,8 @@ def test_native_atmospheric_cubes_and_vertical_selectors_remain_gated(tmp_path, 
     assert not path.exists() and not (tmp_path / "run").exists()
 
 
-def test_typed_words_are_reinterpreted_not_cast_and_unknowns_never_read():
+@pytest.mark.skipif(not NATIVE, reason="optional EPyGrAM FA stack not installed")
+def test_typed_words_are_reinterpreted_not_cast_and_unknowns_never_read(tmp_path):
     # Independent raw word truth, including an integer not exactly representable
     # in float64. No native codec round trip is the oracle for these conversions.
     values = {"SFX.LAT0": np.array([0xC034400000000000], dtype="uint64").view("int64"),
@@ -131,39 +131,48 @@ def test_typed_words_are_reinterpreted_not_cast_and_unknowns_never_read():
               "SFX.L1D": np.array([0], dtype="int64"),
               "SFX.L2D": np.array([1], dtype="int64"),
               "SFX.DTCUR": np.array([2026, 1, 1, 0x40AC200000000000], dtype="int64")}
-    records = {name: len(words) for name, words in values.items()}
-    calls = []
-
-    def read(unit, name, length, abort):
-        calls.append(name)
-        return values[name]
-
-    lfi = SimpleNamespace(wlfilec=read)
+    transactions = 0
 
     def typed(name, **kwargs):
-        return _typed_metadata(lfi, 1, records, name, kwargs.get("source", SOURCE),
-                               kwargs.get("directory", {}))["value"]
+        nonlocal transactions
+        directory = tmp_path / str(transactions)
+        directory.mkdir()
+        transactions += 1
+        entries = [{"name": "T2M", "mask": "FULL"}, {"name": "SST", "mask": "SEA"}]
+        path = fa_files(directory, profile="surfex_history", extra_metadata=True,
+                        source_bug=kwargs.get("source", SOURCE)["BUG"],
+                        surface_fields=[{**entry, "values": np.zeros((7, 9)).tolist()}
+                                        for entry in entries],
+                        surface_directory=entries,
+                        structural_overrides={key: value.tolist() for key, value in values.items()}
+                        )[0]
+        return inspect_fa(path, None, validate_selection=False, metadata_fields=[name])[
+            "typed_metadata"][name]["value"]
 
     assert typed("SFX.LAT0") == -20.25
     assert typed("SFX._FBUF_DIM1") == [2**60 + 1, -1]
     assert typed("SFX.PROGRAM") == "AROME"
     assert typed("SFX.L1D") is False and typed("SFX.L2D") is True
     assert typed("SFX.DTCUR") == {"date": [2026, 1, 1], "seconds": 3600.}
-    before = list(calls)
+    class NoRead:
+        def __getattr__(self, name):
+            raise AssertionError("unqualified typed metadata accessed the library")
+
     for name in ("SFX.T2M", "SFX.UNKNOWN"):
         with pytest.raises(ValueError, match="release-specific"):
-            typed(name)
+            typed_metadata(NoRead(), name, {name: 1}, SOURCE, {})
     with pytest.raises(ValueError, match="release-specific"):
         typed("SFX.LAT0", source={**SOURCE, "BUG": 2})
     with pytest.raises(ValueError, match="contradicts"):
-        typed("SFX.LAT0", directory={"SFX.LAT0": {"TYPE": "N0"}})
-    assert calls == before
+        typed_metadata(NoRead(), "SFX.LAT0", {"SFX.LAT0": 1}, SOURCE,
+                       {"SFX.LAT0": {"TYPE": "N0"}})
     values["SFX.L2D"][0] = -1
     with pytest.raises(ValueError, match="logical word"):
         typed("SFX.L2D")
     values["SFX.PROGRAM"][0] = 256
     with pytest.raises(ValueError, match="Invalid ASCII"):
         typed("SFX.PROGRAM")
+    values["SFX.PROGRAM"][0] = 65
     values["SFX.LAT0"][0] = 0x7FF8000000000000
     assert typed("SFX.LAT0") == {"nonfinite": "nan"}
     json.dumps(typed("SFX.LAT0"), allow_nan=False)

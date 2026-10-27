@@ -68,6 +68,9 @@ def request_fa(request):
             or request.get("protocol_version", PROTOCOL_VERSION) != PROTOCOL_VERSION):
         raise ValueError("Unsupported FA worker protocol_version")
     request = {**request, "protocol_version": PROTOCOL_VERSION}
+    if request.get("backend") == "native":
+        log.warning("FA backend: native is a deprecated alias for epygram; "
+                    "use backend: epygram and install FrameIt[fa] in the helper")
     environment = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
                        MKL_NUM_THREADS="1", PYTHONNOUSERSITE="1")
     # The wheel's private ecCodes uses its own matching MEMFS definitions.
@@ -121,7 +124,7 @@ def request_fa(request):
                                  "coefficients cannot be returned as values")
             if descriptor["native"]["decoded_dtype"] != info["dtype"]:
                 raise ValueError(f"FA decoded dtype contradicts field descriptor for {context}")
-            # Qualified 1.2.1/1.3.0 stacks expose no structured multiplier query. Absence of this
+            # The qualified stack exposes no structured multiplier query. Absence of this
             # warning is NOT independent scaling verification or identity proof.
             missing = "has no encoded FMULTM and FMULTE" in diagnostics
             descriptor["scaling"].update(
@@ -147,7 +150,7 @@ def request_fa(request):
 
 
 def inspect_fa(path, profile, fields=(), *, validate_selection=True, timeout_seconds=120.,
-              expected_source=None, metadata_fields=(), backend="native", python_executable=None,
+              expected_source=None, metadata_fields=(), backend="epygram", python_executable=None,
               earth_radius_m=None, geometry_options=None):
     return request_fa({"operation": "inspect", "path": str(path), "profile": profile,
                        "fields": list(dict.fromkeys(fields)),

@@ -32,9 +32,15 @@ You should end up with a structure similar to:
    └── src
 
 The file ``environment.yaml`` define the dependencies required by **FrameIt**.
-The reference environment uses Python 3.13 to install a published
-``falfilfa4py`` wheel. The optional ``fa`` pip extra exposes the same dependency
-on platforms/Python versions supported by its publisher. FrameIt isolates native
+The reference parent environment uses Python 3.13 for GRIB/NetCDF/ESMF. FA uses a
+separate helper with EPyGrAM 2.1.0 and its unmodified upstream dependencies, plus
+the qualified ctypesForFortran 1.3.0 bridge. The optional ``fa`` pip extra supplies
+this stack; ``fa-epygram`` is an identical installation alias. ``environment.yaml``
+includes the helper setup recipe; select it with ``input.fa.python_executable``.
+The C4 record documents an existing overlay matrix shutdown failure, so a shared
+GRIB/ESMF/EPyGrAM-pin environment is not distribution-qualified by the passing
+helper tests. See :doc:`../user_guide/fa_epygram_c4` for migration
+from the retired raw reader/extra. FrameIt isolates native
 FA decoding from conda's GRIB/ecCodes reader automatically; matching version
 numbers alone did not resolve their observed same-process native-library conflict.
 See :doc:`../user_guide/fa_inputs` for the implemented scope and declarations.

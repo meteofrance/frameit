@@ -13,7 +13,7 @@ input:
   fa:
     backend: epygram
     profile: arome_history
-    # Optional: select a separate environment containing FrameIt[fa-epygram].
+    # Optional: select a separate environment containing FrameIt[fa]/EPyGrAM.
     # python_executable: /path/to/epygram-env/bin/python
     earth_radius_m: 6371229.0  # User declaration; verify the producer Earth model.
     subdomain: CI

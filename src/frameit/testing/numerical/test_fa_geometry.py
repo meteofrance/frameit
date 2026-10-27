@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from frameit.io.fa_geometry import fa_geometry, geometry_signature
+from frameit.io.fa_geometry import admitted_geometry, fa_geometry, geometry_signature
 
 
 def header(latitude=-30.):
@@ -11,11 +11,21 @@ def header(latitude=-30.):
     p[0], p[1] = -1., abs(np.sin(np.deg2rad(latitude)))
     p[2:6] = np.deg2rad([50., latitude, 50., latitude])
     p[6:8] = [1000., 1000.]
-    longitude, latitude = spherical_lambert(np.array([-5000., 5000.]),
-                                           np.array([-3000., 3000.]), 6371229., latitude)
-    p[12:16] = np.deg2rad([longitude[0], latitude[0], longitude[1], latitude[1]])
+    longitude, corner_lat = spherical_lambert(np.array([-5000., 5000.]),
+                                             np.array([-3000., 3000.]), 6371229., latitude)
+    p[12:16] = np.deg2rad([longitude[0], corner_lat[0], longitude[1], corner_lat[1]])
+    # Independent serialized library-contract fixture for parent/lookup tests.
+    # Actual EPyGrAM geometry is checked against Snyder in test_fa_epygram_geometry.
+    facts = {"schema_version": 1, "native_shape": [9, 13],
+             "x": (np.arange(-6, 7)*1000.).tolist(), "y": (np.arange(-4, 5)*1000.).tolist(),
+             "zones": {"CI": [1, 12, 1, 8], "C": [2, 11, 2, 7]},
+             "crs": {"grid_mapping_name": "lambert_conformal_conic", "standard_parallel": latitude,
+                     "latitude_of_projection_origin": latitude,
+                     "longitude_of_central_meridian": 50., "earth_radius": 6371229.},
+             "earth_model": {"radius_m": 6371229., "origin": "explicit fixture declaration"},
+             "origin": "independent analytical test fixture"}
     return dict(KTYPTR=-5, KNLATI=9, KNXLON=13, PCODIL=0,
-                KNLOPA=[0, 1, 2, 12, 2, 8, 1, 1], PSINLA=p)
+                KNLOPA=[0, 1, 2, 12, 2, 8, 1, 1], PSINLA=p, epygram=facts)
 
 
 def spherical_lambert(x, y, radius, latitude=-30.):
@@ -49,8 +59,8 @@ def test_tangent_lambert_asymmetric_ci_and_c_against_equations(latitude):
     np.testing.assert_allclose(central.longitude, ds.longitude[1:-1, 1:-1])
     np.testing.assert_allclose(central.latitude, ds.latitude[1:-1, 1:-1])
     with pytest.raises(ValueError, match="explicit input.fa.earth_radius_m"):
-        fa_geometry(h, {"subdomain": "CI"})
-    with pytest.raises(ValueError, match="contradicts encoded CI corners"):
+        admitted_geometry(h, {"subdomain": "CI"})
+    with pytest.raises(ValueError, match="conflicts with the declared Earth model"):
         fa_geometry(h, {"subdomain": "CI", "earth_radius_m": 5000000.})
 
 
@@ -60,7 +70,7 @@ def test_geometry_signature_ignores_inherited_surface_vertical_header():
     assert geometry_signature(h, options) == geometry_signature(
         {**h, "KNIVER": 90, "PAHYBR": [0., 1.], "PBHYBR": [1., 0.], "PREFER": 101325.}, options)
     with pytest.raises(ValueError, match="CI bounds"):
-        fa_geometry({**h, "KNXLON": 4}, options)
+        admitted_geometry({**h, "KNXLON": 4}, options)
 
 
 def test_geographic_lookup_matches_equivalent_longitudes_without_regridding():

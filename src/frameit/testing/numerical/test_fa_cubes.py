@@ -107,7 +107,7 @@ def test_explicit_cube_schema_replay_and_admission_failures(tmp_path):
     assert restored.fa_options == conf.fa_options
     assert conf.fa_options["python_executable"] == EPYTHON  # Preserve venv symlinks.
     for key, value, message in (
-        ("backend", "native", "native_cubes require backend"),
+        ("backend", "other", "input.fa.backend must be epygram"),
         ("python_executable", "", "interpreter path"),
     ):
         bad = copy.deepcopy(raw)
@@ -134,7 +134,10 @@ def test_explicit_cube_schema_replay_and_admission_failures(tmp_path):
 def test_hybrid_units_reference_pressure_and_invalid_columns():
     header = {"KNIVER": 3, "PREFER": 100000., "PAHYBR": [0., .1, .2, 0.],
               "PBHYBR": [0., .2, .6, 1.]}
-    contract = hybrid_contract(header)
+    vertical = SimpleNamespace(grid={"ABgrid_position": "flux", "gridlevels": [
+        (1, {"Ai": 0., "Bi": 0.}), (2, {"Ai": 10000., "Bi": .2}),
+        (3, {"Ai": 20000., "Bi": .6}), (4, {"Ai": 0., "Bi": 1.})]})
+    contract = hybrid_contract(header, vertical)
     assert contract["a_pa"] == [0., 10000., 20000., 0.]
     assert contract["reference_pressure_pa"] == 100000.  # not EPyGrAM's 101325 default
     assert contract["interface_indices"] == [1, 2, 3, 4]
@@ -143,7 +146,7 @@ def test_hybrid_units_reference_pressure_and_invalid_columns():
     assert contract["physical_coordinates"] == "not computed"
     for change in ({"PREFER": 0.}, {"PAHYBR": [0., .1]}, {"PBHYBR": [0., np.nan, .6, 1.]}):
         with pytest.raises(ValueError, match="Invalid FA native hybrid header"):
-            hybrid_contract({**header, **change})
+            hybrid_contract({**header, **change}, vertical)
     info = {"geometry": header, "field_descriptors": {"S001X": {"sampling": {"epygram": {
         "type_of_first_fixed_surface": 100, "levels": [850]}}}}}
     options = {"native_cubes": {"x": {"records": ["S001X"], "vertical_position": "mass",
@@ -159,7 +162,7 @@ def test_epygram_optionality_and_native_contradictions(tmp_path, monkeypatch):
         raise PackageNotFoundError(name)
 
     monkeypatch.setattr(fa_epygram, "version", missing)
-    with pytest.raises(ValueError, match="install FrameIt\\[fa-epygram\\]"):
+    with pytest.raises(ValueError, match="install FrameIt\\[fa\\]"):
         fa_epygram.initialize(tmp_path, None)
     with pytest.raises(ValueError, match="Cannot launch the FA helper"):
         request_fa({"operation": "inspect", "path": "unopened.fa",
@@ -185,7 +188,10 @@ assert 'epygram' not in sys.modules
 
 @NATIVE
 @pytest.mark.parametrize("synchronous", [True, False])
-def test_native_cube_export_indices_coefficients_masks_and_sparse_decodes(tmp_path, synchronous):
+@pytest.mark.parametrize("backend", ["epygram", "native"])
+def test_native_cube_export_indices_coefficients_masks_and_sparse_decodes(
+    tmp_path, synchronous, backend,
+):
     from netCDF4 import Dataset
     # Parent GRIB remains usable before and after the different FA native stack.
     ec = pytest.importorskip("eccodes")
@@ -195,6 +201,7 @@ def test_native_cube_export_indices_coefficients_masks_and_sparse_decodes(tmp_pa
     paths = fixtures(tmp_path, hours=(0, 1))
     before = [p.read_bytes() for p in paths]
     raw = document(tmp_path, paths, synchronous=synchronous)
+    raw["input"]["fa"]["backend"] = backend
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     preview = preflight(conf)
     assert not conf.output_dir.exists()
@@ -243,6 +250,8 @@ assert not {'frameit', 'epygram', 'falfilfa4py'} & sys.modules.keys()
     assert reader.returncode == 0, reader.stdout + reader.stderr
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
     assert provenance["fa_inputs"][0]["backend_versions"]["EPyGrAM"] == "2.1.0"
+    assert provenance["fa_inputs"][0]["backend"] == "epygram"
+    assert provenance["fa_inputs"][0]["requested_backend"] == backend
     logs = [json.loads(line) for log in (conf.output_dir / "logs").glob("fa-decoder-*.jsonl")
             for line in log.read_text().splitlines()]
     decoded = {name for record in logs for name in record["fields"]}

@@ -31,7 +31,7 @@ input:
         format: fa
         fa:
           backend: epygram
-          # Install FrameIt[fa-epygram] in a coherent Python-3.13 environment.
+          # Install FrameIt[fa] in a coherent Python-3.13 environment (C4 default).
           # Set python_executable to that helper if different from the parent.
           profile: surfex_history
           # Optional exact assertions, not overrides or scientific definitions.

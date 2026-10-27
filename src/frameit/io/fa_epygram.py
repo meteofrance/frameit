@@ -19,7 +19,7 @@ def initialize(destination, radius):
         if version("epygram") != "2.1.0":
             raise ValueError("This FA backend requires EPyGrAM 2.1.0")
     except PackageNotFoundError as exc:
-        raise ValueError("EPyGrAM backend requested: install FrameIt[fa-epygram] in the "
+        raise ValueError("FA requires EPyGrAM: install FrameIt[fa] in the "
                          "helper environment; input.fa.python_executable can select it") from exc
     for name, expected in (("falfilfa4py", "1.2.1"), ("ctypesForFortran", "1.3.0"),
                            ("ectrans4py", "1.6.0"), ("netCDF4", "1.7.2")):
@@ -29,7 +29,7 @@ def initialize(destination, radius):
             actual = None
         if actual != expected:
             raise ValueError(f"EPyGrAM 2.1.0 helper requires {name}=={expected}; "
-                             "install the coherent fa-epygram extra in a separate environment")
+                             "install the coherent fa extra in the helper environment")
     # EPyGrAM supports a user configuration read during package import. A private
     # empty HOME prevents personal tables/plugins and disables its GRIB runtime
     # before it can initialize any native format. Installed files stay untouched.
@@ -134,7 +134,7 @@ def structure_value(resource, name, records, kind, count=None, *, budget=4096):
         if data.dtype.kind == "U" and data.shape == ():
             text = str(data.item())
             if len(text) != length or any(ord(c) > 127 for c in text):
-                raise ValueError(f"{name}: invalid ASCII/length in FA character metadata")
+                raise ValueError(f"{name}: Invalid ASCII/length in FA character metadata")
             return text.rstrip(" \x00")
         if data.dtype == np.int64 and data.shape == (length,):
             return _text(data)
@@ -188,7 +188,7 @@ def check_surface_layout(resource, metadata, directory, records, request):
 
 
 def inspect_resource(resource, request):
-    from falfilfa4py import FA, LFI
+    from falfilfa4py import FA
 
     from frameit.io.fa_worker import _active_header, _describe
 
@@ -196,7 +196,7 @@ def inspect_resource(resource, request):
     # independently encoded CI corners and original normalized A. Never reconstruct
     # geometry from these words on the EPyGrAM path.
     header = _active_header(dict(resource._raw_header_get()))
-    info = _describe(FA, LFI, resource._unit, header, _clocks(resource), resource.cdiden.strip(),
+    info = _describe(FA, resource._unit, header, _clocks(resource), resource.cdiden.strip(),
                      _inventory(resource), request, source=resource)
     geometry_options = request.get("geometry_options")
     if geometry_options is not None:
@@ -228,7 +228,7 @@ def geometry_contract(geometry, header, options):
 
     from frameit.io.fa_geometry import admitted_geometry
 
-    p, k, selected, _anchor = admitted_geometry(header, options)
+    p, k, selected = admitted_geometry(header, options)
     ny, nx = header["KNLATI"], header["KNXLON"]
     if (geometry.position_on_horizontal_grid != "center"
             or (geometry.dimensions.get("Y"), geometry.dimensions.get("X")) != (ny, nx)):

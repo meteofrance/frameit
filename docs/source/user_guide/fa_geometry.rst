@@ -10,6 +10,8 @@ The :doc:`fa_baseline` in-scope missing-corpus requests remain applicable.
 This is the historical P2 repair record. The maintained EPyGrAM path now uses
 the library-derived geometry/CRS/zones in :doc:`fa_epygram_c2`, with the same
 source-axis lookup and CF origin. EPyGrAM independence is superseded.
+The manual production reconstruction is retired in :doc:`fa_epygram_c4`;
+independent equations, original-header admission checks and snapping guards remain.
 
 Repair and numerical compatibility
 ------------------------------------

@@ -1,4 +1,4 @@
-"""Labelled FA grids: EPyGrAM geometry facts and the legacy native baseline.
+"""Labelled FA grids from qualified EPyGrAM geometry facts.
 
     FA modern-header PSINLA angular parameters are radians. CI bounds in KNLOPA
     are one-based inclusive. The geographic anchor is at the centre of CI, not
@@ -39,17 +39,10 @@ def _regional_header(header):
 def geometry_signature(header, options):
     import json
 
-    if "epygram" in header:
-        return json.dumps({"subdomain": options["subdomain"], "geometry": header["epygram"]},
-                          sort_keys=True, allow_nan=False)
-    if options.get("backend") == "epygram":
+    if "epygram" not in header:
         raise ValueError("Missing qualified EPyGrAM geometry; inspect with geometry_options")
-    p, k = _regional_header(header)
-    return json.dumps({"options": {k: options[k] for k in ("subdomain", "earth_radius_m")},
-                       "header": {"KTYPTR": header["KTYPTR"], "PCODIL": header["PCODIL"],
-                                  "KNXLON": header["KNXLON"], "KNLATI": header["KNLATI"],
-                                  "KNLOPA": k.tolist(), "PSINLA": p.tolist()}},
-                       sort_keys=True, allow_nan=False)
+    return json.dumps({"subdomain": options["subdomain"], "geometry": header["epygram"]},
+                      sort_keys=True, allow_nan=False)
 
 
 def admitted_geometry(header, options):
@@ -72,7 +65,6 @@ def admitted_geometry(header, options):
         if list(k[2:6]) != [1, nx, 1, ny] or p[6] == 0 or p[7] == 0:
             raise ValueError("Regular FA requires complete CI bounds and nonzero angular steps")
         x0, x1, y0, y1 = 0, nx, 0, ny
-        anchor_i, anchor_j = (nx - 1) / 2, (ny - 1) / 2
     else:
         radius = options.get("earth_radius_m")
         if radius is None:
@@ -86,7 +78,6 @@ def admitted_geometry(header, options):
         x0, x1, y0, y1 = int(k[2]) - 1, int(k[3]), int(k[4]) - 1, int(k[5])
         if not (0 <= x0 < x1 <= nx and 0 <= y0 < y1 <= ny):
             raise ValueError("FA CI bounds conflict with stored dimensions")
-        anchor_i, anchor_j = (x0 + x1 - 1) / 2, (y0 + y1 - 1) / 2
         if options["subdomain"] == "C":
             x0, x1, y0, y1 = x0 + int(k[6]), x1 - int(k[6]), y0 + int(k[7]), y1 - int(k[7])
         if x0 >= x1 or y0 >= y1 or p[6] <= 0 or p[7] <= 0:
@@ -96,7 +87,7 @@ def admitted_geometry(header, options):
             raise ValueError("Degenerate tangent Lambert reference latitude")
         if abs(abs(p[1]) - abs(np.sin(p[3]))) > 5.e-7:
             raise ValueError("FA projection does not match the supported tangent-cone convention")
-    return p, k, (x0, x1, y0, y1), (anchor_i, anchor_j)
+    return p, k, (x0, x1, y0, y1)
 
 
 def _label_grid(x, y, mapping, longitude, latitude, shape, zone, subdomain, *, regular):
@@ -158,48 +149,6 @@ def _library_grid(facts, options):
 
 
 def fa_geometry(header, options):
-    if "epygram" in header:
-        return _library_grid(header["epygram"], options)
-    if options.get("backend") == "epygram":
+    if "epygram" not in header:
         raise ValueError("Missing qualified EPyGrAM geometry; inspect with geometry_options")
-    p, k, (x0, x1, y0, y1), (anchor_i, anchor_j) = admitted_geometry(header, options)
-    nx, ny = int(header["KNXLON"]), int(header["KNLATI"])
-    regular = p[1] == -9
-    if regular:
-        longitude = np.rad2deg(p[4] + (np.arange(nx) - anchor_i) * p[6])
-        latitude = np.rad2deg(p[5] + (np.arange(ny) - anchor_j) * p[7])
-        difference = np.array([longitude[0], latitude[0], longitude[-1], latitude[-1]])
-        difference -= np.rad2deg(p[12:16])
-        difference[[0, 2]] = (difference[[0, 2]] + 180) % 360 - 180
-        if np.max(np.abs(difference)) > 2.e-5:
-            raise ValueError("FA regular geometry contradicts encoded CI corners")
-        x, y = longitude, latitude
-        mapping = {"grid_mapping_name": "latitude_longitude"}
-    else:
-        radius = options["earth_radius_m"]
-        ci_bounds = int(k[2]) - 1, int(k[3]), int(k[4]) - 1, int(k[5])
-        lat0, lon0, anchor_lon, anchor_lat = np.rad2deg([p[3], p[2], p[4], p[5]])
-        mapping = dict(grid_mapping_name="lambert_conformal_conic", standard_parallel=float(lat0),
-                       latitude_of_projection_origin=float(lat0),
-                       longitude_of_central_meridian=float(lon0), earth_radius=float(radius))
-        crs = CRS.from_cf(mapping)
-        forward = Transformer.from_crs(crs.geodetic_crs, crs, always_xy=True)
-        inverse = Transformer.from_crs(crs, crs.geodetic_crs, always_xy=True)
-        ax, ay = forward.transform(anchor_lon, anchor_lat)
-        ci_x = ax + (np.array([ci_bounds[0], ci_bounds[1] - 1]) - anchor_i) * p[6]
-        ci_y = ay + (np.array([ci_bounds[2], ci_bounds[3] - 1]) - anchor_j) * p[7]
-        corner_lon, corner_lat = inverse.transform(ci_x, ci_y)
-        encoded = np.rad2deg(p[12:16])
-        difference = np.array([corner_lon[0], corner_lat[0],
-                               corner_lon[1], corner_lat[1]]) - encoded
-        difference[[0, 2]] = (difference[[0, 2]] + 180) % 360 - 180
-        # Native modern headers store angles as rounded reals. This tolerance
-        # covers their precision, not a license to silently fit a different CRS.
-        if not np.isfinite(difference).all() or np.max(np.abs(difference)) > 2.e-5:
-            raise ValueError("Declared FA Earth shape/projection contradicts encoded CI corners "
-                             f"(maximum disagreement {np.max(np.abs(difference)):.6g} degrees)")
-        x = ax + (np.arange(x0, x1) - anchor_i) * p[6]
-        y = ay + (np.arange(y0, y1) - anchor_j) * p[7]
-        longitude, latitude = inverse.transform(*np.meshgrid(x, y))
-    return _label_grid(x, y, mapping, longitude, latitude, (ny, nx), (x0, x1, y0, y1),
-                       options["subdomain"], regular=regular)
+    return _library_grid(header["epygram"], options)

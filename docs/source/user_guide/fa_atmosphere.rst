@@ -1,9 +1,10 @@
-FA P5 native cubes and optional EPyGrAM backend
+FA P5 native cubes and maintained EPyGrAM reader
 ================================================
 
-The optional ``fa-epygram`` extra integrates **EPyGrAM 2.1.0** into FrameIt's
-existing isolated FA worker. This follows the maintainer's explicit change of
-scope permitting EPyGrAM. The default ``native`` backend remains available.
+The optional ``fa`` extra integrates **EPyGrAM 2.1.0** into FrameIt's
+existing isolated FA worker. ``fa-epygram`` remains an identical installation alias.
+EPyGrAM is the sole maintained reader and default; ``backend: native`` is a
+deprecated alias, with warnings and effective-backend provenance (see :doc:`fa_epygram_c4`).
 No scientific approval or full FA compatibility is implied by that dependency.
 The subsequent :doc:`fa_epygram_c0` records the cleanup baseline; :doc:`fa_epygram_c1`
 adds evidenced dense SURFEX admission and removes the duplicate raw-resource
@@ -35,13 +36,12 @@ From a Python-3.13 environment:
 
 .. code-block:: bash
 
-   python -m pip install 'frameit[fa-epygram]'
+   python -m pip install 'frameit[fa]'
 
-For development, use ``python -m pip install -e '.[test,fa-epygram]'``.
-This is an **alternative** to the ``fa`` extra: EPyGrAM pins falfilfa4py 1.2.1,
-ecTrans 1.6.0 and other upstream dependencies, whereas ``fa`` pins falfilfa4py
-1.3.0. Do not combine the two extras in one environment. The evaluated helper
-uses ctypesForFortran 1.3.0. A coherent dedicated environment can be selected
+For development, use ``python -m pip install -e '.[test,fa]'``.
+Both FA extras supply EPyGrAM's falfilfa4py 1.2.1, ecTrans 1.6.0 and other
+unmodified upstream dependencies, with ctypesForFortran 1.3.0. Combining the
+installation aliases is supported. A coherent dedicated environment can be selected
 with ``input.fa.python_executable``; otherwise the current interpreter is used.
 FrameIt must be installed in the helper environment too. Relative executable
 paths are YAML-relative; virtual-environment symlinks are preserved.

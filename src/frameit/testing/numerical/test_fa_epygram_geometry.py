@@ -74,11 +74,12 @@ def test_library_zones_cf_origin_and_snapping_against_snyder(tmp_path, latitude,
     lon, lat = spherical_lambert(*np.meshgrid(ds.x, ds.y), 6371229., latitude)
     np.testing.assert_allclose(ds.longitude, lon, rtol=0, atol=2.e-11)
     np.testing.assert_allclose(ds.latitude, lat, rtol=0, atol=2.e-11)
-    # Preserve the existing source CRS/CF origin, not the library's CI-centred axes.
-    legacy = fa_geometry({k: v for k, v in info["geometry"].items() if k != "epygram"}, options)
-    np.testing.assert_allclose(ds.x, legacy.x, rtol=0, atol=1.e-7)
-    np.testing.assert_allclose(ds.y, legacy.y, rtol=0, atol=1.e-7)
-    assert ds.crs.attrs == legacy.crs.attrs
+    # Existing CF origin/meaning, independently specified rather than dual decoding.
+    header_latitude = float(np.rad2deg(np.deg2rad(latitude)))
+    assert ds.crs.attrs == {
+        "grid_mapping_name": "lambert_conformal_conic", "standard_parallel": header_latitude,
+        "latitude_of_projection_origin": header_latitude, "longitude_of_central_meridian": 50.,
+        "earth_radius": 6371229.}
     import xarray as xr
 
     track = xr.Dataset({"lon": ("time", [float(ds.longitude[2, 2])]),

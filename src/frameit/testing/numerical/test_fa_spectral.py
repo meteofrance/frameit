@@ -15,7 +15,7 @@ import pytest
 
 from frameit.io.fa_backend import request_fa
 from frameit.io.fa_contracts import native_descriptor, resolve_descriptor
-from frameit.io.fa_worker import _inspect
+from frameit.io.fa_worker import _describe
 from frameit.testing import fa_spectral_probe
 
 
@@ -52,27 +52,20 @@ def test_selected_spectral_rejected_before_payload_or_library_discovery():
         calls.append(prefix + suffix)
         return True, prefix == "S001", 103 if prefix == "S001" else 0, 18, 0, 0
 
-    fa = SimpleNamespace(
-        get_facst=lambda: (),
-        wfacies=lambda header: (
-            -7, 0., 0., 0., 0., 3, 12, 12, np.zeros(8), np.zeros(8),
-            np.zeros(16), 1, 101325., np.zeros(2), np.zeros(2), False),
-        wfadiex=lambda unit: [2026, 1, 1, 0, 0] + [0] * 17,
-        wfalsif=lambda unit: "ALD", wfanion=flags,
-    )  # No physical reader or transform module provided.
-    entries = iter([("S001TEMPERATURE", 17, 1), ("CLSTEMPERATURE", 145, 2)])
-    lfi = SimpleNamespace(wlfipos=lambda unit: None, wlfinaf=lambda unit: (2,),
-                          wlficas=lambda unit, advance: next(entries))
+    fa = SimpleNamespace(wfanion=flags)  # No physical reader or transform module provided.
+    header = {"KTYPTR": -7, "KTRONC": 3, "KNLATI": 12, "KNXLON": 12}
+    records = {"S001TEMPERATURE": 17, "CLSTEMPERATURE": 145}
+    def describe(request):
+        return _describe(fa, 1, header, {}, "ALD", records, request, source=None)
+
     request = {"profile": "arome_history", "fields": ["S001TEMPERATURE"]}
     with pytest.raises(ValueError, match="gated.*packing=103, bits=18"):
-        _inspect(fa, lfi, 1, "header", request)
-    entries = iter([("S001TEMPERATURE", 17, 1), ("CLSTEMPERATURE", 145, 2)])
-    info = _inspect(fa, lfi, 1, "header", {**request, "validate_selection": False})
+        describe(request)
+    info = describe({**request, "validate_selection": False})
     assert info["field_descriptors"]["S001TEMPERATURE"]["native"]["shape"] is None
     assert info["fields"]["S001TEMPERATURE"]["spectral"] is True
     calls.clear()
-    entries = iter([("S001TEMPERATURE", 17, 1), ("CLSTEMPERATURE", 145, 2)])
-    info = _inspect(fa, lfi, 1, "header", {**request, "fields": ["CLSTEMPERATURE"]})
+    info = describe({**request, "fields": ["CLSTEMPERATURE"]})
     assert calls == ["CLSTEMPERATURE"]  # Unselected spectral records are not even probed.
     assert info["field_descriptors"]["CLSTEMPERATURE"]["native"]["shape"] == [12, 12]
 

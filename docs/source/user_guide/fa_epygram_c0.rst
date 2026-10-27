@@ -10,6 +10,8 @@ not supersede the scientific limitations in the P0--P5 method notes.
 This page is the **historical C0 snapshot**. The subsequent :doc:`fa_epygram_c1`
 implements the evidenced dense SURFEX reader and records its current scope,
 retained native observations, verification and next-stage gates.
+The completed ledger and current default/installation migration are in
+:doc:`fa_epygram_c4`; the backend/extra statements below describe C0 only.
 
 The maintained-reader direction is **EPyGrAM-backed SURFEX FA coupled to AROME
 GRIB**, with independent native grids. EPyGrAM independence is no longer a design

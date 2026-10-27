@@ -9,6 +9,8 @@ producer fields or the full multi-time AROME-GRIB/SURFEX production workflow.
 No independent human scientific approval is claimed.
 The subsequent :doc:`fa_epygram_c2` transfers geometry/CRS/zones to library APIs
 and consolidates selected vertical metadata; the C1 counts/ledger below are historical.
+The current :doc:`fa_epygram_c4` supersedes the transitional native backend and
+incompatible-extra instructions below, with one maintained decoder and migration evidence.
 
 Admitted family and explicit scientific contract
 -------------------------------------------------------

@@ -7,6 +7,8 @@ EPyGrAM-decoded, evidenced AROME-47 / SURFEX-8.1 dense ``PACK=0/X1`` FA fixtures
 All payloads are compact independently prescribed engineering data. They are not
 new real-producer measurements, a production-corpus qualification or scientific
 approval. Existing gates for real SFX scaling and field-specific intervals apply.
+This is the C3 stage record; :doc:`fa_epygram_c4` now completes the cleanup ledger
+and supersedes its transitional backend/default/extra and retirement statements.
 
 Qualified pair and selected quantities
 ---------------------------------------

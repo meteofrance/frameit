@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Complete C4 FA cleanup after passing C1--C3/full baselines: remove the parallel
+  raw decode/header/date/typed-reader path, manual geometry reconstruction and
+  temporary dual comparisons. Keep isolated transport and documented same-resource
+  error/type/clock/header/index/scaling evidence checks and independent oracles.
+- Make EPyGrAM the sole FA reader/default and consolidate `fa` / compatibility
+  `fa-epygram` extras on its unmodified upstream stack. Retain `backend: native`
+  as a warned deprecated alias; record requested/effective backend and migration.
+  Qualify old single/coupled YAML replay and independently checked exports, preserve
+  native cubes and unsupported-family gates, and update examples, CLI/init and CI.
+
 - Qualify the multi-time AROME-convention GRIB / EPyGrAM SURFEX engine workflow on
   independent native grids, with separate source/vertical-qualified products,
   moving centres, exact-common exclusions, strict/cycle/clock/source/scaling failures

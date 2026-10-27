@@ -11,6 +11,9 @@ producer or native-container adapters are not prerequisites for its completion.
 Python 3.13, optional native dependencies and FA/GRIB process isolation remain
 the reference runtime. Core descriptor handling never imports EPyGrAM/native
 packages; the optional worker path is described in :doc:`fa_epygram_c1`.
+The P1 verification/version details below are historical. :doc:`fa_epygram_c4`
+retires the parallel raw reader, preserves these semantic contracts and explains
+the default/extra/legacy-backend migration and current provenance.
 
 Descriptor and operation contract
 ---------------------------------

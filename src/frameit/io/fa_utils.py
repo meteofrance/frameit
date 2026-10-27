@@ -243,7 +243,8 @@ def concat_fa2ds_by_vert_coord(
                             "expected_source": wind_conf.fa_options["expected_source"]})
         provenance[-1].update(native_cubes=info["native_cubes"],
                                hybrid_contract=info.get("hybrid_contract"),
-                              backend=wind_conf.fa_options["backend"])
+                               backend=info["backend_versions"]["FA_backend"],
+                               requested_backend=wind_conf.fa_options["backend"])
         provenance[-1]["geometry_contract"] = info["geometry"].get("epygram")
         provenance[-1]["producer_metadata"] = info["surfex_metadata"]
     if len(geometries) != 1:

@@ -15,7 +15,8 @@ from frameit.core.coupled import _mapped_track
 from frameit.core.execution import execute_simulation
 from frameit.core.grid_geometry import resolve_geometry
 from frameit.core.settings_class import SimulationConfig
-from frameit.io.fa_geometry import NATIVE_LOOKUP, fa_geometry, geometry_signature
+from frameit.io.fa_epygram import geometry_contract
+from frameit.io.fa_geometry import NATIVE_LOOKUP, admitted_geometry, fa_geometry, geometry_signature
 from frameit.testing.numerical.test_fa_geometry import header, spherical_lambert
 from frameit.testing.numerical.test_fa_io import NATIVE, fa_files
 from frameit.testing.numerical.test_fa_pipeline import (
@@ -140,7 +141,7 @@ def test_active_signature_and_unqualified_header_guards():
              "PAHYBR": [np.nan], "KNIVER": 90}
     assert geometry_signature(h, OPTIONS) == geometry_signature(noisy, OPTIONS)
     changed = copy.deepcopy(h)
-    changed["PSINLA"][4] += .001
+    changed["epygram"]["x"][0] += 1.
     assert geometry_signature(h, OPTIONS) != geometry_signature(changed, OPTIONS)
     for key, index, value in (("KNLOPA", 6, -1), ("KNLOPA", 2, 1.5),
                                ("PSINLA", 0, -2), ("PSINLA", 1, -9.1),
@@ -148,10 +149,10 @@ def test_active_signature_and_unqualified_header_guards():
         bad = copy.deepcopy(h)
         bad[key][index] = value
         with pytest.raises(ValueError):
-            fa_geometry(bad, OPTIONS)
+            admitted_geometry(bad, OPTIONS)
     for key, value in (("KTYPTR", 1), ("PCODIL", .5), ("PSLAPO", .1)):
         with pytest.raises(ValueError):
-            fa_geometry({**h, key: value}, OPTIONS)
+            admitted_geometry({**h, key: value}, OPTIONS)
 
 
 def test_regular_descending_axes_and_encoded_corner_contradiction():
@@ -161,12 +162,20 @@ def test_regular_descending_axes_and_encoded_corner_contradiction():
     p = h["PSINLA"]
     p[1], p[6], p[7] = -9, np.deg2rad(.01), np.deg2rad(-.01)
     p[12:16] = [p[4] - 6*p[6], p[5] - 4*p[7], p[4] + 6*p[6], p[5] + 4*p[7]]
+    longitude = 50. + (np.arange(13) - 6)*.01
+    latitude = -30. - (np.arange(9) - 4)*.01
+    library = SimpleNamespace(
+        name="regular_lonlat", position_on_horizontal_grid="center", dimensions={"X": 13, "Y": 9},
+        gimme_corners_ij=lambda subzone: {"ll": (0, 0), "ur": (12, 8)},
+        ij2xy=lambda i, j: (longitude[i], latitude[j]),
+        ij2ll=lambda i, j: (longitude[i], latitude[j]))
+    h["epygram"] = geometry_contract(library, h, OPTIONS)
     source = fa_geometry(h, OPTIONS)
     np.testing.assert_allclose(source.longitude, 50. + (np.arange(13) - 6) * .01)
     np.testing.assert_allclose(source.latitude, -30. - (np.arange(9) - 4) * .01)
     p[12] += .001
     with pytest.raises(ValueError, match="contradicts encoded CI corners"):
-        fa_geometry(h, OPTIONS)
+        geometry_contract(library, h, OPTIONS)
 
 
 def test_anisotropic_lookup_does_not_bypass_scalar_extraction_guards():

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import difflib
+import logging
 import math
 import os
 import re
@@ -27,7 +28,7 @@ DEFAULTS = {
         "netcdf": {"engine": "h5netcdf", "chunks": {}},
         "fa": {"profile": None, "subdomain": "CI", "earth_radius_m": None,
                "field_metadata": {}, "expected_source": {},
-               "backend": "native", "python_executable": None, "native_cubes": {},
+               "backend": "epygram", "python_executable": None, "native_cubes": {},
                "max_points": 20_000_000, "timeout_seconds": 120.},
         "sources": {}, "time_alignment": "common",
     },
@@ -249,7 +250,12 @@ def validate_output_selections(horizontal, cartesian_vertical, polar_vertical):
 def validate_fa_options(options, selected=False):
     """No field identity, unit or temporal meaning is guessed from a record name."""
     if not isinstance(options["backend"], str) or options["backend"] not in {"native", "epygram"}:
-        raise ValueError("input.fa.backend must be native or epygram")
+        raise ValueError("input.fa.backend must be epygram (native is a deprecated alias)")
+    if selected and options["backend"] == "native":
+        logging.getLogger(__name__).warning(
+            "input.fa.backend: native is deprecated and now resolves to EPyGrAM; "
+            "install FrameIt[fa] in the helper and use backend: epygram. "
+            "All scientific declarations and resource limits still apply.")
     executable = options["python_executable"]
     if executable is not None and (not isinstance(executable, str) or not executable.strip()):
         raise ValueError("input.fa.python_executable must be a nonempty interpreter path")
@@ -297,8 +303,8 @@ def validate_fa_options(options, selected=False):
     cubes = options["native_cubes"]
     if not isinstance(cubes, dict):
         raise ValueError("input.fa.native_cubes must be a mapping")
-    if cubes and (options["backend"] != "epygram" or options["profile"] != "arome_history"):
-        raise ValueError("FA native_cubes require backend: epygram and profile: arome_history")
+    if cubes and options["profile"] != "arome_history":
+        raise ValueError("FA native_cubes require profile: arome_history")
     records_seen = set()
     for name, cube in cubes.items():
         if (not isinstance(name, str) or not name.isidentifier() or len(name) > 16
@@ -985,6 +991,8 @@ def write_template(model, path, *, full=False, tracking="wind_pressure", force=F
     text += "# domain.size_km contains full widths; omit it for full-domain extraction.\n"
     text += "# polar.radial_step_m is metres; polar.azimuth_step_deg is degrees.\n"
     text += "# Choose azimuth_step_deg OR azimuth_count; neither means automatic sampling.\n"
+    if full:
+        text += "# FA: FrameIt[fa]/EPyGrAM in an isolated helper; backend: native is deprecated.\n"
     if model == "mesonh":
         text += "# Exclude the exact MesoNH 000 timeseries name using input.exclude if needed.\n"
         if tracking == "pressure_centroid":

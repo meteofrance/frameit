@@ -81,12 +81,14 @@ def test_unqualified_dependency_versions_fail_before_native_import(tmp_path, mon
 
 
 @pytest.mark.skipif(importlib.util.find_spec("epygram") is not None,
-                    reason="requires an interpreter without the optional EPyGrAM stack")
-def test_absent_epygram_dependency_is_actionable_for_surfex(tmp_path):
+                     reason="requires an interpreter without the optional EPyGrAM stack")
+@pytest.mark.parametrize("backend", [None, "native", "epygram"])
+def test_absent_epygram_dependency_is_actionable_for_surfex(tmp_path, backend):
     # Runs in reference and core-only CI. Do not select an available helper: this
     # explicitly tests the current interpreter's genuinely missing dependency.
-    with pytest.raises(ValueError, match=r"install FrameIt\[fa-epygram\]"):
-        inspect_fa(tmp_path / "unopened.fa", "surfex_history", backend="epygram")
+    with pytest.raises(ValueError, match=r"install FrameIt\[fa\]"):
+        inspect_fa(tmp_path / "unopened.fa", "surfex_history",
+                   **({"backend": backend} if backend else {}))
 
 
 # Instrument the *production* worker in a disposable FA-only interpreter. This
@@ -144,7 +146,8 @@ def narrow_words(unit, name, length, abort):
 LFI.wlfilec = narrow_words
 def forbidden(*args, **kwargs):
     raise AssertionError('legacy raw-reader prepass/alternate physical decoder used')
-FA.wfacile = fa_worker._inspect = forbidden
+FA.wfacile = forbidden
+assert not hasattr(fa_worker, '_inspect'), 'legacy full reader still exists'
 if injected_error and injected_error not in ('geometry', 'clock', 'storage'):
     fanion = FA.wfanion
     def failure(unit, prefix, level, suffix):
