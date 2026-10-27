@@ -19,7 +19,8 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
                   state_hours=None, source_version=8, source_bug=1, program="AROME",
                   extra_metadata=False, projection_latitude=None, surface_fields=None,
                   surface_pack=0, projected_spacing_m=1000., field_values=None,
-                  atmospheric_fields=None, hybrid_header=None):
+                  atmospheric_fields=None, hybrid_header=None, surface_directory=None,
+                  structural_overrides=None, ci_bounds=None):
     from falfilfa4py import FA, LFI
 
     if path.exists():
@@ -29,6 +30,12 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
     z = np.zeros(sizes[1], dtype="int64")
     p = np.zeros(18, dtype="float64")
     k[2:6] = 1, nx, 1, ny
+    x0, x1, y0, y1 = ci_bounds or (0, nx, 0, ny)
+    if not (0 <= x0 < x1 <= nx and 0 <= y0 < y1 <= ny):
+        raise ValueError("Fixture CI bounds must lie inside native storage")
+    if ci_bounds is not None and projection_latitude is None:
+        raise ValueError("Fixture CI/CIE distinction requires projected geometry")
+    k[2:6] = x0 + 1, x1, y0 + 1, y1
     p[0:2] = -1, -9
     p[4:8] = np.deg2rad([60., -20., .01064, .01])
     p[8:10] = p[6] * (nx - 1), p[7] * (ny - 1)
@@ -42,8 +49,8 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
         n = np.sin(phi0)
         f = np.cos(phi0) * np.tan(np.pi / 4 + phi0 / 2)**n / n
         rho0 = 6371229. * f / np.tan(np.pi / 4 + phi0 / 2)**n
-        xx = np.array([-1., 1.]) * (nx - 1) * projected_spacing_m / 2
-        yy = np.array([-1., 1.]) * (ny - 1) * projected_spacing_m / 2
+        xx = np.array([-1., 1.]) * (x1 - x0 - 1) * projected_spacing_m / 2
+        yy = np.array([-1., 1.]) * (y1 - y0 - 1) * projected_spacing_m / 2
         rho = np.sign(n) * np.hypot(xx, rho0 - yy)
         theta = np.arctan2(np.sign(n) * xx, np.sign(n) * (rho0 - yy))
         corners_lon = lam0 + theta / n
@@ -86,6 +93,7 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
             fields = [{"name": "T2M", "values": values, "mask": "FULL"}]
             if surface_fields is not None:
                 fields = surface_fields
+            directory = fields if surface_directory is None else surface_directory
 
             def words(name, values):
                 values = np.asarray(values, dtype="int64")
@@ -99,18 +107,19 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
             for name, value in (("VERSION", source_version), ("BUG", source_bug),
                                 ("PACK", surface_pack),
                                 ("MASDEV", 47), ("BUGFIX", 0),
-                                ("DIM_FULL", nx * ny), ("IMAX", nx), ("JMAX", ny),
-                                ("_FBUF_SIZE", len(fields))):
+                                ("DIM_FULL", (x1 - x0) * (y1 - y0)),
+                                ("IMAX", x1 - x0), ("JMAX", y1 - y0),
+                                ("_FBUF_SIZE", len(directory))):
                 words(name, [value])
             for column, width, entries in (
-                ("NAME", 32, [f["name"] for f in fields]),
-                ("TYPE", 2, [f.get("type", "X1") for f in fields]),
-                ("MASK", 16, [f["mask"] for f in fields]),
+                ("NAME", 32, [f["name"] for f in directory]),
+                ("TYPE", 2, [f.get("type", "X1") for f in directory]),
+                ("MASK", 16, [f["mask"] for f in directory]),
             ):
                 text("_FBUF_" + column, "".join(value.ljust(width) for value in entries),
-                     len(fields) * width)
-            words("_FBUF_DIM1", [f.get("dim1", nx * ny) for f in fields])
-            words("_FBUF_DIM2", [f.get("dim2", -1) for f in fields])
+                     len(directory) * width)
+            words("_FBUF_DIM1", [f.get("dim1", nx * ny) for f in directory])
+            words("_FBUF_DIM2", [f.get("dim2", -1) for f in directory])
             current = np.array([2026, 1, 1, 0], dtype="int64")
             current.view(np.float64)[3] = 3600. * (hours if state_hours is None else state_hours)
             words("DTCUR", current)
@@ -129,6 +138,14 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
             encoded = values if packing == 0 else np.where(np.isfinite(values), values, 1.e20)
             FA.wfaieno(unit, field[:4], 0, field[4:], encoded.size, encoded.ravel(),
                        False, undefined and packing != 0, 1.e20)
+        # Negative fixtures only: independently prescribed structural/raw words.
+        # Source datasets are never passed to this writer (it refuses overwrite).
+        for name, words in (structural_overrides or {}).items():
+            if words is None:
+                LFI.wlfisup(unit, name)
+            else:
+                values = np.asarray(words, dtype="int64")
+                LFI.wlfiecr(unit, name, values.size, values)
     finally:
         FA.wfairme(unit, "KEEP")
 

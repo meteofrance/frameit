@@ -5,9 +5,9 @@ The optional ``fa-epygram`` extra integrates **EPyGrAM 2.1.0** into FrameIt's
 existing isolated FA worker. This follows the maintainer's explicit change of
 scope permitting EPyGrAM. The default ``native`` backend remains available.
 No scientific approval or full FA compatibility is implied by that dependency.
-The subsequent :doc:`fa_epygram_c0` re-establishes the current regression baseline
-and maps the SURFEX/AROME-GRIB admission and cleanup work; P5 results below remain
-historical evidence for this increment.
+The subsequent :doc:`fa_epygram_c0` records the cleanup baseline; :doc:`fa_epygram_c1`
+adds evidenced dense SURFEX admission and removes the duplicate raw-resource
+prepass from EPyGrAM transactions. P5 results below remain historical evidence.
 
 Implemented scope
 ------------------
@@ -15,9 +15,9 @@ Implemented scope
 P5 assembles **explicitly associated, instantaneous gridpoint H2D records** into
 labelled native atmospheric cubes. Admitted horizontal geometry is still the
 existing modern regional regular-lon/lat or spherical tangent-Lambert contract.
-The EPyGrAM execution backend currently requires ``profile: arome_history``;
-SURFEX companions retain their existing native backend. Coupled sources may
-select different helper interpreters without sharing native state.
+Native cubes require ``profile: arome_history``. Individual dense SURFEX records
+can use ``profile: surfex_history`` through the C1 capability checks. Coupled
+sources may select different helper interpreters without sharing native state.
 
 Independent generated packing-0 fixtures qualify the assembly/export mechanics,
 not an arbitrary producer/release's field meanings. Real spectral 103/18,

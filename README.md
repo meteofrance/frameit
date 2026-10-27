@@ -42,10 +42,13 @@ regional headers; spectral transformations are not implicit.
 SURFEX execution requires a complete AROME source/directory with `PACK=0` and
 dense horizontal `X1` records. Native vertical-header facts remain inspectable
 provenance, without inferred layer axes or atmospheric 3-D processing.
-The optional `fa-epygram` extra provides an alternative isolated backend for
+The optional `fa-epygram` extra supplies the maintained EPyGrAM 2.1.0 path for
+[evidenced dense SURFEX histories](docs/source/user_guide/fa_epygram_c1.rst) and
 [explicit native atmospheric cubes](docs/source/user_guide/fa_atmosphere.rst),
-retaining full/interface indices and checked hybrid coefficients. It uses its
-own upstream native pins; choose it separately from the `fa` extra. Native
+retaining full/interface indices and checked hybrid coefficients. Select
+`input.fa.backend: epygram`; its upstream native pins and the qualified
+ctypesForFortran 1.3.0 bridge must be installed separately from the `fa` extra.
+`input.fa.python_executable` can select that coherent Python-3.13 helper. Native
 extraction does not require pressure or height diagnosis.
 The [P0 baseline and family matrix](docs/source/user_guide/fa_baseline.rst)
 separate current evidence from blocked capabilities; full FA compatibility is
@@ -169,10 +172,12 @@ for configuration checks without opening datasets.
 For atmospheric GRIB/NetCDF coupled to SURFEX FA, start from
 [`example/config_file/coupled_fa.yaml`](example/config_file/coupled_fa.yaml).
 The primary integration target is **EPyGrAM-backed SURFEX FA + AROME GRIB**.
-The [C0 baseline, API evidence and cleanup ledger](docs/source/user_guide/fa_epygram_c0.rst)
-record the current admission plan: SURFEX execution still uses the native backend;
-the EPyGrAM backend currently accepts atmospheric FA only. Other producer or
-native-container integrations are outside this increment. A native FA/FA example is
+The [C1 admission and migration notes](docs/source/user_guide/fa_epygram_c1.rst)
+qualify the EPyGrAM reader on compact AROME-47 / SURFEX-8.1 dense fixtures, with
+directory, type, clock and scaling guards. Supplied real-field scaling, units,
+support and Earth-model evidence remain unresolved; the multi-time primary pair
+is a C3 qualification gate. Other producer or native-container integrations are
+outside this increment. A native FA/FA compatibility example is
 [`example/config_file/coupled_arome_fa_polar.yaml`](example/config_file/coupled_arome_fa_polar.yaml).
 `input.time_alignment: common` selects exact common times by default, warns for
 each source losing times and records all exclusions in provenance/final status.

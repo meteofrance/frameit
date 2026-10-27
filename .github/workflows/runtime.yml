@@ -22,6 +22,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install core and test dependencies (no GRIB or ESMF)
         run: python -m pip install -e '.[test]'
+      - name: Check core-only dependency boundary
+        run: |
+          python -m pip check
+          python -c "import importlib.util as u; assert all(u.find_spec(n) is None for n in ('epygram', 'falfilfa4py', 'ectrans4py', 'eccodes', 'cfgrib', 'xesmf', 'ESMF'))"
       - name: Exercise batch CLI, export and failure lifecycle
         run: >-
           python -m pytest -q
@@ -31,10 +35,14 @@ jobs:
           src/frameit/testing/numerical/test_fa_contracts.py
           src/frameit/testing/numerical/test_fa_cubes.py
           src/frameit/testing/numerical/test_fa_epygram_probe.py
+          src/frameit/testing/numerical/test_fa_epygram_surfex.py
+          src/frameit/testing/numerical/test_fa_io.py
+          src/frameit/testing/numerical/test_fa_surface.py
           src/frameit/testing/numerical/test_fa_mapping.py
           src/frameit/testing/numerical/test_fa_spectral.py
           src/frameit/testing/numerical/test_coupled_shared_polar.py
           src/frameit/testing/numerical/test_arome_fa_coupling.py
+          src/frameit/testing/numerical/test_fa_pipeline.py::test_coupled_netcdf_sources_do_not_need_fa_backend
           --junitxml=hpc-tests.xml
       - uses: actions/upload-artifact@v4
         if: always()
@@ -113,13 +121,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install the alternative EPyGrAM stack
-        run: python -m pip install -e '.[test,fa-epygram]'
-      - name: Verify cubes, C0 library evidence, isolated readers and export
+      - name: Install the coherent EPyGrAM stack and parent GRIB reader
+        run: python -m pip install -e '.[test,grib,fa-epygram]'
+      - name: Require the qualified native stack (no optional-backend skips)
+        run: |
+          python -m pip check
+          python -c "from importlib.metadata import version; assert {n: version(n) for n in ('epygram', 'falfilfa4py', 'ctypesForFortran', 'ectrans4py', 'netCDF4')} == {'epygram': '2.1.0', 'falfilfa4py': '1.2.1', 'ctypesForFortran': '1.3.0', 'ectrans4py': '1.6.0', 'netCDF4': '1.7.2'}"
+      - name: Verify SURFEX values/failures/lifecycle, cubes, isolation and export
         run: >-
           python -m pytest -q
           src/frameit/testing/numerical/test_fa_cubes.py
           src/frameit/testing/numerical/test_fa_epygram_probe.py
+          src/frameit/testing/numerical/test_fa_epygram_surfex.py
+          src/frameit/testing/numerical/test_fa_contracts.py
+          src/frameit/testing/numerical/test_fa_surface.py
           src/frameit/testing/numerical/test_fa_io.py
           src/frameit/testing/numerical/test_fa_pipeline.py
           --junitxml=fa-epygram-tests.xml

@@ -49,8 +49,8 @@ def _integer(lfi, unit, records, name):
     return int(words[0])
 
 
-def _typed_metadata(lfi, unit, records, name, metadata, directory):
-    """Explicit small structural reads only; never interpret physical raw words."""
+def _typed_spec(records, name, metadata, directory):
+    """Release/type/length gate shared by the two remaining backend paths."""
     spec = SURFEX_METADATA.get(name.removeprefix("SFX.")) if name.startswith("SFX.") else None
     if layout_definition(metadata) is None or spec is None:
         raise ValueError(f"{name}: no evidenced release-specific typed metadata definition")
@@ -63,9 +63,15 @@ def _typed_metadata(lfi, unit, records, name, metadata, directory):
                          f"{layout_definition(metadata)} definition {expected_type}")
     if name not in records or records[name] > 4096:
         raise ValueError(f"{name}: typed metadata missing or exceeds 4096-word budget")
-    words = _words(lfi, unit, records, name)
-    if count is not None and words.size != count:
+    if count is not None and records[name] != count:
         raise ValueError(f"{name}: inconsistent typed metadata length; expected {count}")
+    return kind, count
+
+
+def _typed_metadata(lfi, unit, records, name, metadata, directory):
+    """Explicit small structural reads only; never interpret physical raw words."""
+    kind, _count = _typed_spec(records, name, metadata, directory)
+    words = _words(lfi, unit, records, name)
     if kind == "character":
         value = _text(words)
     elif kind == "integer":
@@ -87,19 +93,19 @@ def _typed_metadata(lfi, unit, records, name, metadata, directory):
     return {"type": kind, "value": value, "evidence": layout_definition(metadata)}
 
 
-def _inspect(fa, lfi, unit, header, request):
-    raw = fa.wfacies(*fa.get_facst(), header)
-    keys = ("KTYPTR", "PSLAPO", "PCLOPO", "PSLOPO", "PCODIL", "KTRONC",
-            "KNLATI", "KNXLON", "KNLOPA", "KNOZPA", "PSINLA", "KNIVER",
-            "PREFER", "PAHYBR", "PBHYBR", "LDGARD")
-    geometry = dict(zip(keys, raw, strict=True))
+def _active_header(geometry):
+    """Keep the existing labelled-grid contract until the C2 geometry transfer."""
+    geometry = dict(geometry)
     # Work buffers contain inactive/uninitialized entries, including NaNs.
     geometry.pop("KNOZPA")
-    geometry["KNLOPA"] = raw[8][:8].tolist()
-    geometry["PSINLA"] = raw[10][:16].tolist()
+    geometry["KNLOPA"] = geometry["KNLOPA"][:8].tolist()
+    geometry["PSINLA"] = geometry["PSINLA"][:16].tolist()
     for key in ("PAHYBR", "PBHYBR"):
         geometry[key] = geometry[key][:int(geometry["KNIVER"]) + 1].tolist()
-    stamp = fa.wfadiex(unit)
+    return geometry
+
+
+def _native_clocks(stamp):
     year, month, day, hour, minute = (int(v) for v in stamp[:5])
     basis = datetime(year, month, day) + timedelta(seconds=int(stamp[13]))
     if basis.hour != hour or basis.minute != minute or not 1678 <= year <= 2261:
@@ -107,6 +113,17 @@ def _inspect(fa, lfi, unit, header, request):
     valid = basis + timedelta(seconds=int(stamp[14]))
     if int(stamp[14]) < 0 or not 1678 <= valid.year <= 2261:
         raise ValueError("Unsupported FA valid time or negative forecast lead")
+    return {"reference_time": basis.isoformat(), "valid_time": valid.isoformat(),
+            "lead_seconds": int(stamp[14]), "header_interval_start_seconds": int(stamp[15])}
+
+
+def _inspect(fa, lfi, unit, header, request):
+    raw = fa.wfacies(*fa.get_facst(), header)
+    keys = ("KTYPTR", "PSLAPO", "PCLOPO", "PSLOPO", "PCODIL", "KTRONC",
+            "KNLATI", "KNXLON", "KNLOPA", "KNOZPA", "PSINLA", "KNIVER",
+            "PREFER", "PAHYBR", "PBHYBR", "LDGARD")
+    geometry = _active_header(dict(zip(keys, raw, strict=True)))
+    clocks = _native_clocks(fa.wfadiex(unit))
     lfi.wlfipos(unit)
     records = {}
     for _ in range(lfi.wlfinaf(unit)[0]):
@@ -115,6 +132,23 @@ def _inspect(fa, lfi, unit, header, request):
         if name in records:
             raise ValueError(f"Duplicate FA record {name!r}")
         records[name] = int(length)
+    return _describe(fa, lfi, unit, geometry, clocks, fa.wfalsif(unit).strip(), records, request)
+
+
+def _describe(fa, lfi, unit, geometry, clocks, identifier, records, request, *, source=None):
+    """Shared scientific/failure contract, independent of the selected decoder."""
+    if source is not None:
+        from frameit.io.fa_epygram import structure_value, typed_metadata
+
+    def structure(name, kind, count=None, budget=100_000):
+        if source is not None:
+            return structure_value(source, name, records, kind, count, budget=budget)
+        if kind == "character":
+            return _text(_words(lfi, unit, records, name))
+        if kind == "integer":
+            return _integer(lfi, unit, records, name)
+        return _words(lfi, unit, records, name)
+
     profile = request["profile"]
     # A surviving SFX namespace is not evidence of an atmospheric history when
     # directory/source records are missing. Raw inventory must retain that gap.
@@ -123,14 +157,18 @@ def _inspect(fa, lfi, unit, header, request):
     required = {"SFX._FBUF_" + key for key in ("SIZE", "NAME", "TYPE", "MASK", "DIM1", "DIM2")}
     required.update("SFX." + key for key in (
         "PROGRAM", "GRID_TYPE", "VERSION", "BUG", "PACK", "DIM_FULL", "IMAX", "JMAX"))
+    if source is not None:
+        required.add("SFX.DTCUR")
     missing = sorted(required - records.keys()) if surface else []
     if surface:
         for key in ("PROGRAM", "GRID_TYPE"):
             if "SFX." + key in records:
-                metadata[key] = _text(_words(lfi, unit, records, "SFX." + key))
+                metadata[key] = structure("SFX." + key, "character")
         for key in ("VERSION", "BUG", "PACK", "DIM_FULL", "IMAX", "JMAX", "MASDEV", "BUGFIX"):
             if "SFX." + key in records:
-                metadata[key] = _integer(lfi, unit, records, "SFX." + key)
+                # The library's L0 accessor discards non-0/1 logical words.
+                kind = "logical" if source is not None and key == "PACK" else "integer"
+                metadata[key] = structure("SFX." + key, kind, 1)
     if missing:
         metadata["layout_status"] = "incomplete_surfex_directory"
         metadata["missing_records"] = missing
@@ -143,31 +181,34 @@ def _inspect(fa, lfi, unit, header, request):
         raise ValueError(f"FA record layout conflicts with profile {profile!r}")
     if surface and not missing:
         if "SFX.DTCUR" in records:
-            current = _words(lfi, unit, records, "SFX.DTCUR")
+            current = structure("SFX.DTCUR", "date_time", 4, budget=4096)
             if current.size != 4:
                 raise ValueError("Unsupported mixed-word SURFEX state timestamp")
+            if not np.isfinite(current.view(np.float64)[3]):
+                raise ValueError("SURFEX SFX.DTCUR has a nonfinite state timestamp")
             state_time = datetime(*(int(v) for v in current[:3])) + timedelta(
                 seconds=float(current.view(np.float64)[3]))
             metadata["STATE_TIME"] = state_time.isoformat()
-            metadata["STATE_TIME_MATCHES_HEADER"] = state_time == valid
-            if request.get("validate_selection", True) and state_time != valid:
+            matches = state_time.isoformat() == clocks["valid_time"]
+            metadata["STATE_TIME_MATCHES_HEADER"] = matches
+            if request.get("validate_selection", True) and not matches:
                 raise ValueError("SURFEX SFX.DTCUR conflicts with FA header validity; "
                                  "no implicit timestamp substitution")
         if request.get("validate_selection", True) and request.get("fields") and (
             metadata["PROGRAM"] != "AROME" or metadata["PACK"] != 0
         ):
             raise ValueError("Only AROME SURFEX histories with SFX.PACK=0 are supported")
-        count = _integer(lfi, unit, records, "SFX._FBUF_SIZE")
+        count = structure("SFX._FBUF_SIZE", "integer", 1)
         if not 0 < count <= 3125:
             raise ValueError("SURFEX field directory exceeds 100000-word metadata budget")
         columns = {}
         for key, width in (("NAME", 32), ("TYPE", 2), ("MASK", 16)):
-            words = _words(lfi, unit, records, "SFX._FBUF_" + key)
+            words = structure("SFX._FBUF_" + key, "integer_array", count * width)
             if words.size != count * width:
                 raise ValueError(f"Inconsistent SURFEX field directory {key}")
             columns[key] = [_text(row) for row in words.reshape(count, width)]
         for key in ("DIM1", "DIM2"):
-            values = _words(lfi, unit, records, "SFX._FBUF_" + key)
+            values = structure("SFX._FBUF_" + key, "integer_array", count)
             if values.size != count:
                 raise ValueError(f"Inconsistent SURFEX field directory {key}")
             columns[key] = values.tolist()
@@ -175,6 +216,10 @@ def _inspect(fa, lfi, unit, header, request):
             if not name or "SFX." + name in descriptors:
                 raise ValueError("Empty or duplicate SURFEX directory name")
             descriptors["SFX." + name] = {key: columns[key][i] for key in columns if key != "NAME"}
+        if source is not None:
+            from frameit.io.fa_epygram import check_surface_layout
+
+            check_surface_layout(source, metadata, descriptors, records, request)
     check_expected_source(metadata, request.get("expected_source", {}))
     fields = {}
     for name in request.get("fields", []):
@@ -208,11 +253,10 @@ def _inspect(fa, lfi, unit, header, request):
         fields[name] = dict(zip(names, flags, strict=True))
         if surface:
             fields[name]["surfex_descriptor"] = descriptors.get(name, {})
-    typed = {name: _typed_metadata(lfi, unit, records, name, metadata, descriptors)
+    typed = {name: (typed_metadata(source, name, records, metadata, descriptors)
+                    if source is not None else
+                    _typed_metadata(lfi, unit, records, name, metadata, descriptors))
              for name in request.get("metadata_fields", [])}
-    clocks = {"reference_time": basis.isoformat(), "valid_time": valid.isoformat(),
-              "lead_seconds": int(stamp[14]),
-              "header_interval_start_seconds": int(stamp[15])}
     contracts = {name: native_descriptor(name, records[name], fields.get(name, {}),
                                          descriptors.get(name, {}), geometry, metadata, clocks)
                  for name in dict.fromkeys([*fields, *typed])}
@@ -221,10 +265,8 @@ def _inspect(fa, lfi, unit, header, request):
                                  expected_source=request.get("expected_source", {}))
         if contract["native_id"] in typed:
             contract["eligibility"]["metadata_decode"] = "available"
-    return {"geometry": geometry, "reference_time": basis.isoformat(),
-            "valid_time": valid.isoformat(), "lead_seconds": int(stamp[14]),
-            "header_interval_start_seconds": int(stamp[15]),
-            "identifier": fa.wfalsif(unit).strip(), "record_count": len(records),
+    return {"geometry": geometry, **clocks,
+            "identifier": identifier, "record_count": len(records),
             "records": records, "fields": fields, "surfex_metadata": metadata,
             "field_directory": descriptors, "field_descriptors": contracts,
             "typed_metadata": typed}
@@ -250,19 +292,19 @@ def handle(request, destination):
         raise ValueError("FA input changed since inventory (size/mtime freshness check)")
     unit, epy_resource = None, None
     try:
-        header = uuid4().hex[:16]
-        unit = FA.wfaitou(str(path), "OLD", header)
-        info = _inspect(FA, LFI, unit, header, request)
         if epygram is not None:
-            from frameit.io.fa_epygram import field_metadata
+            from frameit.io.fa_epygram import inspect_resource
 
-            if request["profile"] != "arome_history":
-                raise ValueError("EPyGrAM backend currently admits arome_history only")
-            epy_resource = epygram.formats.resource(str(path), openmode="r", fmt="FA")
-            for name, descriptor in info["field_descriptors"].items():
-                if descriptor["native"]["representation"] == "gridpoint":
-                    descriptor["sampling"]["epygram"] = field_metadata(
-                        epy_resource, name, info["geometry"])
+            # Own the resource before opening: failed geometry/validity reads
+            # must close the same native unit too.
+            epy_resource = epygram.formats.resource(
+                str(path), openmode="r", fmt="FA", fmtdelayedopen=True)
+            epy_resource.open()
+            info = inspect_resource(epy_resource, request)
+        else:
+            header = uuid4().hex[:16]
+            unit = FA.wfaitou(str(path), "OLD", header)
+            info = _inspect(FA, LFI, unit, header, request)
         if request["operation"] == "read":
             name = request["fields"][0]
             grid = info["geometry"]
@@ -288,6 +330,9 @@ def handle(request, destination):
                 sentinel = np.nan
             descriptor["mask"]["undefined"] = {
                 "present": bool(undefined),
+                "origin": "EPyGrAM_returned_mask" if epy_resource is not None else "FACILO_flag",
+                "sentinel_origin": ("normalized_NaN; original native flag/sentinel not exposed"
+                                    if epy_resource is not None else "FACILO_sentinel"),
                 "sentinel": (float(sentinel) if np.isfinite(sentinel) else str(float(sentinel)))
                 if undefined else None,
                 "normalization": "native undefined values to NaN; valid zeros retained",
@@ -297,6 +342,7 @@ def handle(request, destination):
                     values[np.isnan(values)] = np.nan
                 else:
                     values[values == sentinel] = np.nan
+            descriptor["mask"]["nonfinite_count"] = int(np.count_nonzero(~np.isfinite(values)))
             x0, x1, y0, y1 = request["zone"]
             if not (0 <= x0 < x1 <= grid["KNXLON"] and 0 <= y0 < y1 <= grid["KNLATI"]):
                 raise ValueError("Invalid FA native domain selection")
@@ -313,6 +359,7 @@ def handle(request, destination):
         native_version.restype = ctypes.c_int
         number = native_version()
         info["backend_versions"] = {
+            "FA_backend": backend,
             "falfilfa4py": version("falfilfa4py"),
             "ctypesForFortran": version("ctypesForFortran"),
             "FA_ecCodes_C": f"{number // 10000}.{number // 100 % 100}.{number % 100}",
@@ -326,6 +373,8 @@ def handle(request, destination):
                 raise ValueError("EPyGrAM gridpoint worker unexpectedly loaded spectral transforms")
             info["backend_versions"].update(
                 EPyGrAM=version("epygram"),
+                EPyGrAM_ecTrans_distribution=version("ectrans4py"),
+                EPyGrAM_netCDF4_distribution=version("netCDF4"),
                 EPyGrAM_policy="FA-only private child configuration; no personal tables/plugins; "
                                "gridpoint read only, no spectral/vertical/vector derivation")
         info["identity"] = identity

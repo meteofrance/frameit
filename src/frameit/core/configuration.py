@@ -253,8 +253,6 @@ def validate_fa_options(options, selected=False):
     executable = options["python_executable"]
     if executable is not None and (not isinstance(executable, str) or not executable.strip()):
         raise ValueError("input.fa.python_executable must be a nonempty interpreter path")
-    if options["backend"] == "epygram" and options["profile"] not in {None, "arome_history"}:
-        raise ValueError("The EPyGrAM backend currently admits arome_history only")
     if ((options["profile"] is not None and not isinstance(options["profile"], str))
             or options["profile"] not in {None, "arome_history", "surfex_history"}):
         raise ValueError("input.fa.profile must be arome_history or surfex_history")

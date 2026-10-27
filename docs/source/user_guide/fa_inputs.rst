@@ -7,10 +7,10 @@ atmospheric GRIB or NetCDF inputs in one run, using one geographical track and
 each source's own grid. This is a limited input adapter, not a complete FA
 diagnostic catalogue or qualification of every producer's scientific fields.
 The primary integration target is now **EPyGrAM-backed SURFEX FA plus AROME GRIB**.
-The :doc:`fa_epygram_c0` records the baseline, API evidence and admission plan.
-Current SURFEX execution still uses the native backend; the EPyGrAM backend
-currently admits atmospheric FA only. Other producer/native-container integrations
-are outside this increment.
+The :doc:`fa_epygram_c1` admits the evidenced AROME-47 / SURFEX-8.1 dense layout
+through EPyGrAM, using a single read-only resource and selected library decoding.
+The :doc:`fa_epygram_c0` remains the historical baseline/API evidence and cleanup
+ledger. Other producer/native-container integrations are outside this increment.
 
 Installation and native isolation
 ----------------------------------------
@@ -18,8 +18,10 @@ Installation and native isolation
 The reference ``environment.yaml`` uses Python 3.13 and installs the published
 ``falfilfa4py==1.3.0`` wheel. A minimal installation may use the optional ``fa``
 extra on a platform/Python version supported by that package. The optional
-``fa-epygram`` extra currently supplies atmospheric cube support (see
-:doc:`fa_atmosphere`); its upstream pins require a separate coherent environment.
+``fa-epygram`` extra supplies the maintained SURFEX path and atmospheric cube
+support (see :doc:`fa_atmosphere`). It requires EPyGrAM 2.1.0's unmodified upstream
+pins and the qualified ctypesForFortran 1.3.0 bridge. Choose it separately from
+``fa``; ``input.fa.python_executable`` can select a coherent Python-3.13 helper.
 Ordinary NetCDF/GRIB processing and schema-only validation do not
 require the FA package.
 
@@ -43,7 +45,8 @@ Inspect first
 
    frameit inspect ./data --model arome --format fa --pattern "historic.surfex*.fa"
    frameit inspect ./data --model arome --format fa --pattern "historic.surfex*.fa" \
-       --fa-profile surfex_history --fa-fields SFX.T2M SFX.SST
+       --fa-profile surfex_history --fa-backend epygram --fa-fields SFX.T2M SFX.SST
+   # Add --fa-python /path/to/helper/bin/python for a separate environment.
 
 Inspection returns native headers, record names/lengths, backend versions and
 SURFEX typed field-directory metadata. Optional field probes report encoding
@@ -171,6 +174,14 @@ matching the full storage grid. Layer/patch/tile record names and mask labels ar
 retained, not averaged or assembled into an invented vertical coordinate. Use
 the logical ``surface`` group for individually selected 2-D records; this does
 not label every quantity as a physical ground-surface variable.
+
+For ``backend: epygram``, C1 additionally requires the evidenced source tags
+``PROGRAM=AROME, VERSION=8, BUG=1, MASDEV=47, BUGFIX=0``, a complete FBUF
+directory, matching CI dimensions and a matching DTCUR/header state clock.
+Unmatched releases remain inspectable but require independent structural/type
+evidence before execution. This is distinct from the optional ``expected_source``
+assertions and does not establish field units or physical support from tables.
+See :doc:`fa_epygram_c1` for retained native observations and migration details.
 
 Each selected native record requires ``field_metadata``:
 

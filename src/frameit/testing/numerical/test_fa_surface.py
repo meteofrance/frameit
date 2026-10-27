@@ -15,13 +15,23 @@ from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.fa_backend import inspect_fa
 from frameit.io.fa_utils import concat_fa2ds_by_vert_coord
+from frameit.testing.numerical.test_fa_cubes import EPYTHON
+from frameit.testing.numerical.test_fa_cubes import NATIVE as EPYGRAM
 from frameit.testing.numerical.test_fa_io import NATIVE, fa_files
 from frameit.testing.numerical.test_fa_pipeline import single_fa_document
 
 pytestmark = pytest.mark.skipif(not NATIVE, reason="optional falfilfa4py wheel not installed")
 
 
-def test_dense_directory_order_single_native_layer_masks_and_zero(tmp_path, monkeypatch):
+@pytest.fixture(params=["native", pytest.param("epygram", marks=EPYGRAM)])
+def backend_options(request):
+    return {"backend": request.param,
+            "python_executable": EPYTHON if request.param == "epygram" else None}
+
+
+def test_dense_directory_order_single_native_layer_masks_and_zero(
+    tmp_path, monkeypatch, backend_options,
+):
     y, x = np.indices((7, 9))
     moisture = (x + 10 * y).astype(float) / 1000.
     moisture[2, 3] = np.nan
@@ -33,9 +43,10 @@ def test_dense_directory_order_single_native_layer_masks_and_zero(tmp_path, monk
     path = fa_files(tmp_path, profile="surfex_history", surface_fields=fields)[0]
     path.chmod(0o444)
     before = path.read_bytes()
-    info = inspect_fa(path, None)
+    info = inspect_fa(path, None, **backend_options)
     assert list(info["field_directory"]) == ["SFX.TG2P1", "SFX.WG1P1", "SFX.SST"]
     raw = single_fa_document(tmp_path, [path])
+    raw["input"]["fa"].update(backend_options)
     raw["variables"] = {"surface": {"names": ["SFX.WG1P1"]}}
     raw["input"]["fa"]["field_metadata"] = {"SFX.WG1P1": {
         "units": "m3 m-3", "kind": "continuous", "temporal_kind": "instantaneous"}}
@@ -77,34 +88,38 @@ def test_dense_directory_order_single_native_layer_masks_and_zero(tmp_path, monk
 
 
 @pytest.mark.parametrize("options", [{"surface_pack": 1}, {"program": "OTHER"}])
-def test_unqualified_packing_or_producer_does_not_bypass_dense_gate(tmp_path, options):
+def test_unqualified_packing_or_producer_does_not_bypass_dense_gate(
+    tmp_path, options, backend_options,
+):
     path = fa_files(tmp_path, profile="surfex_history", **options)[0]
-    assert inspect_fa(path, None, validate_selection=False)["field_directory"]
+    assert inspect_fa(path, None, validate_selection=False, **backend_options)["field_directory"]
     with pytest.raises(ValueError, match="Only AROME SURFEX histories.*PACK=0"):
-        inspect_fa(path, "surfex_history", ["SFX.T2M"])
+        inspect_fa(path, "surfex_history", ["SFX.T2M"], **backend_options)
 
 
 @pytest.mark.parametrize("layout", [
     {"type": "X0"}, {"type": "X2"}, {"type": "N1"}, {"type": "L1"}, {"type": "C1"},
     {"dim1": 62}, {"dim2": 1},
 ])
-def test_unqualified_array_layout_remains_inventory_only(tmp_path, layout):
+def test_unqualified_array_layout_remains_inventory_only(tmp_path, layout, backend_options):
     path = fa_files(tmp_path, profile="surfex_history", surface_fields=[{
         "name": "TESTLAYOUT", "mask": "NATURE", **layout,
         "values": np.ones((7, 9)).tolist()}])[0]
-    info = inspect_fa(path, None, ["SFX.TESTLAYOUT"], validate_selection=False)
+    info = inspect_fa(path, None, ["SFX.TESTLAYOUT"], validate_selection=False, **backend_options)
     assert info["field_directory"]["SFX.TESTLAYOUT"]["TYPE"] == layout.get("type", "X1")
     assert info["field_descriptors"]["SFX.TESTLAYOUT"]["eligibility"]["decode"] == "blocked"
     with pytest.raises(ValueError, match="unsupported SURFEX field type/dimensions"):
-        inspect_fa(path, "surfex_history", ["SFX.TESTLAYOUT"])
+        inspect_fa(path, "surfex_history", ["SFX.TESTLAYOUT"], **backend_options)
 
 
 @pytest.mark.parametrize("damage", [
     "name", "name_program", "directory_program", "only_field", "type", "pack",
 ])
-def test_incomplete_surface_directory_cannot_bypass_profile_checks(tmp_path, damage):
+def test_incomplete_surface_directory_cannot_bypass_profile_checks(
+    tmp_path, damage, backend_options,
+):
     path = fa_files(tmp_path, profile="surfex_history", program="OTHER")[0]
-    original = inspect_fa(path, None)["records"]
+    original = inspect_fa(path, None, **backend_options)["records"]
     removed = ["SFX._FBUF_NAME"]
     if damage in {"name_program", "directory_program"}:
         removed.append("SFX.PROGRAM")
@@ -130,7 +145,7 @@ finally:
         [sys.executable, "-c", script, str(path), json.dumps(sorted(set(removed)))],
         capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
-    info = inspect_fa(path, None, validate_selection=False)
+    info = inspect_fa(path, None, validate_selection=False, **backend_options)
     if damage == "name":
         assert info["surfex_metadata"]["PROGRAM"] == "OTHER"
     assert info["surfex_metadata"]["layout_status"] == "incomplete_surfex_directory"
@@ -140,8 +155,8 @@ finally:
     for profile, fields in (("arome_history", []), ("arome_history", ["SFX.T2M"]),
                             ("surfex_history", ["SFX.T2M"])):
         with pytest.raises(ValueError, match="Incomplete SURFEX source"):
-            inspect_fa(path, profile, fields)
-    descriptor = inspect_fa(path, None, ["SFX.T2M"], validate_selection=False)[
+            inspect_fa(path, profile, fields, **backend_options)
+    descriptor = inspect_fa(path, None, ["SFX.T2M"], validate_selection=False, **backend_options)[
         "field_descriptors"]["SFX.T2M"]
     assert descriptor["eligibility"]["decode"] == "blocked"
     assert any("incomplete SURFEX" in reason for reason in descriptor["eligibility"]["reasons"])
@@ -159,8 +174,11 @@ def categorical_document(tmp_path):
     return raw
 
 
-def test_categorical_selection_rejects_bilinear_before_payload_reads(tmp_path, monkeypatch):
+def test_categorical_selection_rejects_bilinear_before_payload_reads(
+    tmp_path, monkeypatch, backend_options,
+):
     raw = categorical_document(tmp_path)
+    raw["input"]["fa"].update(backend_options)
     raw["polar"] = {"enabled": True}
 
     def forbidden(*args, **kwargs):
@@ -174,10 +192,13 @@ def test_categorical_selection_rejects_bilinear_before_payload_reads(tmp_path, m
 
 
 @pytest.mark.parametrize("polar", [False, True])
-def test_dense_x1_categories_keep_codes_and_masks_in_ordinary_outputs(tmp_path, polar):
+def test_dense_x1_categories_keep_codes_and_masks_in_ordinary_outputs(
+    tmp_path, polar, backend_options,
+):
     if polar:
         pytest.importorskip("xesmf")
     raw = categorical_document(tmp_path)
+    raw["input"]["fa"].update(backend_options)
     raw["polar"] = {"enabled": polar, "interpolation_method": "nearest_s2d",
                     "radial_step_m": 2000., "azimuth_count": 8}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
@@ -199,8 +220,12 @@ if 'polar' in paths:
         values = target['SFX.COVERCLASS'].values
         assert set(values[np.isfinite(values)]) <= {0., 2., 5.}
         assert np.any(values == 0.) and np.isnan(values).any()
-assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
+assert not {'frameit', 'falfilfa4py', 'epygram'} & sys.modules.keys()
 """, json.dumps(paths)], capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
     assert provenance["fa_inputs"][0]["fields"]["SFX.COVERCLASS"]["kind"] == "categorical"
+    versions = provenance["fa_inputs"][0]["backend_versions"]
+    assert versions["FA_backend"] == backend_options["backend"]
+    if backend_options["backend"] == "epygram":
+        assert provenance["fa_decoder"]["backend_versions"]["EPyGrAM"] == "2.1.0"

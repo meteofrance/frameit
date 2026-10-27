@@ -4,9 +4,10 @@ P3 coupled cyclone inputs and shared polar products
 This page records the P3 **AROME atmospheric FA + AROME-produced SURFEX FA**
 qualification, with separate products on the same explicit polar target.
 The current primary target is EPyGrAM-backed SURFEX FA + AROME GRIB; see
-:doc:`fa_epygram_c0` for current evidence and the remaining SURFEX admission gate.
-Existing SURFEX examples still use the native backend. Other atmospheric producers
-and new native-container adapters are outside this increment.
+:doc:`fa_epygram_c1` for the new evidenced dense SURFEX reader and remaining
+primary-pair qualification gates. The GRIB/SURFEX examples now select EPyGrAM
+with scaling fallback disabled. Other atmospheric producers and new
+native-container adapters are outside this increment.
 Existing native Cartesian products and vertical-group
 file separation remain. This bounded P3 repair uses admitted dense SURFEX
 histories; missing packed/layered/native-container references remain gates, not

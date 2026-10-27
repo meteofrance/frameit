@@ -53,6 +53,10 @@ report, not a physical-field NetCDF product; see :doc:`fa_spectral`.
 Opt-in P5 native cubes add separate ``level``/``level_w`` axes, original record
 coordinates and pressure-valued/normalized interface coefficients, without
 diagnosing physical coordinates; see :doc:`fa_atmosphere`.
+The :doc:`fa_epygram_c1` adds effective-backend/helper-version provenance and
+post-normalization full-native nonfinite counts in decode observations. Support
+labels remain distinct from actual masks; native/source-qualified product schemas
+and ordinary-reader requirements are preserved.
 Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
 ``lat``/``lon`` remain requested centres; see :doc:`fa_geometry` for conventions.

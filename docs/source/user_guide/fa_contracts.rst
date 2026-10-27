@@ -9,7 +9,8 @@ family matrix remains the qualification boundary. Existing explicit
 This phase covers AROME atmospheric FA and AROME-produced SURFEX FA; other
 producer or native-container adapters are not prerequisites for its completion.
 Python 3.13, optional native dependencies and FA/GRIB process isolation remain
-the reference runtime. EPyGrAM is not installed or imported by this path.
+the reference runtime. Core descriptor handling never imports EPyGrAM/native
+packages; the optional worker path is described in :doc:`fa_epygram_c1`.
 
 Descriptor and operation contract
 ---------------------------------
@@ -125,7 +126,9 @@ Missing native values and unequal values fail even in metadata inventory; the
 mapping neither overrides native metadata nor supplies a producer identity.
 The observed typed-layout selection is separate from this user assertion.
 Physical fields on other releases retain the existing narrow explicit-declaration
-path; no matched layout or scientific approval is implied for those sources.
+path on the legacy native backend; no matched layout or scientific approval is
+implied. The EPyGrAM C1 path blocks execution of unmatched SURFEX structures and
+retains its ``capability_reasons`` in producer metadata/descriptors.
 
 Scaling and codec definition boundary
 --------------------------------------
@@ -140,6 +143,12 @@ warnings are retained and actual opt-in fallback observations are recorded as
 ``identity_explicit_opt_in``. Permission and observed fallback are separate facts.
 Synthetic packing-0 fixtures do not emit that GRIB-scaling warning; failure and
 fallback logging are also tested with explicit diagnostic injection.
+The C1 suite additionally exercises the real native warning on a compact
+packing-120 fixture through EPyGrAM, with default failure and recorded opt-in.
+Both qualified native versions (1.2.1 and 1.3.0) lack a structured scaling query.
+EPyGrAM decode observations identify a returned mask and normalized NaN sentinel;
+the original native flag/sentinel is not exposed by its field object. Full-native
+``mask.nonfinite_count`` is separate from this mask and from support labels.
 
 Scientific labels are not codec definitions. No native definition tables are
 added, no installed files are edited, and no custom-table configuration is

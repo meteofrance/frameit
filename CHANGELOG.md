@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Admit evidenced AROME-47 / SURFEX-8.1 dense PACK=0/X1 histories through the
+  maintained EPyGrAM adapter. Use one read-only resource per transaction for
+  inventory, typed structure and selected data; retain narrow type/error/clock
+  observations and the transitional labelled-header adapter. Block incomplete or
+  contradictory directories, unsupported layouts and missing native scaling.
+- Pin the qualified ctypesForFortran bridge with EPyGrAM's unmodified upstream
+  dependencies, add native SURFEX/failure/optionality CI, and record the effective
+  backend and actual helper versions. GRIB/SURFEX examples select EPyGrAM with
+  scaling fallback disabled; backend defaults and existing product schemas persist.
+
 - Re-establish the C0 reference/EPyGrAM/core regression baseline and record the
   finite SURFEX/AROME-GRIB family matrix, library API evidence, cleanup ledger and
   admission plan. Add a bounded format-isolated investigation probe and compact

@@ -78,6 +78,7 @@ def native_descriptor(name, length, encoding, directory, geometry, metadata, clo
         reasons.append("native encoding not probed or unknown")
     if metadata.get("layout_status") == "incomplete_surfex_directory":
         reasons.append("incomplete SURFEX directory/source metadata; physical execution is blocked")
+    reasons.extend(metadata.get("capability_reasons", []))
     if metadata and (metadata.get("PROGRAM") != "AROME" or metadata.get("PACK") != 0):
         reasons.append("only AROME SURFEX PACK=0 execution is admitted")
     if directory and (directory.get("TYPE") != "X1" or directory.get("DIM2") != -1

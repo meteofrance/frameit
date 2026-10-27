@@ -1,6 +1,6 @@
 # Paths are relative to this YAML. Adapt them and review the field declarations.
 # Limited dense instantaneous scalar example, not full FA qualification.
-# Evidence/gaps: docs/source/user_guide/fa_baseline.rst (including SFX scaling).
+# C1 reader scope/gaps: docs/source/user_guide/fa_epygram_c1.rst (including SFX scaling).
 schema_version: 2
 model: arome
 run:
@@ -27,6 +27,9 @@ input:
         pattern: "historic.surfex*.fa"
         format: fa
         fa:
+          backend: epygram
+          # Install FrameIt[fa-epygram] in a coherent Python-3.13 environment.
+          # Set python_executable to that helper if different from the parent.
           profile: surfex_history
           # Optional exact assertions, not overrides or scientific definitions.
           # E.g. {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0}
@@ -46,10 +49,9 @@ input:
               long_name: "2 metre air temperature (explicit source declaration)"
               kind: continuous
               temporal_kind: instantaneous
-              # Permits the native decoder's identity-scaling fallback for this
-              # otherwise unregistered field. Verify with producer definitions;
-              # this opt-in and native warnings are recorded, not validated away.
-              allow_unscaled: true
+              # Missing native scaling is fatal. An opt-in needs independent
+              # producer-specific justification; units alone cannot establish it.
+              allow_unscaled: false
       variables:
         surface:
           names: [SFX.T2M]

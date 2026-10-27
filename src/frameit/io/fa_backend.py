@@ -118,7 +118,7 @@ def request_fa(request):
                                  "coefficients cannot be returned as values")
             if descriptor["native"]["decoded_dtype"] != info["dtype"]:
                 raise ValueError(f"FA decoded dtype contradicts field descriptor for {context}")
-            # 1.3.0 exposes no structured multiplier query. Absence of this
+            # Qualified 1.2.1/1.3.0 stacks expose no structured multiplier query. Absence of this
             # warning is NOT independent scaling verification or identity proof.
             missing = "has no encoded FMULTM and FMULTE" in diagnostics
             descriptor["scaling"].update(

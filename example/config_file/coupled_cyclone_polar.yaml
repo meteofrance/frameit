@@ -26,6 +26,8 @@ input:
         pattern: "historic.surfex*.fa"
         format: fa
         fa:
+          backend: epygram
+          # FrameIt[fa-epygram]; python_executable can select a separate helper.
           profile: surfex_history
           subdomain: CI
           expected_source: {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0}
