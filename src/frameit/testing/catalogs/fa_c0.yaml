@@ -1,0 +1,185 @@
+# Investigation provenance, not a field preset, execution gate or scientific approval.
+schema_version: 1
+checked_on: '2026-10-27'
+baseline_revision: 799861fee7c6479ac3c5f525d136bba8b872694f
+stage: C0
+primary_target: EPyGrAM SURFEX FA coupled to AROME GRIB on independent grids
+production_epygram_surfex: blocked; atmospheric-only restrictions retained until C1
+scientific_approval: not established
+production_schema_or_default_changes: none
+retired_paths: []
+evidence_tools:
+  api_probe: frameit.testing.fa_epygram_probe
+  independent_tests: frameit.testing.numerical.test_fa_epygram_probe
+  method_and_cleanup_ledger: docs/source/user_guide/fa_epygram_c0.rst
+runtimes:
+  common: {python: 3.13.16, pytest: 9.1.1, numpy: 2.5.4, scipy: 1.18.1, xarray: 2026.9.0}
+  reference:
+    falfilfa4py: 1.3.0
+    ctypesForFortran: 2.2.1
+    FA_ecCodes_C: 2.48.0
+    cfgrib: 0.9.15.1
+    eccodes_python: 2.48.0
+    GRIB_ecCodes_C: 2.50.0
+    netCDF4: 1.7.4
+    xesmf: 0.9.2
+    esmpy: 8.9.1
+    absent: [epygram, ectrans4py]
+  epygram_overlay:
+    epygram: 2.1.0
+    falfilfa4py: 1.2.1
+    ctypesForFortran: 1.3.0
+    FA_ecCodes_C: 2.44.0
+    eccodes_python: 2.44.0
+    eccodeslib: 2.50.0.33
+    GRIB_ecCodes_C: 2.50.0
+    ectrans4py: 1.6.0
+    bronx: 2.1.2
+    footprints: 2.0.0
+    taylorism: 1.1.0
+    pyproj: 3.8.0
+    netCDF4: 1.7.2
+    dependency_check: python -m pip check; no broken requirements
+    isolation: format-specific fresh processes; no FA/GRIB same-process qualification
+    native_FA_source_revision: not independently verified by package or ecCodes version strings
+  core:
+    setup: offline reference clone; optional FA/GRIB/ESMF packages removed in clone only
+    absent: [falfilfa4py, ctypesForFortran, epygram, ectrans4py, cfgrib, eccodes, xesmf, ESMF, esmpy]
+    netCDF4: 1.7.4
+    limitation: absent-stack execution check, not clean dependency installation qualification
+baseline_checks:
+  reference_full: {passed: 604, skipped: 1, subtests_passed: 2, warnings: 722, seconds: 320.28}
+  epygram_full: {passed: 605, skipped: 0, subtests_passed: 2, warnings: 2054, seconds: 316.24}
+  native_focused: {passed: 117, skipped: 1, warnings: 1, seconds: 78.99}
+  epygram_ci_plus_spectral: {passed: 32, skipped: 0, warnings: 16, seconds: 33.94}
+  core_ci_plus_netcdf_coupling: {passed: 80, skipped: 28, subtests_passed: 2, seconds: 24.00}
+  spectral_native_ci: {passed: 22, skipped: 0, warnings: 1, seconds: 15.67}
+  skip_policy: only genuinely absent optional backends; installed required backends executed
+final_checks:
+  reference_full: {passed: 607, skipped: 1, subtests_passed: 2, warnings: 722, seconds: 308.12}
+  epygram_full: {passed: 608, skipped: 0, subtests_passed: 2, warnings: 2054, seconds: 302.96}
+  native_focused: {passed: 120, skipped: 1, warnings: 1, seconds: 79.82}
+  epygram_ci: {passed: 25, skipped: 0, warnings: 16, seconds: 35.28}
+  core_ci_plus_netcdf_coupling: {passed: 80, skipped: 31, subtests_passed: 2, seconds: 22.13}
+  packaged_ci_core_profile: {passed: 6, exit_code: 0, output: build/c0-matrix}
+  schema_only_examples: [coupled_fa, coupled_cyclone_polar, coupled_arome_fa_polar, arome_fa_native_cubes]
+  coupled_dry_run:
+    command: frameit run build/c0-api/coupled-dryrun.yaml --dry-run
+    result: passed; synthetic NetCDF/native-FA compatibility only; exact-common warning and full exclusion
+    physical_decodes: 0
+    output_directory_created: false
+  lint_changed_python: passed; ruff 0.17.1
+  lint_repository:
+    command: ruff check src/frameit
+    result: failed; four unchanged-HEAD findings reproduced from git show HEAD
+    file: src/frameit/processing/polar/conservative.py
+    findings: ['89:E501', '153:E501', '300:B905', '323:E501']
+  docs: sphinx-build -q -W --keep-going -b html docs/source build/c0-docs-handover; passed
+  wheel: python -m pip wheel --no-deps --no-build-isolation . -w build/c0-wheel-handover; passed
+  not_executed: [hosted_CI, Python_3.10, clean_epygram_install, production_primary_workflow]
+regression_commands:
+  environment: TMPDIR=$PWD/build OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+  reference_helper: FRAMEIT_TEST_EPYGRAM_PYTHON=$PWD/build/p5-epygram-env/bin/python
+  reference_full: >-
+    conda run --no-capture-output -n frameit_env python -m pytest -q
+    --basetemp build/c0-reference-final --junitxml=build/c0-reference-final.xml
+  epygram_full: >-
+    conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m pytest -q
+    --basetemp build/c0-epygram-final --junitxml=build/c0-epygram-final.xml
+  native_focused: >-
+    conda run --no-capture-output -n frameit_env python -m pytest -q
+    src/frameit/testing/numerical/test_fa_*.py
+    src/frameit/testing/numerical/test_arome_fa_coupling.py
+    src/frameit/testing/numerical/test_coupled_shared_polar.py
+    --basetemp build/c0-native-final --junitxml=build/c0-native-final.xml
+  epygram_ci: >-
+    conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m pytest -q
+    src/frameit/testing/numerical/test_fa_cubes.py
+    src/frameit/testing/numerical/test_fa_epygram_probe.py
+    src/frameit/testing/numerical/test_fa_io.py
+    src/frameit/testing/numerical/test_fa_pipeline.py
+    --basetemp build/c0-epygram-ci-final --junitxml=build/c0-epygram-ci-final.xml
+  core_ci_plus_netcdf_coupling: >-
+    conda run --no-capture-output -p $PWD/build/c0-core-env python -m pytest -q
+    src/frameit/testing/numerical/test_hpc_execution.py
+    src/frameit/testing/numerical/test_logging.py
+    src/frameit/testing/numerical/test_fa_baseline.py
+    src/frameit/testing/numerical/test_fa_contracts.py
+    src/frameit/testing/numerical/test_fa_cubes.py
+    src/frameit/testing/numerical/test_fa_epygram_probe.py
+    src/frameit/testing/numerical/test_fa_mapping.py
+    src/frameit/testing/numerical/test_fa_spectral.py
+    src/frameit/testing/numerical/test_coupled_shared_polar.py
+    src/frameit/testing/numerical/test_arome_fa_coupling.py
+    src/frameit/testing/numerical/test_fa_pipeline.py::test_coupled_netcdf_sources_do_not_need_fa_backend
+    --basetemp build/c0-core-final --junitxml=build/c0-core-final.xml
+compact_api_evidence:
+  surface:
+    shape_y_x: [7, 9]
+    geometries: [regular_lonlat, spherical_tangent_lambert_south]
+    fa_packing: 0
+    surfex_pack: 0
+    directory_types: X1 with explicit FULL and SEA labels
+    scalar_truth: 280 + 10*j + i; NaN at [1,1]; physical zero at [2,2]
+    scalar_comparison: exact independently prescribed array
+    geographic_comparison: independent angular/spherical equations; absolute 2e-5 degrees
+    selected_decode: SFX.T2M only; SFX.SST metadata does not decode
+    direct_transaction: one native open/geometry read/close
+    metadata_payload_decodes: 0
+    typed_clock_gap: four-word T0 DTCUR readfield returns only scalar year 2026
+    typed_directory_gap: _FBUF_* lacks table definitions; integer-word arrays require checked adapter
+  grib:
+    shape_y_x: [5, 7]
+    messages: 2
+    native_levels_hPa: [700, 850]
+    exact_selector: {shortName: t, typeOfLevel: isobaricInhPa, level: 850}
+    epygram_field_level_Pa: 85000
+    physical_decodes: 0
+    ambiguous_selection: rejected
+supplied_corpus:
+  identity_strategy: size/mtime before and after; no content checksum or corruption proof
+  all_probed_source_stats_unchanged: true
+  retained_private_arrays_or_full_indexes: false
+  atmosphere:
+    record_count: 1345
+    non_header_records: 1337
+    controls: {CLSTEMPERATURE: gridpoint_120_16, S001TEMPERATURE: spectral_103_18}
+    native_error_minus_91: [SURFPRESSION, S090TEMPERATURE, S090WIND.U.PHYS]
+    physical_decodes: 0
+    error_classification: unresolved native header failure; not harmless metadata or proven corruption
+  surface:
+    record_count: 122
+    non_header_records: 114
+    source: {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0, PACK: 0}
+    storage_y_x: [2048, 3072]
+    ci_y_x: [2037, 3061]
+    c_y_x: [2005, 3029]
+    ci_offset_x_y: [0, 0]
+    iwidth_x_y: [16, 16]
+    dim_full: 6235257
+    selected_directory: {TYPE: X1, DIM1: 6291456, DIM2: -1}
+    metadata_fields: [SFX.T2M, SFX.SST, SFX.HU2M, SFX.TSRAD, SFX.TG1P1, SFX.WG1P1]
+    selected_encoding: {KNGRIB: 120, KNBITS: 24}
+    selected_physical_probe: SFX.T2M
+    native_decode_count: 1
+    max_points: 6300000
+    scaling_result: warning has no encoded FMULTM and FMULTE; no physical values admitted
+    products_certified: 0
+    geoid_origin: EPyGrAM default 6371229-m sphere; not producer Earth-model evidence
+    reference_time: '2026-10-21T00:00:00'
+    valid_time: '2026-10-21T12:00:00'
+  grib:
+    headers: 574
+    header_ceiling: 600
+    grid_y_x: [899, 1395]
+    selected_metadata: [meanSea, 10u_at_10m, t_at_850hPa]
+    physical_decodes: 0
+    implementation_decision: retain cfgrib/ecCodes until separate isolated parity step
+remaining_gaps:
+  - C1 production one-resource SURFEX admission and clock/directory/failure tests
+  - C2 canonical labelled geometry/zone/grid-identity and P5 coefficient parity
+  - C3 multiple-time GRIB plus EPyGrAM SURFEX products, separate grids and fresh readers
+  - release-matched real units/scaling/time/support and Earth-model/geographic references
+  - independent real values/masks, multiple times and upstream native -91 explanation
+  - C4 full parity before legacy retirement or backend/extra migration
+  - C5 independent packed/type/layer/interval/spectral references for each selected operation

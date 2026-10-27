@@ -5,6 +5,9 @@ The optional ``fa-epygram`` extra integrates **EPyGrAM 2.1.0** into FrameIt's
 existing isolated FA worker. This follows the maintainer's explicit change of
 scope permitting EPyGrAM. The default ``native`` backend remains available.
 No scientific approval or full FA compatibility is implied by that dependency.
+The subsequent :doc:`fa_epygram_c0` re-establishes the current regression baseline
+and maps the SURFEX/AROME-GRIB admission and cleanup work; P5 results below remain
+historical evidence for this increment.
 
 Implemented scope
 ------------------

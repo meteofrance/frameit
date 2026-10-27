@@ -33,6 +33,7 @@ FrameIt |release| documentation
    user_guide/fa_surface
    user_guide/fa_spectral
    user_guide/fa_atmosphere
+   user_guide/fa_epygram_c0
    user_guide/configuration_file
    user_guide/output_files
    user_guide/matrix_testing

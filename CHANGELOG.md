@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Re-establish the C0 reference/EPyGrAM/core regression baseline and record the
+  finite SURFEX/AROME-GRIB family matrix, library API evidence, cleanup ledger and
+  admission plan. Add a bounded format-isolated investigation probe and compact
+  independent SURFEX value/geometry and GRIB metadata/selection checks. Production
+  SURFEX EPyGrAM admission, backend migration and legacy retirement remain gated.
+
 - Integrate optional EPyGrAM 2.1.0 behind the isolated FA boundary, with an
   alternative extra, explicit backend/helper selection and FA-only private configuration.
 - Assemble declared gridpoint records into native full/interface cubes, retaining

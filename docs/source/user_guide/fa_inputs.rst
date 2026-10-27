@@ -6,17 +6,21 @@ AROME and AROME-produced SURFEX FA histories. It can also process these alongsid
 atmospheric GRIB or NetCDF inputs in one run, using one geographical track and
 each source's own grid. This is a limited input adapter, not a complete FA
 diagnostic catalogue or qualification of every producer's scientific fields.
-The active implementation phase is specifically **AROME atmospheric FA plus
-AROME-produced SURFEX FA**, with the existing AROME GRIB atmospheric route
-preserved. Other producer/native-container integrations are outside this phase.
+The primary integration target is now **EPyGrAM-backed SURFEX FA plus AROME GRIB**.
+The :doc:`fa_epygram_c0` records the baseline, API evidence and admission plan.
+Current SURFEX execution still uses the native backend; the EPyGrAM backend
+currently admits atmospheric FA only. Other producer/native-container integrations
+are outside this increment.
 
 Installation and native isolation
 ----------------------------------------
 
 The reference ``environment.yaml`` uses Python 3.13 and installs the published
 ``falfilfa4py==1.3.0`` wheel. A minimal installation may use the optional ``fa``
-extra on a platform/Python version supported by that package. EPyGrAM is not
-required. Ordinary NetCDF/GRIB processing and schema-only validation do not
+extra on a platform/Python version supported by that package. The optional
+``fa-epygram`` extra currently supplies atmospheric cube support (see
+:doc:`fa_atmosphere`); its upstream pins require a separate coherent environment.
+Ordinary NetCDF/GRIB processing and schema-only validation do not
 require the FA package.
 
 The published wheel bundles an ecCodes runtime that cannot reliably coexist

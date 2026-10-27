@@ -1,10 +1,12 @@
 P3 coupled cyclone inputs and shared polar products
 ====================================================
 
-The active phase is **AROME atmospheric FA + AROME-produced SURFEX FA**, with
-separate atmosphere and surface products on the same explicit polar target.
-The existing AROME GRIB atmospheric route remains compatible. Other atmospheric
-producers and new native-container adapters are outside this phase.
+This page records the P3 **AROME atmospheric FA + AROME-produced SURFEX FA**
+qualification, with separate products on the same explicit polar target.
+The current primary target is EPyGrAM-backed SURFEX FA + AROME GRIB; see
+:doc:`fa_epygram_c0` for current evidence and the remaining SURFEX admission gate.
+Existing SURFEX examples still use the native backend. Other atmospheric producers
+and new native-container adapters are outside this increment.
 Existing native Cartesian products and vertical-group
 file separation remain. This bounded P3 repair uses admitted dense SURFEX
 histories; missing packed/layered/native-container references remain gates, not
