@@ -35,6 +35,7 @@ jobs:
           src/frameit/testing/numerical/test_fa_contracts.py
           src/frameit/testing/numerical/test_fa_cubes.py
           src/frameit/testing/numerical/test_fa_epygram_probe.py
+          src/frameit/testing/numerical/test_fa_epygram_geometry.py
           src/frameit/testing/numerical/test_fa_epygram_surfex.py
           src/frameit/testing/numerical/test_fa_io.py
           src/frameit/testing/numerical/test_fa_surface.py
@@ -132,6 +133,9 @@ jobs:
           python -m pytest -q
           src/frameit/testing/numerical/test_fa_cubes.py
           src/frameit/testing/numerical/test_fa_epygram_probe.py
+          src/frameit/testing/numerical/test_fa_epygram_geometry.py
+          src/frameit/testing/numerical/test_fa_geometry.py
+          src/frameit/testing/numerical/test_fa_mapping.py
           src/frameit/testing/numerical/test_fa_epygram_surfex.py
           src/frameit/testing/numerical/test_fa_contracts.py
           src/frameit/testing/numerical/test_fa_surface.py

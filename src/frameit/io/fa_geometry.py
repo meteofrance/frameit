@@ -1,4 +1,4 @@
-"""Limited native FA geometry: regular lon/lat and spherical tangent Lambert.
+"""Labelled FA grids: EPyGrAM geometry facts and the legacy native baseline.
 
     FA modern-header PSINLA angular parameters are radians. CI bounds in KNLOPA
     are one-based inclusive. The geographic anchor is at the centre of CI, not
@@ -39,6 +39,11 @@ def _regional_header(header):
 def geometry_signature(header, options):
     import json
 
+    if "epygram" in header:
+        return json.dumps({"subdomain": options["subdomain"], "geometry": header["epygram"]},
+                          sort_keys=True, allow_nan=False)
+    if options.get("backend") == "epygram":
+        raise ValueError("Missing qualified EPyGrAM geometry; inspect with geometry_options")
     p, k = _regional_header(header)
     return json.dumps({"options": {k: options[k] for k in ("subdomain", "earth_radius_m")},
                        "header": {"KTYPTR": header["KTYPTR"], "PCODIL": header["PCODIL"],
@@ -47,7 +52,12 @@ def geometry_signature(header, options):
                        sort_keys=True, allow_nan=False)
 
 
-def fa_geometry(header, options):
+def admitted_geometry(header, options):
+    """Qualification/resource checks only; EPyGrAM owns geometry interpretation.
+
+    Original discriminants and encoded corners are not all exposed by its geometry
+    object. Keep these finite admission checks, without reconstructing a projection.
+    """
     p, k = _regional_header(header)
     nx, ny = int(header["KNXLON"]), int(header["KNLATI"])
     if nx * ny > options.get("max_points", 20_000_000):
@@ -63,20 +73,6 @@ def fa_geometry(header, options):
             raise ValueError("Regular FA requires complete CI bounds and nonzero angular steps")
         x0, x1, y0, y1 = 0, nx, 0, ny
         anchor_i, anchor_j = (nx - 1) / 2, (ny - 1) / 2
-        longitude = np.rad2deg(p[4] + (np.arange(nx) - anchor_i) * p[6])
-        latitude = np.rad2deg(p[5] + (np.arange(ny) - anchor_j) * p[7])
-        difference = np.array([longitude[0], latitude[0], longitude[-1], latitude[-1]])
-        difference -= np.rad2deg(p[12:16])
-        difference[[0, 2]] = (difference[[0, 2]] + 180) % 360 - 180
-        if np.max(np.abs(difference)) > 2.e-5:
-            raise ValueError("FA regular geometry contradicts encoded CI corners")
-        ds = xr.Dataset(coords={
-            "x": ("x", longitude, {"units": "degrees_east", "axis": "X"}),
-            "y": ("y", latitude, {"units": "degrees_north", "axis": "Y"}),
-            "longitude": ("x", longitude, {"units": "degrees_east", "standard_name": "longitude"}),
-            "latitude": ("y", latitude, {"units": "degrees_north", "standard_name": "latitude"}),
-        })
-        mapping = {"grid_mapping_name": "latitude_longitude"}
     else:
         radius = options.get("earth_radius_m")
         if radius is None:
@@ -91,16 +87,98 @@ def fa_geometry(header, options):
         if not (0 <= x0 < x1 <= nx and 0 <= y0 < y1 <= ny):
             raise ValueError("FA CI bounds conflict with stored dimensions")
         anchor_i, anchor_j = (x0 + x1 - 1) / 2, (y0 + y1 - 1) / 2
-        ci_bounds = x0, x1, y0, y1
         if options["subdomain"] == "C":
             x0, x1, y0, y1 = x0 + int(k[6]), x1 - int(k[6]), y0 + int(k[7]), y1 - int(k[7])
         if x0 >= x1 or y0 >= y1 or p[6] <= 0 or p[7] <= 0:
             raise ValueError("Invalid FA domain extent or spacing")
-        lat0, lon0, anchor_lon, anchor_lat = np.rad2deg([p[3], p[2], p[4], p[5]])
+        lat0 = np.rad2deg(p[3])
         if not 0 < abs(lat0) < 90:
             raise ValueError("Degenerate tangent Lambert reference latitude")
         if abs(abs(p[1]) - abs(np.sin(p[3]))) > 5.e-7:
             raise ValueError("FA projection does not match the supported tangent-cone convention")
+    return p, k, (x0, x1, y0, y1), (anchor_i, anchor_j)
+
+
+def _label_grid(x, y, mapping, longitude, latitude, shape, zone, subdomain, *, regular):
+    units = ("degrees_east", "degrees_north") if regular else ("m", "m")
+    ds = xr.Dataset(coords={
+        "x": ("x", x, {"units": units[0], "axis": "X"}),
+        "y": ("y", y, {"units": units[1], "axis": "Y"}),
+        "longitude": ("x" if regular else ("y", "x"), longitude,
+                      {"units": "degrees_east", "standard_name": "longitude"}),
+        "latitude": ("y" if regular else ("y", "x"), latitude,
+                     {"units": "degrees_north", "standard_name": "latitude"}),
+    })
+    if not regular:
+        ds.x.attrs["standard_name"] = "projection_x_coordinate"
+        ds.y.attrs["standard_name"] = "projection_y_coordinate"
+    if not (np.isfinite(ds.latitude).all() and np.isfinite(ds.longitude).all()):
+        raise ValueError("Nonfinite reconstructed FA geography")
+    if (float(ds.longitude.max()) - float(ds.longitude.min()) > 180
+            or np.any(np.abs(ds.latitude) >= 90)):
+        raise ValueError("FA geographical index lookup supports nonpolar, "
+                         "non-dateline regional grids")
+    x0, x1, y0, y1 = zone
+    ds = ds.assign_coords(crs=xr.DataArray(0, attrs=mapping),
+                          source_i=("x", np.arange(x0, x1)), source_j=("y", np.arange(y0, y1)))
+    ds.attrs.update(fa_subdomain=subdomain, fa_native_shape=list(shape),
+                    fa_zone_indices=list(zone),
+                    fa_grid_lookup="legacy_squared_degrees" if regular else NATIVE_LOOKUP)
+    return ds
+
+
+def _library_grid(facts, options):
+    """Expand serializable library axes/CRS; no FA header interpretation here."""
+    if facts.get("schema_version") != 1:
+        raise ValueError("Unsupported FA library geometry schema_version")
+    shape = facts["native_shape"]
+    if shape[0] * shape[1] > options.get("max_points", 20_000_000):
+        raise ValueError("Native FA storage grid exceeds input.fa.max_points")
+    if facts["earth_model"]["radius_m"] != options.get("earth_radius_m"):
+        raise ValueError("FA library geometry conflicts with the declared Earth model")
+    try:
+        zone = facts["zones"][options["subdomain"]]
+    except KeyError as exc:
+        raise ValueError("FA subdomain is not qualified for this library geometry") from exc
+    x0, x1, y0, y1 = zone
+    x, y = np.asarray(facts["x"])[x0:x1], np.asarray(facts["y"])[y0:y1]
+    mapping = facts["crs"]
+    regular = mapping["grid_mapping_name"] == "latitude_longitude"
+    if regular:
+        longitude, latitude = x, y
+    else:
+        crs = CRS.from_cf(mapping)
+        inverse = Transformer.from_crs(crs, crs.geodetic_crs, always_xy=True)
+        longitude, latitude = inverse.transform(*np.meshgrid(x, y))
+    ds = _label_grid(x, y, mapping, longitude, latitude, shape, zone, options["subdomain"],
+                     regular=regular)
+    ds.attrs["fa_geometry_origin"] = facts["origin"]
+    ds.attrs["fa_earth_model_origin"] = facts["earth_model"]["origin"]
+    return ds
+
+
+def fa_geometry(header, options):
+    if "epygram" in header:
+        return _library_grid(header["epygram"], options)
+    if options.get("backend") == "epygram":
+        raise ValueError("Missing qualified EPyGrAM geometry; inspect with geometry_options")
+    p, k, (x0, x1, y0, y1), (anchor_i, anchor_j) = admitted_geometry(header, options)
+    nx, ny = int(header["KNXLON"]), int(header["KNLATI"])
+    regular = p[1] == -9
+    if regular:
+        longitude = np.rad2deg(p[4] + (np.arange(nx) - anchor_i) * p[6])
+        latitude = np.rad2deg(p[5] + (np.arange(ny) - anchor_j) * p[7])
+        difference = np.array([longitude[0], latitude[0], longitude[-1], latitude[-1]])
+        difference -= np.rad2deg(p[12:16])
+        difference[[0, 2]] = (difference[[0, 2]] + 180) % 360 - 180
+        if np.max(np.abs(difference)) > 2.e-5:
+            raise ValueError("FA regular geometry contradicts encoded CI corners")
+        x, y = longitude, latitude
+        mapping = {"grid_mapping_name": "latitude_longitude"}
+    else:
+        radius = options["earth_radius_m"]
+        ci_bounds = int(k[2]) - 1, int(k[3]), int(k[4]) - 1, int(k[5])
+        lat0, lon0, anchor_lon, anchor_lat = np.rad2deg([p[3], p[2], p[4], p[5]])
         mapping = dict(grid_mapping_name="lambert_conformal_conic", standard_parallel=float(lat0),
                        latitude_of_projection_origin=float(lat0),
                        longitude_of_central_meridian=float(lon0), earth_radius=float(radius))
@@ -123,23 +201,5 @@ def fa_geometry(header, options):
         x = ax + (np.arange(x0, x1) - anchor_i) * p[6]
         y = ay + (np.arange(y0, y1) - anchor_j) * p[7]
         longitude, latitude = inverse.transform(*np.meshgrid(x, y))
-        ds = xr.Dataset(coords={
-            "x": ("x", x, {"units": "m", "axis": "X", "standard_name": "projection_x_coordinate"}),
-            "y": ("y", y, {"units": "m", "axis": "Y", "standard_name": "projection_y_coordinate"}),
-            "longitude": (("y", "x"), longitude,
-                          {"units": "degrees_east", "standard_name": "longitude"}),
-            "latitude": (("y", "x"), latitude,
-                         {"units": "degrees_north", "standard_name": "latitude"}),
-        })
-    if not (np.isfinite(ds.latitude).all() and np.isfinite(ds.longitude).all()):
-        raise ValueError("Nonfinite reconstructed FA geography")
-    if (float(ds.longitude.max()) - float(ds.longitude.min()) > 180
-            or np.any(np.abs(ds.latitude) >= 90)):
-        raise ValueError("FA geographical index lookup supports nonpolar, "
-                         "non-dateline regional grids")
-    ds = ds.assign_coords(crs=xr.DataArray(0, attrs=mapping),
-                          source_i=("x", np.arange(x0, x1)), source_j=("y", np.arange(y0, y1)))
-    ds.attrs.update(fa_subdomain=options["subdomain"], fa_native_shape=[ny, nx],
-                    fa_zone_indices=[x0, x1, y0, y1],
-                    fa_grid_lookup=NATIVE_LOOKUP if not regular else "legacy_squared_degrees")
-    return ds
+    return _label_grid(x, y, mapping, longitude, latitude, (ny, nx), (x0, x1, y0, y1),
+                       options["subdomain"], regular=regular)

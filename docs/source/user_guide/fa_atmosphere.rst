@@ -8,6 +8,8 @@ No scientific approval or full FA compatibility is implied by that dependency.
 The subsequent :doc:`fa_epygram_c0` records the cleanup baseline; :doc:`fa_epygram_c1`
 adds evidenced dense SURFEX admission and removes the duplicate raw-resource
 prepass from EPyGrAM transactions. P5 results below remain historical evidence.
+The current :doc:`fa_epygram_c2` supplies library-derived labelled geometry and
+checks one source-level vertical contract per transaction, preserving P5 sampling.
 
 Implemented scope
 ------------------

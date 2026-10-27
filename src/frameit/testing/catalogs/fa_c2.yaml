@@ -1,0 +1,194 @@
+# Engineering qualification/provenance, not a producer preset or scientific approval.
+schema_version: 1
+stage: C2
+checked_on: '2026-10-27'
+starting_revision: 6a7e161
+scientific_approval: not established
+primary_target: EPyGrAM SURFEX FA coupled to AROME GRIB on independent native grids
+families:
+  modern_regular_lonlat_ci: qualified compact ascending/descending angular axes; Earth model not inferred
+  spherical_tangent_lambert_ci_c: qualified compact both hemispheres; offset CI/CIE and nonzero I zones
+  dense_surfex_pack0_x1: C1 selected decode/mask/scaling contracts retained with library-labelled geometry
+  atmospheric_gridpoint_cubes: P5 explicit full/interface labels/indices and normalized A/B/PREFER retained
+  grib_netcdf: existing cfgrib/ecCodes loader retained; isolated EPyGrAM metadata and independent output comparison
+  real_producer_fields: unresolved units/scaling/time/support/Earth-model/vertical/vector evidence
+  grib_epygram_surfex_multitime_products: C3 gate; single-time dry-run is planning only
+  unsupported: [additional_projections, global_reduced_grids, packed_support_maps, physical_typed_arrays,
+                layer_patch_tile_axes, intervals_static, spectral_execution, physical_vertical_diagnosis]
+transferred_responsibilities:
+  geometry: library dimensions/gimme_corners_ij/ij2xy/ij2ll/projection/CRS to labelled axes and native indices
+  canonical_origin: library CI-centred CRS translated to existing CF tangent-latitude origin; no fit
+  selection: direct selected H2D metadata accessor; redundant library field_type dispatch removed
+  hybrid: one library vcoordinate contract per transaction; no parent header reconstruction
+  identity: library axes/CRS/zones signature; shape alone is insufficient; vertical facts separate
+retained_exceptions:
+  original_header: admission flags, encoded CI corners, original normalized A/count; same-resource inquiry only
+  private_library_apis: _proj.crs, _readH2DField and allowlisted _readMiscField; version-matched fail-closed API
+  native_errors: selected FANION -91/-93/-94 cannot fall back to Misc
+  index: same-unit bounded length/count/duplicate observations; library omissions
+  structure: named L0 0/1 and mixed T0 observations; physical words never use this path
+  clock: raw consistency observation; no permissive timestamp substitution
+  scaling: native diagnostic text; no structured qualified multiplier query
+  cube_assembly: explicit record/Dask axis adapter; CombineLevels generic grouping/resource handles do not fit
+  grib: preflight coverage/geometry plus loader selection/grouping/laziness; no qualified simpler isolated replacement
+  legacy_native: explicit compatibility baseline until C3/C4; never an EPyGrAM fallback
+transaction_counts:
+  opens: 1
+  closes: 1
+  header_inquiries: 2
+  header_clock_inquiries: 2
+  selected_fanion_inspect: 2
+  selected_fanion_read: 3
+  metadata_physical_decodes: 0
+  selected_data_decodes: 1
+  geometry_transfer: O(nx+ny) axes plus CRS/zones; no full geographic JSON arrays
+independent_evidence:
+  geometry: Snyder equations; off-origin anchor, offset CI, C/I/E, both hemispheres
+  axis_tolerance_m: 1.0e-7
+  inverse_equation_tolerance_degrees: 2.0e-11
+  regular_axis_tolerance_degrees: 1.0e-10
+  encoded_corner_bound_degrees: 2.0e-5
+  existing_tolerances: unchanged
+  fields: independent columns/masks/valid zeros; sparse/reordered full/interface indices and original IDs
+  vectors: companions/neighbours before selection; native/analysis branches and idempotent preparation
+  grib: prescribed 700/850 hPa, cycle/time/units and 5-by-7 values; library field level 85000 Pa remains distinct
+  ordinary_readers: fresh NetCDF readers import neither FrameIt nor EPyGrAM
+  sources: compact generated fixtures read-only; no new private corpus or large run/download/upload
+compatibility:
+  yaml_defaults_extras: unchanged; explicit backend/helper and scientific declarations preserved
+  schema: existing scientific NetCDF names/dimensions/precision/compression/masks retained
+  provenance_additions: geometry_contract; fa_geometry_origin; fa_earth_model_origin
+  signature: horizontal_header_signature key retained; EPyGrAM value is now library-derived JSON
+  earth_model: projected radius explicitly declared; angular grid does not adopt library default geoid
+  sampling: common exact times/warnings/full exclusions; strict selectable; optional bilinear continuous polar
+  physical_operations: no new diagnostic, pressure/height, wind basis, extrapolation or missing-to-zero policy
+runtimes:
+  python: 3.13.16
+  pytest: 9.1.1
+  numpy: 2.5.4
+  scipy: 1.18.1
+  xarray: 2026.9.0
+  pyproj: 3.8.0
+  epygram: 2.1.0
+  falfilfa4py: 1.2.1
+  ctypesForFortran: 1.3.0
+  ectrans4py_distribution: 1.6.0
+  netCDF4: 1.7.2
+  FA_ecCodes_C: 2.44.0
+  GRIB_ecCodes_C: 2.50.0
+  eccodes_python: 2.44.0
+  eccodeslib: 2.50.0.33
+  cfgrib: 0.9.15.1
+  bronx: 2.1.2
+  footprints: 2.0.0
+  taylorism: 1.1.0
+  esmpy: 8.9.1
+  xesmf: 0.9.2
+  reference: {falfilfa4py: 1.3.0, ctypesForFortran: 2.2.1, netCDF4: 1.7.4,
+              eccodes_python: 2.48.0, FA_ecCodes_C: 2.48.0, GRIB_ecCodes_C: 2.50.0}
+  core_only:
+    absent: [epygram, falfilfa4py, ctypesForFortran, ectrans4py, eccodes, cfgrib, xesmf, ESMF, esmpy]
+    netCDF4: 1.7.4
+    setup: existing offline reference clone; optional packages absent, not a clean installation
+  installation: existing coherent helper; unmodified dependencies, no overrides or installed-file edits
+  native_source_revision: not independently established by package/version strings
+checks:
+  baseline_reference_full: {passed: 657, skipped: 1, subtests_passed: 2, seconds: 332.11}
+  baseline_epygram_full: {passed: 657, skipped: 1, subtests_passed: 2, seconds: 324.40}
+  library_focused: {passed: 41, skipped: 1, seconds: 22.71}
+  selected_storage_failure_focused: {passed: 3, skipped: 0, seconds: 1.13}
+  native_focused: {passed: 180, skipped: 1, seconds: 150.64}
+  reference_full: {passed: 667, skipped: 1, subtests_passed: 2, warnings: 722, seconds: 374.36}
+  epygram_full: {passed: 667, skipped: 1, subtests_passed: 2, warnings: 2055, seconds: 370.60}
+  native_ci: {passed: 136, skipped: 1, seconds: 128.67}
+  epygram_ci: {passed: 137, skipped: 1, seconds: 124.27}
+  spectral_native_ci: {passed: 22, skipped: 0, seconds: 18.49}
+  core_ci: {passed: 85, skipped: 109, subtests_passed: 2, seconds: 25.88}
+  skip_policy: only absent optional spectral candidate, explicit absence-only test, or confirmed absent core extras
+  installed_required_backends: exercised; no backend-dependent skip with its required backend installed
+  warnings: upstream cfgrib/xarray future warnings, NumPy/netCDF4 deprecations, focused binary-size warning
+  pip_check: reference, EPyGrAM and core-only pass
+  matrix: six packaged core-profile cases passed; this profile includes GRIB/NetCDF/native/polar regression
+  schema_only: four existing FA/coupled examples passed
+  dry_run: compact GRIB + EPyGrAM SURFEX; one exact time; distinct 5-by-7/7-by-9 grids; no data decode
+  lint_changed_python: passed
+  lint_repository: four pre-existing conservative.py findings, independently reproduced from git show HEAD
+  lint_baseline_findings: ['89:E501', '153:E501', '300:B905', '323:E501']
+  docs: strict Sphinx HTML build passed; final record inclusion rechecked at handover
+  wheel: no-dependency/no-build-isolation wheel build passed; final sources repackaged at handover
+  dry_run_output_directory: not created; test ! -e build/c2-dryrun-output passed
+  unavailable: [hosted_CI, Python_3.10_local, clean_dependency_install, new_real_producer_evidence, C3_multitime_products]
+verification_commands:
+  # The local conda executable was invoked by its absolute launcher path;
+  # use conda on PATH here to keep this record portable. Arguments below are unchanged.
+  environment: TMPDIR=$PWD/build OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+  reference_helper: FRAMEIT_TEST_EPYGRAM_PYTHON=$PWD/build/p5-epygram-env/bin/python
+  baseline_reference: conda run --no-capture-output -n frameit_env python -m pytest -q --basetemp build/c2-baseline-reference --junitxml=build/c2-baseline-reference.xml
+  baseline_epygram: conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m pytest -q --basetemp build/c2-baseline-epygram --junitxml=build/c2-baseline-epygram.xml
+  reference_full: conda run --no-capture-output -n frameit_env python -m pytest -q --basetemp build/c2-reference-verified --junitxml=build/c2-reference-verified.xml
+  epygram_full: conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m pytest -q --basetemp build/c2-epygram-verified --junitxml=build/c2-epygram-verified.xml
+  native_focused: >-
+    conda run --no-capture-output -n frameit_env python -m pytest -q
+    src/frameit/testing/numerical/test_fa_*.py
+    src/frameit/testing/numerical/test_arome_fa_coupling.py
+    src/frameit/testing/numerical/test_coupled_shared_polar.py
+    --basetemp build/c2-native-focused-verified --junitxml=build/c2-native-focused-verified.xml
+  library_focused: >-
+    conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m pytest -q
+    src/frameit/testing/numerical/test_fa_epygram_surfex.py
+    src/frameit/testing/numerical/test_fa_epygram_probe.py
+    src/frameit/testing/numerical/test_fa_epygram_geometry.py
+    --basetemp build/c2-library-focused --junitxml=build/c2-library-focused.xml
+  selected_storage_failure_focused: >-
+    conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m pytest -q
+    src/frameit/testing/numerical/test_fa_epygram_surfex.py::test_open_or_header_failure_closes_the_single_owned_resource
+    --basetemp build/c2-storage-checked --junitxml=build/c2-storage-checked.xml
+  native_ci: >-
+    conda run --no-capture-output -n frameit_env python -m pytest -q
+    src/frameit/testing/numerical/test_fa_io.py src/frameit/testing/numerical/test_fa_geometry.py
+    src/frameit/testing/numerical/test_fa_pipeline.py src/frameit/testing/numerical/test_fa_baseline.py
+    src/frameit/testing/numerical/test_fa_contracts.py src/frameit/testing/numerical/test_fa_cubes.py
+    src/frameit/testing/numerical/test_fa_mapping.py src/frameit/testing/numerical/test_fa_spectral.py
+    src/frameit/testing/numerical/test_fa_surface.py src/frameit/testing/numerical/test_coupled_shared_polar.py
+    src/frameit/testing/numerical/test_arome_fa_coupling.py
+    --basetemp build/c2-native-ci-verified --junitxml=build/c2-native-ci-verified.xml
+  epygram_ci: >-
+    conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m pytest -q
+    src/frameit/testing/numerical/test_fa_cubes.py src/frameit/testing/numerical/test_fa_epygram_probe.py
+    src/frameit/testing/numerical/test_fa_epygram_geometry.py src/frameit/testing/numerical/test_fa_geometry.py
+    src/frameit/testing/numerical/test_fa_mapping.py src/frameit/testing/numerical/test_fa_epygram_surfex.py
+    src/frameit/testing/numerical/test_fa_contracts.py src/frameit/testing/numerical/test_fa_surface.py
+    src/frameit/testing/numerical/test_fa_io.py src/frameit/testing/numerical/test_fa_pipeline.py
+    --basetemp build/c2-epygram-ci-verified --junitxml=build/c2-epygram-ci-verified.xml
+  core_ci: >-
+    conda run --no-capture-output -p "$PWD/build/c0-core-env" python -m pytest -q
+    src/frameit/testing/numerical/test_hpc_execution.py src/frameit/testing/numerical/test_logging.py
+    src/frameit/testing/numerical/test_fa_baseline.py src/frameit/testing/numerical/test_fa_contracts.py
+    src/frameit/testing/numerical/test_fa_cubes.py src/frameit/testing/numerical/test_fa_epygram_probe.py
+    src/frameit/testing/numerical/test_fa_epygram_geometry.py src/frameit/testing/numerical/test_fa_epygram_surfex.py
+    src/frameit/testing/numerical/test_fa_io.py src/frameit/testing/numerical/test_fa_surface.py
+    src/frameit/testing/numerical/test_fa_mapping.py src/frameit/testing/numerical/test_fa_spectral.py
+    src/frameit/testing/numerical/test_coupled_shared_polar.py src/frameit/testing/numerical/test_arome_fa_coupling.py
+    src/frameit/testing/numerical/test_fa_pipeline.py::test_coupled_netcdf_sources_do_not_need_fa_backend
+    --basetemp build/c2-core-ci-verified --junitxml=build/c2-core-ci-verified.xml
+  spectral_ci: >-
+    conda run --no-capture-output -n frameit_env "$SPECTRAL_PYTHON" -m pytest -q
+    src/frameit/testing/numerical/test_fa_spectral.py src/frameit/testing/numerical/test_fa_io.py
+    src/frameit/testing/numerical/test_fa_pipeline.py
+    --basetemp build/c2-spectral-ci --junitxml=build/c2-spectral-ci.xml
+  ancillary:
+    - frameit validate example/config_file/coupled_fa.yaml --schema-only
+    - frameit validate example/config_file/coupled_cyclone_polar.yaml --schema-only
+    - frameit validate example/config_file/coupled_arome_fa_polar.yaml --schema-only
+    - frameit validate example/config_file/arome_fa_native_cubes.yaml --schema-only
+    - frameit run build/c2-coupled-dryrun.yaml --dry-run
+    - frameit run-matrix-test --ci --profile core --output build/c2-matrix
+    - ruff check src/frameit
+    - git show HEAD:src/frameit/processing/polar/conservative.py | ruff check --stdin-filename src/frameit/processing/polar/conservative.py -
+    - LC_ALL=C LANG=C sphinx-build -q -W --keep-going -b html docs/source build/c2-docs-final
+    - python -m pip wheel --no-deps --no-build-isolation . -w build/c2-wheel-final
+    - git diff --check
+next_stage_prerequisites:
+  C3: multi-time actual AROME-convention GRIB + admitted EPyGrAM SURFEX, distinct grids, moving centres,
+      common/strict exclusions, disabled/shared bilinear targets, sync/spawn exports and independent readers
+  C4: C3 gate plus full regressions, evidence ledger closure and explicit backend/extra/default migration

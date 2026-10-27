@@ -50,6 +50,9 @@ retaining full/interface indices and checked hybrid coefficients. Select
 ctypesForFortran 1.3.0 bridge must be installed separately from the `fa` extra.
 `input.fa.python_executable` can select that coherent Python-3.13 helper. Native
 extraction does not require pressure or height diagnosis.
+The [C2 geometry/metadata adapter](docs/source/user_guide/fa_epygram_c2.rst) uses
+qualified EPyGrAM axes/CRS/zones while preserving native indices, explicit Earth
+model declarations, existing CF origins and selected-only field decoding.
 The [P0 baseline and family matrix](docs/source/user_guide/fa_baseline.rst)
 separate current evidence from blocked capabilities; full FA compatibility is
 not claimed.

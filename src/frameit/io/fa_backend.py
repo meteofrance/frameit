@@ -144,12 +144,13 @@ def request_fa(request):
 
 def inspect_fa(path, profile, fields=(), *, validate_selection=True, timeout_seconds=120.,
               expected_source=None, metadata_fields=(), backend="native", python_executable=None,
-              earth_radius_m=None):
+              earth_radius_m=None, geometry_options=None):
     return request_fa({"operation": "inspect", "path": str(path), "profile": profile,
                        "fields": list(dict.fromkeys(fields)),
                        "validate_selection": validate_selection,
                        "expected_source": expected_source or {},
                        "metadata_fields": list(dict.fromkeys(metadata_fields)),
                        "backend": backend, "python_executable": python_executable,
-                       "earth_radius_m": earth_radius_m,
+                        "earth_radius_m": earth_radius_m,
+                        "geometry_options": geometry_options,
                        "timeout_seconds": timeout_seconds})

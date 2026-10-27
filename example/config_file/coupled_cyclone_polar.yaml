@@ -30,6 +30,7 @@ input:
           # FrameIt[fa-epygram]; python_executable can select a separate helper.
           profile: surfex_history
           subdomain: CI
+          # Library-derived geometry is checked before shared-target sampling/budgets.
           expected_source: {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0}
           # Inspection declaration only: confirm the actual producer Earth model.
           earth_radius_m: 6371229.0

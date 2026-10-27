@@ -68,6 +68,7 @@ def open_metadata(files, conf, resources):
                             "earth_radius_m": conf.fa_options["earth_radius_m"]})
             records[-1]["horizontal_header_signature"] = signature
             records[-1]["grid_lookup"] = fa_geometries[signature].attrs["fa_grid_lookup"]
+            records[-1]["geometry_contract"] = info["geometry"].get("epygram")
             records[-1].update(native_cubes=info["native_cubes"],
                                hybrid_contract=info.get("hybrid_contract"),
                                backend=conf.fa_options["backend"])

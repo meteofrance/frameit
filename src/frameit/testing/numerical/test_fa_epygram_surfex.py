@@ -103,13 +103,16 @@ destination = Path(destination)
 epygram = fa_epygram.initialize(destination, request.get('earth_radius_m'))
 fa_epygram.initialize = lambda *args: epygram
 calls, decoded, structural = Counter(), [], []
-for name in ('wfaitou', 'wfairme', 'wfacies', 'wfadiex'):
+for name in ('wfaitou', 'wfairme', 'wfacies', 'wfadiex', 'wfanion'):
     original = getattr(FA, name)
     def counted(*args, name=name, original=original):
         calls[name] += 1
         if injected_error == 'geometry' and name == 'wfacies':
             raise RuntimeError('injected geometry failure')
         result = original(*args)
+        if injected_error == 'storage' and name == 'wfacies' and calls[name] == 2:
+            result = list(result)
+            result[6], result[7] = result[7], result[6]  # same point count, different storage axes
         if injected_error == 'clock' and name == 'wfadiex':
             result[13] = 3600  # inconsistent raw reference hour/seconds
         return result
@@ -136,7 +139,7 @@ LFI.wlfilec = narrow_words
 def forbidden(*args, **kwargs):
     raise AssertionError('legacy raw-reader prepass/alternate physical decoder used')
 FA.wfacile = fa_worker._inspect = forbidden
-if injected_error and injected_error not in ('geometry', 'clock'):
+if injected_error and injected_error not in ('geometry', 'clock', 'storage'):
     fanion = FA.wfanion
     def failure(unit, prefix, level, suffix):
         if prefix + suffix == 'SFX.T2M':
@@ -158,6 +161,8 @@ except Exception as exc:
         assert 'injected geometry failure' in str(exc), str(exc)
     elif injected_error == 'clock':
         assert 'inconsistent FA forecast reference date' in str(exc), str(exc)
+    elif injected_error == 'storage':
+        assert 'sampling/storage contradicts' in str(exc), str(exc)
     elif injected_error == 'late':
         assert 'Field is not H2D' in str(exc), str(exc)
     else:
@@ -183,6 +188,8 @@ def test_one_resource_library_structure_and_selected_payload(tmp_path, operation
     before = path.read_bytes()
     request = {"operation": operation, "path": str(path), "profile": "surfex_history",
                "fields": ["SFX.T2M"], "backend": "epygram", "earth_radius_m": 6371229.,
+               "geometry_options": {"subdomain": "CI", "earth_radius_m": 6371229.,
+                                    "max_points": 63},
                "metadata_fields": ["SFX.PROGRAM", "SFX.VERSION", "SFX.LAT0", "SFX.PACK",
                                    "SFX.L1D", "SFX.L2D", "SFX.DTCUR", "SFX._FBUF_DIM1"],
                "zone": [1, 8, 1, 6], "key": [[None, None, -2], [None, None, -3]]}
@@ -195,9 +202,11 @@ def test_one_resource_library_structure_and_selected_payload(tmp_path, operation
     assert info["backend_versions"]["FA_backend"] == "epygram"
     assert info["backend_versions"]["falfilfa4py"] == "1.2.1"
     assert "SFX._FBUF_NAME" in report["structural"]  # library, not raw directory decode
-    # Transitional header/canonical-grid adapter remains explicit until C2.
+    # Original admission/corner/normalization and clock observations remain narrow.
     assert report["calls"]["wfacies"] == report["calls"]["wfadiex"] == 2
+    assert report["calls"]["wfanion"] == (2 if operation == "inspect" else 3)
     if operation == "inspect":
+        assert info["geometry"]["epygram"]["native_shape"] == [7, 9]
         assert report["decoded"] == []
         assert info["reference_time"] == "2026-01-01T00:00:00"
         assert info["valid_time"] == info["surfex_metadata"]["STATE_TIME"] == "2026-01-01T01:00:00"
@@ -244,7 +253,7 @@ def test_later_physical_failure_also_cannot_dispatch_to_misc_reader(tmp_path):
 
 
 @NATIVE
-@pytest.mark.parametrize("failure", ["geometry", "clock"])
+@pytest.mark.parametrize("failure", ["geometry", "clock", "storage"])
 def test_open_or_header_failure_closes_the_single_owned_resource(tmp_path, failure):
     path, _truth = surface_fixture(tmp_path)
     request = {"operation": "inspect", "path": str(path), "profile": "surfex_history",

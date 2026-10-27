@@ -94,7 +94,7 @@ def _typed_metadata(lfi, unit, records, name, metadata, directory):
 
 
 def _active_header(geometry):
-    """Keep the existing labelled-grid contract until the C2 geometry transfer."""
+    """Bound original admission/corner/normalization evidence and legacy headers."""
     geometry = dict(geometry)
     # Work buffers contain inactive/uninitialized entries, including NaNs.
     geometry.pop("KNOZPA")

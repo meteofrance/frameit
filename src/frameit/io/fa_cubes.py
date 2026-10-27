@@ -30,7 +30,7 @@ def record_selection(options, names):
 def cube_layouts(info, options, names):
     """Check EPyGrAM field levels against native header bounds and declarations."""
     layouts, axes = {}, {}
-    nlevels = info["geometry"]["KNIVER"]
+    nlevels = len(info.get("hybrid_contract", {}).get("interface_indices", [])) - 1
     for name in names:
         declaration = options["native_cubes"].get(name)
         if declaration is None:
@@ -67,7 +67,7 @@ def cube_layouts(info, options, names):
     return layouts
 
 
-def hybrid_contract(header):
+def hybrid_contract(header, vertical=None):
     """FA PREFER scales dimensionless A; A/B define interfaces, not mass means.
 
     The unmodified EPyGrAM 2.1.0 FA reader separately exposes the same arrays
@@ -85,6 +85,18 @@ def hybrid_contract(header):
         a_pa = a * reference
     if not np.isfinite(a_pa).all():
         raise ValueError("Invalid FA native hybrid header: PAHYBR * PREFER is not finite")
+    if vertical is not None:
+        grid = vertical.grid
+        if grid.get("ABgrid_position") != "flux":
+            raise ValueError("Unqualified EPyGrAM hybrid coefficient grid")
+        entries = grid["gridlevels"]
+        if (not np.array_equal([entry[0] for entry in entries], np.arange(1, count + 1))
+                or not np.array_equal([entry[1]["Ai"] for entry in entries], a_pa)
+                or not np.array_equal([entry[1]["Bi"] for entry in entries], b)):
+            raise ValueError("EPyGrAM hybrid coefficients contradict native PREFER/A/B")
+        # Use the qualified library's pressure-valued coefficients; original
+        # normalized A and PREFER remain native observations, not inferred inverses.
+        a_pa = np.asarray([entry[1]["Ai"] for entry in entries])
     return {"interface_indices": list(range(1, count + 1)),
             "coefficient_storage_indices": list(range(count)), "a_normalized": a.tolist(),
             "a_pa": a_pa.tolist(), "b": b.tolist(), "reference_pressure_pa": reference,

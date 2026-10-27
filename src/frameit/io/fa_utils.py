@@ -19,7 +19,6 @@ from frameit.io.fa_cubes import (
     HYBRID_AUXILIARIES,
     add_cube_coordinates,
     cube_layouts,
-    hybrid_contract,
     record_selection,
     validate_cube_requests,
     vertical_signature,
@@ -43,7 +42,9 @@ def inspect_fa_inputs(path, conf, fields):
     info = inspect_fa(path, options["profile"], records, timeout_seconds=options["timeout_seconds"],
                       expected_source=options["expected_source"], backend=options["backend"],
                       python_executable=options["python_executable"],
-                      earth_radius_m=options["earth_radius_m"])
+                      earth_radius_m=options["earth_radius_m"],
+                      geometry_options={key: options[key] for key in (
+                          "subdomain", "earth_radius_m", "max_points")})
     for name in fields:
         metadata = options["field_metadata"].get(name)
         if metadata is None:
@@ -61,7 +62,6 @@ def inspect_fa_inputs(path, conf, fields):
         for record in records}
     info["native_cubes"] = cube_layouts(info, options, fields)
     if info["native_cubes"]:
-        info["hybrid_contract"] = hybrid_contract(info["geometry"])
         validate_cube_requests(info, normalize_requests(conf.requests_user()), conf)
     return info
 
@@ -188,7 +188,7 @@ def concat_fa2ds_by_vert_coord(
             vertical_signatures.add(vertical_signature(info))
             if len(vertical_signatures) != 1:
                 raise ValueError("Selected FA inputs have incompatible native vertical definitions")
-        # Only the active horizontal header entries define source sampling.
+        # Library axes/CRS/zones define EPyGrAM sampling; vertical facts are separate.
         signature = geometry_signature(info["geometry"], wind_conf.fa_options)
         if signature not in geometries:
             geometries[signature] = fa_geometry(info["geometry"], wind_conf.fa_options)
@@ -242,8 +242,9 @@ def concat_fa2ds_by_vert_coord(
                            "field_descriptors": info["field_descriptors"],
                             "expected_source": wind_conf.fa_options["expected_source"]})
         provenance[-1].update(native_cubes=info["native_cubes"],
-                              hybrid_contract=info.get("hybrid_contract"),
+                               hybrid_contract=info.get("hybrid_contract"),
                               backend=wind_conf.fa_options["backend"])
+        provenance[-1]["geometry_contract"] = info["geometry"].get("epygram")
         provenance[-1]["producer_metadata"] = info["surfex_metadata"]
     if len(geometries) != 1:
         raise ValueError("Selected FA inputs have incompatible horizontal geometry")

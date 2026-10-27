@@ -7,6 +7,9 @@ association on the evidenced modern regional AROME/SURFEX branch. Additional
 AROME/SURFEX headers need separate admission evidence; global/reduced grids and
 other producers are outside this phase. This is not full FA compatibility.
 The :doc:`fa_baseline` in-scope missing-corpus requests remain applicable.
+This is the historical P2 repair record. The maintained EPyGrAM path now uses
+the library-derived geometry/CRS/zones in :doc:`fa_epygram_c2`, with the same
+source-axis lookup and CF origin. EPyGrAM independence is superseded.
 
 Repair and numerical compatibility
 ------------------------------------
@@ -147,8 +150,9 @@ reference in :ref:`fa-geometry-method`. Tests use independently evaluated equati
 with ``2e-11 degree`` agreement tolerances; a pyproj round trip alone is not the
 scientific oracle. Internal sample/axis consistency checking does not constitute
 independent confirmation of a real producer's CRS or scientific field meaning.
-Python 3.13, EPyGrAM independence and the native FA/GRIB isolation boundary remain
-unchanged. No new optional dependency is required for these core geometry tests.
+P2 retained Python 3.13 and the native FA/GRIB isolation boundary. The former
+EPyGrAM-independence requirement is superseded by C2's maintained library path;
+core-only geometry tests still require no native optional dependency.
 
 P3 prerequisites remain actual producer/container examples, native type/packing/
 support-map specifications, known ordering and missing-value conventions, layer/

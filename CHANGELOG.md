@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Adapt qualified EPyGrAM geometry/CRS/CI/C/E zones to the labelled source-grid
+  contract, preserving canonical CF origins, native indices, explicit Earth models
+  and independent encoded-corner checks. Record additive library geometry provenance.
+- Remove redundant selected-field type dispatch and parent hybrid reconstruction;
+  check source-level library interface A/B against original normalized A/PREFER
+  once per transaction. Preserve sparse cubes, vector dependencies and GRIB/NetCDF
+  contracts, with independent geometry/zone and isolated GRIB API regressions.
+
 - Admit evidenced AROME-47 / SURFEX-8.1 dense PACK=0/X1 histories through the
   maintained EPyGrAM adapter. Use one read-only resource per transaction for
   inventory, typed structure and selected data; retain narrow type/error/clock

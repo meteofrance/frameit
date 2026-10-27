@@ -192,45 +192,140 @@ def inspect_resource(resource, request):
 
     from frameit.io.fa_worker import _active_header, _describe
 
-    # Transitional public-contract adapter: original modern header flags, encoded
-    # CI corners and normalized A/PREFER remain necessary to the existing grid
-    # signature/corner guards. No second geometry reconstruction happens here.
-    # C2 transfers that labelled-grid contract; use the library's raw-header API
-    # on this resource until then, rather than another raw resource/prepass.
+    # Narrow original-header evidence: the library geometry omits admission flags,
+    # independently encoded CI corners and original normalized A. Never reconstruct
+    # geometry from these words on the EPyGrAM path.
     header = _active_header(dict(resource._raw_header_get()))
     info = _describe(FA, LFI, resource._unit, header, _clocks(resource), resource.cdiden.strip(),
                      _inventory(resource), request, source=resource)
-    for name, descriptor in info["field_descriptors"].items():
-        if (descriptor["native"]["representation"] == "gridpoint"
-                and descriptor["eligibility"]["decode"] != "blocked"):
-            descriptor["sampling"]["epygram"] = field_metadata(resource, name, header)
+    geometry_options = request.get("geometry_options")
+    if geometry_options is not None:
+        header["epygram"] = geometry_contract(resource.geometry, header, geometry_options)
+    selected = {name: descriptor for name, descriptor in info["field_descriptors"].items()
+                if descriptor["native"]["representation"] == "gridpoint"
+                and descriptor["eligibility"]["decode"] != "blocked"}
+    if selected and (resource.geometry.dimensions.get("Y"),
+                     resource.geometry.dimensions.get("X")) != (header["KNLATI"], header["KNXLON"]):
+        raise ValueError("EPyGrAM sampling/storage contradicts the native FA contract")
+    for name, descriptor in selected.items():
+        facts = field_metadata(resource, name)
+        descriptor["sampling"]["epygram"] = facts
+        if facts["type_of_first_fixed_surface"] == 119 and "hybrid_contract" not in info:
+            from frameit.io.fa_cubes import hybrid_contract
+
+            info["hybrid_contract"] = hybrid_contract(header, resource.geometry.vcoordinate)
     return info
 
 
-def field_metadata(resource, name, header):
-    field = resource.readfield(name, getdata=False)
+def geometry_contract(geometry, header, options):
+    """Qualified library axes/CRS/zones, serialized without native objects.
+
+    EPyGrAM recentres projected x/y on CI. Translate its CRS origin to the
+    established CF tangent-latitude origin, without changing sampling or fitting
+    the independently encoded corners. Only O(nx+ny) coordinates cross the worker.
+    """
+    from pyproj import CRS, Transformer
+
+    from frameit.io.fa_geometry import admitted_geometry
+
+    p, k, selected, _anchor = admitted_geometry(header, options)
+    ny, nx = header["KNLATI"], header["KNXLON"]
+    if (geometry.position_on_horizontal_grid != "center"
+            or (geometry.dimensions.get("Y"), geometry.dimensions.get("X")) != (ny, nx)):
+        raise ValueError("EPyGrAM geometry contradicts native FA storage dimensions/position")
+    regular = p[1] == -9
+    if geometry.name != ("regular_lonlat" if regular else "lambert"):
+        raise ValueError("EPyGrAM geometry is outside the qualified regional family")
+
+    def zone(name):
+        corners = geometry.gimme_corners_ij(subzone=name)
+        x0, y0 = corners["ll"]
+        x1, y1 = corners["ur"]
+        bounds = np.asarray([x0, x1 + 1, y0, y1 + 1])
+        if (not np.isfinite(bounds).all() or not np.equal(bounds, np.floor(bounds)).all()
+                or not (0 <= x0 <= x1 < nx and 0 <= y0 <= y1 < ny)):
+            raise ValueError("Invalid EPyGrAM native FA zone bounds")
+        return bounds.astype(int).tolist()
+
+    zones = {"CI": zone("CI")}
+    if not regular:
+        zones["C"] = zone("C")
+        zones["CIE"] = zone(None)
+    if (zones["CI"] != [int(k[2]) - 1, int(k[3]), int(k[4]) - 1, int(k[5])]
+            or zones[options["subdomain"]] != list(selected)):
+        raise ValueError("EPyGrAM native zones contradict original FA domain indices")
+    x, _ = geometry.ij2xy(np.arange(nx), 0)
+    _, y = geometry.ij2xy(0, np.arange(ny))
+    if np.ma.is_masked(x) or np.ma.is_masked(y):
+        raise ValueError("Masked EPyGrAM native FA axes are not qualified")
+    shift = (0., 0.)
+    if regular:
+        mapping = {"grid_mapping_name": "latitude_longitude"}
+    else:
+        radius = options["earth_radius_m"]
+        if geometry.geoid != {"a": radius, "b": radius}:
+            raise ValueError("EPyGrAM geoid contradicts explicit input.fa.earth_radius_m")
+        projection = geometry.projection
+        if geometry.secant_projection or projection["rotation"].get("degrees") != 0:
+            raise ValueError("Only unrotated spherical tangent Lambert FA is qualified")
+        # No public CRS accessor in 2.1.0. The version-matched _proj owns the
+        # projection, including its CI-centred false origin; do not rebuild from FA.
+        library_crs = geometry._proj.crs
+        cf = library_crs.to_cf()
+        parallels = np.atleast_1d(cf["standard_parallel"])
+        latitude = projection["reference_lat"].get("degrees")
+        if not np.equal(parallels, parallels[0]).all():
+            raise ValueError("EPyGrAM CRS does not describe the qualified tangent cone")
+        mapping = {"grid_mapping_name": cf["grid_mapping_name"],
+                   "standard_parallel": float(latitude),
+                   "latitude_of_projection_origin": float(latitude),
+                   "longitude_of_central_meridian": float(cf["longitude_of_central_meridian"]),
+                   "earth_radius": float(radius)}
+        canonical = CRS.from_cf(mapping)
+        shift = Transformer.from_crs(library_crs, canonical, always_xy=True).transform(0., 0.)
+        x, y = np.asarray(x) + shift[0], np.asarray(y) + shift[1]
+    if not (np.isfinite(x).all() and np.isfinite(y).all() and np.isfinite(shift).all()):
+        raise ValueError("Nonfinite EPyGrAM native FA axes")
+    x0, x1, y0, y1 = zones["CI"]
+    lon, lat = geometry.ij2ll(np.array([x0, x1 - 1]), np.array([y0, y1 - 1]))
+    if np.ma.is_masked(lon) or np.ma.is_masked(lat):
+        raise ValueError("Masked EPyGrAM FA geography is not qualified")
+    difference = np.array([lon[0], lat[0], lon[1], lat[1]]) - np.rad2deg(p[12:16])
+    difference[[0, 2]] = (difference[[0, 2]] + 180) % 360 - 180
+    # Same original-header precision bound as the independently checked baseline.
+    if not np.isfinite(difference).all() or np.max(np.abs(difference)) > 2.e-5:
+        raise ValueError("EPyGrAM geometry/declared Earth model contradicts encoded CI corners")
+    return {"schema_version": 1, "origin": "EPyGrAM-2.1.0 geometry/CRS/native zones",
+            "native_shape": [ny, nx], "zones": zones,
+            "x": np.asarray(x).tolist(), "y": np.asarray(y).tolist(), "crs": mapping,
+            "axis_origin_translation": list(shift),
+            "axis_origin_policy": "library CI centre translated to existing CF origin; no fitting",
+            "earth_model": {"radius_m": options.get("earth_radius_m"),
+                            "origin": ("explicit input.fa.earth_radius_m"
+                                       if options.get("earth_radius_m") is not None else
+                                       "unresolved; angular grid only, no library geoid adopted")},
+            "corner_check": "original encoded CI corners; 2e-5 degree header-precision bound"}
+
+
+def field_metadata(resource, name):
+    # The selected raw encoding guard already ran. Avoid the extra field_type
+    # inquiry and broad Misc dispatch; this accessor fails closed at every inquiry.
+    field = resource._readH2DField(name, getdata=False)
     if getattr(field, "structure", None) != "H2D" or field.spectral:
         raise ValueError(f"{name}: only decoded gridpoint H2D records are admitted")
     if field.validity.cumulativeduration() is not None:
         raise ValueError(f"{name}: EPyGrAM reports an interval; selection is instantaneous only")
     geometry = field.geometry
     if (geometry.position_on_horizontal_grid != "center"
-            or (geometry.dimensions["Y"], geometry.dimensions["X"]) != (
-                header["KNLATI"], header["KNXLON"])):
+            or geometry.dimensions != resource.geometry.dimensions):
         raise ValueError(f"{name}: EPyGrAM sampling/storage contradicts the native FA contract")
     vertical = geometry.vcoordinate
     levels = np.asarray(vertical.levels)
     if levels.shape != (1,) or not np.isfinite(levels).all():
         raise ValueError(f"{name}: one finite native level per selected record is required")
     if vertical.typeoffirstfixedsurface == 119:
-        grid = vertical.grid
-        if grid.get("ABgrid_position") != "flux":
-            raise ValueError(f"{name}: unqualified hybrid coefficient grid")
-        a = [entry[1]["Ai"] for entry in grid["gridlevels"]]
-        b = [entry[1]["Bi"] for entry in grid["gridlevels"]]
-        if (not np.array_equal(a, np.asarray(header["PAHYBR"]) * header["PREFER"])
-                or not np.array_equal(b, header["PBHYBR"])):
-            raise ValueError(f"{name}: EPyGrAM hybrid coefficients contradict native PREFER/A/B")
+        if vertical.grid != resource.geometry.vcoordinate.grid:
+            raise ValueError(f"{name}: field hybrid grid contradicts the library resource")
     return {"type_of_first_fixed_surface": int(vertical.typeoffirstfixedsurface),
             "levels": levels.tolist(), "horizontal_position": "center",
             "header_position_default": vertical.position_on_grid,

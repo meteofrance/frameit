@@ -20,7 +20,8 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
                   extra_metadata=False, projection_latitude=None, surface_fields=None,
                   surface_pack=0, projected_spacing_m=1000., field_values=None,
                   atmospheric_fields=None, hybrid_header=None, surface_directory=None,
-                  structural_overrides=None, ci_bounds=None):
+                  structural_overrides=None, ci_bounds=None, i_widths=(0, 0),
+                  projection_center=None, angular_steps_degrees=(.01064, .01)):
     from falfilfa4py import FA, LFI
 
     if path.exists():
@@ -36,8 +37,12 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
     if ci_bounds is not None and projection_latitude is None:
         raise ValueError("Fixture CI/CIE distinction requires projected geometry")
     k[2:6] = x0 + 1, x1, y0 + 1, y1
+    if any(w < 0 or 2*w >= n for w, n in zip(
+            i_widths, (x1 - x0, y1 - y0), strict=True)):
+        raise ValueError("Fixture I-zone widths must leave a nonempty C zone")
+    k[6:8] = i_widths
     p[0:2] = -1, -9
-    p[4:8] = np.deg2rad([60., -20., .01064, .01])
+    p[4:8] = np.deg2rad([60., -20., *angular_steps_degrees])
     p[8:10] = p[6] * (nx - 1), p[7] * (ny - 1)
     p[12:16] = [p[4] - (nx - 1) * p[6] / 2, p[5] - (ny - 1) * p[7] / 2,
                  p[4] + (nx - 1) * p[6] / 2, p[5] + (ny - 1) * p[7] / 2]
@@ -49,14 +54,19 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
         n = np.sin(phi0)
         f = np.cos(phi0) * np.tan(np.pi / 4 + phi0 / 2)**n / n
         rho0 = 6371229. * f / np.tan(np.pi / 4 + phi0 / 2)**n
+        anchor_lon, anchor_lat = np.deg2rad(projection_center or (50., projection_latitude))
+        anchor_rho = 6371229. * f / np.tan(np.pi / 4 + anchor_lat / 2)**n
+        anchor_x = anchor_rho * np.sin(n * (anchor_lon - lam0))
+        anchor_y = rho0 - anchor_rho * np.cos(n * (anchor_lon - lam0))
         xx = np.array([-1., 1.]) * (x1 - x0 - 1) * projected_spacing_m / 2
         yy = np.array([-1., 1.]) * (y1 - y0 - 1) * projected_spacing_m / 2
+        xx, yy = xx + anchor_x, yy + anchor_y
         rho = np.sign(n) * np.hypot(xx, rho0 - yy)
         theta = np.arctan2(np.sign(n) * xx, np.sign(n) * (rho0 - yy))
         corners_lon = lam0 + theta / n
         corners_lat = 2 * np.arctan((6371229. * f / rho)**(1 / n)) - np.pi / 2
         p[1] = abs(n)
-        p[2:6] = lam0, phi0, lam0, phi0
+        p[2:6] = lam0, phi0, anchor_lon, anchor_lat
         p[6:10] = (projected_spacing_m, projected_spacing_m,
                     nx * projected_spacing_m, ny * projected_spacing_m)
         p[12:16] = corners_lon[0], corners_lat[0], corners_lon[1], corners_lat[1]

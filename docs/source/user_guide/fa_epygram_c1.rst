@@ -7,6 +7,8 @@ The historical :doc:`fa_epygram_c0` supplies the API investigation and cleanup
 ledger. This increment qualifies compact engineering fixtures, not arbitrary
 producer fields or the full multi-time AROME-GRIB/SURFEX production workflow.
 No independent human scientific approval is claimed.
+The subsequent :doc:`fa_epygram_c2` transfers geometry/CRS/zones to library APIs
+and consolidates selected vertical metadata; the C1 counts/ledger below are historical.
 
 Admitted family and explicit scientific contract
 -------------------------------------------------------

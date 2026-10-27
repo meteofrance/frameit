@@ -167,14 +167,9 @@ def test_epygram_optionality_and_native_contradictions(tmp_path, monkeypatch):
     vertical = SimpleNamespace(typeoffirstfixedsurface=119, levels=[2], position_on_grid="mass",
                                grid={"ABgrid_position": "flux", "gridlevels": [
                                    (1, {"Ai": 0., "Bi": 0.}), (2, {"Ai": 1., "Bi": 1.})]})
-    field = SimpleNamespace(structure="H2D", spectral=False,
-                            validity=SimpleNamespace(cumulativeduration=lambda: None),
-                            geometry=SimpleNamespace(position_on_horizontal_grid="center",
-                                dimensions={"Y": 7, "X": 9}, vcoordinate=vertical))
-    resource = SimpleNamespace(readfield=lambda *args, **kw: field)
     with pytest.raises(ValueError, match="contradict native PREFER/A/B"):
-        fa_epygram.field_metadata(resource, "S002X", {"KNLATI": 7, "KNXLON": 9,
-            "PAHYBR": [0., .1], "PBHYBR": [0., 1.], "PREFER": 100000.})
+        hybrid_contract({"KNIVER": 1, "PAHYBR": [0., .1], "PBHYBR": [0., 1.],
+                         "PREFER": 100000.}, vertical)
     result = subprocess.run([sys.executable, "-c", """
 import importlib.abc, sys
 class NoNative(importlib.abc.MetaPathFinder):

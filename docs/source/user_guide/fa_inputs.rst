@@ -9,6 +9,8 @@ diagnostic catalogue or qualification of every producer's scientific fields.
 The primary integration target is now **EPyGrAM-backed SURFEX FA plus AROME GRIB**.
 The :doc:`fa_epygram_c1` admits the evidenced AROME-47 / SURFEX-8.1 dense layout
 through EPyGrAM, using a single read-only resource and selected library decoding.
+The :doc:`fa_epygram_c2` transfers labelled geometry/CRS/zones and selected vertical
+metadata to qualified library APIs, preserving source indices and CF origins.
 The :doc:`fa_epygram_c0` remains the historical baseline/API evidence and cleanup
 ledger. Other producer/native-container integrations are outside this increment.
 
@@ -204,6 +206,9 @@ Projected inputs require explicit ``earth_radius_m``. ``subdomain: CI`` (default
 keeps central plus intermediate points; ``C`` excludes the declared I-zone widths.
 The spectral extension zone is excluded. Shape/zone indices, angles, radius and
 CRS are retained; there is no fitting or guessed Earth-shape default.
+With ``backend: epygram``, qualified library axes/CRS/zones define the labelled
+grid; original header flags/corners remain admission evidence. C2 records the
+library-to-existing-CF origin translation and explicit Earth-model origin.
 Dateline-crossing/polar FA grids and unsupported projections fail explicitly.
 Existing spacing/anisotropy checks still apply.
 
@@ -225,6 +230,9 @@ Per-file versioned field descriptors retain unresolved facts explicitly. Decode
 logs and ``fa_decoder.field_observations`` add observed undefined-value and
 scaling-warning/fallback facts. A representative input descriptor is also stored
 as a JSON variable attribute; it does not replace per-file run provenance.
+On the EPyGrAM path, ``geometry_contract`` records library axes/CRS/native zones
+and origin evidence. ``horizontal_header_signature`` retains its key but now has
+a library-derived JSON value, not the legacy raw-header layout.
 
 Existing atomic publication, exclusive run ownership and final ``run-status.yaml``
 handle helper/export failures. Failed required sources never publish a completed
@@ -258,6 +266,10 @@ tangent latitude :math:`\phi_0`, :math:`n=\sin\phi_0`,
 :math:`\rho=RF/\tan(\pi/4+\phi/2)^n`; inverse equations retain the signed southern
 cone. Native offsets locate the CI centre; C selection changes slices, not the
 anchor. Geometry construction never interpolates physical fields.
+For the maintained EPyGrAM path, the library owns header interpretation and CRS;
+C2 translates its CI-centred axes to the established CF origin and expands the
+library-derived axes/CRS in the parent. Original encoded corners remain an
+independent consistency check; no raw-header geometry reconstruction runs there.
 
 **Independent checks:** asymmetric geometry is checked against separately
 evaluated spherical equations in ``test_fa_geometry.py`` (absolute tolerance

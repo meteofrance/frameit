@@ -129,6 +129,37 @@ def test_grib_library_metadata_selection_preserves_native_pressure_units(tmp_pat
     assert selected["metadata_only"]["levels"] == [85000]  # library field is in Pa
     assert selected["metadata_only"]["valid"] == "2026-01-01 01:00:00"
     assert not selected["metadata_only"]["data_present"]
+    # Compare the actual current public contract, not another EPyGrAM round trip.
+    # No production switch: listfields/select does not replace lazy xarray grouping.
+    from frameit.core.preflight import _grib_metadata
+    from frameit.io.grib_utils import concat_grib2ds_by_vert_coord
+    from frameit.io.loader import DatasetResources
+
+    metadata = _grib_metadata(path)
+    levels = next(ds for ds in metadata if "isobaricInhPa" in ds.coords)
+    assert levels.isobaricInhPa.values.tolist() == [700., 850.]
+    assert levels.isobaricInhPa.attrs["units"] == "hPa"
+    assert levels.t.attrs["units"] == selected["metadata"]["units"] == "K"
+    assert levels.attrs["_frameit_forecast_reference_times"] == ["2026-01-01T00:00:00.000000000"]
+    assert str(levels.valid_time.values[0]) == "2026-01-01T01:00:00.000000000"
+    with DatasetResources() as resources:
+        groups, _ = concat_grib2ds_by_vert_coord([path], {
+            "isobaricInhPa": {"variables": ["t"], "levels": [850]}}, {},
+            index_dir=tmp_path / "indexes", resources=resources, filter_requested=True)
+        data = groups["isobaricInhPa"]
+        assert data.isobaricInhPa.values.tolist() == [850.]
+        np.testing.assert_array_equal(data.t.squeeze(), (np.arange(35) + 280.).reshape(5, 7))
+        assert data.t.attrs["units"] == "K"
+        data.to_netcdf(tmp_path / "selected.nc", engine="netcdf4")
+    ordinary = subprocess.run([EPYTHON, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1], engine='netcdf4') as ds:
+    assert ds.isobaricInhPa.values.tolist() == [850.]
+    assert ds.t.attrs['units'] == 'K'
+    np.testing.assert_array_equal(ds.t.squeeze(), (np.arange(35)+280.).reshape(5,7))
+assert not {'frameit', 'epygram', 'falfilfa4py'} & sys.modules.keys()
+""", str(tmp_path / "selected.nc")], capture_output=True, text=True, timeout=30)
+    assert ordinary.returncode == 0, ordinary.stdout + ordinary.stderr
     ambiguous = subprocess.run(command[:-1] + [json.dumps([{"shortName": "t"}])],
                                capture_output=True, text=True, timeout=30)
     assert ambiguous.returncode != 0 and "exactly one message" in ambiguous.stderr
