@@ -178,8 +178,12 @@ The primary integration target is **EPyGrAM-backed SURFEX FA + AROME GRIB**.
 The [C1 admission and migration notes](docs/source/user_guide/fa_epygram_c1.rst)
 qualify the EPyGrAM reader on compact AROME-47 / SURFEX-8.1 dense fixtures, with
 directory, type, clock and scaling guards. Supplied real-field scaling, units,
-support and Earth-model evidence remain unresolved; the multi-time primary pair
-is a C3 qualification gate. Other producer or native-container integrations are
+support and Earth-model evidence remain unresolved. The
+[C3 primary-pair qualification](docs/source/user_guide/fa_epygram_c3.rst) exercises
+actual GRIB containers plus EPyGrAM-decoded dense SURFEX fixtures at multiple times
+on distinct native grids, including moving shared targets and sync/spawn exports.
+This is engine evidence, not real-producer scientific qualification.
+Other producer or native-container integrations are
 outside this increment. A native FA/FA compatibility example is
 [`example/config_file/coupled_arome_fa_polar.yaml`](example/config_file/coupled_arome_fa_polar.yaml).
 `input.time_alignment: common` selects exact common times by default, warns for

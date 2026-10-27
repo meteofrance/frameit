@@ -57,6 +57,13 @@ The :doc:`fa_epygram_c1` adds effective-backend/helper-version provenance and
 post-normalization full-native nonfinite counts in decode observations. Support
 labels remain distinct from actual masks; native/source-qualified product schemas
 and ordinary-reader requirements are preserved.
+The :doc:`fa_epygram_c3` adds ``sources.<id>.fa_decoder.payload_reads`` keyed by
+source basename and selected native field. Each successful payload call reports
+its actual library/accessor and, for EPyGrAM, resource class and read-only mode.
+These post-call observations supplement configured backend labels and actual helper
+versions. Decoder JSONL logs retain individual requests; the manifest consolidates
+observations per file/field. Scaling admission is still checked separately and may
+fail after the library call. This is execution evidence, not producer-scaling proof.
 Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
 ``lat``/``lon`` remain requested centres; see :doc:`fa_geometry` for conventions.

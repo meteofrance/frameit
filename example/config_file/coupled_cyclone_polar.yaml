@@ -1,11 +1,13 @@
 # Separate atmosphere/surface products on one explicitly selected polar target.
 # Adapt paths, centre and selections. This is not a scientific qualification preset.
+# C3 engine qualification and producer gaps: docs/source/user_guide/fa_epygram_c3.rst.
 schema_version: 2
 model: arome
 run:
   name: cyclone-coupled-polar
 input:
   time_alignment: common
+  # Exact common valid times, warnings and full exclusions; strict fails on unequal sets.
   sources:
     atmosphere:
       model: arome
@@ -13,12 +15,22 @@ input:
         directory: ./data/atmosphere
         pattern: "*.grib"
         format: grib
+        # Explicit declarations: check the actual GRIB uvRelativeToGrid flags first.
+        wind_pairs:
+          - {group: surface, u: u10, v: v10, reference_frame: earth}
+          - {group: isobaricInhPa, u: u, v: v, reference_frame: earth}
       variables:
         surface:
           names: [prmsl, u10, v10]
         isobaricInhPa:
           names: [u, v, t, r, z]
           levels: {values: [850, 700, 500]}
+      polar:
+        # Native winds stay in cartesian products. Select scalar polar quantities here;
+        # no wind diagnostic, pressure/height diagnosis or interval conversion is requested.
+        variables:
+          surface: {names: [prmsl]}
+          isobaricInhPa: {names: [t, r, z]}
     surface:
       model: arome
       input:
@@ -53,10 +65,11 @@ input:
           names: [SFX.T2M, SFX.SST]
 tracking:
   source: atmosphere
-  method: fixed_box
-  fixed_box:
-    # Engineering example centre, not a cyclone fix inferred from filenames.
-    center: {latitude: -15.0, longitude: 50.15}
+  method: prescribed_track
+  prescribed_track:
+    # Exact Gregorian time, latitude/longitude in geographic degrees; no index reuse.
+    # Every continuous atmospheric centre is applied to SURFEX at that same time.
+    file: ./data/track.nc
 domain:
   size_km: {x: 40, y: 40}
 polar:
@@ -72,3 +85,5 @@ output:
   overwrite: false
   max_workers: 1
   synchronous_export: true
+  cartesian:
+    horizontal_winds: native

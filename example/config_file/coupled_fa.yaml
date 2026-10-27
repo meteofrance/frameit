@@ -2,6 +2,8 @@
 # Limited dense instantaneous scalar example, not full FA qualification.
 # C1 reader scope/gaps: docs/source/user_guide/fa_epygram_c1.rst (including SFX scaling).
 # C2 geometry/metadata: docs/source/user_guide/fa_epygram_c2.rst; no YAML migration.
+# C3 multi-time GRIB/EPyGrAM engine evidence: docs/source/user_guide/fa_epygram_c3.rst.
+# Compact fixture success does not establish real-producer scaling/units/support.
 schema_version: 2
 model: arome
 run:

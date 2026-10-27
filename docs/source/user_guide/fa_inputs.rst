@@ -11,6 +11,9 @@ The :doc:`fa_epygram_c1` admits the evidenced AROME-47 / SURFEX-8.1 dense layout
 through EPyGrAM, using a single read-only resource and selected library decoding.
 The :doc:`fa_epygram_c2` transfers labelled geometry/CRS/zones and selected vertical
 metadata to qualified library APIs, preserving source indices and CF origins.
+The :doc:`fa_epygram_c3` qualifies the multi-time GRIB/EPyGrAM coupled engine with
+distinct grids, moving centres, optional shared targets and independent exports.
+It does not establish real-producer units/scaling/support or scientific approval.
 The :doc:`fa_epygram_c0` remains the historical baseline/API evidence and cleanup
 ledger. Other producer/native-container integrations are outside this increment.
 
@@ -150,6 +153,11 @@ Coupled products use source-qualified groups:
    products/coupled-surface.track.nc
    products/coupled-surface.cart.atmosphere.heightAboveGround.nc
    products/coupled-surface.cart.surfex.surface.nc
+
+The cyclone example additionally separates ``atmosphere.surface`` and
+``atmosphere.isobaricInhPa`` products. It declares each selected wind pair, preserves
+native Cartesian winds and explicitly selects scalar polar fields. Geopotential
+``z`` is not geometric height; selecting it does not diagnose height or pressure.
 
 Original track indices belong to ``tracking.source``. Additional ``<source>_cx``,
 ``<source>_cy``, bounds and validity variables describe each source grid. Products

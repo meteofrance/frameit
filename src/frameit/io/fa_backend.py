@@ -34,7 +34,7 @@ def _record_diagnostics(request, info):
 def collect_fa_diagnostics(output_dir, inputs):
     """Summarize child-native diagnostics after all spawned exporters complete."""
     summary = {"decode_requests": 0, "warnings": [], "backend_versions": {},
-               "field_observations": {}}
+               "field_observations": {}, "payload_reads": {}}
     warnings = set()
     for relative in sorted({item["decoder_log"] for item in inputs if item.get("decoder_log")}):
         path = Path(output_dir) / relative
@@ -45,6 +45,9 @@ def collect_fa_diagnostics(output_dir, inputs):
                 record = json.loads(line)
                 summary["decode_requests"] += 1
                 summary["backend_versions"].update(record.get("backend_versions", {}))
+                if record.get("payload_read"):
+                    summary["payload_reads"].setdefault(record["source_file"], {}).update(
+                        {name: record["payload_read"] for name in record["fields"]})
                 if record.get("field_descriptors"):
                     summary["field_observations"].setdefault(record["source_file"], {}).update(
                         record["field_descriptors"])
@@ -129,6 +132,7 @@ def request_fa(request):
             )
             _record_diagnostics(request, {"diagnostics": diagnostics,
                                           "backend_versions": info["backend_versions"],
+                                          "payload_read": info.get("payload_read"),
                                           "protocol_version": PROTOCOL_VERSION,
                                           "field_descriptors": info["field_descriptors"]})
             if missing and not request.get("allow_unscaled"):

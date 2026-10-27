@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import dask.array as da
@@ -21,6 +22,12 @@ from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.processing.polar.polar_grid import PolarLonLatGrid
 from frameit.testing.numerical.test_fa_io import NATIVE, fa_files
+from frameit.testing.numerical.test_fa_pipeline import (
+    EPYGRAM,
+    PRIMARY_NATIVE_CHECK,
+    assert_primary_pair_provenance,
+    primary_pair_document,
+)
 
 
 def requests(radial=None, count=None, step=None, ellipsoid="WGS84"):
@@ -335,3 +342,138 @@ assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
 """, json.dumps(products)], capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
     assert "falfilfa4py" not in sys.modules
+
+
+@EPYGRAM
+@pytest.mark.parametrize("synchronous", [True, False])
+def test_primary_pair_shared_target_geometry_budgets_and_fresh_exports(
+    tmp_path, synchronous, monkeypatch,
+):
+    pytest.importorskip("xesmf")
+    from frameit.core import coupled, grid_geometry
+    from frameit.io import fa_utils
+    from frameit.processing.polar import sampling
+
+    raw = primary_pair_document(tmp_path, synchronous=synchronous)
+    raw["polar"]["enabled"] = True
+    originals = {Path(path): Path(path).read_bytes() for source in raw["input"]["sources"].values()
+                 for path in source["input"]["files"]}
+    events, reads = [], []
+    original_geometry = grid_geometry.resolve_geometry
+    original_target = coupled._shared_polar_target
+    original_budget = sampling.check_point_budget
+    original_read = fa_utils.request_fa
+
+    def geometry(*args, **kwargs):
+        result = original_geometry(*args, **kwargs)
+        events.append(("geometry", result["shape"]))
+        return result
+
+    def target(conf, children, *args):
+        assert {tuple(child.grid_geometry["shape"]) for child in children.values()} == {
+            (13, 15), (9, 11)}
+        events.append(("shared", None))
+        return original_target(conf, children, *args)
+
+    def budget(points, maximum):
+        events.append(("budget", points))
+        return original_budget(points, maximum)
+
+    def read(request):
+        reads.append(request["fields"])
+        return original_read(request)
+
+    # preflight binds resolve_geometry directly; the budget is also used by config validation.
+    monkeypatch.setattr("frameit.core.preflight.resolve_geometry", geometry)
+    monkeypatch.setattr(coupled, "_shared_polar_target", target)
+    monkeypatch.setattr(sampling, "check_point_budget", budget)
+    monkeypatch.setattr(fa_utils, "request_fa", read)
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    plan = preflight(conf)
+    assert events[:3] == [("geometry", [13, 15]), ("geometry", [9, 11]), ("shared", None)]
+    # Option/one-frame guards also check 9/27 points; the full allocation is 54.
+    budgets = [points for operation, points in events if operation == "budget"]
+    assert max(budgets) == 54 and budgets.count(54) == 2
+    assert all(p["polar_sampling"]["estimated_time_count"] *
+               p["polar_sampling"]["estimated_points_per_time"] == 54
+               for p in plan["sources"].values())
+    assert not reads and not conf.output_dir.exists()
+    contract = plan["common_polar_target"]
+    assert contract["radial_step_m"] == 3000. and contract["azimuth_count"] == 9
+    assert contract["radial_step_origin"] == "coarsest_participating_native_grid"
+    result = execute_simulation(conf)
+    assert result.ok
+    carts = {p["group"]: p["path"] for p in result.products if p["role"] == "cart"}
+    carts["track"] = next(p["path"] for p in result.products if p["role"] == "track")
+    polars = {p["group"]: p["path"] for p in result.products if p["role"] == "polar"}
+    assert set(polars) == {"atmosphere.surface", "atmosphere.isobaricInhPa", "surfex.surface"}
+    check = subprocess.run([sys.executable, "-c", PRIMARY_NATIVE_CHECK + """
+polars = json.loads(sys.argv[2])
+def selected_with_quality(data, names):
+    suffixes = ('','_support_fraction','_interpolation_status','_valid',
+                '_ring_coverage','_full_ring_valid')
+    assert set(data.data_vars) == {n+s for n in names for s in suffixes} | {'geometry_mapped'}
+    for name in names:
+        assert data[name+'_interpolation_status'].dtype == np.uint8
+        assert 'flag_meanings' in data[name+'_interpolation_status'].attrs
+with xr.open_dataset(polars['atmosphere.surface'], engine='netcdf4') as a:
+    for group, path in polars.items():
+        with xr.open_dataset(path, engine='netcdf4') as data:
+            for name in ('time','rr','theta','longitude','latitude','center_lon','center_lat'):
+                np.testing.assert_array_equal(data[name], a[name])
+            assert data.attrs['common_polar_target_id'] == a.attrs['common_polar_target_id']
+    np.testing.assert_array_equal(a.center_lon, [50.,50.015])
+    np.testing.assert_array_equal(a.center_lat, [-20.,-19.988])
+    # Independent affine GRIB truth at both continuous (not snapped) centres.
+    j = (np.array([-20.,-19.988])+20.054)/.009
+    i = (np.array([50.,50.015])-49.932968)/.009576
+    expected = 100000.+100*np.array([1,2])+10*j+i
+    # Ordinary exports retain the established float32 field encoding.
+    np.testing.assert_array_equal(a.prmsl.isel(rr=0),
+                                  np.broadcast_to(expected.astype('float32')[:,None],(2,9)))
+    selected_with_quality(a, ['prmsl'])
+with xr.open_dataset(polars['surfex.surface'], engine='netcdf4') as s:
+    selected_with_quality(s, ['SFX.T2M','SFX.SST'])
+    assert np.isnan(s['SFX.SST'].isel(time=0,rr=0)).all()
+    np.testing.assert_allclose(s['SFX.SST'].isel(time=1,rr=0),302.,rtol=0,atol=1.e-9)
+    np.testing.assert_allclose(s['SFX.T2M'].isel(rr=0),[[281.]*9,[282.]*9],rtol=0,atol=1.e-9)
+with xr.open_dataset(polars['atmosphere.isobaricInhPa'], engine='netcdf4') as pressure:
+    np.testing.assert_array_equal(pressure.isobaricInhPa,[850.])
+    selected_with_quality(pressure, ['t','r','z'])
+assert not {'frameit','epygram','falfilfa4py','eccodes','cfgrib'} & sys.modules.keys()
+""", json.dumps(carts), json.dumps(polars)], capture_output=True, text=True, timeout=30)
+    assert check.returncode == 0, check.stdout + check.stderr
+    provenance, status = assert_primary_pair_provenance(conf)
+    assert status["common_polar_target"] == provenance["common_polar_target"]
+    assert status["common_polar_target"]["verification"] == (
+        "exact_time_radius_azimuth_longitude_latitude")
+    assert all(path.read_bytes() == before for path, before in originals.items())
+
+
+@EPYGRAM
+@pytest.mark.parametrize("failure", ["target_budget", "finer", "native_budget"])
+def test_primary_pair_planning_guards_precede_payload_and_target_allocation(
+    tmp_path, failure, monkeypatch,
+):
+    pytest.importorskip("xesmf")
+    raw = primary_pair_document(tmp_path)
+    raw["polar"]["enabled"] = True
+    if failure == "target_budget":
+        raw["polar"]["max_points"] = 53
+        message = "requires 54 points"
+    elif failure == "finer":
+        raw["polar"]["radial_step_m"] = 1000.
+        message = "finer than a participating native grid"
+    else:
+        raw["input"]["sources"]["surfex"]["input"]["fa"]["max_points"] = 98
+        message = "resource budget"
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("planning must fail before physical reads or target allocation")
+
+    monkeypatch.setattr("frameit.io.fa_utils.request_fa", forbidden)
+    monkeypatch.setattr(PolarLonLatGrid, "build", forbidden)
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    with pytest.raises(ValueError, match=message):
+        preflight(conf)
+    assert not conf.output_dir.exists()

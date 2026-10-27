@@ -322,12 +322,19 @@ def handle(request, destination):
             if epy_resource is None:
                 values, undefined, sentinel = FA.wfacilo(
                     grid["KNXLON"] * grid["KNLATI"], unit, name[:4], 0, name[4:], False)
+                payload_read = {"library": "falfilfa4py", "accessor": "FA.wfacilo"}
             else:
                 from frameit.io.fa_epygram import read_values
 
                 values, undefined = read_values(
                     epy_resource, name, (grid["KNLATI"], grid["KNXLON"]))
                 sentinel = np.nan
+                payload_read = {
+                    "library": "EPyGrAM", "accessor": "_readH2DField(getdata=True)",
+                    "resource_class": f"{type(epy_resource).__module__}."
+                                      f"{type(epy_resource).__name__}",
+                    "openmode": epy_resource.openmode,
+                }
             descriptor["mask"]["undefined"] = {
                 "present": bool(undefined),
                 "origin": "EPyGrAM_returned_mask" if epy_resource is not None else "FACILO_flag",
@@ -353,7 +360,7 @@ def handle(request, destination):
                 values = np.ascontiguousarray(values)
             np.save(destination / "values.npy", values, allow_pickle=False)
             info = {"shape": list(values.shape), "dtype": str(values.dtype),
-                    "field_descriptors": {name: descriptor}}
+                    "field_descriptors": {name: descriptor}, "payload_read": payload_read}
         library = ctypes.CDLL(falfilfa4py.shared_objects_library)
         native_version = library.codes_get_api_version
         native_version.restype = ctypes.c_int

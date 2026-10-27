@@ -102,7 +102,13 @@ request, destination, injected_error = json.loads(sys.argv[1])
 destination = Path(destination)
 epygram = fa_epygram.initialize(destination, request.get('earth_radius_m'))
 fa_epygram.initialize = lambda *args: epygram
-calls, decoded, structural = Counter(), [], []
+calls, decoded, structural, epygram_payloads = Counter(), [], [], []
+h2d = epygram.formats.FA.FA._readH2DField
+def library_field(self, name, getdata=True, **kwargs):
+    if getdata:
+        epygram_payloads.append(name)
+    return h2d(self, name, getdata=getdata, **kwargs)
+epygram.formats.FA.FA._readH2DField = library_field
 for name in ('wfaitou', 'wfairme', 'wfacies', 'wfadiex', 'wfanion'):
     original = getattr(FA, name)
     def counted(*args, name=name, original=original):
@@ -172,7 +178,8 @@ except Exception as exc:
 assert calls['wfaitou'] == calls['wfairme'] == 1, calls
 assert not {'eccodes', 'cfgrib', 'ectrans4py', 'epygram.formats.GRIB'} & sys.modules.keys()
 print('C1_RESULT=' + json.dumps({'info': info, 'calls': dict(calls),
-                                'decoded': decoded, 'structural': structural}, allow_nan=False))
+                                'decoded': decoded, 'structural': structural,
+                                'epygram_payloads': epygram_payloads}, allow_nan=False))
 """
 
 
@@ -208,6 +215,7 @@ def test_one_resource_library_structure_and_selected_payload(tmp_path, operation
     if operation == "inspect":
         assert info["geometry"]["epygram"]["native_shape"] == [7, 9]
         assert report["decoded"] == []
+        assert report["epygram_payloads"] == [] and "payload_read" not in info
         assert info["reference_time"] == "2026-01-01T00:00:00"
         assert info["valid_time"] == info["surfex_metadata"]["STATE_TIME"] == "2026-01-01T01:00:00"
         typed = info["typed_metadata"]
@@ -219,6 +227,10 @@ def test_one_resource_library_structure_and_selected_payload(tmp_path, operation
         assert list(info["field_directory"]) == ["SFX.T2M", "SFX.SST"]
     else:
         assert report["decoded"] == ["SFX.T2M"]
+        assert report["epygram_payloads"] == ["SFX.T2M"]
+        assert info["payload_read"] == {
+            "library": "EPyGrAM", "resource_class": "epygram.formats.FA.FA",
+            "accessor": "_readH2DField(getdata=True)", "openmode": "r"}
         np.testing.assert_array_equal(np.load(tmp_path / "values.npy"), truth[5:0:-2, 7:0:-3])
         mask = info["field_descriptors"]["SFX.T2M"]["mask"]
         assert mask["nonfinite_count"] == 1 and mask["support_map"] is None

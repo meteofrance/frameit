@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Qualify the multi-time AROME-convention GRIB / EPyGrAM SURFEX engine workflow on
+  independent native grids, with separate source/vertical-qualified products,
+  moving centres, exact-common exclusions, strict/cycle/clock/source/scaling failures
+  and geometry-before-shared-target budget checks. Verify independent values,
+  masks/zeros and exact shared coordinates in fresh ordinary readers for sync/spawn exports.
+- Record actual payload resource/accessor evidence in FA decoder logs and per-source
+  provenance, and require the primary native/shared-polar CI cases. Update coupled
+  examples with explicit vector declarations and selected scalar polar quantities;
+  keep real-producer evidence gaps and C4 backend/extra migration prerequisites explicit.
+
 - Adapt qualified EPyGrAM geometry/CRS/CI/C/E zones to the labelled source-grid
   contract, preserving canonical CF origins, native indices, explicit Earth models
   and independent encoded-corner checks. Record additive library geometry provenance.
