@@ -6,6 +6,34 @@ All old paths below are repository-relative; `UG/` means
 Tables retain the baseline assignments and line references. Progress below
 records completed work; uncompleted destinations remain assignments.
 
+## Remaining public entry points: progress
+
+Step 4 starts at `0abea33`. README links, four FA YAML examples, installation
+comments, templates/presets and public docs already use descriptive current topics;
+the audit confirms them without cosmetic edits to settings or data identities.
+`CHANGELOG.md` now describes the supported FA reader/environment/coupling/cube
+behavior and migration directly instead of narrating C0–C4/P4 development steps.
+Its original FA passages remain in `entry_points_history.md`; unrelated release,
+software/schema/version history is unchanged.
+
+`SPECTRAL_GATE` names the current Spectral FA support and limitations guide.
+Only that explanatory string changes: the original gated-failure prefix,
+encoding-qualified coefficient-contract requirement and independent native-grid
+reference requirement remain. Callers, classifications, guards, provenance keys,
+algorithms, test assertions/tolerances and schemas are unchanged. Six affected
+existing failure/boundary cases pass; see [the entry-point record](entry_points.md).
+
+Twelve ordinary CLI help surfaces, generated full configurations and observed
+alias-warning/invalid-backend paths are stage-free. The private FA module/helper
+docstrings, implementation comments and explicit investigation tools retain their
+development evidence: current Sphinx sources and fresh HTML/search/source/inventory
+do not expose them. Native C0/C1 codes, actual field IDs and mathematical C2
+smoothness retain their meanings. No broad directory/token waiver is added.
+
+The source/upload boundary in `conf.py` and `.github/workflows/docs.yml` is
+unchanged and excludes the developer archive. Final hosted/CI artifact acceptance
+and fresh/strict CI enforcement remain step 5, not inferred from local checks.
+
 ## Topic-guide and archive progress
 
 Step 3 starts at `382624c`. The six neutral topic paths under `UG/` are `fa_baseline.rst`,
@@ -35,8 +63,8 @@ references to step 4. Other guide/tracker/polar/visualization/extension sources 
 audited without rewriting their methods. Native C0/C1 type codes, SFX TG1P1/WG1P1
 identities and quintic C2 smoothness remain legitimate public content.
 
-Remaining work is step 4's changelog/ordinary-message/entry-point audit (including
-`SPECTRAL_GATE` wording) and step 5's complete hosted/CI artifact acceptance.
+At that checkpoint the changelog/ordinary-message audit remained pending; the
+step-4 progress above closes those rows. Step 5 retains hosted/CI artifact acceptance.
 
 ## User-entry rewrite progress
 
@@ -109,9 +137,9 @@ listed below are removed, not published as history redirects.
 | `docs/source/what_is_frameit.rst`; six pages under `tracker/`; four under `polar_projection/`; `visualization_tools/rotate_polar_axes.rst`; `developper/how_to_add_my_tracker.rst` | Existing topic URLs — Topic | No roadmap meaning found; retain scientific methods/citations/experimental status and useful extension tutorial. `C2` smoothness is legitimate. Check links and generated exposure in step 3. |
 
 Frozen full-page histories and stage records are now developer-only; current
-public topics retain their user/scientific contracts. No full-page public history
-duplicate remains. Changelog history cleanup remains step 4. Preserve these
-archives; step 5 must verify the boundary in the actual complete deployment artifact.
+public topics retain their user/scientific contracts. No public history duplicate
+or roadmap-labelled release entry remains. Preserve these archives; step 5 must
+verify the boundary in the actual complete deployment artifact.
 
 ## Scientific-content ownership: what must survive extraction
 
@@ -144,8 +172,8 @@ scientific review remain unresolved; no editor may erase them to simplify prose.
 | `example/config_file/coupled_arome_fa_polar.yaml:7` (`C4` migration) | Current alias/configuration guidance — Surface, step 4; schema-only validate. |
 | `example/config_file/arome_fa_native_cubes.yaml:1,21` (`P5/C2`) | Native-cube/geometry topics — Surface, step 4; schema-only validate. Also literal-included in `fa_atmosphere`. Preserve original names such as `S003TEMPERATURE`. |
 | Other tracked `example/` files; `environment.yaml`; `environment-hpc.yaml` | No roadmap references found; Surface audits links/comments, preserves dependencies and settings. Do not recopy private fixture payloads. |
-| `CHANGELOG.md:5,23,43,59` (`C4`, `C1--C3`, `C0`, `P4`) and surrounding historical assertions | Descriptive behavior/compatibility/limits in release entries — Surface, step 4. [Original unreleased FA excerpt](entry_points_history.md) preserves unique chronology. Keep software/release history. Timing stages and harmonic phase elsewhere are legitimate. |
-| `src/frameit/io/fa_contracts.py::SPECTRAL_GATE` (line 18) | Descriptive spectral support reference — Surface, step 4. Used by `native_descriptor` and `fa_worker._describe`; appears in descriptor reasons, selected-input failure, inspection/preflight/provenance. Keep the gate and coefficient-contract/independent-native-grid requirements. Existing `test_fa_spectral.py` failure/descriptor/transfer cases own verification. No wording change in this freeze. |
+| `CHANGELOG.md:5,23,43,59` (`C4`, `C1--C3`, `C0`, `P4`) and surrounding historical assertions | Closed in step 4: current behavior/compatibility/limits replace the implementation narrative. [Original unreleased FA excerpt](entry_points_history.md) preserves unique chronology; unrelated software/release history is unchanged. Timing stages and harmonic phase elsewhere are legitimate. |
+| `src/frameit/io/fa_contracts.py::SPECTRAL_GATE` (line 18 at the freeze) | Closed in step 4: descriptive current guide reference. Used by unchanged `native_descriptor` and `fa_worker._describe`; the same failure appears in descriptors/inspection/preflight/provenance. The gate and coefficient-contract/independent-native-grid requirements remain; existing spectral/contract failure cases pass unchanged. |
 | CLI parser/help/validation; `core/configuration.py`; `io/fa_backend.py`; `io/fa_epygram.py`; `src/frameit/templates/` and `presets/` | No additional roadmap-visible message found. `--fa-python` help correctly says optional. Surface rechecks generated full init, alias/missing-dependency messages and actual preflight after edits; preserve machine-readable configuration/provenance. |
 | `io/fa_contracts.py` module docstring/comment (`P0`), `io/fa_epygram.py::check_surface_layout` docstring (`C1`), testing probe docstrings/errors (`C0/P4`) and test names | Developer implementation/investigation evidence; no current public autodoc/viewcode page found. Surface owns any actual publication exposure; no mass-renaming. Explicit probes are developer entry points, not normal supported extraction recipes. |
 | `src/frameit/testing/catalogs/fa_p0.yaml`, `fa_p3.yaml`, `fa_p4.yaml`, `fa_p5.yaml`, `fa_c0.yaml`–`fa_c5.yaml`, `fa_environment.yaml` | Existing package assets and consumers (including runtime CI and `pyproject.toml` package-data) are unchanged. Developer index/records own evidence links. All public includes/references to these evidence ledgers are removed in steps 2/3; the original atmosphere prose's `fa_p5.yaml` reference remains in its frozen record. |

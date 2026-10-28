@@ -2,66 +2,54 @@
 
 ## Unreleased
 
-- Complete C4 FA cleanup after passing C1--C3/full baselines: remove the parallel
-  raw decode/header/date/typed-reader path, manual geometry reconstruction and
-  temporary dual comparisons. Keep isolated transport and documented same-resource
-  error/type/clock/header/index/scaling evidence checks and independent oracles.
-- Make EPyGrAM the sole FA reader/default and consolidate `fa` / compatibility
-  `fa-epygram` extras on its unmodified upstream stack. Retain `backend: native`
-  as a warned deprecated alias; record requested/effective backend and migration.
-  Qualify old single/coupled YAML replay and independently checked exports, preserve
-  native cubes and unsupported-family gates, and update examples, CLI/init and CI.
-
-- Qualify the multi-time AROME-convention GRIB / EPyGrAM SURFEX engine workflow on
-  independent native grids, with separate source/vertical-qualified products,
-  moving centres, exact-common exclusions, strict/cycle/clock/source/scaling failures
-  and geometry-before-shared-target budget checks. Verify independent values,
-  masks/zeros and exact shared coordinates in fresh ordinary readers for sync/spawn exports.
-- Record actual payload resource/accessor evidence in FA decoder logs and per-source
-  provenance, and require the primary native/shared-polar CI cases. Update coupled
-  examples with explicit vector declarations and selected scalar polar quantities;
-  keep real-producer evidence gaps and C4 backend/extra migration prerequisites explicit.
-
-- Adapt qualified EPyGrAM geometry/CRS/CI/C/E zones to the labelled source-grid
-  contract, preserving canonical CF origins, native indices, explicit Earth models
-  and independent encoded-corner checks. Record additive library geometry provenance.
-- Remove redundant selected-field type dispatch and parent hybrid reconstruction;
-  check source-level library interface A/B against original normalized A/PREFER
-  once per transaction. Preserve sparse cubes, vector dependencies and GRIB/NetCDF
-  contracts, with independent geometry/zone and isolated GRIB API regressions.
-
-- Admit evidenced AROME-47 / SURFEX-8.1 dense PACK=0/X1 histories through the
-  maintained EPyGrAM adapter. Use one read-only resource per transaction for
-  inventory, typed structure and selected data; retain narrow type/error/clock
-  observations and the transitional labelled-header adapter. Block incomplete or
-  contradictory directories, unsupported layouts and missing native scaling.
-- Pin the qualified ctypesForFortran bridge with EPyGrAM's unmodified upstream
-  dependencies, add native SURFEX/failure/optionality CI, and record the effective
-  backend and actual helper versions. GRIB/SURFEX examples select EPyGrAM with
-  scaling fallback disabled; backend defaults and existing product schemas persist.
-
-- Re-establish the C0 reference/EPyGrAM/core regression baseline and record the
-  finite SURFEX/AROME-GRIB family matrix, library API evidence, cleanup ledger and
-  admission plan. Add a bounded format-isolated investigation probe and compact
-  independent SURFEX value/geometry and GRIB metadata/selection checks. Production
-  SURFEX EPyGrAM admission, backend migration and legacy retirement remain gated.
-
-- Integrate optional EPyGrAM 2.1.0 behind the isolated FA boundary, with an
-  alternative extra, explicit backend/helper selection and FA-only private configuration.
-- Assemble declared gridpoint records into native full/interface cubes, retaining
-  original labels/indices/record IDs and verified PREFER-scaled hybrid coefficients.
+- Install FrameIt and the reference FA/GRIB/NetCDF/polar stack in one Python-3.13
+  Conda environment. Conda owns the shared NetCDF/HDF5/ecCodes libraries; isolated
+  FA workers use the active Python by default. An explicit interpreter override
+  remains optional. See [installation](docs/source/getting_started/installation.rst)
+  and [FA environment and troubleshooting](docs/source/user_guide/fa_environment.rst)
+  for editable-checkout ownership and fresh-environment migration.
+- Use unmodified EPyGrAM 2.1.0 as the sole FA reader/default, with the
+  ctypesForFortran 1.3.0 bridge. The `fa` and compatibility `fa-epygram` extras
+  have identical requirements. Retain `backend: native` as a warned deprecated
+  alias of the same reader, with requested/effective-backend provenance and
+  existing single/coupled YAML replay. See the
+  [configuration reference](docs/source/user_guide/configuration_file.rst).
+- Read evidenced AROME-47 / SURFEX-8.1 dense `PACK=0/X1` instantaneous histories
+  through one read-only EPyGrAM resource per transaction. Preserve source,
+  directory, type, clock, native-error and scaling checks; incomplete or
+  contradictory directories, unsupported layouts and missing native scaling fail.
+- Retire the parallel raw decode/header/date/typed-reader path, manual geometry
+  reconstruction and temporary dual comparisons. Keep format-isolated transport,
+  narrow same-resource evidence checks and independent numerical references.
+- Adapt library geometry/CRS/CI/C/E zones to labelled source grids, preserving
+  canonical CF origins, original native indices, explicit Earth models and
+  independent encoded-corner checks. Check source-level library interface A/B
+  against original normalized A/PREFER once per transaction.
+- Assemble explicitly declared gridpoint records into native full/interface cubes,
+  retaining labels/indices/record IDs and checked PREFER-scaled hybrid coefficients.
   Preserve sparse selection, native/analysis wind branches and polar auxiliaries;
   require declared collocated physical-vector basis and explicitly requested magnitude.
-- Add independent column/vector, failure, optionality and sync/spawn ordinary-reader
-  tests. Spectral, physical-coordinate, map-scaled/staggered and FA atmospheric-tracker
-  admission remains gated by the documented missing evidence.
-
-- Add an optional, isolated P4 ecTrans 1.6.0 candidate probe with independent
-  Fourier-mode/sign/normalization/truncation checks, bounded failure handling and
-  atomic evidence reports. Preserve native spectral header facts as unresolved
-  contracts and reject coefficient-shaped read responses at the parent boundary.
-  Native spectral FA execution remains gated: no coefficient encoding or trusted
-  real-field transformation is qualified by the library-only tests.
+- Couple multi-time AROME-convention GRIB and dense SURFEX FA on independent grids,
+  with separate source/vertical-qualified products and moving centres. Exact-common
+  times warn and record all exclusions; strict/cycle/clock/source/scaling failures
+  remain explicit. Discover native geometry before resolving shared-target budgets.
+  Independent compact fixtures check values/masks/zeroes and exact selected shared
+  coordinates through synchronous/spawn exports and ordinary readers.
+- Record actual payload resource/accessor observations and helper versions in
+  decoder logs and per-source provenance. Coupled examples declare wind pairs and
+  selected scalar polar quantities with scaling fallback disabled. Real-producer
+  units/scaling/support/Earth-model evidence and scientific review remain unresolved;
+  compact engine checks do not validate arbitrary physical fields. See
+  [native FA and coupled inputs](docs/source/user_guide/fa_inputs.rst).
+- Evaluate optional ecTrans 1.6.0 in an isolated analytical library probe, with
+  independent Fourier-mode/sign/normalization/truncation references, bounded
+  failure handling and atomic evidence reports. Retain unresolved native spectral
+  header contracts and reject coefficient-shaped responses at the parent boundary.
+  Spectral FA execution remains blocked without an encoding-qualified coefficient
+  contract and independent native-grid reference; library-only results do not
+  qualify real-field extraction. Physical-coordinate, map-scaled/staggered and
+  FA atmospheric-tracker operations retain their documented limits. See
+  [spectral FA support and limitations](docs/source/user_guide/fa_spectral.rst).
 
 - Add an opt-in wind point-method comparison separating bilinear/ESMF patch
   weights from component-wise/WGS84 geodesic-transport vector treatment. Retain

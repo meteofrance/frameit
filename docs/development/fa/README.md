@@ -2,8 +2,8 @@
 
 **Evidence frozen — 2026-10-28.** Inspected checkout:
 `9b11d602c4fb05fb2adf74b699439de6a0b8625b` (FrameIt 1.1.0). This is step 1 of
-the maintainer's five-step documentation plan. Subsequent user-entry and topic-guide
-rewrites are recorded below; the full public rework is not complete.
+the maintainer's five-step documentation plan. Subsequent user-entry, topic-guide
+and public-message rewrites are recorded below; final publication acceptance is pending.
 The plans were read from `../architectures_ideas/frameit-md/docs/README.md` and
 `CONTENT_MAP.md`; this index is usable without that separate checkout.
 
@@ -14,13 +14,16 @@ The plans were read from `../architectures_ideas/frameit-md/docs/README.md` and
   checks for step 2, starting at `35837df`.
 - [Scientific topic guides and archival boundary](topic_guides.md): step 3,
   starting at `382624c`, including removed public URLs and preservation checks.
+- [Remaining public entry points](entry_points.md): step 4, starting at `0abea33`,
+  including release wording and the spectral failure explanation.
 - Current public entry points: [installation](../../source/getting_started/installation.rst),
   [FA inputs](../../source/user_guide/fa_inputs.rst),
   [environment](../../source/user_guide/fa_environment.rst),
   [configuration](../../source/user_guide/configuration_file.rst) and
   [outputs](../../source/user_guide/output_files.rst).
   Entry pages, FA topic guides and navigation use descriptive current guidance.
-  Remaining release/message cleanup and final publication acceptance are mapped below.
+  Public release/error wording uses current topics; final publication acceptance
+  is mapped below.
 
 ## What was frozen
 
@@ -111,10 +114,11 @@ originals above remain unchanged, including raw verification/dependency ledgers.
 Catalogue references and archived relative links retain their existing valid paths.
 
 Example comments pointing to removed records now name current topics; their parsed
-settings are unchanged. Step 4 still owns release wording, ordinary messages and
-the remaining entry-point audit; step 5 owns complete CI/publication acceptance.
+settings are unchanged. Step 4 replaces remaining unreleased FA roadmap wording
+and the ordinary spectral error reference, with the guard and required evidence
+unchanged. Step 5 owns complete CI/publication acceptance.
 The detailed map retains the finite old-URL -> topic/archive assignments.
 
-**Next task:** step 4, finish release-note and user-visible message wording while
-preserving scientific guards and all machine-readable contracts. Reinspect the
-current implementation and changes since this freeze before editing.
+**Next task:** step 5, verify the complete public source and fresh deployment
+artifact, including search/source/inventory and the existing CI artifact contract.
+Reinspect current status and changes since these records before acceptance.
