@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from math import prod
 from pathlib import Path
 
 import numpy as np
@@ -100,11 +101,18 @@ def request_fa(request):
                                           "returncode": result.returncode})
             raise ValueError(f"FA decoder process failed ({result.returncode}) for {context}: "
                              f"{diagnostics[-4000:]}")
-        payload = json.loads(response.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(response.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"Invalid FA decoder response for {context}: {exc}") from exc
+        if not isinstance(payload, dict) or type(payload.get("ok")) is not bool:
+            raise ValueError(f"Invalid FA decoder response for {context}")
         if not payload["ok"]:
             _record_diagnostics(request, {"diagnostics": diagnostics, "error": payload["error"]})
             raise ValueError(f"FA input {context}: {payload['error']}\n{diagnostics[-4000:]}")
-        info = payload["result"]
+        info = payload.get("result")
+        if not isinstance(info, dict):
+            raise ValueError(f"Invalid FA decoder response for {context}")
         if (type(info.get("protocol_version")) is not int
                 or info.get("protocol_version") != PROTOCOL_VERSION):
             raise ValueError(f"Unsupported FA response protocol_version for {context}")
@@ -141,10 +149,26 @@ def request_fa(request):
             if missing and not request.get("allow_unscaled"):
                 raise ValueError(f"{context}: missing native scaling metadata; explicitly declare "
                                  "field_metadata.<record>.allow_unscaled: true only when justified")
-            values = np.load(Path(directory) / "values.npy", allow_pickle=False)
-            if values.dtype != np.float64 or list(values.shape) != info["shape"]:
+            shape = info.get("shape")
+            budget = request.get("max_points", 20_000_000)
+            if (not isinstance(shape, list) or len(shape) > 2
+                    or any(type(n) is not int or not 0 <= n <= budget for n in shape)
+                    or prod(shape) > budget):
                 raise ValueError(f"Invalid native array transfer for {context}")
-            info["values"] = values
+            try:
+                # Map first: a corrupt NPY header must not allocate before its
+                # dtype/shape is checked. Detach before the owned directory closes.
+                transfer = np.load(Path(directory) / "values.npy", allow_pickle=False,
+                                   mmap_mode="r")
+                try:
+                    if (not isinstance(transfer, np.ndarray) or transfer.dtype != np.float64
+                            or list(transfer.shape) != shape):
+                        raise ValueError("dtype/shape contradicts the FA response")
+                    info["values"] = np.array(transfer, copy=True)
+                finally:
+                    del transfer
+            except (OSError, ValueError, EOFError) as exc:
+                raise ValueError(f"Invalid native array transfer for {context}: {exc}") from exc
         info["decoder_diagnostics"] = diagnostics
         return info
 

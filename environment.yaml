@@ -26,7 +26,8 @@
 #   python -m venv --system-site-packages build/fa-helper
 #   build/fa-helper/bin/python -m pip install -e '.[fa]'
 # Select build/fa-helper/bin/python with input.fa.python_executable (YAML-relative).
-# See docs/source/user_guide/fa_epygram_c4.rst for qualification and runtime gaps.
+# C5 qualifies the separate parent/helper layout and bounded transfers:
+# docs/source/user_guide/fa_epygram_c5.rst (shared-overlay shutdown remains a gap).
 # Freeze resolved packages after testing.
 # This file is recommended for users with conda.
 # Once the environment is activated, install frameit with:

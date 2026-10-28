@@ -43,7 +43,8 @@ helper tests. See :doc:`../user_guide/fa_epygram_c4` for migration
 from the retired raw reader/extra. FrameIt isolates native
 FA decoding from conda's GRIB/ecCodes reader automatically; matching version
 numbers alone did not resolve their observed same-process native-library conflict.
-See :doc:`../user_guide/fa_inputs` for the implemented scope and declarations.
+See :doc:`../user_guide/fa_epygram_c5` for the selected Python-3.13 wheel/resource
+qualification and :doc:`../user_guide/fa_inputs` for implemented scope/declarations.
 
 3. Create and activate the Python environment using a conda/mamba environment
 -----------------------------------------------------------------------------

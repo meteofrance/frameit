@@ -72,6 +72,10 @@ now also records library geometry/CRS/zone origins and returned-mask provenance.
 Scientific variable/dimension names, source/vertical groups, values, units, masks,
 precision and storage encoding retain their established contracts; see
 :doc:`fa_epygram_c4` for compatibility evidence and remaining limits.
+C5 preserves that schema and adds contextual rejection of malformed or over-budget
+helper transfers before array materialization. A failed transfer cannot publish
+that surface product or mark the run completed; already completed other products
+can remain under the per-product atomicity contract. See :doc:`fa_epygram_c5`.
 Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
 ``lat``/``lon`` remain requested centres; see :doc:`fa_geometry` for conventions.

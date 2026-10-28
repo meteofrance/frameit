@@ -53,6 +53,9 @@ deprecated alias, with warnings and requested/effective backend provenance;
 it selects the same reader. Install the unmodified upstream stack and qualified
 ctypesForFortran 1.3.0 bridge in a coherent environment. See the
 [C4 cleanup ledger and migration guide](docs/source/user_guide/fa_epygram_c4.rst).
+The [C5 distribution/resource record](docs/source/user_guide/fa_epygram_c5.rst)
+qualifies bounded transfers and packaged primary-pair checks in the separate
+GRIB/ESMF-parent and FA-helper layout; wider native distribution remains limited.
 `input.fa.python_executable` can select that Python-3.13 helper. Native
 extraction does not require pressure or height diagnosis.
 The [C2 geometry/metadata adapter](docs/source/user_guide/fa_epygram_c2.rst) uses

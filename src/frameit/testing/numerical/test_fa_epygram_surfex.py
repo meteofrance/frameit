@@ -7,6 +7,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -95,13 +96,14 @@ def test_absent_epygram_dependency_is_actionable_for_surfex(tmp_path, backend):
 # fails if the old raw prepass, a physical raw-word fallback or any unselected
 # physical read is used, and counts one native open/close even on selected errors.
 WORKER_CHECK = """
-import json, sys
+import json, resource, sys, time
 from collections import Counter
 from pathlib import Path
 from falfilfa4py import FA, LFI
 from frameit.io import fa_epygram, fa_worker
 request, destination, injected_error = json.loads(sys.argv[1])
 destination = Path(destination)
+started = time.monotonic()
 epygram = fa_epygram.initialize(destination, request.get('earth_radius_m'))
 fa_epygram.initialize = lambda *args: epygram
 calls, decoded, structural, epygram_payloads = Counter(), [], [], []
@@ -111,6 +113,16 @@ def library_field(self, name, getdata=True, **kwargs):
         epygram_payloads.append(name)
     return h2d(self, name, getdata=getdata, **kwargs)
 epygram.formats.FA.FA._readH2DField = library_field
+listfields = epygram.formats.FA.FA.listfields
+def listed(self, *args, **kwargs):
+    calls['listfields'] += 1
+    return listfields(self, *args, **kwargs)
+epygram.formats.FA.FA.listfields = listed
+rewind = LFI.wlfipos
+def rewound(*args):
+    calls['index_rewinds'] += 1
+    return rewind(*args)
+LFI.wlfipos = rewound
 for name in ('wfaitou', 'wfairme', 'wfacies', 'wfadiex', 'wfanion'):
     original = getattr(FA, name)
     def counted(*args, name=name, original=original):
@@ -180,9 +192,19 @@ except Exception as exc:
     info = {'selected_error': str(exc)}
 assert calls['wfaitou'] == calls['wfairme'] == 1, calls
 assert not {'eccodes', 'cfgrib', 'ectrans4py', 'epygram.formats.GRIB'} & sys.modules.keys()
+usage = resource.getrusage(resource.RUSAGE_SELF)
+transfer = destination / 'values.npy'
+measurements = {'worker_wall_s': time.monotonic() - started,
+                'helper_cpu_s': usage.ru_utime + usage.ru_stime,
+                'helper_max_rss_kib': usage.ru_maxrss,
+                'helper_block_read_bytes': usage.ru_inblock * 512,
+                'helper_block_write_bytes': usage.ru_oublock * 512,
+                'source_bytes': Path(request['path']).stat().st_size,
+                'transfer_npy_bytes': transfer.stat().st_size if transfer.exists() else 0}
 print('C1_RESULT=' + json.dumps({'info': info, 'calls': dict(calls),
                                 'decoded': decoded, 'structural': structural,
-                                'epygram_payloads': epygram_payloads}, allow_nan=False))
+                                'epygram_payloads': epygram_payloads,
+                                'measurements': measurements}, allow_nan=False))
 """
 
 
@@ -203,11 +225,18 @@ def test_one_resource_library_structure_and_selected_payload(tmp_path, operation
                "metadata_fields": ["SFX.PROGRAM", "SFX.VERSION", "SFX.LAT0", "SFX.PACK",
                                    "SFX.L1D", "SFX.L2D", "SFX.DTCUR", "SFX._FBUF_DIM1"],
                "zone": [1, 8, 1, 6], "key": [[None, None, -2], [None, None, -3]]}
+    started = time.monotonic()
     result = subprocess.run([EPYTHON, "-c", WORKER_CHECK,
                              json.dumps([request, str(tmp_path), None])],
                             capture_output=True, text=True, timeout=30)
+    elapsed = time.monotonic() - started
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(result.stdout.split("C1_RESULT=")[1])
+    report["measurements"].update(process_wall_s=elapsed, native_points=63,
+                                  operation=operation, projected=projected)
+    (tmp_path / "measurements.json").write_text(json.dumps({
+        "counts": report["calls"], **report["measurements"]}, indent=2) + "\n")
+    assert report["calls"]["listfields"] == 1
     info = report["info"]
     assert info["backend_versions"]["FA_backend"] == "epygram"
     assert info["backend_versions"]["falfilfa4py"] == "1.2.1"

@@ -38,6 +38,7 @@ jobs:
           src/frameit/testing/numerical/test_fa_epygram_geometry.py
           src/frameit/testing/numerical/test_fa_epygram_surfex.py
           src/frameit/testing/numerical/test_fa_io.py
+          src/frameit/testing/numerical/test_fa_resources.py
           src/frameit/testing/numerical/test_fa_surface.py
           src/frameit/testing/numerical/test_fa_mapping.py
           src/frameit/testing/numerical/test_fa_geometry.py
@@ -76,12 +77,15 @@ jobs:
           src/frameit/testing/numerical/test_fa_*.py
           src/frameit/testing/numerical/test_coupled_shared_polar.py
           src/frameit/testing/numerical/test_arome_fa_coupling.py
+          --basetemp=build/fa-native-tests
           --junitxml=fa-tests.xml
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: fa-coupling-python-3.13
-          path: fa-tests.xml
+          path: |
+            fa-tests.xml
+            build/fa-native-tests/**/measurements.json
 
   fa-spectral-candidate:
     runs-on: ubuntu-latest
@@ -127,6 +131,8 @@ jobs:
             -c conda-forge python=3.13 pip esmpy=8.9.1 xesmf=0.9.2 cfgrib eccodes
       - name: Install the coherent EPyGrAM stack and parent GRIB reader
         run: |
+          python -m pip install -e '.[test,grib]'
+          python -m pip check
           python -m venv --system-site-packages .ci-fa-epygram
           .ci-fa-epygram/bin/python -m pip install -e '.[test,grib,fa,fa-epygram]'
       - name: Require the qualified native stack (no optional-backend skips)
@@ -138,8 +144,27 @@ jobs:
         run: >-
           .ci-fa-epygram/bin/python -m pytest -q
           --junitxml=fa-epygram-tests.xml
+      - name: Build and install the distributable wheel separately from the checkout
+        run: |
+          .ci-fa-epygram/bin/python -m pip install 'setuptools>=77' wheel
+          .ci-fa-epygram/bin/python -m pip wheel --no-deps --no-build-isolation . -w build/qualified-wheel
+          python -m pip install --no-deps --no-index --target build/wheel-install build/qualified-wheel/frameit-*.whl
+          PYTHONPATH="$PWD/build/wheel-install" python -c "import frameit; from pathlib import Path; assert Path(frameit.__file__).is_relative_to(Path('build/wheel-install').resolve())"
+      - name: Qualify packaged primary pair with the GRIB/ESMF parent and isolated FA helper
+        env:
+          PYTHONPATH: ${{ github.workspace }}/build/wheel-install
+          FRAMEIT_TEST_EPYGRAM_PYTHON: ${{ github.workspace }}/.ci-fa-epygram/bin/python
+        run: |
+          .ci-fa-epygram/bin/python -c "import frameit; from pathlib import Path; assert Path(frameit.__file__).is_relative_to(Path('build/wheel-install').resolve())"
+          python -m pytest -q \
+            build/wheel-install/frameit/testing/numerical/test_fa_pipeline.py::test_primary_grib_epygram_surfex_native_exports \
+            build/wheel-install/frameit/testing/numerical/test_coupled_shared_polar.py::test_primary_pair_shared_target_geometry_budgets_and_fresh_exports \
+            build/wheel-install/frameit/testing/numerical/test_fa_resources.py \
+            --junitxml=fa-wheel-tests.xml
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: fa-epygram-cubes-python-3.13
-          path: fa-epygram-tests.xml
+          path: |
+            fa-epygram-tests.xml
+            fa-wheel-tests.xml

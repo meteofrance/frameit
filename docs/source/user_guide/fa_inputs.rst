@@ -18,6 +18,8 @@ The :doc:`fa_epygram_c4` closes the cleanup ledger, removes the parallel raw rea
 and documents the default/alias/installation migration. The :doc:`fa_epygram_c0`
 remains historical baseline/API evidence. Other producer/native-container
 integrations are outside this increment.
+The :doc:`fa_epygram_c5` records the selected distribution/resource row, compact
+measurements, transfer-failure coverage and remaining per-family admission gates.
 
 Installation and native isolation
 ----------------------------------------
@@ -231,6 +233,10 @@ inspection. Decoding can require a full horizontal record even for a tiny crop,
 plus coordinate/temporary arrays. Laziness avoids unselected records/times but
 does not promise NetCDF-style subrecord I/O. Short-lived helper startup has a
 real cost; no throughput improvement is claimed.
+Transfers are validated against this point budget before materialization. The
+actual NPY dtype/shape is checked read-only before copying out of the owned
+temporary directory; malformed/partial transfers fail with source/field context.
+Point budgets are not an RSS quota; see :doc:`fa_epygram_c5` for measured scope.
 
 Provenance and failure
 ----------------------
