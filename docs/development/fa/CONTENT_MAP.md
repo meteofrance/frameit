@@ -3,7 +3,30 @@
 Baseline: `9b11d602c4fb05fb2adf74b699439de6a0b8625b`, inspected 2026-10-28.
 All old paths below are repository-relative; `UG/` means
 `docs/source/user_guide/`. Archive links are relative to this directory.
-Destinations are assignments for later tasks, not claims that rewrites exist.
+Tables retain the baseline assignments and line references. Progress below
+records completed work; uncompleted destinations remain assignments.
+
+## User-entry rewrite progress
+
+Step 2 starts at `35837df` and delivers the current user path in `README.md`,
+`docs/source/getting_started/installation.rst`, `docs/source/getting_started/quick_start.rst`,
+`UG/input_files.rst`, `UG/fa_inputs.rst`, `UG/fa_environment.rst`,
+`UG/configuration_file.rst` and `UG/output_files.rst`.
+See [the user-entry verification record](user_journey.md) for exact checks.
+
+These sources and their rendered article bodies use descriptive current topics,
+with the single reference environment, optional interpreter override, scientific
+limits and ordinary-reader/partial-product contracts explicit. The environment
+ledger include is removed; its original record and catalogue remain unchanged.
+All fourteen archived full pages and the entry-point excerpts are unchanged.
+The geometry method anchor/equations and wind/grid anchors remain public.
+
+The FA overview includes `coupled_fa.yaml` beginning at `schema_version:` so its
+rendered example omits the development header while retaining every parsed setting.
+The original YAML comments and other example/release/message cleanup remain owned
+by step 4. Descriptive explicit cross-reference text is used for mixed topic
+guides awaiting step 3. The original stage pages and global navigation are still
+published pending that task; this is not full publication acceptance.
 
 ## Owners and completion order
 
@@ -53,11 +76,11 @@ listed below are removed, not published as history redirects.
 | `docs/source/index.rst` | Descriptive public topics — Topic | Lines 36–41 currently publish all six stage pages. Remove entries with sources in step 3; sidebar-only hiding is insufficient. |
 | `docs/source/what_is_frameit.rst`; six pages under `tracker/`; four under `polar_projection/`; `visualization_tools/rotate_polar_axes.rst`; `developper/how_to_add_my_tracker.rst` | Existing topic URLs — Topic | No roadmap meaning found; retain scientific methods/citations/experimental status and useful extension tutorial. `C2` smoothness is legitimate. Check links and generated exposure in step 3. |
 
-The fourteen frozen full-page bodies and five excerpts from four entry-point sources
-are deliberately duplicated at this step only. Environment/input/README/config/output
-excerpts lose their public history in step 2; all other full-page duplicates in
-step 3; changelog excerpts in step 4. Preserve the archives. Step 5 must find no
-public history copy, stage-named stub or link into this archive.
+The frozen environment/input/README/config/output histories are now developer-only
+records; the current public pages retain their user contracts. Remaining public
+full-page history copies are temporary duplicates scheduled for removal/rewrite
+in step 3; changelog history cleanup is step 4. Preserve the archives. Step 5 must
+find no public history copy, stage-named stub or link into this archive.
 
 ## Scientific-content ownership: what must survive extraction
 

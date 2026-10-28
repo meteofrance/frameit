@@ -1,167 +1,152 @@
 FrameIt Quick Start
 ===================
 
-This page describes the minimal workflow to run **FrameIt** using its command-line interface (CLI).
+Use :doc:`installation` to create and activate the single reference environment
+first. The workflow is **inspect, select, check, run, then interpret**. You supply
+the model inputs; the commands below do not download them.
 
-If FrameIt is not installed yet, see :doc:`installation` first.
-
-Prerequisites
--------------
-
-- A working Python environment where FrameIt is installed.
-- A FrameIt configuration file in YAML format (referred to as ``config.yml`` below).
-
-Check that the CLI is available
--------------------------------
-
-After activating your environment, verify that the ``frameit`` command is visible:
+Check the active installation
+-----------------------------
 
 .. code-block:: bash
 
-   frameit -h
-
-If you cannot access the ``frameit`` executable (PATH issues on some HPC systems), you can use:
-
-.. code-block:: bash
-
-   python -m frameit -h
-
-Display environment information
--------------------------------
-
-To print the FrameIt version and key dependency versions:
-
-.. code-block:: bash
-
+   frameit --help
    frameit info
 
-Prepare the YAML configuration
-------------------------------
-
-1. Run ``frameit init arome`` or ``frameit init mesonh`` to create ``frameit.yaml``.
-2. Update the following elements according to your case:
-
-   - Input data locations (paths or patterns).
-   - Output directory (``output.directory``).
-   - Requested variables and processing options (tracking, extraction, polar projection, etc.).
-
-Validate the configuration
---------------------------
-
-Validation checks schema version 2, input inventory, required variables/levels,
-units, inferred grid geometry, and output accessibility. Use ``--schema-only``
-to validate without opening datasets:
+``info`` reports the active Python and available dependency versions. FA libraries
+are reported without importing their native runtime in the parent. If the
+``frameit`` executable is not on PATH, use the same environment's Python:
 
 .. code-block:: bash
 
+   python -m frameit --help
+
+Inspect a selected input stream
+-------------------------------
+
+Choose the actual model, format and inventory rather than searching unrelated
+files in a broad directory:
+
+.. code-block:: bash
+
+   frameit inspect ./data --model arome --format grib --pattern '*.grib'
+   # For Meso-NH NetCDF:
+   frameit inspect ./data --model mesonh --format netcdf --pattern '*.nc'
+
+Inspection reports metadata, quantity names, available units/levels/times and grid
+facts. Check that they match the intended scientific quantities and sampling.
+Finding a field does not choose its interpretation or verify its decoded values.
+For FA records and named sources use :doc:`../user_guide/fa_inputs`.
+
+Select the requested processing
+-------------------------------
+
+.. code-block:: bash
+
+   frameit init arome
+   # Or: frameit init mesonh --output chido.yaml
+   # Show every supported setting:
+   frameit init arome --full --output full.yaml
+
+Edit ``frameit.yaml`` before running it:
+
+* Set ``input.directory`` and one of ``input.pattern`` or ``input.files``.
+* Select extracted variables and levels, the tracker and its required inputs,
+  and the domain. Declare wind pairs/frames and review source units.
+* Choose a designated ``output.directory``. Use a fresh location for a new
+  attempt; ``output.overwrite: false`` or ``--no-overwrite`` rejects prior artifacts.
+* Leave ``polar.enabled: false`` unless polar sampling is wanted. When enabled,
+  its selected fields are a subset of extraction requests; it does not select
+  everything in the input archive. Production continuous sampling defaults to
+  bilinear point interpolation, without area-budget conservation.
+
+Relative input, output, track and interpreter paths are resolved from the YAML
+file, not the launch directory. Requests can load necessary tracking/wind
+companions internally; available inputs do not enable unrelated diagnostics.
+See :doc:`../user_guide/configuration_file` for selections, scientific defaults
+and migration from flat YAML.
+
+Check schema and preview metadata
+----------------------------------
+
+.. code-block:: bash
+
+   frameit validate --schema-only
    frameit validate
    frameit run --dry-run
 
-If the configuration is valid, the command prints:
+* ``validate --schema-only`` checks YAML types, keys, declarations and selections
+  without opening datasets or requiring optional readers.
+* ``validate`` opens metadata/coordinates and checks inventories, required
+  variables/levels, available units, geometry and output accessibility.
+* ``run --dry-run`` uses metadata preflight too, and prints the effective plan:
+  settings and their origins, selected inputs, resources, grid/sampling information
+  and planned products. It accepts the same execution overrides as ``run``.
 
-.. code-block:: text
+Preflight can perform coordinate I/O and native metadata inquiries. It does not
+decode scientific field payloads, run a tracker, verify scaling that is only
+exposed during decoding, or write scientific products. Point/resource estimates
+are not exact memory/runtime predictions. A successful plan is not scientific
+validation, and a selected data record can still fail during execution.
 
-    OK: 3 input file(s); grid spacing 2500.000 m
-
-Run FrameIt
------------
-
-Run the pipeline with:
+Run and review completion
+--------------------------
 
 .. code-block:: bash
 
-   frameit run path/to/config.yml
+   frameit run
+   # A named configuration is also accepted:
+   frameit run path/to/config.yml --no-overwrite
 
-Logging is initialized automatically and written under the output directory specified in the configuration.
-At the end of the run, FrameIt prints a runtime summary (timer report) in the logs.
 Without a configuration argument, ``run`` and ``validate`` use ``frameit.yaml``.
-All relative paths are resolved from the YAML file. Migrate old flat YAML with
-``frameit config migrate old.yml --output frameit.yaml``; see
-:doc:`/user_guide/configuration_file` for unit conventions and advanced settings.
+Explicit CLI overrides take precedence over YAML; omitted flags preserve YAML
+values. For example, ``--compress-level 2`` overrides the default compression
+level of 1. ``--output-directory`` is a launch-directory-relative override.
 
-NetCDF exports
---------------
+NetCDF, Cartesian and polar export switches default to true, but writing requires
+an available product. Polar computation is enabled separately with
+``polar.enabled``. ``--no-export-polar`` disables its writing, not its computation;
+``--no-export-cart`` omits Cartesian files, and ``--no-export-netcdf`` disables
+all NetCDF writing. Only the selected processing should be enabled when it is
+needed.
 
-By default, the CLI runs NetCDF exports at the end of the pipeline:
+Logs and products are written under ``output.directory``. Inspect
+``run-status.yaml`` for the final state, tracking completeness and product
+inventory. A required-source or export failure cannot mark the run completed;
+already published products can remain because atomicity is per product.
+A permitted shortened track is marked incomplete even if the CLI exits zero.
+Set ``execution.require_complete_tracking: true`` or
+``--require-complete-tracking`` to require a complete track before export.
 
-- NetCDF export: enabled by default
-- Polar export: enabled by default
-- Cartesian export: enabled by default
+``resolved-config.yaml`` records effective settings and
+``run-provenance.yaml`` records input, geometry, units and execution facts.
+Open listed products with an ordinary reader, for example after the default
+AROME template run:
 
-To disable some exports:
+.. code-block:: python
 
-.. code-block:: bash
+   import xarray as xr
 
-   # Disable all NetCDF exports
-   frameit run path/to/config.yml --no-export-netcdf
+   with xr.open_dataset("output/products/analysis.track.nc", engine="netcdf4") as track:
+       print(track.sizes)
+       print(track.data_vars)
 
-.. code-block:: bash
+Adapt the path to the actual manifest. For variable meanings, missing values,
+coordinates and coupled products see :doc:`../user_guide/output_files`. A NetCDF
+container does not guarantee that an existing script expects its schema or
+physical definitions.
 
-   # Disable only polar exports
-   frameit run path/to/config.yml --no-export-polar
-
-.. code-block:: bash
-
-   # Disable only cartesian exports
-   frameit run path/to/config.yml --no-export-cart
-
-You may also tune compression:
-
-.. code-block:: bash
-
-   frameit run path/to/config.yml --compress-level N
-
-Where N is the level of compression you want. The default is N=1; YAML can set
-``output.compression.level``. Explicit CLI options override YAML values.
-Note that increasing the level of compression could drastically increase the execution time of FrameIt.
-
-Optional: HDF5 debug environment variable
------------------------------------------
-
-The CLI removes the ``HDF5_DEBUG`` environment variable by default to avoid excessively verbose HDF5 logging.
-If you want to keep it unchanged:
+Help and optional batch execution
+----------------------------------
 
 .. code-block:: bash
 
-   frameit run path/to/config.yml --no-hdf5-debug-pop
+   frameit run --help
+   frameit validate --help
+   frameit inspect --help
 
-Getting help for subcommands
-----------------------------
-
-For command help and available options:
-
-.. code-block:: bash
-
-   frameit -h
-   frameit run -h
-   frameit validate -h
-   frameit info -h
-
-Exit codes
-----------
-
-- ``0``: success.
-- Non-zero: an error occurred (details are reported in the FrameIt logs and/or printed to stderr).
-
-Minimal HPC example (Slurm)
----------------------------
-
-A typical Slurm wrapper may look like:
-
-.. code-block:: bash
-
-   #!/bin/bash
-   #SBATCH -J frameit
-   #SBATCH --time=02:00:00
-   #SBATCH --nodes=1
-   #SBATCH --ntasks=1
-
-   source /path/to/conda.sh
-   conda activate frameit_env
-
-   frameit validate /path/to/config.yml
-   frameit run /path/to/config.yml
-
-This example is intentionally minimal. Adapt resources and modules according to your HPC environment and workload.
-For bounded execution, isolated attempts, completion manifests and a repeatable
-compute-node test procedure, see :doc:`hpc` and ``example/slurm/``.
+Errors produce a nonzero exit status and details in logs or stderr. The CLI
+removes ``HDF5_DEBUG`` during execution by default; use ``--no-hdf5-debug-pop``
+to preserve it. For one-task/one-node Slurm execution, resource limits,
+cancellation and retries, use :doc:`hpc` and the portable ``example/slurm/``
+launchers. A cluster account is not required for local use.

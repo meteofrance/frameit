@@ -1,20 +1,24 @@
 # FA documentation: developer evidence and handoff
 
-**Inventory/evidence freeze only — 2026-10-28.** Inspected checkout:
+**Evidence frozen — 2026-10-28.** Inspected checkout:
 `9b11d602c4fb05fb2adf74b699439de6a0b8625b` (FrameIt 1.1.0). This is step 1 of
-the maintainer's five-step documentation plan, not completion of the public rework.
+the maintainer's five-step documentation plan. The subsequent user-entry rewrite
+is recorded below; the full public rework is not complete.
 The plans were read from `../architectures_ideas/frameit-md/docs/README.md` and
 `CONTENT_MAP.md`; this index is usable without that separate checkout.
 
 - [Content, ownership and removal map](CONTENT_MAP.md): finite destinations,
   scientific retention, visible strings, incoming links and publication gates.
 - [Verification record](VERIFICATION.md): checks actually run for this freeze.
+- [User-entry rewrite](user_journey.md): current workflow changes, retention and
+  checks for step 2, starting at `35837df`.
 - Current public entry points: [installation](../../source/getting_started/installation.rst),
   [FA inputs](../../source/user_guide/fa_inputs.rst),
   [environment](../../source/user_guide/fa_environment.rst),
   [configuration](../../source/user_guide/configuration_file.rst) and
   [outputs](../../source/user_guide/output_files.rst).
-  These still contain history awaiting the mapped rewrites.
+  These entry pages use current descriptive guidance. Remaining topic guides and
+  navigation still await the mapped rewrites.
 
 ## What was frozen
 
@@ -98,12 +102,14 @@ This directory is outside `docs/source/` and has no Sphinx toctree or public inb
 link. Do not include it in public HTML, search, downloaded sources, viewcode or the
 deployment artifact. Developer records may link to public topics and evidence.
 
-The original public pages are **temporary duplicates** for this ordered handoff:
-step 2 replaces the environment/input/entry-point histories; step 3 rewrites the
-mixed topic pages and deletes all six public `fa_epygram_c*.rst` pages outright,
+The environment/input/entry-point histories have been replaced by current guidance
+in step 2, with their frozen originals unchanged here. Other original public pages
+are **temporary duplicates**: step 3 rewrites the mixed topic pages and deletes
+all six public `fa_epygram_c*.rst` pages outright,
 with no stage-named stubs or redirects. Step 4 clears remaining examples, release
 wording and the spectral error reference; step 5 checks a fresh complete artifact.
 The detailed map assigns every removal. No duplicate is intended to survive step 5.
 
-**Next task:** step 2, rewrite the current installation and user journey using the
-verified contract above. Reinspect changes since this freeze before editing.
+**Next task:** step 3, separate the scientific topic guides from development
+history and remove the public stage pages/navigation. Reinspect the current
+implementation and changes since this freeze before editing.

@@ -1,25 +1,10 @@
 Configuration file (YAML schema version 2)
 ============================================
 
-For named atmospheric/surface sources, native FA settings and the selectable
-``common`` (default) / ``strict`` exact-time policies, see :doc:`fa_inputs` and
-``example/config_file/coupled_fa.yaml``. Single-source schema-v2 documents retain
-their existing structure. Coupled runs require ``tracking.source`` and keep
-variables within each source rather than a shared top-level block.
-Set top-level ``polar.shared_target: true`` for the verified common-target
-contract in :doc:`fa_surface`; its default is false for compatibility. Enabled,
-selected sources inherit the target from ``tracking.source`` and must agree on
-its geometry. Sampling methods and physical masks remain source-specific.
-
-``input.fa.backend`` now defaults to ``epygram``. Legacy ``native`` remains an
-accepted, deprecated alias for that same reader and emits migration warnings.
-``resolved-config.yaml`` preserves an explicit alias for replay; inventories and
-decoder provenance record both requested and effective backend. All profile,
-Earth-model, field/cube, helper, timeout and point-budget settings still apply.
-Both ``fa`` and compatibility ``fa-epygram`` installation extras now select the
-same stack. See :doc:`fa_epygram_c4` before replaying a former raw-reader setup.
-The unified :doc:`fa_environment` uses the current Python for isolated FA workers;
-omit ``input.fa.python_executable`` unless intentionally selecting another runtime.
+After :doc:`installation <../getting_started/installation>`, use this reference
+to select inputs, fields/levels, methods and products explicitly. The reference
+environment already contains FrameIt and the FA/GRIB/NetCDF/polar stack; installing
+an optional dependency does not select its scientific operations.
 
 Create a model-specific, annotated configuration:
 
@@ -63,11 +48,83 @@ imposed. ``input.exclude`` lists glob exclusions. For MesoNH, exclude the exact
 ``000``. Explicit inventories also apply explicit exclusions. Missing inventory
 entries fail rather than disappear. Discovery ordering is deterministic.
 
-Format is detected from file content. Optional ``input.format`` is ``grib`` or
-``netcdf``; mixed inputs and conflicting declarations fail. NetCDF defaults are
+GRIB/NetCDF format is detected from file content; optional ``input.format`` can
+declare ``grib`` or ``netcdf``. Native FA requires explicit ``format: fa`` and
+its profile/declarations below. Mixed ordinary inventories and conflicting
+declarations fail; complementary streams belong in separate named sources.
+NetCDF defaults are
 ``input.netcdf.engine: h5netcdf`` and ``input.netcdf.chunks: {}`` (backend-preferred
 lazy chunks). ``input.duplicate_time_policy`` is ``first`` or ``last``, default
 ``first``. GRIB retains its existing backend time ordering.
+
+Named sources and exact times
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``input.sources`` maps source IDs to their own ``model``, ``input``, ``variables``
+and optional ``polar`` settings. ``tracking.source`` names the reference source;
+top-level ``model`` must match it. Variables belong inside each source, not a
+shared top-level block. Source grids, vertical groups, masks and units remain
+independent. See :doc:`fa_inputs` and ``example/config_file/coupled_fa.yaml``.
+
+``input.time_alignment: common`` is the coupled default: select the exact
+intersection of valid times, warn for each source losing times and retain every
+exclusion in provenance/status. A prescribed track restricts the plan to its
+exact matching times too. ``strict`` requires identical source times and track
+coverage. No nearest-time interpolation or implicit interval conversion occurs;
+ambiguous cycles and conflicting clocks fail.
+
+``polar.shared_target: true`` selects common target coordinates for participating
+sources; it defaults to false. Participating sources inherit the reference target
+and must agree on explicitly selected target geometry. Native geometry is checked
+before common sampling/budgets. The coarsest participating spacing supplies the
+default shared radial step; an explicit step must not be finer than any participant.
+Sampling methods and physical masks remain source-specific. See
+:doc:`Coupled atmosphere/surface sampling <fa_surface>`.
+
+Native FA settings
+~~~~~~~~~~~~~~~~~~
+
+FA sources require ``model: arome`` and ``input.format: fa``. The supported
+profiles are ``arome_history`` and ``surfex_history``; these do not admit arbitrary
+producers or layouts. The full input, source/type/time, geometry and scaling
+contracts are in :doc:`fa_inputs`.
+
+* ``input.fa.backend`` defaults to ``epygram``. Legacy ``native`` is an accepted,
+  deprecated alias of that same reader, with migration warnings. It does not
+  select another decoder. Resolved YAML preserves an explicit alias for replay;
+  inventories and decoder provenance record requested and effective backends.
+* ``input.fa.python_executable`` defaults to null: FA workers use the active
+  Python in fresh isolated processes. Omit it for the single reference environment.
+  An explicit nonempty path selects a runtime containing FrameIt and the coherent
+  FA stack. Paths are YAML-relative without dereferencing interpreter symlinks,
+  including inside named sources. There is no automatic fallback interpreter.
+  See :doc:`FA environment and troubleshooting <fa_environment>` for migration;
+  the ``fa`` and compatibility ``fa-epygram`` extras select the same dependencies.
+* ``subdomain`` is ``CI`` (default) or ``C``; the spectral extension is excluded.
+  Projected FA requires explicit positive ``earth_radius_m`` based on producer
+  evidence, not a fitted/default Earth model.
+* ``expected_source`` defaults to ``{}`` and accepts exact native assertions for
+  ``PROGRAM``, ``VERSION``, ``BUG``, ``MASDEV`` and ``BUGFIX``. Missing or conflicting
+  native facts fail; assertions do not supply or overwrite source identity.
+* ``field_metadata`` declares source ``units``, ``kind: continuous|categorical``
+  and ``temporal_kind: instantaneous`` for each selected record or logical cube
+  variable. These are not requested unit conversions. Native facts precede user
+  completion of unresolved meaning. ``allow_unscaled`` defaults to false; a
+  missing-native-scaling warning fails unless an explicit justified identity
+  fallback is permitted. Permission/observed fallback and warnings are recorded;
+  silence is not proof of correct scaling.
+* ``native_cubes`` defaults to ``{}``. It associates exact native records with
+  declared full/interface positions and centre sampling, retaining original
+  labels/indices and checked A/B/reference-pressure metadata. It does not infer
+  pressure/height, staggering, vector basis or scientific field identity. See
+  :doc:`Native atmospheric levels and cubes <fa_atmosphere>`.
+* ``max_points`` defaults to 20,000,000 stored points and ``timeout_seconds`` to
+  120 per transaction. Even a tiny crop may require a full native horizontal
+  record. These are point/time bounds, not an exact peak-memory guarantee.
+
+Accumulated/averaged FA, implicit deaccumulation/rates, spectral execution,
+packed support-map reconstruction and unqualified physical/vertical operations
+remain unsupported. Header readability is not decode eligibility.
 
 Native grid geometry
 --------------------
@@ -79,8 +136,9 @@ spacings, variability, sources, and the scalar effective spacing.
 
 Current scalar-spacing algorithms reject X/Y differences greater than 10% and
 within-axis spacing variation greater than 20%; these are implementation support
-limits, not claims about arbitrary curvilinear-grid accuracy. All selected inputs
-must have compatible geographic grids. Automatic inference can differ from the
+limits, not claims about arbitrary curvilinear-grid accuracy. Within a source's
+time sequence, selected inputs must have compatible geographic grids; separate
+named sources retain independent grids. Automatic inference can differ from the
 old nominal spacing and consequently change search windows and sampling.
 
 Advanced ``input.grid_spacing_m`` supplies a nominal scalar override in metres.
@@ -171,6 +229,11 @@ Other controls include ``interpolation_method`` (``bilinear`` or ``nearest_s2d``
 source halo, ellipsoid, geometry point budget, plan-cache limits, ``chunks``, and
 ``profile``. ``--full`` exposes their authoritative defaults. Input chunks and
 polar computation chunks are separate; NetCDF storage chunks remain backend-selected.
+
+Bilinear is the production default for continuous point samples, without an
+area-budget conservation guarantee. Categorical fields require an explicit
+appropriate method; experimental conservative/patch/vector-transport methods
+are not chosen automatically. Missing values and physical zeroes remain distinct.
 
 Units and scientific contracts
 ------------------------------
@@ -296,7 +359,12 @@ Inspection, validation, and migration
 
 Dataset preflight checks files, required variables/levels, units, geometry,
 geometry-dependent defaults, and output accessibility without computing scientific
-fields. Dry runs do not write products. Schema-only validation does not open data.
+fields. It can read metadata/coordinates but does not decode scientific payloads,
+verify decode-time scaling or run a tracker. Dry runs print effective settings,
+resource/sampling information and planned products without writing products;
+they are not exact runtime/memory predictions or scientific approval.
+Schema-only validation does not open data. ``config show`` displays resolved
+schema settings; ``config show --resolved`` also performs metadata preflight.
 
 Legacy flat YAML is rejected by ordinary loading with a migration instruction.
 Migration reconstructs exact filename globs/exclusions, preserves physical values
@@ -304,6 +372,12 @@ and selections, resolves old paths against the original launch directory, and
 reports removed ineffective fields. It retains the old nominal resolution as an
 advanced override; remove that key deliberately to enable fully inferred spacing.
 Source-unit validation still requires dataset preflight.
+
+The migration command refuses an existing output configuration unless ``--force``
+is explicit. Review the report and generated YAML, then run ``validate
+--schema-only`` and metadata preflight on the selected inputs. Environment migration
+is separate: use a fresh prefix as described in :doc:`fa_environment`, review any
+explicit interpreter override, and retain all scientific declarations/budgets.
 
 The internal Python ``SimulationConfig`` numerical interface retains flat field
 names for existing integrations; those names are not accepted as schema-v2 YAML.

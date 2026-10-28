@@ -1,14 +1,15 @@
 Output files
 ============
 
-FrameIt produces NetCDF output files that are designed to be shareable and easy to reuse with standard tools
-(xarray, NCO, CDO, ncview).
+FrameIt writes NetCDF products that can be opened without FrameIt, for example
+with xarray/netCDF4, NCO or CDO. Existing scripts still need compatible variable
+definitions, dimensions, coordinates and reader support; a matching format alone
+does not make schemas or physical quantities equivalent.
 
-The output files are :
-
-- cyclone track dataset
-- user-requested variables extracted on a cartesian box
-- user-requested variables extracted on a polar grid (optional)
+The products are a track dataset, selected variables on Cartesian subdomains,
+and optionally selected polar samples. Review ``run-status.yaml`` and provenance
+before interpreting them, including tracking completeness, time exclusions and
+scaling/missing-data observations. A completed run is not scientific approval.
 
 Naming convention
 -----------------
@@ -25,8 +26,9 @@ Group files (one file per group key in the output dictionaries):
 - ``SIMU.polar.<group>.nc`` (polar projection products)
 
 The ``<group>`` token is the corresponding key of the dictionary (for example ``surface``, ``level``,
-``heightAboveGround``). The name is sanitized for filenames (any non-alphanumeric character is replaced by ``_``),
-but the original group name is preserved in the file metadata (see below).
+``heightAboveGround``). Filename tokens retain ASCII letters/digits, ``.``, ``_``
+and ``-``; other characters become ``_``. The original group name is preserved
+in file metadata.
 
 ``output.directory`` is the run root (see :doc:`configuration_file`).
 Artifacts use the same layout for ordinary runs and each matrix case::
@@ -40,50 +42,67 @@ Artifacts use the same layout for ordinary runs and each matrix case::
         run-status.yaml       # Completion state, runtime/resources, product inventory
         .frameit-run.lock     # Present while an attempt owns this root
 
-Coupled sources keep this layout with source-qualified groups, for example
+Coupled and native FA products
+------------------------------
+
+Coupled sources use this layout with source-qualified groups, for example
 ``SIMU.cart.surfex.surface.nc``. The shared track records per-source indices;
 Cartesian grids are not implicitly regridded. Exact-time exclusions and native
 FA diagnostics are reported in provenance/final status. See :doc:`fa_inputs`.
 FA variables additionally carry a JSON ``fa_field_descriptor`` input snapshot
-and its explicit scope. Per-file descriptors and post-decode scaling/mask facts
-are retained in run provenance and decoder logs; see :doc:`fa_contracts`.
+and ``fa_field_descriptor_scope``. This is a representative input-record
+description, not a combined multi-time or post-crop description. Per-file
+descriptors and post-decode scaling/mask facts are retained in run provenance
+and decoder logs; see :doc:`FA metadata and provenance <fa_contracts>`.
 Spectral FA coefficients have no admitted output contract and cannot be returned
-as gridpoint values. The separate P4 candidate evaluation writes an atomic JSON
-report, not a physical-field NetCDF product; see :doc:`fa_spectral`.
-Opt-in P5 native cubes add separate ``level``/``level_w`` axes, original record
-coordinates and pressure-valued/normalized interface coefficients, without
-diagnosing physical coordinates; see :doc:`fa_atmosphere`.
-The :doc:`fa_epygram_c1` adds effective-backend/helper-version provenance and
-post-normalization full-native nonfinite counts in decode observations. Support
-labels remain distinct from actual masks; native/source-qualified product schemas
-and ordinary-reader requirements are preserved.
-The :doc:`fa_epygram_c3` adds ``sources.<id>.fa_decoder.payload_reads`` keyed by
-source basename and selected native field. Each successful payload call reports
-its actual library/accessor and, for EPyGrAM, resource class and read-only mode.
+as gridpoint values; see :doc:`Spectral support and limitations <fa_spectral>`.
+Explicit native atmospheric cubes use separate ``level``/``level_w`` axes,
+original record IDs and source-native indices, plus pressure-valued/normalized
+interface coefficients and the source reference pressure. Native indices are
+not pressure or height coordinates; the complete coefficient axis survives
+sparse data selection without re-expanding unselected levels. See
+:doc:`Native atmospheric levels and cubes <fa_atmosphere>`.
+
+Decoder observations identify actual helper/backend versions, returned native
+masks and post-normalization full-native nonfinite counts. A count before
+cropping is not the output mask. Support labels, native undefined/IEEE NaN
+samples, extension zones and valid physical zeroes remain separate facts.
+Missing values are not converted to physical zeroes to complete an output.
+
+``sources.<id>.fa_decoder.payload_reads`` is keyed by source basename and selected
+native field. Each successful payload call reports its actual library/accessor
+and EPyGrAM resource class/read-only mode.
 These post-call observations supplement configured backend labels and actual helper
 versions. Decoder JSONL logs retain individual requests; the manifest consolidates
 observations per file/field. Scaling admission is still checked separately and may
 fail after the library call. This is execution evidence, not producer-scaling proof.
-C4 makes these library observations universal for FA, including the deprecated
-``native`` alias. Per-input ``backend`` and ``backend_versions.FA_backend`` record
+
+Per-input ``backend`` and ``backend_versions.FA_backend`` record
 the effective ``epygram`` reader; ``requested_backend`` / ``FA_backend_requested``
 retain the request and ``FA_backend_migration`` explains an alias. The default
-now also records library geometry/CRS/zone origins and returned-mask provenance.
-Scientific variable/dimension names, source/vertical groups, values, units, masks,
-precision and storage encoding retain their established contracts; see
-:doc:`fa_epygram_c4` for compatibility evidence and remaining limits.
-C5 preserves that schema and adds contextual rejection of malformed or over-budget
-helper transfers before array materialization. A failed transfer cannot publish
-that surface product or mark the run completed; already completed other products
-can remain under the per-product atomicity contract. See :doc:`fa_epygram_c5`.
+and deprecated ``native`` alias both record library geometry/CRS/zone origins
+and returned-mask provenance. No backend label supplies field/scaling validation.
+Malformed or over-budget helper transfers fail before array materialization;
+that product cannot be published or mark the run completed. Earlier complete
+products can remain under the per-product atomicity contract.
+
 Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
-``lat``/``lon`` remain requested centres; see :doc:`fa_geometry` for conventions.
+``lat``/``lon`` remain requested centres; see
+:doc:`FA geometry and centres <fa_geometry>` for conventions.
 With ``polar.shared_target: true``, separate source-qualified polar products share
 a verified target ID and exactly matching time/radius/azimuth/lat/lon coordinates.
 Source masks and variable meanings remain independent. Vertical-group separation
 is retained (several atmospheric groups can still produce several atmosphere
-files). See :doc:`fa_surface`; no CROCO/WW3 compatibility is implied.
+files). Continuous production polar sampling defaults to bilinear point
+interpolation without an area-budget conservation guarantee. Diagnostics,
+pressure/height calculations, rates/deaccumulation, vector transformations and
+layer/tile averages are not enabled merely because their inputs exist. See
+:doc:`Coupled atmosphere/surface sampling <fa_surface>`; no ocean/wave adapter
+compatibility is implied by sharing a NetCDF container or target.
+
+Completion, provenance and ordinary readers
+-------------------------------------------
 
 GRIB indexes are stored in ``cache/``, never beside the input files. Cache
 filenames distinguish input paths and cfgrib indexing keys. Meso-NH NetCDF
@@ -91,8 +110,8 @@ loading does not create disk indexes; its processing caches remain in memory.
 Migration removes the ineffective legacy ``grib_index_dir`` YAML field;
 indexes always use the run's ``cache/`` directory.
 
-Previously, ordinary runs wrote products and logs directly into the run root.
-Existing files are not moved; new runs use the layout above.
+Legacy products/logs already in a run root are not moved automatically; current
+runs use the layout above.
 
 Normal execution atomically publishes each complete NetCDF/YAML file through a
 same-directory temporary file. Interrupted attempts can retain complete earlier
@@ -101,12 +120,38 @@ products or hidden ``*.partial`` files. The authoritative completion record is
 It lists relative product paths, byte sizes, tracking completeness, execution
 limits, package/native-backend versions and selected Slurm metadata. Scientific
 provenance also records versions and code revision/dirty state when available.
-Sizes and paths are not content checksums. See :doc:`/getting_started/hpc` for
-state meanings and retry policy.
+Sizes and paths are not content checksums. ``completed`` means the requested
+execution finished; a permitted shortened track is marked ``incomplete``.
+With ``execution.require_complete_tracking: true``, an incomplete track fails
+before export. Missing final status, a failed state or an abnormal process exit
+must not be inferred successful from the presence of one file. Atomic publication
+is per product, not an all-products transaction or an fsync durability guarantee.
+See :doc:`/getting_started/hpc` for states, ownership and retry policy.
 
-Product names, dimensions, units, compression and precision are retained.
 ``metadata.extra`` is serialized as the JSON global attribute
 ``frameit_user_metadata_json`` for ordinary NetCDF readers.
+
+For a run using the default AROME template, an ordinary-reader inspection is:
+
+.. code-block:: python
+
+   import xarray as xr
+
+   with xr.open_dataset("output/products/analysis.cart.surface.nc", engine="netcdf4") as ds:
+       print(ds.sizes)
+       print(ds.coords)
+       print(ds["u10"].attrs)
+       print(ds["u10"].dtype, ds["u10"].encoding)
+
+Use the actual paths and selected variables in ``run-status.yaml``; coupled runs
+have source-qualified groups. Check each variable's coordinates, units, basis,
+missing-value metadata and storage dtype rather than assuming that similarly
+named variables share definitions. xarray normally decodes CF time and missing
+values; a valid zero remains data. Source valid times, forecast reference cycles
+and accumulation/averaging intervals are distinct and must not be conflated.
+FA temporal declarations are instantaneous only; no interval conversion is
+inferred to complete a product. JSON attributes such as ``fa_field_descriptor``
+can be read with ``json.loads`` from Python's standard library.
 
 Produced files
 --------------
@@ -285,7 +330,7 @@ FrameIt adds a minimal set of global attributes to each file:
 - ``Conventions`` (currently ``CF-1.8``)
 - ``title``, ``summary``, ``institution``, ``source``
 - ``simulation_id`` (from ``run.name``)
-- ``FRAMEIT_version`` (from the installed FrameIt package)
+- ``frameit_version`` (from the installed FrameIt package)
 
 Additional export-specific attributes:
 

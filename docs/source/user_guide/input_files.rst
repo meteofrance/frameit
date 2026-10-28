@@ -9,17 +9,39 @@ conventions have not been generally qualified. Ordinary inventories include:
 - A single NetCDF file containing all time steps.
 - A list of files (NetCDF or GRIB), each representing a single time step.
 
-All variables must share the same time dimension with the same name, usually ’time’ for MesoNH and ’valid_time’ for AROME.
-For NetCDF files, be sure that the latitude and longitude variable are defined as coordinate for the other variables of the netcdf file.
+Within each source, variables must share a time-dimension convention, usually
+``time`` for Meso-NH and ``valid_time`` for AROME. NetCDF latitude/longitude must
+be coordinates associated with the scientific fields. Matching the container
+format alone does not establish compatible model/variable/grid conventions.
 
 Selection uses ``input.pattern`` (a standard glob or exact filename) or
 ``input.files`` (an ordered explicit inventory), with optional ``input.exclude``
-globs. Relative paths are resolved from the YAML file. Content-based format
-detection rejects mixed inputs; ``input.format`` may explicitly specify ``grib``
-or ``netcdf`` (and explicit ``fa`` with its required profile/declarations).
+globs. Relative paths are resolved from the YAML file. GRIB/NetCDF content-based
+format detection rejects mixed inputs; ``input.format`` may explicitly specify
+``grib`` or ``netcdf``. FA requires explicit ``format: fa`` and its profile/declarations.
 Mixed formats require separate named sources, not a mixed ordinary inventory.
 See :doc:`configuration_file` for schema-v2 examples, units,
 native-grid inference, and migration from the old filename fragments.
+
+Inspect a deliberately selected stream before choosing quantities and methods:
+
+.. code-block:: bash
+
+   frameit inspect ./data --model arome --format grib --pattern '*.grib'
+   frameit inspect ./data --model mesonh --format netcdf --pattern '*.nc'
+
+Review native names, units, time support/cycles, levels and grid coordinates.
+Inspection reads metadata/coordinates, not scientific field payloads, and does
+not prove decoded scaling or scientific suitability. ``validate --schema-only``
+checks configuration without opening inputs; ``validate`` and ``run --dry-run``
+perform metadata preflight for the configured selections. See
+:doc:`../getting_started/quick_start` for the full workflow.
+
+Sources are read-only. FrameIt keeps GRIB indexes in the designated output
+``cache/``, not beside input files. In coupled runs, streams keep their own grids,
+masks and products; exact-common/strict time selection is described in
+:doc:`fa_inputs`. Available fields do not automatically enable diagnostics,
+unit/interval conversions or missing-data filling.
 
 Wind metadata to check
 ----------------------
