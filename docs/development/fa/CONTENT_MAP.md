@@ -6,6 +6,34 @@ All old paths below are repository-relative; `UG/` means
 Tables retain the baseline assignments and line references. Progress below
 records completed work; uncompleted destinations remain assignments.
 
+## Final local acceptance
+
+Step 5 starts at `206a500`; see [acceptance.md](acceptance.md) for exact commands,
+results, retries and unrun checks. Fresh Sphinx 8.1.3 and reference Sphinx 9.2.0
+artifacts pass strict warnings and complete HTML/title/navigation/link/asset/
+search/source/inventory inspection. The canonical `docs/build/html` boundary is
+also built/tested via the Makefile's Sphinx make-mode command; local GNU make and
+hosted Python-3.12 execution are explicitly not claimed.
+
+CI now cleans its designated documentation build, uses strict warnings and checks
+the artifact with one small standard-library guard plus positive/negative tests.
+The existing Python-3.12 setup, Sphinx requirements and upload path remain unchanged.
+No orphan warning suppression, generic stage-token waiver or new docs framework
+is added. Native C0/C1, SFX.TG1P1/WG1P1 and quintic C2 meanings remain visible.
+
+Final walkthroughs use an already installed single reference prefix and compact
+generated inputs: ordinary CLI inspect/configure/schema/preflight/preview/run/read,
+failure and legacy migration; two native default-interpreter sync/spawn cases
+verify isolated FA processes, independent ordinary readers and normal exits.
+Fresh environment creation is unrun under the no-download constraint. All frozen
+records/catalogue assets remain unchanged and locatable through the developer index.
+
+Found defects are corrected: optional fixture binaries are not promised by a fresh
+Git checkout/build; stale numerical-test paths now name existing package files.
+Those clarification-only edits do not change methods, tests, schemas or data values.
+The remaining operational handoff is hosted CI/fresh installation and any desired
+browser/external-link checks; scientific evidence gaps are not documentation approval.
+
 ## Remaining public entry points: progress
 
 Step 4 starts at `0abea33`. README links, four FA YAML examples, installation
@@ -30,15 +58,15 @@ development evidence: current Sphinx sources and fresh HTML/search/source/invent
 do not expose them. Native C0/C1 codes, actual field IDs and mathematical C2
 smoothness retain their meanings. No broad directory/token waiver is added.
 
-The source/upload boundary in `conf.py` and `.github/workflows/docs.yml` is
-unchanged and excludes the developer archive. Final hosted/CI artifact acceptance
-and fresh/strict CI enforcement remain step 5, not inferred from local checks.
+At that checkpoint the source/upload boundary excluded the developer archive,
+but strict/fresh CI enforcement remained pending. The final acceptance above
+records its implementation and the distinct unrun hosted checks.
 
 ## Topic-guide and archive progress
 
 Step 3 starts at `382624c`. The six neutral topic paths under `UG/` are `fa_baseline.rst`,
 `fa_contracts.rst`, `fa_geometry.rst`, `fa_surface.rst`, `fa_atmosphere.rst` and
-`fa_spectral.rst` now describe current support/limits, metadata/provenance,
+`fa_spectral.rst`. They describe current support/limits, metadata/provenance,
 geometry/centres, coupled sampling, native cubes and spectral limitations.
 See [the topic-guide verification record](topic_guides.md).
 
@@ -179,7 +207,7 @@ scientific review remain unresolved; no editor may erase them to simplify prose.
 | `src/frameit/testing/catalogs/fa_p0.yaml`, `fa_p3.yaml`, `fa_p4.yaml`, `fa_p5.yaml`, `fa_c0.yaml`–`fa_c5.yaml`, `fa_environment.yaml` | Existing package assets and consumers (including runtime CI and `pyproject.toml` package-data) are unchanged. Developer index/records own evidence links. All public includes/references to these evidence ledgers are removed in steps 2/3; the original atmosphere prose's `fa_p5.yaml` reference remains in its frozen record. |
 | `src/frameit/templates/arome.yaml`, `mesonh.yaml` / generated `frameit init ... --full`; README used as package long description | Journey/Surface own rendered prose, links and schema examples; retain all keys/defaults. Catalogue filenames and test/package IDs are machine contracts, not targets for cosmetic renaming. |
 | `docs/source/conf.py` | Publication owner: `source` is the public root; `exclude_patterns` currently only `_build`, `Thumbs.db`, `.DS_Store`. Autodoc/autosummary/viewcode extensions are enabled, but no directives currently expose these FA modules. Do not import/include the developer archive. |
-| `.github/workflows/docs.yml`, `docs/Makefile`, `docs/docs-requirements.txt`, `docs/make.bat` | Publication owner: retain Sphinx/RST and artifact `docs/build/html`; CI uses Python 3.12, Sphinx 8.1.3, theme, then `pip install .`, `make -C docs html`. Current build is not strict and does not explicitly clean old artifacts. Reference YAML's Sphinx 9.2.0 is a different environment. |
+| `.github/workflows/docs.yml`, `docs/Makefile`, `docs/docs-requirements.txt`, `docs/make.bat` | Closed locally in step 5: retain Sphinx/RST, Python 3.12/Sphinx 8.1.3 setup and artifact `docs/build/html`; CI cleans before strict `make -C docs html` and checks the publication boundary. Sphinx 8.1.3 and reference 9.2.0 artifacts pass locally; hosted Python-3.12 execution remains unrun. |
 | HTML pages/titles/navigation, `searchindex.js`, `_sources/*.rst.txt`, `objects.inv`, any `_modules`/autodoc output and uploaded artifact | Publication owner checks the complete deployment boundary after step 4. Step 3's fresh artifact has no removed stage pages, source downloads, search/inventory entries or archive routes. Deleting only navigation or reusing a dirty HTML directory still fails acceptance. |
 
 ## Contextual exclusions: retain actual identities

@@ -404,7 +404,8 @@ contamination and centre sensitivity follows Ryglicki and Hodyss (2016), DOI
 ``10.1175/JAMC-D-15-0125.1``, and Zhao et al. (2019), DOI
 ``10.3390/atmos10060300``.
 
-``tests/test_polar_contracts.py`` and ``tests/test_polar_coverage.py`` additionally
+``src/frameit/testing/numerical/test_polar_contracts.py`` and
+``src/frameit/testing/numerical/test_polar_coverage.py`` additionally
 exercise exact time alignment, finite footprints, dateline connectivity, changing
 source geometry, CF auxiliary/bounds retention through loading and extraction,
 weight-based missing-data oracles, joint vector masks, partial-ring eligibility,

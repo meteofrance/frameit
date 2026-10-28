@@ -2,8 +2,8 @@
 
 **Evidence frozen — 2026-10-28.** Inspected checkout:
 `9b11d602c4fb05fb2adf74b699439de6a0b8625b` (FrameIt 1.1.0). This is step 1 of
-the maintainer's five-step documentation plan. Subsequent user-entry, topic-guide
-and public-message rewrites are recorded below; final publication acceptance is pending.
+the maintainer's five-step documentation plan. Subsequent rewrites and final local
+publication acceptance are recorded below, including genuine unrun hosted/install checks.
 The plans were read from `../architectures_ideas/frameit-md/docs/README.md` and
 `CONTENT_MAP.md`; this index is usable without that separate checkout.
 
@@ -16,14 +16,16 @@ The plans were read from `../architectures_ideas/frameit-md/docs/README.md` and
   starting at `382624c`, including removed public URLs and preservation checks.
 - [Remaining public entry points](entry_points.md): step 4, starting at `0abea33`,
   including release wording and the spectral failure explanation.
+- [Final acceptance](acceptance.md): step 5, starting at `206a500`, including full
+  artifact inspection, bounded installed journeys, CI regression checks and limits.
 - Current public entry points: [installation](../../source/getting_started/installation.rst),
   [FA inputs](../../source/user_guide/fa_inputs.rst),
   [environment](../../source/user_guide/fa_environment.rst),
   [configuration](../../source/user_guide/configuration_file.rst) and
   [outputs](../../source/user_guide/output_files.rst).
   Entry pages, FA topic guides and navigation use descriptive current guidance.
-  Public release/error wording uses current topics; final publication acceptance
-  is mapped below.
+  Public release/error wording uses current topics. Local acceptance and remaining
+  deployment/install verification are recorded above.
 
 ## What was frozen
 
@@ -116,9 +118,12 @@ Catalogue references and archived relative links retain their existing valid pat
 Example comments pointing to removed records now name current topics; their parsed
 settings are unchanged. Step 4 replaces remaining unreleased FA roadmap wording
 and the ordinary spectral error reference, with the guard and required evidence
-unchanged. Step 5 owns complete CI/publication acceptance.
+unchanged. Step 5 verifies fresh direct and CI-boundary artifacts, introduces a
+small standard-library publication guard, and records outstanding hosted checks.
 The detailed map retains the finite old-URL -> topic/archive assignments.
 
-**Next task:** step 5, verify the complete public source and fresh deployment
-artifact, including search/source/inventory and the existing CI artifact contract.
-Reinspect current status and changes since these records before acceptance.
+**Handoff:** the local documentation rework/acceptance is complete. Run the hosted
+Python-3.12 documentation workflow and a fresh reference installation when their
+network/resource prerequisites are authorized; see the acceptance record for the
+checks actually run. No push or deployment was performed. Scientific review and
+producer-specific evidence remain separate from documentation acceptance.

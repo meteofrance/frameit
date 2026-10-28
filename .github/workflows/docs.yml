@@ -30,7 +30,17 @@ jobs:
           pip install .
 
       - name: Build documentation
-        run: make -C docs html
+        env:
+          LC_ALL: C
+          LANG: C
+        run: |
+          make -C docs clean
+          make -C docs html SPHINXOPTS="-q -W --keep-going"
+
+      - name: Check public documentation boundary
+        run: |
+          python -m unittest discover -s docs -p test_check_publication.py
+          python docs/check_publication.py docs/build/html
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -9,10 +9,18 @@ invoke shell scripts or recursively invoke the CLI.
 Ready-to-use CI dataset
 -----------------------
 
-The release bundles the frozen simulation fixture, its manifest, and
-``MNH/IBTracks_reunion_CHIDO.nc``. Run ``frameit run-matrix-test --ci`` with an
-``--output`` directory to use it automatically, from any working directory.
-No access to the full source simulations is required.
+The ``--ci`` matrix requires the frozen simulation fixture, its manifest and
+``MNH/IBTracks_reunion_CHIDO.nc``. When these payloads are included in the installed
+package, ``frameit run-matrix-test --ci --output ./runs/ci`` selects that package
+location automatically, from any working directory. No full source simulations
+are needed to run a complete, verified reduced fixture.
+
+A fresh Git checkout contains the manifest but not the ignored GRIB/NetCDF
+payloads. Creating the reference environment does not download or generate them.
+Missing/invalid required fixture data fail verification. Supply a complete
+compatible fixture with ``--ci --data-root ./ci_dataset``, or use the optional
+preparation procedure below with authorized source simulations. This fixture is
+not required for ordinary extraction with your own inputs or for schema-only checks.
 
 Reproduce the CI dataset (maintainers)
 ----------------------------------------
@@ -47,7 +55,9 @@ The native manifest records the recipe, crop, source geometry, fields, levels, t
 byte sizes and content hashes, including the track. Existing compatible fixture
 manifests are supported through a read-only adapter. Matrix execution verifies the
 selected fixture families and does not generate, repair, or download missing data.
-The ready-to-use fixture is included as wheel and source-distribution package data.
+Packaging declares the fixture files as package data, but their inclusion in a
+wheel/source distribution depends on the payloads available when it is built;
+the manifest alone is not a complete dataset.
 
 Run the matrix
 --------------
@@ -63,8 +73,9 @@ Install pytest (``pip install 'frameit[test]'``), then run:
    frameit run-all-tests --data-root /data/DONEE_TEST_CYCLOPY --output ./runs/all-full
 
 The default runs every packaged numerical test, the independent analytical
-scientific qualification, and the full CI matrix using the
-bundled fixture. ``--data-root`` selects the full-domain matrix instead; optional
+scientific qualification, and the full CI matrix using the installed frozen
+fixture, which must be present and valid. ``--data-root`` selects the full-domain
+matrix instead; optional
 UTrack cases accept ``--utrack-weights``. All services run even if one fails.
 The output directory must be fresh and must not overlap the input data.
 
@@ -94,7 +105,7 @@ the repository's ordinary ``pytest`` command.
      --output ./runs/prescribed --case 'mnh_chido_prescribed_*'
    frameit run-matrix-test --ci --output ./runs/plan --plan-only
 
-``--data-root`` overrides the bundled fixture with ``--ci`` and is required otherwise.
+``--data-root`` overrides the package fixture location with ``--ci`` and is required otherwise.
 ``--output`` must be fresh or empty. Its location must not overlap the input tree.
 ``--profile core|full`` defaults to ``full`` in both modes. Repeat ``--case`` to
 select the union of stable IDs or glob patterns within that mode and profile; an
@@ -156,14 +167,14 @@ rule. This command does not compare values to a reference simulation.
 Polar product checks additionally require a uniform, endpoint-exclusive angular
 cycle, radian angles, kilometre radii, consistent degree coordinates and an
 explicit open-grid marker. Numerical accuracy and Fourier behaviour are checked
-separately by ``tests/test_polar_axes.py`` and
-``tests/test_polar_periodic_diagnostics.py``.
+separately by ``test_polar_axes.py`` and ``test_polar_periodic_diagnostics.py``
+in the packaged numerical suite described below.
 
 Polar outputs must also contain geometric mapping indicators and per-field
 support/status/validity arrays, ring coverage and complete-ring eligibility on
 the expected dimensions. The independent numerical oracles and scientific
-metadata checks are in ``tests/test_polar_contracts.py`` and
-``tests/test_polar_coverage.py``.
+metadata checks are in ``test_polar_contracts.py`` and ``test_polar_coverage.py``
+in that same suite.
 
 Numerical tests are packaged in ``src/frameit/testing/numerical`` and run with
 ``python -m pytest`` or the installed ``run-all-tests`` service. Reusable plan
