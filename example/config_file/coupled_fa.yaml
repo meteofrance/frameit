@@ -31,9 +31,8 @@ input:
         format: fa
         fa:
           backend: epygram
-          # Install FrameIt[fa] in a coherent Python-3.13 environment (C4 default).
-          # Qualified distribution: separate GRIB/ESMF parent and FA helper (C5).
-          # Set python_executable to that helper; paths are relative to this YAML.
+          # environment.yaml installs the full Python-3.13 stack in one environment.
+          # Omit python_executable: FA workers use that same Python in isolated processes.
           profile: surfex_history
           # Optional exact assertions, not overrides or scientific definitions.
           # E.g. {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0}

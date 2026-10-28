@@ -18,6 +18,8 @@ decoder provenance record both requested and effective backend. All profile,
 Earth-model, field/cube, helper, timeout and point-budget settings still apply.
 Both ``fa`` and compatibility ``fa-epygram`` installation extras now select the
 same stack. See :doc:`fa_epygram_c4` before replaying a former raw-reader setup.
+The unified :doc:`fa_environment` uses the current Python for isolated FA workers;
+omit ``input.fa.python_executable`` unless intentionally selecting another runtime.
 
 Create a model-specific, annotated configuration:
 

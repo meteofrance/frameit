@@ -13,7 +13,8 @@ input:
   fa:
     backend: epygram
     profile: arome_history
-    # Optional: select a separate environment containing FrameIt[fa]/EPyGrAM.
+    # environment.yaml supplies the full stack; no helper path is needed.
+    # Optional override for a separately maintained FrameIt[fa]/EPyGrAM environment:
     # python_executable: /path/to/epygram-env/bin/python
     earth_radius_m: 6371229.0  # User declaration; verify the producer Earth model.
     subdomain: CI

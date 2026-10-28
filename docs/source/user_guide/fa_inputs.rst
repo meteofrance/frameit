@@ -24,12 +24,14 @@ measurements, transfer-failure coverage and remaining per-family admission gates
 Installation and native isolation
 ----------------------------------------
 
-The reference ``environment.yaml`` uses Python 3.13 for the GRIB/ESMF parent and
-documents a separate maintained optional ``fa`` helper: EPyGrAM 2.1.0's unmodified
-upstream pins and the qualified ctypesForFortran 1.3.0 bridge. ``fa-epygram`` is an
-installation alias with identical
-dependencies; combining these extras is supported. ``input.fa.python_executable``
-can select a coherent Python-3.13 helper containing FrameIt and this stack.
+The reference ``environment.yaml`` installs one Python-3.13 FA/GRIB/NetCDF/polar
+environment, including FrameIt, EPyGrAM 2.1.0's unmodified upstream requirements
+and ctypesForFortran 1.3.0. Conda supplies the shared native I/O libraries at the
+required Python-package versions so pip does not replace them. ``fa-epygram`` is
+an identical installation alias. FA processes use the active Python by default;
+omit ``input.fa.python_executable`` for this setup. That key remains available to
+select a separate coherent environment containing FrameIt and the FA stack.
+See :doc:`fa_environment` for clean-install qualification and migration.
 ``backend: epygram`` is the default for all FA operations. Legacy ``backend: native``
 remains accepted as a deprecated, warned alias with requested/effective provenance.
 It cannot select the retired decoder or bypass admission checks. Existing YAML
@@ -37,7 +39,7 @@ settings retain their scientific/resource meaning; see :doc:`fa_epygram_c4`.
 Ordinary NetCDF/GRIB processing and schema-only validation do not
 require the FA package.
 
-The published wheel bundles an ecCodes runtime that cannot reliably coexist
+The native FA dependency bundles an ecCodes runtime that cannot reliably coexist
 with the conda Python GRIB runtime in one interpreter. FrameIt therefore runs
 native FA metadata/decode transactions in fresh helper processes. These helpers
 never import Python ecCodes. The parent performs scientific preparation,
@@ -48,7 +50,8 @@ Helpers use one native thread and one serialized request at a time per consuming
 process. They use their bundled definition/sample tables: inherited parent
 ``ECCODES_DEFINITION_PATH`` and ``ECCODES_SAMPLES_PATH`` overrides are excluded
 only in the helper. The policy and child versions are recorded. Custom FA
-definition-table loading is not currently an adapter option.
+definition-table loading is not currently an adapter option. A single installation
+does not remove this format-specific process boundary.
 
 Inspect first
 -------------

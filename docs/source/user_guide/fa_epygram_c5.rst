@@ -2,6 +2,9 @@ EPyGrAM C5: distribution and resource qualification
 ======================================================================
 
 The selected C5 row is **distribution/resources**, starting at ``5d990cc``.
+This is the C5 snapshot at ``0a328b7``. The subsequent :doc:`fa_environment`
+qualifies a fresh single-environment installation while retaining FA subprocess
+isolation; the historical overlay failure and measurements below remain evidence.
 This increment qualifies the existing dense SURFEX/AROME-GRIB boundary with compact
 fixtures. It does not admit a new scientific family. C1--C4's maintained reader,
 configuration migration and finite numerical contracts remain the foundation.

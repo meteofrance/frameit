@@ -1,0 +1,167 @@
+# Distribution evidence only; no additional FA family or scientific approval.
+schema_version: 1
+stage: C5-unified-environment
+checked_on: '2026-10-28'
+starting_revision: 0a328b7
+goal: one environment.yaml installation; same Python in isolated FA processes
+scientific_changes: none; existing scientific, selection, failure and resource gates retained
+configuration_changes: none; omit/null python_executable uses sys.executable; explicit overrides still supported
+installation:
+  conda_owns: [netCDF4, h5py, h5netcdf, eccodes_python, eccodes_C, ESMF, ESMPy, xesmf]
+  pip_owns: [FrameIt_editable, EPyGrAM, falfilfa4py, ectrans4py, ctypesForFortran, documentation_tools]
+  requirements: unmodified upstream EPyGrAM metadata; no table/package patch or dependency override
+  canonical_prefix: build/unified-final-verified
+  runtime_boundary: parent GRIB/NetCDF/ESMF; disposable FA-only worker from the active interpreter
+  fresh_installation: create a new prefix when migrating an existing mixed environment
+  core_optionality: core-only installation and CI retained; unrelated diagnostics remain selected-only
+qualified_scope:
+  platform: local Linux x86_64 Python 3.13; other distributions/platforms not claimed
+  families: existing compact dense AROME-47/SURFEX-8.1 PACK=0/X1 and declared gridpoint cubes
+  primary_pair: AROME-convention GRIB plus EPyGrAM SURFEX, distinct grids and multiple exact times
+  products: existing native/source/vertical groups and optional shared bilinear target
+  excluded: packed maps/types/layer-tile axes, intervals/static products, spectral/physical-coordinate/new vector operations and other producers/geometries retain prior gates
+runtimes:
+  python: 3.13.18
+  EPyGrAM: 2.1.0
+  falfilfa4py: 1.2.1
+  ctypesForFortran: 1.3.0
+  ectrans4py: 1.6.0
+  netCDF4: 1.7.2
+  netCDF_C: 4.9.3
+  HDF5: 1.14.6
+  ESMF: 8.9.1
+  ESMF_build: nompi_h8d4c64c_0
+  ESMPy: 8.9.1
+  xesmf: 0.9.2
+  eccodes_python: 2.44.0
+  GRIB_ecCodes_C: 2.46.0
+  FA_ecCodes_C: 2.44.0
+  eccodeslib_distribution: absent; Conda supplies the native library
+  numpy: 2.5.4
+  scipy: 1.18.1
+  xarray: 2026.9.0
+  pandas: 3.1.0
+  dask: 2026.8.0
+  pyproj: 3.8.0
+  h5py: 3.16.0
+  h5netcdf: 1.8.1
+  cfgrib: 0.9.15.1
+  pytest: 9.1.1
+  ruff: 0.17.3
+  sphinx: 9.2.0
+investigation:
+  old_overlay: bounded AROME polar case finishes, then aborts at native shutdown; not qualified
+  old_libraries: wheel HDF5 1.14.2 / NetCDF 4.9.4-development plus Conda MPI HDF5 1.14.6 / NetCDF 4.10.1
+  small_probes: five read/write/regrid combinations exit zero in old reference, old overlay and fresh Conda stacks
+  new_conda_graph: one shared Conda HDF5/NetCDF family; no Python wheel replacement during FA installation
+  serial_wheel_control: same-version netCDF4 wheel in an offline-cloned disposable candidate also exits zero
+  mpi_wheel_control: fresh MPI ESMF plus netCDF4 wheel also exits zero for the bounded case
+  conclusion: old prefix-specific native fault unlocalized; no single-package or universal MPI/wheel cause established
+  remedy: qualified fresh installation; preserve existing environments; no import-order or exit-suppression workaround
+  solver_attempts: several classic/default dry runs and explicit wildcard ESMF-build solve timed out; final YAML with libmamba creates successfully
+checks:
+  clean_yaml_creation: passed from environment.yaml into a fresh prefix, including editable FrameIt/FA and development tools
+  pip_check: passed; netCDF4/h5py/eccodes INSTALLER remains conda
+  candidate_focused: {passed: 20, warnings: 1, seconds: 53.74}
+  default_python_lifetime: {passed: 2, seconds: 22.74}
+  candidate_matrix: six cases pass; independent outer process returncode zero
+  first_full: {failed: 1, passed: 707, skipped: 3, subtests_passed: 2, seconds: 491.79}
+  first_full_failure: investigation probe assumed pip-only eccodeslib metadata; required Conda native backend already worked
+  full_regression: {passed: 708, skipped: 3, subtests_passed: 2, warnings: 2061, seconds: 543.62}
+  native_ci: {passed: 221, skipped: 3, warnings: 130, seconds: 320.82}
+  core_ci: {passed: 110, skipped: 138, subtests_passed: 2, seconds: 29.75}
+  legacy_pip_probe: {passed: 3, warnings: 2, seconds: 4.79}
+  spectral_ci: {passed: 31, skipped: 0, warnings: 16, seconds: 55.75}
+  wheel_and_packaged: {passed: 18, skipped: 0, warnings: 1, seconds: 78.12}
+  packaged_matrix: six cases pass; independent outer process returncode zero
+  wheel_metadata: import origin, Conda ownership/pins, canonical/alias parity and all 140 Python files checked against source
+  strict_docs: initial strict Sphinx build passed
+  schema_and_dry_run: four schema examples pass; two common times, seven products, 54-point shared target, no output created
+  lint_changed_python: passed
+  lint_repository: four unchanged conservative.py findings (89/153/323 E501, 300 B905), reproduced from git show HEAD
+  required_backend_skips: none; absence-only tests exercised in core-only CI
+  initial_test_correction: new shared-target assertion used a guessed label; corrected to the existing exact-coordinate verification contract
+  unavailable: [hosted_CI, Python_3.10_local, other_platforms, precise_old_native_fault, new_real_producer_scientific_evidence]
+verification_commands:
+  launcher: existing local conda executable; shown portably below
+  environment: TMPDIR=$PWD/build OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+  clean_yaml_creation: conda env create --prefix "$PWD/build/unified-final-verified" --file environment.yaml --solver libmamba --quiet
+  candidate_focused: >-
+    conda run --no-capture-output -p "$PWD/build/unified-runtime-env" python -m pytest -q
+    src/frameit/testing/numerical/test_fa_io.py src/frameit/testing/numerical/test_fa_resources.py
+    src/frameit/testing/numerical/test_fa_pipeline.py::test_primary_grib_epygram_surfex_native_exports
+    src/frameit/testing/numerical/test_coupled_shared_polar.py::test_primary_pair_shared_target_geometry_budgets_and_fresh_exports
+    --basetemp build/unified-candidate-focused --junitxml=build/unified-candidate-focused.xml
+  default_python_lifetime: >-
+    conda run --no-capture-output -p "$PWD/build/unified-yaml-env" python -m pytest -q
+    src/frameit/testing/numerical/test_fa_environment.py
+    --basetemp build/unified-default-python-verified --junitxml=build/unified-default-python-verified.xml
+  first_full: conda run --no-capture-output -p "$PWD/build/unified-final-verified" python -m pytest -q --basetemp build/unified-full --junitxml=build/unified-full.xml
+  full_regression: conda run --no-capture-output -p "$PWD/build/unified-final-verified" python -m pytest -q --basetemp build/unified-full-verified --junitxml=build/unified-full-verified.xml
+  native_ci: >-
+    conda run --no-capture-output -p "$PWD/build/unified-final-verified" python -m pytest -q
+    src/frameit/testing/numerical/test_fa_*.py src/frameit/testing/numerical/test_coupled_shared_polar.py
+    src/frameit/testing/numerical/test_arome_fa_coupling.py
+    --basetemp build/unified-native-ci --junitxml=build/unified-native-ci.xml
+  spectral_ci: >-
+    conda run --no-capture-output -p "$PWD/build/unified-final-verified" python -m pytest -q
+    src/frameit/testing/numerical/test_fa_spectral.py src/frameit/testing/numerical/test_fa_io.py
+    src/frameit/testing/numerical/test_fa_pipeline.py
+    --basetemp build/unified-spectral-ci --junitxml=build/unified-spectral-ci.xml
+  packaged_primary: >-
+    PYTHONPATH=$PWD/build/unified-wheel-install conda run --no-capture-output -p "$PWD/build/unified-final-verified"
+    python -m pytest -q build/unified-wheel-install/frameit/testing/numerical/test_fa_environment.py
+    build/unified-wheel-install/frameit/testing/numerical/test_fa_pipeline.py::test_primary_grib_epygram_surfex_native_exports
+    build/unified-wheel-install/frameit/testing/numerical/test_coupled_shared_polar.py::test_primary_pair_shared_target_geometry_budgets_and_fresh_exports
+    build/unified-wheel-install/frameit/testing/numerical/test_fa_resources.py
+    --basetemp build/unified-packaged-primary --junitxml=build/unified-packaged-primary.xml
+  packaged_matrix: >-
+    PYTHONPATH=$PWD/build/unified-wheel-install conda run --no-capture-output -p "$PWD/build/unified-final-verified"
+    python build/unified-matrix-probe.py "$PWD/build/unified-final-verified/bin/python" build/unified-packaged-matrix
+  matrix_probe_command: >-
+    Probe executes the named interpreter with core dumps disabled and runpy.run_module('frameit', run_name='__main__'),
+    argv run-matrix-test --ci --profile core --output <designated output>, captures the true final process returncode
+    and stdout/stderr in <output>-process.json, and propagates nonzero/negative native exits.
+  core_ci: >-
+    conda run --no-capture-output -p "$PWD/build/c0-core-env" python -m pytest -q
+    src/frameit/testing/numerical/test_hpc_execution.py src/frameit/testing/numerical/test_logging.py
+    src/frameit/testing/numerical/test_fa_baseline.py src/frameit/testing/numerical/test_fa_contracts.py
+    src/frameit/testing/numerical/test_fa_cubes.py src/frameit/testing/numerical/test_fa_environment.py
+    src/frameit/testing/numerical/test_fa_epygram_probe.py src/frameit/testing/numerical/test_fa_epygram_geometry.py
+    src/frameit/testing/numerical/test_fa_epygram_surfex.py src/frameit/testing/numerical/test_fa_io.py
+    src/frameit/testing/numerical/test_fa_resources.py src/frameit/testing/numerical/test_fa_surface.py
+    src/frameit/testing/numerical/test_fa_mapping.py src/frameit/testing/numerical/test_fa_geometry.py
+    src/frameit/testing/numerical/test_fa_migration.py src/frameit/testing/numerical/test_fa_spectral.py
+    src/frameit/testing/numerical/test_coupled_shared_polar.py src/frameit/testing/numerical/test_arome_fa_coupling.py
+    src/frameit/testing/numerical/test_fa_pipeline.py
+    --basetemp build/unified-core-ci --junitxml=build/unified-core-ci.xml
+  investigation:
+    - conda run --no-capture-output -n frameit_env python build/unified-native-probe.py "$PWD/build/p5-epygram-env/bin/python" build/unified-old-overlay-probe
+    # REFERENCE_PYTHON denotes the preserved original Conda frameit_env interpreter.
+    - conda run --no-capture-output -n frameit_env python build/unified-native-probe.py "$REFERENCE_PYTHON" build/unified-reference-probe
+    - conda run --no-capture-output -p "$PWD/build/unified-final-verified" python build/unified-native-probe.py "$PWD/build/unified-final-verified/bin/python" build/unified-final-native-probe
+    - conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -X faulthandler -m frameit run-matrix-test --ci --profile core --case arome_batsirai_fixed_polar --output build/unified-old-overlay-repro
+    - conda create --prefix "$PWD/build/unified-wheel-control" --clone "$PWD/build/unified-runtime-env" --offline --yes --quiet
+    - conda run --no-capture-output -p "$PWD/build/unified-wheel-control" python -m pip install --force-reinstall --no-deps --only-binary=:all: netCDF4==1.7.2
+    - conda run --no-capture-output -p "$PWD/build/unified-wheel-control" python build/unified-matrix-probe.py "$PWD/build/unified-wheel-control/bin/python" build/unified-wheel-control-repro --case arome_batsirai_fixed_polar
+    - conda run --no-capture-output -p "$PWD/build/unified-mpi-control" python build/unified-matrix-probe.py "$PWD/build/unified-mpi-control/bin/python" build/unified-mpi-wheel-repro --case arome_batsirai_fixed_polar
+  ancillary:
+    - conda run --no-capture-output -p "$PWD/build/unified-final-verified" python -m pip check
+    - conda run --no-capture-output -p "$PWD/build/c0-core-env" python -m pip check
+    - conda run --no-capture-output -p "$PWD/build/unified-final-verified" python build/unified-check-cli.py
+    - conda run --no-capture-output -p "$PWD/build/unified-final-verified" ruff check src/frameit
+    - conda run --no-capture-output -p "$PWD/build/unified-final-verified" ruff check src/frameit/testing/fa_epygram_probe.py src/frameit/testing/numerical/test_fa_environment.py
+    - git show HEAD:src/frameit/processing/polar/conservative.py | conda run --no-capture-output -p "$PWD/build/unified-final-verified" ruff check --stdin-filename src/frameit/processing/polar/conservative.py -
+    - LC_ALL=C LANG=C conda run --no-capture-output -p "$PWD/build/unified-final-verified" sphinx-build -q -W --keep-going -b html docs/source build/unified-docs
+    - conda run --no-capture-output -p "$PWD/build/unified-final-verified" python -m pip wheel --no-deps --no-build-isolation . -w build/unified-wheel --config-settings=--build-option=--bdist-dir=build/unified-bdist-wheel
+    - conda run --no-capture-output -p "$PWD/build/unified-final-verified" python -m pip install --no-deps --no-index --target build/unified-wheel-install build/unified-wheel/frameit-1.1.0-py3-none-any.whl
+    - PYTHONPATH=$PWD/build/unified-wheel-install conda run --no-capture-output -p "$PWD/build/unified-final-verified" python build/unified-check-package.py build/unified-wheel-install build/unified-wheel/frameit-1.1.0-py3-none-any.whl
+    - LC_ALL=C LANG=C conda run --no-capture-output -p "$PWD/build/unified-final-verified" sphinx-build -q -W --keep-going -b html docs/source build/unified-docs-final
+    - conda run --no-capture-output -p "$PWD/build/unified-final-verified" python -m pip wheel --no-deps --no-build-isolation . -w build/unified-wheel-final --config-settings=--build-option=--bdist-dir=build/unified-bdist-wheel-final
+    - conda run --no-capture-output -p "$PWD/build/unified-final-verified" python -m pip install --no-deps --no-index --target build/unified-wheel-final-install build/unified-wheel-final/frameit-1.1.0-py3-none-any.whl
+    - PYTHONPATH=$PWD/build/unified-wheel-final-install conda run --no-capture-output -p "$PWD/build/unified-final-verified" python build/unified-check-package.py build/unified-wheel-final-install build/unified-wheel-final/frameit-1.1.0-py3-none-any.whl
+    - git diff --check
+next_prerequisites:
+  distribution: hosted required jobs, resolved-build/native-exit checks on any other platform or materially different stack
+  old_overlay: precise native fault still needs upstream/debugger investigation if that installation must be retained
+  science: select any additional family independently and obtain release-matched evidence and required human review

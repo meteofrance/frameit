@@ -31,20 +31,16 @@ You should end up with a structure similar to:
    ├── scripts
    └── src
 
-The file ``environment.yaml`` define the dependencies required by **FrameIt**.
-The reference parent environment uses Python 3.13 for GRIB/NetCDF/ESMF. FA uses a
-separate helper with EPyGrAM 2.1.0 and its unmodified upstream dependencies, plus
-the qualified ctypesForFortran 1.3.0 bridge. The optional ``fa`` pip extra supplies
-this stack; ``fa-epygram`` is an identical installation alias. ``environment.yaml``
-includes the helper setup recipe; select it with ``input.fa.python_executable``.
-The C4 record documents an existing overlay matrix shutdown failure, so a shared
-GRIB/ESMF/EPyGrAM-pin environment is not distribution-qualified by the passing
-helper tests. See :doc:`../user_guide/fa_epygram_c4` for migration
-from the retired raw reader/extra. FrameIt isolates native
-FA decoding from conda's GRIB/ecCodes reader automatically; matching version
-numbers alone did not resolve their observed same-process native-library conflict.
-See :doc:`../user_guide/fa_epygram_c5` for the selected Python-3.13 wheel/resource
-qualification and :doc:`../user_guide/fa_inputs` for implemented scope/declarations.
+``environment.yaml`` installs **FrameIt and its reference FA/GRIB/NetCDF/polar
+stack into one Python-3.13 environment**. Conda supplies the shared native
+NetCDF/HDF5/ecCodes/ESMF libraries; the pip section installs this checkout and the
+unmodified EPyGrAM 2.1.0 bindings with ctypesForFortran 1.3.0. The optional ``fa``
+extra and identical ``fa-epygram`` alias remain available for other installations.
+FA runs in disposable isolated processes using the active Python by default;
+omit ``input.fa.python_executable`` in this setup. A separate interpreter remains
+selectable for existing deployments. See :doc:`../user_guide/fa_environment` for
+qualification, native-stack limits and migration from an older mixed installation,
+and :doc:`../user_guide/fa_inputs` for supported families and declarations.
 
 3. Create and activate the Python environment using a conda/mamba environment
 -----------------------------------------------------------------------------
@@ -54,21 +50,26 @@ If you already have conda/mamba installed, use the file ``environment.yaml``:
 
 .. code-block:: bash
 
-   conda env create -f environment.yaml
+   conda env create -f environment.yaml --solver libmamba
    conda activate frameit_env
 
 
-4. Install the FrameIt package
-------------------------------
+4. Verify the installation
+---------------------------
 
-From the repository root (where ``pyproject.toml`` is located):
+Environment creation installs FrameIt in editable mode from the checkout containing
+``environment.yaml``. No second environment or subsequent pip installation is needed.
+For migration, preserve the old environment and create a fresh named one:
 
 .. code-block:: bash
 
-   pip install -e .
+   conda env create -f environment.yaml --solver libmamba -n frameit_unified
+   conda activate frameit_unified
 
 Quick verification:
 
 .. code-block:: bash
 
    python -c "import frameit; print('frameit import OK')"
+   python -m pip check
+   frameit --help

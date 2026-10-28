@@ -39,7 +39,7 @@ input:
         format: fa
         fa:
           backend: epygram
-          # FrameIt[fa]; python_executable can select a separate helper.
+          # environment.yaml supplies FrameIt[fa]; the active Python runs isolated FA workers.
           profile: surfex_history
           subdomain: CI
           # Library-derived geometry is checked before shared-target sampling/budgets.

@@ -15,7 +15,7 @@ import resource
 import sys
 import tempfile
 from collections import Counter
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import numpy as np
@@ -240,7 +240,13 @@ def main():
                   source_stat_unchanged=True, python=sys.version.split()[0],
                   versions={name: version(name) for name in (
                       ("epygram", "falfilfa4py", "ctypesForFortran") if args.format == "FA"
-                      else ("epygram", "eccodes", "eccodeslib"))})
+                      else ("epygram", "eccodes"))})
+    if args.format == "GRIB":
+        # Conda supplies the native library without the pip-only eccodeslib distribution.
+        try:
+            result["versions"]["eccodeslib"] = version("eccodeslib")
+        except PackageNotFoundError:
+            result["versions"]["eccodeslib"] = None
     print(json.dumps(result, indent=2, allow_nan=False, default=_json_native))
 
 

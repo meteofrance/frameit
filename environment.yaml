@@ -5,33 +5,23 @@
 # To create and activate the environment:
 #
 # 1. Create the environment:
-#    conda env create -f environment.yaml
+#    conda env create -f environment.yaml --solver libmamba
 #
 # 2. Activate it:
 #    conda activate frameit_env
 #
-# 3. To update later:
-#    conda env update -f environment.yaml --prune
-#
-# 4. To deactivate:
+# 3. To deactivate:
 #    conda deactivate
 #
-# Procedure to recreate the env:
-#    conda deactivate
-#    conda env remove -n frameit_env
-#    conda env create -f environment.yaml
-#
-# Python 3.13 qualifies the parent and isolated EPyGrAM FA helper.
-# Keep the reference GRIB/ESMF parent separate from EPyGrAM's exact native pins:
-#   python -m venv --system-site-packages build/fa-helper
-#   build/fa-helper/bin/python -m pip install -e '.[fa]'
-# Select build/fa-helper/bin/python with input.fa.python_executable (YAML-relative).
-# C5 qualifies the separate parent/helper layout and bounded transfers:
-# docs/source/user_guide/fa_epygram_c5.rst (shared-overlay shutdown remains a gap).
-# Freeze resolved packages after testing.
-# This file is recommended for users with conda.
-# Once the environment is activated, install frameit with:
-#    pip install frameit
+# Create a fresh environment when migrating an older mixed Conda/pip installation:
+#    conda env create -f environment.yaml --solver libmamba -n frameit_unified
+# FrameIt and its maintained FA extra are installed from this checkout below.
+# One Python-3.13 environment supplies GRIB/NetCDF/ESMF and EPyGrAM. FA still runs
+# in fresh isolated subprocesses using that Python; omit input.fa.python_executable.
+# Conda owns the shared NetCDF/HDF5/ecCodes stack. Exact Python-package versions
+# satisfy unmodified EPyGrAM 2.1.0 requirements, preventing pip replacements.
+# Qualification uses Conda's resolved serial ESMF/shared NetCDF/HDF5 stack.
+# See docs/source/user_guide/fa_environment.rst for qualification and migration.
 
 name: frameit_env
 channels:
@@ -40,26 +30,29 @@ channels:
 dependencies:
   - python=3.13
   - xarray
-  - dask
+  - dask-core
   - numpy
   - scipy
   - cfgrib
-  - eccodes
+  - python-eccodes=2.44.0
   - pyyaml
   - pyproj
-  - xesmf
+  - esmpy=8.9.1
+  - xesmf=0.9.2
   - shapely>=2
-  - matplotlib
-  - netcdf4
+  - matplotlib-base
+  - netcdf4=1.7.2
   - h5netcdf
   - h5py
   - threadpoolctl
   - pip
-# For developpers : 
-  - ruff
-  - sphinx
-  - sphinx_rtd_theme
-  - furo
-  - sphinx-autodoc-typehints
+  - pytest
+  - setuptools>=77
+  - wheel
   - pip:
-    - pytest
+      - -e .[test,grib,polar,fa]
+      - ruff
+      - sphinx==9.2.0
+      - sphinx-rtd-theme
+      - furo
+      - sphinx-autodoc-typehints

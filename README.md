@@ -35,8 +35,9 @@ Conda/mamba is recommended for the native scientific stack, particularly
 ESMF/ESMPy for optional polar processing. Core NetCDF processing also declares
 pip-installable runtime dependencies. The `grib` extra adds cfgrib/ecCodes;
 the `polar` extra adds xESMF but still requires a compatible ESMF installation.
-The reference conda environment targets Python 3.13 for the GRIB/ESMF parent;
-its comments describe a separate maintained EPyGrAM 2.1.0 FA helper.
+The reference `environment.yaml` installs FrameIt and the FA/GRIB/NetCDF/polar stack
+in one Python-3.13 Conda environment. Conda owns the shared NetCDF/HDF5/ecCodes
+libraries; pip supplies unmodified EPyGrAM and its required FA bindings.
 The optional `fa` extra enables the isolated FA reader;
 `fa-epygram` remains an installation alias for the identical dependencies.
 FA supports explicitly defined instantaneous 2-D gridpoint records on qualified
@@ -53,10 +54,10 @@ deprecated alias, with warnings and requested/effective backend provenance;
 it selects the same reader. Install the unmodified upstream stack and qualified
 ctypesForFortran 1.3.0 bridge in a coherent environment. See the
 [C4 cleanup ledger and migration guide](docs/source/user_guide/fa_epygram_c4.rst).
-The [C5 distribution/resource record](docs/source/user_guide/fa_epygram_c5.rst)
-qualifies bounded transfers and packaged primary-pair checks in the separate
-GRIB/ESMF-parent and FA-helper layout; wider native distribution remains limited.
-`input.fa.python_executable` can select that Python-3.13 helper. Native
+The [unified-environment qualification](docs/source/user_guide/fa_environment.rst)
+records clean installation, native lifetime checks and the remaining limits of
+older mixed stacks. FA stays in isolated subprocesses using the same Python;
+`input.fa.python_executable` is only needed to select a different environment. Native
 extraction does not require pressure or height diagnosis.
 The [C2 geometry/metadata adapter](docs/source/user_guide/fa_epygram_c2.rst) uses
 qualified EPyGrAM axes/CRS/zones while preserving native indices, explicit Earth
@@ -75,13 +76,13 @@ cd frameit
 ```
 2. Create and activate the conda environment
 ```bash
-conda env create -f environment.yaml
+conda env create -f environment.yaml --solver libmamba
 conda activate frameit_env
 ```
-3. Install FrameIt
+3. Verify the installation (FrameIt is installed by `environment.yaml`)
 
 ```bash
-pip install .
+frameit --help
 ```
 
 ## Requirements

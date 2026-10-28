@@ -32,6 +32,11 @@ FrameIt's native encoding guard. No spectral coefficient payload is read here.
 Installation and selection
 ---------------------------
 
+The reference :doc:`fa_environment` installs the complete stack from
+``environment.yaml`` in one Python-3.13 environment; FA workers use that same
+Python in separate processes. No helper path is needed. The pip extra below
+remains available for separately managed installations.
+
 From a Python-3.13 environment:
 
 .. code-block:: bash
