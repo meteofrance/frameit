@@ -1,4 +1,4 @@
-# P5 explicit cube associations for admitted instantaneous GRIDPOINT records.
+# Explicit cube associations for admitted instantaneous GRIDPOINT records.
 # This is an annotated mapping, not a release-qualified AROME field catalogue.
 # Verify source encodings, units, level locations and physical wind basis first.
 # Spectral/-91 records remain gated even when EPyGrAM is installed.
@@ -18,7 +18,7 @@ input:
     # python_executable: /path/to/epygram-env/bin/python
     earth_radius_m: 6371229.0  # User declaration; verify the producer Earth model.
     subdomain: CI
-    # C2 uses EPyGrAM zones/CRS while preserving the existing CF origin/native indices.
+    # EPyGrAM zones/CRS preserve the declared Earth model, CF origin and native indices.
     field_metadata:
       temperature: {units: K, kind: continuous, temporal_kind: instantaneous}
       u: {units: m s-1, kind: continuous, temporal_kind: instantaneous}

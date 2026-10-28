@@ -1,6 +1,6 @@
 # Separate atmosphere/surface products on one explicitly selected polar target.
 # Adapt paths, centre and selections. This is not a scientific qualification preset.
-# C3 engine qualification and producer gaps: docs/source/user_guide/fa_epygram_c3.rst.
+# Coupled sampling and producer limits: docs/source/user_guide/fa_surface.rst.
 schema_version: 2
 model: arome
 run:

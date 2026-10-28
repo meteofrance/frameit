@@ -2,8 +2,8 @@
 
 **Evidence frozen — 2026-10-28.** Inspected checkout:
 `9b11d602c4fb05fb2adf74b699439de6a0b8625b` (FrameIt 1.1.0). This is step 1 of
-the maintainer's five-step documentation plan. The subsequent user-entry rewrite
-is recorded below; the full public rework is not complete.
+the maintainer's five-step documentation plan. Subsequent user-entry and topic-guide
+rewrites are recorded below; the full public rework is not complete.
 The plans were read from `../architectures_ideas/frameit-md/docs/README.md` and
 `CONTENT_MAP.md`; this index is usable without that separate checkout.
 
@@ -12,13 +12,15 @@ The plans were read from `../architectures_ideas/frameit-md/docs/README.md` and
 - [Verification record](VERIFICATION.md): checks actually run for this freeze.
 - [User-entry rewrite](user_journey.md): current workflow changes, retention and
   checks for step 2, starting at `35837df`.
+- [Scientific topic guides and archival boundary](topic_guides.md): step 3,
+  starting at `382624c`, including removed public URLs and preservation checks.
 - Current public entry points: [installation](../../source/getting_started/installation.rst),
   [FA inputs](../../source/user_guide/fa_inputs.rst),
   [environment](../../source/user_guide/fa_environment.rst),
   [configuration](../../source/user_guide/configuration_file.rst) and
   [outputs](../../source/user_guide/output_files.rst).
-  These entry pages use current descriptive guidance. Remaining topic guides and
-  navigation still await the mapped rewrites.
+  Entry pages, FA topic guides and navigation use descriptive current guidance.
+  Remaining release/message cleanup and final publication acceptance are mapped below.
 
 ## What was frozen
 
@@ -102,14 +104,17 @@ This directory is outside `docs/source/` and has no Sphinx toctree or public inb
 link. Do not include it in public HTML, search, downloaded sources, viewcode or the
 deployment artifact. Developer records may link to public topics and evidence.
 
-The environment/input/entry-point histories have been replaced by current guidance
-in step 2, with their frozen originals unchanged here. Other original public pages
-are **temporary duplicates**: step 3 rewrites the mixed topic pages and deletes
-all six public `fa_epygram_c*.rst` pages outright,
-with no stage-named stubs or redirects. Step 4 clears remaining examples, release
-wording and the spectral error reference; step 5 checks a fresh complete artifact.
-The detailed map assigns every removal. No duplicate is intended to survive step 5.
+The environment/input/entry-point histories and six mixed FA topic histories are
+replaced by current guidance. All six public `fa_epygram_c*.rst` sources and their
+navigation entries are removed, with no stage-named stubs or redirects. The full
+originals above remain unchanged, including raw verification/dependency ledgers.
+Catalogue references and archived relative links retain their existing valid paths.
 
-**Next task:** step 3, separate the scientific topic guides from development
-history and remove the public stage pages/navigation. Reinspect the current
-implementation and changes since this freeze before editing.
+Example comments pointing to removed records now name current topics; their parsed
+settings are unchanged. Step 4 still owns release wording, ordinary messages and
+the remaining entry-point audit; step 5 owns complete CI/publication acceptance.
+The detailed map retains the finite old-URL -> topic/archive assignments.
+
+**Next task:** step 4, finish release-note and user-visible message wording while
+preserving scientific guards and all machine-readable contracts. Reinspect the
+current implementation and changes since this freeze before editing.

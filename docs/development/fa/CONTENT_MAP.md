@@ -6,6 +6,38 @@ All old paths below are repository-relative; `UG/` means
 Tables retain the baseline assignments and line references. Progress below
 records completed work; uncompleted destinations remain assignments.
 
+## Topic-guide and archive progress
+
+Step 3 starts at `382624c`. The six neutral topic paths under `UG/` are `fa_baseline.rst`,
+`fa_contracts.rst`, `fa_geometry.rst`, `fa_surface.rst`, `fa_atmosphere.rst` and
+`fa_spectral.rst` now describe current support/limits, metadata/provenance,
+geometry/centres, coupled sampling, native cubes and spectral limitations.
+See [the topic-guide verification record](topic_guides.md).
+
+The six public `UG/fa_epygram_c0.rst`–`fa_epygram_c5.rst` pages and their toctree
+entries are removed outright. No stubs, redirects or public archive links replace
+them. Their complete frozen records, all mixed-page originals and entry-point
+excerpts remain unchanged here. All packaged/test catalogue names/contents remain
+unchanged; public evidence-ledger includes and catalogue references are removed.
+
+Scientific equations, constants, meaningful bounds, citations, masks/time/units,
+original record/vertical identity and unresolved evidence remain public where
+needed to interpret behavior. Spectral Fourier equations and numerical limits
+are retained in an explicitly library-only section, without a probe/installation
+recipe or a spectral-extraction claim. Detailed APIs, experiments and transcripts
+remain developer records. No numerical method, gate or schema is changed.
+
+Four YAML examples had comments naming the removed records or their implementation
+labels. Their comments now point to current topics so no dangling inbound route
+remains; parsed settings/native IDs are unchanged and schema-only checks pass.
+This closes those link/header rows as part of step 3 rather than deferring broken
+references to step 4. Other guide/tracker/polar/visualization/extension sources were
+audited without rewriting their methods. Native C0/C1 type codes, SFX TG1P1/WG1P1
+identities and quintic C2 smoothness remain legitimate public content.
+
+Remaining work is step 4's changelog/ordinary-message/entry-point audit (including
+`SPECTRAL_GATE` wording) and step 5's complete hosted/CI artifact acceptance.
+
 ## User-entry rewrite progress
 
 Step 2 starts at `35837df` and delivers the current user path in `README.md`,
@@ -23,10 +55,10 @@ The geometry method anchor/equations and wind/grid anchors remain public.
 
 The FA overview includes `coupled_fa.yaml` beginning at `schema_version:` so its
 rendered example omits the development header while retaining every parsed setting.
-The original YAML comments and other example/release/message cleanup remain owned
-by step 4. Descriptive explicit cross-reference text is used for mixed topic
-guides awaiting step 3. The original stage pages and global navigation are still
-published pending that task; this is not full publication acceptance.
+At that checkpoint, original YAML comments, mixed guides and stage navigation
+remained pending. The topic-guide progress above records their step-3 disposition;
+step 4 retains the remaining release/message audit. This is not full publication
+acceptance.
 
 ## Owners and completion order
 
@@ -63,7 +95,7 @@ listed below are removed, not published as history redirects.
 | `UG/fa_geometry.rst` | Same URL: supported grids, Earth model, CI/C zones, centres/lookup/snap conventions — Topic | [Full original](fa_geometry_history.rst). Step 3 retains equations/reference link/tolerances and compatibility meaning publicly, removes repair chronology/verification log. |
 | `UG/fa_surface.rst` | Same URL: independent atmosphere/surface products and selected shared sampling — Topic | [Full original](fa_surface_history.rst). Step 3 retains field distinctions/target budgets/masks/current limits publicly; corpus probes, run chronology and `fa_p3.yaml` include stay developer-only. |
 | `UG/fa_atmosphere.rst` | Same URL: explicit native full/interface cubes and coefficients — Topic | [Full original](fa_atmosphere_history.rst). Step 3 keeps associations, original indices, A/B/PREFER, vector limits and meaningful verification scope public; old helper experiments/test runs stay here. |
-| `UG/fa_spectral.rst` | Same URL: spectral support and limitations; production gate and missing references — Topic | [Full original](fa_spectral_history.rst). Step 3 keeps coefficient-not-grid distinction and actionable evidence requirements public; candidate APIs/probe recipes/Fourier method evidence and `fa_p4.yaml` include stay here, linked by this index. |
+| `UG/fa_spectral.rst` | Same URL: spectral support and limitations; production gate, missing references and clearly limited library equations/bounds — Topic | [Full original](fa_spectral_history.rst). Candidate APIs/probe recipes/run ledgers and the `fa_p4.yaml` include remain here; the public topic retains necessary analytical meaning without an extraction recipe. |
 | `UG/configuration_file.rst` | Same URL: actual schema/defaults/precedence/migration, warned alias and optional interpreter — Journey | [Original FA preamble](entry_points_history.md). Step 2 replaces `fa_epygram_c4` link at line 20 with topic guidance. No key/meaning changes. |
 | `UG/output_files.rst` | Same URL: ordinary-reader schema, source/vertical identity, descriptors and atomic completion — Journey | [Original FA passages](entry_points_history.md). Step 2 replaces P4/P5/C1/C3/C4/C5 narration at lines 43–86 with current definitions; preserves machine-readable attribute/provenance names. |
 | `UG/matrix_testing.rst` | Same URL: opt-in reproducibility/regression workflows, prerequisites and limits — Topic | No roadmap hit; keep commands without converting test success into scientific suitability. Link/scope audit in step 3. |
@@ -76,11 +108,10 @@ listed below are removed, not published as history redirects.
 | `docs/source/index.rst` | Descriptive public topics — Topic | Lines 36–41 currently publish all six stage pages. Remove entries with sources in step 3; sidebar-only hiding is insufficient. |
 | `docs/source/what_is_frameit.rst`; six pages under `tracker/`; four under `polar_projection/`; `visualization_tools/rotate_polar_axes.rst`; `developper/how_to_add_my_tracker.rst` | Existing topic URLs — Topic | No roadmap meaning found; retain scientific methods/citations/experimental status and useful extension tutorial. `C2` smoothness is legitimate. Check links and generated exposure in step 3. |
 
-The frozen environment/input/README/config/output histories are now developer-only
-records; the current public pages retain their user contracts. Remaining public
-full-page history copies are temporary duplicates scheduled for removal/rewrite
-in step 3; changelog history cleanup is step 4. Preserve the archives. Step 5 must
-find no public history copy, stage-named stub or link into this archive.
+Frozen full-page histories and stage records are now developer-only; current
+public topics retain their user/scientific contracts. No full-page public history
+duplicate remains. Changelog history cleanup remains step 4. Preserve these
+archives; step 5 must verify the boundary in the actual complete deployment artifact.
 
 ## Scientific-content ownership: what must survive extraction
 
@@ -94,7 +125,7 @@ find no public history copy, stage-named stub or link into this archive.
 | Point-sampled bilinear continuous production fields without area conservation, categorical explicit method, separate masks/undefined/support/extension/real zeroes | `fa_inputs`, `fa_surface`, polar topic guides — Journey/Topic | Surface/C1/C3 histories; exact dense/coordinate checks versus `1e-9` scalar interpolation tolerance. No implicit experimental-method switch or support filling. |
 | Explicit record associations and mass/interface labels/native indices, `A_Pa=PAHYBR*PREFER`, dimensionless B, full coefficient axis through sparse selection | `fa_atmosphere`, `configuration_file`, `output_files` — Topic/Journey | Atmosphere/C2 histories; 100000-Pa independent fixture distinguishes hard-coded 101325-Pa errors. No inferred physical pressure/height, layer/tile axes or CF formula terms. |
 | Vector sampling vs basis/frame, physical components, neighbours before crop, selected-only rotation/magnitude, unresolved stagger/map scaling | `fa_atmosphere`, existing wind/polar guides — Topic | Atmosphere history: `5e-4 m/s` bound applies to the specified 1-km/8-km/5-m/s fixture, not general accuracy. |
-| Spectral coefficients not values, native -91 separate, required coefficient/transform/mask/reference contracts | `fa_spectral`, `fa_baseline` — Topic | Spectral history and `fa_p4.yaml`: double-Fourier equations, signs, counts, `rtol=0, atol=5e-13`, observed `5.551115123125783e-15` maximum on 36 small modes. Preserve this candidate evidence developer-side; do not advertise spectral extraction. |
+| Spectral coefficients not values, native -91 separate, required coefficient/transform/mask/reference contracts | `fa_spectral`, `fa_baseline` — Topic | Spectral history and `fa_p4.yaml` retain full candidate evidence. Necessary double-Fourier equations, signs/counts and `rtol=0, atol=5e-13` scope remain public as library-only evidence; probe/API recipes and transcripts stay here. No spectral extraction is advertised. |
 | Source heat energy vs flux, rain accumulation vs rate, RH vs specific humidity, geopotential vs height, unresolved stress interval labels, original layer/patch/tile identity | `fa_surface`, `fa_inputs`, relevant output definitions — Topic/Journey | Surface history and `fa_p3.yaml` field-priority catalogue. No automatic rates/deaccumulation/sign changes/averages/diagnostics. |
 | Fresh same-Python workers vs optional override, native lifetime failures, point/thread/timeout limits vs actual memory, per-product atomicity/status and ordinary readers | `fa_environment`, `fa_inputs`, `output_files`, optional HPC topic — Journey | Environment/C4/C5 histories; old overlay fault remains unlocalized, clean controls do not prove universal MPI/wheel incompatibility. Historical resource timings/counts stay here. |
 
@@ -117,11 +148,11 @@ scientific review remain unresolved; no editor may erase them to simplify prose.
 | `src/frameit/io/fa_contracts.py::SPECTRAL_GATE` (line 18) | Descriptive spectral support reference — Surface, step 4. Used by `native_descriptor` and `fa_worker._describe`; appears in descriptor reasons, selected-input failure, inspection/preflight/provenance. Keep the gate and coefficient-contract/independent-native-grid requirements. Existing `test_fa_spectral.py` failure/descriptor/transfer cases own verification. No wording change in this freeze. |
 | CLI parser/help/validation; `core/configuration.py`; `io/fa_backend.py`; `io/fa_epygram.py`; `src/frameit/templates/` and `presets/` | No additional roadmap-visible message found. `--fa-python` help correctly says optional. Surface rechecks generated full init, alias/missing-dependency messages and actual preflight after edits; preserve machine-readable configuration/provenance. |
 | `io/fa_contracts.py` module docstring/comment (`P0`), `io/fa_epygram.py::check_surface_layout` docstring (`C1`), testing probe docstrings/errors (`C0/P4`) and test names | Developer implementation/investigation evidence; no current public autodoc/viewcode page found. Surface owns any actual publication exposure; no mass-renaming. Explicit probes are developer entry points, not normal supported extraction recipes. |
-| `src/frameit/testing/catalogs/fa_p0.yaml`, `fa_p3.yaml`, `fa_p4.yaml`, `fa_p5.yaml`, `fa_c0.yaml`–`fa_c5.yaml`, `fa_environment.yaml` | Retain existing package assets and consumers (including runtime CI and `pyproject.toml` package-data) unchanged. Developer index/records own evidence links. Public includes of P0/P3/P4/C0–C5/environment ledgers go in steps 2/3. `fa_p5.yaml` is named in atmosphere prose. |
+| `src/frameit/testing/catalogs/fa_p0.yaml`, `fa_p3.yaml`, `fa_p4.yaml`, `fa_p5.yaml`, `fa_c0.yaml`–`fa_c5.yaml`, `fa_environment.yaml` | Existing package assets and consumers (including runtime CI and `pyproject.toml` package-data) are unchanged. Developer index/records own evidence links. All public includes/references to these evidence ledgers are removed in steps 2/3; the original atmosphere prose's `fa_p5.yaml` reference remains in its frozen record. |
 | `src/frameit/templates/arome.yaml`, `mesonh.yaml` / generated `frameit init ... --full`; README used as package long description | Journey/Surface own rendered prose, links and schema examples; retain all keys/defaults. Catalogue filenames and test/package IDs are machine contracts, not targets for cosmetic renaming. |
 | `docs/source/conf.py` | Publication owner: `source` is the public root; `exclude_patterns` currently only `_build`, `Thumbs.db`, `.DS_Store`. Autodoc/autosummary/viewcode extensions are enabled, but no directives currently expose these FA modules. Do not import/include the developer archive. |
 | `.github/workflows/docs.yml`, `docs/Makefile`, `docs/docs-requirements.txt`, `docs/make.bat` | Publication owner: retain Sphinx/RST and artifact `docs/build/html`; CI uses Python 3.12, Sphinx 8.1.3, theme, then `pip install .`, `make -C docs html`. Current build is not strict and does not explicitly clean old artifacts. Reference YAML's Sphinx 9.2.0 is a different environment. |
-| HTML pages/titles/navigation, `searchindex.js`, `_sources/*.rst.txt`, `objects.inv`, any `_modules`/autodoc output and uploaded artifact | Publication owner checks all of these after steps 2–4. Current build publishes six stage pages, their downloaded sources and literal-included catalogues. Deleting only navigation or reusing a dirty HTML directory fails acceptance. |
+| HTML pages/titles/navigation, `searchindex.js`, `_sources/*.rst.txt`, `objects.inv`, any `_modules`/autodoc output and uploaded artifact | Publication owner checks the complete deployment boundary after step 4. Step 3's fresh artifact has no removed stage pages, source downloads, search/inventory entries or archive routes. Deleting only navigation or reusing a dirty HTML directory still fails acceptance. |
 
 ## Contextual exclusions: retain actual identities
 
@@ -146,10 +177,9 @@ scientific review remain unresolved; no editor may erase them to simplify prose.
    descriptive topics; keep neutral anchors where practical. No public link,
    footer, include, download, search entry or source-code link may route to this
    archive. Developer-to-public and developer-to-catalogue links remain allowed.
-2. Delete the six stage sources and their toctree entries together in step 3.
-   Repair README, `fa_inputs`, `fa_atmosphere`, `fa_geometry`, `fa_surface`,
-   `fa_contracts`, `output_files`, `configuration_file`, stage-to-stage links and
-   the four examples; steps 2/4 own the indicated incoming surfaces.
+2. Step 3 removes the six stage sources and their toctree entries together;
+   affected inbound links, including the four examples, are repaired. Keep them
+   absent; a stage-named stub or redirect would republish the roadmap boundary.
 3. Build to a **brand-new designated directory** using
    `LC_ALL=C LANG=C sphinx-build -q -W --keep-going -b html docs/source "$FRESH_DOCS_OUTPUT"`.
    `-E`/`-a` do not remove stale HTML. Apply the same freshness/strictness to CI

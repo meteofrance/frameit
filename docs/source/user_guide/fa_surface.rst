@@ -1,29 +1,42 @@
-P3 coupled cyclone inputs and shared polar products
-====================================================
+Coupled atmosphere and surface sampling
+=======================================
 
-This page records the P3 **AROME atmospheric FA + AROME-produced SURFEX FA**
-qualification, with separate products on the same explicit polar target.
-The current primary target is EPyGrAM-backed SURFEX FA + AROME GRIB; see
-:doc:`fa_epygram_c3` for the compact primary-pair qualification, and
-:doc:`fa_epygram_c4` for the sole maintained reader/default and migration.
-The GRIB/SURFEX examples select EPyGrAM
-with scaling fallback disabled. Other atmospheric producers and new
-native-container adapters are outside this increment.
-Existing native Cartesian products and vertical-group
-file separation remain. This bounded P3 repair uses admitted dense SURFEX
-histories; missing packed/layered/native-container references remain gates, not
-permission to guess their meaning. See :doc:`fa_baseline`, :doc:`fa_contracts`
-and :doc:`fa_geometry` for the earlier evidence and limitations.
+Named atmospheric and surface sources share a geographical track while retaining
+their own native grids, masks, field definitions and source/vertical-qualified
+products. The primary pair is atmospheric AROME GRIB plus EPyGrAM-decoded dense
+AROME-47 / SURFEX-8.1 FA histories. Native atmospheric FA/SURFEX FA and compatible
+NetCDF sources use the same coupling contract, subject to each adapter's limits.
+See :doc:`fa_inputs`, :doc:`fa_baseline` and :doc:`fa_geometry`.
 
-The scope repair adds direct two-time AROME-FA/SURFEX-FA qualification on 1-km
-and 3-km native grids, with a 54-point common target under a 60-point budget.
-The same target can be replayed from resolved YAML. A 53-point budget, too-fine
-sampling, anisotropic source geometry and ambiguous source clocks still fail.
-Source metadata and geometry are checked while target allocation is deferred;
-no scientific safeguard is disabled to make a target fit.
+Use ``example/config_file/coupled_fa.yaml`` for base extraction,
+``coupled_cyclone_polar.yaml`` for selected scalar polar fields with a supplied
+track, or ``coupled_arome_fa_polar.yaml`` for separate native FA streams.
+Adapt paths/centres and verify all source declarations. The example radius and
+SFX units/time are explicit declarations, not universal producer defaults;
+``allow_unscaled`` remains false. Neither a unit label nor a plausible range
+resolves the native missing-scaling guard.
 
-Common target, independent sources
------------------------------------
+Independent native sources and exact times
+------------------------------------------
+
+The tracking source supplies continuous centres. Each secondary source maps them
+onto its own footprint and selects its own native indices; equal shapes are not
+grid identity. A required source with a centre outside its footprint fails, with
+no edge substitution or spatial time skip. Boxes can retain NaN padding beyond
+the source. Requested centres, snapped source points and vector bases remain distinct.
+
+``input.time_alignment: common`` selects exact common valid times by default,
+with warnings and complete per-source exclusions in provenance/final status.
+``strict`` requires identical source times and prescribed-track coverage.
+Conflicting cycles, ambiguous clocks or inconsistent SURFEX state/header validity
+fail rather than being repaired by a nearest-time match. There is no temporal
+interpolation, missing-to-zero fill or automatic interval conversion.
+See :doc:`fa_inputs` for complete time and calendar requirements.
+
+Select a common polar target
+----------------------------
+
+This fragment opts into one target; merge it into a complete coupled configuration:
 
 .. code-block:: yaml
 
@@ -34,56 +47,51 @@ Common target, independent sources
      azimuth_count: 72
      interpolation_method: bilinear
 
-``shared_target`` defaults to **false**, preserving existing per-source sampling
-configurations. It is a coupled-run option; source-level copies must agree with
-the top-level value. In a single-source run it has no additional effect.
-Only enabled sources with selected polar fields participate; a participating
-``tracking.source`` is required. Disabled polar processing requires no new
-native or interpolation dependency and does not construct target arrays.
+``shared_target`` defaults to false, retaining independent per-source sampling.
+It is a coupled-run setting: source-level copies must agree with the top-level
+value. In a single-source run it has no additional effect. Only enabled sources
+with selected polar fields participate, and ``tracking.source`` must participate.
+With polar disabled, no target arrays or interpolation dependency are required.
 
-The common target uses continuous centres from ``tracking.source``, the common
-physical domain radius, its angular sampling convention and its ellipsoid.
-Explicit source radial steps must agree and cannot be finer than any
-participating native grid. Without an explicit step, this selected mode resolves
-the **coarsest participating native spacing** and records that origin. Unspecified
-secondary angles inherit the reference target; explicit conflicting axes or
-ellipsoids fail. Source interpolation methods, masks, support thresholds, grids,
-vertical coordinates and units remain independent. Source metadata, units,
-vector frames and native geometry are validated first. Then common sampling is
-resolved and the **effective** per-source and complete-time point budgets are
-checked. An unused fine-grid intermediate cannot reject a valid common target;
-the 54-point common-target/60-point-budget regression verifies this ordering.
-Invalid native grids, too-fine requested steps and genuinely oversized targets
-still fail. The private deferred-planning marker is cleared before processing
-and never enters resolved YAML or data graphs.
+The target uses the tracking source's continuous centres, common physical domain
+radius, angular convention and ellipsoid. Explicit radial steps must agree and
+cannot be finer than any participating native grid. When omitted, this selected
+mode resolves the **coarsest participating native spacing** and records that
+origin. Unspecified secondary angles inherit the reference target; explicitly
+conflicting axes or ellipsoids fail. Source interpolation methods, support
+thresholds, masks, units and vertical coordinates remain independent.
 
-Secondary-source extraction is internally geometric/fixed-box, but a supplied
-moving atmospheric track now controls its polar origin at **every** time.
-Previously that internal method froze the surface polar centre at the first
-time. Coupled orchestration now explicitly declares the supplied centres
-authoritative, even when ``shared_target`` is false. Standalone fixed-box freezing
-and constant-track static geometry are preserved; coupled requested centres are
-never replaced by each source's snapped native cell.
+Source metadata, units, wind frames and native geometry are checked **before**
+common sampling/allocation. The effective per-source, complete-time target budget
+is then checked. An unused fine-grid intermediate cannot reject a valid common
+target; invalid native grids, too-fine requested sampling or genuine budget excess
+still fail before payload reads/target construction.
 
-Every participating output group is checked against the continuous reference
-track and against other outputs using exact time/radius/azimuth/longitude/
-latitude values. A mismatch fails before scientific products are exported.
-Successful products carry the same ``common_polar_target_id`` coordinate hash
-and ``common_polar_reference_source``. The hash describes ordered target
-coordinates and ellipsoid, not source-data identity, physical equivalence,
-conservation, equal masks or bitwise identity of sampled fields.
+For a compact 1-km/3-km pair with two common times, a 4-km outer radius and
+9 azimuths, the default shared step is 3 km and radii are 0/3/4 km. That gives
+``2 * 3 * 9 = 54`` target points per source: a 60-point budget fits, a 53-point
+budget does not. These are target-allocation counts, not a full-native decode
+budget, peak-memory estimate or a physical-resolution accuracy guarantee.
 
-Effective axes/counts, native spacings, requested sampling, resolution origin,
-participants, signature and verification status are recorded in preflight,
-``resolved-config.yaml``, ``run-provenance.yaml`` and ``run-status.yaml`` as
-appropriate. The manifest key is ``common_polar_target``. Existing exact-common/
-strict time selection and complete exclusion reports are preserved; no nearest
-times, missing-to-zero fill or automatic interval conversion is introduced.
+A supplied moving track controls each secondary polar origin at **every** time,
+even with ``shared_target: false``. The secondary source's internal fixed-box
+context cannot freeze its first centre. Standalone fixed-box freezing remains
+its own behavior; coupled continuous centres are never replaced by snapped cells.
 
-Separate products and future NetCDF adapters
----------------------------------------------
+Verify coordinates, keep separate products
+--------------------------------------------
 
-Use source IDs ``atmosphere`` and ``surface`` to obtain, for example:
+Every participating output group is checked against the continuous track and
+other groups using exact time/radius/azimuth/longitude/latitude values. A mismatch
+fails before scientific product export. Products carry a common
+``common_polar_target_id`` and ``common_polar_reference_source``. This signature
+describes ordered target coordinates and ellipsoid, not source-data identity,
+physical equivalence, conservation, equal masks or bitwise field identity.
+
+Effective axes/counts, source spacings, requested sampling, resolution origin,
+participants and verification status are recorded under ``common_polar_target``
+in preflight, resolved configuration, provenance and final status as appropriate.
+Source IDs ``atmosphere`` and ``surface`` produce, for example:
 
 .. code-block:: text
 
@@ -91,345 +99,102 @@ Use source IDs ``atmosphere`` and ``surface`` to obtain, for example:
    SIMU.polar.atmosphere.isobaricInhPa.nc
    SIMU.polar.surface.surface.nc
 
-An atmosphere with multiple vertical groups still has multiple source-qualified
-files. Existing source IDs such as ``surfex`` keep their filenames. No variables
-are merged across native grids, and diagnostics are not enabled simply because
-their inputs exist. Continuous production sampling remains bilinear, without a
-conservation guarantee or an automatic experimental-method switch.
+An atmosphere with several vertical groups still produces several files.
+An existing ID such as ``surfex`` keeps that qualification in its filenames.
+Cartesian products retain native source grids. No variables are merged across
+incompatible grids, and no diagnostic is enabled just because its inputs exist.
 
-The source/target/export boundary is independent of FA: a three-source synthetic
-NetCDF test exercises the same contract and separate files. This establishes an
-orchestration basis for later ocean/wave adapters, **not CROCO/WW3 compatibility**.
-Those need their actual grids, masks, staggering, vertical coordinates and field
-conventions. Do not relabel a marine NetCDF file as a supported atmospheric
-producer just to open it. Such extensions are not active FA-phase requirements.
+Continuous production polar sampling defaults to bilinear point interpolation,
+without an area-budget conservation guarantee or automatic experimental-method
+switch. Categorical X1 fields require explicit ``nearest_s2d``; default bilinear
+fails before their payload read. Source support labels, actual masks, IEEE NaNs,
+extension zones and valid zeroes must not be equated or silently filled.
+See :doc:`output_files` for ordinary readers and per-product atomic publication.
 
-Cyclone-analysis field priorities and supplied-corpus evidence
---------------------------------------------------------------
+Quantities, units and temporal meaning
+--------------------------------------
 
-Start with explicitly selected MSLP/near-surface winds, pressure-level winds,
-temperature, moisture and geopotential, then SST and appropriate near-surface
-thermodynamic fields. They support downstream cyclone structure, intensity and
-environment analysis; this priority is not a stable diagnostic catalogue or an
-automatic all-fields preset. RH and specific humidity, geopotential and geometric
-height, surface pressure and MSLP remain different quantities.
+Select actual quantities needed for downstream analysis. The following finite
+examples describe observed metadata and interpretation limits, **not** an
+automatic preset or a release-qualified physical catalogue. Inspect your own
+records/levels/cycles; names and library tables are not independent validation.
 
-Surface heat/momentum exchange, accumulated rain and land/layer/tile states are
-important follow-ups when their source definitions and temporal support are
-admitted. In particular, accumulated heat energy is not an instantaneous heat
-flux. No rates, deaccumulation, sign reversal, soil-depth interpretation or tile
-averages are inferred to complete an output.
+.. list-table:: Atmospheric/surface field distinctions
+   :header-rows: 1
+   :widths: 29 30 41
 
-The maintained manifest records the finite priority list and actual observations:
+   * - Quantity / example identity
+     - Units and support to verify
+     - Interpretation / unresolved evidence
+   * - MSLP: GRIB ``prmsl`` / ``meanSea``
+     - Pa, instantaneous valid time.
+     - MSLP is not surface pressure; do not substitute one for the other.
+   * - Near-surface winds: GRIB ``10u``/``10v`` at 10 m
+     - m s-1; observed ``uvRelativeToGrid=0``.
+     - Preserve/check Earth-relative basis, sampling and pairing, not short names alone.
+   * - Pressure-level ``u``, ``v``, ``t``, ``r``, ``z``
+     - m s-1, K, %, m2 s-2; example 850/700/500 hPa, instantaneous.
+     - Pressure labels use their actual coordinate units; RH is not specific
+       humidity and geopotential is not geometric height.
+   * - GRIB ``2t``/``2r`` at 2 m
+     - K / %, instantaneous.
+     - Near-surface temperature/RH metadata does not supply a missing SFX unit definition.
+   * - ``SFX.SST``, ``SFX.T2M``, ``SFX.HU2M``, ``SFX.TSRAD``
+     - Observed support labels SEA / FULL / FULL / FULL; gridpoint 120/24 encoding.
+     - Release-matched physical units/scaling/time/support remain unresolved.
+       An observed missing-FMULTM/FMULTE T2M decode is not an accepted physical value.
+   * - Native layer/patch states ``SFX.TG1P1`` / ``SFX.WG1P1``
+     - Dense individual records, observed NATURE label and 120/24 encoding.
+     - Keep the exact native IDs. No depth, patch/tile axis, fraction or average
+       follows from the names or support label.
+   * - ``slhf``, ``sshf``, ``ssrd``, ``strd``
+     - Observed GRIB accumulated J m-2, with 0–12-hour support in the example.
+     - Energy is not instantaneous W m-2 flux. Preserve source sign/bounds;
+       no automatic rate, deaccumulation or sign reversal.
+   * - GRIB ``tirf`` (time integral of rain flux)
+     - Observed kg m-2 accumulated over 0–12 hours.
+     - Rain amount is not a rate; interval/reset evidence is required for conversions.
+   * - Turbulent stresses ``iews`` / ``inss``
+     - Observed N m-2, ``stepType=accum`` with 0–12-hour keys.
+     - Instantaneous labels conflict with accumulated temporal metadata;
+       interpretation remains unresolved rather than guessed.
 
-.. literalinclude:: ../../../src/frameit/testing/catalogs/fa_p3.yaml
-   :language: yaml
+Exact IDs such as ``SFX.H``, ``SFX.LE``, ``SFX.FMU``, ``SFX.FMV`` and ``SFX.RAIN``
+were not established in the inspected selection. This is not a claim about every
+producer or permission to choose a different field by analogy. Unestablished SFX
+humidity units/specific-humidity identity likewise remain unresolved.
 
-The supplied files **are useful inputs**. A fresh read-only investigation scanned
-574 GRIB message headers and six selected SURFEX encoding descriptors. GRIB
-metadata provides MSLP, 10-m winds, isobaric u/v/t/r/z at the example levels,
-near-surface temperature/RH, accumulated rain and heat energy. The stress records
-``iews``/``inss`` have an unresolved interpretation conflict: their labels say
-instantaneous, while ``stepType=accum`` and hours 0--12 are encoded. Their
-semantics are not guessed. SFX humidity units and any unestablished specific-
-humidity selection are likewise not filled by analogy with another model.
+Dense SURFEX scope and remaining limits
+---------------------------------------
 
-One selected native SFX.T2M decode was attempted under a 6,300,000-point budget,
-requesting only one returned point. It failed the existing **missing native
-scaling metadata** guard with ``allow_unscaled=false``. No decoded value was
-accepted and no real atmosphere/surface product is certified by that probe.
-Adding a K label or plausible range cannot resolve codec scaling. Existing
-explicit user opt-in remains available only when justified; this repair neither
-enables it nor edits native definition tables. The GRIB atmosphere and separate
-SURFEX source remain the selected workflow; there is no silent field substitution.
+The admitted dense branch uses complete AROME-47/SURFEX-8.1 source/directory facts,
+``SFX.PACK=0``, ``X1``, ``DIM1=storage X*Y`` and ``DIM2=-1``. IMAX/JMAX and DIM_FULL
+describe CI, which need not equal complete storage. Layout PACK and native FA
+codec packing are distinct. Dense directories do not establish native scaling.
+Full/point/strided/reversed selections preserve prescribed values/NaNs/real zeroes;
+categorical codes keep their declared units/kind and float64 decoded representation.
 
-Both source sizes and mtime_ns were unchanged, as recorded in the manifest.
-This is stat freshness, not a checksum/corruption proof. The 16-GB native
-atmospheric FA was not decoded in this increment. No full archive conversion,
-private upload or large production run was performed. Independent geometry,
-scaling and field/time references are still needed for real scientific
-qualification; engineering compatibility is qualified separately below.
+No sparse support map is guessed. Individually selected layer/patch records remain
+2-D; no soil-depth, layer/tile or atmospheric axis is inferred. X0/X2 and physical
+N1/L1/C1 arrays remain blocked: C1 is a native character-array type. Incomplete
+NAME/TYPE/MASK/SIZE/dimension/source records are reported as missing; any surviving
+``SFX.*`` namespace requires the source/directory contract and cannot be relabelled
+atmospheric to bypass it. Available metadata can still be inspected without
+accepting physical execution. See :doc:`fa_contracts`.
 
-Dense layout and selection qualification
------------------------------------------
+Compact independent native/GRIB/NetCDF cases cover multiple times, different
+grids, moving centres, planning/replay, masks/zeroes, sync/spawn exports and fresh
+ordinary readers. Shared coordinates are checked exactly; constant polar scalar
+fixtures use the existing absolute ``1e-9`` interpolation bound. These are finite
+engineering/numerical checks, not scientific validation of real producer fields.
 
-Small generated native FA fixtures cover dense ``PACK=0`` horizontal ``X1``
-records with reordered directories and separate FULL/SEA/NATURE labels. They
-verify selection of one original layer/patch name without decoding other fields,
-valid zeros, IEEE NaNs, read-only bytes, serializable lazy loading and ordinary
-NetCDF reopening on a shared moving target. Raw packing-0 fixtures preserve
-IEEE NaNs directly; that encoding does not carry the explicit undefined flag/
-sentinel. No sentinel-recognition heuristic was added to the production reader.
-``SFX.PACK=0`` describes the SURFEX layout; it is distinct from the native FA
-codec's packing number (0 in these raw fixtures, 120 on the supplied selected
-real fields). A dense directory does not resolve missing codec scaling.
-
-Full-array, individual-point, strided and reversed selections are checked against
-independently specified asymmetric values, including missing values and real
-zeros. These are selections from **dense storage**, not qualified sparse/packed
-support-map reconstruction. Categorical X1 values retain their original codes,
-NaNs, declared units/kind and float64 decoded representation through ordinary
-NetCDF readers. Categorical polar selection requires explicit ``nearest_s2d``;
-the default bilinear method fails before payload reads. This does not admit N1,
-L1 or C1 physical arrays: those, X0/X2 and inconsistent DIM1/DIM2 remain blocked.
-
-The support label is retained separately from actual finite/missing samples.
-There is no guessed sparse support map or conversion of absent surface types to
-zero. Native record identities survive as individual 2-D variables, not invented
-soil-depth, tile or atmospheric-level axes. Other producers, ``PACK!=0`` and
-unqualified X2/typed physical layouts remain actionable failures, while their
-directories can still be inspected. A partial SURFEX directory cannot be relabelled
-as atmospheric FA to bypass producer/layout checks, including when PROGRAM and
-all directory records have been lost. Any surviving ``SFX.*`` namespace requires
-the existing complete source/directory contract. Missing NAME/TYPE/MASK/SIZE,
-dimension arrays or required source tags are reported as
-``surfex_metadata.missing_records`` in raw inspection; available producer facts
-are retained. The private inspector with ``profile=None`` and
-``validate_selection=False`` can probe available encoding flags without physical
-decodes; its field descriptors explicitly block physical execution on incomplete
-sources. Validated profile inventory also rejects the source before loading,
-even without selected fields. New producer/container adapters are outside this phase.
-
-The qualified engineering operations are selected 2-D decode/dataset/native
-extraction/export and explicitly selected eligible polar sampling on the compact
-dense fixtures. Individual layer/patch names remain separate 2-D records.
-No new YAML keys, product names, dimensions, units, encodings or dependencies
-are introduced by this follow-up. Descriptor-v1 sampling metadata is additive.
-Malformed sources now fail earlier; changing their profile cannot repair their
-missing native source/directory records.
-
-Atmospheric native vertical-header facts are carried forward in the P1
-descriptors (see :doc:`fa_contracts`) and checked on ordinary-reader native-pair
-outputs. No field-level sampling location, hybrid units, native vertical index
-or full/interface meaning is assigned from that header or a record-name pattern.
-Native atmospheric cube and vertical-selector acceptance remains P5 work.
-
-The native FA/FA starting example is
-``example/config_file/coupled_arome_fa_polar.yaml``; the AROME GRIB/FA variant is
-``example/config_file/coupled_cyclone_polar.yaml``. Their SFX unit/time and radius
-entries are explicit declarations requiring confirmation, not new producer
-defaults. It intentionally leaves ``allow_unscaled`` false and therefore does
-not conceal the supplied native-scaling blocker. Replace paths/centre and review
-the declarations before scientific use. Pure NetCDF or other independently
-qualified fields can exercise the common-target contract without FA.
-
-Remaining phase gates
------------------------
-
-Packed layouts need actual release-specific support maps/order/coverage and
-trusted scatter/gather values. Full layered/tiled axes need producer indices,
-bounds, fractions and masking conventions. Those future AROME/SURFEX admissions
-are not silently qualified by the dense branch. Other producers, plain-LFI
-adapters and global/reduced grids are outside the current phase. Producer Earth
-model and independent geographic
-checkpoints also remain open from P2.
-
-P4 requires readable native encodings first (including resolution of required
--91 cases), authoritative coefficient sizes/order/truncation/normalization and
-a maintained optional transform library with independent reference cases. A
-shared target does not decode coefficients or qualify native 3-D atmospheric
-fields, vectors, intervals or new diagnostics. No scientific approval is claimed.
-
-Initial P3 verification record
---------------------------------
-
-Starting revision: ``6c735efe6bbdf54a2a28ef21522313cda7e9b50d``, clean.
-The separate architecture repository had unrelated deleted/untracked work;
-only its two FA-roadmap Markdown files are changed for this task.
-
-Commands in the Python-3.13.16 reference environment used prefix
-``conda run -n frameit_env``:
-
-.. code-block:: bash
-
-   python -m pytest -q
-   python -m pytest -q src/frameit/testing/numerical/test_coupled_shared_polar.py \
-       src/frameit/testing/numerical/test_fa_surface.py \
-       src/frameit/testing/numerical/test_fa_pipeline.py \
-       src/frameit/testing/numerical/test_polar_wind.py \
-       src/frameit/testing/numerical/test_polar_contracts.py
-   ruff check src/frameit/core/coupled.py src/frameit/core/configuration.py \
-       src/frameit/core/settings_class.py src/frameit/core/execution.py \
-       src/frameit/processing/polar/polar_grid.py src/frameit/processing/polar/polar_proj.py \
-       src/frameit/testing/fa_fixture.py \
-       src/frameit/testing/numerical/test_coupled_shared_polar.py \
-       src/frameit/testing/numerical/test_fa_surface.py
-   frameit validate example/config_file/coupled_cyclone_polar.yaml --schema-only
-   frameit validate example/config_file/coupled_fa.yaml --schema-only
-   LC_ALL=C LANG=C sphinx-build -q -W --keep-going -b html \
-       docs/source /tmp/opencode/frameit-fa-p3-docs
-   git diff --check
-
-Final full regression: **554 passed, 2 subtests passed**, 722 existing cfgrib/
-xarray future warnings, 271.17 seconds. Focused suite: **66 passed**, one
-NumPy/netCDF binary-size runtime warning. Ruff, both schema examples and strict
-Sphinx build passed. The original standalone fixed-box-freezing test remains
-unchanged; the coupled fix is explicitly scoped rather than updating that test
-to accept changed standalone behavior.
-
-The separate Python-3.13 environment without FA or xESMF ran:
-
-.. code-block:: bash
-
-   python -m pytest -q src/frameit/testing/numerical/test_coupled_shared_polar.py \
-       src/frameit/testing/numerical/test_fa_surface.py \
-       src/frameit/testing/numerical/test_fa_pipeline.py::test_coupled_netcdf_sources_do_not_need_fa_backend
-
-Result: **12 passed, 10 skipped** (native/polar-only cases). GRIB was installed in
-that environment; this is not a no-GRIB qualification. Core/native CI jobs include
-the applicable new tests. Ordinary-reader checks cover sync/spawn, multiple
-atmospheric groups, a third synthetic NetCDF source and the dense FA surface.
-
-To reproduce the bounded real native-scaling check, set ``SURFEX_FA`` to the
-supplied surface path and run the following in that reference environment.
-It reads one full native horizontal record internally (about 50 MB decoded),
-requests one output point, and leaves the missing-scaling guard enabled:
-
-.. code-block:: python
-
-   import os
-   from frameit.io.fa_backend import inspect_fa, request_fa
-   path = os.environ["SURFEX_FA"]
-   info = inspect_fa(path, "surfex_history", ["SFX.T2M"])
-   request_fa({
-       "operation": "read", "path": path, "profile": "surfex_history",
-       "fields": ["SFX.T2M"], "identity": info["identity"],
-       "max_points": 6_300_000, "zone": [0, 3061, 0, 2037],
-       "key": [1000, 1500], "allow_unscaled": False,
-   })
-
-Observed failure: ``SFX.T2M: missing native scaling metadata``. The accompanying
-GRIB check used ecCodes ``codes_grib_new_from_file(..., headers_only=True)``;
-selected interval records explicitly reported ``stepUnits=1`` (hours). This
-bounded corpus investigation was separate from synthetic numerical qualification.
-
-Scope-repair checks
---------------------
-
-The current in-scope regression is ``test_arome_fa_coupling.py``: actual generated
-atmospheric FA and SURFEX FA streams, different native spacings/indices, moving
-centres, exact separate-product coordinates and independently specified constant
-fields. AROME-schema NetCDF cases additionally verify planning/replay and the
-source ``valid_time`` to internal ``time`` contract, including multi-file order
-and explicit failure on ambiguous time names. The base NetCDF case runs without
-FA or polar dependencies. These are AROME workflow checks; other-producer
-integration is neither a phase requirement nor claimed from these fixtures.
-
-Malformed SURFEX sources retain their inspectable index and available producer/
-layout facts but cannot
-bypass source/profile checks by losing the field directory. The production
-reader still rejects unqualified packing, representation and scaling. The
-native source datasets remain read-only; no new real-data scientific approval
-or native codec implementation follows from the scope repair.
-
-Scope-repair verification used the same Python-3.13 reference environment:
-
-.. code-block:: bash
-
-   conda run -n frameit_env python -m pytest -q
-   conda run -n frameit_env ruff check \
-       src/frameit/core/settings_class.py src/frameit/core/configuration.py \
-       src/frameit/core/preflight.py src/frameit/core/coupled.py \
-       src/frameit/io/netcdf_utils.py src/frameit/io/fa_worker.py \
-       src/frameit/testing/fa_fixture.py \
-       src/frameit/testing/numerical/test_arome_fa_coupling.py \
-       src/frameit/testing/numerical/test_fa_surface.py
-   conda run -n frameit_env frameit validate example/config_file/coupled_arome_fa_polar.yaml --schema-only
-   conda run -n frameit_env frameit validate example/config_file/coupled_cyclone_polar.yaml --schema-only
-   conda run -n frameit_env frameit validate example/config_file/coupled_fa.yaml --schema-only
-   LC_ALL=C LANG=C conda run -n frameit_env sphinx-build -q -W --keep-going \
-       -b html docs/source /tmp/opencode/frameit-fa-scope-repair-docs
-   git diff --check
-
-Full regression: **567 passed, 2 subtests passed**, 722 existing cfgrib/xarray
-future warnings, 279.63 seconds. Ruff, all three schema examples and the strict
-documentation build pass. The separate no-FA/no-xESMF environment ran
-``test_arome_fa_coupling.py``, ``test_coupled_shared_polar.py``,
-``test_fa_surface.py`` and the existing no-FA coupled-NetCDF base case:
-**13 passed, 22 dependency-specific skips**. The new AROME base case executes
-without either optional dependency. No source archive was modified, no new
-producer adapter was added and no scientific admission gate was removed.
-
-Dense-admission follow-up
---------------------------
-
-Starting revision: ``82a7f79``. The existing untracked ``opencode.json`` was
-preserved. Baseline regression: **567 passed, 2 subtests passed**, 722 existing
-cfgrib/xarray warnings, 272.23 seconds. Four newly strengthened malformed-source
-cases failed before the repair: profile inventory with no selected fields could
-pass, and losing all original detector records erased the SURFEX classification.
-The repaired checks cover six incomplete-source cases as well as unqualified
-physical types/dimensions. Existing common-target, time-policy, native-grid,
-sync/spawn and optional-dependency tests remain applicable.
-
-The supplied corpus was rechecked read-only after compact-fixture qualification:
-574 GRIB headers (600-header ceiling); atmospheric FA index plus three encoding
-probes, no atmospheric physical decode; six surface encoding probes; and one
-guarded SFX.T2M native decode attempt (6,300,000-point ceiling, one returned
-storage point requested). The atmospheric index has 1345 records and **no SFX
-namespace records**; the tightened directory check preserves its classification.
-SURFPRESSION still returns -91, S001TEMPERATURE is still spectral, and SFX.T2M
-still fails missing native scaling with fallback disabled. The GRIB priority
-records and stress-label/interval conflict are unchanged. All three source
-sizes/mtime_ns match the P0/P3 manifest. No real values were accepted, geometry
-reference supplied or scientific capability promoted. The finite field-priority
-table and recheck facts are retained in ``testing/catalogs/fa_p3.yaml``.
-
-To repeat the added atmospheric index/encoding check, with ``ATMOSPHERE_FA`` set
-to the supplied source, use the isolated backend (no physical array read):
-
-.. code-block:: python
-
-   import os
-   from frameit.io.fa_backend import inspect_fa
-   info = inspect_fa(os.environ["ATMOSPHERE_FA"], None,
-                     ["CLSTEMPERATURE", "SURFPRESSION", "S001TEMPERATURE"],
-                     validate_selection=False)
-   print(info["record_count"], info["fields"])
-   print([name for name in info["records"] if name.startswith("SFX.")])
-
-The surface guarded-decode reproduction above and P0 upstream probe remain
-applicable. Coordinate identity only qualifies the shared sampling target;
-independently supplied geometry/scaling/field definitions are still required.
-
-Follow-up verification used Python 3.13.16. Native commands used the local conda
-launcher for ``frameit_env``; the existing separate no-FA/no-xESMF environment
-provided the optionality check and Ruff:
-
-.. code-block:: bash
-
-   conda run -n frameit_env python -m pytest -q
-   conda run -n frameit_env python -m pytest -q \
-       src/frameit/testing/numerical/test_fa_contracts.py \
-       src/frameit/testing/numerical/test_fa_surface.py \
-       src/frameit/testing/numerical/test_arome_fa_coupling.py \
-       src/frameit/testing/numerical/test_coupled_shared_polar.py \
-       src/frameit/testing/numerical/test_fa_pipeline.py
-   /tmp/opencode/frameit-hpc-venv/bin/python -m pytest -q \
-       src/frameit/testing/numerical/test_fa_contracts.py \
-       src/frameit/testing/numerical/test_fa_baseline.py \
-       src/frameit/testing/numerical/test_arome_fa_coupling.py \
-       src/frameit/testing/numerical/test_coupled_shared_polar.py \
-       src/frameit/testing/numerical/test_fa_surface.py \
-       src/frameit/testing/numerical/test_fa_pipeline.py::test_coupled_netcdf_sources_do_not_need_fa_backend
-   /tmp/opencode/frameit-hpc-venv/bin/ruff check \
-       src/frameit/io/fa_worker.py src/frameit/io/fa_contracts.py \
-       src/frameit/testing/fa_fixture.py \
-       src/frameit/testing/numerical/test_fa_surface.py \
-       src/frameit/testing/numerical/test_fa_contracts.py \
-       src/frameit/testing/numerical/test_arome_fa_coupling.py
-   conda run -n frameit_env frameit validate example/config_file/coupled_arome_fa_polar.yaml --schema-only
-   conda run -n frameit_env frameit validate example/config_file/coupled_cyclone_polar.yaml --schema-only
-   conda run -n frameit_env frameit validate example/config_file/coupled_fa.yaml --schema-only
-   LC_ALL=C LANG=C conda run -n frameit_env sphinx-build -q -W --keep-going \
-       -b html docs/source /tmp/opencode/frameit-p3-dense-followup-docs
-   git diff --check
-
-Results: **585 passed, 2 subtests passed**, 722 existing cfgrib/xarray warnings,
-285.49 seconds; focused suite **67 passed**, 50.74 seconds; optionality suite
-**28 passed, 37 dependency-only skips**, 2.56 seconds. GRIB was installed in the
-optionality environment; this is not a no-GRIB qualification. Ruff, all three
-schema examples and strict Sphinx checks passed. Dense data ordering and codes
-are checked exactly; shared target coordinates are checked exactly, while polar
-scalar values use the existing absolute ``1e-9`` interpolation tolerance.
-Neither agreement criterion is independent scientific validation of real fields.
+Packed layouts require release-specific maps/order/coverage and trusted
+scatter-gather references; scientific layer/tile axes require original indices,
+bounds/fractions/masks. Real sources still need physical definitions/scaling,
+Earth-model/geographic checkpoints and appropriate multi-time references/review.
+Selected spectral/native-error, vertical/vector and interval operations retain
+their separate limits in :doc:`fa_baseline`, :doc:`fa_atmosphere` and
+:doc:`fa_spectral`. No pressure/height, rates, averaging or new diagnostic follows
+from a shared target. Generic NetCDF orchestration is **not CROCO/WW3 support**;
+marine grids, masks, staggering, vertical coordinates and physical conventions
+need their own adapters and evidence.

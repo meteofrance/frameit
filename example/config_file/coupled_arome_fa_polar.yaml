@@ -4,7 +4,8 @@
 # S001 spectral fields here. See docs/source/user_guide/fa_spectral.rst for gates.
 # Native vertical-header facts are retained as provenance, not pressure/height axes.
 # Adapt paths/centre and confirm the source units and producer Earth model.
-# Both FA sources use the default EPyGrAM reader (FrameIt[fa]); see C4 migration notes.
+# Both FA sources use the default EPyGrAM reader (FrameIt[fa]).
+# Configuration/migration: docs/source/user_guide/configuration_file.rst.
 schema_version: 2
 model: arome
 run:

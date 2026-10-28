@@ -1,272 +1,140 @@
-FA P0 baseline and finite qualification matrix
-==============================================
+FA compatibility and limitations
+================================
 
-Evidence date: **2026-10-26**. Starting revision:
-``06a9d62ae70ed6462e7a1251d50d2af687364087``, clean working tree,
-FrameIt 1.1.0. This is the P0 evidence freeze, **not full FA compatibility**.
-Every target below is either limited by named evidence or explicitly blocked.
-The initial 2026-10-22 handover is historical evidence, not today's test result.
-The active phase is now scoped to AROME atmospheric and AROME-produced SURFEX FA.
-Other producer/native-container integrations and global/reduced FA are outside
-this phase's acceptance matrix; adding them is not a completion prerequisite.
+FrameIt provides a **limited native FA adapter**, using EPyGrAM 2.1.0 in isolated
+worker processes. A library's broader format support does not establish FrameIt
+support for every producer, layout or scientific operation. Start with
+:doc:`fa_inputs` for inspection/declarations and :doc:`fa_environment` for the
+single-environment installation and optional interpreter override.
 
-Current checks and corpus
-------------------------------------------------------------
+The matrix below distinguishes implemented operations from metadata that is only
+inspectable and operations that remain blocked. Implemented rows still require
+valid geometry, selected field declarations, readable native encoding and the
+decode-time scaling check. Compact independently prescribed fixtures exercise
+these engineering/numerical contracts; they do not qualify arbitrary real fields
+or constitute independent human scientific approval.
 
-The supplied directory contains exactly two FA histories and one GRIB product.
-Native FA open/header/date/index operations succeed for both histories; GRIB
-message headers identify the third container. No supplied plain LFI or NetCDF
-case is present. FA is an overlay on LFI: a successful LFI index alone cannot
-identify FA, producer, scientific quantities or release. Unknown files must not
-be identified by their suffix alone.
+Current operation matrix
+-------------------------
 
-The manifest below retains basenames, stat freshness, native header facts,
-selected encoding probes, clocks, runtime and missing references. Source paths,
-full indexes and physical arrays are not retained. Size/mtime checks before and
-after reads were unchanged; this is not checksum or corruption verification.
-Both FA files have only one valid time. Their matching rectangular header facts
-do not establish identical masks, physical sampling or vertical coordinates.
-The GRIB grid differs and is not a pointwise reference for native FA.
-
-No real physical payload was decoded in P0. Historical selected scalar decodes
-and the small three-source exercise are regression context only. In particular,
-historical SFX missing-scaling warnings have not acquired an independent physical
-reference. ``allow_unscaled`` remains an explicit, justified opt-in, not a
-qualification or default fix. Producer Earth radius, release identity and field
-definitions remain missing. ``KNIVER=90`` means levels, not header version.
-
-.. literalinclude:: ../../../src/frameit/testing/catalogs/fa_p0.yaml
-   :language: yaml
-
-Finite target matrix
---------------------
-
-Operations are **I** inspect, **D** decode, **X** labelled dataset,
-**E** native extraction/export, **P** polar sampling, **Q** diagnostic.
-``V`` means verified only on the named synthetic scope, ``L`` means
-implemented-limited or native metadata observed, ``B`` means blocked by the
-listed missing evidence/implementation. No real-producer row is fully verified.
-``--`` means inapplicable to the stated operation. The later AROME/SURFEX science
-rows remain explicit admission gates; new producer/container and global-grid
-extensions are not part of this phase.
-
-.. list-table:: P0 operation eligibility (not an execution configuration)
+.. list-table:: Native FA support
    :header-rows: 1
-   :widths: 24 18 38
+   :widths: 25 36 39
 
-   * - Family / scope
-     - I D X E P Q
-     - Evidence, gate and precise request
-   * - Regional instantaneous 2-D scalar histories
-     - L L L L L B
-     - Modern rectangular regular-lon/lat and tangent-Lambert only.
-       Synthetic gridpoint packing-0 has V I/D/X/E, analytical values and
-       independent geometry equations; optional polar origin truth only.
-       Real 120/16 atmospheric and 120/24 SFX encoding probes succeed.
-       Request multi-time trusted values/masks, producer release and Earth model.
-   * - Failing atmospheric encodings
-     - L B B B B B
-     - Three indexed records fail native FANION -91; encoding/representation
-       unknown. Request upstream record-header diagnosis and independent decode.
-   * - Regional spectral atmosphere
-     - L B B B B B
-     - S001 temperature/U flags: spectral 103/18. No transform qualified.
-       Request coefficient sizes/order/normalization and trusted transformed values.
-   * - Native atmospheric 3-D fields
-     - L B B B B B
-     - Per-level names and hybrid arrays inspectable, not qualified cubes.
-       Request full/interface definitions, sampling and independently known columns.
-   * - Horizontal/vertical vectors
-     - L B B B B B
-     - U name/flags are not a wind-basis contract. Request producer pairing,
-       staggering, map scaling, frame and independent vector references.
-   * - SURFEX dense / packed layouts
-     - L L/B L/B L/B L/B B
-     - Dense X1 selected-record support only; no general typed/sparse reconstruction.
-       Dense synthetic scalar pipeline verified. Packed decode blocked.
-       Request PACK variants, support-map order, undefined values and typed truth.
-   * - Soil/snow/patch/tile data
-     - L B B B B B
-     - Directory and individual native names only; no qualified axes/weighting.
-       Request native indices/bounds/fractions and trusted layer/tile examples.
-   * - Point / interval fields
-     - L L/B L/B L/B L/B B
-     - Explicit instantaneous scalar branch only; header interval marker is not
-       field support. Request mean/accumulation/extreme definitions, resets,
-       units, signs and multi-time reference; no implicit deaccumulation.
-   * - Additional regional headers/projections
-     - B B B B B B
-     - No additional sample or header mapping. Request versioned headers,
-       Earth models, anchors/orientations and independent geographic checkpoints.
-   * - Static/PREP/state products
-     - L B B B -- B
-     - SFX state timestamp inspected in history only, not a PREP qualification.
-       Request static/validity specification and representative product; no
-       fabricated dates, track or diagnostic.
+   * - Family or operation
+     - Current support
+     - Requirements and limits
+   * - Header/index and selected encoding inspection
+     - Read-only metadata, names/lengths, clocks, source/directory facts and
+       selected encoding flags or native errors.
+     - An LFI index alone does not identify a supported FA producer, quantity or
+       release. FA must be declared explicitly; suffixes are not evidence.
+   * - Regional instantaneous atmospheric gridpoint records
+     - Selected 2-D decode, labelled datasets, native extraction/export and
+       explicitly requested eligible polar sampling.
+     - ``profile: arome_history``, qualified modern regular-lon/lat or spherical
+       tangent-Lambert geometry, explicit source units/kind/instantaneous meaning.
+       Selected native errors and unknown scaling remain failures.
+   * - Dense AROME-produced SURFEX histories
+     - Selected horizontal real ``X1`` records, including categorical codes and
+       individually named layer/patch records.
+     - Evidenced AROME-47 / SURFEX-8.1 source tags, complete consistent FBUF,
+       ``SFX.PACK=0``, storage-sized DIM1 and DIM2=-1, matching CI/state clock.
+       ``PACK=0`` is a layout fact, not FA codec packing 0 or verified scaling.
+   * - Explicit native atmospheric cubes
+     - Selected gridpoint records on original full/interface labels, sparse
+       selection and native/source/vertical-qualified NetCDF products.
+     - Exact declared record associations and centre sampling; checked native
+       A/B/PREFER and library vertical grid. No inferred pressure/height or
+       full-level coefficients. See :doc:`fa_atmosphere`.
+   * - Collocated physical wind pairs
+     - Existing explicitly selected wind preparation and magnitude/polar products.
+     - Declared matching Earth/grid basis, physical-velocity scaling and
+       companions. Unresolved staggering/map scaling and additional producer
+       vector conventions remain blocked; cube support is not vector validation.
+   * - Coupled atmospheric GRIB/NetCDF plus FA, or native FA/FA
+     - One geographical track, independent source grids/products, exact-common
+       default or strict times, optional shared bilinear targets.
+     - Each source must satisfy its own adapter contract. No common native
+       indices, nearest-time substitution or automatic quantity equivalence.
+       See :doc:`fa_surface`.
+   * - Small typed structural metadata
+     - Evidenced ASCII/integer/0-or-1 logical/real/date structure and directory facts.
+     - Observed release/type/length checks; structural readability is not
+       permission to decode physical arrays. See :doc:`fa_contracts`.
+   * - Spectral records, including observed 103/18 encodings
+     - Encoding/header facts only; physical decoding, raw coefficient export,
+       transformed datasets, extraction and polar products are blocked.
+     - Qualified coefficient/scaling/header-to-transform contracts and trusted
+       native-grid references are missing. A library-only Fourier evaluation
+       does not supply them. See :doc:`fa_spectral`.
+   * - Packed SURFEX, support-map reconstruction, X2 or physical N1/L1/C1 arrays
+     - Not supported for physical execution; available directory facts can be inspected.
+     - Need release-matched type/order/support-map/missing-value definitions and
+       independent decoded/scatter-gather references. C1 here is a native character
+       type code, not a physical scalar capability.
+   * - Soil/snow/layer/patch/tile axes or averages
+     - Original dense 2-D record names can be selected; assembled scientific axes
+       and weighting are not inferred.
+     - Need original indices, bounds, fractions, masks and trusted layer/tile data.
+   * - Accumulated/averaged/extreme FA fields, rates and static/PREP products
+     - Only explicitly instantaneous FA physical records are admitted.
+     - Need field-specific support/bounds/resets/signs/units and independent
+       multi-time or static references. A header interval marker is insufficient.
+   * - Other projections, global/reduced grids, other producers or plain LFI
+     - Not supported by this adapter.
+     - Need versioned native header/active-array mappings, actual Earth models,
+       sampling/zone conventions and independent geographic/value references.
 
-No new stable diagnostic, vector/vertical transform or conservation claim is
-qualified here. FA production eligibility remains explicit instantaneous 2-D
-gridpoint selection with declared meaning/scaling and admitted geometry.
-The optional production continuous polar method remains bilinear.
+Regular lon/lat FA supports the complete ``CI`` grid only. Spherical tangent
+Lambert supports selected ``CI`` or ``C`` zones with an explicit Earth radius;
+rotated, stretched, academic, secant/ellipsoidal, dateline-crossing and polar
+variants are not admitted. See :doc:`fa_geometry` for exact numerical choices.
 
-Native -91 diagnosis and upstream packet
-------------------------------------------------------------
+FA-only tracking supports ``fixed_box`` or ``prescribed_track``. For atmospheric
+trackers, use a qualified GRIB/NetCDF tracking source in a coupled run. Native
+cubes do not themselves establish verified MSLP or pressure-level tracker inputs.
+Diagnostics remain selected operations, not automatic consequences of available
+fields. Continuous production polar sampling defaults to bilinear point samples,
+without an area-budget conservation guarantee; categorical fields require an
+explicit appropriate method such as ``nearest_s2d``.
 
-The private-data-free probe implementation is
-``src/frameit/testing/fa_native_probe.py``. Run it in a **fresh FA-only process**:
+Interpret failures without guessing physics
+-------------------------------------------
 
-.. code-block:: bash
+* **Native -91/-93/-94 on a selected physical record:** execution fails rather
+  than accepting a library metadata classification. Unselected records can remain
+  indexed without payload reads. Observed ``SURFPRESSION``, ``S090TEMPERATURE``
+  and ``S090WIND.U.PHYS`` header failures have no established encoding/cause from
+  index lengths alone. Ask the producer/upstream for the exact native build,
+  header/error specification and a trusted decode or known-good copy. The error
+  alone does not establish corruption or harmless metadata.
+* **Missing FMULTM/FMULTE scaling:** the default is failure. ``allow_unscaled``
+  is a justified explicit identity-fallback permission, not a qualification or a
+  unit conversion. No warning is not proof of identity scaling; see :doc:`fa_contracts`.
+* **Incomplete/contradictory SURFEX directory or clocks:** obtain the required
+  source/directory records and consistent state/header validity. Relabelling the
+  stream as atmospheric cannot repair the missing evidence.
+* **Geometry mismatch:** confirm source Earth model, zones, scanning and encoded
+  corners; do not fit a radius or relax the numeric checks to obtain a plausible map.
+* **Budget, timeout or transfer failure:** inspect storage size and selected work,
+  then change declared budgets deliberately. A crop may require a complete native
+  horizontal decode; point limits are not an RSS quota. See :doc:`fa_environment`.
 
-   python -m frameit.testing.fa_native_probe "$ATMOSPHERE_FA" \
-       SURFPRESSION S090TEMPERATURE S090WIND.U.PHYS S001TEMPERATURE CLSTEMPERATURE
+Scientific evidence still needed
+--------------------------------
 
-It opens OLD, closes KEEP, disables core dumps, bounds native threads, excludes
-parent ecCodes definition overrides and only reads the index and encoding flags.
-It neither decodes horizontal arrays nor imports FrameIt's reader, GRIB or
-EPyGrAM. Source size/mtime is checked. JSON includes selected names, word counts,
-call arguments and binding/native API versions; no source path or physical values.
-Review native stdout/stderr too before sharing; library diagnostics can disclose
-details independently of the JSON. No upload/issue creation is automatic.
-The file can also be run directly with ``python fa_native_probe.py`` after
-copying only that script into an upstream reproduction environment; FrameIt is
-not needed there. Only the optional native package and its dependencies are used.
+Native names/flags, a readable index and plausible values do not establish
+release-specific quantities, units, signs, temporal support, scaling, masks,
+Earth model or vector/vertical sampling. ``KNIVER`` counts native levels, not a
+producer/header release. A matching array shape does not prove a common grid.
+Source size/mtime checks detect freshness changes, not content integrity or
+corruption; package version strings do not verify the native Fortran revision.
 
-Observed calls (``wfanion(unit, prefix, level, suffix)``):
-
-* ``SURF, 0, PRESSION``: -91; indexed length 1,410,925 words.
-* ``S090, 0, TEMPERATURE`` and ``S, 90, TEMPERATURE``: -91;
-  indexed length 1,411,016 words.
-* ``S090, 0, WIND.U.PHYS`` and ``S, 90, WIND.U.PHYS``: -91;
-  indexed length 1,411,016 words.
-* Control ``S001, 0, TEMPERATURE`` and ``S, 1, TEMPERATURE`` both return
-  ``[true, true, 103, 18, 0, 0]``.
-* Control ``CLST, 0, EMPERATURE`` returns
-  ``[true, false, 120, 16, 0, 0]``.
-
-All failures emit ``FANION - ENTETE D'ARTICLE "" INCORRECT``. Classification:
-
-* **Metadata versus physical record:** substantial indexed records are present;
-  the error does not establish harmless metadata or quantity meaning.
-* **Naming/layout:** both supported wrapper call forms produce the same result;
-  the control succeeds in both forms. This weakens a simple prefix/level split
-  hypothesis but does not prove all internal name/layout handling correct.
-* **Encoding/backend:** native FANION fails without FrameIt or GRIB loaded.
-  Binding 1.3.0, ctypesForFortran 2.2.1, wheel-native ecCodes API 24800.
-  No encoding ID can be assigned to the failed records from these probes.
-  Exact bundled FA source revision/producer compatibility remains unknown.
-* **Corruption:** index/header readability and unchanged size/mtime neither prove
-  nor exclude corrupted physical record headers. No trusted second copy or decode
-  exists. Do not classify the source as corrupt based on -91 alone.
-
-Authoritative API reference checked: the installed 1.3.0 ``falfilfa4py/FA.py``
-documents ``wfanion`` prefix(4)/level/suffix(12) and returned encoding flags.
-The installed wrapper SHA256 is recorded in the fixture manifest, identifying
-the inspected API text without claiming a verified native Fortran revision.
-The publisher's `PyPI 1.3.0 record
-<https://pypi.org/pypi/falfilfa4py/1.3.0/json>`_ identifies FA as an LFI overlay,
-its native dependencies and upstream bug tracker. It provides no trusted decode
-or -91 interpretation. The linked ACCORD-NWP/FALFILFA repository/source endpoints
-returned HTTP 404 during this investigation. Thus **authoritative native
-record-header/error specification and independent decoding are blocked**, rather
-than replaced with an inferred error meaning.
-
-Prepared upstream request (maintainer can send after reviewing the output):
-
-* Subject: ``falfilfa4py 1.3.0 FANION -91 on three indexed regional FA records``.
-* Attach only reviewed probe code/output, runtime/manifest facts and exact calls.
-  Include successful 103/18 spectral and 120/16 gridpoint controls.
-* Ask which native revision/encoding families are bundled, what -91 means at
-  this failure site, whether that producer/release is supported and which
-  upstream-supported backend/definition versions should read these records.
-* Ask for a licensed minimal synthetic reproduction or producer-approved reduced
-  file plus trusted native-tool decode, mask and active header/encoding report.
-  Request matched producer/build metadata and a second known-good copy/checksum
-  to distinguish unsupported headers from corruption. Do not submit private
-  records, raw words or full archives without explicit permission.
-
-No native-code workaround, error-code metadata fallback, inferred identity
-scaling or binary codec is introduced. Selected failures remain fatal, while
-unselected records remain indexable.
-
-Verification and P1 admission
------------------------------
-
-Reference environment command prefix is ``conda run -n frameit_env`` (the local
-launcher was resolved explicitly during P0). Initial baseline command:
-
-.. code-block:: bash
-
-   python -m pytest -q src/frameit/testing/numerical/test_fa_io.py \
-       src/frameit/testing/numerical/test_fa_geometry.py \
-       src/frameit/testing/numerical/test_fa_pipeline.py
-
-Result: **16 passed**, one NumPy/netCDF binary-size runtime warning. This is a
-current compact synthetic regression, not scientific validation of real files.
-The additional ``test_fa_baseline.py`` checks -91/-93/-94 selected-failure versus
-raw-inspection behavior without native packages, and exercises the upstream
-probe on generated read-only data when the optional wheel is installed.
-Existing tests cover exact-common/strict exclusion reports, no-FA NetCDF
-coupling, isolated GRIB coexistence, synchronous/spawn exports, ordinary-reader
-reopening and explicitly selected polar origin truth.
-
-Final P0 verification (same Python-3.13 environment):
-
-.. code-block:: bash
-
-   python -m pytest -q src/frameit/testing/numerical/test_fa_baseline.py \
-       src/frameit/testing/numerical/test_fa_io.py \
-       src/frameit/testing/numerical/test_fa_geometry.py \
-       src/frameit/testing/numerical/test_fa_pipeline.py
-   python -m pytest -q
-   ruff check src/frameit/testing/fa_native_probe.py \
-       src/frameit/testing/numerical/test_fa_baseline.py
-   frameit validate example/config_file/coupled_fa.yaml --schema-only
-   LC_ALL=C LANG=C sphinx-build -q -W --keep-going -b html \
-       docs/source /tmp/opencode/frameit-fa-p0-docs
-   git diff --check
-
-Focused suite: **21 passed**, one NumPy/netCDF binary-size warning. Full suite:
-**508 passed, 2 subtests passed**, 722 cfgrib/xarray future warnings, 229.52 s.
-Ruff and schema validation pass. The first strict documentation build found two
-short title underlines, corrected before the final build. The strengthened
-optional-import check was then rerun with ``python -m pytest -q
-src/frameit/testing/numerical/test_fa_baseline.py``: **5 passed**.
-No production run, large download, real-sample diagnostic or real-sample
-physical-coordinate derivation was performed.
-Existing YAML, output semantics and run provenance mechanisms are unchanged;
-this manifest adds investigation provenance, not an automatic capability gate.
-
-P1 can develop versioned descriptors on the proven synthetic/dense scalar
-branch. Before promoting any real family, obtain its producer/release and native
-build identity, authoritative types/scaling/units/time/sampling definitions,
-independent decoded values/masks and geographic checkpoints with justified
-tolerances. Obtain at least two times per real stream and explicit cycle/reset
-examples for the AROME/SURFEX families being admitted.
-For the -91 branch, obtain the native header/error specification and trusted
-decode or upstream-supported resolution first. Typed/scalar metadata may inform
-P1 contracts without admitting packed, spectral, 3-D, vector or interval
-execution. Permission to retain/redistribute real reduced fixtures and human
-review of scientific conventions remain open. No scientific approval is claimed.
-
-P1 follow-up
--------------
-
-The :doc:`fa_contracts` adds versioned descriptors and selected typed structural
-metadata on the observed AROME-47/SURFEX-8.1 branch. It does not promote any
-blocked physical family in this frozen P0 matrix. In particular, the -91,
-release-matched scientific definitions, trusted decodes and multi-time real-data
-gaps remain unresolved.
-
-The :doc:`fa_geometry` records a subsequent bounded P2 repair of already admitted
-modern regional headers and Lambert index lookup. Additional projections, Earth
-models require references before new AROME/SURFEX variants are admitted.
-Global/reduced active metadata belongs to a future, separately scoped reader.
-
-The :doc:`fa_spectral` evaluates a pinned optional ecTrans candidate against
-independent regional Fourier modes. No P0 spectral coefficient encoding or real
-field is promoted by those library-only tests; this matrix's spectral decode,
-dataset, extraction and polar gates remain blocked.
-
-The subsequent :doc:`fa_atmosphere` verifies selected synthetic gridpoint cubes
-through an optional EPyGrAM backend. It does not promote the frozen P0 real spectral,
-scaling, producer-sampling or native-error rows to independently verified status.
+Real-producer use still needs release-matched definitions, independently trusted
+values/masks and geographic checkpoints with justified tolerances, appropriate
+multi-time/cycle/reset examples, and scientific review. Missing native scaling,
+unexplained selected errors and spectral/typed/interval references remain
+unresolved. No implicit deaccumulation, pressure/height calculation, vector
+conversion, averaging, extrapolation or missing-to-zero filling resolves them.
+See :doc:`fa_contracts` for the facts retained in inspection and ordinary outputs.

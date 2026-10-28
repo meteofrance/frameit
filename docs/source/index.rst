@@ -27,20 +27,14 @@ FrameIt |release| documentation
 
    user_guide/input_files
    user_guide/fa_inputs
+   user_guide/fa_environment
+   user_guide/configuration_file
    user_guide/fa_baseline
    user_guide/fa_contracts
    user_guide/fa_geometry
    user_guide/fa_surface
-   user_guide/fa_spectral
    user_guide/fa_atmosphere
-   user_guide/fa_epygram_c0
-   user_guide/fa_epygram_c1
-   user_guide/fa_epygram_c2
-   user_guide/fa_epygram_c3
-   user_guide/fa_epygram_c4
-   user_guide/fa_epygram_c5
-   user_guide/fa_environment
-   user_guide/configuration_file
+   user_guide/fa_spectral
    user_guide/output_files
    user_guide/matrix_testing
 

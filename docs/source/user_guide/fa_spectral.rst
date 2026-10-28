@@ -1,103 +1,80 @@
-FA P4 spectral candidate and admission gates
-=============================================
+Spectral FA support and limitations
+===================================
 
-**Status: library evaluation implemented; production spectral FA remains blocked.**
-This bounded P4 increment starts from ``cce8934``. P0 observed spectral 103/18
-flags for ``S001TEMPERATURE`` and ``S001WIND.U.PHYS``; it did **not** decode their
-coefficients. No supplied encoding has the coefficient/scaling/layout and trusted
-native-grid reference needed for spectral production admission. Installing a
-transform cannot fix the separate native -91 records. See :doc:`fa_baseline`.
+**Production spectral FA execution is blocked.** FrameIt can retain selected
+encoding/header facts, but it does not decode, export raw coefficients, transform,
+extract or polar-sample a spectral physical field. There is no spectral YAML
+activation key. Installing ecTrans or EPyGrAM does not establish a qualified
+coefficient/producer contract. Native atmospheric cubes use admitted gridpoint
+records only; see :doc:`fa_atmosphere` and :doc:`fa_baseline`.
 
-The selected candidate is **ecTrans / ectrans4py 1.6.0**, evaluated in a disposable
-Python-3.13 environment. Its regional scalar inverse transform works against
-independent analytical modes. This is not completion of P4's real-field gate,
-qualification of an FA encoding, scientific approval, or atmospheric cube support.
+Coefficients are not gridpoint values
+-------------------------------------
 
-Actual library and version evidence
------------------------------------
+Observed spectral flags such as 103/18 on ``S001TEMPERATURE`` or
+``S001WIND.U.PHYS`` identify representation/encoding facts, not independently
+decoded coefficients. Indexed/compressed word counts and ``nx*ny`` cannot supply
+coefficient dimensions. A plausible grid-shaped array is not proof of a valid transform.
 
-The publisher's `PyPI metadata <https://pypi.org/pypi/ectrans4py/1.6.0/json>`_
-provides a 3.84-MB Linux x86_64 CPython-3.13 wheel. It is the latest published
-wrapper observed on 2026-10-26. The maintained
-`ecTrans project <https://github.com/ecmwf-ifs/ectrans>`_ has a newer native
-`2.0.0 release <https://github.com/ecmwf-ifs/ectrans/releases/tag/2.0.0>`_.
-These release schedules and APIs are not interchangeable. No ongoing maintenance
-promise for the older wheel, native 2.0 build, or untested wrapper is inferred.
-The evaluated wheel prints native 1.6.0 and revision
-``2c4c818d79effe56d30bb2896866aba590a5fad8``. Distribution/native identities,
-wheel hash, checked source references and finite family statuses are retained in:
+Selected spectral records fail before physical payload decoding or construction
+of a transform-bearing H2D field. The parent also rejects spectral, unknown or
+blocked read descriptors even if transferred dtype/shape resemble grid values.
+A transform installation does not resolve separate native -91 header/encoding
+failures; those need their own upstream explanation and trusted decode.
 
-.. literalinclude:: ../../../src/frameit/testing/catalogs/fa_p4.yaml
-   :language: yaml
+Inspection preserves exact ``KTYPTR``/``KTRONC`` words in
+``native.spectral_contract``, with unresolved coefficient count/order/space/
+normalization/transform truncation and explicit blocked status. FANION
+``truncation`` can mean *under-truncation*, not a complete transform truncation.
+The regional inspector retains only its admitted active rectangular header
+prefixes; it does not claim complete Gaussian/reduced/spectral active-array
+retention, including ``KNOZPA``. Those layouts require authoritative active counts
+before interpretation, not a rectangular reshape.
 
-The actual `1.6.0 wrapper
-<https://github.com/ecmwf-ifs/ectrans/blob/1.6.0/src/ectrans4py/__init__.py>`_
-and its Fortran interfaces expose:
+Requirements for each encoding and producer release
+---------------------------------------------------
 
-* ``etrans_inq4py(nx, ny, physical_nx, physical_ny, tx, ty, max_resolutions, dx, dy)``:
-  regional gridpoint count and **real coefficient count**, from ``ETRANS_INQ``.
-* ``sp2gp_lam4py``: regional double-Fourier scalar inverse transform; explicit
-  coefficient size, derivative flag, reorder flag and spacing. ``LREORDER=True``
-  invokes the library's own FA-order to model-order conversion. FrameIt does not
-  implement a transform or copy that reorder algorithm.
-* ``trans_inq4py`` / ``sp2gp_gauss4py``: distinct global Gaussian/Legendre
-  interfaces. Global inquiry and interleaved-complex input sizes have different
-  contracts from the LAM real coefficient count. They are inspected, **not run or
-  qualified** here; global/reduced FA remains outside this phase.
+#. A readable native coefficient decode with authoritative dimensions, scaling,
+   missing-value semantics and native build/release identity. Flags alone do not
+   qualify it; no compressed-length or grid-size allocation fallback is allowed.
+#. A documented FA header/active-array-to-transform contract: coefficient order,
+   Fourier versus Legendre space, full/under-truncation, normalization, original
+   grid, Earth model and CI/C/extension zones.
+#. Independently trusted coefficient and transformed native-grid fields, matched
+   by quantity/level/time/mask, with justified packing/transform tolerances,
+   appropriate fixture permissions and human scientific review.
+#. Compatible maintained wrapper/native versions and bounded/measured coefficient,
+   workspace, mask, full-grid and transfer resources. Failure, missing dependency,
+   crash and unchanged gridpoint contracts need verification before admission.
 
-The wrapper requires ``ctypesForFortran<2``. The evaluation extra pins 1.3.0;
-the ordinary reference FA environment retains its 2.2.1 installation. This is an
-optional test environment, not an automatic environment update. A future
-production version selection needs upstream-supported native/wrapper compatibility
-and the same independent acceptance cases before admission.
+Additional vector/physical-coordinate operations require their own field sampling,
+full/interface coefficients, units/reference pressure and basis/staggering evidence.
+No pressure/height, gradient, vector conversion or diagnostic becomes mandatory
+because coefficients or dependencies exist.
 
-Reproduce the bounded evaluation
----------------------------------
+Separate library evaluation: scope and equations
+------------------------------------------------
 
-In a fresh Python-3.13 environment, from the FrameIt checkout:
+The optional **ecTrans / ectrans4py 1.6.0 regional scalar double-Fourier evaluation**
+uses prescribed analytical coefficients, not FA input files. It is candidate
+numerical-library evidence, **not supported spectral field extraction or a stable
+scientific diagnostic**. The
+`versioned wrapper source <https://github.com/ecmwf-ifs/ectrans/blob/1.6.0/src/ectrans4py/__init__.py>`_
+and `publisher metadata <https://pypi.org/pypi/ectrans4py/1.6.0/json>`_ define the
+evaluated software/API contract. Other native releases, including
+`ecTrans 2.0.0 <https://github.com/ecmwf-ifs/ectrans/releases/tag/2.0.0>`_, have
+distinct schedules/APIs and are not interchangeable qualifications.
 
-.. code-block:: bash
+The bounded evaluation uses complete 12x12, 18x12 and 12x12 grids at 1000-m
+spacing, truncations (3,3), (5,3), (2,2), and native-inquiry counts of 44/64/24
+real coefficients for 144/216/144 gridpoints. Coefficient allocations use the
+inquiry count. The library owns coefficient reordering (``LREORDER=True``);
+derivatives are disabled (``LGRADIENT=False``). These choices do not map unknown
+FA header words to truncations or qualify extension zones/Earth models.
 
-   python -m pip install -e '.[test,fa-spectral-test]'
-   python -m frameit.testing.fa_spectral_probe --output ./runs/fa-spectral-candidate
-   python -m pytest -q src/frameit/testing/numerical/test_fa_spectral.py
-
-Use a fresh output directory. The explicit command launches a disposable native
-child; ordinary imports, inventory, gridpoint/GRIB/NetCDF processing and diagnostics
-do not load ecTrans or run these tests. The probe reads **no source files** and
-accepts no production fields or arbitrary transform parameters. It checks three
-small library parameter sets, at most 216 gridpoints and 64 coefficients.
-Coefficient allocations use the native inquiry count. Neither ``nx*ny`` nor the
-compressed/indexed word count supplies coefficient dimensions.
-
-The child has one native thread, three resolution slots, no core dumps and no
-unlimited-stack request. The parent excludes inherited ecCodes definition/sample
-overrides only for that child, enforces a 30-second timeout and removes temporary
-files. ``report.json`` is atomically published in the new designated directory.
-It records failed attempts, missing dependencies, native death and timeouts;
-``passed_limited`` always accompanies ``production_spectral_fa: blocked``.
-No coefficients or purported physical fields are exported.
-
-Method and independent numerical evidence
-------------------------------------------
-
-**Quantity/method/maturity:** scalar inverse regional double-Fourier synthesis
-through the published double-precision ecTrans LAM API; candidate evaluation only.
-This is a numerical codec/transform investigation, not a stable diagnostic.
-Upstream implementation/API documentation specifies the tested library contract;
-release-matched producer conventions and human scientific review are missing.
-
-**Inputs/conventions:** explicit grid dimensions, physical dimensions equal to the
-complete test grid, spacings 1000 m, truncations (3,3), (5,3), (2,2), unit spectral
-coefficients (constant 1.25), ``LREORDER=True``, ``LGRADIENT=False``. The native
-inquiries return 44/64/24 reals for 144/216/144 gridpoints. The probe does not
-interpret FA header words as truncations or assume a real field uses Fourier
-rather than Legendre space. Extension zones and source Earth models are not
-qualified by these library-only tests.
-
-**Equations/numerics:** independent closed-form values use
-:math:`X=2\pi m i/n_x`, :math:`Y=2\pi n j/n_y`. In the evaluated four-real
-coefficient blocks, the scalar basis for positive m,n is
+Independent closed-form truth uses :math:`X=2\pi m i/n_x` and
+:math:`Y=2\pi n j/n_y`. For the evaluated four-real coefficient blocks and
+positive m,n the scalar basis is:
 
 .. math::
 
@@ -106,138 +83,41 @@ coefficient blocks, the scalar basis for positive m,n is
 
 Pure-X modes are :math:`2(A\cos X-C\sin X)`; pure-Y modes are
 :math:`2(A\cos Y-B\sin Y)`. The zero-wavenumber constant is A.
-Tests directly populate single coefficients and compare against these equations,
-including zero, constant, both sine signs, all four mixed slots and each axis's
-truncation edge. There is no forward-transform/round-trip oracle. All 36 cases
-pass at ``rtol=0, atol=5e-13``; observed maximum absolute error is
-``5.551115123125783e-15``. The tolerance allows float64 roundoff for this small,
-unit-amplitude workload (at most five waves); it is not a tolerance for packed
-real data, all truncations, another version or production resources.
+Zero, constant 1.25, unit-amplitude cosine/sine signs, all four mixed slots and
+each axis's truncation edge are compared directly to these equations, not to a
+forward-transform/round-trip oracle. The specified bound is ``rtol=0, atol=5e-13``:
+float64 roundoff allowance for at most five waves and 216 points. The recorded
+small-mode maximum error ``5.551115123125783e-15`` is limited library evidence,
+not a tolerance or accuracy claim for packed real fields, all truncations,
+another version or production resources.
 
-**Differences/applicability/failures:** no change to upstream transform mathematics,
-normalization or coefficient reordering. No custom transform, gradient, vector,
-pressure/height calculation, interpolation, conservation claim or method switch.
-Missing or different dependencies and nonfinite/incorrect numerical outputs fail
-the attempt. SIGSEGV and timeout lifecycle tests use deliberately failing disposable
-Python processes; they are not claims to reproduce a particular ecTrans defect.
+The evaluation changes no upstream mathematics/normalization/reordering and
+does not exercise global Gaussian/Legendre, gradient, vector or physical-coordinate
+operations. It reads no source fields and accepts no arbitrary production
+parameters. A bounded fresh child uses one native thread, three resolution slots,
+no core dumps/unlimited-stack request, and a 30-second timeout. Missing/different
+dependencies, nonfinite/incorrect results, timeout or native death fail the attempt.
+Failure-injection cases are lifecycle checks, not diagnoses of a particular native
+library defect. No spectral FA generator or real-field decode is qualified by them.
 
-An exploratory compact native coefficient fixture aborted in native code. Its
-header/coefficient contract had not been established; it is not an admitted
-fixture, an upstream diagnosis, or evidence that packing-0 spectral FA works.
-No speculative native header mapping or supported generator from that attempt is
-retained. The library evaluation is deliberately independent of FA decoding.
+The optional evaluation requires ctypesForFortran 1.3.0 with the pinned wrapper;
+the reference FA environment already uses that bridge. This is not an instruction
+to alter an environment or activate a transform. Gridpoint FA workers reject
+ecTrans imports. Release-matched producer conventions and scientific review
+remain missing even if the analytical evaluation succeeds.
 
-Production boundary, metadata and compatibility
-------------------------------------------------
+Metadata and output boundary
+----------------------------
 
-Selected spectral records still fail **before physical payload decoding**. Raw
-inspection preserves encoding flags and additive descriptor-v1
-``native.spectral_contract`` metadata: exact native ``KTYPTR``/``KTRONC`` words,
-explicitly unresolved coefficient count/order/space/normalization/transform
-truncation and a blocked status. FANION ``truncation`` is potential *under-truncation*,
-not proof of a complete transform truncation. Indexed word counts remain separate.
-The current regional inspector still retains only its admitted rectangular active
-header slices; it does not claim complete Gaussian/reduced/spectral active-array
-retention, including ``KNOZPA``. Admission requires the correct active-array contract
-before retaining or interpreting such work buffers.
+Inspection facts are portable JSON and remain in ordinary per-file provenance;
+they are not physical output variables. Explicit library-evaluation reports record
+versions/revision/effective arguments, counts, per-mode errors/tolerance, resource
+policy, diagnostics and unresolved gates. Even ``passed_limited`` is paired with
+``production_spectral_fa: blocked``. Neither coefficients nor purported physical
+fields are exported by that evaluation.
 
-The parent additionally rejects a read response whose descriptor is spectral,
-unknown or blocked, even if its transferred dtype and shape resemble a grid.
-Coefficients cannot masquerade as values. Raw coefficient export has no admitted
-public contract. Inspection metadata is portable JSON; existing per-file provenance
-retains it through the usual descriptors. The evaluation report adds versions,
-code revision/dirty state, effective transform arguments, counts, per-mode errors,
-tolerance, resource policy, native diagnostics and unresolved gates.
-
-Existing single-source/coupled YAML, selected-record laziness and native-grid
-products retain their contracts. There is no spectral YAML activation key. The
-ordinary NetCDF schema, compression, precision, masks and atomic publication do
-not change. Common/strict exact-time behavior, optional diagnostics/dependencies
-and production bilinear polar sampling remain as documented in :doc:`fa_inputs`.
-
-Remaining P4 gate and P5 prerequisites
----------------------------------------
-
-For **each** proposed encoding/release, obtain:
-
-#. A P0-proven native coefficient decode with authoritative dimensions, scaling
-   and missing-value semantics. FANION flags alone are insufficient; -91 remains
-   a separate upstream gate. No compressed-length or grid-size allocation fallback.
-#. The actual FA header/active-array to transform contract, coefficient order,
-   Fourier/Legendre space, full and under-truncation, normalization, original grid,
-   Earth model and CI/C/extension-zone definitions.
-#. Independent trusted real coefficient and native-grid fields, matched variables/
-   levels/times/masks, redistribution permission for compact fixtures, justified
-   packing/transform tolerances and human review of scientific conventions.
-#. Compatible maintained native/wrapper versions and measured/bounded memory for
-   coefficients, workspaces, masks, complete-grid transforms and transfer. Verify
-   selected fields/dependencies, missing packages, crashes and unchanged gridpoint
-   outputs before enabling a production path.
-
-P5 may use already admitted gridpoint records independently, but spectral cubes
-require those P4 gates first. Cubes/vectors additionally require actual field-level
-sampling, full/interface indices, hybrid coefficient units/reference pressure and
-producer vector-basis/staggering definitions. No optional physical-coordinate or
-diagnostic calculation becomes mandatory because inputs exist.
-
-Verification record
----------------------
-
-Python 3.13.16 reference environment (no ecTrans installed):
-
-.. code-block:: bash
-
-   conda run --no-capture-output -n frameit_env python -m pytest -q
-   ruff check src/frameit/io/fa_contracts.py src/frameit/io/fa_worker.py \
-       src/frameit/io/fa_backend.py src/frameit/testing/fa_spectral_probe.py \
-       src/frameit/testing/numerical/test_fa_spectral.py
-   frameit validate example/config_file/coupled_fa.yaml --schema-only
-   frameit validate example/config_file/coupled_arome_fa_polar.yaml --schema-only
-   frameit validate example/config_file/coupled_cyclone_polar.yaml --schema-only
-   LC_ALL=C LANG=C sphinx-build -q -W --keep-going -b html \
-       docs/source /tmp/opencode/frameit-fa-p4-docs
-   python -m pip wheel --no-deps --no-build-isolation . -w /tmp/opencode/frameit-p4-wheel
-   git diff --check
-
-Observed: **594 passed, 2 subtests passed, 1 skipped** (the absent optional
-candidate), 722 existing cfgrib/xarray future warnings, 276.23 seconds. Lint,
-three schema examples, strict documentation and wheel build pass. Ordinary FA
-gridpoint/GRIB/NetCDF, coupled common/strict times, independent native grids,
-synchronous/spawn exports and ordinary-reader output checks are in that regression.
-
-In the disposable candidate environment, using its Python as ``P4_PYTHON``:
-
-.. code-block:: bash
-
-   conda run --no-capture-output -n frameit_env "$P4_PYTHON" -m pytest -q \
-       src/frameit/testing/numerical/test_fa_spectral.py \
-       src/frameit/testing/numerical/test_fa_io.py \
-       src/frameit/testing/numerical/test_fa_pipeline.py
-   conda run --no-capture-output -n frameit_env "$P4_PYTHON" \
-       -m frameit.testing.fa_spectral_probe --output /tmp/opencode/frameit-fa-p4-candidate
-
-Observed: **22 passed**, one NumPy/netCDF binary-size runtime warning. The
-standalone report passes all 36 analytical cases with the limitations above.
-The overlay environment inherits conda's native-library/data discovery through
-``conda run``; an initial direct-overlay attempt could not discover ecCodes/PROJ.
-The activated rerun passes without patching libraries or changing the FA/GRIB
-boundary. An initial full-suite attempt hit the shell's 120-second limit and
-exposed an order-dependent dependency-check test; after correction the complete
-long-timeout run above passed.
-
-A separate Python-3.13.16 core environment, with neither FA nor ecTrans nor xESMF,
-used its Python as ``CORE_PYTHON``:
-
-.. code-block:: bash
-
-   "$CORE_PYTHON" -m pytest -q \
-       src/frameit/testing/numerical/test_fa_spectral.py \
-       src/frameit/testing/numerical/test_fa_contracts.py \
-       src/frameit/testing/numerical/test_fa_baseline.py \
-       src/frameit/testing/numerical/test_fa_pipeline.py::test_coupled_netcdf_sources_do_not_need_fa_backend
-
-Observed: **25 passed, 3 skipped**, only the optional candidate and two native
-fixture cases. CI now runs the admission/failure tests with extras absent and
-with the existing FA wheel, plus a Python-3.13 pinned-candidate job. Hosted CI has
-not been executed locally. No supplied real FA payload, large production run,
-private-data upload, EPyGrAM import or stable scientific promotion was performed.
+Ordinary GRIB/NetCDF/gridpoint FA, exact-common/strict times, independent grids,
+selected-only diagnostics and continuous bilinear polar sampling retain the
+contracts in :doc:`fa_inputs`. There is no silent spectral-to-grid fallback,
+conservation claim or new method selection. Native coefficient/scaling/mask,
+real transformed-field and production-resource evidence remain unresolved.
