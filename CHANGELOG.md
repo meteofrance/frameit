@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Observe encoded FA factors in packing-120 GRIB2 centre-85/local-1 records using
+  the isolated worker's bundled ecCodes metadata API. An unknown-parameter warning
+  no longer rejects explicitly scaled fields; preserve native decoding, logged
+  warnings, actual factor provenance and fail-closed unresolved/invalid cases.
 - Preserve geographical centres for single-time automatic tracks, including
   GRIB/FA coupling. Motion values remain missing (NaN) without a second time;
   native FA scaling checks and multi-time tracking conventions are unchanged.

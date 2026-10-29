@@ -196,7 +196,7 @@ def handle(request, destination):
     backend = request.get("backend", "epygram")
     if backend not in {"native", "epygram"}:
         raise ValueError("Unknown FA backend")
-    from frameit.io.fa_epygram import initialize, inspect_resource, read_values
+    from frameit.io.fa_epygram import encoded_scaling, initialize, inspect_resource, read_values
 
     epygram = initialize(destination, request.get("earth_radius_m"))
     import falfilfa4py
@@ -226,6 +226,10 @@ def handle(request, destination):
             if request.get("cube_association") is not None:
                 descriptor["sampling"]["native_cube"] = request["cube_association"]
                 descriptor["sampling"]["vertical_interpretation"] = CUBE_VERTICAL_INTERPRETATION
+            scaling = encoded_scaling(epy_resource, name, descriptor["native"],
+                                      request.get("max_points", 20_000_000))
+            if scaling is not None:
+                descriptor["scaling"].update(scaling)
             values, undefined = read_values(
                 epy_resource, name, (grid["KNLATI"], grid["KNXLON"]))
             payload_read = {

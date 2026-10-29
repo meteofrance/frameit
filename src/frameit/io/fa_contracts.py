@@ -2,12 +2,13 @@
 
 Descriptors are ordinary JSON values, not native handles or scientific approval.
 The 8.1 layout below records the P0 corpus, not a catalogue of physical fields.
-No release-matched authoritative physical definitions have yet been supplied.
+No physical field catalogue is applied automatically.
 """
 
 from __future__ import annotations
 
 import json
+import math
 from copy import deepcopy
 
 PROTOCOL_VERSION = 1
@@ -25,7 +26,7 @@ CUBE_VERTICAL_INTERPRETATION = (
 )
 
 # Only small structural metadata whose raw-word layout is evidenced by P0 and
-# the existing fixture recipe. X1 physical fields are never read as raw words.
+# the existing fixture recipe. Physical values are never decoded from raw words.
 SURFEX_METADATA = {
     **{name: ("character", None) for name in ("PROGRAM", "GRID_TYPE", "SURF",
                                             "STORAGE_TYPE", "STORAGETYPE")},
@@ -116,7 +117,7 @@ def native_descriptor(name, length, encoding, directory, geometry, metadata, clo
         "scaling": {"status": "inapplicable_raw_metadata" if spec else "not_exposed",
                     "multiplier": None, "offset": None,
                     "policy": ("raw structural words; no physical codec" if spec else
-                               "native decoder; diagnostic-text missing-scaling guard")},
+                               "native decoder; encoded factors or unresolved-warning guard")},
         "mask": {"support_label": directory.get("MASK"), "undefined": "not_read",
                  "support_map": None},
         "temporal_support": {**clocks, "kind": None, "bounds": None, "origin": "unresolved"},
@@ -191,6 +192,26 @@ def validate_descriptor(descriptor):
                 "eligibility"):
         if not isinstance(descriptor[key], dict):
             raise ValueError(f"Invalid FA field descriptor {key}")
+    scaling = descriptor["scaling"]
+    if scaling.get("status") == "encoded":
+        try:
+            mantissa, exponent = scaling["mantissa"], scaling["exponent"]
+            if (type(mantissa) is not int or type(exponent) is not int
+                    or not all(-(1 << 63) < value < (1 << 63)
+                               for value in (mantissa, exponent))):
+                raise ValueError("invalid encoded factors")
+            divisor = mantissa * 10.**exponent
+            multiplier = 1. / divisor
+            if (not math.isfinite(divisor) or not math.isfinite(multiplier) or multiplier == 0
+                    or scaling["evidence"] != "same_unit_GRIB2_local_85_1"
+                    or descriptor["native"]["encoding"]["packing"] != 120
+                    or not all(type(scaling[key]) in (int, float)
+                               for key in ("divisor", "multiplier", "offset"))
+                    or scaling["divisor"] != divisor or scaling["multiplier"] != multiplier
+                    or scaling["offset"] != 0 or scaling["fallback"] is not None):
+                raise ValueError("inconsistent encoded scaling evidence")
+        except (ValueError, KeyError, TypeError, OverflowError, ZeroDivisionError) as exc:
+            raise ValueError("Invalid encoded FA scaling descriptor") from exc
     try:
         json.dumps(descriptor, allow_nan=False)
     except (ValueError, TypeError) as exc:

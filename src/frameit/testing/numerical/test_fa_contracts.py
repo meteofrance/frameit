@@ -86,6 +86,27 @@ def test_observed_layout_does_not_match_another_or_unidentified_release():
     assert layout_definition({**SOURCE, "MASDEV": 49}) is None
 
 
+@pytest.mark.parametrize("change", [
+    {}, {"multiplier": 1.}, {"mantissa": True}, {"mantissa": 0}, {"exponent": 999},
+    {"exponent": -999}, {"evidence": "guessed_default"}, {"fallback": "identity_explicit_opt_in"},
+    {"divisor": "20"}, {"offset": True},
+])
+def test_encoded_scaling_descriptor_requires_consistent_native_evidence(change):
+    raw = descriptor(packing=120)
+    raw["scaling"].update(status="encoded", evidence="same_unit_GRIB2_local_85_1",
+                          mantissa=2, exponent=1, divisor=20., multiplier=.05,
+                          offset=0., fallback=None)
+    raw["scaling"].update(change)
+    if change:
+        with pytest.raises(ValueError, match="Invalid encoded FA scaling descriptor"):
+            validate_descriptor(raw)
+    else:
+        validate_descriptor(raw)
+        raw["native"]["encoding"]["packing"] = 0
+        with pytest.raises(ValueError, match="Invalid encoded FA scaling descriptor"):
+            validate_descriptor(raw)
+
+
 def test_raw_vertical_header_survives_without_coordinate_or_field_assumptions():
     header = {"KTYPTR": -11, "KNLATI": 7, "KNXLON": 9, "KNIVER": 2, "PREFER": 100000.,
               "PAHYBR": [0., 100., 200.], "PBHYBR": [0., .4, 1.]}

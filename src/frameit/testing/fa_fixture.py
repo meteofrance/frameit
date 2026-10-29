@@ -21,7 +21,8 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
                   surface_pack=0, projected_spacing_m=1000., field_values=None,
                   atmospheric_fields=None, hybrid_header=None, surface_directory=None,
                   structural_overrides=None, ci_bounds=None, i_widths=(0, 0),
-                  projection_center=None, angular_steps_degrees=(.01064, .01)):
+                  projection_center=None, angular_steps_degrees=(.01064, .01),
+                  encoded_scaling=None, omit_scaling_section=False):
     from falfilfa4py import FA, LFI
 
     if path.exists():
@@ -148,6 +149,35 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
             encoded = values if packing == 0 else np.where(np.isfinite(values), values, 1.e20)
             FA.wfaieno(unit, field[:4], 0, field[4:], encoded.size, encoded.ravel(),
                        False, undefined and packing != 0, 1.e20)
+            if encoded_scaling is not None or omit_scaling_section:
+                # Independent byte-level fixture: change metadata, not packed samples.
+                count = int(LFI.wlfinfo(unit, field)[0])
+                words = LFI.wlfilec(unit, field, count, False)
+                message = bytearray(words[3:].tobytes())
+                assert message[:4] == b"GRIB" and message[7] == 2
+                length = int.from_bytes(message[8:16], "big")
+                message = message[:length]
+                position = 16
+                while message[position:position+4] != b"7777":
+                    size = int.from_bytes(message[position:position+4], "big")
+                    assert size >= 5 and position + size <= length - 4
+                    if message[position+4] == 2:
+                        if omit_scaling_section:
+                            del message[position:position+size]
+                            message[8:16] = len(message).to_bytes(8, "big")
+                        else:
+                            # local.85.1 ends with two eight-octet sign-magnitude integers.
+                            for index, value in enumerate(encoded_scaling):
+                                bits = abs(value) | ((1 << 63) if value < 0 else 0)
+                                start = position + size - 16 + index * 8
+                                message[start:start+8] = bits.to_bytes(8, "big")
+                        break
+                    position += size
+                else:
+                    raise AssertionError("Fixture has no GRIB2 local section")
+                message.extend(b"\x00" * (-len(message) % 8))
+                rewritten = np.concatenate((words[:3], np.frombuffer(message, dtype="int64")))
+                LFI.wlfiecr(unit, field, rewritten.size, rewritten)
         # Negative fixtures only: independently prescribed structural/raw words.
         # Source datasets are never passed to this writer (it refuses overwrite).
         for name, words in (structural_overrides or {}).items():

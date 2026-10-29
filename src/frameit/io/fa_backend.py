@@ -121,7 +121,10 @@ def request_fa(request):
             if descriptor["native_id"] != name:
                 raise ValueError(f"FA descriptor native identity mismatch for {context}")
         if diagnostics:
-            log.warning("FA decoder %s: %s", context, diagnostics)
+            observed = any(d["scaling"].get("status") == "encoded"
+                           for d in info.get("field_descriptors", {}).values())
+            note = " [encoded FA factors observed]" if observed else ""
+            log.warning("FA decoder %s%s: %s", context, note, diagnostics)
         if request["operation"] == "read":
             descriptor = info.get("field_descriptors", {}).get(request["fields"][0])
             if descriptor is None:
@@ -132,22 +135,24 @@ def request_fa(request):
                                  "coefficients cannot be returned as values")
             if descriptor["native"]["decoded_dtype"] != info["dtype"]:
                 raise ValueError(f"FA decoded dtype contradicts field descriptor for {context}")
-            # The qualified stack exposes no structured multiplier query. Absence of this
-            # warning is NOT independent scaling verification or identity proof.
-            missing = "has no encoded FMULTM and FMULTE" in diagnostics
-            descriptor["scaling"].update(
-                status="missing" if missing else "not_exposed",
-                evidence="native_diagnostic_text" if missing else "no_structured_native_query",
-                fallback="identity_explicit_opt_in" if missing and request.get(
-                    "allow_unscaled") else None,
-            )
+            # FADGRA's unknown-parameter warning can coexist with encoded factors.
+            observed = descriptor["scaling"].get("status") == "encoded"
+            missing = "has no encoded FMULTM and FMULTE" in diagnostics and not observed
+            if not observed:
+                descriptor["scaling"].update(
+                    status="missing" if missing else "not_exposed",
+                    evidence="native_diagnostic_text" if missing else "no_structured_native_query",
+                    fallback="identity_explicit_opt_in" if missing and request.get(
+                        "allow_unscaled") else None,
+                )
             _record_diagnostics(request, {"diagnostics": diagnostics,
                                           "backend_versions": info["backend_versions"],
                                           "payload_read": info.get("payload_read"),
                                           "protocol_version": PROTOCOL_VERSION,
                                           "field_descriptors": info["field_descriptors"]})
             if missing and not request.get("allow_unscaled"):
-                raise ValueError(f"{context}: missing native scaling metadata; explicitly declare "
+                raise ValueError(f"{context}: unresolved native scaling metadata; "
+                                 "explicitly declare "
                                  "field_metadata.<record>.allow_unscaled: true only when justified")
             shape = info.get("shape")
             budget = request.get("max_points", 20_000_000)

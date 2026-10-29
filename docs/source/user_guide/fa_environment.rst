@@ -103,10 +103,11 @@ Troubleshoot failures
   fields first. Even a small crop can require decoding a complete native record.
   Change ``input.fa.timeout_seconds`` or ``max_points`` deliberately; a point
   budget is not an operating-system memory quota.
-* **Missing FMULTM/FMULTE scaling:** an installation check or a plausible value
-  range cannot establish physical scaling. The default is failure; obtain
-  producer/decoder evidence before any explicit ``allow_unscaled`` opt-in.
-  See :doc:`fa_inputs` for declarations and recorded fallback behavior.
+* **FMULTM/FMULTE warning:** this native unknown-parameter warning can coexist
+  with encoded factors. Check ``scaling.status`` in decoder provenance: observed
+  packing-120 GRIB2 factors are accepted without fallback. If scaling remains
+  unresolved, failure is the default; obtain evidence before an explicit
+  ``allow_unscaled`` opt-in. See :doc:`fa_contracts` for the exact scope.
 * **Native abort or failure during shutdown:** require a normal outer-process
   exit as well as completed products/status. A preceding success message is not
   sufficient. Use a fresh coherent installation rather than an import-order

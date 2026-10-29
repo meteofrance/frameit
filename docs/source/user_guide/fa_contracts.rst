@@ -106,18 +106,50 @@ diagnosed by retaining coefficients.
 Scaling and masks after decoding
 --------------------------------
 
-The maintained native API exposes encoding flags but no qualified structured
-multiplier/offset query. ``scaling.status: not_exposed`` with null multiplier/offset
-records that gap. **Absence of a warning is neither verified scaling nor identity
-scaling.** Source units and plausible ranges cannot establish a missing codec factor.
+For gridpoint packing **120**, the worker observes explicitly encoded FA factors
+in the embedded GRIB2 centre-85 local-section-1 message. It reads the selected
+encoded record through the same open FA unit and inspects metadata with the
+worker's bundled ecCodes C library; no Python GRIB runtime or second physical
+decoder is loaded. EPyGrAM remains the sole physical decoder. The extra encoded
+record read is bounded to ``2 * max_points + 4096`` words and released before
+physical decoding; it adds I/O and temporary memory, not a full-archive scan.
 
-The native diagnostic ``has no encoded FMULTM and FMULTE`` triggers the missing-
-scaling guard. Execution fails unless ``allow_unscaled: true`` was explicitly
-declared. The researcher must justify that opt-in; the flag does not verify
-physical scaling. Logs retain the warning and permission;
-an actually observed permitted identity fallback is recorded as
-``identity_explicit_opt_in``. Permission and observed fallback are different facts.
-No definition tables or installed-package metadata are silently patched.
+``scaling.status: encoded`` records the native mantissa/exponent, their
+``divisor = FMULTM * 10**FMULTE`` and effective ``multiplier = 1 / divisor`` with
+zero offset and ``fallback: null``. **The native decoder has already applied this
+factor; do not apply it again to outputs.** Byte offsets and values must agree
+with actual encoded sign-magnitude integers: transient/default keys are not
+accepted as encoded evidence. Zero, underflowing or nonfinite factors fail even
+with ``allow_unscaled: true``. Units/time/support still need their declarations.
+
+The native diagnostic ``has no encoded FMULTM and FMULTE`` can occur even when
+these factors are present. The published CNRM implementation emits it for an
+unknown parameter number (255), separately from reading the factors. Encoded
+observations therefore take precedence over this warning, which remains logged.
+If factors cannot be observed, the warning still fails execution by default.
+An explicitly justified ``allow_unscaled: true`` retains the legacy unverified
+``identity_explicit_opt_in`` fallback; it does not establish physical scaling.
+Other encodings retain ``not_exposed`` when no warning is emitted: absence of a
+warning is not proof of identity scaling. No installed definitions are patched.
+
+Codec evidence and verification scope:
+
+* `CNRM FADGRA source, lines 172--181 and 234--236
+  <https://www.umr-cnrm.fr/surfex/data/BROWSER/doc_surf81/fadgra_8F90_source.html>`_
+  reads the divisor and divides unpacked values; the corresponding
+  `FACGRM writer, lines 242--244 and 701--711
+  <https://www.umr-cnrm.fr/surfex/data/BROWSER/doc_surf81/facgrm_8F90_source.html>`_
+  multiplies before packing. These published XRD44 sources explain the convention,
+  not the exact build identity of every producer or installed wheel.
+* `ecCodes 2.44.0 local.85.1 definition
+  <https://github.com/ecmwf/eccodes/blob/2.44.0/definitions/grib2/local.85.1.def>`_
+  defines the two eight-octet signed factors with identity defaults. This adapter
+  accepts observed encoded values, not those defaults by assumption.
+* Compact fixtures independently change encoded factor bytes without changing
+  packed samples. Checks compare native output to known scalars divided by the
+  factor, within one 24-bit packing step rescaled by that divisor, including
+  missing samples and valid zeroes. Missing sections and invalid factors fail.
+  This is codec engineering verification, not universal physical validation.
 
 SURFEX ``SFX.PACK=0`` describes the dense support layout, not the scaling of each
 FA record. A dense ``X1`` field can still have native packing 120 and trigger

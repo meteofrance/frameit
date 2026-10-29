@@ -109,8 +109,9 @@ Interpret failures without guessing physics
   index lengths alone. Ask the producer/upstream for the exact native build,
   header/error specification and a trusted decode or known-good copy. The error
   alone does not establish corruption or harmless metadata.
-* **Missing FMULTM/FMULTE scaling:** the default is failure. ``allow_unscaled``
-  is a justified explicit identity-fallback permission, not a qualification or a
+* **Unresolved FMULTM/FMULTE scaling:** encoded packing-120 GRIB2 factors take
+  precedence over the native warning; otherwise the default remains failure.
+  ``allow_unscaled`` is a justified explicit identity-fallback permission, not a qualification or a
   unit conversion. No warning is not proof of identity scaling; see :doc:`fa_contracts`.
 * **Incomplete/contradictory SURFEX directory or clocks:** obtain the required
   source/directory records and consistent state/header validity. Relabelling the

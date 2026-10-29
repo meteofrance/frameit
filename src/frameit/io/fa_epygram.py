@@ -6,6 +6,7 @@ definition tables are vendored. Source files are opened explicitly read-only.
 
 from __future__ import annotations
 
+import ctypes
 import os
 from importlib.metadata import PackageNotFoundError, version
 
@@ -349,3 +350,79 @@ def read_values(resource, name, shape):
     if values.shape != tuple(shape):
         raise ValueError(f"{name}: EPyGrAM decoded shape contradicts the native grid")
     return np.asarray(values.filled(np.nan)), bool(np.ma.getmaskarray(values).any())
+
+
+def encoded_scaling(resource, name, native, max_points):
+    """Observe encoded factors only; EPyGrAM remains the sole physical decoder.
+
+    CNRM FADGRA divides unpacked values by FMULTM * 10**FMULTE. Its warning
+    tests parameterNumber == 255, not the presence of these encoded factors.
+    Use the same open FA unit and bundled ecCodes, without Python GRIB imports.
+    """
+    if native["encoding"].get("packing") != 120:
+        return None
+    from falfilfa4py import LFI, shared_objects_library
+
+    count = native["word_count"]
+    if not 5 <= count <= 2 * max_points + 4096:
+        raise ValueError(f"{name}: encoded FA record exceeds scaling-observation budget")
+    words = LFI.wlfilec(resource._unit, name, count, False)
+    if words.dtype != np.int64 or words.shape != (count,) or tuple(words[:2]) != (120, 0):
+        raise ValueError(f"{name}: encoded FA record contradicts gridpoint packing 120")
+    message = words[3:].view(np.uint8)
+    if message[:4].tobytes() != b"GRIB" or message[7] != 2:
+        raise ValueError(f"{name}: packing 120 requires an embedded GRIB2 message")
+    length = int.from_bytes(message[8:16].tobytes(), "big")
+    if not 20 <= length <= message.size or message[length-4:length].tobytes() != b"7777":
+        raise ValueError(f"{name}: invalid embedded GRIB2 length/terminator")
+    library = ctypes.CDLL(shared_objects_library)
+    create = library.codes_handle_new_from_message_copy
+    create.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t]
+    create.restype = ctypes.c_void_p
+    get = library.codes_get_long
+    get.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_long)]
+    get.restype = ctypes.c_int
+    offset = library.codes_get_offset
+    offset.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_size_t)]
+    offset.restype = ctypes.c_int
+    delete = library.codes_handle_delete
+    delete.argtypes = [ctypes.c_void_p]
+    delete.restype = ctypes.c_int
+    handle = create(None, message.ctypes.data, length)
+    if not handle:
+        raise ValueError(f"{name}: cannot inspect embedded GRIB2 scaling")
+    try:
+        def integer(key):
+            value = ctypes.c_long()
+            code = get(handle, key.encode(), ctypes.byref(value))
+            return value.value if code == 0 else None
+
+        if integer("centre") != 85 or integer("grib2LocalSectionNumber") != 1:
+            return None
+        factors = []
+        for key in ("FMULTM", "FMULTE"):
+            value = integer(key)
+            position = ctypes.c_size_t()
+            code = offset(handle, key.encode(), ctypes.byref(position))
+            if value is None or code != 0 or not 16 <= position.value <= length - 8:
+                return None
+            # Reject transient/default keys: prove the value exists in the message.
+            raw = int.from_bytes(message[position.value:position.value+8].tobytes(), "big")
+            encoded = -(raw & ((1 << 63) - 1)) if raw >> 63 else raw
+            if encoded != value:
+                raise ValueError(f"{name}: embedded FA scaling disagrees with native metadata")
+            factors.append(value)
+        mantissa, exponent = factors
+        try:
+            divisor = mantissa * 10.**exponent
+            multiplier = 1. / divisor
+        except (OverflowError, ZeroDivisionError) as exc:
+            raise ValueError(f"{name}: invalid encoded FA scaling") from exc
+        if not np.isfinite([divisor, multiplier]).all() or multiplier == 0:
+            raise ValueError(f"{name}: invalid encoded FA scaling")
+        return {"status": "encoded", "evidence": "same_unit_GRIB2_local_85_1",
+                "mantissa": mantissa, "exponent": exponent, "divisor": divisor,
+                "multiplier": multiplier, "offset": 0., "fallback": None,
+                "policy": "native decoder divides unpacked values by encoded FA divisor"}
+    finally:
+        delete(handle)

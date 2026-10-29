@@ -221,13 +221,15 @@ Each selected native record requires ``field_metadata``:
 * ``kind``: ``continuous`` or ``categorical``;
 * ``temporal_kind: instantaneous``: currently the only admitted temporal meaning;
 * optional descriptive ``long_name`` and correct ``standard_name``;
-* optional ``allow_unscaled: true``: explicit permission for identity fallback
-  when native registered and encoded scaling factors are both missing. Default
+* optional ``allow_unscaled: true``: explicit permission for an unverified identity
+  fallback when a native scaling warning cannot be resolved. Default
   false: uncertainty discovered during decoding fails the operation.
 
 Fallback warnings are logged and summarized in provenance, including spawned
-exporter requests. The native API exposes no qualified structured multiplier/
-offset query: absence of a scaling warning is not verified identity scaling.
+exporter requests. Packing-120 GRIB2 records with encoded centre-85 local-section-1
+factors are observed explicitly; a native unknown-parameter warning alone does
+not reject them. Other unresolved warnings still fail by default. Absence of a
+scaling warning is not verified identity scaling; see :doc:`fa_contracts`.
 Permission to fall back and an actually observed fallback are separate facts.
 Permission is not scientific validation. File-level start markers do not
 establish every field's interval. Accumulated/averaged FA records,

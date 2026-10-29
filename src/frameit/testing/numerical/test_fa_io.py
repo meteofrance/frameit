@@ -92,7 +92,7 @@ def test_worker_death_and_unscaled_warning_are_actionable(tmp_path, monkeypatch)
     monkeypatch.setattr(subprocess, "run", fake)
     request = {"operation": "read", "path": "native.fa", "fields": ["SFX.T2M"],
                "diagnostics_path": str(tmp_path / "decoder.jsonl")}
-    with pytest.raises(ValueError, match="missing native scaling metadata"):
+    with pytest.raises(ValueError, match="unresolved native scaling metadata"):
         request_fa(request)
     values = request_fa({**request, "allow_unscaled": True})["values"]
     assert np.isnan(values[0, 0]) and values[0, 1] == 0

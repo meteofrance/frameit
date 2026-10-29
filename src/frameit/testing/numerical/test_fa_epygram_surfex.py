@@ -16,11 +16,48 @@ import pytest
 from frameit.core.configuration import resolved_configuration
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.fa_backend import inspect_fa, request_fa
-from frameit.io.fa_epygram import read_values, structure_value
+from frameit.io.fa_epygram import encoded_scaling, read_values, structure_value
 from frameit.testing.numerical.test_fa_cubes import EPYTHON, NATIVE
 from frameit.testing.numerical.test_fa_pipeline import single_fa_document
 
 OPTIONS = {"backend": "epygram", "python_executable": EPYTHON}
+
+
+@pytest.mark.parametrize("failure", [
+    "budget", "shape", "flags", "magic", "edition", "length", "terminator", "unsupported",
+])
+def test_scaling_observation_rejects_bad_envelopes_before_native_grib(monkeypatch, failure):
+    message = bytearray(b"GRIB\xff\xff\xff\x02" + (20).to_bytes(8, "big") + b"7777\x00\x00\x00\x00")
+    if failure == "magic":
+        message[:4] = b"FAIL"
+    elif failure == "edition":
+        message[7] = 1
+    elif failure == "length":
+        message[8:16] = (1000).to_bytes(8, "big")
+    elif failure == "terminator":
+        message[16:20] = b"0000"
+    words = np.concatenate((np.array([120, 0, 24]), np.frombuffer(message, dtype="int64")))
+    native = {"word_count": words.size, "encoding": {"packing": 120}}
+    if failure == "budget":
+        native["word_count"] = 4100
+    elif failure == "shape":
+        words = words[:-1]
+    elif failure == "flags":
+        words[1] = 1
+    elif failure == "unsupported":
+        native["encoding"]["packing"] = 0
+
+    def forbidden(*args):
+        raise AssertionError("Rejected envelope must not reach the native GRIB parser")
+
+    monkeypatch.setitem(sys.modules, "falfilfa4py", SimpleNamespace(
+        LFI=SimpleNamespace(wlfilec=lambda *args: words), shared_objects_library="unused"))
+    monkeypatch.setattr("frameit.io.fa_epygram.ctypes.CDLL", forbidden)
+    if failure == "unsupported":
+        assert encoded_scaling(SimpleNamespace(_unit=1), "SFX.T2M", native, 1) is None
+    else:
+        with pytest.raises(ValueError, match="budget|contradicts|GRIB2"):
+            encoded_scaling(SimpleNamespace(_unit=1), "SFX.T2M", native, 1)
 
 
 def surface_fixture(directory, **options):
@@ -435,14 +472,48 @@ def test_parent_grib_and_epygram_surface_remain_isolated(tmp_path):
 
 
 @NATIVE
-def test_native_scaling_warning_is_fatal_and_explicit_opt_in_is_recorded(tmp_path):
-    path, _truth = surface_fixture(tmp_path, packing=120)
+@pytest.mark.parametrize("factors", [(1, 0), (2, 1), (1, -2), (-2, 1)])
+def test_encoded_scaling_survives_unknown_parameter_warning(tmp_path, factors):
+    grib_already_loaded = "eccodes" in sys.modules
+    path, truth = surface_fixture(tmp_path, packing=120, encoded_scaling=factors)
+    request = {"operation": "read", "path": str(path), "profile": "surfex_history",
+               "fields": ["SFX.T2M"], "zone": [0, 9, 0, 7], "key": [[None]*3, [None]*3],
+               "diagnostics_path": str(tmp_path / "decoder.jsonl"), **OPTIONS}
+    result = request_fa(request)
+    divisor = factors[0] * 10.**factors[1]
+    # One 24-bit packing step for the fixture's enclosing 512-K range, rescaled.
+    np.testing.assert_allclose(result["values"], truth / divisor, rtol=0,
+                               atol=(512. / 2**24) / abs(divisor))
+    scaling = result["field_descriptors"]["SFX.T2M"]["scaling"]
+    assert scaling["status"] == "encoded" and scaling["fallback"] is None
+    assert scaling["mantissa"] == factors[0] and scaling["exponent"] == factors[1]
+    assert scaling["divisor"] == divisor and scaling["multiplier"] == 1 / divisor
+    assert "has no encoded FMULTM and FMULTE" in result["decoder_diagnostics"]
+    log = json.loads((tmp_path / "decoder.jsonl").read_text())
+    assert log["field_descriptors"]["SFX.T2M"]["scaling"] == scaling
+    assert not {"epygram", "falfilfa4py"} & sys.modules.keys()
+    assert ("eccodes" in sys.modules) == grib_already_loaded
+
+
+@NATIVE
+@pytest.mark.parametrize("factors", [(0, 0), (1, 999), (1, -999)])
+def test_invalid_encoded_scaling_is_not_an_opt_in_fallback(tmp_path, factors):
+    path, _truth = surface_fixture(tmp_path, packing=120, encoded_scaling=factors)
+    with pytest.raises(ValueError, match="invalid encoded FA scaling"):
+        request_fa({"operation": "read", "path": str(path), "profile": "surfex_history",
+                    "fields": ["SFX.T2M"], "zone": [0, 9, 0, 7],
+                    "key": [[None]*3, [None]*3], "allow_unscaled": True, **OPTIONS})
+
+
+@NATIVE
+def test_unobservable_scaling_warning_is_fatal_and_explicit_opt_in_is_recorded(tmp_path):
+    path, _truth = surface_fixture(tmp_path, packing=120, omit_scaling_section=True)
     info = inspect_fa(path, "surfex_history", ["SFX.T2M"], **OPTIONS)
     assert info["surfex_metadata"]["PACK"] == 0 and info["fields"]["SFX.T2M"]["packing"] == 120
     request = {"operation": "read", "path": str(path), "profile": "surfex_history",
                "fields": ["SFX.T2M"], "zone": [0, 9, 0, 7], "key": [[1, 3, None], [1, 3, None]],
                "diagnostics_path": str(tmp_path / "decoder.jsonl"), **OPTIONS}
-    with pytest.raises(ValueError, match="missing native scaling metadata"):
+    with pytest.raises(ValueError, match="unresolved native scaling metadata"):
         request_fa(request)
     # Engineering fallback semantics only: this is not proof of producer scaling.
     result = request_fa({**request, "allow_unscaled": True})

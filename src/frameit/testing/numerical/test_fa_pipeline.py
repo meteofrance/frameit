@@ -613,13 +613,6 @@ def test_automatic_coupling_preserves_centres_and_scaling_guard(tmp_path, packin
     raw["execution"] = {"require_complete_tracking": True}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     assert preflight(conf)["track_time_count"] == nt
-    if packing == 120:
-        with pytest.raises(ValueError, match="missing native scaling metadata"):
-            execute_simulation(conf)
-        status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
-        assert status["state"] == "failed"
-        assert not (conf.output_dir / "products/primary-pair.cart.surfex.surface.nc").exists()
-        return
     result = execute_simulation(conf)
     assert result.ok
     with xr.open_dataset(conf.output_dir / "products/primary-pair.track.nc") as track:
@@ -637,14 +630,23 @@ def test_automatic_coupling_preserves_centres_and_scaling_guard(tmp_path, packin
     with xr.open_dataset(product) as data:
         assert data.sizes["time"] == nt
         np.testing.assert_allclose(data["SFX.T2M"].sel(x_box=0, y_box=0), np.arange(nt) + 281.)
+    if packing == 120:
+        provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+        fields = provenance["sources"]["surfex"]["fa_decoder"]["field_observations"]["surface-1.fa"]
+        for field in fields.values():
+            assert field["scaling"]["status"] == "encoded"
+            assert field["scaling"]["divisor"] == 1.
+            assert field["scaling"]["fallback"] is None
+            assert field["scaling"]["allow_unscaled"] is False
 
 
 @EPYGRAM
 def test_primary_pair_cannot_bypass_missing_surface_scaling(tmp_path):
-    raw = primary_pair_document(tmp_path, surface_overrides={1: {"packing": 120}})
+    raw = primary_pair_document(tmp_path, surface_overrides={
+        1: {"packing": 120, "omit_scaling_section": True}})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     assert preflight(conf)["track_time_count"] == 2  # Metadata does not decode a payload.
-    with pytest.raises(ValueError, match="missing native scaling metadata"):
+    with pytest.raises(ValueError, match="unresolved native scaling metadata"):
         execute_simulation(conf)
     status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())

@@ -141,8 +141,9 @@ records/levels/cycles; names and library tables are not independent validation.
      - Near-surface temperature/RH metadata does not supply a missing SFX unit definition.
    * - ``SFX.SST``, ``SFX.T2M``, ``SFX.HU2M``, ``SFX.TSRAD``
      - Observed support labels SEA / FULL / FULL / FULL; gridpoint 120/24 encoding.
-     - Release-matched physical units/scaling/time/support remain unresolved.
-       An observed missing-FMULTM/FMULTE T2M decode is not an accepted physical value.
+     - Physical meaning still needs source evidence and declarations. The historical
+       FMULTM/FMULTE warning alone did not prove missing scaling; current packing-120
+       decoding records encoded factors separately (see :doc:`fa_contracts`).
    * - Native layer/patch states ``SFX.TG1P1`` / ``SFX.WG1P1``
      - Dense individual records, observed NATURE label and 120/24 encoding.
      - Keep the exact native IDs. No depth, patch/tile axis, fraction or average
