@@ -23,6 +23,31 @@ def vortex(center=(60.0, -20.0)):
             speed * np.cos(theta), -speed * np.sin(theta))
 
 
+@pytest.mark.parametrize("missing", [np.nan, np.inf])
+def test_reference_ring_reports_invalid_support(missing):
+    def sample(lon, lat):
+        values = np.full(lon.shape, 80000.)
+        values[:3] = missing
+        return values
+
+    with pytest.raises(ValueError) as error:
+        pc.reference_pressure((51.275, -5.175), sample)
+    message = str(error.value)
+    assert "3/180 samples invalid" in message
+    assert "longitude=51.2750, latitude=-5.1750" in message
+    assert "2,000 m ASL" in message
+    assert "output domain.size_km does not extend" in message
+
+
+def test_reference_ring_rejects_northern_boundary_like_arome_sample():
+    lon, lat = np.meshgrid(np.linspace(32.75, 67.6, 300),
+                           np.linspace(-25.9, -3.45, 200))
+    sample = pc.make_interpolator(lon, lat, np.full(lon.shape, 80000.))
+    with pytest.raises(ValueError, match="67/180 samples invalid"):
+        pc.reference_pressure((51.275, -5.175), sample)
+    assert pc.reference_pressure((51.275, -15.), sample) == pytest.approx(80000.)
+
+
 def test_vertical_interpolation_and_missing_brackets():
     rec = dict(z=np.array([3000, 1000])[:, None, None],
                u=np.array([30, 10])[:, None, None],

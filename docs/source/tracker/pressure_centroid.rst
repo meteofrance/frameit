@@ -8,6 +8,21 @@ follow the supplied ``compare_batsirai_centers_v1.4.1.py`` implementation. This
 is an independent implementation, not a bitwise reproduction of the authors'
 analysis code.
 
+Troubleshooting reference-ring coverage
+--------------------------------------
+
+The full 500-km reference ring must have finite pressure interpolated to
+2,000 m ASL, including the horizontal interpolation stencil. An invalid sample
+causes failure, not averaging over a partial ring. The error reports the candidate
+centre and invalid sample count. Check whether the centre belongs to the intended
+disturbance, whether the ring crosses the atmospheric input boundary, and whether
+vertical brackets or masks leave missing pressure at that height. Supply wider
+valid atmospheric coverage or choose another suitable tracker when these
+requirements cannot be met. Increasing ``domain.size_km`` changes the output box,
+not the atmospheric input coverage. The reference radius is not a configuration
+workaround. Motion coupling also requires at least two increasing valid times;
+a single snapshot can test spatial support but cannot validate a full track.
+
 Inputs and supported grids
 --------------------------
 

@@ -150,8 +150,18 @@ def reference_pressure(center, sample_p):
     x, y = geodesic_circle(center, REFERENCE_RADIUS_M,
                            np.linspace(0, 360, REFERENCE_ANGLES, endpoint=False))
     sampled = sample_p(x, y)
-    if not np.isfinite(sampled).all():
-        raise ValueError("500-km pressure reference ring leaves valid data")
+    invalid = ~np.isfinite(sampled)
+    if invalid.any():
+        raise ValueError(
+            "500-km pressure reference ring leaves valid data: "
+            f"{int(invalid.sum())}/{sampled.size} samples invalid around "
+            f"longitude={center[0]:.4f}, latitude={center[1]:.4f}. "
+            "The full ring requires finite pressure at 2,000 m ASL, including "
+            "its interpolation stencil. Check the candidate centre, atmospheric "
+            "input boundaries and vertical brackets/masks; provide wider valid "
+            "input coverage or select another tracking method. Increasing the "
+            "output domain.size_km does not extend atmospheric input coverage."
+        )
     return float(sampled.mean())
 
 
