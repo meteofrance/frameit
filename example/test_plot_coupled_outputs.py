@@ -86,6 +86,42 @@ class CoupledPlotTests(unittest.TestCase):
         rms = float(np.sqrt(plots.complete_ring_mean(field**2)))
         self.assertAlmostEqual(rms, np.sqrt(2.0), places=14)
 
+    def test_cyclonic_tangent_both_hemispheres(self):
+        bearing = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
+        for sign in (-1, 1):
+            u, v = -sign * 5 * np.cos(bearing), sign * 5 * np.sin(bearing)
+            np.testing.assert_allclose(
+                plots.cyclonic_tangential(u, v, bearing, sign * 10), 5, atol=1e-14
+            )
+
+    def test_wind_bilinear_sampling_and_no_extrapolation(self):
+        target = polar_dataset().isel(time=[0]).copy(deep=True)
+        target.latitude.values[:] = -10
+        target.longitude.values[:] = 35.5
+        target["radial_bearing"] = xr.zeros_like(target.latitude)
+        lat = np.array([-11.0, -10.0, -9.0])
+        lon = np.array([34.0, 35.0, 36.0])
+        values = lon[None, :] - 34 + 2 * (lat[:, None] + 10)
+        source = xr.Dataset(
+            {
+                "u10": (("time", "y_box", "x_box"), values[None]),
+                "v10": (("time", "y_box", "x_box"), np.zeros((1, 3, 3))),
+            },
+            coords={
+                "time": target.time,
+                "latitude": (("time", "y_box"), lat[None]),
+                "longitude": (("time", "x_box"), lon[None]),
+            },
+        )
+        for name in ("u10", "v10"):
+            source[name].attrs = wind_dataset().u.attrs.copy()
+        sampled = plots.sampled_cyclonic_wind({"surface": source, "polar_pressure": target})
+        np.testing.assert_allclose(sampled.isel(rr=1), 1.5, atol=1e-14)
+        self.assertTrue(np.isnan(sampled.isel(rr=0)).all())
+        target.longitude.values[0, 1, 0] = 37
+        sampled = plots.sampled_cyclonic_wind({"surface": source, "polar_pressure": target})
+        self.assertTrue(np.isnan(sampled.values[0, 1, 0]))
+
     def test_incomplete_ring_is_not_renormalized(self):
         field = xr.DataArray([1.0, 2.0, np.nan, 4.0], dims="theta")
         self.assertTrue(np.isnan(plots.complete_ring_mean(field)))

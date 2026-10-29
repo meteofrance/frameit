@@ -5,7 +5,7 @@ Run beside the NetCDF files with::
 
     conda run -n test python plot_coupled_outputs.py
 
-Dependencies: numpy, xarray, netCDF4, matplotlib, cartopy, cmocean, PyYAML.
+Dependencies: numpy, scipy, xarray, netCDF4, matplotlib, cartopy, cmocean, PyYAML.
 Cartopy downloads Natural Earth's finest available (1:10 million) layers once.
 Figures are exploratory: neither tracked storm identity nor field accuracy is
 established. Missing samples are not filled. See plots/plot_manifest.json for
@@ -61,10 +61,8 @@ PRODUCTS = {
 }
 STEMS = (
     "01_track_and_surface_evolution",
-    "02_surface_wind_and_pressure",
-    "03_coupled_temperature_comparison",
-    "04_vertical_evolution_at_tracked_centres",
-    "05_vertical_section_through_peak_ascent",
+    "02_sst_and_atmosphere_coupling",
+    "03_cyclone_structure",
 )
 
 
@@ -293,8 +291,8 @@ def figure_track(data):
         fig,
         "Tracked centres and surface evolution",
         f"AROME / SURFEX · {stamp(times[0], True)} — {stamp(times[-1])} · identity unverified",
-        "Extrema refer to each moving native crop, not verified storm intensity. "
-        "Dashed box: crop at maximum 10 m wind.",
+        "Contours: MSLP every 2 hPa at first / middle / last time. "
+        "Dashed box: crop at maximum 10 m wind; extrema are crop statistics.",
     )
     grid = fig.add_gridspec(
         2,
@@ -310,11 +308,24 @@ def figure_track(data):
     extent = [
         float(track.lon.min()) - 2.0,
         float(track.lon.max()) + 2.0,
-        float(track.lat.min()) - 1.1,
-        float(track.lat.max()) + 1.1,
+        float(track.lat.min()) - 3.0,
+        float(track.lat.max()) + 3.0,
     ]
     ax = map_axes(fig, grid[:, 0], extent, backdrop=True)
-    ax.set_title("Southeast Africa", loc="left", pad=12)
+    ax.set_title("Tracked path and selected pressure fields", loc="left", pad=12)
+    for index in sorted({0, len(times) // 2, len(times) - 1}):
+        longitude, latitude = cart_geolocation(surface, index)
+        ax.contour(
+            longitude,
+            latitude,
+            surface.prmsl.isel(time=index) / 100,
+            levels=np.arange(1000, 1030, 2),
+            colors=BLUE,
+            linewidths=0.5,
+            alpha=0.6,
+            transform=GEO,
+            zorder=3,
+        )
     ax.plot(track.lon, track.lat, color=INK, lw=1.5, transform=GEO, zorder=7)
     elapsed = (times - times[0]) / np.timedelta64(1, "h")
     points = ax.scatter(
@@ -794,6 +805,262 @@ def figure_section(data):
     }
 
 
+def coupled_temperature_fields(data):
+    ds = data["polar_surfex"]
+    require_units(ds["SFX.SST"], {"K"})
+    sst = valid_polar(ds, "SFX.SST")
+    air = valid_polar(data["polar_temperature"], "t2m").squeeze("heightAboveGround", drop=True)
+    sfx_air = valid_polar(ds, "SFX.T2M")
+    return sst, air, sfx_air
+
+
+def figure_coupling(data):
+    sst, air, sfx_air = coupled_temperature_fields(data)
+    speed = wind_speed(data["surface"], "u10", "v10")
+    selected = int(speed.max(("y_box", "x_box")).argmax(dim="time"))
+    times = data["track"].time.values
+    fig = plt.figure(figsize=(15, 9))
+    heading(
+        fig,
+        "SST and atmosphere–surface coupling",
+        f"{stamp(times[selected], True)} · snapshot at maximum native-crop 10 m wind",
+        "SST − T2m is a temperature contrast, not a heat flux. "
+        "Shared targets; missing samples remain missing; neither air-temperature source is truth.",
+    )
+    grid = fig.add_gridspec(
+        4,
+        2,
+        left=0.075,
+        right=0.95,
+        bottom=0.14,
+        top=0.83,
+        height_ratios=[1, 0.05, 0.7, 0.05],
+        hspace=0.95,
+        wspace=0.30,
+    )
+    extent = extent_for(data["surfex"], selected)
+    ax = map_axes(fig, grid[0, 0], extent)
+    lon, lat = cart_geolocation(data["surfex"], selected)
+    values = data["surfex"]["SFX.SST"].isel(time=selected) - 273.15
+    artist = ax.pcolormesh(
+        lon,
+        lat,
+        values,
+        shading="auto",
+        transform=GEO,
+        cmap=cmocean.cm.thermal,
+        rasterized=True,
+        zorder=2,
+    )
+    centre_marker(ax, data["track"], selected)
+    ax.set_title("SURFEX SST · native grid", loc="left", pad=12)
+    colourbar(fig, artist, grid[1, 0], "Sea surface temperature (°C)")
+    ax = map_axes(fig, grid[0, 1], extent)
+    polar = data["polar_surfex"]
+
+    def cyclic(a):
+        return np.concatenate([a, a[:, :1]], axis=1)
+
+    contrast = (sst - air).isel(time=selected)
+    limit = symmetric_limit(contrast.values, 0.5)
+    artist = ax.contourf(
+        cyclic(polar.longitude.isel(time=selected).values),
+        cyclic(polar.latitude.isel(time=selected).values),
+        cyclic(contrast.values),
+        levels=np.linspace(-limit, limit, 31),
+        cmap=cmocean.cm.balance,
+        norm=TwoSlopeNorm(0, -limit, limit),
+        transform=GEO,
+        zorder=2,
+    )
+    centre_marker(ax, data["track"], selected)
+    ax.set_title("SST − atmospheric 2 m temperature", loc="left", pad=12)
+    colourbar(fig, artist, grid[1, 1], "SST − T2m (K)")
+    details = {"snapshot_time_utc": np.datetime_as_string(times[selected], unit="s")}
+    for j, (values, title, label, cmap) in enumerate(
+        (
+            (
+                complete_ring_mean(sst - air),
+                "Sea–air temperature contrast",
+                "Ring-mean SST − T2m (K)",
+                cmocean.cm.thermal,
+            ),
+            (
+                np.sqrt(complete_ring_mean((sfx_air - air) ** 2)),
+                "GRIB / SURFEX air-temperature agreement",
+                "Ring RMS (SURFEX T2m − GRIB T2m) (K)",
+                cmocean.cm.amp,
+            ),
+        )
+    ):
+        ax = fig.add_subplot(grid[2, j])
+        artist = ax.pcolormesh(
+            times,
+            sst.rr,
+            values.transpose("rr", "time"),
+            shading="nearest",
+            cmap=cmap,
+            rasterized=True,
+        )
+        ax.set_ylim(0, float(sst.rr.max()))
+        ax.set_ylabel("Radius (km)")
+        ax.set_title(title, loc="left", pad=12, fontsize=11)
+        time_axis(ax, times)
+        ax.grid(False)
+        colourbar(fig, artist, grid[3, j], label)
+    details["sst_valid_fraction"] = float(sst.count() / sst.size)
+    return fig, details
+
+
+def cyclonic_tangential(u, v, bearing, latitude):
+    """Cyclonic-positive, Earth-relative tangent; bearing clockwise from north."""
+    return np.sign(latitude) * (v * np.sin(bearing) - u * np.cos(bearing))
+
+
+def sampled_cyclonic_wind(data):
+    from scipy.interpolate import RegularGridInterpolator
+
+    surface, target = data["surface"], data["polar_pressure"]
+    wind_speed(surface, "u10", "v10")
+    arrays = []
+    for i in range(surface.sizes["time"]):
+        lat = surface.latitude.isel(time=i).values
+        lon = surface.longitude.isel(time=i).values
+        locations = np.column_stack(
+            [
+                target.latitude.isel(time=i).values.ravel(),
+                target.longitude.isel(time=i).values.ravel(),
+            ]
+        )
+        components = []
+        for name in ("u10", "v10"):
+            sampler = RegularGridInterpolator(
+                (lat, lon),
+                surface[name].isel(time=i).values,
+                bounds_error=False,
+                fill_value=np.nan,
+            )
+            components.append(sampler(locations).reshape(target.latitude.shape[1:]))
+        values = cyclonic_tangential(
+            *components,
+            target.radial_bearing.isel(time=i).values,
+            target.latitude.isel(time=i).values,
+        )
+        values[0, :] = np.nan
+        arrays.append(values)
+    return xr.DataArray(
+        np.asarray(arrays),
+        dims=("time", "rr", "theta"),
+        coords={k: target[k] for k in ("time", "rr", "theta")},
+    )
+
+
+def figure_structure(data):
+    target = data["polar_profiles"]
+    vt = complete_ring_mean(sampled_cyclonic_wind(data))
+    speed = wind_speed(data["surface"], "u10", "v10")
+    selected = int(speed.max(("y_box", "x_box")).argmax(dim="time"))
+    radius = target.rr
+    outer = radius >= 0.8 * float(radius.max())
+    temperature = complete_ring_mean(valid_polar(target, "t")).isel(time=selected)
+    reference = temperature.where(outer, drop=True).mean("rr", skipna=False)
+    anomaly = temperature - reference
+    humidity = complete_ring_mean(valid_polar(target, "r")).isel(time=selected)
+    omega = complete_ring_mean(valid_polar(target, "w")).isel(time=selected)
+    fig = plt.figure(figsize=(16, 8))
+    heading(
+        fig,
+        "Cyclone structure: circulation, thermal anomaly and moisture",
+        f"AROME · sections at {stamp(target.time.values[selected], True)} · complete rings only",
+        "Tangential wind: cyclonic positive, Earth-relative, no motion subtraction. "
+        "ΔT reference: outer 20% of radius. Contours: ω (Pa/s; negative upward).",
+    )
+    grid = fig.add_gridspec(
+        2,
+        3,
+        left=0.07,
+        right=0.96,
+        bottom=0.20,
+        top=0.81,
+        height_ratios=[1, 0.045],
+        hspace=0.55,
+        wspace=0.35,
+    )
+    times = target.time.values
+    ax = fig.add_subplot(grid[0, 0])
+    limit = symmetric_limit(vt.values, 2)
+    artist = ax.pcolormesh(
+        times,
+        radius,
+        vt.transpose("rr", "time"),
+        shading="nearest",
+        cmap=cmocean.cm.balance,
+        norm=TwoSlopeNorm(0, -limit, limit),
+        rasterized=True,
+    )
+    ax.set_title("10 m tangential circulation", loc="left", pad=12, fontsize=11)
+    ax.set_ylabel("Radius (km)")
+    ax.set_ylim(0, float(radius.max()))
+    time_axis(ax, times)
+    ax.grid(False)
+    colourbar(fig, artist, grid[1, 0], "Ring-mean cyclonic wind (m s$^{-1}$)")
+    for j, (values, title, label, cmap, norm) in enumerate(
+        (
+            (
+                anomaly,
+                "Radial temperature anomaly",
+                "ΔT from outer rings (K)",
+                cmocean.cm.balance,
+                TwoSlopeNorm(
+                    0, -symmetric_limit(anomaly.values, 0.5), symmetric_limit(anomaly.values, 0.5)
+                ),
+            ),
+            (
+                humidity,
+                "Humidity + pressure vertical velocity",
+                "Relative humidity (%)",
+                cmocean.cm.haline,
+                Normalize(0, 101),
+            ),
+        ),
+        start=1,
+    ):
+        ax = fig.add_subplot(grid[0, j])
+        artist = ax.pcolormesh(
+            radius,
+            target.isobaricInhPa,
+            values.transpose("isobaricInhPa", "rr"),
+            shading="nearest",
+            cmap=cmap,
+            norm=norm,
+            rasterized=True,
+        )
+        pressure_axis(ax, target.isobaricInhPa)
+        ax.set_yticks([1000, 850, 700, 500, 300, 200, 100])
+        ax.set_xlabel("Radius from tracked centre (km)")
+        ax.set_title(title, loc="left", pad=12, fontsize=10.5)
+        if j == 2:
+            contours = ax.contour(
+                radius,
+                target.isobaricInhPa,
+                omega.transpose("isobaricInhPa", "rr"),
+                levels=[-0.5, -0.2, 0.2, 0.5],
+                colors=INK,
+                linewidths=0.7,
+            )
+            for text in ax.clabel(contours, fmt="%.1f", inline=False, fontsize=8):
+                text.set_gid("contour-label")
+        colourbar(fig, artist, grid[1, j], label)
+    return fig, {
+        "snapshot_time_utc": np.datetime_as_string(times[selected], unit="s"),
+        "temperature_reference_radius_km": [0.8 * float(radius.max()), float(radius.max())],
+        "wind_sampling": (
+            "Bilinear native lat/lon interpolation to existing polar targets; no extrapolation"
+        ),
+        "omega_contours_pa_s": [-0.5, -0.2, 0.2, 0.5],
+    }
+
+
 def figure_texts(fig):
     texts = fig.findobj(Text)
     for ax in fig.axes:
@@ -938,7 +1205,16 @@ def main(argv=None):
         "python": sys.version.split()[0],
         "dependencies": {
             name: importlib.metadata.version(name)
-            for name in ("numpy", "xarray", "netCDF4", "matplotlib", "cartopy", "cmocean", "PyYAML")
+            for name in (
+                "numpy",
+                "scipy",
+                "xarray",
+                "netCDF4",
+                "matplotlib",
+                "cartopy",
+                "cmocean",
+                "PyYAML",
+            )
         },
         "geographic_layers": (
             "Natural Earth 1:10 million coastline, land, lakes and international borders"
@@ -1003,6 +1279,34 @@ def main(argv=None):
                 }
             )
         validate_products(data)
+        coupled_temperature_fields(data)
+        manifest["configuration"]["matches_updated_products"] = False
+        manifest["limitations"].append(
+            "Supplied YAML omits SST and the updated tracking seed; "
+            "it is not the effective configuration for these products."
+        )
+        manifest["limitations"] = [
+            item for item in manifest["limitations"] if "restricted to 700" not in item
+        ]
+        manifest["limitations"].extend(
+            [
+                "All exported pressure levels are shown without a surface-pressure mask.",
+                "No reference track supplied; these plots do not prove tracking accuracy.",
+                "SST minus air temperature is not a heat flux or proof of feedback.",
+                "Outer-ring temperature reference is local, not a verified environment.",
+            ]
+        )
+        manifest["methods"]["wind_sampling"] = (
+            "Scipy regular-grid bilinear interpolation of Earth-relative u10/v10 "
+            "onto existing polar targets; NaN outside crop; no motion subtraction; "
+            "cyclonic tangent = sign(latitude)*(v*sin(bearing)-u*cos(bearing)); origin undefined"
+        )
+        manifest["methods"]["temperature_anomaly"] = (
+            "Complete-ring mean T minus equal-radius mean of complete rings "
+            "at r >= 0.8*rmax, independently at each pressure at the peak-wind time"
+        )
+        manifest["methods"]["rendering"] = "No smoothing or gap filling; wind sampling as declared."
+        manifest["methods"].pop("selection_rms")
         manifest["valid_times_utc"] = np.datetime_as_string(
             data["track"].time.values, unit="s"
         ).tolist()
@@ -1023,7 +1327,7 @@ def main(argv=None):
             )
         for stem, make in zip(
             STEMS,
-            (figure_track, figure_surface, figure_temperature, figure_vertical, figure_section),
+            (figure_track, figure_coupling, figure_structure),
             strict=True,
         ):
             fig, details = make(data)
