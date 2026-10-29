@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Preserve geographical centres for single-time automatic tracks, including
+  GRIB/FA coupling. Motion values remain missing (NaN) without a second time;
+  native FA scaling checks and multi-time tracking conventions are unchanged.
 - Install FrameIt and the reference FA/GRIB/NetCDF/polar stack in one Python-3.13
   Conda environment. Conda owns the shared NetCDF/HDF5/ecCodes libraries; isolated
   FA workers use the active Python by default. An explicit interpreter override

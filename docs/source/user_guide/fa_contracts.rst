@@ -119,6 +119,11 @@ an actually observed permitted identity fallback is recorded as
 ``identity_explicit_opt_in``. Permission and observed fallback are different facts.
 No definition tables or installed-package metadata are silently patched.
 
+SURFEX ``SFX.PACK=0`` describes the dense support layout, not the scaling of each
+FA record. A dense ``X1`` field can still have native packing 120 and trigger
+this guard. Metadata inspection/preflight does not decode its physical payload,
+so successful inspection does not establish that extraction/export will pass.
+
 ``mask.undefined`` identifies the EPyGrAM returned mask and normalized NaN
 sentinel; its field object does not expose the original native flag/sentinel.
 An IEEE NaN need not have a returned mask bit. ``mask.nonfinite_count`` counts

@@ -166,6 +166,10 @@ This file contains the cyclone trajectory and kinematic diagnostics computed by 
   (for example ``heading_deg``, ``speed``), and any additional diagnostic variables created by
   ``enrich_track_with_kinematics``.
 
+For a single-time automatic track, ``lat`` and ``lon`` still identify the centre
+used by every coupled source. ``heading_deg``, ``dist`` and ``speed`` are NaN:
+one position cannot establish motion, and missing motion is not physical zero.
+
 This file is intended to be the minimal entry point to interpret all other FrameIt products.
 
 SIMU.cart.<group>.nc

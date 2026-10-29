@@ -125,12 +125,13 @@ def test_continuous_origin_fixed_freeze_and_earth_metadata():
     assert fixed.attrs["center_definition"] == "continuous_track"
 
 
+@pytest.mark.parametrize("nt", [1, 2])
 @pytest.mark.parametrize("model", ["AROME", "MNH"])
 @pytest.mark.parametrize("method", ["fixed_box", "prescribed_track"])
-def test_supplied_centres_survive_tracker_and_postprocessing(tmp_path, model, method):
-    times = np.array(["2024-01-01T00", "2024-01-01T06"], dtype="datetime64[ns]")
-    expected_lat = np.array([-20.01, -20.02])
-    expected_lon = np.array([0.01, 0.02])
+def test_supplied_centres_survive_tracker_and_postprocessing(tmp_path, model, method, nt):
+    times = np.array(["2024-01-01T00", "2024-01-01T06"], dtype="datetime64[ns]")[:nt]
+    expected_lat = np.array([-20.01, -20.02])[:nt]
+    expected_lon = np.array([0.01, 0.02])[:nt]
     if model == "AROME":
         source = xr.Dataset(coords={"time": times, "latitude": [-21., -20., -19.],
                                     "longitude": [0., 1., 2.]})
@@ -152,11 +153,44 @@ def test_supplied_centres_survive_tracker_and_postprocessing(tmp_path, model, me
     track = enrich_track_with_kinematics(track, ds_flat=source, conf=conf(tracking_method=method))
     np.testing.assert_allclose(track.lon, expected_lon)
     np.testing.assert_allclose(track.lat, expected_lat)
-    np.testing.assert_array_equal(track.cx, [0, 0])
-    np.testing.assert_array_equal(track.cy, [1, 1])
+    np.testing.assert_array_equal(track.cx, np.zeros(nt))
+    np.testing.assert_array_equal(track.cy, np.ones(nt))
     geometry = grid([0, 10], [0, 90], method).build(source, track=track)
     np.testing.assert_allclose(geometry.lon[:, 0, 0], expected_lon)
     np.testing.assert_allclose(geometry.lat[:, 0, 0], expected_lat)
+
+
+@pytest.mark.parametrize("nt", [1, 2])
+@pytest.mark.parametrize("layout", ["rectilinear", "curvilinear", "time_curvilinear"])
+def test_index_track_coordinates_do_not_require_motion(nt, layout):
+    times = np.array(["2024-01-01T00", "2024-01-01T06"], dtype="datetime64[ns]")[:nt]
+    source = xr.Dataset(coords={"time": times, "latitude": [-21., -20., -19.],
+                                "longitude": [50., 51., 52.]})
+    if layout != "rectilinear":
+        lon, lat = np.meshgrid(source.longitude.values, source.latitude.values)
+        source = xr.Dataset(coords={"time": times, "longitude": (("y", "x"), lon),
+                                    "latitude": (("y", "x"), lat)})
+        if layout == "time_curvilinear":
+            source = source.assign_coords({
+                name: source[name].expand_dims(time=times) for name in ("longitude", "latitude")})
+    track = xr.Dataset({"cx": ("time", [1, 2][:nt]), "cy": ("time", [1, 2][:nt])},
+                       coords={"time": times})
+    result = enrich_track_with_kinematics(track, ds_flat=source,
+                                         conf=conf(tracking_method="wind_pressure"))
+    np.testing.assert_array_equal(result.lon, [51., 52.][:nt])
+    np.testing.assert_array_equal(result.lat, [-20., -19.][:nt])
+    assert result.lon.dims == result.lat.dims == ("time",)
+    assert result.lon.attrs["units"] == "degrees_east"
+    assert result.lat.attrs["units"] == "degrees_north"
+    assert "lon" not in track and "lat" not in track
+    if nt == 1:
+        for name in ("heading_deg", "dist", "speed"):
+            assert result[name].dims == ("time",) and np.isnan(result[name]).all()
+    else:
+        azimuth, _, distance = Geod(ellps="WGS84").inv(51., -20., 52., -19.)
+        np.testing.assert_allclose(result.heading_deg, azimuth % 360)
+        np.testing.assert_allclose(result.dist, distance / 1000)
+        np.testing.assert_allclose(result.speed, distance / (6 * 3600))
 
 
 def test_grid_relative_rotation_units_and_missing_metadata_contract():

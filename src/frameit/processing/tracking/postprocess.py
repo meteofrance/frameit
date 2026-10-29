@@ -81,9 +81,10 @@ def enrich_track_with_kinematics(
 
     Notes
     -----
+    A single-time track retains geographical centres but has NaN motion values.
     Returns ``track_ds`` unchanged when ``tracking_method == "fixed_box"``,
-    when fewer than two time steps are present, or when required fields are
-    missing from ``track_ds`` or ``ds_flat``.
+    when no time steps are present, or when required fields are missing from
+    ``track_ds`` or ``ds_flat``.
     """
 
     tracking_method = str(getattr(conf, "tracking_method", "")).lower()
@@ -113,7 +114,7 @@ def enrich_track_with_kinematics(
         return track_ds
 
     nt = int(track_ds.sizes.get(tdim, 0))
-    if nt < 2:
+    if nt == 0:
         return track_ds
 
     lon_src = ds_flat[lonv_name]
@@ -215,10 +216,11 @@ def enrich_track_with_kinematics(
     d_m[:-1] = dist_m / 1e3
     speed_ms[:-1] = speed
 
-    # Copy last
-    heading_deg[-1] = heading_deg[-2]
-    d_m[-1] = d_m[-2]
-    speed_ms[-1] = speed_ms[-2]
+    # A single centre defines a position, not motion.
+    if nt > 1:
+        heading_deg[-1] = heading_deg[-2]
+        d_m[-1] = d_m[-2]
+        speed_ms[-1] = speed_ms[-2]
 
     # Guard against near-stationary steps, keep previous heading when possible
     if min_step_m is not None and float(min_step_m) > 0.0:

@@ -601,6 +601,45 @@ def test_primary_pair_rejects_time_cycle_clock_and_source_conflicts(tmp_path, fa
 
 
 @EPYGRAM
+@pytest.mark.parametrize("nt", [1, 2])
+@pytest.mark.parametrize("packing", [0, 120])
+def test_automatic_coupling_preserves_centres_and_scaling_guard(tmp_path, packing, nt):
+    raw = primary_pair_document(tmp_path, surface_overrides={1: {"packing": packing}})
+    suffixes = tuple(f"-{hour}" for hour in range(1, nt + 1))
+    for source in raw["input"]["sources"].values():
+        source["input"]["files"] = [path for path in source["input"]["files"]
+                                    if Path(path).stem.endswith(suffixes)]
+    raw["tracking"] = {"source": "atmosphere", "method": "wind_pressure"}
+    raw["execution"] = {"require_complete_tracking": True}
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    assert preflight(conf)["track_time_count"] == nt
+    if packing == 120:
+        with pytest.raises(ValueError, match="missing native scaling metadata"):
+            execute_simulation(conf)
+        status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
+        assert status["state"] == "failed"
+        assert not (conf.output_dir / "products/primary-pair.cart.surfex.surface.nc").exists()
+        return
+    result = execute_simulation(conf)
+    assert result.ok
+    with xr.open_dataset(conf.output_dir / "products/primary-pair.track.nc") as track:
+        np.testing.assert_allclose(track.lon, np.full(nt, 49.932968), rtol=0, atol=1.e-6)
+        np.testing.assert_allclose(track.lat, np.full(nt, -20.054), rtol=0, atol=1.e-6)
+        np.testing.assert_array_equal(track.atmosphere_cx, np.zeros(nt))
+        np.testing.assert_array_equal(track.atmosphere_cy, np.zeros(nt))
+        assert "surfex_cx" in track and "surfex_cy" in track
+        for name in ("heading_deg", "dist", "speed"):
+            if nt == 1:
+                assert np.isnan(track[name]).all()
+            else:
+                assert np.isfinite(track[name]).all()
+    product = next(p["path"] for p in result.products if p.get("source") == "surfex")
+    with xr.open_dataset(product) as data:
+        assert data.sizes["time"] == nt
+        np.testing.assert_allclose(data["SFX.T2M"].sel(x_box=0, y_box=0), np.arange(nt) + 281.)
+
+
+@EPYGRAM
 def test_primary_pair_cannot_bypass_missing_surface_scaling(tmp_path):
     raw = primary_pair_document(tmp_path, surface_overrides={1: {"packing": 120}})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
