@@ -139,3 +139,35 @@ The red line shows the extracted box.
    :align: center
 
    Example of tracking and extraction using the wind_pressure tracking method.
+Optional initial position
+-------------------------
+
+Restrict the first MSLP search to a user-selected position and radius:
+
+.. code-block:: yaml
+
+   tracking:
+     source: atmosphere  # For coupled atmosphere/SURFEX inputs
+     method: wind_pressure
+     wind_pressure:
+       initial_guess:
+         latitude: -5.8
+         longitude: 50.0
+         search_radius_km: 100
+       search_half_width_km: 100
+       refine_half_width_km: 50
+
+These coordinates are illustrative, not a verified storm position. The seed
+applies to the first selected input timestamp; it does not filter input times.
+Latitude/longitude are degrees north/east in [-90, 90]/[-180, 180], and the
+radius must be finite and positive. Distances use the WGS84 geodesic and include
+grid points at the radius. The method searches finite MSLP candidates within
+the circle on the available grid; it does not require complete circular coverage.
+No valid candidate causes an error, never a global-search fallback at initialization.
+The existing wind refinement may move the centre outside this circle.
+Subsequent tracking and its existing fallback policy are unchanged.
+
+Omit ``initial_guess`` (or set it to ``null``) to retain the global initial MSLP
+search. The effective configuration and seeded track attributes record the
+position, radius and search convention. Seeded selection is not independent
+confirmation of storm identity and does not require a 500-km reference ring.

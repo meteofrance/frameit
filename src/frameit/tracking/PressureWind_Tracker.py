@@ -21,6 +21,7 @@ def pressure_wind_tracker(
     time_dim: str = "time",
     half_search: int,
     half_refine: int,
+    initial_mask: xr.DataArray | None = None,
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """
     Sequential cyclone-centre tracker using MSLP and 10 m wind.
@@ -45,6 +46,9 @@ def pressure_wind_tracker(
         Half-width of the MSLP search box in grid points (≥ 1).
     half_refine : int
         Half-width of the wind refinement box in grid points (≥ 1).
+    initial_mask : xr.DataArray, optional
+        First-time pressure candidates. No finite candidate is an error; wind
+        refinement remains unconstrained by this mask. Omit for a global search.
 
     Returns
     -------
@@ -104,6 +108,13 @@ def pressure_wind_tracker(
     # ------------------------------------------------------------------
     mslp0 = mslp.isel({time_dim: 0})
     wind0 = wind_10m.isel({time_dim: 0})
+    if initial_mask is not None:
+        if initial_mask.dims != mslp0.dims or initial_mask.shape != mslp0.shape:
+            raise ValueError("Initial search mask must match the horizontal pressure grid")
+        mslp0 = mslp0.where(initial_mask & np.isfinite(mslp0))
+        if not bool(np.isfinite(mslp0).any()):
+            raise ValueError("wind_pressure initial guess search circle contains no finite MSLP; "
+                             "check seed position, radius and input coverage")
 
     idx_mslp0 = mslp0.argmin(dim=[njy, nix])
     cy0_fg = int(idx_mslp0[njy])
@@ -212,6 +223,7 @@ class PressureWindTracker(TcTracker):
     def __init__(
         self, var_aliases, grid_spacing_m: float | None = None, *,
         search_half_width_km=100., refine_half_width_km=50., resolution_km=None,
+        initial_guess=None, lat_name="latitude", lon_name="longitude",
     ):
         """
         Parameters
@@ -223,6 +235,10 @@ class PressureWindTracker(TcTracker):
             Used to derive ``half_search`` and ``half_refine`` in grid points.
         """
         super().__init__(var_aliases=var_aliases)
+        from frameit.core.configuration import validate_wind_pressure_initial_guess
+
+        self.initial_guess = validate_wind_pressure_initial_guess(initial_guess)
+        self.lat_name, self.lon_name = lat_name, lon_name
 
         if resolution_km is not None:
             import warnings
@@ -268,7 +284,9 @@ class PressureWindTracker(TcTracker):
         var_aliases = getattr(conf, "tracking_var_aliases", {}) or {}
         return cls(var_aliases=var_aliases, grid_spacing_m=conf.resolution,
                    search_half_width_km=conf.wind_pressure_search_half_width_km,
-                   refine_half_width_km=conf.wind_pressure_refine_half_width_km)
+                   refine_half_width_km=conf.wind_pressure_refine_half_width_km,
+                   initial_guess=conf.wind_pressure_initial_guess,
+                   lat_name=conf.name_latitude, lon_name=conf.name_longitude)
 
     def _track_method(self, ds: xr.Dataset) -> xr.Dataset:
         """
@@ -288,6 +306,28 @@ class PressureWindTracker(TcTracker):
         mslp = self._field(ds, "mslp")
         u10 = self._field(ds, "u10m")
         v10 = self._field(ds, "v10m")
+        initial_mask = None
+        if self.initial_guess is not None:
+            from pyproj import Geod
+
+            seed = self.initial_guess
+            coords = []
+            for name in (self.lat_name, self.lon_name):
+                if name not in ds:
+                    raise ValueError(f"wind_pressure initial guess requires coordinate {name}")
+                coordinate = ds[name]
+                coords.append(coordinate.isel(time=0) if "time" in coordinate.dims else coordinate)
+            lat, lon = xr.broadcast(*coords)
+            spatial = mslp.isel(time=0)
+            if set(lat.dims) != set(spatial.dims):
+                raise ValueError("Initial guess geography must match the horizontal pressure grid")
+            lat, lon = lat.transpose(*spatial.dims), lon.transpose(*spatial.dims)
+            _, _, distance = Geod(ellps="WGS84").inv(
+                np.full(lat.shape, seed["longitude"]),
+                np.full(lat.shape, seed["latitude"]), np.asarray(lon), np.asarray(lat))
+            initial_mask = xr.DataArray(
+                np.isfinite(distance) & (distance <= seed["search_radius_km"] * 1000),
+                dims=spatial.dims, coords=spatial.coords)
 
         cy, cx = pressure_wind_tracker(
             mslp=mslp,
@@ -296,6 +336,15 @@ class PressureWindTracker(TcTracker):
             time_dim="time",
             half_search=self.half_search_indices,
             half_refine=self.half_refine_indices,
+            initial_mask=initial_mask,
         )
 
-        return xr.Dataset({"cy": cy, "cx": cx})
+        result = xr.Dataset({"cy": cy, "cx": cx})
+        if self.initial_guess is not None:
+            result.attrs.update(
+                wind_pressure_initial_guess_latitude=self.initial_guess["latitude"],
+                wind_pressure_initial_guess_longitude=self.initial_guess["longitude"],
+                wind_pressure_initial_search_radius_km=self.initial_guess["search_radius_km"],
+                wind_pressure_initial_search_geometry="WGS84 geodesic circle; first input time",
+            )
+        return result

@@ -161,6 +161,7 @@ class SimulationConfig:
     fa_options: dict[str, Any] = field(default_factory=dict)
     wind_pressure_search_half_width_km: float = 100.0
     wind_pressure_refine_half_width_km: float = 50.0
+    wind_pressure_initial_guess: dict[str, float] | None = None
     # Shared default for continuous polar point samples; no area-budget guarantee.
     # Methods are selected explicitly, never inferred per variable.
     polar_interpolation_method: str = "bilinear"

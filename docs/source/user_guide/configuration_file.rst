@@ -148,6 +148,11 @@ effective value and its source are retained in run provenance.
 Tracking and extraction
 -----------------------
 
+For an optional first-time geographic search with ``wind_pressure``, set
+``tracking.wind_pressure.initial_guess`` to a mapping of ``latitude``,
+``longitude`` and ``search_radius_km``. See
+:doc:`../tracker/pressure_wind_tracker` for scope, validation and failure policy.
+
 ``tracking.method`` defaults to ``wind_pressure``. Supported alternatives are
 ``fixed_box``, ``prescribed_track``, ``pressure_centroid`` (AROME and Meso-NH), and
 ``utrack``. An experimental ``multifield_vortex`` native-grid adaptation of

@@ -35,7 +35,8 @@ DEFAULTS = {
     "tracking": {
         "source": None,
         "method": "wind_pressure",
-        "wind_pressure": {"search_half_width_km": 100., "refine_half_width_km": 50.},
+        "wind_pressure": {"search_half_width_km": 100., "refine_half_width_km": 50.,
+                          "initial_guess": None},
         "fixed_box": {"center": {"latitude": None, "longitude": None}},
         "prescribed_track": {"file": None, "time_name": "time",
                              "latitude_name": "latitude", "longitude_name": "longitude"},
@@ -137,6 +138,22 @@ def _merge_checked(raw, defaults, prefix=""):
     if errors:
         raise ValueError("\n".join(errors))
     return result
+
+
+def validate_wind_pressure_initial_guess(value):
+    """Validate an optional geographic first-time pressure search."""
+    if value is None:
+        return None
+    path = "tracking.wind_pressure.initial_guess"
+    guess = _merge_checked(value, {"latitude": None, "longitude": None,
+                                   "search_radius_km": None}, path)
+    for name, limit in (("latitude", 90), ("longitude", 180)):
+        coordinate = guess[name]
+        if (isinstance(coordinate, bool) or not isinstance(coordinate, (int, float))
+                or not math.isfinite(coordinate) or abs(coordinate) > limit):
+            raise ValueError(f"{path}.{name} must be finite and in [-{limit}, {limit}]")
+    _positive(guess["search_radius_km"], f"{path}.search_radius_km")
+    return guess
 
 
 def _positive(value, path, *, integer=False, allow_zero=False):
@@ -462,7 +479,10 @@ def resolve_schema(raw, *, base_dir=None):
     if trk["method"] not in methods:
         raise ValueError(f"tracking.method must be one of {sorted(methods)}")
     for key, value in trk["wind_pressure"].items():
-        _positive(value, f"tracking.wind_pressure.{key}")
+        if key == "initial_guess":
+            trk["wind_pressure"][key] = validate_wind_pressure_initial_guess(value)
+        else:
+            _positive(value, f"tracking.wind_pressure.{key}")
     if trk["method"] == "fixed_box":
         center = trk["fixed_box"]["center"]
         for name, limit in (("latitude", 90), ("longitude", 180)):
@@ -681,6 +701,7 @@ def to_runtime(raw, *, base_dir=None):
             if trk["method"] == "fixed_box" else None,
         "wind_pressure_search_half_width_km": trk["wind_pressure"]["search_half_width_km"],
         "wind_pressure_refine_half_width_km": trk["wind_pressure"]["refine_half_width_km"],
+        "wind_pressure_initial_guess": trk["wind_pressure"]["initial_guess"],
         "prescribed_track_file": trk["prescribed_track"]["file"] or "",
         "prescribed_track_time_name": trk["prescribed_track"]["time_name"],
         "prescribed_track_lat_name": trk["prescribed_track"]["latitude_name"],
