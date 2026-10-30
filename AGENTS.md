@@ -2,6 +2,24 @@
 
 > Automate repetitive work. Make scientific choices explicit. Harmonize data without erasing its meaning. Preserve researchers' freedom.
 
+## Superpowers workflow skills
+
+Use the globally installed Superpowers skills through OpenCode's native `skill`
+tool; do not copy them or install project-local duplicates.
+
+- At session start, load `using-superpowers` unless its instructions are already
+  provided in context.
+- Load applicable skills before acting: `brainstorming` for design,
+  `writing-plans` for implementation plans, `systematic-debugging` for bugs,
+  `test-driven-development` for code implementation, and
+  `verification-before-completion` before claiming completion.
+- Follow each skill's applicability and workflow without expanding the task.
+  User instructions and this repository's scientific safeguards, scope,
+  verification, and completion requirements take precedence over generic skill
+  advice.
+- If a required skill is unavailable, report that limitation; do not claim to
+  have loaded or followed it.
+
 ## 1. Mission and scope
 
 FrameIt is a configurable Python tool for repeatable scientific post-processing. Its purpose is to reduce the technical work between simulation outputs and scientific analysis, share reusable methods across researchers and projects, and produce data that colleagues can understand, compare, and reuse.
