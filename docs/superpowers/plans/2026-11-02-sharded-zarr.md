@@ -72,3 +72,43 @@
 - [ ] Update templates, README, output naming/layout, recursive inventory semantics, replacement/crash limitations and changelog; do not imply NCO/CDO can read Zarr or make unmeasured performance claims.
 - [ ] Run `python -m pytest src/frameit/testing/numerical -q`; record actual results and missing optional fixtures/dependencies rather than claiming they passed. Run documentation build if the existing environment supports it.
 - [ ] Run `git diff --check`, review connected code and task-only diff, commit documentation/final corrections locally, and report exact verification results and commit IDs. Preserve the unrelated `opencode.json` file.
+
+## Completion record
+
+Implemented in `850b643`, `6aaf368` and `d74dab1`; no scientific calculation
+changes. A fresh read-only reviewer found no actionable issues and independently
+ran the 31 new Zarr tests successfully. Nothing pushed; existing branch retained.
+
+Verification (Python 3.13, xarray 2026.9.0, Zarr 3.4.2):
+
+- `python -m pytest -q`: **794 passed, 3 skipped, 2 subtests passed**; 2063
+  dependency/deprecation warnings. The three skips require an interpreter
+  without EPyGrAM. The temporary test environment needed `PROJ_DATA` and
+  `ESMFMKFILE` pointing to its underlying Conda installation; an initial run
+  with the wrong PROJ database failed, and the corrected full rerun passed.
+- Without Zarr installed, `python -m pytest
+  src/frameit/testing/numerical/test_zarr_export.py
+  src/frameit/testing/numerical/test_configuration_v2.py
+  src/frameit/testing/numerical/test_hpc_execution.py -q`:
+  **89 passed, 17 skipped** (Zarr-specific cases).
+- `python -m sphinx -E -a -b html docs/source <temporary-build-directory>`:
+  successful; two existing warnings in tracker documentation, none in changed
+  output/installation pages.
+- `git diff --check`: clean.
+
+Implementation decisions and limits:
+
+- Work stayed in the existing non-main checkout to minimize overhead; unrelated
+  `opencode.json` was preserved. No merge or push was authorized.
+- Writer dependencies are checked before execution, not metadata planning:
+  runner preflight lacks effective CLI export overrides. Dry-run therefore does
+  not certify writer availability; disabled export remains dependency-free.
+- Supported optional version floors use the cleanly tested combination.
+  Older-library probes aborted at interpreter shutdown; their cause remains
+  unresolved, and those combinations are unsupported rather than claimed fixed.
+- Default spatial blocking uses only the last two non-time dataset dimensions;
+  other axes stay at extent one to avoid large vertical write blocks. Unusual
+  axis orders may need explicit size overrides.
+- No production-scale benchmark was run. Measure actual workloads before tuning.
+- Publication is not fsync-durable or atomic directory exchange. After a killed
+  writer, a private backup may need manual recovery once ownership is checked.
