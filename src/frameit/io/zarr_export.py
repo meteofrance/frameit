@@ -5,8 +5,6 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-import xarray as xr
-
 from frameit.utils.atomic import atomic_directory_output
 
 
@@ -16,8 +14,8 @@ def check_zarr_dependencies() -> None:
     from packaging.version import Version
 
     try:
-        supported = (Version(version("xarray")) >= Version("2025.10.1")
-                     and Version(version("zarr")) >= Version("3.1.3"))
+        supported = (Version(version("xarray")) >= Version("2026.9.0")
+                     and Version("3.4.2") <= Version(version("zarr")) < Version("4"))
         if supported:
             import zarr  # noqa: F401
 
@@ -25,7 +23,7 @@ def check_zarr_dependencies() -> None:
     except (PackageNotFoundError, ImportError):
         pass
     raise ValueError(
-        "output.engine: zarr requires xarray>=2025.10.1 and zarr>=3.1.3; "
+        "output.engine: zarr requires xarray>=2026.9.0 and zarr>=3.4.2,<4; "
         "install FrameIt's optional extra: pip install 'frameit[zarr]'"
     )
 
@@ -53,6 +51,7 @@ def write_dataset_zarr(
     races between tasks. Coordinates use the same layout, optionally compressed.
     """
     check_zarr_dependencies()
+    import zarr
     from zarr.codecs import GzipCodec
 
     from frameit.io.netcdf_export import _append_history, _prepare_dataset, _utc_now_iso
@@ -63,15 +62,17 @@ def write_dataset_zarr(
     if type(compress_level) is not int or not 0 <= compress_level <= 9:
         raise ValueError("compress_level must be an integer in [0, 9]")
     chunks, shards = {}, {}
+    block_dims = [dim for dim in ds.sizes if dim != "time"][-2:]
     for dim, size in ds.sizes.items():
         if size == 0:
             raise ValueError(f"Cannot export Zarr with empty dimension {dim!r}")
-        default = 1 if dim == "time" else min(size, 128)
+        default = min(size, 128) if dim in block_dims else 1
         chunk = chunk_size.get(dim, default)
         if dim in shard_size and dim not in chunk_size:
             chunk = math.gcd(chunk, shard_size[dim])
         chunks[dim] = chunk
-        shards[dim] = shard_size.get(dim, chunk * (8 if dim == "time" else 4))
+        count = 8 if dim == "time" else (4 if dim in block_dims else 1)
+        shards[dim] = shard_size.get(dim, chunk * count)
 
     ds_out = _prepare_dataset(ds, metadata, product_type, group, track_filename)
     ds_out.encoding = {}
@@ -91,6 +92,8 @@ def write_dataset_zarr(
     ds_out = ds_out.chunk(shards)
     path = Path(path)
     with atomic_directory_output(path, overwrite=overwrite) as temporary:
-        ds_out.to_zarr(temporary, mode="w", zarr_format=3, consolidated=False,
-                       encoding=encoding, safe_chunks=True)
+        # Dask/export workers already own the CPU budget; do not add a codec pool per worker.
+        with zarr.config.set({"async.concurrency": 1, "threading.max_workers": 1}):
+            ds_out.to_zarr(temporary, mode="w", zarr_format=3, consolidated=False,
+                           encoding=encoding, safe_chunks=True)
     return path

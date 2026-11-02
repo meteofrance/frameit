@@ -340,9 +340,18 @@ def write_dataset_netcdf(
     return path
 
 
-def _write_single_group(
-    args: tuple[str, xr.Dataset, Path, str, ExportMetadata, str, str, str, bool, int, bool, bool],
-) -> Path:
+def _write_dataset(ds, path, *, engine, zarr_chunk_size=None, zarr_shard_size=None, **kwargs):
+    if engine == "zarr":
+        from frameit.io.zarr_export import write_dataset_zarr
+
+        kwargs.pop("fmt", None)
+        kwargs.pop("unlimited_time", None)
+        return write_dataset_zarr(ds, path, chunk_size=zarr_chunk_size,
+                                  shard_size=zarr_shard_size, **kwargs)
+    return write_dataset_netcdf(ds, path, engine=engine, **kwargs)
+
+
+def _write_single_group(args: tuple) -> Path:
     """
     Worker function for ProcessPoolExecutor — must be a top-level callable.
     Unpacks all arguments and calls write_dataset_netcdf.
@@ -360,9 +369,11 @@ def _write_single_group(
         compress_level,
         compress_coords,
         unlimited_time,
+        zarr_chunk_size,
+        zarr_shard_size,
     ) = args
 
-    return write_dataset_netcdf(
+    return _write_dataset(
         ds,
         out_path,
         metadata=metadata,
@@ -375,6 +386,8 @@ def _write_single_group(
         compress_level=compress_level,
         compress_coords=compress_coords,
         unlimited_time=unlimited_time,
+        zarr_chunk_size=zarr_chunk_size,
+        zarr_shard_size=zarr_shard_size,
     )
 
 
@@ -397,6 +410,8 @@ def write_group_dict(
     dask_scheduler: str = "threads",
     dask_workers: int = 1,
     native_threads: int = 1,
+    zarr_chunk_size: dict[str, int] | None = None,
+    zarr_shard_size: dict[str, int] | None = None,
 ) -> list[Path]:
     """
     Write a dictionary of Datasets to individual NetCDF files, optionally in parallel.
@@ -456,7 +471,8 @@ def write_group_dict(
     destinations = set()
     for group, ds in ds_dict.items():
         group_token = _sanitize_filename_token(str(group))
-        fn = f"{simu_name}.{grid}.{group_token}.nc"
+        suffix = ".zarr" if engine == "zarr" else ".nc"
+        fn = f"{simu_name}.{grid}.{group_token}{suffix}"
         out_path = out_dir / fn
         if out_path in destinations:
             raise ValueError(f"Group names map to the same NetCDF destination: {out_path}")
@@ -484,6 +500,8 @@ def write_group_dict(
                 compress_level,
                 compress_coords,
                 unlimited_time,
+                zarr_chunk_size,
+                zarr_shard_size,
             )
         )
 
@@ -545,6 +563,8 @@ def export_outputs(
     dask_scheduler: str = "threads",
     dask_workers: int = 1,
     native_threads: int = 1,
+    zarr_chunk_size: dict[str, int] | None = None,
+    zarr_shard_size: dict[str, int] | None = None,
 ) -> dict[str, Path | list[Path]]:
     """
     Export all FrameIt products (track, polar, Cartesian) from a completed run.
@@ -604,7 +624,7 @@ def export_outputs(
     out_path = base_out / out_subdir if out_subdir else base_out
     out_path.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Exporting NetCDF: engine=%s, compression=%d", engine, int(compress_level))
+    logger.info("Exporting products: engine=%s, compression=%d", engine, int(compress_level))
     logger.debug(
         "Export outputs: simu_name=%s, out_path=%s, export_polar=%s, export_cart=%s,"
         " engine=%s, fmt=%s, overwrite=%s, compress_level=%s, max_workers=%s.",
@@ -622,10 +642,11 @@ def export_outputs(
     meta = build_metadata_from_conf(conf, frameit_version=frameit_version, institution=institution)
 
     # Track
-    track_file = out_path / f"{simu_name}.track.nc"
+    suffix = ".zarr" if engine == "zarr" else ".nc"
+    track_file = out_path / f"{simu_name}.track{suffix}"
     logger.debug("Exporting track to %s", track_file)
 
-    track_written = write_dataset_netcdf(
+    track_written = _write_dataset(
         runner.track,
         track_file,
         metadata=meta,
@@ -636,6 +657,8 @@ def export_outputs(
         compress_level=compress_level,
         compress_coords=compress_coords,
         unlimited_time=unlimited_time,
+        zarr_chunk_size=zarr_chunk_size,
+        zarr_shard_size=zarr_shard_size,
     )
 
     results: dict[str, Path | list[Path]] = {"track": track_written}
@@ -659,6 +682,7 @@ def export_outputs(
             max_workers=max_workers,
             synchronous=synchronous,
             dask_scheduler=dask_scheduler, dask_workers=dask_workers, native_threads=native_threads,
+            zarr_chunk_size=zarr_chunk_size, zarr_shard_size=zarr_shard_size,
         )
     else:
         logger.debug(
@@ -686,6 +710,7 @@ def export_outputs(
             max_workers=max_workers,
             synchronous=synchronous,
             dask_scheduler=dask_scheduler, dask_workers=dask_workers, native_threads=native_threads,
+            zarr_chunk_size=zarr_chunk_size, zarr_shard_size=zarr_shard_size,
         )
     else:
         logger.debug(

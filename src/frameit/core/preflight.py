@@ -605,18 +605,19 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
         excluded = [str(p) for p in candidates if input_path_excluded(p, conf)]
     products = []
     prefix = conf.output_dir / "products" / conf.simulation_name
+    suffix = ".zarr" if options.engine == "zarr" else ".nc"
     if options.export_netcdf:
-        products.append(str(prefix) + ".track.nc")
+        products.append(str(prefix) + f".track{suffix}")
         if options.export_cart:
             products.extend(
-                str(prefix) + f".cart.{_sanitize_filename_token(g)}.nc"
+                str(prefix) + f".cart.{_sanitize_filename_token(g)}{suffix}"
                 for g in conf.requests_user()
             )
         if options.export_polar and conf.compute_polar_proj:
             groups = {conf.name_vertical_dim if g == "level_w" and conf.atm_model == "MNH" else g
                       for g in conf.polar_variables}
             products.extend(
-                str(prefix) + f".polar.{_sanitize_filename_token(g)}.nc" for g in sorted(groups)
+                str(prefix) + f".polar.{_sanitize_filename_token(g)}{suffix}" for g in sorted(groups)
             )
     plan = {"configuration": resolved, "grid_geometry": geometry,
             "inputs": inventory, "unit_provenance": unit_records,

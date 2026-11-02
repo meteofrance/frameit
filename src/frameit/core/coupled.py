@@ -279,18 +279,19 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
 
     prefix = conf.output_dir / "products" / conf.simulation_name
     options = execution_options or ExecutionOptions.from_config(conf)
+    suffix = ".zarr" if options.engine == "zarr" else ".nc"
     products = []
     if options.export_netcdf:
-        products.append(str(prefix) + ".track.nc")
+        products.append(str(prefix) + f".track{suffix}")
         for name, child in children.items():
             if options.export_cart:
                 for group in child.requests_user():
                     products.append(str(prefix) +
-                                    f".cart.{name}.{_sanitize_filename_token(group)}.nc")
+                                     f".cart.{name}.{_sanitize_filename_token(group)}{suffix}")
             if options.export_polar and child.compute_polar_proj:
                 for group in child.polar_variables:
                     products.append(str(prefix) +
-                                    f".polar.{name}.{_sanitize_filename_token(group)}.nc")
+                                     f".polar.{name}.{_sanitize_filename_token(group)}{suffix}")
     plan = {"configuration": resolved_configuration(conf, execution_options),
             "grid_geometry": conf.grid_geometry, "time_alignment": alignment,
             "tracking_source": conf.tracking_source, "tracking_method": conf.tracking_method,

@@ -34,6 +34,8 @@ class ExecutionOptions:
     dask_workers: int | None = None
     native_threads: int = 1
     require_complete_tracking: bool = False
+    zarr_chunk_size: dict[str, int] = field(default_factory=dict)
+    zarr_shard_size: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def from_config(cls, config, **overrides):
@@ -55,11 +57,18 @@ class ExecutionOptions:
             "dask_workers": execution.get("dask_workers"),
             "native_threads": execution.get("native_threads", 1),
             "require_complete_tracking": execution.get("require_complete_tracking", False),
+            "zarr_chunk_size": output.get("zarr_chunk_size", {}),
+            "zarr_shard_size": output.get("zarr_shard_size", {}),
         }
         values.update({k: v for k, v in overrides.items() if v is not None})
         return cls(**values)
 
     def __post_init__(self):
+        from frameit.io.zarr_export import validate_zarr_sizes
+
+        validate_zarr_sizes(self.zarr_chunk_size, self.zarr_shard_size)
+        if self.engine not in {"netcdf4", "h5netcdf", "zarr"}:
+            raise ValueError("output.engine must be netcdf4, h5netcdf or zarr")
         if not 0 <= int(self.compress_level) <= 9:
             raise ValueError("compress_level must be in [0, 9]")
         for name in ("max_workers", "dask_workers", "native_threads"):
@@ -108,8 +117,9 @@ def _product_descriptors(exports, runner):
         # Group names can contain punctuation sanitized in the physical name.
         from frameit.io.netcdf_export import _sanitize_filename_token
 
+        suffix = Path(paths[0]).suffix if paths else ".nc"
         filenames = {
-            f"{runner.conf.simulation_name}.{role}.{_sanitize_filename_token(str(group))}.nc": str(
+            f"{runner.conf.simulation_name}.{role}.{_sanitize_filename_token(str(group))}{suffix}": str(
                 group
             )
             for group in groups
@@ -129,7 +139,8 @@ def _product_descriptors(exports, runner):
 def _loaded_backend_versions():
     """Record native versions without initializing otherwise unused backends."""
     versions = {}
-    for name in ("eccodes", "ESMF", "esmpy", "xesmf", "netCDF4", "h5netcdf", "h5py", "pyproj"):
+    for name in ("eccodes", "ESMF", "esmpy", "xesmf", "netCDF4", "h5netcdf", "h5py", "pyproj",
+                 "zarr"):
         module = sys.modules.get(name)
         if module is None:
             continue
@@ -169,6 +180,10 @@ def execute_simulation(
     )
 
     requested = options or ExecutionOptions.from_config(config)
+    if requested.export_netcdf and requested.engine == "zarr":
+        from frameit.io.zarr_export import check_zarr_dependencies
+
+        check_zarr_dependencies()
     effective, resources = resolve_execution_resources(requested)
     runtime = runtime_provenance()
     with owned_run(config.output_dir, overwrite=effective.overwrite, initial={
@@ -192,7 +207,9 @@ def execute_simulation(
             products=[{
                 **product,
                 "path": str(Path(product["path"]).relative_to(config.output_dir.resolve())),
-                "size_bytes": Path(product["path"]).stat().st_size,
+                "size_bytes": (sum(p.stat().st_size for p in Path(product["path"]).rglob("*")
+                                   if p.is_file()) if Path(product["path"]).is_dir()
+                               else Path(product["path"]).stat().st_size),
             } for product in result.products],
         )
         return result
@@ -295,10 +312,12 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
                         max_workers=options.max_workers,
                         dask_scheduler=options.dask_scheduler, dask_workers=options.dask_workers,
                         native_threads=options.native_threads,
+                        zarr_chunk_size=options.zarr_chunk_size,
+                        zarr_shard_size=options.zarr_shard_size,
                     )
-                log.debug("NetCDF export finished")
+                log.debug("Product export finished (engine=%s)", options.engine)
             else:
-                log.info("NetCDF export skipped (--no-export-netcdf).")
+                log.info("Product export skipped (--no-export-netcdf).")
             runner.timer.log_summary(log, title="FrameIt runtime summary")
             products = _product_descriptors(exports, runner)
             log.info("Run complete: %d input file(s) · %d product(s)",

@@ -101,7 +101,7 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="export_netcdf",
         action="store_false",
         default=None,
-        help="Disable NetCDF export (enabled by default).",
+        help="Disable product export (NetCDF or Zarr; enabled by default).",
     )
     pr.add_argument(
         "--no-export-polar",

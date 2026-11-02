@@ -79,6 +79,7 @@ DEFAULTS = {
         "compression": {"level": 1, "coordinates": False}, "engine": "netcdf4",
         "format": "NETCDF4", "unlimited_time": True, "overwrite": True, "max_workers": None,
         "synchronous_export": False,
+        "zarr_chunk_size": {}, "zarr_shard_size": {},
         "institution": "LACy, Université de La Réunion, CNRS, Météo-France",
     },
     "execution": {"dask_scheduler": "threads", "dask_workers": None, "native_threads": 1,
@@ -597,8 +598,13 @@ def resolve_schema(raw, *, base_dir=None):
     if execution["dask_workers"] is not None:
         _positive(execution["dask_workers"], "execution.dask_workers", integer=True)
     _positive(execution["native_threads"], "execution.native_threads", integer=True)
-    if out["engine"] not in {"netcdf4", "h5netcdf"} or out["format"] != "NETCDF4":
-        raise ValueError("output supports netcdf4/h5netcdf engines with NETCDF4 format")
+    if out["engine"] not in {"netcdf4", "h5netcdf", "zarr"}:
+        raise ValueError("output.engine must be netcdf4, h5netcdf or zarr")
+    if out["engine"] != "zarr" and out["format"] != "NETCDF4":
+        raise ValueError("NetCDF output supports only NETCDF4 format")
+    from frameit.io.zarr_export import validate_zarr_sizes
+
+    validate_zarr_sizes(out["zarr_chunk_size"], out["zarr_shard_size"])
     if inp["netcdf"]["engine"] not in {"h5netcdf", "netcdf4", "scipy"}:
         raise ValueError("Unsupported input.netcdf.engine")
     if conf["logging"]["level"] not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
@@ -767,7 +773,7 @@ def resolved_configuration(conf, options=None):
         out["compression"] = {"level": options.compress_level,
                               "coordinates": options.compress_coords}
         for key in ("engine", "overwrite", "unlimited_time", "max_workers", "institution",
-                    "synchronous_export"):
+                     "synchronous_export", "zarr_chunk_size", "zarr_shard_size"):
             out[key] = getattr(options, key)
         out["format"] = options.fmt
         result["execution"] = {
@@ -799,6 +805,8 @@ def resolved_sources(conf, options=None):
             ("overwrite", "output.overwrite"), ("unlimited_time", "output.unlimited_time"),
             ("max_workers", "output.max_workers"),
             ("synchronous_export", "output.synchronous_export"),
+            ("zarr_chunk_size", "output.zarr_chunk_size"),
+            ("zarr_shard_size", "output.zarr_shard_size"),
             *((key, f"execution.{key}") for key in DEFAULTS["execution"]),
         ):
             if getattr(options, attribute) != getattr(baseline, attribute):
