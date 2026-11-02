@@ -213,6 +213,21 @@ def build_metadata_from_conf(
     return meta
 
 
+def _prepare_dataset(ds, metadata, product_type, group=None, track_filename=None):
+    """Keep metadata meaning and JSON attribute conventions identical across writers."""
+    ds_out = ds.copy(deep=False)
+    ds_out.attrs = _sanitize_attrs(ds_out.attrs)
+    for name in ds_out.variables:
+        ds_out[name].attrs = _sanitize_attrs(ds_out[name].attrs)
+    ds_out.attrs.update(_sanitize_attrs(metadata.base_attrs()))
+    ds_out.attrs["product_type"] = str(product_type)
+    if group is not None:
+        ds_out.attrs["group"] = str(group)
+    if track_filename is not None:
+        ds_out.attrs["track_filename"] = str(track_filename)
+    return ds_out
+
+
 def write_dataset_netcdf(
     ds: xr.Dataset,
     path: str | Path,
@@ -295,19 +310,7 @@ def write_dataset_netcdf(
         bool(unlimited_time),
     )
 
-    ds_out = ds.copy()
-    # Sanitize global attrs
-    ds_out.attrs = _sanitize_attrs(ds_out.attrs)
-    # Sanitize attrs on all variables and coords (fixes units=None, etc.)
-    for name in list(ds_out.data_vars) + list(ds_out.coords):
-        ds_out[name].attrs = _sanitize_attrs(ds_out[name].attrs)
-
-    ds_out.attrs.update(_sanitize_attrs(metadata.base_attrs()))
-    ds_out.attrs["product_type"] = str(product_type)
-    if group is not None:
-        ds_out.attrs["group"] = str(group)
-    if track_filename is not None:
-        ds_out.attrs["track_filename"] = str(track_filename)
+    ds_out = _prepare_dataset(ds, metadata, product_type, group, track_filename)
 
     ds_out = _append_history(ds_out, f"{_utc_now_iso()}: written by frameit io.netcdf_export")
 
