@@ -2,7 +2,9 @@ Output files
 ============
 
 FrameIt writes NetCDF products that can be opened without FrameIt, for example
-with xarray/netCDF4, NCO or CDO. Existing scripts still need compatible variable
+with xarray/netCDF4, NCO or CDO. Alternatively, ``output.engine: zarr`` selects
+sharded Zarr v3 directory stores, readable with compatible xarray/Zarr readers
+(not the NetCDF readers NCO/CDO). Existing scripts still need compatible variable
 definitions, dimensions, coordinates and reader support; a matching format alone
 does not make schemas or physical quantities equivalent.
 
@@ -35,7 +37,7 @@ Artifacts use the same layout for ordinary runs and each matrix case::
 
     <output_dir>/
         cache/       # GRIB index files
-        products/    # Track, Cartesian and polar NetCDF files
+        products/    # Track, Cartesian and polar .nc files or .zarr stores
         logs/        # Simulation logs
         resolved-config.yaml  # Reloadable effective schema-v2 configuration
         run-provenance.yaml   # Geometry, inputs, units, and execution settings
@@ -129,7 +131,7 @@ is per product, not an all-products transaction or an fsync durability guarantee
 See :doc:`/getting_started/hpc` for states, ownership and retry policy.
 
 ``metadata.extra`` is serialized as the JSON global attribute
-``frameit_user_metadata_json`` for ordinary NetCDF readers.
+``frameit_user_metadata_json`` for ordinary readers of either output backend.
 
 For a run using the default AROME template, an ordinary-reader inspection is:
 
@@ -152,6 +154,125 @@ and accumulation/averaging intervals are distinct and must not be conflated.
 FA temporal declarations are instantaneous only; no interval conversion is
 inferred to complete a product. JSON attributes such as ``fa_field_descriptor``
 can be read with ``json.loads`` from Python's standard library.
+
+.. _sharded-zarr-output:
+
+Sharded Zarr v3
+---------------
+
+Select ``output.engine: zarr`` after installing the optional ``zarr`` extra
+(Python 3.12+, xarray >= 2026.9.0, Zarr-Python >= 3.4.2 and < 4). NetCDF remains
+the default. The same track, Cartesian groups and requested polar groups are
+written as local directory stores: ``SIMU.track.zarr``,
+``SIMU.cart.<group>.zarr`` and ``SIMU.polar.<group>.zarr``. Source-qualified
+groups keep the same naming rules. Only the selected backend is written.
+
+Variables, dimensions, coordinates, physical units, missing samples and
+scientific metadata meanings are preserved. Decoded values are written without
+additional quantization or source integer repacking. Compression is lossless
+gzip at ``output.compression.level`` (default 1; 0 disables it); coordinates are
+uncompressed unless ``output.compression.coordinates: true``. There is no
+NetCDF-style unlimited dimension, append/resume or remote-store support.
+
+Chunks versus shards
+~~~~~~~~~~~~~~~~~~~~
+
+A **chunk** is a small block of array values encoded and compressed independently.
+A reader can decompress only the chunks needed for a selection rather than the
+whole array. Smaller chunks can reduce unnecessary reading for small selections,
+but too many tiny chunks add indexing, compression and scheduling overhead.
+
+A **shard** packs several chunks into one stored object: one file in these local
+stores. This reduces the number of files without making the whole shard the
+unit of decompression. Compatible readers can retrieve individual chunks inside
+a shard; actual disk I/O and caching depend on the reader. Larger shards reduce
+file counts but can increase write memory and the amount of work per task.
+
+Both sizes count **array elements along each named dimension**, not bytes or
+numbers of files. For example::
+
+    output:
+      engine: zarr
+      zarr_chunk_size: {time: 1, y_box: 128, x_box: 128}
+      zarr_shard_size: {time: 8, y_box: 512, x_box: 512}
+
+Each chunk holds one time and 128 by 128 grid points. Each full shard covers
+eight times and 512 by 512 points: ``8 * 4 * 4 = 128`` chunks. Boundary shards
+can be partially filled; arrays need not be divisible by these sizes. These
+settings do **not** change scientific resolution, sampling, precision or values.
+
+Defaults and tuning
+~~~~~~~~~~~~~~~~~~~
+
+Both mappings are optional; ``output.engine: zarr`` alone works. For each product:
+
+* Time chunks contain one element; a time shard spans eight chunks.
+* The last two non-time dimensions in dataset order use chunk extents of
+  ``min(dimension length, 128)``, with four chunks per shard along each axis.
+  These normally correspond to the two spatial axes. Other dimensions use
+  chunk and shard extents of one, avoiding large vertical-cube write blocks.
+* Explicit chunk sizes replace those defaults. Without a shard override,
+  the default number of chunks per shard is retained.
+* A shard-only override chooses a chunk extent equal to the greatest common
+  divisor of the default chunk extent and requested shard extent. Supplying
+  both settings avoids surprises and gives direct control.
+* All sizes must be positive integers, not YAML booleans. Explicit shard
+  extents must be multiples of explicit chunk extents. Configured dimensions
+  absent from a product are ignored, so Cartesian settings do not break the
+  track or polar stores. Check spelling against the actual output dimensions.
+* Scalars such as a CRS variable are not sharded. Empty dimensions fail with
+  an actionable error; this writer does not publish empty-axis products.
+
+Use ``x_box``/``y_box`` for Cartesian products and ``rr``/``theta`` for polar
+products, plus the actual vertical dimensions where needed. Configure both
+sets in the mappings if the same run needs different layouts. The actual
+layout is inspectable in each array's ``zarr.json`` metadata or through
+``zarr.open_group(path)[variable].chunks`` and ``.shards``.
+
+Storage chunks are not the input or polar-processing **Dask chunks**. Before
+writing, FrameIt rechunks lazily to shard boundaries so parallel tasks do not
+write different chunks into the same shard simultaneously. It does not load
+the entire dataset eagerly. Write memory depends on shard size, dtype and
+concurrency; explicitly requesting very large shards can still exhaust memory.
+Zarr's internal concurrency is capped to one while writing, leaving parallelism
+to the configured Dask/export workers. There is no universally optimal layout:
+start with defaults and measure representative selections before tuning.
+
+Completion and reading
+~~~~~~~~~~~~~~~~~~~~~~
+
+FrameIt writes a private sibling temporary directory and publishes it after
+the complete store has been written. Under the existing exclusive run-root
+lock, a replacement first renames the previous store to a private backup;
+caught publication errors restore that backup. Unlike NetCDF file replacement,
+replacement of a nonempty directory has a brief visibility gap and is **not an
+atomic directory exchange**. A killed process can leave hidden
+``.frameit-*.partial`` or ``.frameit-*.backup`` directories. A backup may contain
+the previous complete product; do not delete or restore it until the writer
+has stopped. Unrelated directories and symlinks are not overwritten as stores.
+This is not an fsync durability or all-products transaction guarantee.
+
+``run-status.yaml`` remains the authoritative completion record. Its product
+paths refer to store directories and ``size_bytes`` sums all stored files
+recursively, not the directory inode size. Paths and sizes are not checksums.
+Scientific provenance retains effective settings and the loaded Zarr version.
+
+No FrameIt import is needed to read a completed product:
+
+.. code-block:: python
+
+   import xarray as xr
+
+   with xr.open_zarr("output/products/analysis.cart.surface.zarr",
+                     consolidated=False) as ds:
+       print(ds.sizes, ds.coords)
+       print(ds["u10"].attrs)
+
+Stores use v3 dimension metadata and non-consolidated metadata. Readers must
+support Zarr v3, its sharding codec and the stored dtypes. The writer dependency
+versions above are a tested reader combination, not a promise that all tools
+advertising Zarr support can read these stores. Ordinary-reader round trips
+test storage interoperability, not scientific applicability to every dataset.
 
 Produced files
 --------------

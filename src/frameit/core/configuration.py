@@ -1008,7 +1008,8 @@ def write_template(model, path, *, full=False, tracking="wind_pressure", force=F
         )}
         c["domain"] = {"size_km": c["domain"]["size_km"]}
         c["polar"] = {"enabled": False, "variables": "all"}
-        c["output"] = {"directory": "./output", "cartesian": c["output"]["cartesian"],
+        c["output"] = {"directory": "./output", "engine": c["output"]["engine"],
+                       "cartesian": c["output"]["cartesian"],
                        "polar": c["output"]["polar"]}
         c.pop("logging")
         c.pop("metadata")
@@ -1020,6 +1021,8 @@ def write_template(model, path, *, full=False, tracking="wind_pressure", force=F
     text += "# domain.size_km contains full widths; omit it for full-domain extraction.\n"
     text += "# polar.radial_step_m is metres; polar.azimuth_step_deg is degrees.\n"
     text += "# Choose azimuth_step_deg OR azimuth_count; neither means automatic sampling.\n"
+    text += "# output.engine: netcdf4 (default), h5netcdf, or zarr (optional extra).\n"
+    text += "# Zarr: optional zarr_chunk_size / zarr_shard_size map dimension names to element counts.\n"
     if full:
         text += "# FA: FrameIt[fa]/EPyGrAM in an isolated helper; backend: native is deprecated.\n"
     if model == "mesonh":

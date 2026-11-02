@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add optional sharded Zarr v3 output selected by `output.engine: zarr`, with
+  dimension-based `zarr_chunk_size` / `zarr_shard_size` overrides. Preserve the
+  existing product groups, scientific values and default NetCDF workflow;
+  inventory directory-store bytes and publish only complete stores. Document
+  chunks versus shards, reader requirements and replacement/crash limitations.
 - Observe encoded FA factors in packing-120 GRIB2 centre-85/local-1 records using
   the isolated worker's bundled ecCodes metadata API. An unknown-parameter warning
   no longer rejects explicitly scaled fields; preserve native decoding, logged

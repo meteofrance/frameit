@@ -354,7 +354,7 @@ def _write_dataset(ds, path, *, engine, zarr_chunk_size=None, zarr_shard_size=No
 def _write_single_group(args: tuple) -> Path:
     """
     Worker function for ProcessPoolExecutor — must be a top-level callable.
-    Unpacks all arguments and calls write_dataset_netcdf.
+    Unpacks all arguments and calls the selected dataset writer.
     """
     (
         group,
@@ -414,10 +414,9 @@ def write_group_dict(
     zarr_shard_size: dict[str, int] | None = None,
 ) -> list[Path]:
     """
-    Write a dictionary of Datasets to individual NetCDF files, optionally in parallel.
+    Write grouped products as NetCDF files or Zarr stores, optionally in parallel.
 
-    Each group produces one file named ``{simu_name}.{grid}.{group}.nc``
-    inside ``out_dir``.
+    Each group produces ``{simu_name}.{grid}.{group}.nc`` or ``.zarr`` inside ``out_dir``.
 
     Parameters
     ----------
@@ -475,7 +474,8 @@ def write_group_dict(
         fn = f"{simu_name}.{grid}.{group_token}{suffix}"
         out_path = out_dir / fn
         if out_path in destinations:
-            raise ValueError(f"Group names map to the same NetCDF destination: {out_path}")
+            kind = "Zarr" if engine == "zarr" else "NetCDF"
+            raise ValueError(f"Group names map to the same {kind} destination: {out_path}")
         destinations.add(out_path)
 
         logger.debug(
@@ -567,7 +567,7 @@ def export_outputs(
     zarr_shard_size: dict[str, int] | None = None,
 ) -> dict[str, Path | list[Path]]:
     """
-    Export all FrameIt products (track, polar, Cartesian) from a completed run.
+    Export all FrameIt products using the selected NetCDF or Zarr engine.
 
     The track file is always written.  Polar and Cartesian exports are
     conditional on the corresponding flag and on data being available.

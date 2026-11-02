@@ -7,7 +7,7 @@
 
 FrameIt is a configurable Python tool for fixed or moving subdomain extraction,
 object tracking and selected diagnostics from **AROME and Meso-NH** model outputs.
-It writes NetCDF products for use with ordinary readers and researchers' own
+It writes NetCDF (default) or optional sharded Zarr v3 products for ordinary readers and researchers' own
 analysis scripts. Model, variable, grid and reference-frame conventions still
 matter when comparing outputs.
 
@@ -72,6 +72,12 @@ See the [quick-start guide](docs/source/getting_started/quick_start.rst).
    execution facts. Outputs are published atomically per product; a failed run
    can leave earlier complete products. Concurrent writers to one run root are
    rejected. See [output files and interpretation](docs/source/user_guide/output_files.rst).
+
+For Zarr output, install the optional extra with `python -m pip install '.[zarr]'`
+(Python 3.12+) and set `output.engine: zarr` in YAML. The same products become
+`.zarr` directory stores instead of `.nc` files. Optional `output.zarr_chunk_size`
+and `output.zarr_shard_size` tune storage, not scientific values; see
+[chunks versus shards](docs/source/user_guide/output_files.rst#sharded-zarr-v3).
 
 For legacy flat YAML, migrate explicitly and review the result:
 

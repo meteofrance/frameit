@@ -73,12 +73,24 @@ readers. Optional extras are selected only for the paths you need:
      - Compatibility installation alias with exactly the same requirements as ``fa``.
    * - ``test``
      - pytest for the optional regression workflows.
+   * - ``zarr``
+     - Sharded Zarr v3 output: Python 3.12+, xarray >= 2026.9.0 and
+       Zarr-Python >= 3.4.2, < 4. Not needed for NetCDF output.
 
 For example, ``python -m pip install '.[grib]'`` selects core plus GRIB from the
 checkout. The full reference YAML already installs its listed extras. Installed
 extras do not enable diagnostics or scientific transformations by themselves;
 those follow the selected configuration. Model weights are not supplied by this
 environment. See :doc:`../user_guide/fa_inputs` for FA producer/layout limits.
+
+For sharded Zarr output, install ``python -m pip install '.[zarr]'`` from the
+checkout (or ``'frameit[zarr]'`` for a published version containing this feature),
+then select ``output.engine: zarr`` in YAML. The reference environment does not
+install this extra by default. Dependency availability is checked before
+processing when Zarr export is enabled; schema-only validation and metadata
+planning do not certify writer availability. The supported dependency floors
+are deliberately conservative; older library combinations are not qualified.
+See :ref:`sharded-zarr-output` for ordinary-reader examples and storage settings.
 
 Migrate an existing environment
 -------------------------------

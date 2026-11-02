@@ -234,6 +234,7 @@ Other controls include ``interpolation_method`` (``bilinear`` or ``nearest_s2d``
 source halo, ellipsoid, geometry point budget, plan-cache limits, ``chunks``, and
 ``profile``. ``--full`` exposes their authoritative defaults. Input chunks and
 polar computation chunks are separate; NetCDF storage chunks remain backend-selected.
+Zarr storage chunks and shards have separate optional output settings described below.
 
 Bilinear is the production default for continuous point samples, without an
 area-budget conservation guarantee. Categorical fields require an explicit
@@ -320,6 +321,33 @@ Polar computation is independent of polar export. Compression defaults to level
 1 with coordinate compression disabled. Other supported controls are ``engine``,
 ``format``, ``unlimited_time``, ``overwrite``, ``max_workers``,
 ``synchronous_export`` (default false), and ``institution``.
+
+``output.engine`` selects ``netcdf4`` (default), ``h5netcdf``, or ``zarr``.
+The first two write NetCDF files; ``zarr`` writes sharded Zarr v3 directory
+stores with the same products and ``.zarr`` instead of ``.nc``. ``output.format``
+is optional, defaults to ``NETCDF4``, and is unused for Zarr, as is
+``output.unlimited_time``. Zarr export does not support append/resume.
+
+For Zarr only, ``output.zarr_chunk_size`` and ``output.zarr_shard_size`` are
+optional mappings from dimension names to positive integer element counts.
+Both default to ``{}``, meaning the documented automatic layout. For example::
+
+    output:
+      engine: zarr
+      zarr_chunk_size: {time: 1, y_box: 128, x_box: 128}
+      zarr_shard_size: {time: 8, y_box: 512, x_box: 512}
+
+Use the actual output dimension names; polar axes are ``rr`` and ``theta``.
+Dimensions absent from a particular product are ignored. Explicit shard sizes
+must be multiples of explicit chunk sizes. See :ref:`sharded-zarr-output` for
+the difference between chunks and shards, defaults and override rules.
+
+For backward compatibility, ``output.export.netcdf`` and the CLI
+``--no-export-netcdf`` remain the overall product-export gate for **either**
+engine; the legacy name does not force NetCDF output. ``.cartesian`` and
+``.polar`` retain their existing selection behavior. Compression level 1 is
+lossless gzip for Zarr (0 disables compression); coordinate compression remains
+opt-in. NetCDF compression behavior is unchanged.
 
 ``execution.dask_scheduler`` is ``threads`` (default) or ``synchronous``.
 ``execution.dask_workers`` defaults to one effective worker;

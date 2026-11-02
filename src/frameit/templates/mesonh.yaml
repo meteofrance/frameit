@@ -20,5 +20,8 @@ polar:
   variables: all
 output:
   directory: ./output
+  engine: netcdf4  # Or zarr (optional extra); see output documentation for chunks vs shards.
+  # zarr_chunk_size: {time: 1, y_box: 128, x_box: 128}
+  # zarr_shard_size: {time: 8, y_box: 512, x_box: 512}
   cartesian: {horizontal_winds: mass_earth, vertical_velocity: interfaces}
   polar: {vertical_velocity: mass}
