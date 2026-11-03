@@ -16,7 +16,7 @@
 # Create a fresh environment when migrating an older mixed Conda/pip installation:
 #    conda env create -f environment.yaml --solver libmamba -n frameit_unified
 # FrameIt and its maintained FA extra are installed from this checkout below.
-# One Python-3.13 environment supplies GRIB/NetCDF/ESMF and EPyGrAM. FA still runs
+# One Python-3.13 environment supplies GRIB/NetCDF/Zarr/ESMF and EPyGrAM. FA still runs
 # in fresh isolated subprocesses using that Python; omit input.fa.python_executable.
 # Conda owns the shared NetCDF/HDF5/ecCodes stack. Exact Python-package versions
 # satisfy unmodified EPyGrAM 2.1.0 requirements, preventing pip replacements.
@@ -29,7 +29,8 @@ channels:
   - nodefaults
 dependencies:
   - python=3.13
-  - xarray
+  - xarray>=2026.9.0
+  - zarr>=3.4.2,<4
   - dask-core
   - numpy
   - scipy
@@ -50,7 +51,7 @@ dependencies:
   - setuptools>=77
   - wheel
   - pip:
-      - -e .[test,grib,polar,fa]
+      - -e .[test,grib,polar,fa,zarr]
       - ruff
       - sphinx==9.2.0
       - sphinx-rtd-theme

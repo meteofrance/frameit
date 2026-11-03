@@ -14,7 +14,7 @@ matter when comparing outputs.
 ## Installation
 
 With Conda/mamba available, create the reference **Python-3.13
-FA/GRIB/NetCDF/polar environment** from the checkout:
+FA/GRIB/NetCDF/Zarr/polar environment** from the checkout:
 
 ```bash
 git clone https://github.com/meteofrance/frameit
@@ -73,8 +73,9 @@ See the [quick-start guide](docs/source/getting_started/quick_start.rst).
    can leave earlier complete products. Concurrent writers to one run root are
    rejected. See [output files and interpretation](docs/source/user_guide/output_files.rst).
 
-For Zarr output, install the optional extra with `python -m pip install '.[zarr]'`
-(Python 3.12+) and set `output.engine: zarr` in YAML. The same products become
+Both environment YAMLs include Zarr support. For a core-only pip installation,
+add `python -m pip install '.[zarr]'` (Python 3.12+). Set `output.engine: zarr`
+in YAML to use it. The same products become
 `.zarr` directory stores instead of `.nc` files. Optional `output.zarr_chunk_size`
 and `output.zarr_shard_size` tune storage, not scientific values; see
 [chunks versus shards](docs/source/user_guide/output_files.rst#sharded-zarr-v3).
@@ -176,7 +177,7 @@ the inputs described in the [regression workflow](docs/source/user_guide/matrix_
 ## Optional HPC / Slurm execution
 
 Use one task on one node per configuration. `environment-hpc.yaml` provides a
-base NetCDF/test environment; add GRIB and polar dependencies only when needed.
+base NetCDF/Zarr/test environment; add GRIB and polar dependencies only when needed.
 Portable launchers and an independent output checker are in `example/slurm/`.
 See [the Belenos/Slurm qualification procedure](docs/source/getting_started/hpc.rst)
 for environment setup, resource limits, isolated attempts, cancellation behavior,

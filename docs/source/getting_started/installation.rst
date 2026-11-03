@@ -1,7 +1,7 @@
 Installation of FrameIt
 =======================
 
-The reference ``environment.yaml`` installs **FrameIt and its FA/GRIB/NetCDF/polar
+The reference ``environment.yaml`` installs **FrameIt and its FA/GRIB/NetCDF/Zarr/polar
 stack in one Python-3.13 Conda environment**. Use this path when you need the
 complete native stack. You need Git and a working Conda/mamba installation.
 
@@ -18,7 +18,7 @@ Create the reference environment
    frameit --help
 
 Run environment creation from the checkout containing ``environment.yaml``. Its
-pip section installs ``-e .[test,grib,polar,fa]`` plus development/documentation
+pip section installs ``-e .[test,grib,polar,fa,zarr]`` plus development/documentation
 tools. FrameIt is already installed when the command completes; a second
 environment or a subsequent pip installation is not required.
 
@@ -83,10 +83,11 @@ extras do not enable diagnostics or scientific transformations by themselves;
 those follow the selected configuration. Model weights are not supplied by this
 environment. See :doc:`../user_guide/fa_inputs` for FA producer/layout limits.
 
-For sharded Zarr output, install ``python -m pip install '.[zarr]'`` from the
-checkout (or ``'frameit[zarr]'`` for a published version containing this feature),
-then select ``output.engine: zarr`` in YAML. The reference environment does not
-install this extra by default. Dependency availability is checked before
+Both environment YAMLs include the required Zarr and xarray versions. For a
+core-only pip installation, add ``python -m pip install '.[zarr]'`` from the
+checkout (or ``'frameit[zarr]'`` for a published version containing this feature).
+Select ``output.engine: zarr`` in the processing YAML to use it; NetCDF remains
+the default. Dependency availability is checked before
 processing when Zarr export is enabled; schema-only validation and metadata
 planning do not certify writer availability. The supported dependency floors
 are deliberately conservative; older library combinations are not qualified.
@@ -113,6 +114,6 @@ declarations and budgets still apply. See :doc:`FA environment and troubleshooti
 <../user_guide/fa_environment>` for failure diagnosis and
 :doc:`../user_guide/configuration_file` for YAML migration.
 
-HPC execution is optional. ``environment-hpc.yaml`` is a minimal NetCDF/test
+HPC execution is optional. ``environment-hpc.yaml`` is a minimal NetCDF/Zarr/test
 environment, not an additional prerequisite for this reference installation.
 Use :doc:`hpc` for its setup and site-specific Slurm/resource guidance.

@@ -24,7 +24,7 @@ from the checkout:
    python -m pip install --no-deps -e .
    python -m frameit --help
 
-The base environment includes NetCDF processing and pytest, without ESMF,
+The base environment includes NetCDF/Zarr processing and pytest, without ESMF,
 plotting or documentation dependencies. Add only the selected execution paths:
 
 .. code-block:: bash
