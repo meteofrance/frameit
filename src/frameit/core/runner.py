@@ -227,6 +227,7 @@ class FrameitRunner:
                 wind_conf=self.conf,
                 engine=self.conf.netcdf_engine,
                 chunks=self.conf.netcdf_chunks,
+                file_layout=self.conf.netcdf_file_layout,
                 duplicate_time_policy=self.conf.duplicate_time_policy,
                 native_output_groups=self._native_cartesian_groups,
             )

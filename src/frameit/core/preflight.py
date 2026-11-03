@@ -29,6 +29,24 @@ from frameit.utils.units import convert_units, unit_key
 
 def open_metadata(files, conf, resources):
     """Open lazily with no disk indexes, closing originals on all error paths."""
+    if conf.file_type == "netcdf" and getattr(conf, "netcdf_file_layout", "time_series") == "variables":
+        from frameit.io.netcdf_utils import _merge_variable_shards, normalize_netcdf_time
+
+        opened = [normalize_netcdf_time(resources.add(xr.open_dataset(
+            path, engine=conf.netcdf_engine)), conf) for path in files]
+        requested = set()
+        for request in (conf.requests_user(), conf.requests_tracker().get(conf.tracking_method, {})):
+            expanded, _ = wind_dependencies(conf, request)
+            requested.update(name for spec in expanded.values() for name in spec.get("variables", [])
+                             if name != "wind_speed")
+        requested.update(name for name in (conf.name_latitude, conf.name_longitude)
+                         if any(name in ds for ds in opened))
+        merged = _merge_variable_shards(opened, requested)
+        merged.attrs = dict(merged.attrs, _frameit_variable_providers={
+            name: str(path) for path, ds in zip(files, opened) for name in ds.data_vars
+            if name in requested})
+        yield files[0], [merged]
+        return
     fa_geometries = {}
     fa_vertical_signature = None
     for path in files:
@@ -76,7 +94,10 @@ def open_metadata(files, conf, resources):
         elif conf.file_type == "grib":
             datasets = _grib_metadata(path)
         else:
-            datasets = [xr.open_dataset(path, engine=conf.netcdf_engine)]
+            from frameit.io.netcdf_utils import normalize_netcdf_time
+
+            original = resources.add(xr.open_dataset(path, engine=conf.netcdf_engine))
+            datasets = [normalize_netcdf_time(original, conf)]
         for ds in datasets:
             resources.add(ds)
         yield path, datasets
@@ -384,6 +405,9 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 mnh_records.append((path, header))
             user_dependencies, user_pairs = wind_dependencies(conf, conf.requests_user())
             tracker_dependencies, tracker_pairs = wind_dependencies(conf, tracker)
+            if conf.file_type == "netcdf":
+                _check_requests(datasets, user_dependencies, path)
+                _check_requests(datasets, tracker_dependencies, path)
             pairs = []
             for pair in user_pairs + tracker_pairs:
                 if pair not in pairs:
@@ -415,7 +439,8 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 variables.update({name: da.attrs.get("units") for name, da in ds.data_vars.items()})
                 for name in ds.coords:
                     spatial_time = {
-                        conf.name_latitude, conf.name_longitude, "time", "valid_time", "step"
+                        conf.name_latitude, conf.name_longitude, "time", "valid_time", "step",
+                        "forecast_reference_time",
                     }
                     if conf.file_type == "fa":
                         spatial_time.update({"x", "y", "source_i", "source_j", "crs",
@@ -478,7 +503,13 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 "calendar", "standard"))) for ds in datasets
                 for name in ("time", "valid_time") if name in ds.coords}
             inventory.append({"path": str(path), "variables": variables, "levels": levels,
-                               "times": sorted(set(times)), "calendars": sorted(calendars)})
+                                "times": sorted(set(times)), "calendars": sorted(calendars)})
+            references = sorted({str(value) for ds in datasets if "forecast_reference_time" in ds
+                                 for value in np.atleast_1d(ds.forecast_reference_time.values)})
+            if references:
+                inventory[-1]["reference_times"] = references
+            if datasets[0].attrs.get("_frameit_variable_providers"):
+                inventory[-1]["variable_providers"] = datasets[0].attrs["_frameit_variable_providers"]
             unmapped = [entry for ds in datasets for entry in ds.attrs.get(
                 "_frameit_unmapped_grib_records", [])]
             if unmapped:

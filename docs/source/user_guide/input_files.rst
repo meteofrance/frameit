@@ -8,6 +8,7 @@ conventions have not been generally qualified. Ordinary inventories include:
 
 - A single NetCDF file containing all time steps.
 - A list of files (NetCDF or GRIB), each representing a single time step.
+- Complementary NetCDF variable files, explicitly selected as described below.
 
 Within each source, variables must share a time-dimension convention, usually
 ``time`` for Meso-NH and ``valid_time`` for AROME. NetCDF latitude/longitude must
@@ -42,6 +43,38 @@ Sources are read-only. FrameIt keeps GRIB indexes in the designated output
 masks and products; exact-common/strict time selection is described in
 :doc:`fa_inputs`. Available fields do not automatically enable diagnostics,
 unit/interval conversions or missing-data filling.
+
+Complementary NetCDF variables
+------------------------------
+
+For one physical field per file, declare the layout within that source:
+
+.. code-block:: yaml
+
+   input:
+     format: netcdf
+     files: [pressure.nc, u10.nc, v10.nc]
+     netcdf:
+       file_layout: variables
+   variables:
+     surface:
+       names: [prmsl, u10, v10]
+
+Adapt names and wind declarations to the source metadata. A wind companion may
+live in a different shard. Files must share identical decoded sample times,
+forecast cycle and horizontal coordinates; shared vertical definitions and
+auxiliaries must agree. Selected physical fields must have exactly one provider.
+Payloads remain selected and lazy; coordinate checks can read small axes and
+required geography, not physical cubes to prove duplicate equality. Time blocks
+mixed with variable shards are unsupported; separate unlike grids into sources.
+
+AROME NetCDF ``valid_time`` becomes canonical ``time``. A colliding scalar
+``time`` is retained as ``forecast_reference_time`` only when its source
+``standard_name`` explicitly identifies that clock; conflicting or unidentified
+clocks fail. Original forecast identity, time bounds and interval annotations
+remain distinct from valid/sample time. No timestamp shifting, nearest matching,
+resampling or value filling is performed. This assembly option does not make
+interval means scientifically equivalent to instantaneous fields.
 
 Wind metadata to check
 ----------------------

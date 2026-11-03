@@ -51,11 +51,21 @@ entries fail rather than disappear. Discovery ordering is deterministic.
 GRIB/NetCDF format is detected from file content; optional ``input.format`` can
 declare ``grib`` or ``netcdf``. Native FA requires explicit ``format: fa`` and
 its profile/declarations below. Mixed ordinary inventories and conflicting
-declarations fail; complementary streams belong in separate named sources.
+declarations fail; unlike grids/streams belong in separate named sources.
 NetCDF defaults are
 ``input.netcdf.engine: h5netcdf`` and ``input.netcdf.chunks: {}`` (backend-preferred
 lazy chunks). ``input.duplicate_time_policy`` is ``first`` or ``last``, default
 ``first``. GRIB retains its existing backend time ordering.
+
+``input.netcdf.file_layout`` defaults to ``time_series``: prepare each snapshot
+independently, then concatenate times. Every requested NetCDF field (including
+required wind companions) must exist in each file. Missing later fields fail
+rather than disappearing or being broadcast from an earlier file.
+Choose ``variables`` explicitly for complementary variable files on the same
+grid, times and forecast cycle. It merges selected fields and their coordinate
+dependencies with exact alignment, without time concatenation or deduplication.
+Duplicate selected field providers, inconsistent coordinates/depths/clocks and
+mixed time-block/variable-shard inventories fail. See :doc:`input_files`.
 
 Named sources and exact times
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

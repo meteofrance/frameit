@@ -25,7 +25,7 @@ DEFAULTS = {
         "directory": "./data", "pattern": None, "files": None, "exclude": [],
         "format": None, "grid_spacing_m": None, "duplicate_time_policy": "first",
         "wind_reference_frame": None, "wind_pairs": [],
-        "netcdf": {"engine": "h5netcdf", "chunks": {}},
+        "netcdf": {"engine": "h5netcdf", "chunks": {}, "file_layout": "time_series"},
         "fa": {"profile": None, "subdomain": "CI", "earth_radius_m": None,
                "field_metadata": {}, "expected_source": {},
                "backend": "epygram", "python_executable": None, "native_cubes": {},
@@ -423,7 +423,7 @@ def resolve_schema(raw, *, base_dir=None):
     enum_paths = (
         "model", "tracking.method", "input.format", "input.duplicate_time_policy",
         "input.time_alignment",
-        "input.wind_reference_frame", "input.netcdf.engine", "domain.edge_policy",
+        "input.wind_reference_frame", "input.netcdf.engine", "input.netcdf.file_layout", "domain.edge_policy",
         "polar.interpolation_method", "polar.missing_data_policy", "polar.ellipsoid",
         "output.engine", "output.format", "logging.level",
         "tracking.pressure_centroid.motion.solver",
@@ -607,6 +607,8 @@ def resolve_schema(raw, *, base_dir=None):
     validate_zarr_sizes(out["zarr_chunk_size"], out["zarr_shard_size"])
     if inp["netcdf"]["engine"] not in {"h5netcdf", "netcdf4", "scipy"}:
         raise ValueError("Unsupported input.netcdf.engine")
+    if inp["netcdf"]["file_layout"] not in {"time_series", "variables"}:
+        raise ValueError("input.netcdf.file_layout must be time_series or variables")
     if conf["logging"]["level"] not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
         raise ValueError("logging.level must be DEBUG, INFO, WARNING, or ERROR")
     if not isinstance(conf["metadata"]["extra"], dict):
@@ -697,6 +699,7 @@ def to_runtime(raw, *, base_dir=None):
         "duplicate_time_policy": inp["duplicate_time_policy"],
         "netcdf_engine": inp["netcdf"]["engine"],
         "netcdf_chunks": inp["netcdf"]["chunks"],
+        "netcdf_file_layout": inp["netcdf"]["file_layout"],
         "wind_reference_frame": inp["wind_reference_frame"],
         "wind_pairs": inp["wind_pairs"],
         "cartesian_horizontal_winds": c["output"]["cartesian"]["horizontal_winds"],
@@ -1022,6 +1025,7 @@ def write_template(model, path, *, full=False, tracking="wind_pressure", force=F
     text += "# polar.radial_step_m is metres; polar.azimuth_step_deg is degrees.\n"
     text += "# Choose azimuth_step_deg OR azimuth_count; neither means automatic sampling.\n"
     text += "# output.engine: netcdf4 (default), h5netcdf, or zarr (optional extra).\n"
+    text += "# NetCDF: input.netcdf.file_layout: variables merges complementary same-grid files.\n"
     text += "# Zarr: optional zarr_chunk_size / zarr_shard_size map dimension names to element counts.\n"
     if full:
         text += "# FA: FrameIt[fa]/EPyGrAM in an isolated helper; backend: native is deprecated.\n"

@@ -155,6 +155,7 @@ class SimulationConfig:
     duplicate_time_policy: str = "first"
     netcdf_engine: str = "h5netcdf"
     netcdf_chunks: dict[str, int] = field(default_factory=dict)
+    netcdf_file_layout: str = "time_series"
     input_sources: dict[str, Any] = field(default_factory=dict)
     time_alignment: str = "common"
     tracking_source: str | None = None
