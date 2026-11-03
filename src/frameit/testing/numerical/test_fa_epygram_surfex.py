@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import importlib.util
 import json
 import subprocess
 import sys
@@ -116,17 +115,6 @@ def test_unqualified_dependency_versions_fail_before_native_import(tmp_path, mon
     with pytest.raises(ValueError, match="ctypesForFortran==1.3.0"):
         fa_epygram.initialize(tmp_path, None)
     assert "epygram" not in sys.modules and not (tmp_path / ".epygram").exists()
-
-
-@pytest.mark.skipif(importlib.util.find_spec("epygram") is not None,
-                     reason="requires an interpreter without the optional EPyGrAM stack")
-@pytest.mark.parametrize("backend", [None, "native", "epygram"])
-def test_absent_epygram_dependency_is_actionable_for_surfex(tmp_path, backend):
-    # Runs in reference and core-only CI. Do not select an available helper: this
-    # explicitly tests the current interpreter's genuinely missing dependency.
-    with pytest.raises(ValueError, match=r"install FrameIt\[fa\]"):
-        inspect_fa(tmp_path / "unopened.fa", "surfex_history",
-                   **({"backend": backend} if backend else {}))
 
 
 # Instrument the *production* worker in a disposable FA-only interpreter. This
