@@ -202,3 +202,130 @@ def test_nemo_detected_non_netcdf_fails_before_optional_reader(tmp_path, monkeyp
     monkeypatch.setattr(module, "_grib_metadata", forbidden)
     with pytest.raises(ValueError, match="NEMO.*NetCDF"):
         module.preflight(conf)
+
+
+def component_scene(depth, field, **shifts):
+    ds = nemo_scene(depth=depth, field=field, **shifts)
+    ds[field].attrs.update(units="m/s", long_name="native ocean component", standard_name={
+        "vozocrtx": "sea_water_x_velocity", "vomecrty": "sea_water_y_velocity",
+        "vovecrtz": "upward_sea_water_velocity"}[field])
+    return ds
+
+
+def test_nemo_equal_dimension_names_keep_independent_geography(tmp_path):
+    from frameit.core.execution import execute_simulation
+
+    cases = [("deptht", "votemper", 0., 0., 2, 2),
+             ("depthu", "vozocrtx", .006, 0., 1, 2),
+             ("depthv", "vomecrty", 0., .006, 2, 1),
+             ("depthw", "vovecrtz", 0., 0., 2, 2)]
+    for depth, field, dx, dy, x0, y0 in cases:
+        source = nemo_scene() if depth == "deptht" else component_scene(depth, field, shift_x=dx, shift_y=dy)
+        path = tmp_path / f"{depth}.nc"
+        source.to_netcdf(path)
+        raw = nemo_document(tmp_path, [path], variables={depth: {"names": [field], "levels": {"indices": [1, 0]}}})
+        raw["output"].update(directory=str(tmp_path / depth), cartesian={"horizontal_winds": "native"})
+        result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+        assert result.ok, result
+        product = next(p["path"] for p in result.products if p["role"] == "cart")
+        with xr.open_dataset(product) as out:
+            np.testing.assert_array_equal(out.x[0], np.arange(x0, x0+3))
+            np.testing.assert_array_equal(out.y[0], np.arange(y0, y0+3))
+            np.testing.assert_array_equal(out[field], source[field].values[:, [1, 0], y0:y0+3, x0:x0+3])
+            np.testing.assert_array_equal(out.nav_lon[0], source.nav_lon[y0:y0+3, x0:x0+3])
+            np.testing.assert_array_equal(out.nav_lat[0], source.nav_lat[y0:y0+3, x0:x0+3])
+            np.testing.assert_array_equal(out[f"{depth}_bounds"], [[2., 4.], [0., 2.]])
+            np.testing.assert_array_equal(out[depth], [2., 0.] if depth == "depthw" else [3., 1.])
+        subprocess.run([sys.executable, "-c", """
+import netCDF4 as nc
+import numpy as np
+import sys
+path, source_path, field, depth, x0, y0 = sys.argv[1:]
+x0, y0 = int(x0), int(y0)
+with nc.Dataset(path) as out, nc.Dataset(source_path) as source:
+    actual = out[field][:]
+    expected = source[field][:, [1,0], y0:y0+3, x0:x0+3]
+    np.testing.assert_array_equal(np.ma.getmaskarray(actual), np.ma.getmaskarray(expected))
+    np.testing.assert_array_equal(actual.compressed(), expected.compressed())
+    np.testing.assert_array_equal(out['nav_lat'][0], source['nav_lat'][y0:y0+3, x0:x0+3])
+    np.testing.assert_array_equal(out['nav_lon'][0], source['nav_lon'][y0:y0+3, x0:x0+3])
+    np.testing.assert_array_equal(out[depth][:], source[depth][[1,0]])
+    assert np.any(actual == 0.)
+    assert out[field].units == source[field].units
+    assert 'horizontal_wind_representation' not in out.ncattrs()
+""", str(product), str(path), field, depth, str(x0), str(y0)], check=True)
+    # A T/U source cannot be assembled as complementary fields on one grid.
+    raw = nemo_document(
+        tmp_path, [tmp_path / "deptht.nc", tmp_path / "depthu.nc"], variables={
+            "deptht": {"names": ["votemper"], "levels": "all"},
+            "depthu": {"names": ["vozocrtx"], "levels": "all"}})
+    raw["output"]["cartesian"] = {"horizontal_winds": "native"}
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    with pytest.raises(ValueError, match="coordinate|geography"):
+        concat_nc2ds_by_vert_coord(conf.input_files, conf.requested_variables_user, {},
+                                  concat_dimension="time_counter", wind_conf=conf, file_layout="variables")
+
+
+def test_nemo_native_components_never_call_wind_preparation(tmp_path, monkeypatch):
+    from frameit.core.execution import execute_simulation
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Ocean components must not execute atmospheric wind preparation")
+
+    for target in ("frameit.processing.derived.wind.normalize_winds",
+                   "frameit.processing.derived.wind.normalize_native_wind_units",
+                   "frameit.processing.derived.wind.normalize_velocity_units",
+                   "frameit.processing.wind_collocation.prepare_native_mnh",
+                   "frameit.core.runner.add_speed_from_uv_dict",
+                   "frameit.core.runner.select_vertical_velocity",
+                   "frameit.processing.extraction.add_speed_from_uv_dict"):
+        monkeypatch.setattr(target, forbidden)
+    ds = component_scene("depthu", "vozocrtx")
+    ds["sozotaux"] = (("time_counter", "y", "x"), np.zeros((3, 7, 7)),
+                      {"units": "N/m2", "standard_name": "surface_downward_x_stress"})
+    path = tmp_path / "components.nc"
+    ds.to_netcdf(path)
+    raw = nemo_document(tmp_path, [path], variables={
+        "depthu": {"names": ["vozocrtx"], "levels": "all"}, "surface": {"names": ["sozotaux"]}})
+    raw["output"]["cartesian"] = {"horizontal_winds": "native"}
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert result.ok, result
+    for product in result.products:
+        if product["role"] != "cart":
+            continue
+        with xr.open_dataset(product["path"]) as out:
+            assert "horizontal_wind_representation" not in out.attrs
+            assert "vertical_velocity_representation" not in out.attrs
+            assert not {"wind_speed", "vrad", "vtan"} & set(out.variables)
+            name = "vozocrtx" if product["group"] == "depthu" else "sozotaux"
+            assert out[name].attrs["units"] == ds[name].attrs["units"]
+            assert out[name].attrs["standard_name"] == ds[name].attrs["standard_name"]
+
+
+@pytest.mark.parametrize("analysis", ["mass_earth", "polar"])
+def test_unqualified_nemo_vector_analysis_fails_actionably(tmp_path, analysis):
+    from frameit.core.preflight import preflight
+
+    path = tmp_path / "current.nc"
+    component_scene("depthu", "vozocrtx").to_netcdf(path)
+    raw = nemo_document(tmp_path, [path], variables={"depthu": {"names": ["vozocrtx"], "levels": "all"}})
+    raw["output"]["cartesian"] = {"horizontal_winds": "native" if analysis == "polar" else "mass_earth"}
+    if analysis == "polar":
+        raw["polar"] = {"enabled": True}
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    with pytest.raises(ValueError, match="NEMO.*native|NEMO.*analysis|NEMO.*polar"):
+        preflight(conf)
+    with pytest.raises(ValueError, match="NEMO.*native|NEMO.*analysis|NEMO.*polar"):
+        concat_nc2ds_by_vert_coord([path], conf.requested_variables_user, {},
+                                  concat_dimension="time_counter", wind_conf=conf)
+
+
+def test_nemo_vertical_mass_analysis_is_not_a_native_copy(tmp_path):
+    from frameit.core.preflight import preflight
+
+    path = tmp_path / "vertical.nc"
+    component_scene("depthw", "vovecrtz").to_netcdf(path)
+    raw = nemo_document(tmp_path, [path], variables={"depthw": {"names": ["vovecrtz"], "levels": "all"}})
+    raw["output"]["cartesian"] = {"horizontal_winds": "native", "vertical_velocity": "mass"}
+    with pytest.raises(ValueError, match="NEMO.*depthw|NEMO.*native"):
+        preflight(SimulationConfig.from_mapping_with_model_preset(raw))

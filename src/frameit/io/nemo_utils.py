@@ -6,6 +6,30 @@ import xarray as xr
 
 def prepare_nemo(ds: xr.Dataset, conf) -> xr.Dataset:
     """Validate stored sampling and retain source-local axes/support unchanged."""
+    requested = {name for spec in getattr(conf, "requested_variables_user", {}).values()
+                 for name in spec.get("variables", [])}
+    native_components = {"vozocrtx", "vomecrty", "vovecrtz", "sozobrtx", "somebrty",
+                         "sozotaux", "sometauy"}
+    native_components.update(name for name in ds.data_vars if ds[name].attrs.get("standard_name") in {
+        "sea_water_x_velocity", "sea_water_y_velocity", "eastward_sea_water_velocity",
+        "northward_sea_water_velocity", "upward_sea_water_velocity", "surface_downward_x_stress",
+        "surface_downward_y_stress"})
+    if requested & {"wind_speed", "vrad", "vtan"}:
+        raise ValueError("NEMO wind diagnostics are unsupported; request native ocean quantities")
+    if requested & native_components:
+        if getattr(conf, "cartesian_horizontal_winds", "mass_earth") != "native":
+            raise ValueError("NEMO components require output.cartesian.horizontal_winds: native; "
+                             "analysed vectors lack a qualified angle/mesh/support contract")
+        polar = getattr(conf, "polar_variables", {})
+        polar_names = {name for spec in polar.values() for name in spec.get("variables", [])} if isinstance(
+            polar, dict) else requested
+        if getattr(conf, "compute_polar_proj", False) and polar_names & native_components:
+            raise ValueError("NEMO polar component analysis is unqualified; native extraction remains available")
+    vertical = {name for name in ds.data_vars
+                if ds[name].attrs.get("standard_name") == "upward_sea_water_velocity"}
+    if (requested & (vertical | {"vovecrtz"})
+            and getattr(conf, "cartesian_vertical_velocity", "interfaces") != "interfaces"):
+        raise ValueError("NEMO W retains native depthw samples; mass-level analysis is unqualified")
     if "time_counter" not in ds:
         raise ValueError("NEMO requires the native time_counter sample clock")
     clock = ds.time_counter

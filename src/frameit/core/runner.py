@@ -443,7 +443,7 @@ class FrameitRunner:
             self.dict_collocated_crop_user = {}
             if self.conf.compute_polar_proj:
                 support_conf = polar_support_settings(self.conf, self.track)
-                polar_source = select_vertical_velocity(
+                polar_source = self.ds_user if self.conf.atm_model == "NEMO" else select_vertical_velocity(
                     self.ds_user, self.conf, getattr(self.conf, "polar_vertical_velocity", "mass")
                 )
                 _, support_fields = extract_data(
@@ -490,12 +490,13 @@ class FrameitRunner:
             unused = (set(dataset.dims) & private_axes) - used
             if unused:
                 dataset = dataset.drop_dims(unused)
-            dataset.attrs.update(
-                horizontal_wind_representation=getattr(
-                    self.conf, "cartesian_horizontal_winds", "mass_earth"),
-                vertical_velocity_representation=getattr(
-                    self.conf, "cartesian_vertical_velocity", "interfaces"),
-            )
+            if self.conf.atm_model != "NEMO":
+                dataset.attrs.update(
+                    horizontal_wind_representation=getattr(
+                        self.conf, "cartesian_horizontal_winds", "mass_earth"),
+                    vertical_velocity_representation=getattr(
+                        self.conf, "cartesian_vertical_velocity", "interfaces"),
+                )
             self.dict_crop_user[group] = dataset
 
         return RunResult(ok=True, n_files=len(files), output_dir=self.output_dir, files=files)

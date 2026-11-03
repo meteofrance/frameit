@@ -56,5 +56,34 @@ FrameIt; format compatibility does not promise an unchanged downstream schema.
 Verification uses compact synthetic time/depth/crop, independent source-window
 and ordinary-reader checks. Passing these engineering tests is not scientific
 qualification across all real regimes, nor human scientific sign-off. Native
-ocean vectors and any analysed representation have separate requirements; do not
+ocean components are supported only as the native copies described below; do not
 interpret scalar admission as evidence of qualified current rotation or stresses.
+
+Separate native components
+--------------------------
+
+Native ``vozocrtx``/``vomecrty`` on independent U/V grids and ``vovecrtz`` on
+``depthw`` retain source values, geography, zeros, missingness, units and names.
+Native barotropic and stress components can also be selected without loading
+unrequested companions or interpreting their basis, sign or scaling. Separate
+contexts preserve shifted native sampling even when every file uses ``x/y``.
+``depthw`` is not relabelled as ``deptht`` merely because their lengths agree.
+
+For any native component selection explicitly declare the existing legacy-named
+selector ``output.cartesian.horizontal_winds: native``. Its name is retained for
+configuration compatibility; it does not turn currents/stresses into winds.
+The native ocean path never derives wind speed, radial/tangential winds or
+atmospheric reference-frame metadata. The default ``mass_earth`` selection fails
+for NEMO components rather than silently returning a different representation.
+For W, retain ``output.cartesian.vertical_velocity: interfaces`` (the default):
+it preserves the native ``depthw`` axis, not a diagnosed mass-level velocity.
+An explicitly requested ``mass`` transformation fails.
+
+Analysed NEMO components, including explicit polar component requests, remain
+unsupported: the admitted files do not establish a qualified angle, mesh,
+support and collocation contract. A wind declaration is not such evidence.
+This does not block independent scalar copies or eligible scalar polar samples.
+No current rotation, stress reconciliation, coastal filling, speed diagnostic or
+track-motion subtraction is performed. Native copied samples are checked for
+exact decoded numerical agreement; no conservation or all-regime validation is
+claimed.
