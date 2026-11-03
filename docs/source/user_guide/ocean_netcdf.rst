@@ -87,3 +87,22 @@ No current rotation, stress reconciliation, coastal filling, speed diagnostic or
 track-motion subtraction is performed. Native copied samples are checked for
 exact decoded numerical agreement; no conservation or all-regime validation is
 claimed.
+
+Exact coupled extraction and optional scalar targets
+---------------------------------------------------
+
+``example/config_file/nemo_arome.yaml`` demonstrates separate T/U/V/W sources
+with one fixed geographical centre. Its files and centres must be adapted to
+the selected data. It is exercised with compact synthetic exact-time inputs,
+not a claim of real mean/snapshot temporal equivalence. A prescribed track uses
+the same continuous centres at every source, with independent native index lookup.
+``common`` records exact-time exclusions; ``strict`` also requires equal source
+times and track coverage. A centre outside any selected source fails rather
+than substituting an edge point or silently dropping that time.
+
+Eligible scalar sources can opt into the existing shared polar target. Target
+time/radius/azimuth/geography and target identity agree exactly, while native
+depths, source mean bounds, forecast identity and field-local support remain
+different. Component requests remain gated as described above. Continuous
+bilinear point sampling is not area-conservative or a physical-depth section.
+Polar processing stays optional and is not enabled by the native example.

@@ -1,0 +1,62 @@
+# Native atmosphere/ocean extraction on independent regional grids.
+# Supply the listed files under ./data, relative to this YAML.
+# Requires exact common SAMPLE times: interval means and snapshots remain distinct.
+# Half-hour ocean means and whole-hour atmosphere snapshots correctly fail.
+# No timestamp shift, nearest match, interpolation or temporal association is enabled.
+schema_version: 2
+model: arome
+run:
+  name: native-atmosphere-ocean
+input:
+  time_alignment: common
+  sources:
+    arome:
+      model: arome
+      input:
+        format: netcdf
+        files: [./data/prmsl.nc, ./data/u10.nc, ./data/v10.nc]
+        netcdf: {file_layout: variables}
+        wind_reference_frame: earth
+      variables:
+        surface: {names: [prmsl, u10, v10]}
+    nemo_t:
+      model: nemo
+      input: {format: netcdf, files: [./data/nemo_t.nc]}
+      variables:
+        deptht: {names: [votemper], levels: {indices: [0, 1]}}
+    nemo_u:
+      model: nemo
+      input: {format: netcdf, files: [./data/nemo_u.nc]}
+      variables:
+        depthu: {names: [vozocrtx], levels: {indices: [0, 1]}}
+    nemo_v:
+      model: nemo
+      input: {format: netcdf, files: [./data/nemo_v.nc]}
+      variables:
+        depthv: {names: [vomecrty], levels: {indices: [0, 1]}}
+    nemo_w:
+      model: nemo
+      input: {format: netcdf, files: [./data/nemo_w.nc]}
+      variables:
+        depthw: {names: [vovecrtz], levels: {indices: [0, 1]}}
+tracking:
+  source: arome
+  method: fixed_box
+  fixed_box:
+    # Illustrative geographical point, not a qualified cyclone centre.
+    center: {latitude: -20., longitude: 60.}
+domain:
+  size_km: {x: 100., y: 100.}
+polar:
+  enabled: false
+execution:
+  dask_workers: 1
+  native_threads: 1
+output:
+  directory: ./output
+  overwrite: false
+  synchronous_export: true
+  max_workers: 1
+  cartesian:
+    horizontal_winds: native
+    vertical_velocity: interfaces
