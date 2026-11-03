@@ -144,7 +144,9 @@ def restore_auxiliaries(result: xr.Dataset, leading, transformed):
         # metadata must not bring back the native source geography.
         clean = xr.DataArray(coord.variable)
         clean.attrs = point_attributes(coord.attrs, available, retain_bounds=True)
-        clean.encoding = {}
+        clean.encoding = ({key: coord.encoding[key] for key in ("units", "calendar", "dtype")
+                           if key in coord.encoding}
+                          if coord.dtype.kind == "M" or "calendar" in coord.encoding else {})
         result = result.assign_coords({name: clean})
     for name, coord in transformed.items():
         clean = xr.DataArray(coord.variable)

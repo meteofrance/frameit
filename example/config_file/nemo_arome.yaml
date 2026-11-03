@@ -1,14 +1,14 @@
 # Native atmosphere/ocean extraction on independent regional grids.
 # Supply the listed files under ./data, relative to this YAML.
-# Requires exact common SAMPLE times: interval means and snapshots remain distinct.
-# Half-hour ocean means and whole-hour atmosphere snapshots correctly fail.
-# No timestamp shift, nearest match, interpolation or temporal association is enabled.
+# At reference T, select the native NEMO mean bounded by [T-1 hour, T].
+# Omit unmatched temporal pairings with warnings; means are NOT instantaneous states.
+# Source times/bounds are retained; no interpolation, averaging or extrapolation.
 schema_version: 2
 model: arome
 run:
   name: native-atmosphere-ocean
 input:
-  time_alignment: common
+  time_alignment: preceding_hour
   sources:
     arome:
       model: arome

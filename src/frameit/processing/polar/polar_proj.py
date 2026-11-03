@@ -278,6 +278,7 @@ def polar_project(
     if not reference_index.is_monotonic_increasing:
         raise ValueError("Reference time labels must be increasing")
     time = xr.DataArray(reference.time.variable)
+    time_encodings = {name: dict(ds.time.encoding) for name, ds in dico_collocated.items()}
     inputs = {name: align_times(ds, time, f"Source group {name}")
               for name, ds in dico_collocated.items()}
     report = {"projected": [], "skipped": [], "redirects": [], "unused_track_times": 0}
@@ -373,6 +374,10 @@ def polar_project(
             work["pieces"], dim="time", coords="different", compat="equals"
         )
         result = result.assign_coords(time=time.variable)
+        # Per-time sampling drops scalar clocks; restore untouched leading auxiliaries.
+        leading, _, _ = source_auxiliaries(
+            source, conf.name_longitude, conf.name_latitude, field_names=names)
+        result = restore_auxiliaries(result, leading, {})
         for name in ("lon", "lat"):
             label = conf.name_longitude if name == "lon" else conf.name_latitude
             result = result.assign_coords({label: geometry[name].variable})
@@ -413,6 +418,7 @@ def polar_project(
         for name, attributes in coordinate_attributes.items():
             if name in result.coords:
                 result[name].attrs = attributes
+        result.time.encoding = time_encodings[source_name]
         result = finalize_polar_output(result)
         for name, variable in list(result.data_vars.items()):
             if chunks and hasattr(variable.data, "__dask_graph__"):

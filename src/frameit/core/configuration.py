@@ -461,8 +461,10 @@ def resolve_schema(raw, *, base_dir=None):
             raise ValueError(f"input.{key} must be a list of paths/patterns")
     if inp["format"] not in {None, "grib", "netcdf", "fa"}:
         raise ValueError("input.format must be grib, netcdf or fa")
-    if inp["time_alignment"] not in {"common", "strict"}:
-        raise ValueError("input.time_alignment must be common or strict")
+    if inp["time_alignment"] not in {"common", "strict", "preceding_hour"}:
+        raise ValueError("input.time_alignment must be common, strict or preceding_hour")
+    if inp["time_alignment"] == "preceding_hour" and not inp["sources"]:
+        raise ValueError("input.time_alignment: preceding_hour requires named NetCDF sources")
     validate_fa_options(inp["fa"], inp["format"] == "fa")
     if inp["format"] == "fa" and conf["model"] != "arome":
         raise ValueError("Current FA profiles require model: arome; declare the actual "

@@ -95,17 +95,67 @@ track-motion subtraction is performed. Native copied samples are checked for
 exact decoded numerical agreement; no conservation or all-regime validation is
 claimed.
 
-Exact coupled extraction and optional scalar targets
-----------------------------------------------------
+Coupled extraction and optional scalar targets
+----------------------------------------------
 
 ``example/config_file/nemo_arome.yaml`` demonstrates separate T/U/V/W sources
 with one fixed geographical centre. Its files and centres must be adapted to
-the selected data. It is exercised with compact synthetic exact-time inputs,
-not a claim of real mean/snapshot temporal equivalence. A prescribed track uses
+the selected data. It explicitly selects ``input.time_alignment: preceding_hour``
+as its pairing default, not a claim of mean/snapshot temporal equivalence.
+A prescribed track uses
 the same continuous centres at every source, with independent native index lookup.
 ``common`` records exact-time exclusions; ``strict`` also requires equal source
 times and track coverage. A centre outside any selected source fails rather
 than substituting an edge point or silently dropping that time.
+
+Preceding-hour association (no interpolation)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The additive ``preceding_hour`` policy requires named NetCDF sources with an
+AROME tracking/reference source and at least one NEMO secondary source. Selected
+AROME fields must explicitly declare instantaneous sampling (``GRIB_stepType:
+instant`` or ``cell_methods: 'time: point'``); selected NEMO fields must declare
+``time: mean`` and provide decoded one-hour bounds. Contradictory declarations,
+invalid bounds and multiple distinct native samples for one requested interval
+fail rather than selecting an arbitrary candidate. All participants must have
+unique physical records. Repeated timestamps within a file or
+overlapping providers of a selected physical field across files fail, even if
+``duplicate_time_policy`` would normally keep one. Complementary variable shards
+may repeat matching clock/bounds metadata. Additional AROME participants
+still match reference timestamps exactly. The global default remains ``common``;
+existing exact ``common`` and ``strict`` runs are unchanged.
+
+At reference time T, the policy selects the unique native NEMO sample whose
+averaging interval is exactly **[T-1 hour, T]**, using the preceding interval
+convention (T-1 hour, T]. For example, an AROME snapshot at 06:00 is paired with
+the NEMO mean over 05:00–06:00, typically labelled 05:30. It does not select the
+following hour or compute an interpolated instantaneous ocean value. Native
+values, zeros, field-local missing cells, depth axes and spatial grids are
+unchanged. This is an explicit comparison convention, not reconstruction of an
+instantaneous state, producer endorsement or general scientific validation.
+
+If any source lacks a temporal partner, the entire reference-time pairing is
+omitted for all sources with a warning. All omissions and selected source times,
+intervals and offsets are recorded in ``time_alignment`` in run provenance and
+status. Prescribed-track coverage first restricts the reference timeline and its
+exclusions are recorded separately. No remaining pairings is an actionable error.
+Malformed required metadata is an error, not an excuse to omit a pairing. This
+policy never fills missing individual grid cells or substitutes another quantity.
+
+Product ``time`` is the reference/coupling timestamp, also the end label of the
+NEMO mean. Ocean ``source_time(time)`` preserves the original native sampling
+labels and their calendar/bounds; ``time_centered`` and original bound arrays are
+retained where supplied. ``source_time`` is reserved and must not already exist
+in the ocean input. Both ``time`` and ``source_time`` reference the unchanged
+averaging bounds, and fields retain ``cell_methods: time: mean``. Downstream
+scripts needing native centre labels must use ``source_time`` rather than
+assuming product ``time`` is a native centre. Ordinary NetCDF/Zarr readers can
+interpret these coordinates without FrameIt. This explicit mode changes the
+time-label contract; it does not change the values or enable temporal
+interpolation, extrapolation, averaging of means or nearest-time fallback.
+
+Optional spatial scalar targets
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Eligible scalar sources can opt into the existing shared polar target. Target
 time/radius/azimuth/geography and target identity agree exactly, while native
