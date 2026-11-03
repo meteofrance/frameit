@@ -4,6 +4,29 @@ import numpy as np
 import xarray as xr
 
 
+def validate_nemo_metadata(datasets, variables=None):
+    """Reject changing native field/coordinate meaning, without reading payloads."""
+    from frameit.processing.polar.metadata import coordinate_dependency_names
+
+    keys = ("units", "standard_name", "long_name", "cell_methods", "positive", "axis",
+            "bounds", "formula_terms", "grid_mapping", "online_operation",
+            "interval_operation", "interval_write")
+    reference = {}
+    for ds in datasets:
+        selected = ds[[name for name in ds.data_vars if variables is None or name in variables]]
+        names = set(selected.variables) | coordinate_dependency_names(
+            ds, selected.data_vars, coordinates=selected.coords)
+        for name in names:
+            attrs = {key: ds[name].attrs.get(key) for key in keys}
+            if name in reference:
+                changed = [key for key in keys if not np.array_equal(attrs[key], reference[name][key])]
+                if changed:
+                    raise ValueError(f"NEMO {name}: conflicting scientific metadata {changed} "
+                                     "across time-series files; no automatic conversion is applied")
+            else:
+                reference[name] = attrs
+
+
 def prepare_nemo(ds: xr.Dataset, conf) -> xr.Dataset:
     """Validate stored sampling and retain source-local axes/support unchanged."""
     requested = {name for spec in getattr(conf, "requested_variables_user", {}).values()

@@ -523,6 +523,10 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
         # Some AROME diagnostics legitimately begin after the initial record.
         # Validate availability across the inventory; per-file gaps remain
         # visible and the loader retains its established NaN/time alignment.
+        if conf.atm_model == "NEMO":
+            from frameit.io.nemo_utils import validate_nemo_metadata
+
+            validate_nemo_metadata(grids, requested_names)
         tolerance = 0. if conf.atm_model == "NEMO" else (.51 if conf.file_type == "grib" else .5)
         _check_requests(grids, user_dependencies, Path("selected-inputs"), tolerance=tolerance)
         if mnh_centroid:

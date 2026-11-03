@@ -53,6 +53,13 @@ sentinel replacement or coastal filling is applied. Unrequested physical fields
 remain uncomputed. Exported NetCDF products reopen in ordinary readers without
 FrameIt; format compatibility does not promise an unchanged downstream schema.
 
+For successive native NEMO files, selected field and coordinate scientific
+metadata must remain consistent, including units, quantity identity, averaging
+annotations and positive direction. Conflicting declarations fail in preflight
+and loading; no automatic Celsius/Kelvin or other ocean quantity conversion is
+introduced. Native clocks are checked before selecting variables, including
+``time_centered`` stored as an auxiliary data variable rather than a coordinate.
+
 Verification uses compact synthetic time/depth/crop, independent source-window
 and ordinary-reader checks. Passing these engineering tests is not scientific
 qualification across all real regimes, nor human scientific sign-off. Native
@@ -89,7 +96,7 @@ exact decoded numerical agreement; no conservation or all-regime validation is
 claimed.
 
 Exact coupled extraction and optional scalar targets
----------------------------------------------------
+----------------------------------------------------
 
 ``example/config_file/nemo_arome.yaml`` demonstrates separate T/U/V/W sources
 with one fixed geographical centre. Its files and centres must be adapted to

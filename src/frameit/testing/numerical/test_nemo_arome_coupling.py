@@ -285,3 +285,38 @@ def test_nemo_arome_interrupted_export_and_overwrite_protection(tmp_path, monkey
     with pytest.raises(FileExistsError):
         execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert complete.read_bytes() == before
+
+
+def test_nemo_products_zarr_roundtrip(tmp_path):
+    pytest.importorskip("zarr")
+    raw = coupled_document(tmp_path, moving=True)
+    raw["output"].update(engine="zarr",
+        zarr_chunk_size={"time": 1, "deptht": 1, "depthu": 1, "depthv": 1, "depthw": 1, "x_box": 2, "y_box": 2},
+        zarr_shard_size={"time": 2, "deptht": 2, "depthu": 2, "depthv": 2, "depthw": 2, "x_box": 4, "y_box": 4})
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert result.ok, result
+    products = {p["source"]: p["path"] for p in result.products if p["role"] == "cart"}
+    subprocess.run([sys.executable, "-c", """
+import json,sys,xarray as xr,numpy as np,zarr
+from pathlib import Path
+paths=json.loads(sys.argv[1]); root=Path(sys.argv[2])
+for source,field,depth in [('nemo_t','votemper','deptht'),('nemo_u','vozocrtx','depthu'),('nemo_v','vomecrty','depthv'),('nemo_w','vovecrtz','depthw')]:
+    with xr.open_zarr(paths[source],consolidated=False) as out,xr.open_dataset(root/f'{source}.nc') as src:
+        for t in (0,1):
+            expected=src[field].isel(time_counter=t,y=out.y[t].values.astype(int),x=out.x[t].values.astype(int))
+            np.testing.assert_array_equal(out[field][t],expected)
+        np.testing.assert_array_equal(out.time,src.time_counter)
+        np.testing.assert_array_equal(out[depth],src[depth])
+        np.testing.assert_array_equal(out[f'{depth}_source_native_index'],[0,1])
+        for bounds in [f'{depth}_bounds','time_counter_bounds','time_centered_bounds']:
+            np.testing.assert_array_equal(out[bounds],src[bounds])
+        for attr in ['units','standard_name','long_name','cell_methods']:
+            assert out[field].attrs.get(attr)==src[field].attrs.get(attr)
+        assert out.attrs['source_id']==source
+        assert 'horizontal_wind_representation' not in out.attrs
+        array=zarr.open_group(paths[source],mode='r')[field]
+        assert array.chunks==(1,1,2,2) and array.shards==(2,2,4,4)
+with xr.open_zarr(paths['arome'],consolidated=False) as a:
+    assert a.forecast_reference_time.values==np.datetime64('2024-12-11')
+assert 'frameit' not in sys.modules
+""", json.dumps(products), str(tmp_path)], check=True)

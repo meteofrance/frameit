@@ -187,9 +187,13 @@ def concat_nc2ds(
         missing = set(variables) - set(original.variables)
         if missing:
             raise ValueError(f"{path}: NetCDF input missing requested fields: {sorted(missing)}")
-        keep = set(variables) | coordinate_dependency_names(original, variables)
-        part = original.drop_vars([name for name in original.data_vars if name not in keep])
-        opened.append(normalize_netcdf_time(part, conf))
+        prepared = normalize_netcdf_time(original, conf)
+        keep = set(variables) | coordinate_dependency_names(prepared, variables)
+        opened.append(prepared.drop_vars([name for name in prepared.data_vars if name not in keep]))
+    if getattr(conf, "atm_model", None) == "NEMO":
+        from frameit.io.nemo_utils import validate_nemo_metadata
+
+        validate_nemo_metadata(opened)
     if len(opened) == 1:
         ds = opened[0]
     elif concat_dimension:
@@ -329,6 +333,10 @@ def concat_nc2ds_by_vert_coord(
             result = {}
             for group in dict.fromkeys(g for part in parts for g in part):
                 sequence = [part[group] for part in parts if group in part]
+                if ocean:
+                    from frameit.io.nemo_utils import validate_nemo_metadata
+
+                    validate_nemo_metadata(sequence)
                 result[group] = drop_time_dupes(xr.concat(
                     sequence, dim="time", data_vars="minimal", coords="different",
                     compat="equals", join="exact", combine_attrs="override",

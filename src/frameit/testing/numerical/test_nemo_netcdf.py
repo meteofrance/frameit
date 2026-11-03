@@ -329,3 +329,62 @@ def test_nemo_vertical_mass_analysis_is_not_a_native_copy(tmp_path):
     raw["output"]["cartesian"] = {"horizontal_winds": "native", "vertical_velocity": "mass"}
     with pytest.raises(ValueError, match="NEMO.*depthw|NEMO.*native"):
         preflight(SimulationConfig.from_mapping_with_model_preset(raw))
+
+
+@pytest.mark.parametrize("attribute", ["units", "standard_name", "long_name", "cell_methods",
+                                       "depth_units", "positive"])
+def test_nemo_time_series_rejects_changes_in_scientific_meaning(tmp_path, attribute):
+    from frameit.core.preflight import preflight
+
+    first = nemo_scene().isel(time_counter=[0])
+    second = nemo_scene().isel(time_counter=[1])
+    for ds in (first, second):
+        ds.votemper.attrs["standard_name"] = "sea_water_potential_temperature"
+    if attribute == "depth_units":
+        second.deptht.attrs["units"] = "km"
+    elif attribute == "positive":
+        second.deptht.attrs["positive"] = "up"
+    else:
+        second.votemper.attrs[attribute] = {"units": "K", "standard_name": "sea_water_temperature",
+            "long_name": "density anomaly", "cell_methods": "time: point"}[attribute]
+    paths = [tmp_path / "first.nc", tmp_path / "second.nc"]
+    first.to_netcdf(paths[0])
+    second.to_netcdf(paths[1])
+    raw = nemo_document(tmp_path, paths)
+    raw["input"]["netcdf"]["file_layout"] = "time_series"
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    with pytest.raises(ValueError, match="NEMO.*metadata|NEMO.*units|NEMO.*meaning"):
+        preflight(conf)
+    with pytest.raises(ValueError, match="NEMO.*metadata|NEMO.*units|NEMO.*meaning"):
+        concat_nc2ds_by_vert_coord(paths, conf.requested_variables_user, {},
+                                  concat_dimension="time_counter", wind_conf=conf)
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_nemo_time_series_validates_original_data_variable_clock(tmp_path, conflict):
+    ds = nemo_scene().reset_coords("time_centered")
+    if conflict:
+        ds["time_centered"] = ds.time_centered + np.timedelta64(1, "m")
+        ds.time_centered.attrs["bounds"] = "time_centered_bounds"
+        ds.time_centered.encoding["units"] = "seconds since 2024-12-11"
+    path = tmp_path / "clock.nc"
+    ds.to_netcdf(path)
+    raw = nemo_document(tmp_path, [path])
+    raw["input"]["netcdf"]["file_layout"] = "time_series"
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+
+    def load():
+        return concat_nc2ds_by_vert_coord([path], conf.requested_variables_user, {},
+                                          concat_dimension="time_counter", wind_conf=conf)
+
+    if conflict:
+        with pytest.raises(ValueError, match="sample clocks disagree"):
+            load()
+    else:
+        groups, _ = load()
+        try:
+            result = groups["deptht"]
+            np.testing.assert_array_equal(result.time_centered, ds.time_centered)
+            np.testing.assert_array_equal(result.time_centered_bounds, ds.time_centered_bounds)
+        finally:
+            groups["deptht"].close()
