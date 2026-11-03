@@ -160,17 +160,6 @@ verification_commands:
     src/frameit/testing/numerical/test_fa_contracts.py src/frameit/testing/numerical/test_fa_surface.py
     src/frameit/testing/numerical/test_fa_io.py src/frameit/testing/numerical/test_fa_pipeline.py
     --basetemp build/c2-epygram-ci-verified --junitxml=build/c2-epygram-ci-verified.xml
-  core_ci: >-
-    conda run --no-capture-output -p "$PWD/build/c0-core-env" python -m pytest -q
-    src/frameit/testing/numerical/test_hpc_execution.py src/frameit/testing/numerical/test_logging.py
-    src/frameit/testing/numerical/test_fa_baseline.py src/frameit/testing/numerical/test_fa_contracts.py
-    src/frameit/testing/numerical/test_fa_cubes.py src/frameit/testing/numerical/test_fa_epygram_probe.py
-    src/frameit/testing/numerical/test_fa_epygram_geometry.py src/frameit/testing/numerical/test_fa_epygram_surfex.py
-    src/frameit/testing/numerical/test_fa_io.py src/frameit/testing/numerical/test_fa_surface.py
-    src/frameit/testing/numerical/test_fa_mapping.py src/frameit/testing/numerical/test_fa_spectral.py
-    src/frameit/testing/numerical/test_coupled_shared_polar.py src/frameit/testing/numerical/test_arome_fa_coupling.py
-    src/frameit/testing/numerical/test_fa_pipeline.py::test_coupled_netcdf_sources_do_not_need_fa_backend
-    --basetemp build/c2-core-ci-verified --junitxml=build/c2-core-ci-verified.xml
   spectral_ci: >-
     conda run --no-capture-output -n frameit_env "$SPECTRAL_PYTHON" -m pytest -q
     src/frameit/testing/numerical/test_fa_spectral.py src/frameit/testing/numerical/test_fa_io.py

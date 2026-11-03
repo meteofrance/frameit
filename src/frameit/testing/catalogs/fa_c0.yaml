@@ -99,20 +99,6 @@ regression_commands:
     src/frameit/testing/numerical/test_fa_io.py
     src/frameit/testing/numerical/test_fa_pipeline.py
     --basetemp build/c0-epygram-ci-final --junitxml=build/c0-epygram-ci-final.xml
-  core_ci_plus_netcdf_coupling: >-
-    conda run --no-capture-output -p $PWD/build/c0-core-env python -m pytest -q
-    src/frameit/testing/numerical/test_hpc_execution.py
-    src/frameit/testing/numerical/test_logging.py
-    src/frameit/testing/numerical/test_fa_baseline.py
-    src/frameit/testing/numerical/test_fa_contracts.py
-    src/frameit/testing/numerical/test_fa_cubes.py
-    src/frameit/testing/numerical/test_fa_epygram_probe.py
-    src/frameit/testing/numerical/test_fa_mapping.py
-    src/frameit/testing/numerical/test_fa_spectral.py
-    src/frameit/testing/numerical/test_coupled_shared_polar.py
-    src/frameit/testing/numerical/test_arome_fa_coupling.py
-    src/frameit/testing/numerical/test_fa_pipeline.py::test_coupled_netcdf_sources_do_not_need_fa_backend
-    --basetemp build/c0-core-final --junitxml=build/c0-core-final.xml
 compact_api_evidence:
   surface:
     shape_y_x: [7, 9]

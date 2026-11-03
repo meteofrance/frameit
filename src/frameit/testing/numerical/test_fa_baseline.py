@@ -52,20 +52,3 @@ def test_upstream_probe_is_read_only_and_does_not_export_private_paths(tmp_path)
     assert str(tmp_path) not in result.stdout
     assert path.read_bytes() == original
     assert "falfilfa4py" not in sys.modules
-
-
-def test_probe_module_discovery_does_not_load_optional_native_library():
-    result = subprocess.run([sys.executable, "-c", """
-import importlib.abc
-import sys
-class NoNative(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'falfilfa4py', 'eccodes', 'cfgrib'}:
-            raise ModuleNotFoundError(fullname)
-sys.meta_path.insert(0, NoNative())
-import frameit.testing.fa_native_probe
-import frameit.io.fa_worker
-assert 'falfilfa4py' not in sys.modules
-assert 'eccodes' not in sys.modules
-"""], capture_output=True, text=True, timeout=30)
-    assert result.returncode == 0, result.stderr

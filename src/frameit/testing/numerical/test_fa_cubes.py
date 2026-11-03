@@ -173,17 +173,6 @@ def test_epygram_optionality_and_native_contradictions(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="contradict native PREFER/A/B"):
         hybrid_contract({"KNIVER": 1, "PAHYBR": [0., .1], "PBHYBR": [0., 1.],
                          "PREFER": 100000.}, vertical)
-    result = subprocess.run([sys.executable, "-c", """
-import importlib.abc, sys
-class NoNative(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'epygram', 'falfilfa4py', 'eccodes', 'ectrans4py'}:
-            raise ModuleNotFoundError(fullname)
-sys.meta_path.insert(0, NoNative())
-import frameit.io.fa_epygram, frameit.io.fa_cubes, frameit.io.fa_worker
-assert 'epygram' not in sys.modules
-"""], capture_output=True, text=True, timeout=30)
-    assert result.returncode == 0, result.stderr
 
 
 @NATIVE

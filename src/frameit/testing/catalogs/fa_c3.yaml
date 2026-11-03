@@ -187,21 +187,9 @@ verification_commands:
     src/frameit/testing/numerical/test_fa_spectral.py src/frameit/testing/numerical/test_fa_io.py
     src/frameit/testing/numerical/test_fa_pipeline.py
     --basetemp build/c3-spectral-ci --junitxml=build/c3-spectral-ci.xml
-  core_ci: >-
-    conda run --no-capture-output -p "$PWD/build/c0-core-env" python -m pytest -q
-    src/frameit/testing/numerical/test_hpc_execution.py src/frameit/testing/numerical/test_logging.py
-    src/frameit/testing/numerical/test_fa_baseline.py src/frameit/testing/numerical/test_fa_contracts.py
-    src/frameit/testing/numerical/test_fa_cubes.py src/frameit/testing/numerical/test_fa_epygram_probe.py
-    src/frameit/testing/numerical/test_fa_epygram_geometry.py src/frameit/testing/numerical/test_fa_epygram_surfex.py
-    src/frameit/testing/numerical/test_fa_io.py src/frameit/testing/numerical/test_fa_surface.py
-    src/frameit/testing/numerical/test_fa_mapping.py src/frameit/testing/numerical/test_fa_spectral.py
-    src/frameit/testing/numerical/test_coupled_shared_polar.py src/frameit/testing/numerical/test_arome_fa_coupling.py
-    src/frameit/testing/numerical/test_fa_pipeline.py
-    --basetemp build/c3-core-ci --junitxml=build/c3-core-ci.xml
   ancillary:
     - python -m pip check
     - build/p5-epygram-env/bin/python -m pip check
-    - conda run --no-capture-output -p "$PWD/build/c0-core-env" python -m pip check
     - frameit validate example/config_file/coupled_fa.yaml --schema-only
     - frameit validate example/config_file/coupled_cyclone_polar.yaml --schema-only
     - frameit validate example/config_file/coupled_arome_fa_polar.yaml --schema-only

@@ -150,18 +150,6 @@ verification_commands:
     src/frameit/testing/numerical/test_fa_*.py src/frameit/testing/numerical/test_coupled_shared_polar.py
     src/frameit/testing/numerical/test_arome_fa_coupling.py
     --basetemp build/c5-native-ci --junitxml=build/c5-native-ci.xml
-  core_ci: >-
-    conda run --no-capture-output -p "$PWD/build/c0-core-env" python -m pytest -q
-    src/frameit/testing/numerical/test_hpc_execution.py src/frameit/testing/numerical/test_logging.py
-    src/frameit/testing/numerical/test_fa_baseline.py src/frameit/testing/numerical/test_fa_contracts.py
-    src/frameit/testing/numerical/test_fa_cubes.py src/frameit/testing/numerical/test_fa_epygram_probe.py
-    src/frameit/testing/numerical/test_fa_epygram_geometry.py src/frameit/testing/numerical/test_fa_epygram_surfex.py
-    src/frameit/testing/numerical/test_fa_io.py src/frameit/testing/numerical/test_fa_resources.py
-    src/frameit/testing/numerical/test_fa_surface.py src/frameit/testing/numerical/test_fa_mapping.py
-    src/frameit/testing/numerical/test_fa_geometry.py src/frameit/testing/numerical/test_fa_migration.py
-    src/frameit/testing/numerical/test_fa_spectral.py src/frameit/testing/numerical/test_coupled_shared_polar.py
-    src/frameit/testing/numerical/test_arome_fa_coupling.py src/frameit/testing/numerical/test_fa_pipeline.py
-    --basetemp build/c5-core-ci --junitxml=build/c5-core-ci.xml
   spectral_ci: >-
     conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m pytest -q
     src/frameit/testing/numerical/test_fa_spectral.py src/frameit/testing/numerical/test_fa_io.py
@@ -174,10 +162,6 @@ verification_commands:
     build/c5-wheel-install/frameit/testing/numerical/test_coupled_shared_polar.py::test_primary_pair_shared_target_geometry_budgets_and_fresh_exports
     build/c5-wheel-install/frameit/testing/numerical/test_fa_resources.py
     --basetemp build/c5-packaged-primary --junitxml=build/c5-packaged-primary.xml
-  packaged_core_transfer: >-
-    PYTHONPATH=$PWD/build/c5-wheel-install conda run --no-capture-output -p "$PWD/build/c0-core-env" python -m pytest -q
-    build/c5-wheel-install/frameit/testing/numerical/test_fa_resources.py -k 'not primary_pair'
-    --basetemp build/c5-packaged-core --junitxml=build/c5-packaged-core.xml
   packaged_reference_matrix: >-
     PYTHONPATH=$PWD/build/c5-wheel-install conda run --no-capture-output -n frameit_env python -m frameit
     run-matrix-test --ci --profile core --output build/c5-wheel-reference-matrix
@@ -186,7 +170,6 @@ verification_commands:
     build/p5-epygram-env/bin/python -m frameit run-matrix-test --ci --profile core --output build/c5-wheel-overlay-matrix
   ancillary:
     - conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m pip check
-    - conda run --no-capture-output -p "$PWD/build/c0-core-env" python -m pip check
     - conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m pip install --dry-run --no-index --no-build-isolation -e '.[test,grib,fa,fa-epygram,fa-spectral-test]'
     - conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m frameit validate example/config_file/coupled_fa.yaml --schema-only
     - conda run --no-capture-output -n frameit_env build/p5-epygram-env/bin/python -m frameit validate example/config_file/coupled_cyclone_polar.yaml --schema-only

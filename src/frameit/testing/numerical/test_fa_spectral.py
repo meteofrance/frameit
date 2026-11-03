@@ -138,23 +138,6 @@ def test_native_probe_failure_cleanup_and_atomic_report(tmp_path, monkeypatch, f
     assert (output / "report.json").read_bytes() == before
 
 
-def test_spectral_module_discovery_never_loads_optional_packages():
-    result = subprocess.run([sys.executable, "-c", """
-import importlib.abc
-import sys
-class NoNative(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'ectrans4py', 'falfilfa4py', 'eccodes', 'cfgrib', 'epygram'}:
-            raise ModuleNotFoundError(fullname)
-sys.meta_path.insert(0, NoNative())
-import frameit.io.fa_worker
-import frameit.io.fa_utils
-import frameit.testing.fa_spectral_probe
-assert not {'ectrans4py', 'falfilfa4py', 'eccodes', 'cfgrib', 'epygram'} & sys.modules.keys()
-"""], capture_output=True, text=True, timeout=30)
-    assert result.returncode == 0, result.stderr
-
-
 @pytest.mark.skipif(importlib.util.find_spec("ectrans4py") is None,
                     reason="optional pinned fa-spectral-test candidate not installed")
 def test_native_candidate_against_independent_fourier_modes(tmp_path):

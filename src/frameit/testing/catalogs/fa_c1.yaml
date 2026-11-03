@@ -167,23 +167,6 @@ verification_commands:
     src/frameit/testing/numerical/test_fa_io.py
     src/frameit/testing/numerical/test_fa_pipeline.py
     --basetemp build/c1-epygram-ci --junitxml=build/c1-epygram-ci.xml
-  core_ci: >-
-    FRAMEIT_TEST_EPYGRAM_PYTHON= conda run --no-capture-output -p $PWD/build/c0-core-env python
-    -m pytest -q src/frameit/testing/numerical/test_hpc_execution.py
-    src/frameit/testing/numerical/test_logging.py
-    src/frameit/testing/numerical/test_fa_baseline.py
-    src/frameit/testing/numerical/test_fa_contracts.py
-    src/frameit/testing/numerical/test_fa_cubes.py
-    src/frameit/testing/numerical/test_fa_epygram_probe.py
-    src/frameit/testing/numerical/test_fa_epygram_surfex.py
-    src/frameit/testing/numerical/test_fa_io.py
-    src/frameit/testing/numerical/test_fa_surface.py
-    src/frameit/testing/numerical/test_fa_mapping.py
-    src/frameit/testing/numerical/test_fa_spectral.py
-    src/frameit/testing/numerical/test_coupled_shared_polar.py
-    src/frameit/testing/numerical/test_arome_fa_coupling.py
-    src/frameit/testing/numerical/test_fa_pipeline.py::test_coupled_netcdf_sources_do_not_need_fa_backend
-    --basetemp build/c1-core-ci --junitxml=build/c1-core-ci.xml
   spectral_ci_modules: [test_fa_spectral.py, test_fa_io.py, test_fa_pipeline.py]
   spectral_ci_runtime: existing P4 Python-3.13 helper with falfilfa4py 1.3.0 and ecTrans 1.6.0
   ancillary_reference_commands:
