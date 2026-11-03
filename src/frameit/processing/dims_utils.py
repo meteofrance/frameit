@@ -127,6 +127,7 @@ def normalize_dims_for_extraction(
         "hybrid",
         "hybrid1",
         "hybrid2",  # possible model level names
+        "deptht", "depthu", "depthv", "depthw",
     )
     vertical_dims = getattr(
         conf,

@@ -437,10 +437,15 @@ def resolve_schema(raw, *, base_dir=None):
             path in {"input.format", "input.wind_reference_frame"} and value is None
         ):
             raise ValueError(f"{path} must be a string")
-    if "model" not in raw or conf["model"] not in {"arome", "mesonh"}:
-        raise ValueError("model must be 'arome' or 'mesonh'")
+    if "model" not in raw or conf["model"] not in {"arome", "mesonh", "nemo"}:
+        raise ValueError("model must be 'arome', 'mesonh' or 'nemo'")
     base = Path(base_dir or Path.cwd()).resolve()
     inp, trk, pol, out = (conf[n] for n in ("input", "tracking", "polar", "output"))
+    if conf["model"] == "nemo":
+        if trk["method"] not in {"fixed_box", "prescribed_track"}:
+            raise ValueError("NEMO reference sources require fixed_box or prescribed_track")
+        if inp["format"] not in {None, "netcdf"}:
+            raise ValueError("NEMO supports only native NetCDF inputs")
     if not inp["sources"] and bool(inp["pattern"]) == bool(inp["files"]):
         raise ValueError("input requires exactly one of pattern or files")
     for key in ("directory",):
@@ -686,7 +691,7 @@ def to_runtime(raw, *, base_dir=None):
         "schema_version": 2, "yaml_config": c, "schema_sources": setting_sources(raw, c),
         "simulation_name": c["run"]["name"],
         "comment": c["run"]["description"],
-        "atm_model": {"arome": "AROME", "mesonh": "MNH"}[c["model"]],
+        "atm_model": {"arome": "AROME", "mesonh": "MNH", "nemo": "NEMO"}[c["model"]],
         "ocean_model": c["metadata"]["ocean_model"], "wave_model": c["metadata"]["wave_model"],
         "resolution": inp["grid_spacing_m"] or 0, "infer_grid_geometry": True,
         "file_name_prefix": "", "file_name": "", "file_name_suffix": "",
@@ -972,10 +977,11 @@ def migrate_mapping(old, *, launch_dir=None):
     return c, reports
 
 
-def write_template(model, path, *, full=False, tracking="wind_pressure", force=False):
+def write_template(model, path, *, full=False, tracking=None, force=False):
     """Templates and reference defaults share the schema's source of truth."""
-    if model not in {"arome", "mesonh"}:
-        raise ValueError("model must be arome or mesonh")
+    if model not in {"arome", "mesonh", "nemo"}:
+        raise ValueError("model must be arome, mesonh or nemo")
+    tracking = tracking or ("fixed_box" if model == "nemo" else "wind_pressure")
     from importlib import resources
 
     template = yaml.safe_load(resources.files("frameit").joinpath(

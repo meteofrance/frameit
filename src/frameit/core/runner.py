@@ -186,6 +186,8 @@ class FrameitRunner:
         self._native_cartesian_groups = {}
         polar_requests = getattr(self.conf, "polar_variables", {})
         for group, spec in loading_requests.items():
+            if self.conf.atm_model == "NEMO":
+                continue
             variables = list(spec.get("variables", []))
             polar_spec = polar_requests.get(group, {}) if isinstance(polar_requests, dict) else {}
             polar_names = (
@@ -221,7 +223,7 @@ class FrameitRunner:
                 tracker_requested_variables_by_method_yaml=requested_vars_tracker,
                 method=tracking_method,
                 concat_dimension=time_dim,
-                float_tol=0.5,
+                float_tol=None if self.conf.atm_model == "NEMO" else 0.5,
                 strict=self.input_files is not None,
                 resources=self.resources,
                 wind_conf=self.conf,
@@ -276,6 +278,7 @@ class FrameitRunner:
         from frameit.tracking.pressure_centroid_inputs import is_mnh_centroid
 
         dict_tracker = {m: {g: (normalize_geography(ds, self.conf) if
+                               self.conf.atm_model == "NEMO" or
                                ((is_mnh_centroid(self.conf) and m == "pressure_centroid") or
                                 (self.conf.atm_model == "MNH" and m == "multifield_vortex")) else
                                normalize_winds(normalize_geography(ds, self.conf), self.conf, g))
@@ -290,7 +293,7 @@ class FrameitRunner:
                             if "wind_speed" in spec.get("variables", [])}
             requested_speed = {g: ds for g, ds in dict_user.items() if g in speed_groups}
             dict_user.update(add_speed_from_uv_dict(requested_speed, self.conf))
-        else:
+        elif self.conf.atm_model != "NEMO":
             dict_user = add_speed_from_uv_dict(dict_user, self.conf)
         # Record the effective per-component transformations, including direct
         # Python API runs which did not call metadata preflight.
@@ -405,9 +408,10 @@ class FrameitRunner:
         # Export representation is separate from the prepared analysis branch.
         native_cart = getattr(self.conf, "cartesian_horizontal_winds", "mass_earth") == "native"
         cart_source = self._native_cartesian_groups if native_cart else self.ds_user
-        cart_source = select_vertical_velocity(
-            cart_source, self.conf, getattr(self.conf, "cartesian_vertical_velocity", "interfaces")
-        )
+        if self.conf.atm_model != "NEMO":
+            cart_source = select_vertical_velocity(
+                cart_source, self.conf, getattr(self.conf, "cartesian_vertical_velocity", "interfaces")
+            )
         if native_cart:
             for group, spec in self.conf.requested_variables_user.items():
                 if "wind_speed" in spec.get("variables", []) and group in self.ds_user:
@@ -425,7 +429,7 @@ class FrameitRunner:
                 ds_user=cart_source,
                 ds_tracker=self.ds_tracker,
                 track_ds=self.track,
-                native_winds=native_cart,
+                native_winds=native_cart and self.conf.atm_model != "NEMO",
             )
             if benchmark:
                 self.track.load()

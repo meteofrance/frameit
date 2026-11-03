@@ -151,10 +151,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     pin = sub.add_parser("init", help="Create an annotated schema-v2 configuration")
-    pin.add_argument("model", choices=("arome", "mesonh"))
+    pin.add_argument("model", choices=("arome", "mesonh", "nemo"))
     pin.add_argument("--output", type=Path, default=Path("frameit.yaml"))
     pin.add_argument(
-        "--tracking", default="wind_pressure",
+        "--tracking", default=None,
         choices=("wind_pressure", "fixed_box", "prescribed_track", "pressure_centroid",
                  "multifield_vortex", "utrack"),
     )
@@ -179,7 +179,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     pins = sub.add_parser("inspect", help="Inspect dataset metadata, units, and grid geometry")
     pins.add_argument("directory", type=Path)
-    pins.add_argument("--model", required=True, choices=("arome", "mesonh"))
+    pins.add_argument("--model", required=True, choices=("arome", "mesonh", "nemo"))
     pins.add_argument("--format", choices=("grib", "netcdf", "fa"), default=None)
     pins.add_argument("--pattern", default="*", help="Explicit input glob (default: *)")
     pins.add_argument("--fa-profile", choices=("arome_history", "surfex_history"), default=None)

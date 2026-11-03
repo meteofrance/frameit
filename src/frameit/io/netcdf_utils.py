@@ -28,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 def normalize_netcdf_time(ds: xr.Dataset, conf) -> xr.Dataset:
     """Use sample time without discarding an evidenced AROME forecast clock."""
+    if getattr(conf, "atm_model", None) == "NEMO":
+        from frameit.io.nemo_utils import prepare_nemo
+
+        ds = prepare_nemo(ds, conf)
     source = getattr(conf, "name_time_dim", None) or "time"
     renames = {}
     if source != "time" and source in ds:
@@ -262,6 +266,10 @@ def concat_nc2ds_by_vert_coord(
     }
 
     files = resolve_input_files(files, strict=strict)
+    ocean = wind_conf is not None and wind_conf.atm_model == "NEMO"
+    if ocean:
+        float_tol = None
+        geovar_candidates = (wind_conf.name_latitude, wind_conf.name_longitude)
     mnh_centroid = wind_conf is not None and wind_conf.atm_model == "MNH" and (
         method == "pressure_centroid" or (method is None and "pressure_centroid" in methods))
     mnh_fields = None
@@ -345,7 +353,7 @@ def concat_nc2ds_by_vert_coord(
     if vortex_fields is not None:
         requested_vars_all.update(vortex_fields.variables)
 
-    if wind_conf is not None:
+    if wind_conf is not None and not ocean:
         from frameit.processing.derived.wind import wind_names
         from frameit.processing.wind_reference import wind_pairs
 
@@ -392,6 +400,10 @@ def concat_nc2ds_by_vert_coord(
     # The opener normalizes source clocks before selection and deduplication.
     if "time" in ds.dims:
         concat_dimension = "time"
+    if ocean:
+        from frameit.core.preflight import _check_requests
+
+        _check_requests([ds], user_requested_variables_yaml, Path("selected-inputs"), tolerance=0.)
 
     for req in [user_req, *tracker_req_by_method.values()]:
         for spec in req.values():
@@ -405,7 +417,7 @@ def concat_nc2ds_by_vert_coord(
         if keep_as_coords:
             ds = ds.set_coords(keep_as_coords)
 
-    if wind_conf is not None:
+    if wind_conf is not None and not ocean:
         from frameit.processing.derived.wind import normalize_native_wind_units
         from frameit.utils.units import normalize_geography
 
@@ -440,7 +452,7 @@ def concat_nc2ds_by_vert_coord(
         from frameit.processing.wind_collocation import prepare_native_mnh
 
         ds_user_native, mass_w = prepare_native_mnh(ds, wind_conf)
-    elif wind_conf is not None:
+    elif wind_conf is not None and not ocean:
         from frameit.processing.derived.wind import normalize_winds
 
         ds_user_native = ds
