@@ -77,7 +77,8 @@ def interpolate_to_height(rec, height=HEIGHT_M):
             raise ValueError("Absolute pressure must be positive")
         differences = np.diff(z, axis=0)
         finite_columns = np.isfinite(z).all(axis=0)
-        monotone = np.all(differences > 0, axis=0) | np.all(differences < 0, axis=0)
+        descending = np.all(differences < 0, axis=0)
+        monotone = np.all(differences > 0, axis=0) | descending
         if np.any(finite_columns & ~monotone):
             raise ValueError("Physical height must be strictly monotone in every native column")
     else:
@@ -85,24 +86,34 @@ def interpolate_to_height(rec, height=HEIGHT_M):
         if not np.isfinite(levels).all() or np.any(levels <= 0):
             raise ValueError("Pressure levels must be finite and positive")
         pressure = np.broadcast_to(levels[:, None, None] * (1 if in_pa else 100), z.shape)
-    ordering = np.argsort(z, axis=0)
-    zs = np.take_along_axis(z, ordering, axis=0)
-    above = np.sum(zs < height, axis=0)
-    hi = np.clip(above, 1, zs.shape[0] - 1)
+    if native:
+        above = np.sum(z < height, axis=0)
+    else:
+        ordering = np.argsort(z, axis=0)
+        zs = np.take_along_axis(z, ordering, axis=0)
+        above = np.sum(zs < height, axis=0)
+    hi = np.clip(above, 1, z.shape[0] - 1)
     lo = hi - 1
 
     def get(a, idx):
         return np.take_along_axis(a, idx[None], axis=0)[0]
 
-    za, zb = get(zs, lo), get(zs, hi)
-    ok = (height >= zs[0]) & (height <= zs[-1]) & np.isfinite(za) & np.isfinite(zb)
     if native:
-        ok &= finite_columns
+        lo, hi = (np.where(descending, z.shape[0] - 1 - index, index) for index in (lo, hi))
+    else:
+        lo, hi = get(ordering, lo), get(ordering, hi)
+    za, zb = get(z, lo), get(z, hi)
+    ok = np.isfinite(za) & np.isfinite(zb)
+    if native:
+        ok &= finite_columns & (height >= za) & (height <= zb)
+    else:
+        ok &= (height >= zs[0]) & (height <= zs[-1])
     frac = (height - za) / np.where(zb > za, zb - za, np.nan)
     result = []
-    for data in (rec["u"], rec["v"], np.log(pressure)):
-        sorted_data = np.take_along_axis(data, ordering, axis=0)
-        lower, upper = get(sorted_data, lo), get(sorted_data, hi)
+    for name, data in (("u", rec["u"]), ("v", rec["v"]), ("p", pressure)):
+        lower, upper = get(data, lo), get(data, hi)
+        if name == "p":
+            lower, upper = np.log(lower), np.log(upper)
         out = np.where(frac == 0, lower, np.where(frac == 1, upper,
                        lower * (1 - frac) + upper * frac))
         out[~ok] = np.nan

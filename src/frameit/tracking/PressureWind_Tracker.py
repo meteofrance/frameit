@@ -111,12 +111,12 @@ def pressure_wind_tracker(
     if initial_mask is not None:
         if initial_mask.dims != mslp0.dims or initial_mask.shape != mslp0.shape:
             raise ValueError("Initial search mask must match the horizontal pressure grid")
-        mslp0 = mslp0.where(initial_mask & np.isfinite(mslp0))
+        mslp0 = mslp0.where(initial_mask & np.isfinite(mslp0)).load()
         if not bool(np.isfinite(mslp0).any()):
             raise ValueError("wind_pressure initial guess search circle contains no finite MSLP; "
                              "check seed position, radius and input coverage")
 
-    idx_mslp0 = mslp0.argmin(dim=[njy, nix])
+    idx_mslp0 = mslp0.load().argmin(dim=[njy, nix])
     cy0_fg = int(idx_mslp0[njy])
     cx0_fg = int(idx_mslp0[nix])
 
@@ -130,10 +130,10 @@ def pressure_wind_tracker(
             njy: slice(y_min0, y_max0 + 1),
             nix: slice(x_min0, x_max0 + 1),
         }
-    )
+    ).load()
 
     if bool(wind0_sub.isnull().all()):
-        idx_wind0 = wind0.argmin(dim=[njy, nix])
+        idx_wind0 = wind0.load().argmin(dim=[njy, nix])
         cy0 = int(idx_wind0[njy])
         cx0 = int(idx_wind0[nix])
     else:
@@ -167,11 +167,11 @@ def pressure_wind_tracker(
                 njy: slice(y_min, y_max + 1),
                 nix: slice(x_min, x_max + 1),
             }
-        )
+        ).load()
 
         # 2) MSLP first guess (local, or global if all NaN)
         if bool(mslp_sub.isnull().all()):
-            idx_mslp = mslp_t.argmin(dim=[njy, nix])
+            idx_mslp = mslp_t.load().argmin(dim=[njy, nix])
             cy_fg = int(idx_mslp[njy])
             cx_fg = int(idx_mslp[nix])
         else:
@@ -192,10 +192,10 @@ def pressure_wind_tracker(
                 njy: slice(y2_min, y2_max + 1),
                 nix: slice(x2_min, x2_max + 1),
             }
-        )
+        ).load()
 
         if bool(wind_sub.isnull().all()):
-            idx_wind = wind_t.argmin(dim=[njy, nix])
+            idx_wind = wind_t.load().argmin(dim=[njy, nix])
             cy_new = int(idx_wind[njy])
             cx_new = int(idx_wind[nix])
         else:

@@ -78,3 +78,52 @@ def test_schema_maps_seed_to_tracker():
         'tracking': {'method': 'wind_pressure', 'wind_pressure': {'initial_guess': seed}}})
     conf.resolution = 2500
     assert PressureWindTracker.from_config(conf).initial_guess == seed
+
+
+@pytest.mark.parametrize("case,expected,read_counts", [
+    ("ordinary", [1, 1], {"p": 2, "u": 2, "v": 2}),
+    ("pressure_fallback", [1, 5], {"p": 3, "u": 2, "v": 2}),
+    ("wind_fallback", [5, 5], {"p": 2, "u": 3, "v": 3}),
+])
+def test_lazy_search_windows_are_evaluated_once_with_existing_fallbacks(case, expected, read_counts):
+    from collections import Counter
+
+    import dask
+    import dask.array as da
+
+    from frameit.tracking.PressureWind_Tracker import pressure_wind_tracker
+
+    pressure = np.full((2, 7, 7), 101000.)
+    u, v = np.full_like(pressure, 10.), np.zeros_like(pressure)
+    pressure[:, 1, 1], u[:, 1, 1] = 98000., 0.
+    if case == "pressure_fallback":
+        pressure[1] = np.nan
+        pressure[1, 5, 5], u[1, 5, 5] = 97000., -1.
+        u[1, 1, 1] = 10.
+    elif case == "wind_fallback":
+        u[0, :3, :3] = np.nan
+        u[:, 5, 5], pressure[1, 5, 5] = 0., 97000.
+    reads = Counter()
+
+    def load(name, values):
+        reads[name] += 1
+        return values
+
+    fields = [xr.DataArray(da.stack([da.from_delayed(dask.delayed(load)(name, row),
+                                                    shape=(7, 7), dtype=float) for row in values]),
+                           dims=("time", "y", "x"), coords={"time": [0, 1]})
+              for name, values in (("p", pressure), ("u", u), ("v", v))]
+    with dask.config.set(scheduler="synchronous"):
+        cy, cx = pressure_wind_tracker(*fields, half_search=1, half_refine=1)
+    np.testing.assert_array_equal(cy, expected)
+    np.testing.assert_array_equal(cx, expected)
+    assert reads == read_counts
+
+
+def test_all_missing_global_pressure_still_fails():
+    from frameit.tracking.PressureWind_Tracker import pressure_wind_tracker
+
+    field = xr.DataArray(np.full((1, 3, 3), np.nan), dims=("time", "y", "x"),
+                         coords={"time": [0]}).chunk({"time": 1})
+    with pytest.raises(ValueError, match="All.NaN"):
+        pressure_wind_tracker(field, field, field, half_search=1, half_refine=1)

@@ -113,6 +113,35 @@ def test_native_log_pressure_and_affine_wind_interpolation():
         interpolate_to_height({**record, "z": np.zeros_like(height)})
 
 
+def test_validated_native_columns_use_brackets_without_sorting(monkeypatch):
+    height = np.broadcast_to(np.array([1000., 2000., 3000., 4000.])[:, None, None], (4, 1, 3)).copy()
+    height[:, :, 1] = height[::-1, :, 1]
+    height[2, 0, 2] = np.nan
+    record = {"z": height, "pressure_field_pa": 100_000 * np.exp(-height / 8000),
+              "u": height * .01, "v": height * -.02}
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Already validated monotone native columns must not be sorted")
+
+    monkeypatch.setattr(np, "argsort", forbidden)
+    for target in (1000., 2000., 2500., 4000.):
+        result = interpolate_to_height(record, target)
+        np.testing.assert_allclose(result["u"], [[target * .01, target * .01, np.nan]],
+                                   rtol=1e-14, equal_nan=True)
+        np.testing.assert_allclose(result["p"], [[100_000 * np.exp(-target / 8000)] * 2 + [np.nan]],
+                                   rtol=2e-15, equal_nan=True)
+    for target in (0., 5000.):
+        assert np.isnan(interpolate_to_height(record, target)["p"]).all()
+
+
+def test_legacy_unordered_height_records_keep_sorting_semantics():
+    height = np.array([3000., 1000., 2000.])[:, None, None]
+    result = interpolate_to_height({"z": height, "pressure_levels": np.array([800., 1000., 900.]),
+                                    "u": height * .01, "v": height * -.02}, 1500.)
+    np.testing.assert_allclose(result["u"], 15., rtol=0, atol=1e-14)
+    np.testing.assert_allclose(result["p"], np.sqrt(1000. * 900.), rtol=2e-15)
+
+
 def test_bilinear_native_cells_area_wrap_and_strict_support():
     x, y = np.meshgrid(np.arange(4.), np.arange(4.))
     lon, lat = 179 + x * .4 + y * .1 + x * y * .02, -20 + y * .4 + x * .05
