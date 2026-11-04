@@ -314,7 +314,8 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
     conf.add_parameter("source_provenance", {
         name: {"model": child.atm_model, "format": child.file_type,
                "grid_geometry": child.grid_geometry, "inventory": inventories[name],
-               "unit_provenance": child.simulation_parameter.get("unit_provenance", []),
+                "unit_provenance": child.simulation_parameter.get("unit_provenance", []),
+                "surfex_provenance": child.simulation_parameter.get("surfex_provenance", []),
                "wind_provenance": child.simulation_parameter.get("wind_provenance", []),
                "fa_inputs": child.simulation_parameter.get("fa_inventory", [])}
         for name, child in children.items()})

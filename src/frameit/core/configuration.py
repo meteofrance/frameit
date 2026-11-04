@@ -25,7 +25,7 @@ DEFAULTS = {
         "directory": "./data", "pattern": None, "files": None, "exclude": [],
         "format": None, "grid_spacing_m": None, "duplicate_time_policy": "first",
         "wind_reference_frame": None, "wind_pairs": [],
-        "netcdf": {"engine": "h5netcdf", "chunks": {}, "file_layout": "time_series"},
+        "netcdf": {"engine": "h5netcdf", "chunks": {}, "file_layout": "time_series", "surfex_fields": []},
         "fa": {"profile": None, "subdomain": "CI", "earth_radius_m": None,
                "field_metadata": {}, "expected_source": {},
                "backend": "epygram", "python_executable": None, "native_cubes": {},
@@ -616,6 +616,10 @@ def resolve_schema(raw, *, base_dir=None):
         raise ValueError("Unsupported input.netcdf.engine")
     if inp["netcdf"]["file_layout"] not in {"time_series", "variables"}:
         raise ValueError("input.netcdf.file_layout must be time_series or variables")
+    from frameit.io.surfex_utils import validate_surfex_fields
+
+    validate_surfex_fields(inp["netcdf"]["surfex_fields"], conf["model"], inp["format"],
+                           inp["netcdf"]["file_layout"])
     if conf["logging"]["level"] not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
         raise ValueError("logging.level must be DEBUG, INFO, WARNING, or ERROR")
     if not isinstance(conf["metadata"]["extra"], dict):
@@ -707,6 +711,7 @@ def to_runtime(raw, *, base_dir=None):
         "netcdf_engine": inp["netcdf"]["engine"],
         "netcdf_chunks": inp["netcdf"]["chunks"],
         "netcdf_file_layout": inp["netcdf"]["file_layout"],
+        "netcdf_surfex_fields": inp["netcdf"]["surfex_fields"],
         "wind_reference_frame": inp["wind_reference_frame"],
         "wind_pairs": inp["wind_pairs"],
         "cartesian_horizontal_winds": c["output"]["cartesian"]["horizontal_winds"],

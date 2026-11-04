@@ -527,6 +527,10 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             from frameit.io.netcdf_utils import validate_native_metadata
 
             validate_native_metadata(grids, requested_names, model=conf.atm_model)
+        if getattr(conf, "netcdf_surfex_fields", []):
+            from frameit.io.surfex_utils import validate_surfex_metadata
+
+            validate_surfex_metadata(grids, set(conf.netcdf_surfex_fields) & requested_names)
         tolerance = 0. if conf.atm_model in {"NEMO", "CROCO"} else (.51 if conf.file_type == "grib" else .5)
         _check_requests(grids, user_dependencies, Path("selected-inputs"), tolerance=tolerance)
         if mnh_centroid:

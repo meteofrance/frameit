@@ -5,6 +5,8 @@ run:
 input:
   directory: ./data
   pattern: "*.nc"
+  # Optional embedded SEA interpretation; also select these names under variables.
+  # netcdf: {surfex_fields: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA]}
   # UM10/VM10 are declared Earth-relative; adapt this to your source diagnostics.
   wind_pairs:
     - {group: surface, u: UM10, v: VM10, reference_frame: earth}

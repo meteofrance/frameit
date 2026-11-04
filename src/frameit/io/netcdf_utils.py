@@ -63,6 +63,10 @@ def normalize_netcdf_time(ds: xr.Dataset, conf) -> xr.Dataset:
         from frameit.io.croco_utils import prepare_croco
 
         ds = prepare_croco(ds, conf)
+    elif getattr(conf, "netcdf_surfex_fields", []):
+        from frameit.io.surfex_utils import prepare_surfex
+
+        ds = prepare_surfex(ds, conf)
     source = getattr(conf, "name_time_dim", None) or "time"
     renames = {}
     if source != "time" and source in ds:
@@ -223,6 +227,10 @@ def concat_nc2ds(
         opened.append(prepared.drop_vars([name for name in prepared.data_vars if name not in keep]))
     if getattr(conf, "atm_model", None) in {"NEMO", "CROCO"}:
         validate_native_metadata(opened, model=conf.atm_model)
+    if getattr(conf, "netcdf_surfex_fields", []):
+        from frameit.io.surfex_utils import validate_surfex_metadata
+
+        validate_surfex_metadata(opened, set(conf.netcdf_surfex_fields) & set(variables))
     if len(opened) == 1:
         ds = opened[0]
     elif concat_dimension:
@@ -364,6 +372,11 @@ def concat_nc2ds_by_vert_coord(
                 sequence = [part[group] for part in parts if group in part]
                 if ocean:
                     validate_native_metadata(sequence, model=wind_conf.atm_model)
+                if getattr(wind_conf, "netcdf_surfex_fields", []):
+                    from frameit.io.surfex_utils import validate_surfex_metadata
+
+                    fields = set(wind_conf.netcdf_surfex_fields) & set().union(*(ds.data_vars for ds in sequence))
+                    validate_surfex_metadata(sequence, fields)
                 result[group] = drop_time_dupes(xr.concat(
                     sequence, dim="time", data_vars="minimal", coords="different",
                     compat="equals", join="exact", combine_attrs="override",

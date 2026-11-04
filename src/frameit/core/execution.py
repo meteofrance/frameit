@@ -269,6 +269,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
                         "grid_geometry": config.grid_geometry,
                         "input_inventory": [str(p) for p in result.files],
                         "unit_provenance": config.simulation_parameter.get("unit_provenance", []),
+                        "surfex_provenance": config.simulation_parameter.get("surfex_provenance", []),
                         "wind_provenance": config.simulation_parameter.get("wind_provenance", []),
                         "wind_transformations": config.simulation_parameter.get(
                             "wind_transformations", []),

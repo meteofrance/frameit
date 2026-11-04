@@ -226,3 +226,80 @@ not yet qualified and are rejected where requested, rather than silently invokin
 atmospheric wind processing. Native exports attach no wind representation or
 wind-speed diagnostic. These limitations do not require installing optional
 diagnostic, FA, GRIB, Zarr or polar dependencies for ordinary scalar NetCDF copies.
+
+Embedded SURFEX sea fields in Meso-NH
+----------------------------------------
+
+The existing ``model: mesonh`` NetCDF time-series reader also handles embedded
+SURFEX snapshots. Raw extraction is unchanged by default. Explicitly select the
+confirmed SEA-field interpretation when missing-value/support and unit completion
+are wanted:
+
+.. code-block:: yaml
+
+   model: mesonh
+   input:
+     format: netcdf
+     netcdf:
+       surfex_fields: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA]
+   variables:
+     surface:
+       names: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA, FRAC_SEA]
+
+This fragment supplements the ordinary paths, tracking, domain and output
+configuration; ``FRAC_SEA`` is retained as an ancillary even when not explicitly
+selected for export. The finite supported list is the six named fields above plus
+``FRAC_SEA`` itself. Only requested, explicitly listed fields are interpreted;
+unlisted quantities retain their original values and metadata. Variable-shard,
+other-model and non-NetCDF interpretations fail rather than guessing a source.
+
+The input contract, explicitly confirmed by the user for this family, treats
+exact ``999`` as invalid in these SURFEX fields and trusts their unit comments.
+The selected fields replace this sentinel with missing values, preserving existing
+NaNs and legitimate zeroes. This is **not** a dataset-wide Meso-NH sentinel rule:
+an unrelated ``PRES=999 hPa`` remains valid. Unselected raw access is still
+available by leaving ``surfex_fields`` empty (the default).
+
+``FRAC_SEA`` must have native ``nj/ni`` support and declared physical
+``c_grid_dynamic_range`` on both axes. Its physical interior must be finite and
+within [0,1]; invalid/missing required support fails. Known outer-halo ``999``
+values become missing. Selected SEA quantities are supported where the fraction
+is strictly positive. Fractional coastal coverage stays fractional and separate
+from Boolean support; values are neither multiplied nor divided by that fraction.
+Changing 2-D states are prepared per snapshot before time-series concatenation.
+Validation reads the 2-D support field; it does not decode thermal/flux cubes.
+
+Explicit ``units`` take precedence. If absent, the terminal parenthesized unit in
+the comment supplies the label, with ``(fraction)`` represented as ``1``. Missing
+or ambiguous required comments fail. Actual contradictions with explicit units
+fail; known equivalent spellings such as ``kelvin/K`` and ``W m-2/W/m2`` do not.
+Original comments are preserved, and ``surfex_units_source`` identifies the
+metadata origin. This labels the supplied values; it performs no unit conversion.
+Across successive interpreted snapshots, quantity, support and statistical
+metadata must agree. Equivalent unit spellings are allowed; incompatible units
+such as K versus degC fail instead of combining values under the first label.
+Neither preflight nor direct loading silently converts those snapshots.
+No CF standard names, flux signs, stress basis, instantaneous/averaged sampling or
+new ``cell_methods`` are inferred from field names or diagnostic flags.
+
+Run provenance includes ``surfex_provenance`` (inside each named source for a
+coupled run) with source basename, field, units origin, invalid sentinel and support
+rule. Resolved configurations retain the opt-in list. Ordinary-reader output
+attributes identify the interpreted fields and the absence of additional value
+weighting or inferred flux timing/sign/basis. Optional scalar polar sampling uses
+the same missing support; its interpolated fractional coverage is not a binary
+wet mask or a conservative area average.
+
+Producer evidence was checked in the official `Meso-NH 5.7.2 archive
+<https://doi.org/10.5281/zenodo.15698760>`_: ``src/MNH/modd_parameters.f90`` defines
+Meso-NH's undefined value as 999; ``write_surf_mnh.f90`` and
+``unpack_1d_2d.f90`` scatter native SURFEX values onto the atmospheric array and
+replace the SURFEX undefined marker with the Meso-NH marker. The SURFEX-side
+undefined constants are different; 999 is not asserted as universal across all
+SURFEX containers. ``writesurf_seafluxn.F90`` emits the SST/SSS unit comments;
+``write_diag_seb_seafluxn.F90`` emits the heat/stress comments.
+``write_diag_surf_atmn.F90`` writes the sea fraction, and ``get_1d_mask.F90`` uses
+positive fraction support. This verifies writer conventions, not the actual run's
+DIAG averaging/reset configuration or an unmodified producer build. Those facts
+remain unresolved where an operation would require them; this native path does
+not silently complete them.

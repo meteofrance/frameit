@@ -156,6 +156,7 @@ class SimulationConfig:
     netcdf_engine: str = "h5netcdf"
     netcdf_chunks: dict[str, int] = field(default_factory=dict)
     netcdf_file_layout: str = "time_series"
+    netcdf_surfex_fields: list[str] = field(default_factory=list)
     input_sources: dict[str, Any] = field(default_factory=dict)
     time_alignment: str = "common"
     tracking_source: str | None = None
@@ -339,6 +340,10 @@ class SimulationConfig:
         from frameit.core.configuration import validate_output_selections, validate_wind_pairs
 
         validate_wind_pairs(self.wind_pairs)
+        from frameit.io.surfex_utils import validate_surfex_fields
+
+        validate_surfex_fields(self.netcdf_surfex_fields, self.atm_model, self.file_type,
+                               self.netcdf_file_layout)
         validate_output_selections(self.cartesian_horizontal_winds,
                                    self.cartesian_vertical_velocity,
                                    self.polar_vertical_velocity)
