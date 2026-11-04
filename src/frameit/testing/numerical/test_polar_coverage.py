@@ -168,3 +168,82 @@ def test_lazy_and_eager_coverage_results_match():
     lazy, _ = polar_project({"surface": source.chunk({"time": 1, "x_box": 3})}, conf=config)
     assert hasattr(lazy["surface"].q.data, "dask")
     xr.testing.assert_allclose(lazy["surface"].compute(), eager["surface"])
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int32])
+@pytest.mark.parametrize("policy,minimum,expected,status", [
+    ("strict", .5, np.nan, 2), ("renormalize", .5, 30., 0),
+    ("renormalize", .8, np.nan, 3), ("renormalize", 1., np.nan, 3),
+])
+def test_batched_application_avoids_backend_dispatch_and_preserves_labels(
+    monkeypatch, lazy, dtype, policy, minimum, expected, status
+):
+    import dask
+    import dask.array as da
+
+    operator = prescribed_weights([.1, .2, .3, .4])
+    field = xr.DataArray(
+        np.broadcast_to([[10., 20.], [30., 40.]], (3, 2, 2, 2)).copy(),
+        dims=("time", "level", "y_box", "x_box"),
+        coords={"time": [5, 7, 9], "level": [850, 500], "run": "test"},
+        name="q", attrs={"units": "K"},
+    ).astype(dtype).transpose("x_box", "time", "y_box", "level")
+    mask = xr.DataArray([[True, True], [False, True]], dims=("y_box", "x_box"))
+    reads = []
+    if lazy:
+        raw = field.values
+
+        def load():
+            reads.append(1)
+            return raw
+
+        payload = da.from_delayed(dask.delayed(load)(), shape=field.shape, dtype=dtype)
+        field = field.copy(data=payload).chunk({"time": 1, "level": 1, "x_box": 1})
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Repeated backend dispatch defeats batched weight application")
+
+    monkeypatch.setattr(xe.Regridder, "__call__", forbidden)
+    value, support, reason = operator.apply(
+        field, mask, policy=policy, minimum_support=minimum, output_chunks=(1,))
+    assert value.dims == ("time", "level", "locations")
+    assert value.dtype == (np.float32 if dtype == np.float32 and policy == "strict" else np.float64)
+    assert value.attrs == {"units": "K"}
+    for coordinate in ("time", "level", "run"):
+        xr.testing.assert_identical(value[coordinate], field[coordinate])
+    if lazy:
+        assert reads == []
+        assert value.chunksizes == {"time": (1, 1, 1), "level": (1, 1), "locations": (1,)}
+    np.testing.assert_allclose(value, expected, equal_nan=True, atol=1e-12)
+    np.testing.assert_allclose(support, .7, atol=1e-14)
+    np.testing.assert_array_equal(reason, np.full((3, 2, 1), status, dtype=np.uint8))
+
+
+def test_batched_application_unmapped_and_static_mask_rows():
+    source = xr.Dataset({"lon": (("y_box", "x_box"), [[0., 1.], [0., 1.]]),
+                         "lat": (("y_box", "x_box"), [[0., 0.], [1., 1.]])})
+    target = xr.Dataset({"lon": ("locations", [.5, 5.]), "lat": ("locations", [.5, 5.])})
+    backend = xe.Regridder(source, target, "bilinear", locstream_out=True,
+                           unmapped_to_nan=False, input_dims=("y_box", "x_box"))
+    field = xr.DataArray([[10., 20.], [30., 40.]], dims=("y_box", "x_box"))
+    value, support, status = SupportedRegridder(backend).apply(field)
+    np.testing.assert_allclose(value, [25., np.nan], atol=.01, equal_nan=True)
+    np.testing.assert_array_equal(support, [1., 0.])
+    np.testing.assert_array_equal(status, [0, 1])
+    value, support, status = SupportedRegridder(
+        backend, source_mask=[[1, 1], [0, 1]]).apply(field)
+    assert np.isnan(value).all()
+    np.testing.assert_array_equal(support, [0., 0.])
+    np.testing.assert_array_equal(status, [1, 1])
+
+
+def test_chunked_joint_mask_on_eager_field_remains_lazy():
+    operator = prescribed_weights([.1, .2, .3, .4], policy="renormalize")
+    field = xr.DataArray([[10., 20.], [30., 40.]], dims=("y_box", "x_box"))
+    mask = xr.DataArray([[True, True], [False, True]], dims=field.dims).chunk({"x_box": 1})
+    value, support, status = operator.apply(field, mask)
+    assert hasattr(value.data, "dask")
+    np.testing.assert_allclose(value, [30.], atol=1e-12)
+    np.testing.assert_allclose(support, [.7], atol=1e-14)
+    np.testing.assert_array_equal(status, [0])

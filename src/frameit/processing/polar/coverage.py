@@ -107,6 +107,7 @@ class SupportedRegridder:
         )
         presence = weights.copy()
         presence.data[:] = 1
+        self.weights, self.presence_weights = weights, presence
         self.presence = copy(regridder)
         self.presence.weights = xr.DataArray(
             sparse.COO.from_scipy_sparse(presence), dims=("out_dim", "in_dim")
@@ -130,15 +131,38 @@ class SupportedRegridder:
             field, mask = xr.align(field, mask, join="exact")
             mask = mask & np.isfinite(field)
         mask = mask.transpose(*field.dims)
-        if not hasattr(field.data, "__dask_graph__"):
-            field = field.copy(data=np.ascontiguousarray(field.data))
-            mask = mask.copy(data=np.ascontiguousarray(mask.data))
+        if tuple(field.sizes[dim] for dim in ("y_box", "x_box")) != self.operator.shape_in:
+            raise ValueError("Field shape does not match the interpolation source grid")
+        if field.chunks is not None or mask.chunks is not None:
+            # A stencil needs the cropped horizontal plane, never all times/levels.
+            if field.chunks is None:
+                field = field.chunk(mask.chunksizes)
+            field = field.chunk({"y_box": -1, "x_box": -1})
+            mask = mask.chunk(field.chunksizes)
+        weights, presence = self.weights, self.presence_weights
+
+        def apply_block(data, valid):
+            shape = (*data.shape[:-2], weights.shape[0])
+            data = data.reshape(-1, weights.shape[1])
+            valid = valid.reshape(data.shape)
+            numerator = (weights @ np.where(valid, data, 0).T).T.astype(data.dtype)
+            support = (weights @ valid.astype(float).T).T
+            absent = (presence @ (~valid).astype(float).T).T
+            return tuple(array.reshape(shape) for array in (numerator, support, absent))
+
         # No source NaN/Inf ever enters a sparse matrix multiply, including
         # contributors whose mathematically zero coefficient was discarded.
-        options = {"skipna": False, "output_chunks": output_chunks}
-        numerator = self.operator(field.where(mask, 0), keep_attrs=True, **options)
-        support = self.operator(mask.astype(float), **options).clip(0, 1)
-        absent = self.presence((~mask).astype(float), **options)
+        arrays = xr.apply_ufunc(
+            apply_block, field, mask,
+            input_core_dims=[["y_box", "x_box"], ["y_box", "x_box"]],
+            output_core_dims=[["locations"], ["locations"], ["locations"]],
+            dask="parallelized", output_dtypes=[field.dtype, float, float],
+            dask_gufunc_kwargs={"output_sizes": {"locations": weights.shape[0]}},
+        )
+        if output_chunks and hasattr(arrays[0].data, "__dask_graph__"):
+            arrays = tuple(array.chunk({"locations": output_chunks[0]}) for array in arrays)
+        numerator, support, absent = arrays
+        support = support.clip(0, 1)
         mapped = self.geometry_mapped.broadcast_like(numerator)
         # Complete stencils have exactly unit support; floating sparse sums
         # must not turn a threshold of one into an accidental rejection.

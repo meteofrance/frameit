@@ -187,6 +187,8 @@ class PolarRegridPlan:
         for operator in (self.supported.operator, self.supported.presence):
             weights = operator.weights.data
             total += weights.data.nbytes + weights.coords.nbytes
+        for weights in (self.supported.weights, self.supported.presence_weights):
+            total += weights.data.nbytes + weights.indices.nbytes + weights.indptr.nbytes
         return total
 
     def apply(self, field, mask=None, *, policy="strict", minimum_support=.5, output_chunks=None):
