@@ -145,6 +145,13 @@ Verification in `frameit_env`:
   `-W --keep-going` fails on those warnings.
 - `git diff --check`: passed.
 
+A subsequent actual `frameit run` CLI smoke run on the same sparse-cube
+configuration completed with three products. Its decoded outputs and variable
+metadata matched the baseline, with another 32 independent native-window checks.
+A fresh-context, read-only code review found no critical, important or minor
+issues; its additional focused tests and raw-dataset isolation/rollback checks
+passed. That engineering review is not scientific sign-off.
+
 ## Reproduce or profile another selection
 
 Use the same environment and separate baseline/optimized source checkouts with

@@ -78,5 +78,11 @@ is selected. Keep the existing dictionary available to coupled consumers.
   decoded values and scientific metadata, and verify original source windows.
 - [x] Report median timing, RSS, logical reads and OS-cache limitations; document
   existing reader/chunk tuning without claiming all-model real-data speedups.
-- [ ] Run the full `conda run -n frameit_env python -m pytest -q`, relevant docs
+- [x] Run the full `conda run -n frameit_env python -m pytest -q`, relevant docs
   checks, review task-only diffs, and commit locally without pushing.
+
+Final verification: 1006 tests and two subtests passed; 46 assembly tests passed
+again after formatting. Both input readers passed exact baseline/source-window
+comparisons. The actual CLI smoke run and fresh-context code review passed.
+HTML builds with two existing unrelated tracker warnings; strict `-W` therefore
+remains nonzero. Implementation commit: `ecc9ada`; no merge or push requested.
