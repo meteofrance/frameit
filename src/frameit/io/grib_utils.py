@@ -8,7 +8,6 @@ import hashlib
 import logging
 from pathlib import Path
 
-import cfgrib
 import numpy as np
 import xarray as xr
 
@@ -256,6 +255,10 @@ def concat_grib2ds_by_vert_coord(
     by_group_trk : dict[str, dict[str, xr.Dataset]]
         ``{method -> {group -> xr.Dataset}}`` for tracker-requested variables.
     """
+
+    # Keep optional ecCodes initialization after core geometry imports: some
+    # wheels globally preload a conflicting PROJ before pyproj is initialized.
+    import cfgrib
 
     files = resolve_input_files(files, strict=strict)
     idx_dir = Path(index_dir)

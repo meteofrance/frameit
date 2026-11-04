@@ -280,6 +280,7 @@ def test_grib_per_file_units_rotation_and_native_branch(tmp_path, monkeypatch):
     from frameit.io import grib_utils
     from frameit.io.loader import DatasetResources
 
+    cfgrib = pytest.importorskip("cfgrib")
     paths = [tmp_path / "first.grib", tmp_path / "second.grib"]
     for path in paths:
         path.touch()
@@ -288,7 +289,7 @@ def test_grib_per_file_units_rotation_and_native_branch(tmp_path, monkeypatch):
         str(paths[1]): grib_blocks("2024-01-01T01:00", scalar=False,
                                   units="km h-1", angle=0.),
     }
-    monkeypatch.setattr(grib_utils.cfgrib, "open_datasets", lambda path, **kw: blocks[path])
+    monkeypatch.setattr(cfgrib, "open_datasets", lambda path, **kw: blocks[path])
     request = {"isobaricInhPa": {
         "variables": ["u", "v"], "level_selection": "values", "level_values": [850.],
     }}
@@ -321,6 +322,7 @@ def test_grib_per_file_units_rotation_and_native_branch(tmp_path, monkeypatch):
 def test_grib_later_frame_conflict_is_checked_before_concatenation(tmp_path, monkeypatch):
     from frameit.io import grib_utils
 
+    cfgrib = pytest.importorskip("cfgrib")
     paths = [tmp_path / "first.grib", tmp_path / "second.grib"]
     for path in paths:
         path.touch()
@@ -328,7 +330,7 @@ def test_grib_later_frame_conflict_is_checked_before_concatenation(tmp_path, mon
         str(paths[0]): grib_blocks("2024-01-01"),
         str(paths[1]): grib_blocks("2024-01-01T01:00", flag=0),
     }
-    monkeypatch.setattr(grib_utils.cfgrib, "open_datasets", lambda path, **kw: blocks[path])
+    monkeypatch.setattr(cfgrib, "open_datasets", lambda path, **kw: blocks[path])
     with pytest.raises(ValueError, match="Conflicting wind reference metadata"):
         grib_utils.concat_grib2ds_by_vert_coord(
             paths, {"isobaricInhPa": {"variables": ["u", "v"], "level_selection": "all"}},
@@ -344,12 +346,13 @@ def test_grib_later_frame_conflict_is_checked_before_concatenation(tmp_path, mon
 def test_grib_all_scalar_level_headers_retain_selected_timestamps(tmp_path, monkeypatch, selection):
     from frameit.io import grib_utils
 
+    cfgrib = pytest.importorskip("cfgrib")
     paths = [tmp_path / "first.grib", tmp_path / "second.grib"]
     for path in paths:
         path.touch()
     blocks = {str(path): grib_blocks(stamp) for path, stamp in zip(
         paths, ["2024-01-01", "2024-01-01T01:00"], strict=True)}
-    monkeypatch.setattr(grib_utils.cfgrib, "open_datasets", lambda path, **kw: blocks[path])
+    monkeypatch.setattr(cfgrib, "open_datasets", lambda path, **kw: blocks[path])
     user, _ = grib_utils.concat_grib2ds_by_vert_coord(
         paths, {"isobaricInhPa": {"variables": ["u", "v"], **selection}}, {},
         index_dir=tmp_path / "indexes",
