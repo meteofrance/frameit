@@ -429,7 +429,7 @@ class FrameitRunner:
                 ds_user=cart_source,
                 ds_tracker=self.ds_tracker,
                 track_ds=self.track,
-                native_winds=native_cart and self.conf.atm_model not in {"NEMO", "CROCO"},
+                native_winds=native_cart and self.conf.atm_model != "NEMO",
             )
             if benchmark:
                 self.track.load()

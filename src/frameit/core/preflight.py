@@ -526,7 +526,15 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
         if conf.atm_model in {"NEMO", "CROCO"}:
             from frameit.io.netcdf_utils import validate_native_metadata
 
-            validate_native_metadata(grids, requested_names, model=conf.atm_model)
+            metadata_names = set(requested_names)
+            if conf.atm_model == "CROCO":
+                from frameit.io.croco_utils import current_pairs
+
+                pairs = current_pairs(conf)
+                if pairs:
+                    metadata_names.update(name for pair in pairs for name in pair)
+                    metadata_names.update(("angle", "mask_rho", "mask_u", "mask_v"))
+            validate_native_metadata(grids, metadata_names, model=conf.atm_model)
         if getattr(conf, "netcdf_surfex_fields", []):
             from frameit.io.surfex_utils import validate_surfex_metadata
 

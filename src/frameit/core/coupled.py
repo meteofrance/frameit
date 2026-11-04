@@ -316,6 +316,7 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
                "grid_geometry": child.grid_geometry, "inventory": inventories[name],
                 "unit_provenance": child.simulation_parameter.get("unit_provenance", []),
                 "surfex_provenance": child.simulation_parameter.get("surfex_provenance", []),
+                "current_provenance": child.simulation_parameter.get("current_provenance", []),
                "wind_provenance": child.simulation_parameter.get("wind_provenance", []),
                "fa_inputs": child.simulation_parameter.get("fa_inventory", [])}
         for name, child in children.items()})

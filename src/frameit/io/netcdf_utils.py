@@ -50,7 +50,7 @@ def validate_native_metadata(datasets, variables=None, *, model):
     if model == "CROCO":
         from frameit.io.croco_utils import validate_croco_coefficients
 
-        validate_croco_coefficients(datasets)
+        validate_croco_coefficients(datasets, variables)
 
 
 def normalize_netcdf_time(ds: xr.Dataset, conf) -> xr.Dataset:
@@ -347,6 +347,16 @@ def concat_nc2ds_by_vert_coord(
     if file_layout not in {"time_series", "variables"}:
         raise ValueError("NetCDF file_layout must be time_series or variables")
     if len(files) > 1 and file_layout == "time_series":
+        if wind_conf is not None and wind_conf.atm_model == "CROCO":
+            from frameit.io.croco_utils import current_pairs
+
+            pairs = current_pairs(wind_conf)
+            if pairs:
+                # Validate native companions before per-file rotation hides their metadata.
+                headers = [normalize_netcdf_time(resources.add(xr.open_dataset(
+                    path, engine=engine)), wind_conf) for path in files]
+                names = {name for pair in pairs for name in pair} | {"angle", "mask_rho", "mask_u", "mask_v"}
+                validate_native_metadata(headers, names, model="CROCO")
         # Interpret units, basis and native brackets independently in each file.
         # Concatenating first would retain only one file's interpretation.
         users, trackers, natives = [], [], []
@@ -418,6 +428,14 @@ def concat_nc2ds_by_vert_coord(
                     requested_vars_all.add(rotation["coordinate"])
                 if rotation.get("method") == "mesonh_projection":
                     requested_vars_all.update(("BETA", "RPK", "LON0", "CARTESIAN"))
+
+    if wind_conf is not None and wind_conf.atm_model == "CROCO":
+        from frameit.io.croco_utils import current_pairs
+
+        pairs = current_pairs(wind_conf)
+        if pairs:
+            requested_vars_all.update(name for pair in pairs for name in pair)
+            requested_vars_all.update(("angle", "mask_rho"))
 
     # Automatically add geographic variables
     requested_vars_all.discard("wind_speed")
@@ -500,6 +518,10 @@ def concat_nc2ds_by_vert_coord(
         from frameit.processing.wind_collocation import prepare_native_mnh
 
         ds_user_native, mass_w = prepare_native_mnh(ds, wind_conf)
+    elif wind_conf is not None and wind_conf.atm_model == "CROCO":
+        from frameit.io.croco_utils import prepare_croco_currents
+
+        ds_user_native = prepare_croco_currents(ds, wind_conf)
     elif wind_conf is not None and not ocean:
         from frameit.processing.derived.wind import normalize_winds
 

@@ -220,12 +220,69 @@ invalid metadata and lazy selected loading without optional model/polar stacks.
 This is engineering verification of copied data and metadata, not scientific
 validation of every real regime or a new stable depth diagnostic.
 
-Current scope is native **rho scalars**. Staggered face/current analysis, stress
-interpretation, wet-mask application and polar sigma/physical-depth products are
-not yet qualified and are rejected where requested, rather than silently invoking
-atmospheric wind processing. Native exports attach no wind representation or
-wind-speed diagnostic. These limitations do not require installing optional
-diagnostic, FA, GRIB, Zarr or polar dependencies for ordinary scalar NetCDF copies.
+Native CROCO faces and current analysis
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Regional history fields on ``xi_u/eta_v`` retain their actual N-1 midpoint
+locations and ``lat_u/lon_u`` or ``lat_v/lon_v`` geography. With the existing
+``output.cartesian.horizontal_winds: native`` selector, values, source units and
+vector basis are copied unchanged; no wet-mask interpretation, companion current
+or angle is required. Local face dimensions are ``x_u_box`` and ``y_v_box``;
+unavailable bounding faces are missing, not fabricated or extrapolated. Source
+coordinate labels remain available. Rho dimensions use ``x_box/y_box``. This
+legacy-named selector applies to ocean currents without making them winds.
+
+Explicit ``mass_earth`` selects rho/Earth analysis for ``u/v`` on ``s_rho`` and
+``ubar/vbar`` on ``surface``. Selecting either component loads its companion.
+The method requires regular labelled N-1 midpoint faces, declared velocity units,
+finite rho-point ``angle`` with angular units, and static ``mask_rho`` with
+explicit ``option_0=land`` and ``option_1=water``. These options, not the supplied
+contradictory ``land_binary_mask`` standard name, establish the mask polarity;
+the source declaration is retained in provenance. ``CPP-options`` must contain
+``MASKING`` and must not contain ``WET_DRY``. No wetting/drying support is claimed.
+
+Absent face masks are derived from the product of the two neighbouring binary
+rho masks. Explicit binary ``mask_u/mask_v`` additionally restrict support where
+present. Each rho component requires both native brackets to be finite and wet:
+there is no single-neighbour replacement. After midpoint interpolation,
+
+.. math::
+
+   u_E = u_\rho\cos\alpha-v_\rho\sin\alpha,\qquad
+   v_N = u_\rho\sin\alpha+v_\rho\cos\alpha.
+
+Both outputs share the wet-rho/finite-vector mask, including at missing outer
+brackets; legitimate zero currents remain zero. Preparation precedes spatial
+cropping and sparse level selection. It operates at the same native sigma index,
+not at a common physical depth, and performs no temporal interpolation, transport
+conservation, smoothing or track-motion subtraction. Declared velocity and angle
+units are converted explicitly to m/s and radians; native exports are not converted.
+Different static angle/mask arrays or scientific companion definitions across
+snapshots fail instead of inheriting the first file's interpretation.
+
+The producer reference is the official `CROCO v2.1.0 source release
+<https://doi.org/10.5281/zenodo.15064113>`_: ``OCEAN/setup_grid1.F`` defines the
+static face-mask products and ``OCEAN/cpl_prism_put.F`` defines midpoint averaging
+followed by this east/north rotation. The rotation applies geometrically at each
+native level; the producer routine's coupling example is at the surface. This is
+a bounded coordinate-transformation implementation, not a new stable diagnostic
+or proof of an unmodified producer build. Independent constant/linear-field,
+90-degree/varying-angle and reversed/permuted-axis tests use float64 analytic
+references with absolute/relative tolerances of 1e-12; support, zeros, sparse sigma
+dependencies, exports, laziness and invalid inputs are also tested. Synthetic
+agreement does not validate every real coastline or flow regime.
+
+Analysed fields retain their names but now have rho dimensions and east/north
+current definitions in m/s; downstream scripts must use the selected representation
+rather than assume native staggering from ``u/v`` names. Ordinary-reader attributes
+identify the current frame, method and support; ``current_provenance`` records the
+source units, static-mask authority, method and boundary policy, inside the named
+source for coupled runs. Native and analysis branches remain separate and attach
+no wind-speed, radial/tangential-wind or wind-representation metadata. Stress
+analysis remains separately gated; native stress copies do not establish its sign,
+basis or physical definition. Polar sigma products remain gated pending their
+integration checks. No optional FA/GRIB/polar stack is needed for Cartesian copies
+or current analysis.
 
 Embedded SURFEX sea fields in Meso-NH
 ----------------------------------------

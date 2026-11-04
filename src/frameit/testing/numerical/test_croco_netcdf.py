@@ -227,5 +227,5 @@ def test_croco_unqualified_analysis_does_not_silently_use_scalar_path(tmp_path, 
     else:
         raw["polar"] = {"enabled": True}
     ds.to_netcdf(path)
-    with pytest.raises(ValueError, match="CROCO.*qualified"):
+    with pytest.raises(ValueError, match="CROCO.*(?:qualified|labelled)"):
         preflight(SimulationConfig.from_mapping_with_model_preset(raw))

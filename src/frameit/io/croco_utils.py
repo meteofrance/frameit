@@ -1,10 +1,145 @@
-"""Native CROCO Vtransform=2 history metadata; no physical-depth calculation."""
+"""CROCO Vtransform=2 native history and explicitly selected current analysis."""
+
+from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
 
-def validate_croco_coefficients(datasets):
+def current_pairs(conf):
+    """Only declared current names use the existing mass/Earth selector."""
+    requested = {name for spec in getattr(conf, "requested_variables_user", {}).values()
+                 for name in spec.get("variables", [])}
+    analysis = getattr(conf, "cartesian_horizontal_winds", "native") == "mass_earth"
+    return [pair for pair in (("u", "v"), ("ubar", "vbar")) if analysis and requested.intersection(pair)]
+
+
+def _validate_faces(ds, names):
+    for face, mass, suffix in (("xi_u", "xi_rho", "u"), ("eta_v", "eta_rho", "v")):
+        if not any(name in ds and face in ds[name].dims for name in names):
+            continue
+        if mass not in ds.coords or face not in ds.coords:
+            raise ValueError(f"CROCO requires labelled {face}/{mass} axes")
+        rho, native = ds[mass].values, ds[face].values
+        if (rho.ndim != 1 or native.ndim != 1 or len(rho) < 3 or len(native) != len(rho)-1
+                or not np.isfinite(rho).all() or not np.isfinite(native).all()
+                or not np.allclose(np.diff(rho), np.diff(rho)[0], rtol=0, atol=1e-10)
+                or np.diff(rho)[0] == 0
+                or not (np.all(np.diff(native) > 0) or np.all(np.diff(native) < 0))
+                or not np.allclose(np.sort(native), np.sort((rho[1:]+rho[:-1])/2), rtol=0, atol=1e-10)
+                or ds[face].attrs.get("units") != ds[mass].attrs.get("units")):
+            raise ValueError(f"CROCO {face}: requires regular N-1 midpoint face coordinates")
+        dims = {"eta_rho", "xi_u"} if suffix == "u" else {"eta_v", "xi_rho"}
+        for geo in (f"lat_{suffix}", f"lon_{suffix}"):
+            if geo not in ds or set(ds[geo].dims) != dims or not ds[geo].attrs.get("units"):
+                raise ValueError(f"CROCO requires explicit native face geography {geo}")
+
+
+def _velocity(da):
+    from frameit.utils.units import convert_units
+
+    value = da.copy(deep=False)
+    if da.attrs.get("units") in {"meter second-1", "metre second-1"}:
+        value.attrs = dict(da.attrs, units="m s-1", source_units=da.attrs["units"])
+    return convert_units(value, "velocity")
+
+
+def _validate_current_inputs(ds, pairs):
+    if not pairs:
+        return
+    from frameit.utils.units import convert_units
+
+    options = str(ds.attrs.get("CPP-options", "")).split()
+    if "MASKING" not in options or "WET_DRY" in options:
+        raise ValueError("CROCO current analysis requires explicit static MASKING without WET_DRY")
+    if "mask_rho" not in ds or ds.mask_rho.dims != ("eta_rho", "xi_rho"):
+        raise ValueError("CROCO current analysis requires static mask_rho")
+    mask = ds.mask_rho
+    if (str(mask.attrs.get("option_0", "")).lower() != "land"
+            or str(mask.attrs.get("option_1", "")).lower() != "water"
+            or not np.isin(mask.values, [0, 1]).all()):
+        raise ValueError("CROCO mask_rho requires explicit option_0=land, option_1=water and binary values")
+    if "angle" not in ds or ds.angle.dims != ("eta_rho", "xi_rho"):
+        raise ValueError("CROCO current analysis requires rho-point angle")
+    try:
+        convert_units(xr.DataArray(0., attrs=ds.angle.attrs), "angle")
+        for pair in pairs:
+            for name in pair:
+                if name not in ds:
+                    raise ValueError(f"missing current companion {name}")
+                _velocity(xr.DataArray(0., attrs=ds[name].attrs))
+    except ValueError as error:
+        raise ValueError(f"CROCO current analysis: {error}") from error
+    if not np.isfinite(ds.angle.values).all():
+        raise ValueError("CROCO angle must be finite")
+    for pair in pairs:
+        statistics = ("cell_methods", "online_operation", "interval_operation", "interval_write")
+        if any(ds[pair[0]].attrs.get(key) != ds[pair[1]].attrs.get(key) for key in statistics):
+            raise ValueError("CROCO current companions have incompatible statistical definitions")
+        for name, horizontal in zip(pair, ({"eta_rho", "xi_u"}, {"eta_v", "xi_rho"})):
+            required = {"time", *horizontal} | ({"s_rho"} if name in {"u", "v"} else set())
+            if set(ds[name].dims) != required:
+                raise ValueError(f"CROCO {name}: incompatible native current dimensions")
+    for suffix, dims in (("u", {"eta_rho", "xi_u"}), ("v", {"eta_v", "xi_rho"})):
+        name = f"mask_{suffix}"
+        if name in ds and (set(ds[name].dims) != dims or not np.isin(ds[name].values, [0, 1]).all()):
+            raise ValueError(f"CROCO {name}: requires binary native face support")
+
+
+def prepare_croco_currents(ds, conf):
+    """Both-valid midpoint collocation, then joint-mask rho/Earth rotation."""
+    from frameit.processing.wind_collocation import interpolate_staggered
+    from frameit.utils.units import convert_units
+
+    pairs = current_pairs(conf)
+    if not pairs:
+        return ds
+    if all(name in ds and ds[name].attrs.get("current_reference_frame") == "earth"
+           for pair in pairs for name in pair):
+        return ds
+    _validate_faces(ds, [name for pair in pairs for name in pair])
+    _validate_current_inputs(ds, pairs)
+    result = ds.copy(deep=False)
+    if result.mask_rho.attrs.get("standard_name") == "land_binary_mask":
+        attrs = dict(result.mask_rho.attrs)
+        attrs["source_standard_name"] = attrs.pop("standard_name")
+        result["mask_rho"].attrs = attrs
+    wet = ds.mask_rho == 1
+    angle = convert_units(ds.angle, "angle")
+    for pair in pairs:
+        components = []
+        for name, face, mass in zip(pair, ("xi_u", "eta_v"), ("xi_rho", "eta_rho")):
+            support = interpolate_staggered(wet.astype(float), mass, ds[face]) == 1
+            mask_name = "mask_u" if face == "xi_u" else "mask_v"
+            if mask_name in ds:
+                support = support & (ds[mask_name] == 1)
+            value = _velocity(ds[name]).where(support)
+            components.append(interpolate_staggered(value, face, ds[mass]))
+        u, v = components
+        valid = wet & np.isfinite(u) & np.isfinite(v)
+        for name, value, standard in zip(pair,
+                (u*np.cos(angle)-v*np.sin(angle), u*np.sin(angle)+v*np.cos(angle)),
+                ("eastward_sea_water_velocity", "northward_sea_water_velocity")):
+            value = value.where(valid)
+            if "bar" in name:
+                standard = "barotropic_" + standard
+            value.attrs = {key: val for key, val in ds[name].attrs.items()
+                           if key not in {"standard_name", "coordinates", "grid", "long_name"}}
+            value.attrs.update(units="m s-1", standard_name=standard,
+                               long_name=standard.replace("_", " "), current_reference_frame="earth",
+                               current_collocation="native_midpoint_both_valid_then_angle_rotation",
+                               current_support="static mask_rho option_0=land option_1=water; joint finite vector",
+                               source_units=ds[name].attrs["units"],
+                               coordinates="lat_rho lon_rho", ancillary_variables="angle mask_rho")
+            for key in ("long_name", "standard_name"):
+                if key in ds[name].attrs:
+                    value.attrs[f"source_{key}"] = ds[name].attrs[key]
+            result[name] = value
+    result.attrs = dict(result.attrs, current_analysis_method="CROCO 2.1 midpoint collocation then rho angle rotation; no extrapolation or motion subtraction")
+    return result
+
+
+def validate_croco_coefficients(datasets, variables=None):
     """A history sequence must not inherit one file's different sigma definition."""
     reference = {}
     for ds in datasets:
@@ -20,6 +155,13 @@ def validate_croco_coefficients(datasets):
                 if name in reference and not np.array_equal(values, reference[name]):
                     raise ValueError(f"CROCO {name}: conflicting native sigma definitions across files")
                 reference[name] = values
+        for name in ("angle", "mask_rho", "mask_u", "mask_v"):
+            if name not in ds or (variables is not None and name not in variables):
+                continue
+            values = ds[name].values
+            if name in reference and not np.array_equal(values, reference[name]):
+                raise ValueError(f"CROCO {name}: static current geometry/support changes across files")
+            reference[name] = values
 
 
 def prepare_croco(ds: xr.Dataset, conf) -> xr.Dataset:
@@ -99,8 +241,34 @@ def prepare_croco(ds: xr.Dataset, conf) -> xr.Dataset:
                  for name in spec.get("variables", [])}
     if requested & {"wind_speed", "vrad", "vtan"}:
         raise ValueError("CROCO ocean fields do not admit atmospheric wind diagnostics")
-    if any(name in ds and set(ds[name].dims) & {"xi_u", "eta_v"} for name in requested):
-        raise ValueError("CROCO native face/current analysis is not yet qualified; rho scalars remain available")
+    pairs = current_pairs(conf)
+    if getattr(conf, "cartesian_horizontal_winds", "native") != "native" and requested & {"sustr", "svstr"}:
+        raise ValueError("CROCO stress analysis remains unqualified; request native representation")
+    face_names = requested | {name for pair in pairs for name in pair}
+    _validate_faces(ds, face_names)
+    _validate_current_inputs(ds, pairs)
+    for pair in pairs:
+        for name in pair:
+            ancillary = str(result[name].attrs.get("ancillary_variables", "")).split()
+            ancillary.extend(key for key in ("angle", "mask_rho", "mask_u", "mask_v") if key in ds)
+            result[name].attrs = dict(result[name].attrs, ancillary_variables=" ".join(dict.fromkeys(ancillary)))
+    params = getattr(conf, "simulation_parameter", None)
+    if pairs and params is not None:
+        records = params.setdefault("current_provenance", [])
+        for pair in pairs:
+            record = {"source_id": Path(ds.encoding.get("source", "in_memory")).name,
+                      "components": list(pair), "method": "both_valid_midpoint_then_rho_angle_rotation",
+                      "producer_reference": "CROCO 2.1.0 cpl_prism_put.F/setup_grid1.F",
+                      "support": "static MASKING; mask_rho option_0=land option_1=water; joint finite vector",
+                      "source_mask_standard_name": ds.mask_rho.attrs.get("standard_name"),
+                      "reference_frame": "earth", "units": "m s-1",
+                      "source_units": {name: ds[name].attrs["units"] for name in pair},
+                      "boundary_policy": "missing bracket remains missing; no extrapolation",
+                      "vertical_policy": "same native sigma index; no physical-depth interpolation",
+                      "track_motion_subtracted": False}
+            if record not in records:
+                records.append(record)
     if getattr(conf, "compute_polar_proj", False):
         raise ValueError("CROCO sigma polar metadata/analysis is not yet qualified; native extraction remains available")
-    return result.set_coords(["lat_rho", "lon_rho", *(["scrum_time"] if "scrum_time" in result else [])])
+    geography = [name for name in ("lat_rho", "lon_rho", "lat_u", "lon_u", "lat_v", "lon_v", "scrum_time") if name in result]
+    return result.set_coords(geography)
