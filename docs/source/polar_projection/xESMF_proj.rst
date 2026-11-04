@@ -215,6 +215,15 @@ checks. Small row-sum roundoff is normalized. U/V requested together use the
 same joint finite-data mask and denominator; independently normalized component
 stencils are not used to form a vector.
 
+Partial-stencil support within ``2 * n * eps64`` of a renormalization threshold
+is re-summed with Python's accurate ``math.fsum`` before the ordinary
+``support >= threshold`` comparison; ``n`` is the nonzero stencil size. This
+roundoff bound only selects sums to re-evaluate: it is **not** acceptance slack,
+and a support fraction genuinely below the threshold remains rejected. Complete
+stencils have exactly unit support; a threshold of one still requires every
+contributor to be present. This removes borderline mask decisions caused by
+floating-point accumulation/chunk order, not a change to the scientific cutoff.
+
 These fractions describe **interpolation-weight support**, not area coverage or
 conservation. The current supported point methods are ``bilinear`` and explicit
 ``nearest_s2d``; negative-weight/high-order methods need a different support
@@ -473,6 +482,11 @@ override ``rr``, ``theta`` and relevant leading dimensions such as ``time``,
 whole axis. Unknown output dimensions fail clearly. NumPy inputs stay eager.
 An explicit angular split still needs consolidation before ordinary Fourier
 analysis. Output chunking changes storage/computation layout, not the operator.
+CSR target rows are partitioned before multiplication, so these radial blocks
+bound executed interpolation outputs as well as final Dask chunks. Each task
+uses one cropped horizontal source plane per existing leading-dimension chunk;
+it does not combine all times or levels. Selecting a subset of target chunks
+does not multiply the unselected target rows.
 
 The projection report and ordinary execution result include
 ``regrid_performance``: plan builds, hits, evictions, retained-array estimates,

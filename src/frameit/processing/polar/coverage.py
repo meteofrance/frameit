@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from copy import copy
+from math import fsum
 
 import numpy as np
 import xarray as xr
@@ -64,14 +65,26 @@ def attach_quality(ds, name, support, status):
     )
 
 
-def _apply_weights(data, valid, *, weights, presence):
+def _apply_weights(data, valid, *, weights, presence, rows, minimum_support):
     """One cropped horizontal block, with a module-level callable for spawned export."""
+    weights, presence = weights[rows], presence[rows]
     shape = (*data.shape[:-2], weights.shape[0])
     data = data.reshape(-1, weights.shape[1])
     valid = valid.reshape(data.shape)
     numerator = (weights @ np.where(valid, data, 0).T).T.astype(data.dtype, copy=False)
     support = (weights @ valid.astype(float).T).T
     absent = (presence @ (~valid).astype(float).T).T
+    if minimum_support is not None and 0 < minimum_support < 1:
+        # Re-sum borderline stencils accurately; never relax the scientific threshold.
+        bound = 2 * np.finfo(float).eps * np.diff(weights.indptr)
+        uncertain = ((abs(support - minimum_support) <= bound)
+                     & (support > 0) & (absent > 0))
+        for sample, location in np.argwhere(uncertain):
+            start, stop = weights.indptr[location:location + 2]
+            support[sample, location] = fsum(
+                weight for weight, index in zip(weights.data[start:stop],
+                                                  weights.indices[start:stop], strict=True)
+                if valid[sample, index])
     return tuple(array.reshape(shape) for array in (numerator, support, absent))
 
 
@@ -154,15 +167,23 @@ class SupportedRegridder:
 
         # No source NaN/Inf ever enters a sparse matrix multiply, including
         # contributors whose mathematically zero coefficient was discarded.
-        arrays = xr.apply_ufunc(
-            _apply_weights, field, mask, kwargs={"weights": weights, "presence": presence},
-            input_core_dims=[["y_box", "x_box"], ["y_box", "x_box"]],
-            output_core_dims=[["locations"], ["locations"], ["locations"]],
-            dask="parallelized", output_dtypes=[field.dtype, float, float],
-            dask_gufunc_kwargs={"output_sizes": {"locations": weights.shape[0]}},
-        )
-        if output_chunks and hasattr(arrays[0].data, "__dask_graph__"):
-            arrays = tuple(array.chunk({"locations": output_chunks[0]}) for array in arrays)
+        locations = weights.shape[0]
+        chunk_size = output_chunks[0] if output_chunks else locations
+        chunk_size = locations if chunk_size == -1 else chunk_size
+        blocks = []
+        for start in range(0, locations, chunk_size):
+            stop = min(start + chunk_size, locations)
+            blocks.append(xr.apply_ufunc(
+                _apply_weights, field, mask,
+                kwargs={"weights": weights, "presence": presence, "rows": slice(start, stop),
+                        "minimum_support": minimum_support if policy == "renormalize" else None},
+                input_core_dims=[["y_box", "x_box"], ["y_box", "x_box"]],
+                output_core_dims=[["locations"], ["locations"], ["locations"]],
+                dask="parallelized", output_dtypes=[field.dtype, float, float],
+                dask_gufunc_kwargs={"output_sizes": {"locations": stop - start}},
+            ))
+        arrays = tuple(xr.concat([block[index] for block in blocks], dim="locations")
+                       if len(blocks) > 1 else blocks[0][index] for index in range(3))
         numerator, support, absent = arrays
         support = support.clip(0, 1)
         mapped = self.geometry_mapped.broadcast_like(numerator)

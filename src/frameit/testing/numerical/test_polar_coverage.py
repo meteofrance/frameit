@@ -258,3 +258,50 @@ def test_lazy_polar_products_remain_pickleable_for_spawned_export():
     np.testing.assert_allclose(value.compute(), [30.], atol=1e-12)
     np.testing.assert_allclose(support.compute(), [.7], atol=1e-14)
     np.testing.assert_array_equal(status.compute(), [0])
+
+
+def test_output_chunks_bound_executed_target_blocks_and_cull_unselected_rows(monkeypatch):
+    import dask
+
+    source = xr.Dataset({"lon": (("y_box", "x_box"), [[0., 1.], [0., 1.]]),
+                         "lat": (("y_box", "x_box"), [[0., 0.], [1., 1.]])})
+    target = xr.Dataset({"lon": ("locations", np.linspace(.1, .9, 100)),
+                         "lat": ("locations", np.full(100, .5))})
+    operator = SupportedRegridder(xe.Regridder(
+        source, target, "bilinear", locstream_out=True, unmapped_to_nan=False,
+        input_dims=("y_box", "x_box")))
+    multiply = type(operator.weights).__matmul__
+    rows = []
+
+    def counted(weights, values):
+        rows.append(weights.shape[0])
+        return multiply(weights, values)
+
+    monkeypatch.setattr(type(operator.weights), "__matmul__", counted)
+    field = xr.DataArray(np.ones((2, 2)), dims=("y_box", "x_box")).chunk({"x_box": 1})
+    value, _, _ = operator.apply(field, output_chunks=(16,))
+    assert rows == []
+    with dask.config.set(scheduler="synchronous"):
+        np.testing.assert_allclose(value.isel(locations=slice(17, 20)).compute(), 1., atol=1e-14)
+    assert rows and max(rows) <= 16
+    assert sum(rows) <= 3 * 16, "Unselected target chunks must not be multiplied"
+
+
+@pytest.mark.parametrize("chunks", [None, {"y_box": 2, "x_box": 1}])
+@pytest.mark.parametrize("weights,expected_support,valid", [
+    ([.49, .004949494949494949, .5, .005050505050505051], .5, True),
+    ([.25, .25 - np.spacing(.5), .5 + np.spacing(.5), 0.], .5 - np.spacing(.5), False),
+    ([.25, .25 + np.spacing(.5), .5 - np.spacing(.5), 0.], .5 + np.spacing(.5), True),
+])
+def test_support_threshold_uses_accurate_weight_sum_without_acceptance_slack(
+    chunks, weights, expected_support, valid
+):
+    operator = prescribed_weights(weights, policy="renormalize")
+    field = xr.DataArray(np.ones((2, 2)), dims=("y_box", "x_box"))
+    if chunks is not None:
+        field = field.chunk(chunks)
+    mask = xr.DataArray([[True, True], [False, True]], dims=field.dims)
+    value, support, status = operator.apply(field, mask)
+    np.testing.assert_array_equal(support.compute(), [expected_support])
+    np.testing.assert_array_equal(status.compute(), [0 if valid else 3])
+    np.testing.assert_allclose(value.compute(), [1. if valid else np.nan], atol=1e-14, equal_nan=True)
