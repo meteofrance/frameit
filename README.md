@@ -200,7 +200,7 @@ If you use FrameIt in your research, please cite it as follows:
 
 ```bibtex
 @software{soufflet_frameit_2026,
-  author    = {Soufflet, Clément and Hoarau, Kevin and Colomb, Adrien and Laxenaire, Rémi},
+  author    = {Soufflet, Clément and Hoarau, Kevin and Colomb, Adrien and Laxenaire, Rémi and Deferrez, Maxence},
   title     = {FrameIt: Focused Regional Analysis of Modeled Events with Integrated Tracking},
   year      = {2026},
   publisher = {Zenodo},
@@ -227,3 +227,4 @@ FrameIt was developed at Météo-France.
 - Kevin Hoarau — CNRS
 - Adrien Colomb — Météo-France
 - Rémi Laxenaire — Météo-France
+- Maxence Deferrez — Météo-France
