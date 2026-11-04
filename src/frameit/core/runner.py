@@ -186,7 +186,7 @@ class FrameitRunner:
         self._native_cartesian_groups = {}
         polar_requests = getattr(self.conf, "polar_variables", {})
         for group, spec in loading_requests.items():
-            if self.conf.atm_model == "NEMO":
+            if self.conf.atm_model in {"NEMO", "CROCO"}:
                 continue
             variables = list(spec.get("variables", []))
             polar_spec = polar_requests.get(group, {}) if isinstance(polar_requests, dict) else {}
@@ -223,7 +223,7 @@ class FrameitRunner:
                 tracker_requested_variables_by_method_yaml=requested_vars_tracker,
                 method=tracking_method,
                 concat_dimension=time_dim,
-                float_tol=None if self.conf.atm_model == "NEMO" else 0.5,
+                float_tol=None if self.conf.atm_model in {"NEMO", "CROCO"} else 0.5,
                 strict=self.input_files is not None,
                 resources=self.resources,
                 wind_conf=self.conf,
@@ -278,7 +278,7 @@ class FrameitRunner:
         from frameit.tracking.pressure_centroid_inputs import is_mnh_centroid
 
         dict_tracker = {m: {g: (normalize_geography(ds, self.conf) if
-                               self.conf.atm_model == "NEMO" or
+                               self.conf.atm_model in {"NEMO", "CROCO"} or
                                ((is_mnh_centroid(self.conf) and m == "pressure_centroid") or
                                 (self.conf.atm_model == "MNH" and m == "multifield_vortex")) else
                                normalize_winds(normalize_geography(ds, self.conf), self.conf, g))
@@ -293,7 +293,7 @@ class FrameitRunner:
                             if "wind_speed" in spec.get("variables", [])}
             requested_speed = {g: ds for g, ds in dict_user.items() if g in speed_groups}
             dict_user.update(add_speed_from_uv_dict(requested_speed, self.conf))
-        elif self.conf.atm_model != "NEMO":
+        elif self.conf.atm_model not in {"NEMO", "CROCO"}:
             dict_user = add_speed_from_uv_dict(dict_user, self.conf)
         # Record the effective per-component transformations, including direct
         # Python API runs which did not call metadata preflight.
@@ -408,7 +408,7 @@ class FrameitRunner:
         # Export representation is separate from the prepared analysis branch.
         native_cart = getattr(self.conf, "cartesian_horizontal_winds", "mass_earth") == "native"
         cart_source = self._native_cartesian_groups if native_cart else self.ds_user
-        if self.conf.atm_model != "NEMO":
+        if self.conf.atm_model not in {"NEMO", "CROCO"}:
             cart_source = select_vertical_velocity(
                 cart_source, self.conf, getattr(self.conf, "cartesian_vertical_velocity", "interfaces")
             )
@@ -429,7 +429,7 @@ class FrameitRunner:
                 ds_user=cart_source,
                 ds_tracker=self.ds_tracker,
                 track_ds=self.track,
-                native_winds=native_cart and self.conf.atm_model != "NEMO",
+                native_winds=native_cart and self.conf.atm_model not in {"NEMO", "CROCO"},
             )
             if benchmark:
                 self.track.load()
@@ -443,7 +443,7 @@ class FrameitRunner:
             self.dict_collocated_crop_user = {}
             if self.conf.compute_polar_proj:
                 support_conf = polar_support_settings(self.conf, self.track)
-                polar_source = self.ds_user if self.conf.atm_model == "NEMO" else select_vertical_velocity(
+                polar_source = self.ds_user if self.conf.atm_model in {"NEMO", "CROCO"} else select_vertical_velocity(
                     self.ds_user, self.conf, getattr(self.conf, "polar_vertical_velocity", "mass")
                 )
                 _, support_fields = extract_data(
@@ -490,7 +490,7 @@ class FrameitRunner:
             unused = (set(dataset.dims) & private_axes) - used
             if unused:
                 dataset = dataset.drop_dims(unused)
-            if self.conf.atm_model != "NEMO":
+            if self.conf.atm_model not in {"NEMO", "CROCO"}:
                 dataset.attrs.update(
                     horizontal_wind_representation=getattr(
                         self.conf, "cartesian_horizontal_winds", "mass_earth"),

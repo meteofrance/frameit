@@ -163,3 +163,66 @@ depths, source mean bounds, forecast identity and field-local support remain
 different. Component requests remain gated as described above. Continuous
 bilinear point sampling is not area-conservative or a physical-depth section.
 Polar processing stays optional and is not enabled by the native example.
+
+CROCO native history scalars
+----------------------------
+
+``model: croco`` admits the tested regional ``CROCO history file`` family with
+decoded Gregorian ``time``, optional agreeing ``scrum_time``, native rho geography
+``lat_rho/lon_rho`` on ``(eta_rho, xi_rho)`` and explicit consistent
+``Vtransform=2`` declarations. Use ``frameit init croco`` or ``frameit inspect
+./data --model croco --format netcdf --pattern '*.nc'``. Adapt the generated paths,
+fields, native level indices and geographical centre to the data. Fixed and
+prescribed centres are supported independently or in named-source exact-time runs.
+This does not admit every CROCO release, restart/averaged products, other vertical
+transforms or a producer-specific coupling convention. The NEMO-only
+``preceding_hour`` profile does not apply to CROCO.
+
+Native ``temp/salt`` are selected on ``s_rho``; ``zeta`` belongs to ``surface``.
+Fields genuinely stored on ``s_w`` use a separate group. Do not infer the stored
+location of ``w`` or substitute ``omega`` from their names. Fractional sigma values
+are **dimensionless, not metres**; value selection is exact in both preflight and
+loading. Sparse/reordered selections retain
+``s_rho_source_native_index/s_w_source_native_index``. Native rho geography, source
+axis labels and source dynamic-range metadata survive crops; the output is not
+collocated with an atmospheric grid merely because array sizes agree.
+
+Selected scientific definitions must agree across successive files, including
+quantity/units, coordinate formula metadata, sigma labels, stretching curves and
+critical depth. Different declarations fail rather than inheriting the first
+file's interpretation. State such as ``zeta`` remains time-dependent. The source
+clock's encoded epoch/calendar is authoritative; ``scrum_time.time_origin`` does
+not override it. No temperature, salinity or density conversion is performed.
+Decoded missing cells and valid zeroes retain their native meaning; native copies
+do not yet interpret wet-mask polarity or finite land placeholders.
+
+The retained formula metadata uses `CF ocean s-coordinate, generic form 2
+<https://cfconventions.org/Data/cf-conventions/cf-conventions-1.12/cf-conventions.html#_ocean_s_coordinate_generic_form_2>`_:
+
+.. math::
+
+   S = \frac{h_c s + h C}{h_c+h}, \qquad z = \eta + (\eta+h)S.
+
+The adapter checks explicit formula dependencies and their native dimensions,
+dimensionless sigma/stretching ranges, positive-up orientation and positive
+metre-valued critical depth. It preserves selected ``s``, its referenced ``C``
+curve, ``hc``, cropped bathymetry ``h`` and selected-time ``zeta`` without computing
+a physical-depth cube. The producer spelling
+``ocean_s_coordinate_g2_at_w_location`` on ``s_w`` is retained as
+``source_standard_name``; the standard name becomes ``ocean_s_coordinate_g2``
+because the declared equation is the same at that sampling location. Other source
+definitions are not guessed or silently completed.
+
+Verification includes an independent formula-dependency anchor
+(``h=20, hc=5, s=-0.5, C=-0.25, eta=1`` gives ``z=-5.3 m``), exact native decoded
+value/mask/coordinate round trips in an ordinary reader, changing-state snapshots,
+invalid metadata and lazy selected loading without optional model/polar stacks.
+This is engineering verification of copied data and metadata, not scientific
+validation of every real regime or a new stable depth diagnostic.
+
+Current scope is native **rho scalars**. Staggered face/current analysis, stress
+interpretation, wet-mask application and polar sigma/physical-depth products are
+not yet qualified and are rejected where requested, rather than silently invoking
+atmospheric wind processing. Native exports attach no wind representation or
+wind-speed diagnostic. These limitations do not require installing optional
+diagnostic, FA, GRIB, Zarr or polar dependencies for ordinary scalar NetCDF copies.

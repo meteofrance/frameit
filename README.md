@@ -7,7 +7,8 @@
 
 FrameIt is a configurable Python tool for fixed or moving subdomain extraction,
 object tracking and selected diagnostics from **AROME and Meso-NH** model outputs,
-plus native regional **NEMO** scalar/component extraction with fixed/prescribed centres.
+plus native regional **NEMO** scalar/component and **CROCO** rho-scalar extraction
+with fixed/prescribed centres.
 It writes NetCDF (default) or optional sharded Zarr v3 products for ordinary readers and researchers' own
 analysis scripts. Model, variable, grid and reference-frame conventions still
 matter when comparing outputs.

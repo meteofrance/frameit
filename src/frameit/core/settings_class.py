@@ -29,7 +29,7 @@ from frameit.io.loader import load_config_with_model_presets, resolve_config_wit
 logger = logging.getLogger(__name__)
 
 # Restricted types for a few key fields
-ModelName = Literal["AROME", "MNH", "NEMO"]
+ModelName = Literal["AROME", "MNH", "NEMO", "CROCO"]
 TrackingMethod = Literal[
     "wind_pressure", "pressure_centroid", "multifield_vortex", "fixed_box",
     "prescribed_track", "utrack"
@@ -347,10 +347,10 @@ class SimulationConfig:
             or self.wind_reference_frame not in {"earth", "grid"}
         ):
             raise ValueError("wind_reference_frame must be 'earth', 'grid', or None")
-        if self.atm_model not in ("AROME", "MNH", "NEMO"):
-            raise ValueError("atm_model must be 'AROME', 'MNH' or 'NEMO'")
-        if self.atm_model == "NEMO" and self.tracking_method not in {"fixed_box", "prescribed_track"}:
-            raise ValueError("NEMO reference sources require fixed_box or prescribed_track")
+        if self.atm_model not in ("AROME", "MNH", "NEMO", "CROCO"):
+            raise ValueError("atm_model must be 'AROME', 'MNH', 'NEMO' or 'CROCO'")
+        if self.atm_model in {"NEMO", "CROCO"} and self.tracking_method not in {"fixed_box", "prescribed_track"}:
+            raise ValueError(f"{self.atm_model} reference sources require fixed_box or prescribed_track")
 
         if not self.simulation_output_dir:
             raise ValueError("simulation_output_dir must not be empty")

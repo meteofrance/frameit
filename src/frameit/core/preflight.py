@@ -250,7 +250,7 @@ def _belongs_to_group(ds, name, group):
     if group != "surface":
         return group in ds[name].dims or group in ds[name].coords
     vertical = {"level", "level_w", "heightAboveGround", "isobaricInhPa", "isobaricInPa",
-                "deptht", "depthu", "depthv", "depthw"}
+                "deptht", "depthu", "depthv", "depthw", "s_rho", "s_w"}
     return not (set(ds[name].dims) & vertical)
 
 
@@ -259,7 +259,7 @@ def wind_dependencies(conf, requests):
     from frameit.processing.derived.wind import wind_names
 
     expanded = deepcopy(requests)
-    if getattr(conf, "atm_model", None) == "NEMO":
+    if getattr(conf, "atm_model", None) in {"NEMO", "CROCO"}:
         return expanded, []
     pairs = []
     for group, spec in expanded.items():
@@ -359,8 +359,8 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
     files = (discover_input_files(conf) if input_files is None
              else resolve_input_files(input_files, strict=True))
     conf.file_type = infer_format(files, conf.file_type or None)
-    if conf.atm_model == "NEMO" and conf.file_type != "netcdf":
-        raise ValueError("NEMO supports only native NetCDF inputs")
+    if conf.atm_model in {"NEMO", "CROCO"} and conf.file_type != "netcdf":
+        raise ValueError(f"{conf.atm_model} supports only native NetCDF inputs")
     if conf.file_type == "fa":
         if conf.tracking_method not in {"fixed_box", "prescribed_track"}:
             raise ValueError("FA atmospheric trackers remain gated; use fixed_box/prescribed_track "
@@ -411,7 +411,7 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             user_dependencies, user_pairs = wind_dependencies(conf, conf.requests_user())
             tracker_dependencies, tracker_pairs = wind_dependencies(conf, tracker)
             if conf.file_type == "netcdf":
-                tolerance = 0. if conf.atm_model == "NEMO" else .5
+                tolerance = 0. if conf.atm_model in {"NEMO", "CROCO"} else .5
                 _check_requests(datasets, user_dependencies, path, tolerance=tolerance)
                 _check_requests(datasets, tracker_dependencies, path, tolerance=tolerance)
             pairs = []
@@ -523,11 +523,11 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
         # Some AROME diagnostics legitimately begin after the initial record.
         # Validate availability across the inventory; per-file gaps remain
         # visible and the loader retains its established NaN/time alignment.
-        if conf.atm_model == "NEMO":
-            from frameit.io.nemo_utils import validate_nemo_metadata
+        if conf.atm_model in {"NEMO", "CROCO"}:
+            from frameit.io.netcdf_utils import validate_native_metadata
 
-            validate_nemo_metadata(grids, requested_names)
-        tolerance = 0. if conf.atm_model == "NEMO" else (.51 if conf.file_type == "grib" else .5)
+            validate_native_metadata(grids, requested_names, model=conf.atm_model)
+        tolerance = 0. if conf.atm_model in {"NEMO", "CROCO"} else (.51 if conf.file_type == "grib" else .5)
         _check_requests(grids, user_dependencies, Path("selected-inputs"), tolerance=tolerance)
         if mnh_centroid:
             layout = inspect_mnh_sequence(mnh_records)

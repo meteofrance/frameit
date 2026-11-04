@@ -26,12 +26,43 @@ from frameit.processing.requests import (
 logger = logging.getLogger(__name__)
 
 
+def validate_native_metadata(datasets, variables=None, *, model):
+    """Reject changing native scientific definitions without loading physical fields."""
+    from frameit.processing.polar.metadata import coordinate_dependency_names
+
+    keys = ("units", "standard_name", "long_name", "cell_methods", "positive", "axis",
+            "bounds", "formula_terms", "grid_mapping", "online_operation",
+            "interval_operation", "interval_write")
+    reference = {}
+    for ds in datasets:
+        selected = ds[[name for name in ds.data_vars if variables is None or name in variables]]
+        names = set(selected.variables) | coordinate_dependency_names(
+            ds, selected.data_vars, coordinates=selected.coords)
+        for name in names:
+            attrs = {key: ds[name].attrs.get(key) for key in keys}
+            if name in reference:
+                changed = [key for key in keys if not np.array_equal(attrs[key], reference[name][key])]
+                if changed:
+                    raise ValueError(f"{model} {name}: conflicting scientific metadata {changed} "
+                                     "across time-series files; no automatic conversion is applied")
+            else:
+                reference[name] = attrs
+    if model == "CROCO":
+        from frameit.io.croco_utils import validate_croco_coefficients
+
+        validate_croco_coefficients(datasets)
+
+
 def normalize_netcdf_time(ds: xr.Dataset, conf) -> xr.Dataset:
     """Use sample time without discarding an evidenced AROME forecast clock."""
     if getattr(conf, "atm_model", None) == "NEMO":
         from frameit.io.nemo_utils import prepare_nemo
 
         ds = prepare_nemo(ds, conf)
+    elif getattr(conf, "atm_model", None) == "CROCO":
+        from frameit.io.croco_utils import prepare_croco
+
+        ds = prepare_croco(ds, conf)
     source = getattr(conf, "name_time_dim", None) or "time"
     renames = {}
     if source != "time" and source in ds:
@@ -190,10 +221,8 @@ def concat_nc2ds(
         prepared = normalize_netcdf_time(original, conf)
         keep = set(variables) | coordinate_dependency_names(prepared, variables)
         opened.append(prepared.drop_vars([name for name in prepared.data_vars if name not in keep]))
-    if getattr(conf, "atm_model", None) == "NEMO":
-        from frameit.io.nemo_utils import validate_nemo_metadata
-
-        validate_nemo_metadata(opened)
+    if getattr(conf, "atm_model", None) in {"NEMO", "CROCO"}:
+        validate_native_metadata(opened, model=conf.atm_model)
     if len(opened) == 1:
         ds = opened[0]
     elif concat_dimension:
@@ -270,7 +299,7 @@ def concat_nc2ds_by_vert_coord(
     }
 
     files = resolve_input_files(files, strict=strict)
-    ocean = wind_conf is not None and wind_conf.atm_model == "NEMO"
+    ocean = wind_conf is not None and wind_conf.atm_model in {"NEMO", "CROCO"}
     if ocean:
         float_tol = None
         geovar_candidates = (wind_conf.name_latitude, wind_conf.name_longitude)
@@ -334,9 +363,7 @@ def concat_nc2ds_by_vert_coord(
             for group in dict.fromkeys(g for part in parts for g in part):
                 sequence = [part[group] for part in parts if group in part]
                 if ocean:
-                    from frameit.io.nemo_utils import validate_nemo_metadata
-
-                    validate_nemo_metadata(sequence)
+                    validate_native_metadata(sequence, model=wind_conf.atm_model)
                 result[group] = drop_time_dupes(xr.concat(
                     sequence, dim="time", data_vars="minimal", coords="different",
                     compat="equals", join="exact", combine_attrs="override",

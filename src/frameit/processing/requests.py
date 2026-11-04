@@ -270,7 +270,7 @@ def build_group_ds(
 
     if vertical_dims is None:
         vertical_dims = {"level", "level_w", "isobaricInhPa", "heightAboveGround",
-                         "deptht", "depthu", "depthv", "depthw"}
+                         "deptht", "depthu", "depthv", "depthw", "s_rho", "s_w"}
 
     def _warn(msg: str) -> None:
         if logger is not None:
