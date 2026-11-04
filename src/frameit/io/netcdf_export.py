@@ -10,6 +10,7 @@ import logging
 import multiprocessing
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -391,6 +392,21 @@ def _write_single_group(args: tuple) -> Path:
     )
 
 
+def _export_pool(group_count, max_workers, dask_scheduler, dask_workers, native_threads):
+    from frameit.core.runtime import cpu_budget, initialize_export_worker
+
+    cpus, _ = cpu_budget()
+    per_process = (1 if dask_scheduler == "synchronous" else dask_workers) * native_threads
+    if per_process > cpus:
+        raise ValueError("Export thread counts exceed CPU budget")
+    workers = min(max_workers or cpus // per_process, group_count, cpus // per_process)
+    return ProcessPoolExecutor(
+        max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
+        initializer=initialize_export_worker,
+        initargs=(dask_scheduler, dask_workers, native_threads),
+    )
+
+
 def write_group_dict(
     ds_dict: Mapping[str, xr.Dataset],
     out_dir: str | Path,
@@ -412,6 +428,7 @@ def write_group_dict(
     native_threads: int = 1,
     zarr_chunk_size: dict[str, int] | None = None,
     zarr_shard_size: dict[str, int] | None = None,
+    _executor: ProcessPoolExecutor | None = None,
 ) -> list[Path]:
     """
     Write grouped products as NetCDF files or Zarr stores, optionally in parallel.
@@ -513,18 +530,9 @@ def write_group_dict(
     written: list[Path] = []
     if not tasks_args:
         return written
-    from frameit.core.runtime import cpu_budget, initialize_export_worker
-
-    cpus, _ = cpu_budget()
-    per_process = (1 if dask_scheduler == "synchronous" else dask_workers) * native_threads
-    if per_process > cpus:
-        raise ValueError("Export thread counts exceed CPU budget")
-    workers = min(max_workers or cpus // per_process, len(tasks_args), cpus // per_process)
-    with ProcessPoolExecutor(
-        max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
-        initializer=initialize_export_worker,
-        initargs=(dask_scheduler, dask_workers, native_threads),
-    ) as executor:
+    pool = nullcontext(_executor) if _executor is not None else _export_pool(
+        len(tasks_args), max_workers, dask_scheduler, dask_workers, native_threads)
+    with pool as executor:
         futures = {
             executor.submit(_write_single_group, args): args[0]  # args[0] = group name
             for args in tasks_args
@@ -663,61 +671,30 @@ def export_outputs(
 
     results: dict[str, Path | list[Path]] = {"track": track_written}
 
-    # Polar
-    if export_polar and getattr(runner, "dict_polar_user", None):
-        logger.info("  Polar: %d group(s)", len(runner.dict_polar_user))
-        results["polar"] = write_group_dict(
-            runner.dict_polar_user,
-            out_path,
-            simu_name=simu_name,
-            grid="polar",
-            metadata=meta,
-            track_filename=track_written.name,
-            engine=engine,
-            fmt=fmt,
-            overwrite=overwrite,
-            compress_level=compress_level,
-            compress_coords=compress_coords,
-            unlimited_time=unlimited_time,
-            max_workers=max_workers,
-            synchronous=synchronous,
-            dask_scheduler=dask_scheduler, dask_workers=dask_workers, native_threads=native_threads,
-            zarr_chunk_size=zarr_chunk_size, zarr_shard_size=zarr_shard_size,
-        )
-    else:
-        logger.debug(
-            "Polar export skipped (export_polar=%s, dict_polar_user present=%s).",
-            bool(export_polar),
-            bool(getattr(runner, "dict_polar_user", None)),
-        )
-
-    # Cartesian crop
-    if export_cart and getattr(runner, "dict_crop_user", None):
-        logger.info("  Cartesian: %d group(s)", len(runner.dict_crop_user))
-        results["cart"] = write_group_dict(
-            runner.dict_crop_user,
-            out_path,
-            simu_name=simu_name,
-            grid="cart",
-            metadata=meta,
-            track_filename=track_written.name,
-            engine=engine,
-            fmt=fmt,
-            overwrite=overwrite,
-            compress_level=compress_level,
-            compress_coords=compress_coords,
-            unlimited_time=unlimited_time,
-            max_workers=max_workers,
-            synchronous=synchronous,
-            dask_scheduler=dask_scheduler, dask_workers=dask_workers, native_threads=native_threads,
-            zarr_chunk_size=zarr_chunk_size, zarr_shard_size=zarr_shard_size,
-        )
-    else:
-        logger.debug(
-            "Cart export skipped (export_cart=%s, dict_crop_user present=%s).",
-            bool(export_cart),
-            bool(getattr(runner, "dict_crop_user", None)),
-        )
+    groups = {}
+    for grid, enabled, attribute in (("polar", export_polar, "dict_polar_user"),
+                                      ("cart", export_cart, "dict_crop_user")):
+        datasets = getattr(runner, attribute, None)
+        if enabled and datasets:
+            groups[grid] = datasets
+        else:
+            logger.debug("%s export skipped (enabled=%s, data present=%s).",
+                         grid, bool(enabled), bool(datasets))
+    pool = (_export_pool(max(map(len, groups.values())), max_workers,
+                         dask_scheduler, dask_workers, native_threads)
+            if groups and not synchronous else nullcontext(None))
+    # Share native-safe workers across phases, retaining serial phase ordering.
+    with pool as executor:
+        for grid, datasets in groups.items():
+            logger.info("  %s: %d group(s)", grid, len(datasets))
+            results[grid] = write_group_dict(
+                datasets, out_path, simu_name=simu_name, grid=grid, metadata=meta,
+                track_filename=track_written.name, engine=engine, fmt=fmt,
+                overwrite=overwrite, compress_level=compress_level, compress_coords=compress_coords,
+                unlimited_time=unlimited_time, max_workers=max_workers, synchronous=synchronous,
+                dask_scheduler=dask_scheduler, dask_workers=dask_workers, native_threads=native_threads,
+                zarr_chunk_size=zarr_chunk_size, zarr_shard_size=zarr_shard_size, _executor=executor,
+            )
 
     for role, paths in results.items():
         for path in ([paths] if isinstance(paths, Path) else paths):

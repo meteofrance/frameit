@@ -154,6 +154,54 @@ def test_group_filename_collisions_fail_before_writing(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
+@pytest.mark.parametrize("mode", ["spawn", "sync", "empty", "failure"])
+def test_group_phases_share_one_bounded_pool_and_close_it(tmp_path, monkeypatch, mode):
+    from frameit.io import netcdf_export
+
+    original = netcdf_export.ProcessPoolExecutor
+    pools = []
+
+    def create_pool(**kwargs):
+        pool = original(**kwargs)
+        pools.append((pool, kwargs))
+        return pool
+
+    monkeypatch.setattr(netcdf_export, "ProcessPoolExecutor", create_pool)
+    monkeypatch.setattr("frameit.core.runtime.cpu_budget", lambda: (2, "test allocation"))
+    ds = xr.Dataset({"q": (("time", "y", "x"), [[[1., np.nan], [3., 4.]]], {"units": "K"})},
+                    coords={"time": [0]}).chunk({"time": 1})
+    runner = SimpleNamespace(
+        conf=SimpleNamespace(simulation_name="TEST"), output_dir=tmp_path,
+        track=xr.Dataset({"cy": ("time", [0])}, coords={"time": [0]}),
+        dict_polar_user={"one": ds, "two": ds}, dict_crop_user={"surface": ds},
+    )
+    if mode == "empty":
+        runner.dict_polar_user = runner.dict_crop_user = {}
+    if mode == "failure":
+        products = tmp_path / "products"
+        products.mkdir()
+        (products / "TEST.cart.surface.nc").write_bytes(b"previous complete product")
+        with pytest.raises(FileExistsError):
+            netcdf_export.export_outputs(runner, institution="test", overwrite=False, max_workers=9)
+        assert (products / "TEST.cart.surface.nc").read_bytes() == b"previous complete product"
+        assert not list(products.glob("*.partial"))
+    else:
+        result = netcdf_export.export_outputs(
+            runner, institution="test", synchronous=mode == "sync", max_workers=9)
+        assert set(result) == ({"track"} if mode == "empty" else {"track", "polar", "cart"})
+        for role in ("polar", "cart") if mode != "empty" else ():
+            for path in result[role]:
+                with xr.open_dataset(path) as saved:
+                    xr.testing.assert_identical(saved.q, ds.q)
+                    assert saved.attrs["track_filename"] == "TEST.track.nc"
+    assert len(pools) == (0 if mode in {"sync", "empty"} else 1)
+    for pool, options in pools:
+        assert options["max_workers"] == 2
+        assert options["mp_context"].get_start_method() == "spawn"
+        assert options["initargs"] == ("threads", 1, 1)
+        assert pool._shutdown_thread and pool._processes is None
+
+
 def cli_environment():
     return {
         **os.environ, "SLURM_CPUS_PER_TASK": "1", "SLURM_JOB_ID": "local-qualification",
