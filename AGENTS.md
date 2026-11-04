@@ -161,6 +161,14 @@ Scientific reproducibility, numerical agreement within a justified tolerance, an
 
 ## 9. Testing and performance
 
+Agents MUST use the Conda `frameit_env` environment with Python 3.13 for
+development, tests, documentation builds and data checks. Activate it with
+`conda activate frameit_env` or use `conda run -n frameit_env`.
+Python 3.10 and separate core-only environments are deprecated for agent work;
+do not create, maintain or require checks in those environments. If `frameit_env`
+is unavailable, report the blocker rather than silently using another runtime.
+This instruction does not itself change package metadata or CI configuration.
+
 Use the project's existing tools and conventions. Add or update the smallest tests that exercise the changed behavior; a documentation-only edit does not require an unrelated scientific benchmark.
 
 For applicable code changes, cover:

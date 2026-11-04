@@ -1,0 +1,18 @@
+schema_version: 2
+model: nemo
+input:
+  directory: ./data
+  pattern: '*.nc'
+  format: netcdf
+variables:
+  deptht:
+    names: [votemper]
+    levels: {indices: [0]}
+tracking:
+  method: fixed_box
+  fixed_box:
+    center: {latitude: -20., longitude: 60.}
+output:
+  directory: ./output
+  overwrite: false
+  cartesian: {horizontal_winds: native}

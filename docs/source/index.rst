@@ -26,6 +26,7 @@ FrameIt |release| documentation
    :caption: User guide
 
    user_guide/input_files
+   user_guide/ocean_netcdf
    user_guide/fa_inputs
    user_guide/fa_environment
    user_guide/configuration_file

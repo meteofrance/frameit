@@ -5,10 +5,14 @@
 from __future__ import annotations
 
 import logging
+import re
+from collections import ChainMap
 from collections.abc import Iterable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import xarray as xr
 
 from frameit.check.check_functions import drop_time_dupes
@@ -20,6 +24,124 @@ from frameit.processing.requests import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def validate_native_metadata(datasets, variables=None, *, model):
+    """Reject changing native scientific definitions without loading physical fields."""
+    from frameit.processing.polar.metadata import coordinate_dependency_names
+
+    keys = ("units", "standard_name", "long_name", "cell_methods", "positive", "axis",
+            "bounds", "formula_terms", "grid_mapping", "online_operation",
+            "interval_operation", "interval_write")
+    reference = {}
+    for ds in datasets:
+        selected = ds[[name for name in ds.data_vars if variables is None or name in variables]]
+        names = set(selected.variables) | coordinate_dependency_names(
+            ds, selected.data_vars, coordinates=selected.coords)
+        for name in names:
+            attrs = {key: ds[name].attrs.get(key) for key in keys}
+            if name in reference:
+                changed = [key for key in keys if not np.array_equal(attrs[key], reference[name][key])]
+                if changed:
+                    raise ValueError(f"{model} {name}: conflicting scientific metadata {changed} "
+                                     "across time-series files; no automatic conversion is applied")
+            else:
+                reference[name] = attrs
+    if model == "CROCO":
+        from frameit.io.croco_utils import validate_croco_coefficients
+
+        validate_croco_coefficients(datasets, variables)
+
+
+def normalize_netcdf_time(ds: xr.Dataset, conf) -> xr.Dataset:
+    """Use sample time without discarding an evidenced AROME forecast clock."""
+    if getattr(conf, "atm_model", None) == "NEMO":
+        from frameit.io.nemo_utils import prepare_nemo
+
+        ds = prepare_nemo(ds, conf)
+    elif getattr(conf, "atm_model", None) == "CROCO":
+        from frameit.io.croco_utils import prepare_croco
+
+        ds = prepare_croco(ds, conf)
+    elif getattr(conf, "netcdf_surfex_fields", []):
+        from frameit.io.surfex_utils import prepare_surfex
+
+        ds = prepare_surfex(ds, conf)
+    source = getattr(conf, "name_time_dim", None) or "time"
+    renames = {}
+    if source != "time" and source in ds:
+        if "time" in ds:
+            reference = ds["time"]
+            if (str(getattr(conf, "atm_model", "")).upper() != "AROME"
+                    or reference.ndim != 0
+                    or reference.attrs.get("standard_name") != "forecast_reference_time"):
+                raise ValueError(f"NetCDF time coordinate 'time' conflicts with configured "
+                                 f"dimension {source!r}; provide an unambiguous source schema")
+            if "forecast_reference_time" in ds:
+                other = ds["forecast_reference_time"]
+                if other.ndim != 0 or not reference.variable.equals(other.variable):
+                    raise ValueError("Conflicting forecast reference clocks")
+                ds = ds.drop_vars("forecast_reference_time")
+            renames["time"] = "forecast_reference_time"
+        renames[source] = "time"
+    result = ds.rename(renames).copy(deep=False)
+    if "time" in result and result.time.ndim == 0:
+        result = result.assign_coords(time=("time", np.atleast_1d(result.time.values),
+                                             dict(result.time.attrs)))
+    if renames:
+        pattern = re.compile(r"\b(" + "|".join(map(re.escape, renames)) + r")\b")
+        for name in result.variables:
+            for mapping in ("attrs", "encoding"):
+                metadata = dict(getattr(result[name], mapping))
+                for key in ("coordinates", "bounds", "cell_methods", "formula_terms",
+                            "cell_measures", "ancillary_variables"):
+                    if isinstance(metadata.get(key), str):
+                        metadata[key] = pattern.sub(lambda m: renames[m[0]], metadata[key])
+                setattr(result[name], mapping, metadata)
+    return result
+
+
+def _merge_variable_shards(datasets, variables):
+    """Merge selected disjoint fields only after exact coordinate/auxiliary checks."""
+    from frameit.processing.polar.metadata import coordinate_dependency_names
+
+    requested = set(variables)
+    geography = {name for ds in datasets for name in ds.variables
+                 if name in {"latitude", "longitude", "nav_lat", "nav_lon"}
+                 or ds[name].attrs.get("standard_name") in {"latitude", "longitude"}}
+    for ds in datasets:
+        if geography - set(ds.variables):
+            raise ValueError("NetCDF variable shards require the same geography coordinates")
+    datasets = [ds.set_coords(sorted(geography)) for ds in datasets]
+    logical = ChainMap(*({name: ds[name] for name in ds.variables} for ds in datasets))
+    dependencies = coordinate_dependency_names(
+        logical, requested, coordinates={name for ds in datasets for name in ds.coords})
+    missing = requested - {name for ds in datasets for name in ds.variables}
+    if missing:
+        raise ValueError(f"NetCDF variable shards missing providers: {sorted(missing)}")
+    selected, seen = [], {}
+    for ds in datasets:
+        names = requested & set(ds.variables)
+        keep = names | dependencies | set(ds.coords)
+        part = ds.drop_vars([name for name in ds.data_vars if name not in keep])
+        for name in set(part.variables) | set(ds.coords):
+            value = ds[name]
+            if name in seen:
+                if name in requested and name not in part.coords:
+                    raise ValueError(f"Duplicate selected physical-field provider: {name}")
+                if value.ndim > 2:
+                    raise ValueError(f"Repeated auxiliary {name} requires unsupported physical-cube equality")
+                if not value.variable.identical(seen[name].variable):
+                    raise ValueError(f"NetCDF variable shards disagree on coordinate/auxiliary {name}")
+            else:
+                seen[name] = value
+        if selected and ("time" not in part.coords or "time" not in selected[0].coords
+                         or not part.time.variable.equals(selected[0].time.variable)):
+            raise ValueError("Variable shards require identical sample time coordinates")
+        if selected and (set(part.coords) ^ set(selected[0].coords)) & {"forecast_reference_time"}:
+            raise ValueError("Variable shards require the same forecast reference clock")
+        selected.append(part)
+    return xr.merge(selected, join="exact", compat="identical", combine_attrs="override")
 
 # -------------------------------------------------------------
 # Minimal, reusable NetCDF opener
@@ -36,9 +158,12 @@ def concat_nc2ds(
     resources=None,
     engine="h5netcdf",
     chunks=None,
+    *,
+    file_layout="time_series",
+    time_conf=None,
 ) -> xr.Dataset:
     """
-    Open and concatenate a list of NetCDF files into a single Dataset.
+    Open selected NetCDF variables lazily, concatenating times or merging shards.
 
     Uses ``xr.open_dataset`` for each original input, then combines the
     lazy arrays. Loading is lazy (Dask): data is read only on
@@ -55,13 +180,16 @@ def concat_nc2ds(
         loading to reduce memory usage.
     concat_dimension : str or None, optional
         Dimension along which to concatenate (e.g. "time").  When None,
-        ``xr.open_mfdataset`` uses ``combine="by_coords"``.
+        use ``combine_by_coords`` for the default time-series layout.
     parallel : bool, optional
         Retained for API compatibility. Original handles are opened serially;
         array computation remains lazy and can use Dask scheduling.
     strict : bool, optional
         Consume an explicit inventory without sorting or omitting missing
         paths. Default False preserves ordinary discovery behaviour.
+    file_layout : {"time_series", "variables"}
+        Default time series require selected fields in every file. Variable
+        shards require unique selected providers and exact shared coordinates.
 
     Returns
     -------
@@ -77,55 +205,39 @@ def concat_nc2ds(
     files = resolve_input_files(files_list, strict=strict)
     variables = list(variables)
 
-    # List variables from the first file (used to build drop_variables)
-    with xr.open_dataset(files[0], decode_cf=False, engine=engine) as t0:
-        all_vars = list(t0.data_vars)
-        from frameit.processing.polar.metadata import coordinate_dependency_names
+    if file_layout not in {"time_series", "variables"}:
+        raise ValueError("NetCDF file_layout must be time_series or variables")
+    conf = time_conf or SimpleNamespace(name_time_dim=concat_dimension or "time", atm_model="AROME")
+    if file_layout == "variables":
+        opened = [normalize_netcdf_time(resources.add(xr.open_dataset(
+            path, engine=engine, chunks={} if chunks is None else chunks)), conf) for path in files]
+        return _merge_variable_shards(opened, variables)
 
-        dependencies = coordinate_dependency_names(t0, variables)
-    keep_vars = list(dict.fromkeys([v for v in set(variables) | dependencies if v in all_vars]))
-    drop_vars = [v for v in all_vars if v not in keep_vars]
+    from frameit.processing.polar.metadata import coordinate_dependency_names
 
-    if len(files) == 1:
-        if logger:
-            logger.debug("Single-file mode: xr.open_dataset")
-        ds = resources.add(
-            xr.open_dataset(
-                files[0],
-                engine=engine,
-                drop_variables=drop_vars or None,
-                chunks={} if chunks is None else chunks,
-            )
-        )
+    opened = []
+    for path in files:
+        original = resources.add(xr.open_dataset(
+            path, engine=engine, chunks={} if chunks is None else chunks))
+        missing = set(variables) - set(original.variables)
+        if missing:
+            raise ValueError(f"{path}: NetCDF input missing requested fields: {sorted(missing)}")
+        prepared = normalize_netcdf_time(original, conf)
+        keep = set(variables) | coordinate_dependency_names(prepared, variables)
+        opened.append(prepared.drop_vars([name for name in prepared.data_vars if name not in keep]))
+    if getattr(conf, "atm_model", None) in {"NEMO", "CROCO"}:
+        validate_native_metadata(opened, model=conf.atm_model)
+    if getattr(conf, "netcdf_surfex_fields", []):
+        from frameit.io.surfex_utils import validate_surfex_metadata
+
+        validate_surfex_metadata(opened, set(conf.netcdf_surfex_fields) & set(variables))
+    if len(opened) == 1:
+        ds = opened[0]
+    elif concat_dimension:
+        ds = xr.concat(opened, dim="time" if "time" in opened[0].dims else concat_dimension,
+                       data_vars="all", coords="different", compat="no_conflicts", join="outer")
     else:
-        if logger:
-            logger.debug(
-                "Multi-file mode: original-handle loading (combine=%s, concat_dim=%s)",
-                "nested" if concat_dimension else "by_coords",
-                concat_dimension,
-            )
-        # Keep each original handle alive, rather than relying on a derived
-        # merged Dataset to inherit all backend close callbacks.
-        opened = [
-            resources.add(
-                xr.open_dataset(
-                    file, engine=engine, drop_variables=drop_vars or None,
-                    chunks={} if chunks is None else chunks,
-                )
-            )
-            for file in files
-        ]
-        if concat_dimension:
-            ds = xr.concat(
-                opened,
-                dim=concat_dimension,
-                data_vars="all",
-                coords="different",
-                compat="no_conflicts",
-                join="outer",
-            )
-        else:
-            ds = xr.combine_by_coords(opened)
+        ds = xr.combine_by_coords(opened)
 
     if logger:
         present = ", ".join(sorted(ds.data_vars))
@@ -157,6 +269,7 @@ def concat_nc2ds_by_vert_coord(
     chunks=None,
     duplicate_time_policy="first",
     native_output_groups=None,
+    file_layout="time_series",
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open the NetCDF files once then apply two independent requests.
@@ -194,6 +307,10 @@ def concat_nc2ds_by_vert_coord(
     }
 
     files = resolve_input_files(files, strict=strict)
+    ocean = wind_conf is not None and wind_conf.atm_model in {"NEMO", "CROCO"}
+    if ocean:
+        float_tol = None
+        geovar_candidates = (wind_conf.name_latitude, wind_conf.name_longitude)
     mnh_centroid = wind_conf is not None and wind_conf.atm_model == "MNH" and (
         method == "pressure_centroid" or (method is None and "pressure_centroid" in methods))
     mnh_fields = None
@@ -227,7 +344,22 @@ def concat_nc2ds_by_vert_coord(
         tracker_req_by_method["pressure_centroid"] = normalize_requests(mnh_fields.requests())
         wind_conf.requested_variables_tracker["pressure_centroid"] = mnh_fields.requests()
 
-    if len(files) > 1:
+    if file_layout not in {"time_series", "variables"}:
+        raise ValueError("NetCDF file_layout must be time_series or variables")
+    if len(files) > 1 and file_layout == "time_series":
+        if wind_conf is not None and wind_conf.atm_model == "CROCO":
+            from frameit.io.croco_utils import current_pairs, polar_fields
+
+            pairs = current_pairs(wind_conf)
+            polar = polar_fields(wind_conf)
+            if pairs or polar:
+                # Validate native companions before per-file rotation hides their metadata.
+                headers = [normalize_netcdf_time(resources.add(xr.open_dataset(
+                    path, engine=engine)), wind_conf) for path in files]
+                names = {name for pair in pairs for name in pair} | polar | {"mask_rho"}
+                if pairs:
+                    names.update(("angle", "mask_u", "mask_v"))
+                validate_native_metadata(headers, names, model="CROCO")
         # Interpret units, basis and native brackets independently in each file.
         # Concatenating first would retain only one file's interpretation.
         users, trackers, natives = [], [], []
@@ -240,6 +372,7 @@ def concat_nc2ds_by_vert_coord(
                 float_tol=float_tol, resources=resources, wind_conf=wind_conf, engine=engine,
                 chunks=chunks, duplicate_time_policy=duplicate_time_policy,
                 native_output_groups=native,
+                file_layout=file_layout,
             )
             users.append(user)
             trackers.append(tracker)
@@ -250,6 +383,13 @@ def concat_nc2ds_by_vert_coord(
             result = {}
             for group in dict.fromkeys(g for part in parts for g in part):
                 sequence = [part[group] for part in parts if group in part]
+                if ocean:
+                    validate_native_metadata(sequence, model=wind_conf.atm_model)
+                if getattr(wind_conf, "netcdf_surfex_fields", []):
+                    from frameit.io.surfex_utils import validate_surfex_metadata
+
+                    fields = set(wind_conf.netcdf_surfex_fields) & set().union(*(ds.data_vars for ds in sequence))
+                    validate_surfex_metadata(sequence, fields)
                 result[group] = drop_time_dupes(xr.concat(
                     sequence, dim="time", data_vars="minimal", coords="different",
                     compat="equals", join="exact", combine_attrs="override",
@@ -274,7 +414,7 @@ def concat_nc2ds_by_vert_coord(
     if vortex_fields is not None:
         requested_vars_all.update(vortex_fields.variables)
 
-    if wind_conf is not None:
+    if wind_conf is not None and not ocean:
         from frameit.processing.derived.wind import wind_names
         from frameit.processing.wind_reference import wind_pairs
 
@@ -292,11 +432,24 @@ def concat_nc2ds_by_vert_coord(
                 if rotation.get("method") == "mesonh_projection":
                     requested_vars_all.update(("BETA", "RPK", "LON0", "CARTESIAN"))
 
+    if wind_conf is not None and wind_conf.atm_model == "CROCO":
+        from frameit.io.croco_utils import current_pairs, polar_fields
+
+        pairs = current_pairs(wind_conf)
+        if pairs:
+            requested_vars_all.update(name for pair in pairs for name in pair)
+            requested_vars_all.update(("angle", "mask_rho"))
+        if polar_fields(wind_conf):
+            requested_vars_all.add("mask_rho")
+
     # Automatically add geographic variables
+    requested_vars_all.discard("wind_speed")
     auto_geo = []
     if keep_geovars:
-        with xr.open_dataset(files[0], decode_cf=False, engine=engine) as t0:
-            present = set(t0.data_vars) | set(t0.coords)
+        present = set()
+        for path in files:
+            with xr.open_dataset(path, decode_cf=False, engine=engine) as t0:
+                present.update(t0.variables)
         auto_geo = [name for name in geovar_candidates if name in present]
         if auto_geo:
             logger.info("Auto-adding geographic variables: %s", ", ".join(auto_geo))
@@ -312,17 +465,22 @@ def concat_nc2ds_by_vert_coord(
         resources=resources,
         engine=engine,
         chunks=chunks,
+        file_layout=file_layout,
+        time_conf=wind_conf,
     )
-    # Input presets name the source axis; the grouped processing contract uses
-    # canonical time, just like the GRIB/FA adapters. Do this before selection
-    # and deduplication, including each leaf of a multi-file inventory.
-    if concat_dimension != "time" and concat_dimension in ds.dims:
-        if "time" in ds:
-            raise ValueError(f"NetCDF time coordinate 'time' conflicts with configured "
-                             f"dimension {concat_dimension!r}; provide an unambiguous "
-                             "source schema")
-        ds = ds.rename({concat_dimension: "time"})
+    # The opener normalizes source clocks before selection and deduplication.
+    if "time" in ds.dims:
         concat_dimension = "time"
+    if ocean:
+        from frameit.core.preflight import _check_requests
+
+        _check_requests([ds], user_requested_variables_yaml, Path("selected-inputs"), tolerance=0.)
+
+    for req in [user_req, *tracker_req_by_method.values()]:
+        for spec in req.values():
+            missing = set(spec.get("variables", [])) - set(ds.data_vars) - {"wind_speed"}
+            if missing:
+                raise ValueError(f"NetCDF input missing requested fields: {sorted(missing)}")
 
     # Promote geographic variables to coordinates if needed
     if auto_geo:
@@ -330,7 +488,7 @@ def concat_nc2ds_by_vert_coord(
         if keep_as_coords:
             ds = ds.set_coords(keep_as_coords)
 
-    if wind_conf is not None:
+    if wind_conf is not None and not ocean:
         from frameit.processing.derived.wind import normalize_native_wind_units
         from frameit.utils.units import normalize_geography
 
@@ -365,7 +523,11 @@ def concat_nc2ds_by_vert_coord(
         from frameit.processing.wind_collocation import prepare_native_mnh
 
         ds_user_native, mass_w = prepare_native_mnh(ds, wind_conf)
-    elif wind_conf is not None:
+    elif wind_conf is not None and wind_conf.atm_model == "CROCO":
+        from frameit.io.croco_utils import prepare_croco_currents
+
+        ds_user_native = prepare_croco_currents(ds, wind_conf)
+    elif wind_conf is not None and not ocean:
         from frameit.processing.derived.wind import normalize_winds
 
         ds_user_native = ds

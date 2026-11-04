@@ -16,8 +16,10 @@ def horizontal_axes(conf):
     """Named mass and Meso-NH alias axes; never infer geometry from array order."""
     x = getattr(conf, "name_lon_dim", None) or "ni"
     y = getattr(conf, "name_lat_dim", None) or "nj"
-    return (y, x), {y: "y", x: "x", "nj_u": "y", "ni_u": "x",
-                    "nj_v": "y", "ni_v": "x"}
+    axes = {y: "y", x: "x", "nj_u": "y", "ni_u": "x", "nj_v": "y", "ni_v": "x"}
+    if getattr(conf, "atm_model", None) == "CROCO":
+        axes.update(xi_u="x", eta_v="y")
+    return (y, x), axes
 
 
 def _normalize_dataset_dims(
@@ -127,6 +129,7 @@ def normalize_dims_for_extraction(
         "hybrid",
         "hybrid1",
         "hybrid2",  # possible model level names
+        "deptht", "depthu", "depthv", "depthw",
     )
     vertical_dims = getattr(
         conf,

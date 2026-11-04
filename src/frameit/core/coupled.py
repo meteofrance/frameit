@@ -119,7 +119,7 @@ def _stamps(values, context):
     return {str(value.astype('datetime64[ns]')) for value in array.reshape(-1)}
 
 
-def _inventory(conf):
+def _inventory(conf, *, temporal=False):
     from frameit.core.preflight import infer_format, open_metadata
 
     files = discover_input_files(conf)
@@ -127,8 +127,19 @@ def _inventory(conf):
     records = []
     probe = conf.copy()
     probe.requested_variables_user = {}
+    requested = set()
+    if temporal:
+        from frameit.core.preflight import wind_dependencies
+
+        if conf.file_type != "netcdf":
+            raise ValueError("preceding_hour requires named NetCDF sources")
+        for request in (conf.requests_user(), conf.requests_tracker().get(conf.tracking_method, {})):
+            expanded, _ = wind_dependencies(conf, request)
+            requested.update(name for spec in expanded.values() for name in spec.get("variables", [])
+                             if name != "wind_speed")
     for path in files:
         times, references = set(), set()
+        temporal_fields, cells, collision = {}, [], False
         if conf.file_type == "fa":
             from frameit.io.fa_backend import inspect_fa
 
@@ -142,8 +153,33 @@ def _inventory(conf):
             references = {info["reference_time"]}
         else:
             with DatasetResources() as resources:
-                for _, datasets in open_metadata([path], probe, resources):
+                if temporal:
+                    from frameit.io.netcdf_utils import normalize_netcdf_time
+
+                    original = resources.add(xr.open_dataset(path, engine=conf.netcdf_engine))
+                    metadata = [(path, [normalize_netcdf_time(original, probe)])]
+                else:
+                    metadata = open_metadata([path], probe, resources)
+                for _, datasets in metadata:
                     for ds in datasets:
+                        if temporal:
+                            native_times = _stamps(ds.time.values, str(path))
+                            if len(native_times) != ds.time.size:
+                                raise ValueError(f"{path}: duplicate native sample timestamps; "
+                                                 "preceding_hour requires unique physical records")
+                            temporal_fields.update({name: {key: ds[name].attrs[key] for key in (
+                                "cell_methods", "online_operation", "GRIB_stepType") if key in ds[name].attrs}
+                                for name in requested & set(ds.data_vars)})
+                            collision |= "source_time" in ds
+                            if conf.atm_model == "NEMO":
+                                bounds = ds.time.attrs.get("bounds")
+                                if not bounds or bounds not in ds:
+                                    raise ValueError(f"{path}: preceding_hour requires native time bounds")
+                                _stamps(ds[bounds].values, str(path))
+                                cells = [{"source_time": str(np.datetime64(sample, "ns")),
+                                          "start": str(np.datetime64(lo, "ns")),
+                                          "end": str(np.datetime64(hi, "ns"))}
+                                         for sample, (lo, hi) in zip(ds.time.values, ds[bounds].values, strict=True)]
                         for name in ("time", "valid_time"):
                             if name in ds.coords:
                                 calendar = ds[name].encoding.get("calendar", ds[name].attrs.get(
@@ -159,6 +195,9 @@ def _inventory(conf):
             raise ValueError(f"{path}: no valid source timestamps")
         records.append({"path": str(path), "times": sorted(times),
                         "reference_times": sorted(str(np.datetime64(t, 'ns')) for t in references)})
+        if temporal:
+            records[-1].update(temporal_fields=temporal_fields, time_cells=cells,
+                               source_time_conflict=collision)
     return records
 
 
@@ -200,14 +239,15 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
     """Discover times first; scientifically validate only the selected records."""
     from frameit.core.preflight import polar_sampling_plan, preflight
 
+    preceding = conf.time_alignment == "preceding_hour"
     children = {name: SimulationConfig.from_mapping_with_model_preset(
         source_document(conf.yaml_config, name),
-        _defer_polar_sampling=conf.polar_shared_target) for name in conf.input_sources}
+        _defer_polar_sampling=conf.polar_shared_target or preceding) for name in conf.input_sources}
     requested_polar = conf.simulation_parameter.setdefault("coupled_polar_requests", {
         name: {key: child.yaml_config["polar"][key] for key in (
             "radial_step_m", "azimuth_count", "azimuth_step_deg", "ellipsoid")}
         for name, child in children.items()})
-    inventories = {name: _inventory(child) for name, child in children.items()}
+    inventories = {name: _inventory(child, temporal=preceding) for name, child in children.items()}
     track_times = None
     if conf.tracking_method == "prescribed_track":
         from frameit.io.track_file import load_track_coordinates
@@ -217,12 +257,20 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
                                        latitude_name=conf.prescribed_track_lat_name,
                                        longitude_name=conf.prescribed_track_lon_name)
         track_times = _stamps(track.time.values, "prescribed track")
-    alignment = align_source_times(inventories, conf.time_alignment, track_times)
+    if preceding:
+        from frameit.core.time_association import align_preceding_hour
+
+        alignment = align_preceding_hour(inventories, conf.tracking_source,
+                                         {name: child.atm_model for name, child in children.items()}, track_times)
+    else:
+        alignment = align_source_times(inventories, conf.time_alignment, track_times)
     selected = set(alignment["selected_times"])
     plans = {}
     known_cycles = []
     for name, child in children.items():
-        entries = [item for item in inventories[name] if set(item["times"]) & selected]
+        native_times = ({item["source_time"] for item in alignment["sources"][name]["associations"]}
+                        if preceding else selected)
+        entries = [item for item in inventories[name] if set(item["times"]) & native_times]
         references = {time for entry in entries for time in entry["reference_times"]}
         if len(references) > 1:
             raise ValueError(f"Source {name}: select one forecast cycle explicitly")
@@ -243,8 +291,8 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
             # the resolved target now, never an unused fine-grid intermediate.
             child.__post_init__()
             if child.compute_polar_proj:
-                count = len(selected) if shared is not None and name in shared[
-                    "participants"] else plans[name]["track_time_count"]
+                count = len(selected) if preceding or (shared is not None and name in shared[
+                    "participants"]) else plans[name]["track_time_count"]
                 sampling = polar_sampling_plan(child, count)
                 plans[name]["polar_sampling"] = {
                     **plans[name].get("polar_sampling", {}), **sampling}
@@ -266,7 +314,9 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
     conf.add_parameter("source_provenance", {
         name: {"model": child.atm_model, "format": child.file_type,
                "grid_geometry": child.grid_geometry, "inventory": inventories[name],
-               "unit_provenance": child.simulation_parameter.get("unit_provenance", []),
+                "unit_provenance": child.simulation_parameter.get("unit_provenance", []),
+                "surfex_provenance": child.simulation_parameter.get("surfex_provenance", []),
+                "current_provenance": child.simulation_parameter.get("current_provenance", []),
                "wind_provenance": child.simulation_parameter.get("wind_provenance", []),
                "fa_inputs": child.simulation_parameter.get("fa_inventory", [])}
         for name, child in children.items()})
@@ -407,10 +457,19 @@ def run_coupled(runner, *, benchmark=False):
             consumer.timer.start()
             consumer.preflight_report = plans[name]
             consumer.ds_user, consumer.ds_tracker, source_files = consumer.load_dataset()
-            consumer.ds_user = _select_times(consumer.ds_user, times)
-            consumer.ds_tracker = _select_times(consumer.ds_tracker, times)
-            consumer._native_cartesian_groups = _select_times(
-                consumer._native_cartesian_groups, times)
+            if conf.time_alignment == "preceding_hour" and child.atm_model == "NEMO":
+                from frameit.core.time_association import associate_preceding_times
+
+                associations = plan["time_alignment"]["sources"][name]["associations"]
+                consumer.ds_user = associate_preceding_times(consumer.ds_user, associations)
+                consumer.ds_tracker = associate_preceding_times(consumer.ds_tracker, associations)
+                consumer._native_cartesian_groups = associate_preceding_times(
+                    consumer._native_cartesian_groups, associations)
+            else:
+                consumer.ds_user = _select_times(consumer.ds_user, times)
+                consumer.ds_tracker = _select_times(consumer.ds_tracker, times)
+                consumer._native_cartesian_groups = _select_times(
+                    consumer._native_cartesian_groups, times)
             consumers[name] = consumer
             files.extend(source_files)
             if benchmark:

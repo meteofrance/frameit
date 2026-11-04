@@ -160,8 +160,16 @@ def _sample_piece(source, names, pair, geometry, conf, method, plan_cache, sourc
     leading, auxiliaries, mapping = source_auxiliaries(
         cropped, conf.name_longitude, conf.name_latitude, field_names=names
     )
+    if getattr(conf, "atm_model", None) == "CROCO":
+        masks = {"mask_rho", "mask_u", "mask_v"}
+        if masks.intersection(names):
+            raise ValueError("CROCO binary mask polar sampling is not qualified; use native masks")
+        # Native support is already applied; binary masks are not continuous fields.
+        for name in masks:
+            leading.pop(name, None)
+            auxiliaries.pop(name, None)
     joint = None
-    if all(name in names for name in pair):
+    if pair and all(name in names for name in pair):
         u, v = align_wind_pair(cropped[pair[0]], cropped[pair[1]])
         joint = np.isfinite(u) & np.isfinite(v)
         joint = joint.reset_coords(drop=True)
@@ -207,7 +215,7 @@ def _sample_piece(source, names, pair, geometry, conf, method, plan_cache, sourc
 def _quality_for_outputs(ds, sampled_names, pair, internal):
     for name in sampled_names:
         attach_quality(ds, name, ds[f"{name}_support_fraction"], ds[f"{name}_interpolation_status"])
-    if all(name in sampled_names for name in pair):
+    if pair and all(name in sampled_names for name in pair):
         for name in ("vrad", "vtan", "wind_speed"):
             if name not in ds:
                 continue
@@ -278,6 +286,7 @@ def polar_project(
     if not reference_index.is_monotonic_increasing:
         raise ValueError("Reference time labels must be increasing")
     time = xr.DataArray(reference.time.variable)
+    time_encodings = {name: dict(ds.time.encoding) for name, ds in dico_collocated.items()}
     inputs = {name: align_times(ds, time, f"Source group {name}")
               for name, ds in dico_collocated.items()}
     report = {"projected": [], "skipped": [], "redirects": [], "unused_track_times": 0}
@@ -301,7 +310,7 @@ def polar_project(
     for (output, source_name), job in _projection_jobs(requests, inputs, report, conf).items():
         source = inputs[source_name]
         requested = job["variables"]
-        pair = wind_names(conf, output)
+        pair = () if getattr(conf, "atm_model", None) in {"NEMO", "CROCO"} else wind_names(conf, output)
         internal = []
         if "wind_speed" in requested:
             if not all(name in source for name in pair):
@@ -373,6 +382,10 @@ def polar_project(
             work["pieces"], dim="time", coords="different", compat="equals"
         )
         result = result.assign_coords(time=time.variable)
+        # Per-time sampling drops scalar clocks; restore untouched leading auxiliaries.
+        leading, _, _ = source_auxiliaries(
+            source, conf.name_longitude, conf.name_latitude, field_names=names)
+        result = restore_auxiliaries(result, leading, {})
         for name in ("lon", "lat"):
             label = conf.name_longitude if name == "lon" else conf.name_latitude
             result = result.assign_coords({label: geometry[name].variable})
@@ -404,15 +417,27 @@ def polar_project(
         )
         result = finalize_polar_output(result)
         coordinate_attributes = {name: dict(coord.attrs) for name, coord in result.coords.items()}
-        result = add_vrad_vtan_from_polar_dict({output: result}, conf)[output]
-        result = add_speed_from_uv_dict({output: result}, conf)[output]
+        if getattr(conf, "atm_model", None) not in {"NEMO", "CROCO"}:
+            result = add_vrad_vtan_from_polar_dict({output: result}, conf)[output]
+            result = add_speed_from_uv_dict({output: result}, conf)[output]
         result = _quality_for_outputs(result, names, pair, internal)
         # xarray mask arithmetic may discard coordinate attributes when its
         # arrays are assigned back. Restore the authoritative coordinate schema.
         for name, attributes in coordinate_attributes.items():
             if name in result.coords:
                 result[name].attrs = attributes
+        result.time.encoding = time_encodings[source_name]
         result = finalize_polar_output(result)
+        if getattr(conf, "atm_model", None) == "CROCO":
+            # Interpolating h/zeta does not commute with the nonlinear depth formula.
+            for axis in ("s_rho", "s_w"):
+                if axis in result.coords:
+                    attrs = dict(result[axis].attrs)
+                    for key in ("formula_terms", "standard_name"):
+                        if key in attrs:
+                            attrs.setdefault(f"source_{key}", attrs.pop(key))
+                    result[axis].attrs = attrs
+            result.attrs["vertical_sampling"] = "native_sigma_indices_not_constant_physical_depth"
         for name, variable in list(result.data_vars.items()):
             if chunks and hasattr(variable.data, "__dask_graph__"):
                 result[name] = variable.chunk({dim: size for dim, size in chunks.items()

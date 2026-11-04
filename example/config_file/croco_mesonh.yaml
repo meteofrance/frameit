@@ -1,0 +1,66 @@
+schema_version: 2
+model: mesonh
+run:
+  name: croco-mesonh
+input:
+  time_alignment: common  # Exact labels only; strict rejects unequal timelines.
+  sources:
+    ocean:
+      model: croco
+      input:
+        format: netcdf
+        directory: ./data/croco
+        pattern: "*_his.nc"
+      variables:
+        # Adapt indices to the inspected native sigma axis; these are not metres.
+        s_rho:
+          names: [temp, salt, u, v, w]
+          levels: {indices: [0, 49]}
+        surface:
+          names: [zeta]
+      polar:
+        variables:
+          s_rho: {names: [temp, u, v]}
+    atmosphere:
+      model: mesonh
+      input:
+        format: netcdf
+        directory: ./data/mesonh
+        pattern: "*diag.nc"
+        netcdf:
+          # Explicit embedded SEA interpretation; no inferred flux sign or timing.
+          surfex_fields: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA]
+      variables:
+        surface:
+          names: [MSLP, SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA, FRAC_SEA]
+        level:
+          names: [PRES]
+          levels: {indices: [1, 70]}
+      polar:
+        variables:
+          surface: {names: [MSLP, SST, SSS]}
+tracking:
+  source: atmosphere
+  method: fixed_box
+  fixed_box:
+    # Illustrative common-ocean centre, not an identified cyclone position.
+    center: {latitude: -11.0, longitude: 55.0}
+domain:
+  size_km: {x: 100, y: 100}
+polar:
+  enabled: false  # Opt in to spatial point sampling; not a constant-depth section.
+  shared_target: true
+  azimuth_count: 16
+  radial_step_m: 2000
+  max_points: 5000
+execution:
+  native_threads: 1
+  dask_workers: 1
+output:
+  directory: ./output/croco-mesonh
+  overwrite: false
+  engine: netcdf4
+  synchronous_export: true
+  max_workers: 1
+  # native copies native faces/basis/units; mass_earth selects CROCO rho/Earth currents.
+  cartesian: {horizontal_winds: mass_earth}

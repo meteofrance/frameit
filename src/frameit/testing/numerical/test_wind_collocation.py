@@ -162,6 +162,7 @@ def test_runner_loads_speed_only_native_dependencies(tmp_path, monkeypatch):
     settings.infer_grid_geometry = False
     settings.netcdf_engine = "h5netcdf"
     settings.netcdf_chunks = {}
+    settings.netcdf_file_layout = "time_series"
     settings.duplicate_time_policy = "first"
     settings.name_time_dim = "time"
     settings.name_latitude = "latitude"

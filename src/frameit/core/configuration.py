@@ -25,7 +25,7 @@ DEFAULTS = {
         "directory": "./data", "pattern": None, "files": None, "exclude": [],
         "format": None, "grid_spacing_m": None, "duplicate_time_policy": "first",
         "wind_reference_frame": None, "wind_pairs": [],
-        "netcdf": {"engine": "h5netcdf", "chunks": {}},
+        "netcdf": {"engine": "h5netcdf", "chunks": {}, "file_layout": "time_series", "surfex_fields": []},
         "fa": {"profile": None, "subdomain": "CI", "earth_radius_m": None,
                "field_metadata": {}, "expected_source": {},
                "backend": "epygram", "python_executable": None, "native_cubes": {},
@@ -423,7 +423,7 @@ def resolve_schema(raw, *, base_dir=None):
     enum_paths = (
         "model", "tracking.method", "input.format", "input.duplicate_time_policy",
         "input.time_alignment",
-        "input.wind_reference_frame", "input.netcdf.engine", "domain.edge_policy",
+        "input.wind_reference_frame", "input.netcdf.engine", "input.netcdf.file_layout", "domain.edge_policy",
         "polar.interpolation_method", "polar.missing_data_policy", "polar.ellipsoid",
         "output.engine", "output.format", "logging.level",
         "tracking.pressure_centroid.motion.solver",
@@ -437,10 +437,15 @@ def resolve_schema(raw, *, base_dir=None):
             path in {"input.format", "input.wind_reference_frame"} and value is None
         ):
             raise ValueError(f"{path} must be a string")
-    if "model" not in raw or conf["model"] not in {"arome", "mesonh"}:
-        raise ValueError("model must be 'arome' or 'mesonh'")
+    if "model" not in raw or conf["model"] not in {"arome", "mesonh", "nemo", "croco"}:
+        raise ValueError("model must be 'arome', 'mesonh', 'nemo' or 'croco'")
     base = Path(base_dir or Path.cwd()).resolve()
     inp, trk, pol, out = (conf[n] for n in ("input", "tracking", "polar", "output"))
+    if conf["model"] in {"nemo", "croco"}:
+        if trk["method"] not in {"fixed_box", "prescribed_track"}:
+            raise ValueError(f"{conf['model'].upper()} reference sources require fixed_box or prescribed_track")
+        if inp["format"] not in {None, "netcdf"}:
+            raise ValueError(f"{conf['model'].upper()} supports only native NetCDF inputs")
     if not inp["sources"] and bool(inp["pattern"]) == bool(inp["files"]):
         raise ValueError("input requires exactly one of pattern or files")
     for key in ("directory",):
@@ -456,8 +461,10 @@ def resolve_schema(raw, *, base_dir=None):
             raise ValueError(f"input.{key} must be a list of paths/patterns")
     if inp["format"] not in {None, "grib", "netcdf", "fa"}:
         raise ValueError("input.format must be grib, netcdf or fa")
-    if inp["time_alignment"] not in {"common", "strict"}:
-        raise ValueError("input.time_alignment must be common or strict")
+    if inp["time_alignment"] not in {"common", "strict", "preceding_hour"}:
+        raise ValueError("input.time_alignment must be common, strict or preceding_hour")
+    if inp["time_alignment"] == "preceding_hour" and not inp["sources"]:
+        raise ValueError("input.time_alignment: preceding_hour requires named NetCDF sources")
     validate_fa_options(inp["fa"], inp["format"] == "fa")
     if inp["format"] == "fa" and conf["model"] != "arome":
         raise ValueError("Current FA profiles require model: arome; declare the actual "
@@ -607,6 +614,12 @@ def resolve_schema(raw, *, base_dir=None):
     validate_zarr_sizes(out["zarr_chunk_size"], out["zarr_shard_size"])
     if inp["netcdf"]["engine"] not in {"h5netcdf", "netcdf4", "scipy"}:
         raise ValueError("Unsupported input.netcdf.engine")
+    if inp["netcdf"]["file_layout"] not in {"time_series", "variables"}:
+        raise ValueError("input.netcdf.file_layout must be time_series or variables")
+    from frameit.io.surfex_utils import validate_surfex_fields
+
+    validate_surfex_fields(inp["netcdf"]["surfex_fields"], conf["model"], inp["format"],
+                           inp["netcdf"]["file_layout"])
     if conf["logging"]["level"] not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
         raise ValueError("logging.level must be DEBUG, INFO, WARNING, or ERROR")
     if not isinstance(conf["metadata"]["extra"], dict):
@@ -684,7 +697,7 @@ def to_runtime(raw, *, base_dir=None):
         "schema_version": 2, "yaml_config": c, "schema_sources": setting_sources(raw, c),
         "simulation_name": c["run"]["name"],
         "comment": c["run"]["description"],
-        "atm_model": {"arome": "AROME", "mesonh": "MNH"}[c["model"]],
+        "atm_model": {"arome": "AROME", "mesonh": "MNH", "nemo": "NEMO", "croco": "CROCO"}[c["model"]],
         "ocean_model": c["metadata"]["ocean_model"], "wave_model": c["metadata"]["wave_model"],
         "resolution": inp["grid_spacing_m"] or 0, "infer_grid_geometry": True,
         "file_name_prefix": "", "file_name": "", "file_name_suffix": "",
@@ -697,6 +710,8 @@ def to_runtime(raw, *, base_dir=None):
         "duplicate_time_policy": inp["duplicate_time_policy"],
         "netcdf_engine": inp["netcdf"]["engine"],
         "netcdf_chunks": inp["netcdf"]["chunks"],
+        "netcdf_file_layout": inp["netcdf"]["file_layout"],
+        "netcdf_surfex_fields": inp["netcdf"]["surfex_fields"],
         "wind_reference_frame": inp["wind_reference_frame"],
         "wind_pairs": inp["wind_pairs"],
         "cartesian_horizontal_winds": c["output"]["cartesian"]["horizontal_winds"],
@@ -969,10 +984,11 @@ def migrate_mapping(old, *, launch_dir=None):
     return c, reports
 
 
-def write_template(model, path, *, full=False, tracking="wind_pressure", force=False):
+def write_template(model, path, *, full=False, tracking=None, force=False):
     """Templates and reference defaults share the schema's source of truth."""
-    if model not in {"arome", "mesonh"}:
-        raise ValueError("model must be arome or mesonh")
+    if model not in {"arome", "mesonh", "nemo", "croco"}:
+        raise ValueError("model must be arome, mesonh, nemo or croco")
+    tracking = tracking or ("fixed_box" if model in {"nemo", "croco"} else "wind_pressure")
     from importlib import resources
 
     template = yaml.safe_load(resources.files("frameit").joinpath(
@@ -1022,6 +1038,7 @@ def write_template(model, path, *, full=False, tracking="wind_pressure", force=F
     text += "# polar.radial_step_m is metres; polar.azimuth_step_deg is degrees.\n"
     text += "# Choose azimuth_step_deg OR azimuth_count; neither means automatic sampling.\n"
     text += "# output.engine: netcdf4 (default), h5netcdf, or zarr (optional extra).\n"
+    text += "# NetCDF: input.netcdf.file_layout: variables merges complementary same-grid files.\n"
     text += "# Zarr: optional zarr_chunk_size / zarr_shard_size map dimension names to element counts.\n"
     if full:
         text += "# FA: FrameIt[fa]/EPyGrAM in an isolated helper; backend: native is deprecated.\n"

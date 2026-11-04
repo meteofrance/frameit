@@ -29,6 +29,24 @@ from frameit.utils.units import convert_units, unit_key
 
 def open_metadata(files, conf, resources):
     """Open lazily with no disk indexes, closing originals on all error paths."""
+    if conf.file_type == "netcdf" and getattr(conf, "netcdf_file_layout", "time_series") == "variables":
+        from frameit.io.netcdf_utils import _merge_variable_shards, normalize_netcdf_time
+
+        opened = [normalize_netcdf_time(resources.add(xr.open_dataset(
+            path, engine=conf.netcdf_engine)), conf) for path in files]
+        requested = set()
+        for request in (conf.requests_user(), conf.requests_tracker().get(conf.tracking_method, {})):
+            expanded, _ = wind_dependencies(conf, request)
+            requested.update(name for spec in expanded.values() for name in spec.get("variables", [])
+                             if name != "wind_speed")
+        requested.update(name for name in (conf.name_latitude, conf.name_longitude)
+                         if any(name in ds for ds in opened))
+        merged = _merge_variable_shards(opened, requested)
+        merged.attrs = dict(merged.attrs, _frameit_variable_providers={
+            name: str(path) for path, ds in zip(files, opened) for name in ds.data_vars
+            if name in requested})
+        yield files[0], [merged]
+        return
     fa_geometries = {}
     fa_vertical_signature = None
     for path in files:
@@ -76,7 +94,10 @@ def open_metadata(files, conf, resources):
         elif conf.file_type == "grib":
             datasets = _grib_metadata(path)
         else:
-            datasets = [xr.open_dataset(path, engine=conf.netcdf_engine)]
+            from frameit.io.netcdf_utils import normalize_netcdf_time
+
+            original = resources.add(xr.open_dataset(path, engine=conf.netcdf_engine))
+            datasets = [normalize_netcdf_time(original, conf)]
         for ds in datasets:
             resources.add(ds)
         yield path, datasets
@@ -228,7 +249,8 @@ def _belongs_to_group(ds, name, group):
         return metadata_group == group
     if group != "surface":
         return group in ds[name].dims or group in ds[name].coords
-    vertical = {"level", "level_w", "heightAboveGround", "isobaricInhPa", "isobaricInPa"}
+    vertical = {"level", "level_w", "heightAboveGround", "isobaricInhPa", "isobaricInPa",
+                "deptht", "depthu", "depthv", "depthw", "s_rho", "s_w"}
     return not (set(ds[name].dims) & vertical)
 
 
@@ -237,6 +259,8 @@ def wind_dependencies(conf, requests):
     from frameit.processing.derived.wind import wind_names
 
     expanded = deepcopy(requests)
+    if getattr(conf, "atm_model", None) in {"NEMO", "CROCO"}:
+        return expanded, []
     pairs = []
     for group, spec in expanded.items():
         variables = spec.setdefault("variables", [])
@@ -335,6 +359,8 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
     files = (discover_input_files(conf) if input_files is None
              else resolve_input_files(input_files, strict=True))
     conf.file_type = infer_format(files, conf.file_type or None)
+    if conf.atm_model in {"NEMO", "CROCO"} and conf.file_type != "netcdf":
+        raise ValueError(f"{conf.atm_model} supports only native NetCDF inputs")
     if conf.file_type == "fa":
         if conf.tracking_method not in {"fixed_box", "prescribed_track"}:
             raise ValueError("FA atmospheric trackers remain gated; use fixed_box/prescribed_track "
@@ -384,6 +410,10 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 mnh_records.append((path, header))
             user_dependencies, user_pairs = wind_dependencies(conf, conf.requests_user())
             tracker_dependencies, tracker_pairs = wind_dependencies(conf, tracker)
+            if conf.file_type == "netcdf":
+                tolerance = 0. if conf.atm_model in {"NEMO", "CROCO"} else .5
+                _check_requests(datasets, user_dependencies, path, tolerance=tolerance)
+                _check_requests(datasets, tracker_dependencies, path, tolerance=tolerance)
             pairs = []
             for pair in user_pairs + tracker_pairs:
                 if pair not in pairs:
@@ -415,7 +445,8 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 variables.update({name: da.attrs.get("units") for name, da in ds.data_vars.items()})
                 for name in ds.coords:
                     spatial_time = {
-                        conf.name_latitude, conf.name_longitude, "time", "valid_time", "step"
+                        conf.name_latitude, conf.name_longitude, "time", "valid_time", "step",
+                        "forecast_reference_time",
                     }
                     if conf.file_type == "fa":
                         spatial_time.update({"x", "y", "source_i", "source_j", "crs",
@@ -478,7 +509,13 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 "calendar", "standard"))) for ds in datasets
                 for name in ("time", "valid_time") if name in ds.coords}
             inventory.append({"path": str(path), "variables": variables, "levels": levels,
-                               "times": sorted(set(times)), "calendars": sorted(calendars)})
+                                "times": sorted(set(times)), "calendars": sorted(calendars)})
+            references = sorted({str(value) for ds in datasets if "forecast_reference_time" in ds
+                                 for value in np.atleast_1d(ds.forecast_reference_time.values)})
+            if references:
+                inventory[-1]["reference_times"] = references
+            if datasets[0].attrs.get("_frameit_variable_providers"):
+                inventory[-1]["variable_providers"] = datasets[0].attrs["_frameit_variable_providers"]
             unmapped = [entry for ds in datasets for entry in ds.attrs.get(
                 "_frameit_unmapped_grib_records", [])]
             if unmapped:
@@ -486,7 +523,25 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
         # Some AROME diagnostics legitimately begin after the initial record.
         # Validate availability across the inventory; per-file gaps remain
         # visible and the loader retains its established NaN/time alignment.
-        tolerance = .51 if conf.file_type == "grib" else .5
+        if conf.atm_model in {"NEMO", "CROCO"}:
+            from frameit.io.netcdf_utils import validate_native_metadata
+
+            metadata_names = set(requested_names)
+            if conf.atm_model == "CROCO":
+                from frameit.io.croco_utils import current_pairs, polar_fields
+
+                pairs = current_pairs(conf)
+                if pairs:
+                    metadata_names.update(name for pair in pairs for name in pair)
+                    metadata_names.update(("angle", "mask_rho", "mask_u", "mask_v"))
+                if polar_fields(conf):
+                    metadata_names.add("mask_rho")
+            validate_native_metadata(grids, metadata_names, model=conf.atm_model)
+        if getattr(conf, "netcdf_surfex_fields", []):
+            from frameit.io.surfex_utils import validate_surfex_metadata
+
+            validate_surfex_metadata(grids, set(conf.netcdf_surfex_fields) & requested_names)
+        tolerance = 0. if conf.atm_model in {"NEMO", "CROCO"} else (.51 if conf.file_type == "grib" else .5)
         _check_requests(grids, user_dependencies, Path("selected-inputs"), tolerance=tolerance)
         if mnh_centroid:
             layout = inspect_mnh_sequence(mnh_records)

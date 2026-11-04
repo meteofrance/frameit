@@ -6,7 +6,10 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22128192.svg)](https://doi.org/10.5281/zenodo.22128192)
 
 FrameIt is a configurable Python tool for fixed or moving subdomain extraction,
-object tracking and selected diagnostics from **AROME and Meso-NH** model outputs.
+object tracking and selected diagnostics from **AROME and Meso-NH** model outputs,
+plus native regional **NEMO** scalar/component and **CROCO** scalar/face extraction
+and explicitly selected CROCO rho/Earth current analysis
+with fixed/prescribed centres.
 It writes NetCDF (default) or optional sharded Zarr v3 products for ordinary readers and researchers' own
 analysis scripts. Model, variable, grid and reference-frame conventions still
 matter when comparing outputs.
@@ -116,7 +119,10 @@ defaults, CLI precedence, wind/level selections and migration.
 - **Scientific selection:** installing dependencies or finding inputs does not
   enable unrequested diagnostics, deaccumulation, rates, height/pressure calculation,
   vector conversion or support-mask filling. Requested methods can require internal
-  companion fields. Ocean and wave model adapters are not currently supported.
+  companion fields. Native regional NEMO scalars and separate U/V/W components
+  retain source depths, sampling
+  intervals and field-specific missingness; see [ocean NetCDF](docs/source/user_guide/ocean_netcdf.rst).
+  This is not general ocean-release or wave-model support.
 
 Start with [native FA and coupled inputs](docs/source/user_guide/fa_inputs.rst) and
 [`example/config_file/coupled_fa.yaml`](example/config_file/coupled_fa.yaml).

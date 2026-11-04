@@ -947,7 +947,7 @@ def extract_data(
             track_box=track_box,
         )
     # Add total wind speed here :
-    if not native_winds:
+    if not native_winds and getattr(conf, "atm_model", None) not in {"NEMO", "CROCO"}:
         extracted = add_speed_from_uv_dict(extracted, conf)
 
     return track_box, extracted

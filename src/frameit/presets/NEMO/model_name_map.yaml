@@ -1,0 +1,8 @@
+name_time_dim: time_counter
+name_vertical_dim: deptht
+name_lat_dim: y
+name_lon_dim: x
+name_latitude: nav_lat
+name_longitude: nav_lon
+velocity_aliases: {}
+tracking_var_aliases: {}

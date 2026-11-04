@@ -1,0 +1,329 @@
+"""Selected lazy assembly: variable shards are not successive snapshots."""
+
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+import xarray as xr
+
+from frameit.io.loader import DatasetResources
+from frameit.io.netcdf_utils import concat_nc2ds, concat_nc2ds_by_vert_coord
+
+
+TIMES = np.array(['2024-12-11T00', '2024-12-11T06'], dtype='datetime64[ns]')
+REFERENCE = np.datetime64('2024-12-11T00', 'ns')
+
+
+def shard(name, value, *, forecast=True):
+    coords = {'valid_time': TIMES,
+              'latitude': ('latitude', [-20., -19.99, -19.98], {'units': 'degrees_north'}),
+              'longitude': ('longitude', [60., 60.01, 60.02], {'units': 'degrees_east'})}
+    if forecast:
+        coords['time'] = xr.DataArray(REFERENCE, attrs={'standard_name': 'forecast_reference_time'})
+    return xr.Dataset({name: (('valid_time', 'latitude', 'longitude'),
+                             np.full((2, 3, 3), value), {'units': 'Pa' if name == 'prmsl' else 'm s-1'})},
+                      coords=coords)
+
+
+def write_shards(tmp_path, datasets):
+    paths = []
+    for i, ds in enumerate(datasets):
+        path = tmp_path / f'part{i}.nc'
+        ds.to_netcdf(path)
+        paths.append(path)
+    return paths
+
+
+def load(paths, names, **kwargs):
+    return concat_nc2ds_by_vert_coord(
+        paths, {'surface': {'variables': names}}, {}, concat_dimension='valid_time',
+        file_layout='variables', **kwargs)[0]['surface']
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_variable_shards_merge_without_duplicate_times(tmp_path, reverse):
+    paths = write_shards(tmp_path, [shard('prmsl', 100000.), shard('u10', 0.), shard('v10', 3.)])
+    with DatasetResources() as resources:
+        ds = load(paths[::-1] if reverse else paths, ['prmsl', 'u10', 'v10'], resources=resources)
+        np.testing.assert_array_equal(ds.time, TIMES)
+        assert set(ds.data_vars) == {'prmsl', 'u10', 'v10'}
+        for name, value in [('prmsl', 100000.), ('u10', 0.), ('v10', 3.)]:
+            assert hasattr(ds[name].data, 'dask')
+            np.testing.assert_array_equal(ds[name], np.full((2, 3, 3), value))
+        assert ds.forecast_reference_time.values == REFERENCE
+
+
+@pytest.mark.parametrize('problem', ['missing', 'duplicate', 'grid', 'clock', 'cycle', 'depth', 'mixed'])
+def test_variable_shards_reject_unsafe_assembly(tmp_path, problem):
+    a, b = shard('prmsl', 100000.), shard('u10', 1.)
+    names = ['prmsl', 'u10']
+    if problem == 'missing':
+        names.append('v10')
+    elif problem == 'duplicate':
+        b['prmsl'] = b.u10
+    elif problem == 'grid':
+        b = b.assign_coords(longitude=b.longitude + .005)
+    elif problem in {'clock', 'mixed'}:
+        b = b.assign_coords(valid_time=TIMES + np.timedelta64(1, 'h'))
+    elif problem == 'cycle':
+        b = b.assign_coords(time=b.time + np.timedelta64(1, 'h'))
+    elif problem == 'depth':
+        a = a.assign_coords(deptht=[1., 2.])
+        b = b.assign_coords(deptht=[1., 3.])
+    paths = write_shards(tmp_path, [a, b])
+    with pytest.raises(ValueError, match='missing|provider|coordinate|clock|time|depth|grid'):
+        load(paths, names)
+
+
+def test_arome_reference_time_survives_normalization():
+    from frameit.io.netcdf_utils import normalize_netcdf_time
+
+    ds = shard('prmsl', 1.)
+    ds.prmsl.encoding['coordinates'] = 'time valid_time'
+    result = normalize_netcdf_time(ds, SimpleNamespace(name_time_dim='valid_time', atm_model='AROME'))
+    np.testing.assert_array_equal(result.time, TIMES)
+    assert result.forecast_reference_time.values == REFERENCE
+    assert result.prmsl.encoding['coordinates'] == 'forecast_reference_time time'
+    assert ds.time.ndim == 0  # normalization must not mutate its input
+
+
+@pytest.mark.parametrize('collision', ['unidentified', 'conflicting', 'vector'])
+def test_arome_reference_time_rejects_ambiguous_collisions(collision):
+    from frameit.io.netcdf_utils import normalize_netcdf_time
+
+    ds = shard('prmsl', 1.)
+    if collision == 'unidentified':
+        ds.time.attrs.clear()
+    elif collision == 'conflicting':
+        ds = ds.assign_coords(forecast_reference_time=REFERENCE + np.timedelta64(1, 'h'))
+    else:
+        ds = ds.drop_vars('time').assign_coords(time=('valid_time', TIMES))
+    with pytest.raises(ValueError, match='time|clock|forecast'):
+        normalize_netcdf_time(ds, SimpleNamespace(name_time_dim='valid_time', atm_model='AROME'))
+
+
+def test_time_series_requires_field_at_each_selected_time(tmp_path):
+    a = shard('prmsl', 1., forecast=False).isel(valid_time=[0])
+    b = shard('u10', 2., forecast=False).isel(valid_time=[1])
+    paths = write_shards(tmp_path, [a, b])
+    with pytest.raises(ValueError, match='missing|prmsl'):
+        concat_nc2ds_by_vert_coord(paths, {'surface': {'variables': ['prmsl']}}, {},
+                                  concat_dimension='valid_time')
+    with pytest.raises(ValueError, match='missing|prmsl'):
+        concat_nc2ds(paths, ['prmsl'], concat_dimension='valid_time')
+
+
+def test_time_series_expands_changing_timeless_snapshots(tmp_path):
+    datasets = []
+    for index, value in enumerate([4., 9.]):
+        ds = shard('prmsl', value, forecast=False).isel(valid_time=index, drop=True)
+        datasets.append(ds.assign_coords(time=TIMES[index]))
+    paths = write_shards(tmp_path, datasets)
+    groups, _ = concat_nc2ds_by_vert_coord(paths, {'surface': {'variables': ['prmsl']}}, {})
+    try:
+        np.testing.assert_array_equal(groups['surface'].prmsl[:, 0, 0], [4., 9.])
+    finally:
+        groups['surface'].close()
+
+
+@pytest.mark.parametrize('policy, expected', [('first', 4.), ('last', 9.)])
+def test_time_series_retains_declared_duplicate_precedence(tmp_path, policy, expected):
+    paths = write_shards(tmp_path, [shard('prmsl', value, forecast=False).isel(valid_time=[0])
+                                    for value in (4., 9.)])
+    groups, _ = concat_nc2ds_by_vert_coord(
+        paths, {'surface': {'variables': ['prmsl']}}, {}, concat_dimension='valid_time',
+        duplicate_time_policy=policy)
+    try:
+        assert groups['surface'].sizes['time'] == 1
+        np.testing.assert_array_equal(groups['surface'].prmsl, np.full((1, 3, 3), expected))
+    finally:
+        groups['surface'].close()
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_variable_shard_original_handles_close(tmp_path, monkeypatch, fail):
+    paths = write_shards(tmp_path, [shard('prmsl', 1.), shard('u10', 2.)])
+    opened, closed = [], []
+    original = xr.open_dataset
+
+    def tracked(*args, **kwargs):
+        ds = original(*args, **kwargs)
+        close = ds._close
+        token = len(opened)
+        opened.append(token)
+
+        def closing():
+            closed.append(token)
+            close()
+
+        ds.set_close(closing)
+        return ds
+
+    monkeypatch.setattr(xr, 'open_dataset', tracked)
+    if fail:
+        with pytest.raises(ValueError):
+            load(paths, ['prmsl', 'absent'])
+    else:
+        result = load(paths, ['prmsl', 'u10'])
+        assert set(closed) != set(opened)
+        result.close()
+    assert set(closed) == set(opened)
+
+
+def test_variable_shards_selected_only_payload_stays_lazy(tmp_path):
+    from dask.callbacks import Callback
+
+    ds = shard('prmsl', 1.)
+    ds['unrequested'] = ds.prmsl * 5
+    paths = write_shards(tmp_path, [ds, shard('u10', 2.)])
+    tasks = []
+    with Callback(pretask=lambda key, *args: tasks.append(str(key))):
+        result = concat_nc2ds(paths, ['prmsl', 'u10'], concat_dimension='valid_time', file_layout='variables')
+    try:
+        assert not any(name in task for name in ('prmsl', 'u10', 'unrequested') for task in tasks)
+        assert 'unrequested' not in result
+        assert hasattr(result.prmsl.data, 'dask')
+    finally:
+        result.close()
+
+
+def configuration(tmp_path, paths, *, coupled=False):
+    from frameit.core.settings_class import SimulationConfig
+
+    source = {'model': 'arome', 'input': {'format': 'netcdf', 'files': list(map(str, paths)),
+                                        'wind_reference_frame': 'earth',
+                                        'netcdf': {'file_layout': 'variables'}},
+              'variables': {'surface': {'names': ['prmsl', 'u10']}}}
+    raw = {'schema_version': 2, **source,
+           'tracking': {'method': 'fixed_box', 'fixed_box': {'center': {'latitude': -19.99,
+                                                                       'longitude': 60.01}}},
+           'output': {'directory': str(tmp_path / 'out'), 'overwrite': False}}
+    if coupled:
+        raw['input'] = {'sources': {'atmosphere': source, 'other': source}}
+        raw.pop('variables')
+        raw['tracking']['source'] = 'atmosphere'
+    return SimulationConfig.from_mapping_with_model_preset(raw)
+
+
+def test_variable_shards_preflight_companion_inventory_and_replay(tmp_path):
+    from frameit.core.configuration import resolved_configuration
+    from frameit.core.coupled import _inventory
+    from frameit.core.preflight import preflight
+
+    paths = write_shards(tmp_path, [shard('prmsl', 100000.), shard('u10', 0.), shard('v10', 3.)])
+    conf = configuration(tmp_path, paths)
+    assert conf.netcdf_file_layout == 'variables'
+    preflight(conf)
+    inventory = _inventory(conf)
+    assert len(inventory) == 3
+    for entry in inventory:
+        assert entry['times'] == [str(t) for t in TIMES]
+        assert entry['reference_times'] == [str(REFERENCE)]
+    replay = type(conf).from_mapping_with_model_preset(resolved_configuration(conf))
+    assert replay.netcdf_file_layout == 'variables'
+    coupled = configuration(tmp_path, paths, coupled=True)
+    assert all(s['input']['netcdf']['file_layout'] == 'variables'
+               for s in coupled.input_sources.values())
+
+
+@pytest.mark.parametrize('value', ['mixed', 1, None])
+def test_netcdf_layout_rejects_invalid_configuration(tmp_path, value):
+    from frameit.core.configuration import resolve_schema
+
+    with pytest.raises(ValueError, match='file_layout'):
+        resolve_schema({'schema_version': 2, 'model': 'arome',
+                        'input': {'pattern': '*.nc', 'netcdf': {'file_layout': value}}})
+
+
+def test_variable_shard_wind_companion_can_live_in_another_file(tmp_path):
+    paths = write_shards(tmp_path, [shard('prmsl', 100000.), shard('u10', 0.), shard('v10', 3.)])
+    conf = configuration(tmp_path, paths)
+    result = load(paths, ['u10'], wind_conf=conf)
+    try:
+        np.testing.assert_array_equal(result.u10, np.zeros((2, 3, 3)))
+        assert result.u10.attrs['standard_name'] == 'eastward_wind'
+    finally:
+        result.close()
+
+
+@pytest.mark.parametrize('problem', [None, 'shift', 'missing'])
+def test_variable_shards_validate_repeated_curvilinear_geography(tmp_path, problem):
+    datasets = []
+    for name in ['temperature', 'salinity']:
+        ds = xr.Dataset({name: (('time', 'y', 'x'), np.ones((2, 3, 3)))},
+                        coords={'time': TIMES, 'y': [0, 1, 2], 'x': [0, 1, 2]})
+        ds['nav_lat'] = (('y', 'x'), np.broadcast_to([-20., -19.99, -19.98], (3, 3)),
+                         {'standard_name': 'latitude', 'units': 'degrees_north'})
+        ds['nav_lon'] = (('y', 'x'), np.broadcast_to([60., 60.01, 60.02], (3, 3)),
+                         {'standard_name': 'longitude', 'units': 'degrees_east'})
+        datasets.append(ds)
+    if problem == 'shift':
+        datasets[1].nav_lon.values = datasets[1].nav_lon.values + .005
+    elif problem == 'missing':
+        datasets[1] = datasets[1].drop_vars('nav_lon')
+    paths = write_shards(tmp_path, datasets)
+    if problem:
+        with pytest.raises(ValueError, match='coordinate|geography'):
+            concat_nc2ds(paths, ['temperature', 'salinity', 'nav_lat', 'nav_lon'], file_layout='variables')
+    else:
+        ds = concat_nc2ds(paths, ['temperature', 'salinity', 'nav_lat', 'nav_lon'], file_layout='variables')
+        try:
+            np.testing.assert_array_equal(ds.nav_lon[0], [60., 60.01, 60.02])
+        finally:
+            ds.close()
+
+
+def test_variable_shards_follow_auxiliary_dependencies_across_files(tmp_path):
+    first = shard('prmsl', 1.)
+    first.prmsl.attrs['ancillary_variables'] = 'quality'
+    second = shard('u10', 2.)
+    second['quality'] = (('latitude', 'longitude'), np.arange(9).reshape(3, 3))
+    paths = write_shards(tmp_path, [first, second])
+    ds = load(paths, ['prmsl'])
+    try:
+        np.testing.assert_array_equal(ds.quality, np.arange(9).reshape(3, 3))
+        assert 'u10' not in ds
+    finally:
+        ds.close()
+
+
+def test_variable_shards_sample_clock_ignores_unrelated_scalar_coordinates(tmp_path):
+    pressure = shard('prmsl', 100000.).assign_coords(meanSea=0.)
+    wind = shard('u10', 3.).assign_coords(heightAboveGround=10.)
+    paths = write_shards(tmp_path, [pressure, wind])
+    ds = load(paths, ['prmsl', 'u10'])
+    try:
+        np.testing.assert_array_equal(ds.time, TIMES)
+        assert ds.meanSea == 0.
+        assert ds.heightAboveGround == 10.
+    finally:
+        ds.close()
+
+
+@pytest.mark.parametrize('conflict', [False, True])
+def test_variable_shards_preserve_and_validate_interval_bounds(tmp_path, conflict):
+    datasets = [shard('prmsl', 1.), shard('u10', 2.)]
+    bounds = np.array([['2024-12-10T23:30', '2024-12-11T00:30'],
+                       ['2024-12-11T05:30', '2024-12-11T06:30']], dtype='datetime64[ns]')
+    for ds in datasets:
+        ds['valid_time_bounds'] = (('valid_time', 'nv'), bounds.copy())
+        ds.valid_time.encoding['units'] = 'seconds since 2024-12-11'
+        ds.valid_time_bounds.encoding['units'] = 'seconds since 2024-12-11'
+        ds.valid_time.attrs['bounds'] = 'valid_time_bounds'
+        for name in ['prmsl', 'u10']:
+            if name in ds:
+                ds[name].attrs['cell_methods'] = 'valid_time: mean (interval: 240 s)'
+    if conflict:
+        datasets[1]['valid_time_bounds'] = datasets[1].valid_time_bounds + np.timedelta64(1, 'm')
+    paths = write_shards(tmp_path, datasets)
+    if conflict:
+        with pytest.raises(ValueError, match='coordinate|auxiliary'):
+            load(paths, ['prmsl', 'u10'])
+    else:
+        ds = load(paths, ['prmsl', 'u10'])
+        try:
+            assert ds.time.attrs['bounds'] == 'valid_time_bounds'
+            np.testing.assert_array_equal(ds.valid_time_bounds, bounds)
+            assert ds.prmsl.attrs['cell_methods'] == 'time: mean (interval: 240 s)'
+        finally:
+            ds.close()

@@ -29,7 +29,7 @@ from frameit.io.loader import load_config_with_model_presets, resolve_config_wit
 logger = logging.getLogger(__name__)
 
 # Restricted types for a few key fields
-ModelName = Literal["AROME", "MNH"]
+ModelName = Literal["AROME", "MNH", "NEMO", "CROCO"]
 TrackingMethod = Literal[
     "wind_pressure", "pressure_centroid", "multifield_vortex", "fixed_box",
     "prescribed_track", "utrack"
@@ -155,6 +155,8 @@ class SimulationConfig:
     duplicate_time_policy: str = "first"
     netcdf_engine: str = "h5netcdf"
     netcdf_chunks: dict[str, int] = field(default_factory=dict)
+    netcdf_file_layout: str = "time_series"
+    netcdf_surfex_fields: list[str] = field(default_factory=list)
     input_sources: dict[str, Any] = field(default_factory=dict)
     time_alignment: str = "common"
     tracking_source: str | None = None
@@ -338,6 +340,10 @@ class SimulationConfig:
         from frameit.core.configuration import validate_output_selections, validate_wind_pairs
 
         validate_wind_pairs(self.wind_pairs)
+        from frameit.io.surfex_utils import validate_surfex_fields
+
+        validate_surfex_fields(self.netcdf_surfex_fields, self.atm_model, self.file_type,
+                               self.netcdf_file_layout)
         validate_output_selections(self.cartesian_horizontal_winds,
                                    self.cartesian_vertical_velocity,
                                    self.polar_vertical_velocity)
@@ -346,8 +352,10 @@ class SimulationConfig:
             or self.wind_reference_frame not in {"earth", "grid"}
         ):
             raise ValueError("wind_reference_frame must be 'earth', 'grid', or None")
-        if self.atm_model not in ("AROME", "MNH"):
-            raise ValueError("atm_model must be 'AROME' or 'MNH'")
+        if self.atm_model not in ("AROME", "MNH", "NEMO", "CROCO"):
+            raise ValueError("atm_model must be 'AROME', 'MNH', 'NEMO' or 'CROCO'")
+        if self.atm_model in {"NEMO", "CROCO"} and self.tracking_method not in {"fixed_box", "prescribed_track"}:
+            raise ValueError(f"{self.atm_model} reference sources require fixed_box or prescribed_track")
 
         if not self.simulation_output_dir:
             raise ValueError("simulation_output_dir must not be empty")
