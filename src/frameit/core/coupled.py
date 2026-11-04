@@ -364,9 +364,7 @@ def _select_times(tree, times):
 
 def _mapped_track(track, source, conf):
     from frameit.tracking.geographic import (
-        clear_grid_observations,
         locate_track,
-        nearest_grid_point,
         uses_native_fa_lookup,
     )
 
@@ -384,19 +382,13 @@ def _mapped_track(track, source, conf):
     if lat.ndim == lon.ndim == 2:
         axes = conf.name_lat_dim, conf.name_lon_dim
         lat, lon = lat.transpose(*axes), lon.transpose(*axes)
-    result = clear_grid_observations(track)
-    cy, cx = [], []
     for latitude, longitude in zip(track.lat.values, track.lon.values, strict=True):
         if not _inside_grid(lat, lon, float(latitude), float(longitude), source, conf):
             raise ValueError("A coupled geographic centre is outside a selected source grid; "
                              "no edge-point substitution or spatial time skipping is permitted")
-        j, i = nearest_grid_point(lat, lon, float(latitude), float(longitude),
-                                  axes=(conf.name_lat_dim, conf.name_lon_dim))
-        cy.append(j)
-        cx.append(i)
-    result["cy"] = ("time", cy)
-    result["cx"] = ("time", cx)
-    return result
+    geography = xr.Dataset({conf.name_latitude: lat, conf.name_longitude: lon})
+    return locate_track(track, geography, axes=(conf.name_lat_dim, conf.name_lon_dim),
+                        lat_name=conf.name_latitude, lon_name=conf.name_longitude)
 
 
 def _inside_grid(lat, lon, latitude, longitude, source, conf):

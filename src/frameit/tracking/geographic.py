@@ -49,6 +49,52 @@ def nearest_grid_point(latitude, longitude, lat0, lon0, *, axes=None):
     raise ValueError("Geographic lookup requires static 1-D axes or matching 2-D grids")
 
 
+def _nearest_grid_points(latitude, longitude, positions, *, axes=None):
+    """Index candidates once; original arithmetic decides distances and ties."""
+    positions = [tuple(map(float, point)) for point in positions]
+    if len(positions) < 2 or latitude.ndim != 2 or longitude.ndim != 2:
+        return [nearest_grid_point(latitude, longitude, *p, axes=axes) for p in positions]
+    from scipy.spatial import cKDTree
+
+    if axes is not None:
+        latitude, longitude = latitude.transpose(*axes), longitude.transpose(*axes)
+    elif hasattr(latitude, "dims"):
+        longitude = longitude.transpose(*latitude.dims)
+    lat, lon = np.asarray(latitude), np.asarray(longitude)
+    if lat.shape != lon.shape:
+        raise ValueError("Geographic coordinate grids must have identical shapes")
+    shape = lat.shape
+    lat, lon = lat.ravel(), lon.ravel()
+    finite = np.flatnonzero(np.isfinite(lat) & np.isfinite(lon))
+    if not finite.size:
+        raise ValueError("Source geography contains no finite candidate")
+    scale = max(1., float(np.max(abs(lat[finite]))), float(np.max(abs(lon[finite]))))
+    # shortcut: extreme degrees use the scan; extend index bounds if such sources are needed.
+    if scale > 720 or lat.dtype.kind not in "fiu" or lon.dtype.kind not in "fiu":
+        return [nearest_grid_point(latitude, longitude, *p) for p in positions]
+    epsilon = max(np.finfo(dtype).eps if dtype.kind == "f" else np.finfo(float).eps
+                  for dtype in (lat.dtype, lon.dtype, np.dtype(float)))
+    tree = cKDTree(np.column_stack((lat[finite], (lon[finite].astype(float) + 180) % 360 - 180)))
+    points = []
+    for lat0, lon0 in positions:
+        lat0, lon0 = float(lat0), float(lon0)
+        if not np.isfinite([lat0, lon0]).all() or max(abs(lat0), abs(lon0)) > 720:
+            points.append(nearest_grid_point(latitude, longitude, lat0, lon0))
+            continue
+        queries = np.column_stack((np.full(3, lat0),
+                                   (lon0 + 180) % 360 - 180 + np.array([-360., 0., 360.])))
+        nearest = tree.query(queries, workers=1)[0].min()
+        # Include floating-point ties, including float32 subtraction/wrap rounding.
+        radius = np.nextafter(nearest + 64 * epsilon * (scale + abs(lat0) + abs(lon0) + 1), np.inf)
+        candidates = finite[np.unique(np.concatenate(tree.query_ball_point(queries, radius))).astype(int)]
+        distance = (lat[candidates] - lat0)**2 + longitude_difference(lon[candidates], lon0)**2
+        if not np.isfinite(distance).any():
+            raise ValueError("Source geography contains no finite candidate")
+        winner = candidates[np.nanargmin(distance)]
+        points.append(tuple(int(i) for i in np.unravel_index(winner, shape)))
+    return points
+
+
 def uses_native_fa_lookup(source):
     from frameit.io.fa_geometry import NATIVE_LOOKUP
 
@@ -116,7 +162,9 @@ def locate_track(track, source, *, axes=None, lat_name="latitude", lon_name="lon
         observations = []
     else:
         lat, lon = source[lat_name], source[lon_name]
-    centres = zip(track.lat.values, track.lon.values, strict=True)
+    centres = list(zip(track.lat.values, track.lon.values, strict=True))
+    if not native:
+        points = _nearest_grid_points(lat, lon, centres, axes=axes)
     for index, (latitude, longitude) in enumerate(centres):
         if native and (not np.isfinite([latitude, longitude]).all() or abs(latitude) >= 90):
             raise ValueError("Geographic centres must be finite nonpolar coordinates")
@@ -138,7 +186,7 @@ def locate_track(track, source, *, axes=None, lat_name="latitude", lon_name="lon
             j, i = select(y, qy), select(x, qx)
             observations.append([float(lat[j, i]), float(lon[j, i]), x[i] - qx, y[j] - qy])
         else:
-            j, i = nearest_grid_point(lat, lon, float(latitude), float(longitude), axes=axes)
+            j, i = points[index]
         cy.append(j)
         cx.append(i)
     result["cy"], result["cx"] = ("time", cy), ("time", cx)
