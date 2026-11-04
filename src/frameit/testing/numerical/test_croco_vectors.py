@@ -104,7 +104,7 @@ def test_croco_current_joint_support_never_fills_missing_or_erases_zero(problem)
 
 
 @pytest.mark.parametrize("problem", ["angle_units", "angle_missing", "mask_polarity", "mask_range",
-                                    "wet_dry", "missing_companion", "units", "face_shift"])
+                                    "wet_dry", "missing_companion", "units", "quantity", "face_shift"])
 def test_croco_analysis_rejects_unresolved_inputs(problem):
     from frameit.io.croco_utils import prepare_croco
 
@@ -116,6 +116,7 @@ def test_croco_analysis_rejects_unresolved_inputs(problem):
     elif problem == "wet_dry": ds.attrs["CPP-options"] += " WET_DRY"
     elif problem == "missing_companion": ds = ds.drop_vars("v")
     elif problem == "units": ds.u.attrs["units"] = "Pa"
+    elif problem == "quantity": ds.u.attrs["standard_name"] = "eastward_sea_water_velocity"
     else: ds = ds.assign_coords(xi_u=ds.xi_u+.1)
     with pytest.raises(ValueError, match="CROCO"):
         prepare_croco(ds, vector_conf())

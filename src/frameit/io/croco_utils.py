@@ -6,12 +6,18 @@ import numpy as np
 import xarray as xr
 
 
+def polar_fields(conf):
+    return {name for spec in getattr(conf, "polar_variables", {}).values()
+            for name in spec.get("variables", [])} if getattr(conf, "compute_polar_proj", False) else set()
+
+
 def current_pairs(conf):
     """Only declared current names use the existing mass/Earth selector."""
     requested = {name for spec in getattr(conf, "requested_variables_user", {}).values()
                  for name in spec.get("variables", [])}
     analysis = getattr(conf, "cartesian_horizontal_winds", "native") == "mass_earth"
-    return [pair for pair in (("u", "v"), ("ubar", "vbar")) if analysis and requested.intersection(pair)]
+    return [pair for pair in (("u", "v"), ("ubar", "vbar"))
+            if (requested if analysis else polar_fields(conf)).intersection(pair)]
 
 
 def _validate_faces(ds, names):
@@ -44,21 +50,26 @@ def _velocity(da):
     return convert_units(value, "velocity")
 
 
-def _validate_current_inputs(ds, pairs):
-    if not pairs:
-        return
-    from frameit.utils.units import convert_units
-
+def _static_wet_mask(ds):
     options = str(ds.attrs.get("CPP-options", "")).split()
     if "MASKING" not in options or "WET_DRY" in options:
-        raise ValueError("CROCO current analysis requires explicit static MASKING without WET_DRY")
+        raise ValueError("CROCO analysis requires explicit static MASKING without WET_DRY")
     if "mask_rho" not in ds or ds.mask_rho.dims != ("eta_rho", "xi_rho"):
-        raise ValueError("CROCO current analysis requires static mask_rho")
+        raise ValueError("CROCO analysis requires static mask_rho")
     mask = ds.mask_rho
     if (str(mask.attrs.get("option_0", "")).lower() != "land"
             or str(mask.attrs.get("option_1", "")).lower() != "water"
             or not np.isin(mask.values, [0, 1]).all()):
         raise ValueError("CROCO mask_rho requires explicit option_0=land, option_1=water and binary values")
+    return mask == 1
+
+
+def _validate_current_inputs(ds, pairs):
+    if not pairs:
+        return
+    from frameit.utils.units import convert_units
+
+    _static_wet_mask(ds)
     if "angle" not in ds or ds.angle.dims != ("eta_rho", "xi_rho"):
         raise ValueError("CROCO current analysis requires rho-point angle")
     try:
@@ -80,6 +91,12 @@ def _validate_current_inputs(ds, pairs):
             required = {"time", *horizontal} | ({"s_rho"} if name in {"u", "v"} else set())
             if set(ds[name].dims) != required:
                 raise ValueError(f"CROCO {name}: incompatible native current dimensions")
+            axis = "x" if name in {"u", "ubar"} else "y"
+            prefix = "barotropic_" if "bar" in name else ""
+            standard = f"{prefix}sea_water_{axis}_velocity"
+            location = "u" if axis == "x" else "v"
+            if ds[name].attrs.get("standard_name") not in {None, standard, f"{standard}_at_{location}_location"}:
+                raise ValueError(f"CROCO {name}: quantity metadata contradicts native grid-relative current identity")
     for suffix, dims in (("u", {"eta_rho", "xi_u"}), ("v", {"eta_v", "xi_rho"})):
         name = f"mask_{suffix}"
         if name in ds and (set(ds[name].dims) != dims or not np.isin(ds[name].values, [0, 1]).all()):
@@ -92,9 +109,10 @@ def prepare_croco_currents(ds, conf):
     from frameit.utils.units import convert_units
 
     pairs = current_pairs(conf)
-    if not pairs:
+    polar = polar_fields(conf)
+    if not pairs and not polar:
         return ds
-    if all(name in ds and ds[name].attrs.get("current_reference_frame") == "earth"
+    if not polar and all(name in ds and ds[name].attrs.get("current_reference_frame") == "earth"
            for pair in pairs for name in pair):
         return ds
     _validate_faces(ds, [name for pair in pairs for name in pair])
@@ -104,8 +122,8 @@ def prepare_croco_currents(ds, conf):
         attrs = dict(result.mask_rho.attrs)
         attrs["source_standard_name"] = attrs.pop("standard_name")
         result["mask_rho"].attrs = attrs
-    wet = ds.mask_rho == 1
-    angle = convert_units(ds.angle, "angle")
+    wet = _static_wet_mask(ds)
+    angle = convert_units(ds.angle, "angle") if pairs else None
     for pair in pairs:
         components = []
         for name, face, mass in zip(pair, ("xi_u", "eta_v"), ("xi_rho", "eta_rho")):
@@ -135,7 +153,13 @@ def prepare_croco_currents(ds, conf):
                 if key in ds[name].attrs:
                     value.attrs[f"source_{key}"] = ds[name].attrs[key]
             result[name] = value
-    result.attrs = dict(result.attrs, current_analysis_method="CROCO 2.1 midpoint collocation then rho angle rotation; no extrapolation or motion subtraction")
+    for name in polar - {name for pair in pairs for name in pair} - {"mask_rho"}:
+        if name in result and {"eta_rho", "xi_rho"} <= set(result[name].dims):
+            value = result[name].where(wet)
+            value.attrs = dict(result[name].attrs, croco_support="static mask_rho option_0=land option_1=water")
+            result[name] = value
+    if pairs:
+        result.attrs = dict(result.attrs, current_analysis_method="CROCO 2.1 midpoint collocation then rho angle rotation; no extrapolation or motion subtraction")
     return result
 
 
@@ -239,7 +263,7 @@ def prepare_croco(ds: xr.Dataset, conf) -> xr.Dataset:
             raise ValueError(f"CROCO requires explicit native rho geography {name}")
     requested = {name for spec in getattr(conf, "requested_variables_user", {}).values()
                  for name in spec.get("variables", [])}
-    if requested & {"wind_speed", "vrad", "vtan"}:
+    if (requested | polar_fields(conf)) & {"wind_speed", "vrad", "vtan"}:
         raise ValueError("CROCO ocean fields do not admit atmospheric wind diagnostics")
     pairs = current_pairs(conf)
     if getattr(conf, "cartesian_horizontal_winds", "native") != "native" and requested & {"sustr", "svstr"}:
@@ -247,6 +271,16 @@ def prepare_croco(ds: xr.Dataset, conf) -> xr.Dataset:
     face_names = requested | {name for pair in pairs for name in pair}
     _validate_faces(ds, face_names)
     _validate_current_inputs(ds, pairs)
+    polar = polar_fields(conf)
+    if polar:
+        if polar & {"mask_rho", "mask_u", "mask_v"}:
+            raise ValueError("CROCO binary mask polar sampling is not qualified; use native masks")
+        _static_wet_mask(ds)
+        for name in polar:
+            if name in result:
+                ancillary = str(result[name].attrs.get("ancillary_variables", "")).split()
+                result[name].attrs = dict(result[name].attrs,
+                                          ancillary_variables=" ".join(dict.fromkeys([*ancillary, "mask_rho"])))
     for pair in pairs:
         for name in pair:
             ancillary = str(result[name].attrs.get("ancillary_variables", "")).split()
@@ -269,6 +303,8 @@ def prepare_croco(ds: xr.Dataset, conf) -> xr.Dataset:
             if record not in records:
                 records.append(record)
     if getattr(conf, "compute_polar_proj", False):
-        raise ValueError("CROCO sigma polar metadata/analysis is not yet qualified; native extraction remains available")
+        if any(name in ds and set(ds[name].dims) & {"xi_u", "eta_v"}
+               and name not in {"u", "v", "ubar", "vbar"} for name in polar):
+            raise ValueError("CROCO polar native-face/stress interpretation is not qualified")
     geography = [name for name in ("lat_rho", "lon_rho", "lat_u", "lon_u", "lat_v", "lon_v", "scrum_time") if name in result]
     return result.set_coords(geography)

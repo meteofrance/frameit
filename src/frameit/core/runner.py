@@ -446,6 +446,12 @@ class FrameitRunner:
                 polar_source = self.ds_user if self.conf.atm_model in {"NEMO", "CROCO"} else select_vertical_velocity(
                     self.ds_user, self.conf, getattr(self.conf, "polar_vertical_velocity", "mass")
                 )
+                if self.conf.atm_model == "CROCO":
+                    # Unselected native faces must not enter a scalar-only polar crop.
+                    polar_source = {group: xr.Dataset(
+                        {name: dataset[name] for name in self.conf.polar_variables.get(group, {}).get("variables", [])
+                         if name in dataset.data_vars}, attrs=dict(dataset.attrs))
+                        for group, dataset in polar_source.items() if group in self.conf.polar_variables}
                 _, support_fields = extract_data(
                     conf=support_conf, ds_user=polar_source, ds_tracker=self.ds_tracker,
                     track_ds=self.track,

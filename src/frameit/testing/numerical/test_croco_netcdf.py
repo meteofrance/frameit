@@ -216,16 +216,12 @@ def test_croco_time_series_rejects_changing_scientific_definitions(tmp_path, cha
                                    wind_conf=conf, resources=resources)
 
 
-@pytest.mark.parametrize("unsupported", ["faces", "polar"])
-def test_croco_unqualified_analysis_does_not_silently_use_scalar_path(tmp_path, unsupported):
+def test_croco_unlabelled_faces_do_not_silently_use_scalar_path(tmp_path):
     path = tmp_path/"ocean.nc"
     ds = croco_scene()
     raw = croco_document(tmp_path, [path])
-    if unsupported == "faces":
-        ds["u"] = (("time", "s_rho", "eta_rho", "xi_u"), np.ones((2,3,7,6)), {"units": "meter second-1"})
-        raw["variables"] = {"s_rho": {"names": ["u"], "levels": "all"}}
-    else:
-        raw["polar"] = {"enabled": True}
+    ds["u"] = (("time", "s_rho", "eta_rho", "xi_u"), np.ones((2,3,7,6)), {"units": "meter second-1"})
+    raw["variables"] = {"s_rho": {"names": ["u"], "levels": "all"}}
     ds.to_netcdf(path)
     with pytest.raises(ValueError, match="CROCO.*(?:qualified|labelled)"):
         preflight(SimulationConfig.from_mapping_with_model_preset(raw))

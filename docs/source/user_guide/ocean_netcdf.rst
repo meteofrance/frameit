@@ -280,9 +280,50 @@ source units, static-mask authority, method and boundary policy, inside the name
 source for coupled runs. Native and analysis branches remain separate and attach
 no wind-speed, radial/tangential-wind or wind-representation metadata. Stress
 analysis remains separately gated; native stress copies do not establish its sign,
-basis or physical definition. Polar sigma products remain gated pending their
-integration checks. No optional FA/GRIB/polar stack is needed for Cartesian copies
-or current analysis.
+basis or physical definition. No optional FA/GRIB/polar stack is needed for
+Cartesian copies or current analysis.
+
+Optional shared point sampling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``example/config_file/croco_mesonh.yaml`` demonstrates exact-time named sources,
+different native vertical groups, opt-in SURFEX interpretation and selected
+CROCO rho/Earth currents. Adapt its paths, native indices and illustrative centre
+to the inspected inputs. Set ``horizontal_winds: native`` for unchanged native
+Cartesian faces. Polar processing is off by default; enabling it uses the existing
+shared target, separately selected fields, and ordinary optional polar dependencies.
+The fixed or prescribed continuous geographical centres are shared, but each source
+performs its own grid lookup. Common time labels do not imply that ocean and
+atmospheric grids, masks, temperatures or flux definitions are interchangeable.
+
+CROCO polar scalar fields use the declared static water mask, without requiring
+current companions or angle. Selected currents are prepared with the method above
+before spatial sampling, even when Cartesian output remains native. Unselected
+native faces do not enter a scalar-only polar crop. No ocean wind diagnostics or
+automatic storm-motion subtraction run. Shared targets have identical time,
+radius, azimuth, longitude, latitude and target identity, but field-local missing
+support remains different. Missing brackets/land remain missing under the declared
+polar coverage policy; this is not conservative area or transport remapping.
+Native binary water masks are used before interpolation, but are not automatically
+sampled into polar auxiliaries: bilinear fractions must not be advertised as binary
+masks. Explicit polar requests for CROCO binary masks fail; use native masks or the
+per-field interpolation support/quality variables instead.
+
+Polar CROCO outputs retain selected ``s_rho/s_w`` labels and original native
+indices, but archive ``formula_terms`` and the native vertical standard name as
+``source_formula_terms/source_standard_name``. Interpolating bathymetry and sea
+level does not commute with the nonlinear native depth formula. Sampled auxiliaries
+therefore must not be used to claim that these fields lie on a constant-depth
+section or that a reconstructed depth equals sampled native depth. The product
+records ``vertical_sampling: native_sigma_indices_not_constant_physical_depth``.
+Native Cartesian products retain their valid original formula metadata unchanged.
+
+Compact paired tests cover fixed/moving shifted grids, exact common/strict time
+policies, shared scalar/current targets, legitimate SURFEX zeros, sigma metadata,
+diagnostics-disabled processing, synchronous/spawned exports, NetCDF and Zarr
+ordinary-reader reopening, failed mid-write publication and overwrite protection.
+These tests establish bounded implementation behavior, not scientific equivalence
+of unlike source quantities or validity of every real configuration.
 
 Embedded SURFEX sea fields in Meso-NH
 ----------------------------------------

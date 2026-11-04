@@ -35,6 +35,7 @@ jobs:
           src/frameit/testing/numerical/test_nemo_netcdf.py
           src/frameit/testing/numerical/test_croco_netcdf.py
           src/frameit/testing/numerical/test_croco_vectors.py
+          src/frameit/testing/numerical/test_croco_mnh_coupling.py
           src/frameit/testing/numerical/test_mnh_surfex_support.py
           src/frameit/testing/numerical/test_nemo_arome_coupling.py
           src/frameit/testing/numerical/test_fa_baseline.py

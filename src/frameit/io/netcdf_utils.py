@@ -348,14 +348,17 @@ def concat_nc2ds_by_vert_coord(
         raise ValueError("NetCDF file_layout must be time_series or variables")
     if len(files) > 1 and file_layout == "time_series":
         if wind_conf is not None and wind_conf.atm_model == "CROCO":
-            from frameit.io.croco_utils import current_pairs
+            from frameit.io.croco_utils import current_pairs, polar_fields
 
             pairs = current_pairs(wind_conf)
-            if pairs:
+            polar = polar_fields(wind_conf)
+            if pairs or polar:
                 # Validate native companions before per-file rotation hides their metadata.
                 headers = [normalize_netcdf_time(resources.add(xr.open_dataset(
                     path, engine=engine)), wind_conf) for path in files]
-                names = {name for pair in pairs for name in pair} | {"angle", "mask_rho", "mask_u", "mask_v"}
+                names = {name for pair in pairs for name in pair} | polar | {"mask_rho"}
+                if pairs:
+                    names.update(("angle", "mask_u", "mask_v"))
                 validate_native_metadata(headers, names, model="CROCO")
         # Interpret units, basis and native brackets independently in each file.
         # Concatenating first would retain only one file's interpretation.
@@ -430,12 +433,14 @@ def concat_nc2ds_by_vert_coord(
                     requested_vars_all.update(("BETA", "RPK", "LON0", "CARTESIAN"))
 
     if wind_conf is not None and wind_conf.atm_model == "CROCO":
-        from frameit.io.croco_utils import current_pairs
+        from frameit.io.croco_utils import current_pairs, polar_fields
 
         pairs = current_pairs(wind_conf)
         if pairs:
             requested_vars_all.update(name for pair in pairs for name in pair)
             requested_vars_all.update(("angle", "mask_rho"))
+        if polar_fields(wind_conf):
+            requested_vars_all.add("mask_rho")
 
     # Automatically add geographic variables
     requested_vars_all.discard("wind_speed")
