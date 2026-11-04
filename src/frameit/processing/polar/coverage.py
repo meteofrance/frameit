@@ -64,6 +64,17 @@ def attach_quality(ds, name, support, status):
     )
 
 
+def _apply_weights(data, valid, *, weights, presence):
+    """One cropped horizontal block, with a module-level callable for spawned export."""
+    shape = (*data.shape[:-2], weights.shape[0])
+    data = data.reshape(-1, weights.shape[1])
+    valid = valid.reshape(data.shape)
+    numerator = (weights @ np.where(valid, data, 0).T).T.astype(data.dtype, copy=False)
+    support = (weights @ valid.astype(float).T).T
+    absent = (presence @ (~valid).astype(float).T).T
+    return tuple(array.reshape(shape) for array in (numerator, support, absent))
+
+
 class SupportedRegridder:
     """Apply actual xESMF weights, retaining joint vector masks and strict stencils."""
 
@@ -141,19 +152,10 @@ class SupportedRegridder:
             mask = mask.chunk(field.chunksizes)
         weights, presence = self.weights, self.presence_weights
 
-        def apply_block(data, valid):
-            shape = (*data.shape[:-2], weights.shape[0])
-            data = data.reshape(-1, weights.shape[1])
-            valid = valid.reshape(data.shape)
-            numerator = (weights @ np.where(valid, data, 0).T).T.astype(data.dtype)
-            support = (weights @ valid.astype(float).T).T
-            absent = (presence @ (~valid).astype(float).T).T
-            return tuple(array.reshape(shape) for array in (numerator, support, absent))
-
         # No source NaN/Inf ever enters a sparse matrix multiply, including
         # contributors whose mathematically zero coefficient was discarded.
         arrays = xr.apply_ufunc(
-            apply_block, field, mask,
+            _apply_weights, field, mask, kwargs={"weights": weights, "presence": presence},
             input_core_dims=[["y_box", "x_box"], ["y_box", "x_box"]],
             output_core_dims=[["locations"], ["locations"], ["locations"]],
             dask="parallelized", output_dtypes=[field.dtype, float, float],

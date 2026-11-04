@@ -247,3 +247,14 @@ def test_chunked_joint_mask_on_eager_field_remains_lazy():
     np.testing.assert_allclose(value, [30.], atol=1e-12)
     np.testing.assert_allclose(support, [.7], atol=1e-14)
     np.testing.assert_array_equal(status, [0])
+
+
+def test_lazy_polar_products_remain_pickleable_for_spawned_export():
+    import pickle
+
+    operator = prescribed_weights([.1, .2, .3, .4], policy="renormalize")
+    field = xr.DataArray([[10., 20.], [np.nan, 40.]], dims=("y_box", "x_box")).chunk({"x_box": 1})
+    value, support, status = pickle.loads(pickle.dumps(operator.apply(field)))
+    np.testing.assert_allclose(value.compute(), [30.], atol=1e-12)
+    np.testing.assert_allclose(support.compute(), [.7], atol=1e-14)
+    np.testing.assert_array_equal(status.compute(), [0])
