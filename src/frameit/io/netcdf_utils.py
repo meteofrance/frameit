@@ -209,16 +209,16 @@ def concat_nc2ds(
         raise ValueError("NetCDF file_layout must be time_series or variables")
     conf = time_conf or SimpleNamespace(name_time_dim=concat_dimension or "time", atm_model="AROME")
     if file_layout == "variables":
-        opened = [normalize_netcdf_time(resources.add(xr.open_dataset(
-            path, engine=engine, chunks={} if chunks is None else chunks)), conf) for path in files]
+        opened = [normalize_netcdf_time(resources.open_netcdf(
+            path, engine=engine, chunks={} if chunks is None else chunks), conf) for path in files]
         return _merge_variable_shards(opened, variables)
 
     from frameit.processing.polar.metadata import coordinate_dependency_names
 
     opened = []
     for path in files:
-        original = resources.add(xr.open_dataset(
-            path, engine=engine, chunks={} if chunks is None else chunks))
+        original = resources.open_netcdf(
+            path, engine=engine, chunks={} if chunks is None else chunks)
         missing = set(variables) - set(original.variables)
         if missing:
             raise ValueError(f"{path}: NetCDF input missing requested fields: {sorted(missing)}")
@@ -307,6 +307,7 @@ def concat_nc2ds_by_vert_coord(
     }
 
     files = resolve_input_files(files, strict=strict)
+    chunks = {} if chunks is None else chunks
     ocean = wind_conf is not None and wind_conf.atm_model in {"NEMO", "CROCO"}
     if ocean:
         float_tol = None
@@ -321,12 +322,12 @@ def concat_nc2ds_by_vert_coord(
         from frameit.tracking.multifield_inputs import inspect_inputs, mnh_loading_fields
 
         for path in files:
-            with xr.open_dataset(path, engine=engine) as header:
-                inspect_inputs([header], wind_conf, str(path))
-                fields, requests = mnh_loading_fields(header, wind_conf)
-                if vortex_fields is not None and fields != vortex_fields:
-                    raise ValueError(f"multifield_vortex: inconsistent source fields in {path}")
-                vortex_fields = fields
+            header = resources.open_netcdf(path, engine=engine, chunks=chunks)
+            inspect_inputs([header], wind_conf, str(path))
+            fields, requests = mnh_loading_fields(header, wind_conf)
+            if vortex_fields is not None and fields != vortex_fields:
+                raise ValueError(f"multifield_vortex: inconsistent source fields in {path}")
+            vortex_fields = fields
         tracker_req_by_method["multifield_vortex"] = normalize_requests(requests)
         wind_conf.requested_variables_tracker["multifield_vortex"] = requests
     if mnh_centroid:
@@ -334,8 +335,7 @@ def concat_nc2ds_by_vert_coord(
 
         def headers():
             for path in files:
-                with xr.open_dataset(path, engine=engine) as header:
-                    yield path, header
+                yield path, resources.open_netcdf(path, engine=engine, chunks=chunks)
 
         mnh_fields = inspect_mnh_sequence(headers())
         logger.info("MNH pressure_centroid inputs: pressure=%s, winds=%s/%s, height=%s",
@@ -354,8 +354,8 @@ def concat_nc2ds_by_vert_coord(
             polar = polar_fields(wind_conf)
             if pairs or polar:
                 # Validate native companions before per-file rotation hides their metadata.
-                headers = [normalize_netcdf_time(resources.add(xr.open_dataset(
-                    path, engine=engine)), wind_conf) for path in files]
+                headers = [normalize_netcdf_time(resources.open_netcdf(
+                    path, engine=engine, chunks=chunks), wind_conf) for path in files]
                 names = {name for pair in pairs for name in pair} | polar | {"mask_rho"}
                 if pairs:
                     names.update(("angle", "mask_u", "mask_v"))
@@ -448,8 +448,8 @@ def concat_nc2ds_by_vert_coord(
     if keep_geovars:
         present = set()
         for path in files:
-            with xr.open_dataset(path, decode_cf=False, engine=engine) as t0:
-                present.update(t0.variables)
+            header = resources.open_netcdf(path, engine=engine, chunks=chunks)
+            present.update(header.variables)
         auto_geo = [name for name in geovar_candidates if name in present]
         if auto_geo:
             logger.info("Auto-adding geographic variables: %s", ", ".join(auto_geo))

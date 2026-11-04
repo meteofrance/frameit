@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from contextlib import nullcontext
 from copy import deepcopy
 from pathlib import Path
 
@@ -27,13 +28,13 @@ from frameit.processing.wind_reference import (
 from frameit.utils.units import convert_units, unit_key
 
 
-def open_metadata(files, conf, resources):
+def open_metadata(files, conf, resources, *, chunks=None):
     """Open lazily with no disk indexes, closing originals on all error paths."""
     if conf.file_type == "netcdf" and getattr(conf, "netcdf_file_layout", "time_series") == "variables":
         from frameit.io.netcdf_utils import _merge_variable_shards, normalize_netcdf_time
 
-        opened = [normalize_netcdf_time(resources.add(xr.open_dataset(
-            path, engine=conf.netcdf_engine)), conf) for path in files]
+        opened = [normalize_netcdf_time(resources.open_netcdf(
+            path, engine=conf.netcdf_engine, chunks=chunks), conf) for path in files]
         requested = set()
         for request in (conf.requests_user(), conf.requests_tracker().get(conf.tracking_method, {})):
             expanded, _ = wind_dependencies(conf, request)
@@ -96,7 +97,7 @@ def open_metadata(files, conf, resources):
         else:
             from frameit.io.netcdf_utils import normalize_netcdf_time
 
-            original = resources.add(xr.open_dataset(path, engine=conf.netcdf_engine))
+            original = resources.open_netcdf(path, engine=conf.netcdf_engine, chunks=chunks)
             datasets = [normalize_netcdf_time(original, conf)]
         for ds in datasets:
             resources.add(ds)
@@ -348,7 +349,8 @@ def polar_sampling_plan(conf, time_count):
             "estimated_time_count": time_count}
 
 
-def preflight(conf, *, input_files=None, check_output=True, execution_options=None):
+def preflight(conf, *, input_files=None, check_output=True, execution_options=None, resources=None):
+    """Validate metadata/geometry, optionally retaining lazy inputs in a run's owner."""
     if conf.input_sources:
         if input_files is not None:
             raise ValueError("Coupled inventories are specified per input.sources entry")
@@ -383,9 +385,10 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
     if (mnh_centroid or multifield and conf.atm_model == "MNH") and conf.file_type != "netcdf":
         raise ValueError(f"Meso-NH {conf.tracking_method} requires native-level NetCDF inputs")
 
-    with DatasetResources() as resources:
+    chunks = conf.netcdf_chunks if resources is not None else None
+    with (DatasetResources() if resources is None else nullcontext(resources)) as resources:
         grids = []
-        for path, datasets in open_metadata(files, conf, resources):
+        for path, datasets in open_metadata(files, conf, resources, chunks=chunks):
             grids.extend(datasets)
             tracker = conf.requests_tracker().get(conf.tracking_method, {})
             layout = None

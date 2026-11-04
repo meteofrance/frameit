@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Reuse managed lazy NetCDF opens across ordinary-run preflight and loading for
+  every NetCDF model, and skip unused native Cartesian preparation across input
+  formats. Preserve per-file scientific checks, native chunks, reader defaults
+  and output values. Document the bounded BATSIRAI profile and measured reader
+  speed/memory trade-offs in [input-reading performance](docs/development/input-reading.md).
 - Add optional sharded Zarr v3 output selected by `output.engine: zarr`, with
   dimension-based `zarr_chunk_size` / `zarr_shard_size` overrides. Preserve the
   existing product groups, scientific values and default NetCDF workflow;

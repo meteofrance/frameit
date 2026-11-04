@@ -175,7 +175,9 @@ class FrameitRunner:
         if self.conf.infer_grid_geometry and self.preflight_report is None:
             from frameit.core.preflight import preflight
 
-            self.preflight_report = preflight(self.conf, input_files=files)
+            self.preflight_report = preflight(
+                self.conf, input_files=files, resources=self.resources
+            )
         self.tracker = build_tracker_from_config(self.conf)
         file_type = (self.conf.file_type or "").lower()
         time_dim = getattr(self.conf, "name_time_dim", None)
@@ -184,6 +186,8 @@ class FrameitRunner:
         loading_requests = deepcopy(requested_vars_user)
         self._internal_wind_names = {}
         self._native_cartesian_groups = {}
+        native_output_groups = (self._native_cartesian_groups if getattr(
+            self.conf, "cartesian_horizontal_winds", "mass_earth") == "native" else None)
         polar_requests = getattr(self.conf, "polar_variables", {})
         for group, spec in loading_requests.items():
             if self.conf.atm_model in {"NEMO", "CROCO"}:
@@ -231,7 +235,7 @@ class FrameitRunner:
                 chunks=self.conf.netcdf_chunks,
                 file_layout=self.conf.netcdf_file_layout,
                 duplicate_time_policy=self.conf.duplicate_time_policy,
-                native_output_groups=self._native_cartesian_groups,
+                native_output_groups=native_output_groups,
             )
 
         elif file_type == "fa":
@@ -241,7 +245,7 @@ class FrameitRunner:
                 files, loading_requests, requested_vars_tracker, method=tracking_method,
                 strict=True, resources=self.resources, wind_conf=self.conf,
                 duplicate_time_policy=self.conf.duplicate_time_policy,
-                native_output_groups=self._native_cartesian_groups,
+                native_output_groups=native_output_groups,
             )
 
         elif file_type in {"grib", "grib2"}:
@@ -264,7 +268,7 @@ class FrameitRunner:
                 resources=self.resources,
                 duplicate_time_policy=self.conf.duplicate_time_policy,
                 wind_conf=self.conf,
-                native_output_groups=self._native_cartesian_groups,
+                native_output_groups=native_output_groups,
                 filter_requested=bool(self.conf.simulation_parameter.get("coupled_source_id")),
             )
 

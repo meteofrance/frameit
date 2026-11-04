@@ -1,5 +1,6 @@
 """Selected lazy assembly: variable shards are not successive snapshots."""
 
+from collections import Counter
 from types import SimpleNamespace
 
 import numpy as np
@@ -8,7 +9,6 @@ import xarray as xr
 
 from frameit.io.loader import DatasetResources
 from frameit.io.netcdf_utils import concat_nc2ds, concat_nc2ds_by_vert_coord
-
 
 TIMES = np.array(['2024-12-11T00', '2024-12-11T06'], dtype='datetime64[ns]')
 REFERENCE = np.datetime64('2024-12-11T00', 'ns')
@@ -327,3 +327,174 @@ def test_variable_shards_preserve_and_validate_interval_bounds(tmp_path, conflic
             assert ds.prmsl.attrs['cell_methods'] == 'time: mean (interval: 240 s)'
         finally:
             ds.close()
+
+
+def track_netcdf_opens(monkeypatch):
+    opened, closed = [], []
+    original = xr.open_dataset
+
+    def tracked(*args, **kwargs):
+        ds = original(*args, **kwargs)
+        close = ds._close
+        token = len(opened)
+        opened.append(args[0])
+
+        def closing():
+            closed.append(token)
+            close()
+
+        ds.set_close(closing)
+        return ds
+
+    monkeypatch.setattr(xr, 'open_dataset', tracked)
+    return opened, closed
+
+
+@pytest.mark.parametrize('engine', ['h5netcdf', 'netcdf4'])
+@pytest.mark.parametrize('model', ['mesonh', 'arome', 'nemo', 'croco'])
+def test_runner_reuses_netcdf_metadata_without_reading_fields(tmp_path, monkeypatch, engine, model):
+    from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
+    from xarray.backends.netCDF4_ import NetCDF4ArrayWrapper
+
+    from frameit.core.runner import FrameitRunner
+    from frameit.core.settings_class import SimulationConfig
+
+    from .test_configuration_v2 import dataset, document
+    from .test_croco_netcdf import croco_document, croco_scene
+    from .test_nemo_netcdf import nemo_document, nemo_scene
+
+    paths = [tmp_path / f'part{i}.nc' for i in range(2)]
+    if model == 'mesonh':
+        scene = dataset(tmp_path)
+        raw = document(tmp_path, variables={'surface': {'names': ['MSLP']}})
+        field, group, clock = 'MSLP', 'surface', 'time'
+    elif model == 'arome':
+        scene = shard('prmsl', 100000.)
+        raw = configuration(tmp_path, paths).yaml_config
+        raw['variables'] = {'surface': {'names': ['prmsl']}}
+        field, group, clock = 'prmsl', 'surface', 'valid_time'
+    elif model == 'nemo':
+        scene = nemo_scene().isel(time_counter=slice(0, 2))
+        raw = nemo_document(tmp_path, paths, variables={
+            'deptht': {'names': ['votemper'], 'levels': 'all'}})
+        field, group, clock = 'votemper', 'deptht', 'time_counter'
+    else:
+        scene = croco_scene()
+        raw = croco_document(tmp_path, paths, variables={
+            's_rho': {'names': ['temp'], 'levels': 'all'}})
+        field, group, clock = 'temp', 's_rho', 'time'
+    scene['unrequested'] = xr.ones_like(scene[field])
+    for i, path in enumerate(paths):
+        part = scene.isel({clock: [i]})
+        chunks = tuple(min(2, n) for n in part[field].shape)
+        part.to_netcdf(path, engine='h5netcdf', encoding={field: {'chunksizes': chunks}})
+    raw['input'].pop('directory', None)
+    raw['input'].pop('pattern', None)
+    raw['input']['files'] = list(map(str, paths))
+    raw['input']['netcdf'] = {'engine': engine, 'file_layout': 'time_series'}
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    opened, closed = track_netcdf_opens(monkeypatch)
+    wrapper = H5NetCDFArrayWrapper if engine == 'h5netcdf' else NetCDF4ArrayWrapper
+    original_read = wrapper._getitem
+
+    def no_physical_read(array, key):
+        assert array.variable_name not in {field, 'unrequested'}
+        return original_read(array, key)
+
+    with FrameitRunner(conf) as runner:
+        with monkeypatch.context() as guarded:
+            guarded.setattr(wrapper, '_getitem', no_physical_read)
+            groups, _, files = runner.load_dataset()
+        assert Counter(opened) == Counter(paths)
+        assert files == paths
+        result = groups[group][field]
+        assert hasattr(result.data, 'dask')
+        assert all(n <= 2 for chunks in result.chunks for n in chunks)
+        np.testing.assert_array_equal(result, scene[field])
+        assert 'unrequested' not in groups[group]
+        assert not closed
+    assert set(closed) == set(range(len(opened)))
+
+
+def test_netcdf_reuse_expires_on_close(tmp_path, monkeypatch):
+    path = write_shards(tmp_path, [shard('prmsl', 1.)])[0]
+    opened, closed = track_netcdf_opens(monkeypatch)
+    with DatasetResources() as resources:
+        for _ in range(2):
+            ds = concat_nc2ds([path], ['prmsl'], resources=resources)
+            assert float(ds.prmsl[0, 0, 0]) == 1.
+        assert len(opened) == 1
+        resources.close()
+        assert set(closed) == {0}
+        shard('prmsl', 9.).to_netcdf(path)
+        ds = concat_nc2ds([path], ['prmsl'], resources=resources)
+        assert float(ds.prmsl[0, 0, 0]) == 9.
+        assert len(opened) == 2
+    assert set(closed) == {0, 1}
+
+
+def test_netcdf_reuse_respects_engine_and_chunks(tmp_path, monkeypatch):
+    paths = write_shards(tmp_path, [shard('prmsl', 1.)])
+    opened, _ = track_netcdf_opens(monkeypatch)
+    with DatasetResources() as resources:
+        for chunks in ({'latitude': 1, 'longitude': 2}, {'longitude': 2, 'latitude': 1}):
+            first = concat_nc2ds(paths, ['prmsl'], resources=resources, chunks=chunks)
+        second = concat_nc2ds(paths, ['prmsl'], resources=resources, chunks={'latitude': 3})
+        other_engine = concat_nc2ds(paths, ['prmsl'], resources=resources,
+                                   chunks={'latitude': 3}, engine='netcdf4')
+        assert len(opened) == 3
+        assert first.prmsl.chunksizes['latitude'] == (1, 1, 1)
+        assert second.prmsl.chunksizes['latitude'] == (3,)
+        xr.testing.assert_equal(second, other_engine)
+
+
+def test_netcdf_failed_load_closes_and_allows_retry(tmp_path, monkeypatch):
+    paths = write_shards(tmp_path, [shard('prmsl', 1.)])
+    opened, closed = track_netcdf_opens(monkeypatch)
+    with DatasetResources() as resources:
+        with pytest.raises(ValueError, match='missing'):
+            concat_nc2ds(paths, ['missing'], resources=resources)
+        assert closed == [0]
+        result = concat_nc2ds(paths, ['prmsl'], resources=resources)
+        assert float(result.prmsl[0, 0, 0]) == 1.
+        assert len(opened) == 2
+    assert set(closed) == {0, 1}
+
+
+def test_standalone_preflight_closes_netcdf(tmp_path, monkeypatch):
+    from frameit.core.preflight import preflight
+
+    paths = write_shards(tmp_path, [shard('prmsl', 100000.), shard('u10', 0.), shard('v10', 3.)])
+    conf = configuration(tmp_path, paths)
+    opened, closed = track_netcdf_opens(monkeypatch)
+    assert preflight(conf)['track_time_count'] == 2
+    assert Counter(opened) == Counter(paths)
+    assert set(closed) == set(range(len(opened)))
+
+
+@pytest.mark.parametrize('representation', ['native', 'mass_earth'])
+def test_runner_only_prepares_selected_cartesian_branch(tmp_path, representation):
+    from frameit.core.runner import FrameitRunner
+    from frameit.core.settings_class import SimulationConfig
+
+    from .test_configuration_v2 import document
+    from .test_wind_collocation import native
+
+    source = native()
+    path = tmp_path / 'native.nc'
+    source.to_netcdf(path, engine='h5netcdf')
+    raw = document(tmp_path,
+        input={'files': [str(path)], 'wind_pairs': [
+            {'group': 'level', 'u': 'UT', 'v': 'VT', 'reference_frame': 'earth'}]},
+        variables={'level': {'names': ['UT', 'VT'], 'levels': 'all'},
+                   'level_w': {'names': ['WT'], 'levels': 'all'}},
+        output={'directory': str(tmp_path / 'out'),
+                'cartesian': {'horizontal_winds': representation}})
+    with FrameitRunner(SimulationConfig.from_mapping_with_model_preset(raw)) as runner:
+        groups, _, _ = runner.load_dataset()
+        assert bool(runner._native_cartesian_groups) == (representation == 'native')
+        np.testing.assert_array_equal(groups['level'].UT[0, :, 1], [[0., 2., 4.]] * 3)
+        np.testing.assert_array_equal(groups['level_w']._frameit_mass_w[0, :, 0, 0], [.5, 2.5, 6.])
+        if representation == 'native':
+            np.testing.assert_array_equal(runner._native_cartesian_groups['level'].UT, source.UT)
+            np.testing.assert_array_equal(runner._native_cartesian_groups['level_w'].WT, source.WT)

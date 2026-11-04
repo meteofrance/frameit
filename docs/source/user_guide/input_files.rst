@@ -44,6 +44,41 @@ masks and products; exact-common/strict time selection is described in
 :doc:`fa_inputs`. Available fields do not automatically enable diagnostics,
 unit/interval conversions or missing-data filling.
 
+NetCDF reading performance
+--------------------------
+
+The shared NetCDF loader reuses raw lazy inputs within the current run's resource
+lifetime. Ordinary-run metadata preflight and field loading share those handles;
+standalone validation closes its own inputs. Closing or rolling back a failed
+load discards the corresponding entries. Nothing is cached across runs, and
+per-file clock, units, native-grid and coordinate checks are not skipped.
+
+The input reader and chunks are existing, explicit settings:
+
+.. code-block:: yaml
+
+   input:
+     netcdf:
+       engine: h5netcdf  # Default; netcdf4 is the existing alternative.
+       chunks: {}        # Respect each variable's native storage chunks.
+
+Compare readers with your actual selection. On the tested large Meso-NH files,
+``netcdf4`` has cheaper metadata setup but a higher process memory peak; it is
+not a universally faster or lower-memory choice. This setting selects the input
+reader, independently of ``output.engine``. No automatic reader substitution
+is performed.
+
+Keep ``chunks: {}`` as the starting point. Oversized chunks (especially ``-1``
+for whole axes) can force reading much more than a small spatial/vertical
+selection needs; very small chunks increase scheduling and repeated storage
+chunk reads. Chunk overrides use the source's dimension names. Measure wall
+time, memory and output agreement before adopting a different layout.
+
+The runtime ``Input loading`` section includes metadata, coordinates and lazy
+graph preparation, not necessarily physical-field reads. With lazy execution,
+those reads may be charged to tracking or export. Compare the entire run as well
+as individual sections, using the same thread budget and filesystem-cache state.
+
 Complementary NetCDF variables
 ------------------------------
 

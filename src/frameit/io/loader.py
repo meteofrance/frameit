@@ -24,12 +24,23 @@ class DatasetResources:
     def __init__(self):
         self._datasets = []
         self._ids = set()
+        self._netcdf = {}
 
     def add(self, dataset):
         if id(dataset) not in self._ids:
             self._ids.add(id(dataset))
             self._datasets.append(dataset)
         return dataset
+
+    def open_netcdf(self, path, *, engine, chunks=None):
+        """Reuse the same lazy input only within this owner's open lifetime."""
+        import xarray as xr
+
+        chunk_key = tuple(sorted(chunks.items())) if isinstance(chunks, Mapping) else chunks
+        key = (Path(path).absolute(), engine, chunk_key)
+        if key not in self._netcdf:
+            self._netcdf[key] = self.add(xr.open_dataset(path, engine=engine, chunks=chunks))
+        return self._netcdf[key]
 
     def close_from(self, start=0):
         datasets = self._datasets[start:]
@@ -40,6 +51,7 @@ class DatasetResources:
                 dataset.close()
             except Exception:
                 log.exception("Failed to close a loaded dataset")
+        self._netcdf = {key: ds for key, ds in self._netcdf.items() if id(ds) in self._ids}
 
     def close(self):
         self.close_from()
