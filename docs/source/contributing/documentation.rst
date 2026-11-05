@@ -8,31 +8,38 @@ Review what a researcher needs to know about the change: commands, settings and
 defaults, processing, outputs, installation and limitations. Update the affected
 canonical pages, examples, template comments and figures in the same change. If
 none are affected, record ``Docs: no user-facing impact because ...`` in the
-commit or handover. A prose edit with no useful information is not required.
+commit or handover.
 
 Build documentation strictly in ``frameit_env``, run the publication check and
 inspect the affected HTML. Show visual changes in the OpenCode GUI browser and
-keep the preview available for feedback. This is a contributor obligation, not a
-local Git hook or a dependency of scientific processing.
+keep the preview available for feedback.
 
 Writing for researchers
 -----------------------
 
 Write for researchers who know bash, YAML, Python and their data, but not FrameIt.
-Use plain, professional language,
-without slogans or artificial encouragement. Explain consequential scientific
+Use plain, professional language, without slogans or artificial encouragement.
+Explain consequential scientific
 choices where the reader makes them, then link to the equations, evidence and
 reference details rather than repeating them throughout the site.
 
 Use short sentences and direct verbs. Put one main idea in each sentence.
 Explain FrameIt, not basic YAML, bash or meteorology. Remove repeated cautions
-and words that do not help the reader make a choice.
+and words that do not help the reader make a choice. Keep a sentence only if it
+helps the reader choose settings, run a task, interpret results or solve a problem.
+Remove recaps of what the preceding steps do not require, defensive asides,
+development progress reports and unsupported feature plans. Keep consequential
+scientific assumptions, limits and failure behavior beside the relevant choice;
+link to the full method record instead of repeating it.
 
 Keep **Your first run** and **Quick start** distinct. The first run teaches the
 YAML through a checked example. Quick start is a short template/edit/check/run
 reminder for users who know their data. Installation should show one clear route;
-advanced setup belongs in the environment reference. The reference environment
-already installs FrameIt, so do not add a second pip installation step.
+advanced setup belongs in the environment reference. Show the commands to run,
+not commentary about alternative steps the reader was never asked to take.
+
+Keep analysis and display in downstream tools. Documentation figures may explain
+the data and methods. HPC instructions must use site-neutral paths and settings.
 
 Document the current ``schema_version: "2.1"`` only. Do not publish schema history,
 conversion instructions or upgrade pages. Internal development and provenance
@@ -100,16 +107,15 @@ light background; the **symbol** is the favicon/compact mark. Keep the original
 colors, aspect ratio and clear space. Do not crop, stretch, invert or recolor them.
 
 ``html_logo`` uses the outlined ``_static/logo/frameit_logo.svg``, not the
-text-bearing master. The source uses **Liberation Mono Bold**; the verified export
-used version 2.1.5. Its 2172×724 composition, centred baseline and 355° I/t rotations
-are preserved by ``docs/outline_logo.py``. This is a recipe for this artwork, not a
-general SVG text engine. Regeneration needs FontTools and that exact font face;
-building/reading the committed documentation does not. From the repository root:
+text-bearing master. The source uses **Simpletix**, Version 1. Its 2172×724
+composition, centred baseline and colors are preserved by ``docs/outline_logo.py``.
+Regeneration needs FontTools and that
+exact font face. From the repository root:
 
 .. code-block:: bash
 
-   fc-match -f '%{family} %{style}\n%{file}\n' 'Liberation Mono:style=Bold'
-   FONT=$(fc-match -f '%{file}' 'Liberation Mono:style=Bold')
+   fc-match -f '%{family} %{style}\n%{file}\n' simpletix
+   FONT=$(fc-match -f '%{file}' simpletix)
    conda run --no-capture-output -n frameit_env python docs/outline_logo.py --font "$FONT" --output docs/source/_static/logo/frameit_logo.svg
 
 Verify the font identity, compare the outlined result to the supplied artwork,
@@ -131,16 +137,13 @@ The small ``_templates/layout.html`` override keeps the existing theme's menu
 behavior while supplying heading levels and a native keyboard-operable mobile
 button. Keep that control labelled and check menu targets at narrow widths.
 Notes, warnings and errors keep distinct labels and contrast-tested headings;
-color alone must not carry status. Body text remains a reading face, not the
-wordmark's monospace typeface. Do not add hosted fonts or change the Sphinx theme.
+color alone must not carry status. Keep body text in a readable face. Do not add
+hosted fonts or change the Sphinx theme.
 Explanatory SVGs share these tokens and readable labels, but **scientific data
 colormaps retain their scientific meaning** rather than adopting a brand palette.
 
 ``python docs/check_publication.py <artifact>`` checks configured source/build
-marks as well as the publication boundary. Its standard-library tests exercise
-missing/invalid SVG, live font text, scripts and external resources. Logo export
-tests use optional regeneration tooling when present; the committed asset checks
-do not depend on a locally installed typeface.
+marks and rejects non-public pages and references in the generated site.
 
 Local HTML preview
 ------------------
@@ -175,8 +178,7 @@ Load the browser skill and open
 ``http://127.0.0.1:8765/baseline-01/index.html`` in the OpenCode GUI browser/Review
 pane. Keep the returned tab ID for subsequent operations, verify the page loads
 and share the actual clickable URL. Inspect the changed pages at desktop and
-narrow widths. Manual rebuild and navigation to the next iteration are sufficient;
-no frontend, plugin or hot-reload dependency is needed.
+narrow widths. Rebuild into a new iteration directory after edits.
 
 Keep the server running until feedback is finished or the maintainer requests a
 stop. Put the owned server process, current iteration URL and restart command in

@@ -141,9 +141,8 @@ records/levels/cycles; names and library tables are not independent validation.
      - Near-surface temperature/RH metadata does not supply a missing SFX unit definition.
    * - ``SFX.SST``, ``SFX.T2M``, ``SFX.HU2M``, ``SFX.TSRAD``
      - Observed support labels SEA / FULL / FULL / FULL; gridpoint 120/24 encoding.
-     - Physical meaning still needs source evidence and declarations. The historical
-       FMULTM/FMULTE warning alone did not prove missing scaling; current packing-120
-       decoding records encoded factors separately (see :doc:`fa_contracts`).
+     - Verify physical meaning from source evidence. Packing-120 decoding records
+       encoded scaling factors separately from native warnings; see :doc:`fa_contracts`.
    * - Native layer/patch states ``SFX.TG1P1`` / ``SFX.WG1P1``
      - Dense individual records, observed NATURE label and 120/24 encoding.
      - Keep the exact native IDs. No depth, patch/tile axis, fraction or average
@@ -195,7 +194,5 @@ bounds/fractions/masks. Real sources still need physical definitions/scaling,
 Earth-model/geographic checkpoints and appropriate multi-time references/review.
 Selected spectral/native-error, vertical/vector and interval operations retain
 their separate limits in :doc:`fa_baseline`, :doc:`fa_atmosphere` and
-:doc:`fa_spectral`. No pressure/height, rates, averaging or new diagnostic follows
-from a shared target. Generic NetCDF orchestration is **not CROCO/WW3 support**;
-marine grids, masks, staggering, vertical coordinates and physical conventions
-need their own adapters and evidence.
+:doc:`fa_spectral`. Use :doc:`ocean_netcdf` for the separate NEMO/CROCO adapters
+and their grid, mask, current and vertical conventions.

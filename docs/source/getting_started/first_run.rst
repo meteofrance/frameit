@@ -53,8 +53,7 @@ The main choices are:
   The centre uses degrees north and east.
 * ``domain.width_km`` sets **full widths**, not half-widths. This 4×4 km request
   selects 5×5 native points on this grid. It does not create a new grid.
-* ``polar.enabled: false`` leaves polar sampling off. Installing its dependencies
-  does not select it.
+* ``polar.enabled: false`` leaves polar sampling off.
 * ``output.overwrite: false`` protects existing products.
 
 Name your run
@@ -72,7 +71,7 @@ unchanged; do not add a second ``run`` or ``output`` block.
 
 ``run.name`` supplies the product filename prefix. ``output.directory`` sets the
 run directory. These choices give filenames such as
-``results/products/first-run.cart.surface.nc``. They do not change the extracted values.
+``results/products/first-run.cart.surface.nc``.
 
 Check before running
 ---------------------
@@ -89,9 +88,8 @@ Without a filename, these commands read ``frameit.yaml``.
 * ``validate`` also checks input metadata, units, coordinates and required fields.
 * ``--dry-run`` shows the settings and planned products without writing them.
 
-The last two checks can read coordinates, but not scientific field values. A
-successful check does not establish scientific validity or guarantee execution.
-Use the preview to check that only the intended work is selected.
+Check that the preview selects the intended work. Validation reads metadata and
+coordinates; field values are read during execution.
 
 .. figure:: ../_static/figures/processing-products.svg
    :width: 440px

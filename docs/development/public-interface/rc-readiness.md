@@ -307,7 +307,7 @@ do not mark Task 7 complete or start Task 8.
 ## Task 7 G2 corrections and approval
 
 The maintainer reviewed `pilots-05` and requested shorter wording, clearer
-installation, separate first-run/quick-start pages, Maxence DEFEREZ credit,
+installation, separate first-run/quick-start pages, Maxence DEFERREZ credit,
 current-only YAML guidance and fully visible figures. They accepted the
 fixed-region prose. Their exact approval condition was: **"Once this is fixed,
 you have my approval."** The following checks establish completion of those
@@ -325,7 +325,7 @@ corrections; no additional human inspection or scientific approval is invented.
   Current YAML uses `schema_version: "2.1"`; strict admission is unchanged.
   Only the shared error text changed in processing code. Independent scientific
   data, manifest/status and FA worker/provenance contracts were not rewritten.
-- Maxence DEFEREZ is included in the documentation copyright, README credits and
+- Maxence DEFERREZ is included in the documentation copyright, README credits and
   package author metadata. Other author credits and the existing citation remain.
 - All eight figures have full-size links. Screen display is limited to 75vh with
   `object-fit: contain`; print has no screen-height cap. Scientific raster data,
@@ -364,6 +364,82 @@ print inspection remain unavailable in this browser session; bounds/focus/print
 rules are not misreported as those checks. Fresh installation, installed artifacts,
 unassisted-reader acceptance, scientific review and release qualification remain
 their separate later gates. No push, publication or deployment is authorized.
+
+## Post-G2 correction: focused processing and useful documentation
+
+The maintainer requested site-neutral HPC guidance, removal of visualization
+functionality, and a review of all user documentation for unhelpful text. During
+execution they also corrected the name to **Maxence DEFERREZ** and supplied refined
+logo masters. This correction does not start the remaining release tasks.
+
+Changes:
+
+- Removed `frameit.viz`, the plotting-only angular closure helpers/re-export,
+  standalone plotting example/tests, qualification PNG generation and figure
+  options, plotting logger settings, the explicit Matplotlib environment dependency
+  and Slurm `MPLBACKEND` overrides. Explanatory documentation figures remain.
+- Preserved numerical endpoint validation, analytical truth, errors, profiles,
+  spectra, masks, means/FFTs, production settings and scientific product schemas.
+  Qualification now writes JSON/NetCDF only. Intentional compatibility removals
+  include the plotting APIs, `figures` arguments and `--no-figures`; the numerical
+  report flag is `mean_fft_checked` instead of `mean_fft_plotting_checked`.
+- Reviewed all 33 original public reST sources and README. Removed the
+  visualization page/navigation/recipes, installation repetitions, development
+  commentary, unsupported future-command promises and redundant disclaimers.
+  Kept method records, references, assumptions, applicability and actionable
+  failure behavior. The contribution guide records the choose/run/interpret/
+  troubleshoot usefulness rule and site-neutral HPC wording.
+- Corrected stale current-schema examples (`output.backend`, `export.enabled`,
+  `polar.variables: extracted`, pair-specific winds) against the resolver and
+  shared wind/lookup code. No scientific behavior was changed to fit the docs.
+- Used the existing wrapping styles for tables, long keys and prose after narrow
+  reference-page overflows were observed. Code blocks retain their scrolling.
+- Corrected current credits/copyright/package author spelling. Both packaged logo
+  masters match the supplied refinements byte-for-byte. The outlined wordmark uses
+  the exact Simpletix normal, Version 1 face, preserving the new size, positions,
+  colors and zero rotations. No font file or new reader dependency is distributed.
+
+Verification in `frameit_env`, Python 3.13.18:
+
+- RED: analytical CLI failed on `import matplotlib` with plotting imports blocked;
+  publication checks failed on stale visualization pages/references. Both are now
+  covered. The launcher check also failed when a plotting override replaced its
+  caller's environment; it passed after removing that override. The old logo
+  recipe rejected the new face before its narrow recipe/test update.
+- `conda run --no-capture-output -n frameit_env python -m pytest -q` → **1186
+  passed, 4590 known warnings, 2 subtests passed, no skips, 558.66 s**, normal exit.
+- `conda run --no-capture-output -n frameit_env python -m unittest discover -s
+  docs -p test_check_publication.py` → **7 passed**, no skips. The optional exact-
+  font regeneration check ran here; builds/readers use the committed outlines.
+- `conda run --no-capture-output -n frameit_env python -m
+  frameit.testing.polar_qualification --output
+  build/rc/plot-removal-qualification-01` → **463 checks passed, zero failures**.
+  An independent process importing no FrameIt reopened both NetCDFs and checked
+  values, units, topology and coverage. Seven cases, profiles and spectra remain;
+  only two JSON and two NetCDF products were written.
+- `conda run --no-capture-output -n frameit_env sphinx-build -q -W --keep-going -b
+  html docs/source build/docs-preview/pilots-17` and `conda run --no-capture-output
+  -n frameit_env python docs/check_publication.py build/docs-preview/pilots-17`
+  passed. Targeted Ruff F, `bash -n` on both launchers and `git diff --check` passed.
+  All 26 YAML code blocks parsed; corrected output fragments passed the current
+  resolver. Local file/fragment checks passed for 34 HTML pages and 2090 links.
+- Final rendered review: **31 topic pages at 320/390/768/1200 px** (124 placements),
+  correct name/footer and current logo on each page, no page overflow or broken
+  images. All **8 figures/32 placements** fit; all **44 SVG labels** and drawings
+  fit their viewBoxes. Full-size figure targets returned HTTP 200. New logo,
+  symbol and glyph bounds fit; the served wordmark contains seven glyph paths and
+  no live text. Independent FreeType advances agree within 0.2 px with the export.
+- Fresh-context read-only review of the plotting/prose correction found no
+  Critical/Important defects and one
+  leftover plotting-setting cleanup, addressed above. Retained explanatory images,
+  removed APIs and historical records were reviewed as intentional scope choices.
+
+The live `pilots-17` installation preview remains available. Earlier screenshots
+were inspected; the final logo screenshot attempt reported a non-visible window,
+so latest-logo review is rendered DOM/geometry, not a claimed pixel capture or
+human approval. Fresh installation, hosted CI, real HPC jobs, keyboard traversal,
+paginated print and scientific/release sign-off were not run here. Existing data,
+unrelated `opencode.json`, font files and supplied originals were not modified.
 
 ## Task 1 verification receipt
 

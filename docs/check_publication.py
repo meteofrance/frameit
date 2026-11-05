@@ -1,4 +1,4 @@
-"""Reject accidental FA development-history publication using only the standard library."""
+"""Check public documentation boundaries and assets using only the standard library."""
 
 from __future__ import annotations
 
@@ -15,7 +15,8 @@ FORBIDDEN = re.compile(
     r"fa_epygram_c\d+|fa_(?:p\d+|c\d+|environment)\.ya?ml"
     r"|(?:docs/)?development/fa|fa_\w+_history(?:\.|/)"
     r"|Frozen\s+developer\s+evidence|\bFA\s+P\d+\b|\bEPyGrAM\s+C\d+\b"
-    r"|\b(?:stage|increment)\s+[PC]\d+\b|upgrading_to_v2",
+    r"|\b(?:stage|increment)\s+[PC]\d+\b|upgrading_to_v2"
+    r"|visualization_tools|frameit\.viz\b",
     re.IGNORECASE,
 )
 TEXT_SUFFIXES = {".html", ".js", ".txt", ".rst", ".yaml", ".yml", ".json"}
@@ -70,7 +71,7 @@ def check_text(path: Path, text: str) -> list[str]:
     if match is None:
         return []
     line = text.count("\n", 0, match.start()) + 1
-    return [f"{path}:{line}: development-history reference {match.group()!r}"]
+    return [f"{path}:{line}: non-public reference {match.group()!r}"]
 
 
 def check_artifact(artifact: Path) -> list[str]:
@@ -80,7 +81,7 @@ def check_artifact(artifact: Path) -> list[str]:
             errors.append(f"{artifact / name}: missing expected Sphinx product")
     for path in sorted(artifact.rglob("*")):
         if FORBIDDEN.search(path.relative_to(artifact).as_posix()):
-            errors.append(f"{path}: development record/catalogue copied into artifact")
+            errors.append(f"{path}: non-public page copied into artifact")
         if path.is_file() and path.suffix in TEXT_SUFFIXES:
             errors.extend(check_text(path, path.read_text(encoding="utf-8")))
     inventory = artifact / "objects.inv"

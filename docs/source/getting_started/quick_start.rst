@@ -26,7 +26,7 @@ Before running, check these YAML settings:
   replacement is intended.
 
 For winds or currents, also check the declared component basis and requested
-output representation. Finding a field does not select its scientific meaning.
+output representation.
 
 Useful commands
 ---------------
@@ -57,8 +57,7 @@ workflow. For example:
    frameit init nemo --output ocean.yaml
    frameit init mesonh --coupling croco --output coupled.yaml
 
-Each command creates a starter, not a ready-to-run choice for every dataset.
-Edit it using your source metadata. Polar sampling stays off unless selected.
+Edit the starter using your source metadata. Polar sampling stays off unless selected.
 
 Check ``run-status.yaml`` under your output directory, then open the listed
 products with an ordinary NetCDF/Zarr reader. Keep ``resolved-config.yaml`` and

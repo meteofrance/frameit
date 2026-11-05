@@ -12,7 +12,7 @@
 body { color: var(--frameit-navy); }
 .wy-nav-content { max-width: 58rem; background: white; }
 .wy-nav-content-wrap { background: var(--frameit-surface); }
-.rst-content { line-height: 1.65; }
+.rst-content { line-height: 1.65; overflow-wrap: anywhere; }
 .rst-content h1, .rst-content h2, .rst-content h3 { color: var(--frameit-navy); line-height: 1.3; }
 .wy-nav-content a { color: var(--frameit-teal-text); text-decoration: underline; text-underline-offset: .15em; }
 .wy-nav-content a:hover { color: var(--frameit-navy); }
@@ -81,15 +81,15 @@ body { color: var(--frameit-navy); }
     .wy-nav-content a, .wy-nav-content a:visited { color: var(--frameit-navy); }
 }
 
-.config-table {
+.config-table, .rst-content table.docutils {
     table-layout: fixed;
     width: 100%;
 }
 
-.rst-content .config-table td,
-.rst-content .config-table th,
-.config-table code,
-.config-table .pre {
+.rst-content table.docutils td,
+.rst-content table.docutils th,
+.rst-content code.literal,
+.rst-content code.literal .pre {
     white-space: normal;
     overflow-wrap: anywhere;
 }

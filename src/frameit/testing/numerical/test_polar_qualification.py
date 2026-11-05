@@ -1,5 +1,9 @@
 """Scientific gates and independent derivative/origin/serialization oracles."""
 
+import json
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
@@ -77,7 +81,42 @@ def test_displaced_tangential_vortex_has_physical_radial_wind():
     np.testing.assert_allclose(actual, expected, atol=.08, rtol=0)
 
 
-def test_netcdf_reload_diagnostics_and_plotting_keep_scientific_contract(tmp_path):
+def test_netcdf_reload_diagnostics_keep_scientific_contract(tmp_path):
     pytest.importorskip("xesmf")
     report = serialization_and_diagnostics(AnalyticVortex(longitude=179.6), tmp_path)
-    assert report["mean_fft_plotting_checked"]
+    assert report["mean_fft_checked"]
+
+
+def test_analytical_cli_writes_numerical_evidence_without_plotting_dependencies(tmp_path):
+    pytest.importorskip("xesmf")
+    output = tmp_path / "example"
+    result = subprocess.run([sys.executable, "-c", """
+import importlib.abc, runpy, sys
+class NoPlotting(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {'matplotlib', 'cartopy', 'cmocean'}:
+            raise ModuleNotFoundError(f'Plotting dependency requested: {fullname}')
+sys.meta_path.insert(0, NoPlotting())
+sys.argv = ['polar_qualification', '--example', '--output', sys.argv[1]]
+runpy.run_module('frameit.testing.polar_qualification', run_name='__main__')
+""", str(output)], capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert sorted(path.name for path in output.iterdir()) == ["analytical-vortex.nc", "example.json"]
+    report = json.loads((output / "example.json").read_text())
+    assert report["passed"] and all(check["ok"] for check in report["checks"])
+    assert report["serialization"]["mean_fft_checked"]
+    assert len(report["spectra"]) == 5
+    assert len(report["profiles"]["radius_km"]) == 51
+    reader = subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1], engine='netcdf4') as data:
+    assert data.sizes['rr'] == 51 and data.sizes['theta'] == 128
+    assert data.rr.attrs['units'] == 'km' and data.theta.attrs['units'] == 'rad'
+    assert not data.attrs['theta_closed']
+    np.testing.assert_allclose(data.constant, 1, atol=1e-12)
+    assert np.isnan(data.vtan.isel(rr=0)).all()
+    np.testing.assert_allclose(data.vtan.sel(rr=40), 50, atol=.05, rtol=0)
+    np.testing.assert_allclose(data.vrad.sel(rr=40), -5, atol=.05, rtol=0)
+assert 'frameit' not in sys.modules
+""", str(output / "analytical-vortex.nc")], capture_output=True, text=True, timeout=60)
+    assert reader.returncode == 0, reader.stdout + reader.stderr

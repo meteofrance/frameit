@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath("../../src"))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "FrameIt"
-author = "Clément Soufflet, Maxence DEFEREZ"
+author = "Clément Soufflet, Maxence DEFERREZ"
 copyright = f"{date.today().year}, {author}"
 release = get_version("frameit")
 

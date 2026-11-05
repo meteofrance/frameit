@@ -112,9 +112,8 @@ unused for AROME. Only ``all_no_thick`` is currently supported.
 * ``speed_check_interval_hours: 6``: minimum elapsed time between evaluated
   translation checks. Higher-frequency fixes do not trigger hourly speed checks.
 
-This experimental method requires explicit YAML, not a starter with guessed
-research inputs. Adapt seed, motion, source conventions and paths before running.
-Examples are ``example/config_file/conf_multifield_arome.yml``
+Adapt seed, motion, source conventions and paths before running. Examples are
+``example/config_file/conf_multifield_arome.yml``
 and ``example/config_file/conf_multifield_mnh.yml``.
 
 Numerical method and domain support

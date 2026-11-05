@@ -553,10 +553,10 @@ not two copied references. Validate resulting local paths/fragments in Task 9.
 | --- | --- |
 | `index.rst` | Rewrite navigation: first run, task guides, concepts, reference/troubleshooting, contribution; no archive toctree. |
 | `what_is_frameit.rst` | Rewrite focused mission/current capabilities/limits; preserve URL and attribution; no all-in-one/future-app claims. |
-| `getting_started/installation.rst` | One Linux/Python 3.13 reference-environment route; it already installs FrameIt. Link advanced setup separately. |
+| `getting_started/installation.rst` | One Linux/Python 3.13 setup route. Show commands; omit commentary about unrequested alternatives. Link advanced setup separately. |
 | `getting_started/first_run.rst` | Guided scalar example: read the YAML, change run name/output directory, check/run and inspect independent values. |
 | `getting_started/quick_start.rst` | Short template/edit/check/run reminder and CLI links for users who know their data. |
-| `getting_started/hpc.rst` | Retain bounded Slurm/operational procedure; update support/CLI/config literals, distinguish unrun site qualification. |
+| `getting_started/hpc.rst` | Site-neutral HPC/Slurm setup, bounded pilot checks, resources, cancellation and retry policy. No named site or developer-review handoff. |
 | `user_guide/input_files.rst` | Retain canonical input/layout/metadata contracts; link task field/coupled guides. |
 | `user_guide/ocean_netcdf.rst` | Retain authoritative NEMO/CROCO/SURFEX/time/scientific scope and formulas; clearer task entry links, update selectors only. |
 | `user_guide/fa_inputs.rst` | Retain native FA admission/declarations; consolidate duplicated task steps by linking coupled guide. |
@@ -580,7 +580,7 @@ not two copied references. Validate resulting local paths/fragments in Task 9.
 | `polar_projection/scientific_qualification.rst` | Retain independent qualification methodology/results with revision/scope and current sampling conventions. |
 | `polar_projection/conservative_experiment.rst` | Retain experimental method/evidence, not a stable production choice. |
 | `polar_projection/wind_method_comparison.rst` | Retain experimental comparison and limitations; do not turn method comparison into automatic selection. |
-| `visualization_tools/rotate_polar_axes.rst` | Retain optional downstream utility, distinguish displayed-domain rotation from vector basis/frame. |
+| `visualization_tools/rotate_polar_axes.rst` | Remove with plotting APIs/examples per the post-G2 maintainer correction. Keep numerical methods and explanatory figures. |
 | `developper/how_to_add_my_tracker.rst` | Retain URL, update contributor interface examples and method evidence/optionality obligations; correct navigation label without gratuitous URL break. |
 | `contributing/documentation.rst` | Refine Task 1 guide with G2 feedback, branding tokens/logo export recipe, precise checks. |
 
@@ -597,8 +597,9 @@ New canonical pages (proposed):
 - `troubleshooting.rst`: actionable index by failure phase, linking native/method
   specifics rather than duplicating every caveat.
 - README stays short: implemented mission, installation/first-run/deeper links,
-  limits and preserved credits/citation. G2 specifies **Maxence DEFEREZ** in
-  project credits, package author metadata and documentation copyright.
+  limits and preserved credits/citation. Use **Maxence DEFERREZ** in project
+  credits, package author metadata and documentation copyright (spelling corrected
+  by the maintainer after G2).
 
 Proposed editable SVGs beneath `_static/figures/` (captions label **schematics**,
 not data/validation; units/alt text/legends and non-color distinctions required):

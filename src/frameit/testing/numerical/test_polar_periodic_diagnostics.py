@@ -5,7 +5,6 @@ import pytest
 import xarray as xr
 
 from frameit.processing.polar import azimuthal_mean, periodic_fourier_coefficients
-from frameit.processing.polar.polar_utils import close_theta_for_plot
 
 
 def field(size, values, start=0):
@@ -23,10 +22,12 @@ def test_full_ring_means_do_not_double_count_north(size):
     assert float(azimuthal_mean(constant)) == 1
     assert float(azimuthal_mean(cosine)) == pytest.approx(0, abs=1e-12)
     assert float(azimuthal_mean(sine)) == pytest.approx(0, abs=1e-12)
-    closed = close_theta_for_plot(cosine.to_dataset())
-    assert float(closed.signal.mean("theta")) == pytest.approx(1 / (size + 1), abs=1e-12)
-    with pytest.raises(ValueError, match="endpoint-exclusive"):
-        azimuthal_mean(closed.signal)
+    endpoint = cosine.isel(theta=slice(0, 1)).assign_coords(theta=[2 * np.pi])
+    closed = xr.concat([cosine, endpoint], dim="theta")
+    assert float(closed.mean("theta")) == pytest.approx(1 / (size + 1), abs=1e-12)
+    for helper in (azimuthal_mean, periodic_fourier_coefficients):
+        with pytest.raises(ValueError, match="endpoint-exclusive"):
+            helper(closed)
 
 
 @pytest.mark.parametrize("mode", [1, 2, 3])

@@ -21,7 +21,7 @@ fi
 if [[ -n ${FRAMEIT_ENV_SCRIPT:-} ]]; then
     source "$FRAMEIT_ENV_SCRIPT"
 fi
-export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 MPLBACKEND=Agg
+export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 BLIS_NUM_THREADS=1
 checkout=$(python -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).resolve(strict=True))' "$1")

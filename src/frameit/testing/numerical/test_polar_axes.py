@@ -1,4 +1,4 @@
-"""Sampling geometry, periodic topology, allocation limits and plotting closure."""
+"""Sampling geometry, periodic topology, allocation limits and endpoint validation."""
 
 from types import SimpleNamespace
 
@@ -9,7 +9,7 @@ import yaml
 
 from frameit.core.settings_class import SimulationConfig
 from frameit.processing.polar.polar_grid import PolarLonLatGrid
-from frameit.processing.polar.polar_utils import close_theta_for_plot, finalize_polar_output
+from frameit.processing.polar.polar_utils import finalize_polar_output
 
 
 def settings(**overrides):
@@ -141,46 +141,45 @@ def test_actual_radial_intervals_and_coordinate_aware_derivative():
     np.testing.assert_allclose(q.differentiate("rr", edge_order=2), 2 * ds.rr, atol=1e-12)
 
 
-def test_plotting_closure_idempotence_auxiliaries_and_analysis_reopening():
+def test_verified_closed_endpoint_is_removed_without_changing_other_samples():
     ds = finalize_polar_output(configured_grid(polar_n_theta=36).build(box()))
     ds["signal"] = np.cos(ds.theta).broadcast_like(ds.lon)
     ds["time_only"] = ("time", [1., 2.])
     original = ds.copy(deep=True)
     xr.testing.assert_identical(finalize_polar_output(ds), ds)
-    closed = close_theta_for_plot(ds)
-    assert closed.sizes["theta"] == 37
-    assert closed.time_only.dims == ("time",)
-    xr.testing.assert_identical(close_theta_for_plot(closed), closed)
+    endpoint = ds.isel(theta=slice(0, 1)).assign_coords(theta=[2 * np.pi], theta_deg=("theta", [360.]))
+    closed = xr.concat([ds, endpoint], dim="theta", data_vars="minimal", coords="minimal")
+    closed.theta.attrs["units"] = "rad"
+    closed.theta_deg.attrs["units"] = "degree"
     xr.testing.assert_identical(ds, original)
     xr.testing.assert_identical(finalize_polar_output(closed), ds)
-    for name in ["radial_bearing", "lon", "lat", "signal"]:
-        np.testing.assert_allclose(closed[name].isel(theta=0), closed[name].isel(theta=-1),
-                                   equal_nan=True)
-    assert closed.theta_deg[-1] == 360
-    assert closed.theta[-1] == 2 * np.pi
+    xr.testing.assert_identical(finalize_polar_output(ds.assign_attrs(theta_closed=True)), ds)
 
 
 def test_inconsistent_closed_values_and_repeated_endpoint_are_rejected():
     ds = finalize_polar_output(configured_grid(polar_n_theta=36).build(box()))
     ds["signal"] = np.cos(ds.theta)
-    closed = close_theta_for_plot(ds)
+    endpoint = ds.isel(theta=slice(0, 1)).assign_coords(theta=[2 * np.pi], theta_deg=("theta", [360.]))
+    closed = xr.concat([ds, endpoint], dim="theta", data_vars="minimal", coords="minimal")
+    closed.theta.attrs["units"] = "rad"
+    closed.theta_deg.attrs["units"] = "degree"
     inconsistent = closed.copy(deep=True)
     inconsistent["signal"][-1] = 42
-    for helper in (close_theta_for_plot, finalize_polar_output):
-        with pytest.raises(ValueError, match="does not duplicate"):
-            helper(inconsistent)
+    with pytest.raises(ValueError, match="does not duplicate"):
+        finalize_polar_output(inconsistent)
     integer_labels = closed.assign(label=("theta", np.full(37, 10**12, dtype=np.int64)))
     integer_labels["label"][-1] += 1
     with pytest.raises(ValueError, match="does not duplicate"):
-        close_theta_for_plot(integer_labels)
+        finalize_polar_output(integer_labels)
     repeated = xr.concat([closed, closed.isel(theta=slice(-1, None))], dim="theta")
     with pytest.raises(ValueError, match="unique"):
-        close_theta_for_plot(repeated)
-    # A stale attribute does not override actual open/closed coordinates.
-    stale = ds.assign_attrs(theta_closed=True)
-    assert close_theta_for_plot(stale).sizes["theta"] == 37
-    closed.attrs["theta_closed"] = False
-    assert close_theta_for_plot(closed).sizes["theta"] == 37
+        finalize_polar_output(repeated)
+    missing = closed.copy(deep=True)
+    missing["signal"][0] = np.nan
+    with pytest.raises(ValueError, match="does not duplicate"):
+        finalize_polar_output(missing)
+    missing["signal"][-1] = np.nan
+    assert np.isnan(finalize_polar_output(missing).signal[0])
 
 
 def test_directional_samples_are_labelled_truthfully():

@@ -3,25 +3,17 @@ Native atmospheric levels and cubes
 
 FrameIt assembles **explicitly associated, instantaneous gridpoint H2D records**
 into labelled native atmospheric cubes. The records remain on their original
-full/interface indices; extraction does not require pressure or height diagnosis.
-This is an implemented, limited assembly/export contract, not qualification of
-every producer's scientific fields or full FA compatibility.
+full/interface indices, without diagnosing pressure or height.
 
 Native cubes require ``input.format: fa`` and ``profile: arome_history``, with
 qualified modern regular-lon/lat or spherical tangent-Lambert geometry.
 Individually selected dense SURFEX records use ``surfex_history`` and its separate
 source/layout checks. See :doc:`fa_inputs`, :doc:`fa_geometry` and :doc:`fa_baseline`.
 
-Use the reference :doc:`fa_environment` for the single Python-3.13 stack. FA workers
-use the active interpreter in isolated processes; ``python_executable`` is an
-optional deliberate override. The ``fa`` extra and identical ``fa-epygram`` alias
-use unmodified EPyGrAM 2.1.0, falfilfa4py 1.2.1 and ctypesForFortran 1.3.0, with
-the qualified upstream dependencies. The reader is ``backend: epygram``.
-Installing dependencies does not change which scientific operations are supported.
+See :doc:`fa_environment` for the FA dependencies and worker runtime.
 
 EPyGrAM remains external software, copyright Météo-France (2014-), under
-`CeCILL-C <https://github.com/UMR-CNRM/EPyGrAM/blob/2.1.0/LICENSE.txt>`_. No
-implementation or definition tables are vendored. Its
+`CeCILL-C <https://github.com/UMR-CNRM/EPyGrAM/blob/2.1.0/LICENSE.txt>`_. Its
 `publisher's 2.1.0 metadata <https://pypi.org/pypi/epygram/2.1.0/json>`_ and
 ``formats/FA.py`` / ``geometries/VGeometry.py`` describe the version-specific
 library interfaces; library defaults/tables are not producer-specific sampling proof.
@@ -43,8 +35,7 @@ cannot be accepted as harmless metadata or replaced by another field.
 The annotated example below is an association template, **not** a release-qualified
 field catalogue. A literal ID such as ``S001TEMPERATURE`` can be spectral in a real
 stream. Inspect actual encodings and confirm units, sampling, coefficients and
-wind basis before selecting records; installation cannot make an unsupported
-declared record executable.
+wind basis before selecting records.
 
 .. literalinclude:: ../../../example/config_file/arome_fa_native_cubes.yaml
    :language: yaml

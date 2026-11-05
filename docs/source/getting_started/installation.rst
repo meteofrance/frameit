@@ -17,8 +17,7 @@ Get the code, then create and activate the environment:
    conda activate frameit_env
 
 ``environment.yaml`` installs **FrameIt and its dependencies**, including the
-FA, GRIB, NetCDF, Zarr and polar stack. No second environment or separate
-``pip install`` step is needed.
+FA, GRIB, NetCDF, Zarr and polar stack.
 
 FrameIt is installed in **editable mode**. Keep the checkout: this environment
 uses its code, so edits to the checkout affect what runs.
@@ -31,8 +30,7 @@ Check the installation
    python -m pip check
    frameit --help
 
-``pip check`` checks dependencies. ``--help`` checks that the command works.
-For a small processing test, continue with :doc:`first_run`.
+Continue with :doc:`first_run` for a small processing example.
 
 If you manage your own Python environment or need native-library troubleshooting,
 see :doc:`../user_guide/fa_environment`. For cluster use, see :doc:`hpc`.

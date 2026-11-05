@@ -33,6 +33,12 @@ class PublicationBoundaryTests(unittest.TestCase):
         self.assertTrue(check_text(Path('topic.rst'),
                                   'See getting_started/upgrading_to_v2.html'))
 
+    def test_plotting_references_fail_publication(self):
+        for text in ('See visualization_tools/rotate_polar_axes.html',
+                     'from frameit.viz import setup_geodesic_polar_ax'):
+            with self.subTest(text=text):
+                self.assertTrue(check_text(Path('topic.rst'), text))
+
     def test_brand_assets_require_local_valid_font_independent_svg(self):
         from check_publication import check_brand_assets
 
@@ -70,8 +76,10 @@ class PublicationBoundaryTests(unittest.TestCase):
     def test_outlined_wordmark_preserves_composition_and_source(self):
         root = Path(__file__).resolve().parent
         master = root / 'source/_static/logo/frameit_logo_vector.svg'
-        font = subprocess.check_output([
-            'fc-match', '-f', '%{file}', 'Liberation Mono:style=Bold'], text=True).strip()
+        family, font = subprocess.check_output([
+            'fc-match', '-f', '%{family}\n%{file}', 'simpletix'], text=True).splitlines()
+        if family != 'simpletix':
+            self.skipTest('Logo regeneration needs the exact Simpletix face')
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / 'outlined.svg'
             before = master.read_bytes()
@@ -91,7 +99,7 @@ class PublicationBoundaryTests(unittest.TestCase):
             self.assertEqual(len(wordmark), 7)
             self.assertEqual([p.get('fill').lower() for p in wordmark],
                              ['#00978f'] + ['#021633']*4 + ['#ec7600']*2)
-            self.assertTrue(all('rotate(355)' in p.get('transform') for p in list(wordmark)[-2:]))
+            self.assertTrue(all('rotate(' not in p.get('transform') for p in wordmark))
 
     def test_native_identities_and_scientific_terms_are_not_roadmap_labels(self):
         self.assertEqual(check_text(Path("topic.rst"),
@@ -114,6 +122,7 @@ class PublicationBoundaryTests(unittest.TestCase):
                 header + zlib.compress(b"index std:doc 1 index.html -\n"))
             self.assertEqual(check_artifact(root), [])
             for name, content in (("fa_epygram_c1.html", "A hidden orphan page"),
+                                  ("visualization_tools.html", "A stale plotting page"),
                                   ("_sources/copied.rst.txt", "Frozen developer evidence"),
                                   ("searchindex.js", "user_guide/fa_epygram_c4")):
                 with self.subTest(name=name):

@@ -8,7 +8,7 @@ NEMO regional native scalars
 ``nav_lon`` on its own ``(y, x)`` grid, decoded Gregorian ``time_counter``, and
 native ``deptht/depthu/depthv/depthw`` coordinates. It is not qualification of
 every NEMO release, arbitrary global/folded grids or companion mesh files.
-The existing regional geometry limits still apply: at most 10% difference
+The regional geometry limits are at most 10% difference
 between X/Y spacing and 20% within-axis variability. A spacing override cannot
 bypass them. NetCDF is the base path; FA, GRIB, polar and Zarr dependencies are
 not needed for native scalar extraction.
@@ -23,7 +23,7 @@ own geographical lookup with the continuous centres from the reference source.
 Complementary T-grid scalar files require ``input.netcdf.file_layout: variables``;
 see :doc:`input_files`. Do not merge shifted U/V geography into a T-grid source
 merely because dimensions have the same names/shapes. Instantiate only requested
-native contexts. The current implementation preserves data meaning rather than
+native contexts. Extraction preserves data meaning rather than
 converting between similarly named quantities:
 
 * potential temperature is not relabelled as in-situ or sea-surface temperature;
@@ -61,10 +61,8 @@ introduced. Native clocks are checked before selecting variables, including
 ``time_centered`` stored as an auxiliary data variable rather than a coordinate.
 
 Verification uses compact synthetic time/depth/crop, independent source-window
-and ordinary-reader checks. Passing these engineering tests is not scientific
-qualification across all real regimes, nor human scientific sign-off. Native
-ocean components are supported only as the native copies described below; do not
-interpret scalar admission as evidence of qualified current rotation or stresses.
+and ordinary-reader checks. Broader real-data qualification remains open. Native
+components have the separate limits below.
 
 Separate native components
 --------------------------
@@ -122,8 +120,7 @@ unique physical records. Repeated timestamps within a file or
 overlapping providers of a selected physical field across files fail, even if
 ``duplicate_time_policy`` would normally keep one. Complementary variable shards
 may repeat matching clock/bounds metadata. Additional AROME participants
-still match reference timestamps exactly. The global default remains ``common``;
-existing exact ``common`` and ``strict`` runs are unchanged.
+still match reference timestamps exactly. The global default is ``common``.
 
 At reference time T, the policy selects the unique native NEMO sample whose
 averaging interval is exactly **[T-1 hour, T]**, using the preceding interval
@@ -157,7 +154,7 @@ interpolation, extrapolation, averaging of means or nearest-time fallback.
 Optional spatial scalar targets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Eligible scalar sources can opt into the existing shared polar target. Target
+Eligible scalar sources can opt into a shared polar target. Target
 time/radius/azimuth/geography and target identity agree exactly, while native
 depths, source mean bounds, forecast identity and field-local support remain
 different. Component requests remain gated as described above. Continuous
@@ -224,7 +221,7 @@ Native CROCO faces and current analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Regional history fields on ``xi_u/eta_v`` retain their actual N-1 midpoint
-locations and ``lat_u/lon_u`` or ``lat_v/lon_v`` geography. With the existing
+locations and ``lat_u/lon_u`` or ``lat_v/lon_v`` geography. With
 ``output.cartesian.horizontal_vectors: native`` selector, values, source units and
 vector basis are copied unchanged; no wet-mask interpretation, companion current
 or angle is required. Local face dimensions are ``x_u_box`` and ``y_v_box``;
@@ -290,7 +287,7 @@ Optional shared point sampling
 different native vertical groups, opt-in SURFEX interpretation and selected
 CROCO rho/Earth currents. Adapt its paths, native indices and illustrative centre
 to the inspected inputs. Set ``horizontal_vectors: native`` for unchanged native
-Cartesian faces. Polar processing is off by default; enabling it uses the existing
+Cartesian faces. Polar processing is off by default; enabling it uses a
 shared target, separately selected fields, and ordinary optional polar dependencies.
 The fixed or prescribed continuous geographical centres are shared, but each source
 performs its own grid lookup. Common time labels do not imply that ocean and
@@ -328,10 +325,8 @@ of unlike source quantities or validity of every real configuration.
 Embedded SURFEX sea fields in Meso-NH
 ----------------------------------------
 
-The existing ``model: mesonh`` NetCDF time-series reader also handles embedded
-SURFEX snapshots. Raw extraction is unchanged by default. Explicitly select the
-confirmed SEA-field interpretation when missing-value/support and unit completion
-are wanted:
+The ``model: mesonh`` NetCDF time-series reader also handles embedded SURFEX
+snapshots. To interpret SEA-field missing values, support and unit comments:
 
 .. code-block:: yaml
 
@@ -351,8 +346,8 @@ selected for export. The finite supported list is the six named fields above plu
 unlisted quantities retain their original values and metadata. Variable-shard,
 other-model and non-NetCDF interpretations fail rather than guessing a source.
 
-The input contract, explicitly confirmed by the user for this family, treats
-exact ``999`` as invalid in these SURFEX fields and trusts their unit comments.
+For this supported family, exact ``999`` is invalid in these SURFEX fields and
+unit comments supply missing unit labels.
 The selected fields replace this sentinel with missing values, preserving existing
 NaNs and legitimate zeroes. This is **not** a dataset-wide Meso-NH sentinel rule:
 an unrelated ``PRES=999 hPa`` remains valid. Unselected raw access is still

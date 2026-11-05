@@ -1,4 +1,4 @@
-"""Outline the supplied FrameIt wordmark with its exact Liberation Mono Bold face.
+"""Outline the supplied FrameIt wordmark with its exact Simpletix face.
 
 This is a recipe for this artwork, not a general SVG text-layout engine.
 FontTools is regeneration tooling only; readers/builds use the committed SVG.
@@ -19,14 +19,14 @@ def outline_wordmark(font_path: Path, output: Path) -> None:
     if output.resolve() in {master.resolve(), (folder / 'frameit_logo_symbol_vector.svg').resolve(), font_path.resolve()}:
         raise ValueError('Refusing to replace source artwork or the font')
     font = TTFont(font_path)
-    if font['name'].getDebugName(4) != 'Liberation Mono Bold':
-        raise ValueError('Exact Liberation Mono Bold is required; no font substitution')
+    if font['name'].getDebugName(4) != 'simpletix':
+        raise ValueError('Exact Simpletix is required; no font substitution')
     tree = ET.parse(master)
     root = tree.getroot()
     svg = '{http://www.w3.org/2000/svg}'
     text = root.find(svg + 'text')
     if (text is None or ''.join(text.itertext()) != 'FrameIt'
-            or text.find(".//" + svg + "tspan[@id='tspan4']").get('rotate') != '355 355 0'
+            or text.find(".//" + svg + "tspan[@id='tspan4']").get('rotate') != '0 0 0'
             or 'text-anchor:middle' not in text.get('style', '')):
         raise ValueError('Source composition changed; review this specific export recipe')
     size = float(re.search(r'font-size:([0-9.]+)px', text.get('style')).group(1))
@@ -39,10 +39,9 @@ def outline_wordmark(font_path: Path, output: Path) -> None:
         pen = SVGPathPen(glyphs)
         glyphs[cmap[ord(character)]].draw(pen)
         fill = '#00978F' if index == 0 else '#EC7600' if index >= 5 else '#021633'
-        angle = 355 if index >= 5 else 0
         ET.SubElement(group, svg + 'path', {
             'd': pen.getCommands(), 'fill': fill,
-            'transform': f'translate({x:.8f} {y}) rotate({angle}) scale({scale:.10f} {-scale:.10f})',
+            'transform': f'translate({x:.8f} {y}) scale({scale:.10f} {-scale:.10f})',
         })
         x += advance
     root.insert(list(root).index(text), group)

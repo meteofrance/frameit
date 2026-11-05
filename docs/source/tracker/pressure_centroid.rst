@@ -82,19 +82,11 @@ Native winds are collocated linearly using the actual mass/staggered coordinate
 pairs before height interpolation. Horizontal native coordinates normalize to
 metres; missing coordinate units use the documented MNH metre input contract
 and the affected coordinate names are recorded in track metadata.
-``UT_ZM``/``VT_ZM`` and, independently,
-``UM10``/``VM10`` have an earth-relative MNH input contract. Native ``UT``/``VT``
-use a grid-relative contract unless source metadata or an explicitly configured
-``input.wind_reference_frame`` declares earth-relative components. The global
-schema's implicit earth-relative default is not applied to raw native winds.
-Explicit per-field wind metadata takes precedence. Contradictory pair metadata
-is rejected. Grid-relative winds use a supplied ``grid_rotation`` (radians
-counterclockwise from geographic east, with supported angular-unit conversion),
-or a rotation derived from WGS84 native-axis directions. Derived rotation
-requires an approximately orthogonal, consistently oriented grid (absolute
-axis-direction dot product no greater than 0.02). The tracker records the source
-frames and rotation method. This preparation is scoped to tracker inputs;
-exported user variables retain the existing independent preparation contract.
+Declare each selected model-level and surface pair with ``input.wind_pairs``.
+The basis must agree with source metadata. Grid-relative pairs require an
+explicit rotation method; see :ref:`wind-grid-contract` and
+:ref:`wind-preparation-method` for equations and geometry checks. The tracker
+records source frames and rotation. User fields use the same preparation contract.
 
 The adapter respects a declared one-based inclusive vertical
 ``c_grid_dynamic_range`` to exclude nonphysical levels. It does not blindly
@@ -232,8 +224,7 @@ MNH attributes additionally record the selected pressure/height/wind sources,
 height reference, vector frames and rotation, quadrilateral interpolation and
 nodal area weighting. The implementation identifier is ``frameit_mnh_native_v1``;
 its geometry preparation differs from the comparison script. Resolved inputs
-are also included in ``run-provenance.yaml``. Existing variable names, dimensions,
-units and output encodings are retained.
+are also included in ``run-provenance.yaml``.
 
 Dedicated verification
 ----------------------

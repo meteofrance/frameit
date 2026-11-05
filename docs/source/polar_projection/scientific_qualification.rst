@@ -16,8 +16,8 @@ geodesic bearing at each target. Tangential wind is positive clockwise.
    frameit run-all-tests --output ./runs/all-tests
 
 Each output directory must be fresh or empty. The small example exports
-``analytical-vortex.nc`` and plots truth/sampled profiles, radial/tangential errors,
-and harmonic amplitudes and peak directions in ``vortex-diagnostics.png``.
+``analytical-vortex.nc`` and ``example.json`` with errors, radial profiles,
+harmonic amplitudes and peak directions.
 
 The complete qualification writes:
 
@@ -27,8 +27,7 @@ The complete qualification writes:
   counts, physical and normalized errors, radial profiles, complex coefficients,
   phase comparisons, centre offsets, software provenance and resource observations;
 * ``analytical-vortex.nc`` and ``moving-masked-vortex.nc``: independently checked
-  reloads, including dynamic masks and clipped-domain quality flags;
-* ``convergence-and-profiles.png``: visual evidence supplementing numerical checks.
+  reloads, including dynamic masks and clipped-domain quality flags.
 
 Analytical definitions
 ----------------------
@@ -102,7 +101,7 @@ Accuracy metrics use an oracle-declared common set: missing required points
 invalidate a score instead of lowering its RMS. Separate clipped-domain and
 changing-sector experiments check coverage and eligibility through export.
 The report distinguishes actual model-boundary mapping loss from missing-data
-support. NetCDF reloads also exercise full-ring means, FFTs and plotting closure.
+support. NetCDF reloads also exercise full-ring means and FFTs.
 Cached/uncached and eager/Dask products are compared at tight tolerances. Backend
 versions and resource measurements apply to the environment recorded in the report.
 

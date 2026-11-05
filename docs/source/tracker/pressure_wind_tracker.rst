@@ -9,7 +9,7 @@ The pressure-wind tracker (``tracking.method: pressure_wind``) estimates the cyc
 1. a *pressure-based first guess* from mean sea-level pressure (MSLP),
 2. a *wind-based refinement* using the 10 m wind speed magnitude.
 
-The tracker outputs a time series of cyclone center indices ``(cy, cx)`` in the model grid.
+The output contains native centre indices ``cy(time)`` and ``cx(time)``.
 
 Required input fields
 ---------------------
@@ -37,8 +37,6 @@ Let:
 
 Sequential procedure
 ~~~~~~~~~~~~~~~~~~~~
-
-The procedure is defined as follows.
 
 Initialization (t = 0)
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -79,20 +77,6 @@ For each time step ``t = 1..nt-1``:
 
 3. Store the refined indices as ``(cy_t, cx_t)`` and proceed to the next time step.
 
-Output
-------
-
-The core tracking function returns two 1D arrays:
-
-- ``cy(time)``: row index of the estimated center,
-- ``cx(time)``: column index of the estimated center,
-
-both returned as integers and packaged in an ``xarray.Dataset``:
-
-.. code-block:: python
-
-   xr.Dataset({"cy": cy, "cx": cx})
-
 Window sizes and conversion from physical half-widths
 --------------------------------------------------------
 
@@ -130,7 +114,7 @@ To activate this tracker in the YAML configuration, set:
 Illustration
 ------------
 
-Here is an illustration for tropical cyclone CHIDO, using wind-pressure tracking
+Pressure-wind tracking for tropical cyclone CHIDO,
 with ``domain.width_km: {x: 50, y: 75}`` (full widths in kilometres).
 The red line shows the extracted box.
 
@@ -159,17 +143,17 @@ Restrict the first MSLP search to a user-selected position and radius:
        search_half_width_km: 100
        refine_half_width_km: 50
 
-These coordinates are illustrative, not a verified storm position. The seed
-applies to the first selected input timestamp; it does not filter input times.
+Adapt these coordinates to the intended disturbance. The seed applies to the
+first selected input timestamp; it does not filter input times.
 Latitude/longitude are degrees north/east in [-90, 90]/[-180, 180], and the
 radius must be finite and positive. Distances use the WGS84 geodesic and include
 grid points at the radius. The method searches finite MSLP candidates within
 the circle on the available grid; it does not require complete circular coverage.
 No valid candidate causes an error, never a global-search fallback at initialization.
-The existing wind refinement may move the centre outside this circle.
-Subsequent tracking and its existing fallback policy are unchanged.
+Wind refinement may move the centre outside this circle. Later times use the
+search and fallback policy described above.
 
 Omit ``initial_guess`` (or set it to ``null``) to retain the global initial MSLP
 search. The effective configuration and seeded track attributes record the
-position, radius and search convention. Seeded selection is not independent
-confirmation of storm identity and does not require a 500-km reference ring.
+position, radius and search convention. Check the first centre against the
+intended disturbance.

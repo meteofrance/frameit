@@ -52,14 +52,13 @@ from tangent-basis treatment:
 cyclone papers. It has signed weights, is not guaranteed monotone or nodally
 interpolatory, and can alter sharp extrema. No clipping is applied. Its behavior
 is measured against independent truth rather than justified by its order alone.
-The existing production path intentionally still supports its established point
-methods and missing-data contract; these candidates live in the testing package.
+These candidates live in the testing package; ordinary processing uses its
+configured point method and missing-data policy.
 
 Inputs must already be collocated, share labelled horizontal locations, and be
 explicitly Earth-relative in m/s. Conflicting available GRIB component flags fail.
-This comparison does not invent grid rotation or staggered-wind conventions.
-Native Meso-NH preparation remains covered by its existing dedicated tests, not
-new real-data qualification in this experiment.
+Prepare staggered or grid-relative winds before using this interface; see
+:ref:`wind-preparation-method`.
 
 Method record: vector transport
 ----------------------------------------
@@ -230,8 +229,7 @@ files retain point truth. ``ci/ci.json`` and four optional CI NetCDF files retai
 real-data comparisons and metadata. The ``wind_method`` dimension avoids
 confusing methods with times or heights. Full-ring profiles and split real/imaginary
 Fourier coefficients are independently readable with ordinary NetCDF tools.
-The existing atomic writer's lossless default compression is used, without a
-new precision/encoding requirement.
+Products use the ordinary writer's lossless default compression.
 
 Weight-build, transport-build and field-application times and shared sparse-array
 estimates are recorded. Bases share their spatial operator; their repeated build
@@ -295,6 +293,6 @@ Remaining gaps and review status
 All alternatives remain experimental. Representative native-model preparation,
 noise sensitivity, wider regimes, independent scientific review, and a justified
 production missing-data/default policy remain outstanding. No scalar conservation,
-speed-norm identity, good plot or passing synthetic gate establishes momentum,
+speed-norm identity or passing synthetic gate establishes momentum,
 energy, vorticity/divergence preservation or general real-storm validity. A
 default change requires evidence and explicit review beyond this comparison.

@@ -10,10 +10,8 @@ It is **experimental**, with no change to ordinary YAML, point products or their
 default interpolation. It does not remap velocities or claim mass, momentum,
 energy, circulation or flux conservation. It is not a stable diagnostic.
 
-The demonstrated task is sharing storm-centred rainfall-depth cells with explicit
-areas and coverage, so a colleague can integrate them without reconstructing the
-grid. This fits FrameIt's data-preparation role. Physical diagnostics built from
-these data still need their own definitions and validation.
+Use the cells' explicit areas and coverage to integrate a scalar over the observed
+storm-centred footprint.
 
 Run the experiment in an environment with the polar dependencies:
 
@@ -27,7 +25,7 @@ Use a fresh output directory. The command writes ``comparison.json`` and three
 small NetCDF products. It records independent overlap checks, analytical errors,
 quadrature sensitivity, source refinement, compact-vortex point errors and
 single-run build/application times. ``FRAMEIT_BUILD_REVISION`` can supply the code
-revision through the existing environment-provenance mechanism. Timings include
+revision in provenance. Timings include
 first-use initialization and are not an isolated-worker speedup benchmark.
 
 Python opt-in interface
@@ -190,31 +188,23 @@ interval and launch-angle midpoints, not area centroids. Means include appropria
   backend version and experimental status.
 
 The comparison adds analytical truth and explicitly labelled point samples; those
-samples are not advertised as cell means. The ordinary writer supplies existing
-FrameIt product metadata and atomic finalization. These small products use its
-existing default encoding; no new compression, precision or chunking contract is
-introduced. Ordinary xarray/NetCDF readers suffice. Existing point mean/Fourier
+samples are not advertised as cell means. Products use the ordinary writer's
+default encoding and metadata; read them with xarray/NetCDF. Point mean/Fourier
 helpers intentionally do not accept these cell dimensions.
 
 Bundled BATSIRAI accumulated-rain pilot
 ---------------------------------------------
 
-The existing ``--ci`` matrix fixture contains accumulated rain even though its
-ordinary matrix cases request other fields. Select the dedicated experimental
-preset explicitly:
+Select accumulated rain from the ``--ci`` matrix fixture with:
 
 .. code-block:: bash
 
    python -m frameit.testing.polar_cell_comparison --ci --output ./runs/polar-cell-ci
 
 This uses the same packaged ``AROME/BATSIRAI`` files and recipe/manifest as the
-matrix, verified with the existing content-checksum mechanism. It requires the
+matrix, verified with content checksums. It requires the
 optional GRIB and polar dependencies, including Shapely 2 for the spatially indexed
-independent oracle. It does not change ``frameit run-matrix-test --ci`` cases or
-ordinary processing defaults. Packaged numerical tests exercise the complete pilot
-when these dependencies and the fixture are present, so ``run-all-tests`` includes
-that check through its numerical suite. The command above retains the detailed
-JSON and NetCDF evidence in a designated directory.
+independent oracle. The command retains detailed JSON and NetCDF evidence.
 
 **Quantity and time contract.** Select only surface GRIB parameter 235015,
 ``tirf`` (time integral of rain flux), accumulated from forecast hour zero in
@@ -312,9 +302,7 @@ already present in the frozen BATSIRAI GRIB files:
 This selection is mutually exclusive with the rainfall ``--ci`` selection. It
 creates ``sshf/`` and ``slhf/`` subdirectories, each with five NetCDF products and
 a detailed ``comparison.json``, plus an outer completion/failure report. The
-rainfall command and its mass/product names remain available. The shared code
-handles only these three explicitly declared accumulated scalars; it is not a
-generic variable-meaning inference mechanism.
+rainfall command uses its own output directory.
 
 **Quantity contract.** ``sshf`` is parameter 146 (time-integrated surface sensible
 heat net flux); ``slhf`` is parameter 147 (time-integrated surface latent heat net
@@ -438,10 +426,8 @@ of the actual BATSIRAI CI thermodynamic fields:
    python -m frameit.testing.polar_cell_comparison --ci-thermodynamics --output ./runs/polar-thermo-ci
 
 This is mutually exclusive with ``--ci`` and ``--ci-heat-fluxes`` and remains an
-experimental data-representation comparison, not a stable diagnostic. Existing
-rain/energy presets and ordinary processing defaults remain available. The same
-input manifest, sphere, analysis-cell construction and independent spherical
-overlap machinery are reused; no extra dependencies are introduced.
+experimental data-representation comparison, not a stable diagnostic. It uses the
+same input manifest, sphere, analysis cells and independent overlap checks.
 
 **Field and temporal contract.** Explicitly select temperature ``t`` (GRIB 130,
 K), relative humidity ``r`` (157, percent), and specific turbulent kinetic energy
@@ -546,6 +532,4 @@ field-mean semantics, sharp/discontinuous analytical precipitation, observed
 land/coast masks, ellipsoidal
 physical-area treatment, larger workload memory measurements, vector/flux
 methods, repeated isolated performance runs, and independent scientific review
-remain outstanding. There is no stable promotion or default change. The next
-decision should use actual user quantities and native-grid metadata, comparing
-budget fidelity and structure at the required scales.
+remain outstanding. The method remains experimental.

@@ -11,8 +11,6 @@ from datetime import datetime
 from pathlib import Path
 
 _DEFAULT_THIRD_PARTY_LEVELS: dict[str, int] = {
-    "matplotlib": logging.WARNING,
-    "fiona": logging.WARNING,
     "pyproj": logging.WARNING,
     "xesmf": logging.WARNING,
     "xesmf.backend": logging.WARNING,

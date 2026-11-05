@@ -30,16 +30,28 @@
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="0.32714991"
-     inkscape:cx="1182.9439"
-     inkscape:cy="522.69616"
+     inkscape:zoom="0.92265414"
+     inkscape:cx="674.1421"
+     inkscape:cy="508.31615"
      inkscape:window-width="1707"
      inkscape:window-height="989"
      inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="1"
-     inkscape:current-layer="svg1"
-     inkscape:export-bgcolor="#ffffffff" />
+     inkscape:current-layer="symbol"
+     inkscape:export-bgcolor="#ffffffff"
+     showguides="true">
+    <sodipodi:guide
+       position="207.17161,399.30109"
+       orientation="1,0"
+       id="guide1"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="703.45483,795.17253"
+       orientation="0,-1"
+       id="guide2"
+       inkscape:locked="false" />
+  </sodipodi:namedview>
   <title
      id="title">FrameIt logo</title>
   <desc
@@ -54,7 +66,8 @@
        fill="#00978f">
       <path
          id="f-shape"
-         d="m 142,142 h 244 q 13,0 13,13 v 42 q 0,13 -13,13 H 184 v 56 h 147 q 13,0 13,13 v 42 q 0,13 -13,13 H 184 v 87 q 0,13 -13,13 h -43 q -13,0 -13,-13 V 169 q 0,-27 27,-27 z" />
+         d="m 142,142 h 244 c 8.66667,0 13,4.33333 13,13 v 15.69223 c 0,8.66667 -4.33333,13 -13,13 H 157.69223 v 87.091 H 331 c 8.66667,0 13,4.33333 13,13 v 10.909 c 0,8.66667 -4.33333,13 -13,13 H 157.69223 V 421 c 0,8.66667 -4.33333,13 -13,13 H 128 c -8.66667,0 -13,-4.33333 -13,-13 V 169 c 0,-18 9,-27 27,-27 z"
+         sodipodi:nodetypes="sssssccsssscssssss" />
     </g>
     <g
        id="viewfinder"
@@ -83,7 +96,7 @@
          sodipodi:nodetypes="ccccc" />
       <path
          id="trajectory-after-point"
-         d="m 435.36122,381.69698 c 41.36849,-12.64241 35.31757,1.39396 63.00364,1.04365 24.32484,-2.35395 40.63878,-7.07275 53.95999,-27.12368 m -9.64606,-22.31393 30.58422,30.98181"
+         d="m 435.36122,381.69698 c 41.36849,-12.64241 35.31757,1.39396 63.00364,1.04365 24.32484,-2.35395 48.41509,-12.90498 53.31196,-44.62038 m -9.64606,-22.31393 30.58422,30.98181"
          sodipodi:nodetypes="ccccc" />
     </g>
     <circle

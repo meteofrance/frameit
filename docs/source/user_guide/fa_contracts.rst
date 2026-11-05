@@ -85,7 +85,7 @@ The producer-authored ``SFXFLDDESC_MOD`` (Philippe Marguinaud, Météo-France),
 <https://github.com/UMR-CNRM/EPyGrAM/blob/develop/src/epygram/data/sfxflddesc_mod.F90-49T1>`_,
 is a different release from MASDEV=47. It is not applied as a matched physical
 catalogue. Library tables/defaults cannot fill release-matched byte, field,
-scaling or sampling evidence gaps. No EPyGrAM implementation/table is vendored.
+scaling or sampling evidence gaps.
 
 Vertical facts versus explicit cube associations
 ------------------------------------------------
@@ -130,7 +130,7 @@ If factors cannot be observed, the warning still fails execution by default.
 An explicitly justified ``allow_unscaled: true`` permits an unverified
 ``identity_explicit_opt_in`` fallback; it does not establish physical scaling.
 Other encodings retain ``not_exposed`` when no warning is emitted: absence of a
-warning is not proof of identity scaling. No installed definitions are patched.
+warning is not proof of identity scaling.
 
 Codec evidence and verification scope:
 
@@ -180,9 +180,7 @@ JSON signature, not a vertical, quantity or content-checksum contract.
 
 ``backend`` and ``backend_versions.FA_backend`` identify effective ``epygram``;
 ``requested_backend`` / ``FA_backend_requested`` retain the request.
-The reader is ``epygram``.
-Scientific/source/resource checks still apply. Parent GRIB versions
-and worker-native versions are separate observations.
+Parent GRIB versions and worker-native versions are separate observations.
 
 Decoder JSONL logs retain individual requests and post-read mask/scaling facts.
 ``fa_decoder.field_observations`` summarizes the last descriptor per source

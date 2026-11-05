@@ -27,16 +27,28 @@
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="0.55478821"
-     inkscape:cx="1086.9013"
-     inkscape:cy="493.88216"
+     inkscape:zoom="0.25662025"
+     inkscape:cx="529.96596"
+     inkscape:cy="783.25852"
      inkscape:window-width="1707"
      inkscape:window-height="989"
      inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="1"
      inkscape:current-layer="svg1"
-     inkscape:export-bgcolor="#ffffff00" />
+     inkscape:export-bgcolor="#ffffff00"
+     showguides="true">
+    <sodipodi:guide
+       position="466.78092,539.15107"
+       orientation="0,-1"
+       id="guide1"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="160.10164,551.76729"
+       orientation="1,0"
+       id="guide2"
+       inkscape:locked="false" />
+  </sodipodi:namedview>
   <title
      id="title">FrameIt logo</title>
   <desc
@@ -44,32 +56,34 @@
   <!-- Reconstructed from deliberately authored geometric SVG paths. No bitmap, tracing, filters or embedded fonts. -->
   <g
      id="symbol"
-     aria-label="FrameIt symbol">
+     aria-label="FrameIt symbol"
+     transform="translate(-28)">
     <g
        id="letter-f"
-       fill="#00978F">
+       fill="#00978f">
       <path
          id="f-shape"
-         d="M142 142 H386 Q399 142 399 155 V197 Q399 210 386 210 H184 V266 H331 Q344 266 344 279 V321 Q344 334 331 334 H184 V421 Q184 434 171 434 H128 Q115 434 115 421 V169 Q115 142 142 142 Z" />
+         d="m 142,142 h 244 c 8.66667,0 13,4.33333 13,13 v 16 c 0,8.66667 -4.33333,13 -13,13 H 160 v 88 h 171 c 8.66667,0 13,4.33333 13,13 v 10 c 0,8.66667 -4.33333,13 -13,13 H 160 v 113 c 0,8.66667 -4.33333,13 -13,13 h -19 c -8.66667,0 -13,-4.33333 -13,-13 V 169 c 0,-18 9,-27 27,-27 z"
+         sodipodi:nodetypes="sssssccsssscssssss" />
     </g>
     <g
        id="viewfinder"
-       fill="#00978F"
+       fill="#00978f"
        aria-label="Framing corners">
       <path
          id="upper-right-corner"
-         d="M444 142 H535 Q570 142 570 178 V263 Q570 280 553 280 H540 Q526 280 526 265 V193 Q526 184 517 184 H445 Q431 184 431 170 V155 Q431 142 444 142 Z" />
+         d="m 444,142 h 91 q 35,0 35,36 v 85 q 0,17 -17,17 h -13 q -14,0 -14,-15 v -72 q 0,-9 -9,-9 h -72 q -14,0 -14,-14 v -15 q 0,-13 13,-13 z" />
       <path
          id="lower-left-corner"
-         d="M128 462 H146 Q159 462 159 476 V520 Q159 525 164 525 H252 Q265 525 265 538 V555 Q265 568 252 568 H143 Q115 568 115 540 V476 Q115 462 128 462 Z" />
+         d="m 128,462 h 18 q 13,0 13,14 v 44 q 0,5 5,5 h 88 q 13,0 13,13 v 17 q 0,13 -13,13 H 143 q -28,0 -28,-28 v -64 q 0,-14 13,-14 z" />
       <path
          id="lower-right-corner"
-         d="M542 435 H555 Q569 435 569 449 V540 Q569 568 543 568 H434 Q421 568 421 555 V539 Q421 526 434 526 H522 Q526 526 526 521 V449 Q526 435 542 435 Z" />
+         d="m 542,435 h 13 q 14,0 14,14 v 91 q 0,28 -26,28 H 434 q -13,0 -13,-13 v -16 q 0,-13 13,-13 h 88 q 4,0 4,-5 v -72 q 0,-14 16,-14 z" />
     </g>
     <g
        id="trajectory"
        fill="none"
-       stroke="#F79335"
+       stroke="#f79335"
        stroke-width="26"
        stroke-linecap="round"
        aria-label="Curved track">
@@ -79,7 +93,7 @@
          sodipodi:nodetypes="ccccc" />
       <path
          id="trajectory-after-point"
-         d="m 435.36122,381.69698 c 41.36849,-12.64241 35.31757,1.39396 63.00364,1.04365 24.32484,-2.35395 40.63878,-7.07275 53.95999,-27.12368 m -9.64606,-22.31393 30.58422,30.98181"
+         d="m 435.36122,381.69698 c 41.36849,-12.64241 35.31757,1.39396 63.00364,1.04365 24.32484,-2.35395 29.50507,-20.68062 37.87796,-48.15402 m -9.64606,-22.31393 30.58422,30.98181"
          sodipodi:nodetypes="ccccc" />
     </g>
     <circle
@@ -87,26 +101,26 @@
        cx="387"
        cy="403"
        r="33"
-       fill="#EC7600" />
+       fill="#ec7600" />
   </g>
   <text
      xml:space="preserve"
-     style="font-size:341.333px;line-height:0;text-align:center;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#021633;stroke-width:1.15"
-     x="1317.6312"
-     y="488.11777"
+     style="font-size:474.667px;line-height:0;text-align:center;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#021633;stroke-width:1.15"
+     x="1341.0905"
+     y="517.52301"
      id="text2"
      inkscape:label="FrameIt"><tspan
        sodipodi:role="line"
        id="tspan2"
-       x="1317.6312"
-       y="488.11777"
-       style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:341.333px;line-height:0;font-family:'Liberation Mono';-inkscape-font-specification:'Liberation Mono Bold';letter-spacing:0px;word-spacing:0px"
+       x="1341.0905"
+       y="517.52301"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:474.667px;line-height:0;font-family:simpletix;-inkscape-font-specification:simpletix;letter-spacing:0px;word-spacing:0px"
        rotate="0 0 0 0 0 0"><tspan
-   style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;line-height:0;font-family:'Liberation Mono';-inkscape-font-specification:'Liberation Mono Bold';letter-spacing:0px;word-spacing:0px;fill:#00978f;fill-opacity:1"
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:474.667px;line-height:0;font-family:simpletix;-inkscape-font-specification:simpletix;letter-spacing:0px;word-spacing:0px;fill:#00978f;fill-opacity:1"
    id="tspan3"
    dx="0"
    rotate="0 0">F</tspan>rame<tspan
-   style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;line-height:0;font-family:'Liberation Mono';-inkscape-font-specification:'Liberation Mono Bold';letter-spacing:0px;word-spacing:0px;fill:#ec7600;fill-opacity:1"
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:474.667px;line-height:0;font-family:simpletix;-inkscape-font-specification:simpletix;letter-spacing:0px;word-spacing:0px;fill:#ec7600;fill-opacity:1"
    id="tspan4"
-   rotate="355 355 0">It</tspan></tspan></text>
+   rotate="0 0 0">It</tspan></tspan></text>
 </svg>

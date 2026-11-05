@@ -45,11 +45,7 @@ The tracker returns two 1D arrays:
 - ``cy(time)``: row index of the estimated center,
 - ``cx(time)``: column index of the estimated center,
 
-both returned as integers and packaged in an ``xarray.Dataset``:
-
-.. code-block:: python
-
-   xr.Dataset({"cy": cy, "cx": cx})
+Both are integers in the output track dataset.
 
 Configuration and usage
 -----------------------
@@ -90,8 +86,7 @@ Dependencies
 ------------
 
 This tracker requires the ``utrack`` package to be installed. It is not part of the
-standard FrameIt dependencies. If ``utrack`` is not installed, the tracker class is
-still importable but will raise an error at instantiation time.
+standard FrameIt dependencies.
 
 Clone the repository and install the package locally:
 

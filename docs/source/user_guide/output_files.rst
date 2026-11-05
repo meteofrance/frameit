@@ -71,22 +71,9 @@ cropping is not the output mask. Support labels, native undefined/IEEE NaN
 samples, extension zones and valid physical zeroes remain separate facts.
 Missing values are not converted to physical zeroes to complete an output.
 
-``sources.<id>.fa_decoder.payload_reads`` is keyed by source basename and selected
-native field. Each successful payload call reports its actual library/accessor
-and EPyGrAM resource class/read-only mode.
-These post-call observations supplement configured backend labels and actual helper
-versions. Decoder JSONL logs retain individual requests; the manifest consolidates
-observations per file/field. Scaling admission is still checked separately and may
-fail after the library call. This is execution evidence, not producer-scaling proof.
-
-Per-input ``backend`` and ``backend_versions.FA_backend`` record
-the effective ``epygram`` reader; ``requested_backend`` / ``FA_backend_requested``
-retain the request. The reader is ``epygram``.
-The reader records library geometry/CRS/zone origins and returned-mask provenance.
-No backend label supplies field/scaling validation.
-Malformed or over-budget helper transfers fail before array materialization;
-that product cannot be published or mark the run completed. Earlier complete
-products can remain under the per-product atomicity contract.
+``sources.<id>.fa_decoder.payload_reads`` identifies actual read calls by source
+basename and native field. Decoder JSONL logs retain individual requests and
+scaling observations; see :doc:`fa_contracts` for descriptor meanings and limits.
 
 Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
@@ -95,13 +82,8 @@ snapping offsets to the track, source-prefixed in coupled products. Continuous
 With ``polar.shared_target: true``, separate source-qualified polar products share
 a verified target ID and exactly matching time/radius/azimuth/lat/lon coordinates.
 Source masks and variable meanings remain independent. Vertical-group separation
-is retained (several atmospheric groups can still produce several atmosphere
-files). Continuous production polar sampling defaults to bilinear point
-interpolation without an area-budget conservation guarantee. Diagnostics,
-pressure/height calculations, rates/deaccumulation, vector transformations and
-layer/tile averages are not enabled merely because their inputs exist. See
-:doc:`Coupled atmosphere/surface sampling <fa_surface>`; no ocean/wave adapter
-compatibility is implied by sharing a NetCDF container or target.
+is retained. See :doc:`Coupled atmosphere/surface sampling <fa_surface>` for target
+settings and :doc:`ocean_netcdf` for ocean-specific conventions.
 
 Completion, provenance and ordinary readers
 -------------------------------------------
@@ -133,7 +115,7 @@ For a run using the default AROME template, an ordinary-reader inspection is:
 
    import xarray as xr
 
-   with xr.open_dataset("output/products/analysis.cart.surface.nc", engine="netcdf4") as ds:
+   with xr.open_dataset("output/products/arome-pressure-wind.cart.surface.nc", engine="netcdf4") as ds:
        print(ds.sizes)
        print(ds.coords)
        print(ds["u10"].attrs)
@@ -186,7 +168,7 @@ Both sizes count **array elements along each named dimension**, not bytes or
 numbers of files. For example::
 
     output:
-      engine: zarr
+      backend: zarr
       zarr_chunk_size: {time: 1, y_box: 128, x_box: 128}
       zarr_shard_size: {time: 8, y_box: 512, x_box: 512}
 
@@ -257,16 +239,14 @@ No FrameIt import is needed to read a completed product:
 
    import xarray as xr
 
-   with xr.open_zarr("output/products/analysis.cart.surface.zarr",
+   with xr.open_zarr("output/products/arome-pressure-wind.cart.surface.zarr",
                      consolidated=False) as ds:
        print(ds.sizes, ds.coords)
        print(ds["u10"].attrs)
 
 Stores use v3 dimension metadata and non-consolidated metadata. Readers must
 support Zarr v3, its sharding codec and the stored dtypes. The writer dependency
-versions above are a tested reader combination, not a promise that all tools
-advertising Zarr support can read these stores. Ordinary-reader round trips
-test storage interoperability, not scientific applicability to every dataset.
+versions above provide a tested reader combination.
 
 Produced files
 --------------
@@ -285,8 +265,6 @@ For a single-time automatic track, ``lat`` and ``lon`` still identify the centre
 used by every coupled source. ``heading_deg``, ``dist`` and ``speed`` are NaN:
 one position cannot establish motion, and missing motion is not physical zero.
 
-This file is intended to be the minimal entry point to interpret all other FrameIt products.
-
 SIMU.cart.<group>.nc
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -300,8 +278,7 @@ Typical structure:
   ``y_box_km``) when available
 - Data variables depend on the YAML request (see :doc:`configuration_file`)
 
-If you export cartesian crops, you obtain one file per vertical group, which keeps the outputs modular
-and avoids mixing incompatible vertical coordinates in a single file.
+Each vertical group has its own file.
 
 .. _wind-grid-contract:
 
@@ -311,10 +288,8 @@ Wind locations, reference frames and output choices
 .. note::
 
    Defaults are Cartesian horizontal ``earth_centered``, Cartesian vertical
-   ``interfaces`` and polar vertical ``mass``. Minimal starters show only needed
-   declarations; complete settings remain inspectable. Numerical conventions and qualification limits are in
-   :ref:`wind-preparation-method`; source references do not establish scientific
-   validation for every input grid.
+   ``interfaces`` and polar vertical ``mass``. Numerical conventions and
+   qualification limits are in :ref:`wind-preparation-method`.
 
 **Location is not direction.** On a Meso-NH C grid, U and V are sampled on
 different horizontal faces; scalars occupy mass points. Grid-relative components
@@ -347,7 +322,7 @@ Choose Cartesian horizontal representation independently of vertical W:
      - U/V need their own coordinates; collocate and, when needed, rotate
        before geographic vector analysis.
    * - ``horizontal_vectors: earth_centered`` (default)
-     - Collocated east/north components suit comparison and ordinary plotting.
+     - Collocated east/north components suit geographic comparison.
      - Interpolation can smooth gradients; original face samples are not retained.
    * - ``vertical_velocity: interfaces``
      - Retains W at native vertical interfaces (Cartesian default).
@@ -487,25 +462,19 @@ Notes:
 
 Coordinates are not compressed by default. Configure storage with
 ``output.compression: {level: 2, coordinates: false}``. The default level is 1;
-storage chunks are backend-selected. Compression does not change wind sampling
-or vector definitions.
+storage chunks are backend-selected.
 
-NetCDF exports
---------------
+Export selection
+-----------------
 
-By default, the CLI runs NetCDF exports at the end of the pipeline:
-
-- NetCDF export: enabled by default
-- Polar export: enabled by default
-- Cartesian export: enabled by default
-
-Writing requires an available product; polar computation is enabled separately
-with ``polar.enabled``. Set exports explicitly in YAML, for example:
+Exports are enabled by default for available Cartesian and polar products.
+Enable polar computation separately with ``polar.enabled``. To omit polar
+products from either output backend:
 
 .. code-block:: yaml
 
    output:
-     export: {netcdf: true, cartesian: true, polar: false}
+      export: {enabled: true, cartesian: true, polar: false}
 
-Set ``netcdf: false`` to disable all NetCDF writing, or ``cartesian: false`` to
+Set ``enabled: false`` to disable all product writing, or ``cartesian: false`` to
 omit Cartesian products. See :doc:`configuration_file` for precedence.

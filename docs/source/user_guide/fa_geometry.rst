@@ -72,7 +72,7 @@ format does not switch its lookup convention. Neither metric promises the minimu
 ground/geodesic distance. For example, the independently specified southern
 Lambert fixture at requested projected ``(-4499.99, -2100) m`` selects storage
 ``(j=1, i=1)`` using native axes but ``(1,0)`` using squared geographic degrees.
-The distinction matters near cell boundaries; it is not a new interpolation choice.
+The distinction matters near cell boundaries.
 
 Requested ``lat``/``lon`` remain continuous and define polar targets/track
 kinematics. They are not replaced by snapped source coordinates. Each source is
@@ -87,8 +87,7 @@ Lookup supports ascending/descending storage, subject to the native-header
 admission rules. Before choosing centres, **every** geographic sample is projected
 and compared to its labelled axes in blocks of at most 32 rows. This checks
 interior association, not just corners/equal shapes. Scientific payloads stay
-lazy, but coordinate I/O and projection have a real cost; no production-throughput
-claim follows from this bounded processing.
+lazy; coordinate I/O and projection add to preflight cost.
 
 The internal double-precision sample/CRS consistency tolerance is ``1e-5 m``.
 Axis regularity, boundary roundoff and ties use the greater of ``1e-5 m`` and
@@ -148,8 +147,5 @@ independent scientific oracle.
 Compact native extraction/coupling checks reopen values and metadata through
 ordinary NetCDF readers. They do not independently confirm a real producer's
 Earth model, geographic checkpoints, physical definitions or vector/vertical
-sampling. Those references and scientific review remain required. Geometry does
-not resolve unknown scaling, native errors, packed/typed support, intervals or
-spectral execution. Continuous production polar sampling defaults to bilinear
-point interpolation without conservation; no experimental method is activated
-by a grid being readable.
+sampling. Those references and scientific review remain required. See
+:doc:`fa_baseline` for field and encoding limits.

@@ -4,42 +4,23 @@ Native FA and coupled sources
 FrameIt can extract selected instantaneous 2-D gridpoint records from native
 AROME and AROME-produced SURFEX FA histories. It can also process these alongside
 atmospheric GRIB or NetCDF inputs in one run, using one geographical track and
-each source's own grid. This is a limited input adapter, not a complete FA
-diagnostic catalogue or qualification of every producer's scientific fields.
-The maintained reader is **EPyGrAM 2.1.0**. The primary coupled workflow is
-AROME GRIB plus dense AROME-47 / SURFEX-8.1 FA histories. Compact generated fields
-exercise the multi-time engine, separate grids, moving centres and exports;
-they do not establish real-producer units, scaling, physical support or scientific
-approval. Explicit native atmospheric cubes are also supported under the
-record/vertical contracts described below.
+each source's own grid. The reader is **EPyGrAM 2.1.0**. Supported layouts include
+dense AROME-47 / SURFEX-8.1 histories and explicitly associated atmospheric cubes.
+Check :doc:`fa_baseline` for source and operation limits.
 
 Installation and native isolation
 ----------------------------------------
 
-The reference ``environment.yaml`` installs FrameIt and the FA/GRIB/NetCDF/polar
-stack in one Python-3.13 environment. FA workers use the active Python in fresh
-isolated processes; omit ``input.fa.python_executable`` or leave it null.
-An explicit override selects a separate coherent runtime containing FrameIt and
-the FA stack. ``fa`` is the optional reader extra; ``fa-epygram`` is an identical
-installation alias. See :doc:`FA environment and troubleshooting <fa_environment>`
-for installation and interpreter selection. The FA reader is ``backend: epygram``.
-See :doc:`configuration_file` for its settings.
-Ordinary NetCDF/GRIB processing and schema-only validation do not
-require the FA package.
-
-The native FA dependency bundles an ecCodes runtime that cannot reliably coexist
-with the conda Python GRIB runtime in one interpreter. FrameIt therefore runs
-native FA metadata/decode transactions in fresh helper processes. These helpers
-never import Python ecCodes. The parent performs scientific preparation,
-tracking, extraction and export as usual. No wheel patch, global library-path
-change or full-archive conversion is needed.
+FA reads run in isolated processes using the active Python by default. Set
+``input.fa.python_executable`` to select another runtime containing FrameIt and
+the FA stack. See :doc:`fa_environment` for installation and troubleshooting.
+NetCDF/GRIB processing does not require the FA package.
 
 Helpers use one native thread and one serialized request at a time per consuming
 process. They use their bundled definition/sample tables: inherited parent
 ``ECCODES_DEFINITION_PATH`` and ``ECCODES_SAMPLES_PATH`` overrides are excluded
 only in the helper. The policy and child versions are recorded. Custom FA
-definition-table loading is not currently an adapter option. A single installation
-does not remove this format-specific process boundary.
+definition-table loading is not an adapter option.
 
 Inspect first
 -------------
@@ -95,7 +76,7 @@ With ``input.sources``:
   It must name a configured source. FA itself currently supports ``fixed_box`` or
   ``prescribed_track`` tracking; use GRIB/NetCDF for other atmospheric methods.
 * Put variables inside each source; top-level ``variables`` must be empty and
-  top-level ``polar.variables`` must remain ``all``. Each source may override
+  top-level ``polar.variables`` must remain ``extracted``. Each source may override
   its own polar selection/options.
 * Global domain, export, logging and execution settings are shared. Native grids,
   coordinates, masks and units are not merged or silently regridded.
@@ -162,7 +143,7 @@ Original track indices belong to ``tracking.source``. Additional ``<source>_cx``
 ``<source>_cy``, bounds and validity variables describe each source grid. Products
 record ``source_id``, ``source_model``, ``source_format`` and ``source_group``. FA
 variables retain native names, declarations, source indices, masks, packing and
-producer metadata. Existing single-source naming/defaults are preserved.
+producer metadata.
 
 Polar sampling stays optional. ``polar.shared_target: true`` opts into one target
 for participating sources: common exact times, continuous centres, radius/azimuth
@@ -253,8 +234,7 @@ Existing spacing/anisotropy checks still apply.
 ``timeout_seconds`` to 120 per transaction. Raise budgets explicitly after
 inspection. Decoding can require a full horizontal record even for a tiny crop,
 plus coordinate/temporary arrays. Laziness avoids unselected records/times but
-does not promise NetCDF-style subrecord I/O. Short-lived helper startup has a
-real cost; no throughput improvement is claimed.
+does not provide NetCDF-style subrecord I/O.
 Transfers are validated against this point budget before materialization. The
 actual NPY dtype/shape is checked read-only before copying out of the owned
 temporary directory; malformed/partial transfers fail with source/field context.

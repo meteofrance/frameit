@@ -5,19 +5,13 @@
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22128192.svg)](https://doi.org/10.5281/zenodo.22128192)
 
-FrameIt is a configurable Python tool for fixed or moving subdomain extraction,
-object tracking and selected diagnostics from **AROME and Meso-NH** model outputs,
-plus native regional **NEMO** scalar/component and **CROCO** scalar/face extraction
-and explicitly selected CROCO rho/Earth current analysis
-with fixed/prescribed centres.
-It writes NetCDF (default) or optional sharded Zarr v3 products for ordinary readers and researchers' own
-analysis scripts. Model, variable, grid and reference-frame conventions still
-matter when comparing outputs.
+FrameIt extracts fixed or moving regions from **AROME, Meso-NH, NEMO and CROCO**
+outputs. A YAML file selects inputs, fields, tracking and optional polar sampling.
+Products use NetCDF or sharded Zarr v3 for analysis with your own tools.
 
 ## Installation
 
-With Conda/mamba available, create the reference **Python-3.13
-FA/GRIB/NetCDF/Zarr/polar environment** from the checkout:
+On Linux, with Git and Conda/mamba:
 
 ```bash
 git clone https://github.com/meteofrance/frameit
@@ -28,23 +22,15 @@ python -m pip check
 frameit --help
 ```
 
-The YAML installs FrameIt in editable mode, including the native stack and
-documentation/test tools. Keep this checkout available: edits to it affect the
-installed package. **No second environment or subsequent FrameIt installation is
-required.** FA workers run in isolated processes using the active Python; omit
-`input.fa.python_executable` unless deliberately selecting a different runtime.
-
-The package supports Python 3.13 only. Core NetCDF processing can also be installed
-without FA, GRIB or polar extras. See [installation](docs/source/getting_started/installation.rst)
-for setup and [FA environment and troubleshooting](docs/source/user_guide/fa_environment.rst)
-for dependency details and interpreter selection.
+The environment uses Python 3.13 and installs FrameIt in editable mode. Keep the
+checkout: edits to it affect what runs. See [installation](docs/source/getting_started/installation.rst)
+and [dependency troubleshooting](docs/source/user_guide/fa_environment.rst).
 
 ## Quick start
 
-For a first run without model data, use the
-[Your first run](docs/source/getting_started/first_run.rst).
+New to FrameIt? Follow [Your first run](docs/source/getting_started/first_run.rst).
 
-1. Inspect a deliberately selected input stream and create an annotated configuration:
+1. Inspect your inputs and create a starter:
 
 ```bash
 frameit inspect ./data --model arome --format grib --pattern '*.grib'
@@ -58,7 +44,7 @@ frameit init arome
    file's directory. Polar processing is off by default; select it and its fields
    explicitly when needed.
 
-3. Check and execute the requested plan:
+3. Check and run:
 
 ```bash
 frameit validate --schema-only  # YAML checks; opens no datasets
@@ -67,31 +53,18 @@ frameit run --dry-run           # Preview effective settings, resources and prod
 frameit run
 ```
 
-Validation and dry-run read metadata/coordinates, not scientific field payloads.
-They do not verify decoded scaling/values, predict exact memory or runtime, or
-establish scientific suitability. Processing can still fail on a selected payload.
-See the [quick-start guide](docs/source/getting_started/quick_start.rst).
+Validation and dry-run check metadata and coordinates; values are read during
+execution. See [Quick start](docs/source/getting_started/quick_start.rst) for CLI tips.
 
 4. Review `run-status.yaml` under `output.directory`, then open the listed NetCDF
    products with xarray or another ordinary reader. `resolved-config.yaml` records
    effective settings; `run-provenance.yaml` records input, geometry, unit and
-   execution facts. Outputs are published atomically per product; a failed run
-   can leave earlier complete products. Concurrent writers to one run root are
-   rejected. See [output files and interpretation](docs/source/user_guide/output_files.rst).
+   execution facts. A failed run can leave earlier complete products; use the
+   status inventory. See [output files](docs/source/user_guide/output_files.rst).
 
-Both environment YAMLs include Zarr support. For a core-only pip installation,
-add `python -m pip install '.[zarr]'`. Set `output.backend: zarr`
-in YAML to use it. The same products become
-`.zarr` directory stores instead of `.nc` files. Optional `output.zarr_chunk_size`
-and `output.zarr_shard_size` tune storage, not scientific values; see
-[chunks versus shards](docs/source/user_guide/output_files.rst#sharded-zarr-v3).
-
-Use `schema_version: "2.1"` in run configurations. The generated templates set it
-for you.
-
-The [configuration reference](docs/source/user_guide/configuration_file.rst) explains
-the minimal named/composed starters, defaults, CLI precedence, and wind/level selections.
-`frameit config show` displays complete defaults.
+Set `output.backend: zarr` for `.zarr` stores instead of `.nc` files. See
+[storage settings](docs/source/user_guide/output_files.rst#sharded-zarr-v3) and the
+[configuration reference](docs/source/user_guide/configuration_file.rst).
 
 ## Supported tasks and limits
 
@@ -99,42 +72,28 @@ the minimal named/composed starters, defaults, CLI precedence, and wind/level se
   adaptive pressure-centroid tracking (AROME isobaric and Meso-NH native levels).
   The seeded multi-field vortex tracker is experimental, with scientific
   qualification pending. UTrack requires its own weights and dependencies.
-- **Coupled inputs:** named atmospheric GRIB/NetCDF and native AROME/SURFEX FA
-  streams share geographical centres while retaining independent grids, masks,
-  source/vertical-qualified products and physical definitions. The default
-  `input.time_alignment: common` selects exact common times, warns about losses
-  and records all exclusions; `strict` fails on unequal source times.
-- **Native FA:** the EPyGrAM reader supports explicitly defined instantaneous
-  gridpoint records, including evidenced AROME-47 / SURFEX-8.1 dense `PACK=0/X1`
-  histories and explicitly associated atmospheric full/interface cubes. Units,
-  time support, scaling and projected Earth model need explicit evidence and
-  declarations. Missing native scaling fails by default. Compact engineering
-  fixtures do not qualify arbitrary real producer fields. Spectral FA, packed
-  SURFEX reconstruction and implicit pressure/height diagnosis remain unsupported.
+- **Coupled inputs:** sources share centres but keep their own grids, masks,
+  quantities and products. `input.time_alignment: common` selects exact common
+  times and records exclusions; `strict` fails on unequal times. See
+  [coupled sources](docs/source/user_guide/fa_inputs.rst).
+- **Native FA:** EPyGrAM reads selected instantaneous AROME/SURFEX gridpoint
+  records and explicitly associated native cubes. Declare units, sampling and
+  projected Earth model from producer evidence. Unresolved scaling fails by
+  default. Spectral decoding and packed SURFEX reconstruction are unsupported.
+  See [FA limits](docs/source/user_guide/fa_baseline.rst).
 - **Optional polar sampling:** continuous production fields default to bilinear
   point sampling, without an area-budget conservation guarantee. Categorical
   data require an explicit appropriate method such as `nearest_s2d`. Shared
   targets are opt-in (`polar.shared_target: true`); equal target coordinates do
   not imply equal source masks or quantities. Conservative, patch and additional
   vector-transport methods remain experimental.
-- **Scientific selection:** installing dependencies or finding inputs does not
-  enable unrequested diagnostics, deaccumulation, rates, height/pressure calculation,
-  vector conversion or support-mask filling. Requested methods can require internal
-  companion fields. Native regional NEMO scalars and separate U/V/W components
-  retain source depths, sampling
-  intervals and field-specific missingness; see [ocean NetCDF](docs/source/user_guide/ocean_netcdf.rst).
-  This is not general ocean-release or wave-model support.
+- **Ocean inputs:** regional NEMO supports native scalars and separate components;
+  CROCO also supports selected rho/Earth current analysis. Fixed/prescribed
+  centres, source depths, time intervals and field-specific missingness are
+  preserved. Check [ocean conventions and limits](docs/source/user_guide/ocean_netcdf.rst).
 
-Start with [native FA and coupled inputs](docs/source/user_guide/fa_inputs.rst) and
-[`example/config_file/coupled_fa.yaml`](example/config_file/coupled_fa.yaml).
-The [coupled cyclone example](example/config_file/coupled_cyclone_polar.yaml)
-selects scalar polar quantities with explicit wind declarations; the
-[FA/FA example](example/config_file/coupled_arome_fa_polar.yaml) uses separate
-native streams. Review producer-specific field/scaling/support/Earth-model facts
-before use. See [native atmospheric levels and cubes](docs/source/user_guide/fa_atmosphere.rst),
-[FA geometry](docs/source/user_guide/fa_geometry.rst),
-[coupled atmosphere/surface sampling](docs/source/user_guide/fa_surface.rst) and
-[spectral support and limitations](docs/source/user_guide/fa_spectral.rst).
+Diagnostics run only when selected. Check scientific definitions, units, sampling
+and reference frames before comparing products.
 
 ## Optional scientific checks and analytical examples
 
@@ -144,62 +103,29 @@ python -m frameit.testing.polar_qualification --example --output ./runs/analytic
 frameit run-all-tests --output ./runs/all-tests
 ```
 
-Use fresh output directories. Qualification retains convergence tables, direct
-analytical truth, complex harmonic comparisons, displaced-centre experiments,
-coverage and export checks. The example writes a NetCDF vortex and truth/error/
-harmonic diagnostic plots. `run-all-tests` also runs the packaged numerical tests
-and the AROME/MNH integration matrix.
+Use fresh output directories. Qualification writes numerical JSON reports and
+NetCDF examples with analytical errors, profiles, harmonics and coverage checks.
+See [qualification](docs/source/polar_projection/scientific_qualification.rst) for
+methods and tolerances. `run-all-tests` also runs the
+[AROME/MNH matrix](docs/source/user_guide/matrix_testing.rst), which requires its
+frozen input fixture. These checks do not validate every real-data regime.
 
-An opt-in [experimental polar-cell comparison](docs/source/polar_projection/conservative_experiment.rst)
-evaluates conservative scalar cell means against point sampling, integrated
-bilinear reconstruction and independent spherical overlap/analytical truth:
-
-```bash
-python -m frameit.testing.polar_cell_comparison --output ./runs/polar-cell-comparison
-# Requires the frozen BATSIRAI fixture used by the --ci matrix:
-python -m frameit.testing.polar_cell_comparison --ci --output ./runs/polar-cell-ci
-# Source-signed accumulated sensible/latent surface heat exchange:
-python -m frameit.testing.polar_cell_comparison --ci-heat-fluxes --output ./runs/polar-heat-ci
-# Instantaneous temperature, relative humidity and specific TKE, with explicit weighting:
-python -m frameit.testing.polar_cell_comparison --ci-thermodynamics --output ./runs/polar-thermo-ci
-```
-
-Production polar sampling defaults to **bilinear for every continuous variable**,
-without an area-budget conservation guarantee. Conservative, patch and additional
-vector transport remain experimental. Categorical data require an explicit
-appropriate method, such as `nearest_s2d`.
-
-The [experimental wind-method comparison](docs/source/polar_projection/wind_method_comparison.rst)
-separately evaluates bilinear/ESMF patch weights and component/geodesic-transport
-representations against independent vortex truth, with optional real CI winds:
-
-```bash
-python -m frameit.testing.polar_wind_comparison --ci --output ./runs/wind-methods-ci
-```
-
-These checks assess their documented numerical/engineering scope; passing them
-is not scientific approval of another dataset or regime. Matrix commands require
-the inputs described in the [regression workflow](docs/source/user_guide/matrix_testing.rst).
+Separate experiments compare [scalar cells](docs/source/polar_projection/conservative_experiment.rst)
+and [wind sampling methods](docs/source/polar_projection/wind_method_comparison.rst).
 
 ## Optional HPC / Slurm execution
 
 Use one task on one node per configuration. `environment-hpc.yaml` provides a
 base NetCDF/Zarr/test environment; add GRIB and polar dependencies only when needed.
 Portable launchers and an independent output checker are in `example/slurm/`.
-See [the Belenos/Slurm qualification procedure](docs/source/getting_started/hpc.rst)
+See [HPC and Slurm](docs/source/getting_started/hpc.rst)
 for environment setup, resource limits, isolated attempts, cancellation behavior,
 and the results to collect. Site account/partition/module names must be supplied
 from the current HPC documentation.
 
 ## Documentation
 
-The full documentation is available at [https://meteofrance.github.io/frameit/](https://meteofrance.github.io/frameit/).
-
-It includes:
-
-- A detailed description of all configuration parameters
-- A description of the available tracking methods
-- A description of the output files
+[Read the documentation](https://meteofrance.github.io/frameit/).
 
 ## Citation
 
@@ -224,7 +150,7 @@ version DOI listed on the [Zenodo record](https://doi.org/10.5281/zenodo.2212819
 
 FrameIt is released under the Apache 2.0 License.
 
-Copyright 2026 Clément Soufflet and Maxence DEFEREZ — Météo-France
+Copyright 2026 Clément Soufflet and Maxence DEFERREZ — Météo-France
 
 ## Authors
 
@@ -234,4 +160,4 @@ FrameIt was developed at Météo-France.
 - Kevin Hoarau — CNRS
 - Adrien Colomb — Météo-France
 - Rémi Laxenaire — Météo-France
-- Maxence DEFEREZ — Météo-France
+- Maxence DEFERREZ — Météo-France

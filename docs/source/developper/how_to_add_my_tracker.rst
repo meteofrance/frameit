@@ -1,9 +1,8 @@
 How to add a new tracker
 ========================
 
-FrameIt uses a plugin-based system that makes it straightforward to integrate a new tracking method.
-This guide walks you through the four steps required: creating the tracker class, registering it,
-declaring the required input variables, and exposing the configuration parameters.
+To add a tracker, implement its class, register it, declare its inputs and expose
+its settings in the configuration schema.
 
 The ``UtrackTracker`` is used as a concrete reference throughout.
 
@@ -81,13 +80,8 @@ If detection fails, raise an explicit error rather than inventing a centre.
 Optional dependencies
 ^^^^^^^^^^^^^^^^^^^^^
 
-If your tracker depends on a library that is not always installed, guard the import with a bare
-``try/except`` so that FrameIt can still be imported without the optional dependency::
-
-    try:
-        from my_optional_lib import SomeClass
-    except ImportError:
-        pass
+Load optional dependencies only when the tracker is selected. If one is missing,
+raise an ``ImportError`` that names the dependency and how to install it.
 
 Step 2 — Register the tracker
 ------------------------------
@@ -141,7 +135,9 @@ internal name and the model-file name are identical::
 Step 4 — Expose configuration parameters
 -----------------------------------------
 
-If your tracker requires parameters beyond the standard ones, add them to the ``SimulationConfig`` dataclass in
+Add tracker-specific settings to the public defaults and validation in
+``src/frameit/core/configuration.py``, then translate them in ``to_runtime``.
+Add the corresponding internal fields to ``SimulationConfig`` in
 ``src/frameit/core/settings_class.py``::
 
     # My tracker options
@@ -199,3 +195,5 @@ Summary of files to modify
      - Add any variable aliases your tracker needs.
    * - ``src/frameit/core/settings_class.py``
      - Add configuration fields for tracker-specific parameters.
+   * - ``src/frameit/core/configuration.py``
+     - Add public keys, validation and runtime translation.

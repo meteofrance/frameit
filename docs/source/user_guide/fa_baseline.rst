@@ -2,10 +2,8 @@ FA compatibility and limitations
 ================================
 
 FrameIt provides a **limited native FA adapter**, using EPyGrAM 2.1.0 in isolated
-worker processes. A library's broader format support does not establish FrameIt
-support for every producer, layout or scientific operation. Start with
-:doc:`fa_inputs` for inspection/declarations and :doc:`fa_environment` for the
-single-environment installation and optional interpreter override.
+worker processes. Start with :doc:`fa_inputs` for record selection and
+:doc:`fa_environment` for setup.
 
 The matrix below distinguishes implemented operations from metadata that is only
 inspectable and operations that remain blocked. Implemented rows still require

@@ -2,7 +2,7 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file or http://www.apache.org/licenses/LICENSE-2.0
 
-"""Analytical polar coordinates and explicitly plotting-only cyclic closure."""
+"""Analytical polar coordinates and endpoint validation."""
 
 from __future__ import annotations
 
@@ -91,34 +91,6 @@ def _validate_closure_values(ds, theta_dim):
             matches = np.array_equal(first, last)
         if not matches:
             raise ValueError(f"Closed polar endpoint does not duplicate the first slice of {name}")
-
-
-def close_theta_for_plot(ds: xr.Dataset, *, theta_dim: str = "theta") -> xr.Dataset:
-    """Append exactly one verified cyclic endpoint on a separate plotting view.
-
-    Actual coordinates and all angular values determine whether closure already
-    exists. ``theta_closed`` alone is never trusted. Scientific means/FFTs must
-    use the endpoint-exclusive dataset, not this plotting view.
-    """
-    if theta_dim not in ds.dims:
-        return ds.copy(deep=False)
-    values, closed = _inspect_theta(ds, theta_dim)
-    if closed:
-        result = ds.copy(deep=False)
-    else:
-        tail = ds.isel({theta_dim: slice(0, 1)}).assign_coords(
-            {theta_dim: [float(values[0]) + 2 * np.pi]}
-        )
-        if "theta_deg" in ds.coords and ds.theta_deg.dims == (theta_dim,):
-            tail = tail.assign_coords(theta_deg=(theta_dim, [float(ds.theta_deg[0]) + 360]))
-        result = xr.concat([ds, tail], dim=theta_dim, data_vars="minimal", coords="minimal")
-    result.attrs["theta_closed"] = True
-    return result
-
-
-def close_theta(ds: xr.Dataset, *, theta_dim: str = "theta") -> xr.Dataset:
-    """Compatibility alias for the explicit plotting-closure helper."""
-    return close_theta_for_plot(ds, theta_dim=theta_dim)
 
 
 def finalize_polar_output(ds: xr.Dataset) -> xr.Dataset:

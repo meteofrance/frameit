@@ -46,26 +46,21 @@ unit/interval conversions or missing-data filling.
 NetCDF reading performance
 --------------------------
 
-The shared NetCDF loader reuses raw lazy inputs within the current run's resource
-lifetime. Ordinary-run metadata preflight and field loading share those handles;
-standalone validation closes its own inputs. Closing or rolling back a failed
-load discards the corresponding entries. Nothing is cached across runs, and
-per-file clock, units, native-grid and coordinate checks are not skipped.
+The NetCDF loader reuses open inputs during a run and closes them afterward.
+The cache does not persist across runs.
 
-The input reader and chunks are existing, explicit settings:
+Choose the input reader and chunks with:
 
 .. code-block:: yaml
 
    input:
      netcdf:
-       engine: h5netcdf  # Default; netcdf4 is the existing alternative.
+       engine: h5netcdf  # Default; netcdf4 is the alternative.
        chunks: {}        # Respect each variable's native storage chunks.
 
-Compare readers with your actual selection. On the tested large Meso-NH files,
-``netcdf4`` has cheaper metadata setup but a higher process memory peak; it is
-not a universally faster or lower-memory choice. This setting selects the input
-reader, independently of ``output.backend``. No automatic reader substitution
-is performed.
+Compare readers with your actual selection, measuring runtime and peak memory.
+This setting selects the input reader independently of ``output.backend``;
+FrameIt does not substitute another reader automatically.
 
 Keep ``chunks: {}`` as the starting point. Oversized chunks (especially ``-1``
 for whole axes) can force reading much more than a small spatial/vertical
@@ -119,8 +114,8 @@ occupies vertical interfaces. DIAG ``UT_ZM``/``VT_ZM`` are zonal/meridional
 diagnostics; ``UM10``/``VM10`` are Earth-relative 10-m surface winds. Do not apply
 one file-wide grid-relative assumption to all of them.
 
-The explicit declarations are in :doc:`configuration_file`; the single
-illustrated explanation of collocation, rotation and level selection is
+The declarations are in :doc:`configuration_file`; diagrams of collocation,
+rotation and level selection are in
 :ref:`wind-grid-contract`. Declared input must agree
 with available GRIB flags and CF metadata. Missing information is not permission
 to silently choose another frame, rotation method or physical quantity.
@@ -159,5 +154,4 @@ from `geometric vertical velocity
 <https://codes.wmo.int/grib2/codeflag/4.2/0-2-9>`_ (m s-1, commonly ``wz``).
 Check parameter identity and units; short names alone are insufficient.
 
-These references define source conventions, not validation of every release or
-grid by FrameIt. Unsupported metadata/geometry must be resolved explicitly.
+Use release-matched definitions to resolve unsupported metadata or geometry.

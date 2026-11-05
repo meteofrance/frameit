@@ -84,9 +84,7 @@ Notes:
   mutually exclusive in YAML schema version 2.1.
 - Omitting both angular options, or setting both to null, selects
   ``N = max(3, ceil(2*pi*rmax_km/dr_km))``. This targets radial spacing at the
-  outer ring, without a one-degree floor. The previous implicit 10-degree
-  default is replaced by this automatic rule; explicitly setting 10 degrees
-  retains that sampling choice, with 36 analytical angles.
+  outer ring. Setting 10 degrees selects 36 analytical angles.
 - ``polar.max_points`` is a positive integer, defaulting to 2,000,000. The
   product of time count, radius count and angle count is checked before target
   coordinates are allocated. It bounds geometry points, not the memory of all
@@ -234,7 +232,7 @@ The sparse linear-map interpretation follows Ullrich and Taylor (2015), Section
 Coverage and validity outputs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Every sampled field has the following additional data variables. They are
-marked ``frameit_role="interpolation_quality"`` so plotting/analysis code can
+marked ``frameit_role="interpolation_quality"`` so analysis code can
 distinguish them from physical quantities:
 
 - ``geometry_mapped(time, rr, theta)``: geometric mapping indicator, shared by
@@ -279,7 +277,7 @@ recorded as provenance. Target ellipsoid parameters and the distinction between
 ellipsoidal target geodesics and ESMF's spherical interpolation geometry are
 explicit in the output attributes.
 
-Analysis and plotting
+Azimuthal analysis
 ~~~~~~~~~~~~~~~~~~~~~
 Scientific outputs contain an **endpoint-exclusive** angular axis. An ordinary
 complete-ring mean or FFT therefore counts each direction once. The helpers
@@ -331,22 +329,7 @@ for Fourier analysis. Irregular directions supplied to ``PolarLonLatGrid``
 are labelled ``directional_samples`` and rejected by these ordinary ring
 diagnostics. Missing sectors are not zero-filled or silently partially averaged.
 
-Close a separate view only when plotting requires a cyclic endpoint:
-
-.. code-block:: python
-
-   from frameit.viz import close_theta_for_plot, setup_geodesic_polar_ax
-
-   plot_view = close_theta_for_plot(polar_dataset.isel(time=0, level=0))
-   plot_view["vtan"].plot.contourf(ax=ax, x="theta", y="rr")
-   setup_geodesic_polar_ax(ax)
-
-Plot closure is idempotent and does not modify the analytical dataset. It
-checks actual endpoint coordinates and angular values, including auxiliary
-coordinates such as ``radial_bearing``, rather than trusting an attribute.
-``close_theta`` remains a compatibility alias for this plotting helper.
-
-For older closed files, ``finalize_polar_output(dataset)`` verifies the
+``finalize_polar_output(dataset)`` verifies a closed file's
 duplicate column before removing it. An inconsistent endpoint raises an
 error; do not blindly remove the last column from every file. A
 nonuniform angular grid remains directional sampling after endpoint removal
@@ -462,7 +445,7 @@ stencils and is part of the geometry signature.
 
 The default cache holds at most eight plans and an estimated 128 MiB of
 geometry/weight arrays. Oversized plans are applied without retention. Setting
-either limit to zero disables plan retention and provides the corrected
+either limit to zero disables plan retention and provides an
 uncached baseline. Normalized source coordinates have a separate small cache
 (eight entries, at most 8 MiB). NumPy coordinates are content-fingerprinted;
 Dask geometry uses immutable graph tokens to avoid repeatedly loading the
@@ -516,7 +499,7 @@ mask changes and lazy/eager agreement under multiple chunk layouts.
 
 Reproducible computation benchmark
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Run corrected cached and uncached workflows in fresh workers:
+Run cached and uncached workflows in fresh workers:
 
 .. code-block:: bash
 
@@ -528,7 +511,7 @@ workloads include fixed AROME/MNH runs, moving MNH tracking and a small explicit
 continuous-origin AROME track within the frozen fixture. Input preloading,
 computation, weight construction/application and NetCDF export timings are
 reported separately. Fresh workers isolate RSS high-water marks; the driver
-verifies all physical and quality outputs against the corrected uncached
+verifies all physical and quality outputs against the uncached
 operator and stores versions, parameters and results in ``benchmark.json``.
 
 A single local CI run observed weight-build reductions of 3 to 1 for fixed
@@ -538,10 +521,6 @@ ratios were approximately 1.05, 1.00, 1.01 and 1.25 respectively: application
 work dominates these small fixtures. These are measured examples, not a
 universal speedup claim or a brittle timing threshold. Use repeated runs and
 the recorded environment/memory breakdown for larger workloads.
-
-The xESMF spherical point operator remains the numerical reference. A
-native-CRS rectilinear interpolation path would require independent accuracy
-tests because changing interpolation coordinates changes the operator.
 
 Software dependencies
 ~~~~~~~~~~~~~~~~~~~~~
@@ -575,7 +554,7 @@ Troubleshooting
 Illustration
 ------------
 
-Here is an illustration for the tropical cyclone CHIDO, first row shows the cartesian coordinates, the second one shows the polar coordinates.
+Tropical cyclone CHIDO on Cartesian and polar grids:
 
 .. figure:: ../_static/figures/Fig.cart_Chido.png
    :target: ../_static/figures/Fig.cart_Chido.png

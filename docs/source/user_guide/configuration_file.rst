@@ -1,10 +1,7 @@
 Configuration file (YAML schema version 2.1)
 ============================================
 
-After :doc:`installation <../getting_started/installation>`, use this reference
-to select inputs, fields/levels, methods and products explicitly. The reference
-environment already contains FrameIt and the FA/GRIB/NetCDF/polar stack; installing
-an optional dependency does not select its scientific operations.
+Use this reference to select inputs, fields, levels, methods and products.
 
 Create a model-specific, annotated configuration:
 
@@ -15,11 +12,9 @@ Create a model-specific, annotated configuration:
    frameit init arome --tracking prescribed_track
    frameit init arome --coupling nemo
 
-Starters contain only the selected workflow and retain their scientific comments.
 Use ``frameit config show`` for complete defaults or
 ``config show --resolved`` for metadata-dependent settings. ``--force`` replaces
-only the selected configuration, not input files. Generation otherwise refuses
-existing destinations; it opens no datasets and loads no optional scientific stack.
+an existing configuration. Without it, generation refuses an existing destination.
 
 .. _starter-catalogue:
 
@@ -27,7 +22,7 @@ Starter catalogue
 ------------------
 
 Each command below writes ``frameit.yaml``. Adapt the inspected inputs and the
-illustrative centres/widths; these are not scientifically qualified presets.
+illustrative centres and widths to your data.
 All explicitly disable polar sampling and refuse product overwrites.
 
 .. list-table:: Named starters and equivalent compositions
@@ -96,8 +91,7 @@ annotations, not algorithm options. Optional ocean/wave identifiers belong in
 * ``input.pattern``: a standard relative glob, or an exact filename;
 * ``input.files``: explicit file paths, retaining their declared order.
 
-``*`` matches text and ``?`` matches a single character; no timestep width is
-imposed. ``input.exclude`` lists glob exclusions. For MesoNH, exclude the exact
+``input.exclude`` lists glob exclusions. For MesoNH, exclude the exact
 000 timeseries filename where applicable rather than every filename containing
 ``000``. ``exclude`` must be a list, not null; an explicit ``files`` list must be
 nonempty, even beside a pattern. Explicit inventories also apply explicit exclusions. Missing inventory
@@ -161,7 +155,7 @@ contracts are in :doc:`fa_inputs`.
 
 * ``input.fa.backend`` is ``epygram``. Inventories and provenance record the reader.
 * ``input.fa.python_executable`` defaults to null: FA workers use the active
-  Python in fresh isolated processes. Omit it for the single reference environment.
+  Python in fresh isolated processes.
   An explicit nonempty path selects a runtime containing FrameIt and the coherent
   FA stack. Paths are YAML-relative without dereferencing interpreter symlinks,
   including inside named sources. There is no automatic fallback interpreter.
@@ -178,7 +172,7 @@ contracts are in :doc:`fa_inputs`.
   completion of unresolved meaning. ``allow_unscaled`` defaults to false; a
   missing-native-scaling warning fails unless an explicit justified identity
   fallback is permitted. Permission/observed fallback and warnings are recorded;
-  silence is not proof of correct scaling.
+  see :doc:`fa_contracts` for scaling observations and limits.
 * ``native_cubes`` defaults to ``{}``. It associates exact native records with
   declared full/interface positions and centre sampling, retaining original
   labels/indices and checked A/B/reference-pressure metadata. It does not infer
@@ -204,8 +198,8 @@ Current scalar-spacing algorithms reject X/Y differences greater than 10% and
 within-axis spacing variation greater than 20%; these are implementation support
 limits, not claims about arbitrary curvilinear-grid accuracy. Within a source's
 time sequence, selected inputs must have compatible geographic grids; separate
-named sources retain independent grids. Automatic inference can differ from the
-old nominal spacing and consequently change search windows and sampling.
+named sources retain independent grids. The resolved spacing determines search
+windows and polar sampling defaults.
 
 Advanced ``input.grid_spacing_m`` supplies a nominal scalar override in metres.
 It does not bypass incompatible/anisotropic/nonuniform geometry checks. The
@@ -240,8 +234,7 @@ they describe square half-widths, not circular radii.
 
 ``tracking.prescribed_track.file`` is required for prescribed tracking. Optional
 ``time_name``, ``latitude_name``, and ``longitude_name`` default to ``time``,
-``latitude``, and ``longitude``. Matching is exact timestamp intersection;
-nearest/interpolated matching is not introduced by this schema.
+``latitude``, and ``longitude``. Matching uses exact timestamp intersection.
 
 ``tracking.utrack.weights_file`` is required for UTrack; ``use_gpu`` defaults to
 false and ``batch_size`` to 16. The pressure-centroid convergence, motion, and
@@ -321,7 +314,6 @@ dimensionless.
 Missing geographic/wind units follow documented AROME/MesoNH adapter contracts
 and are recorded. Unsupported or incompatible declarations fail. Geographic
 coordinates are normalized before tracking as well as polar projection.
-Use pair-specific declarations below to make each scientific choice explicit.
 Use ``input.wind_pairs`` for each selected horizontal pair, including mixed
 model-level grid winds and Earth-relative surface winds.
 Pass-through scalar fields preserve their source units; computationally prepared
@@ -349,7 +341,7 @@ Earth-relative surface winds:
          reference_frame: earth
    output:
      cartesian:
-        horizontal_vectors: earth_centered  # native | earth_centered
+       horizontal_vectors: earth_centered  # native | earth_centered
        vertical_velocity: interfaces  # interfaces | mass
      polar:
        vertical_velocity: mass  # interfaces | mass
@@ -373,8 +365,7 @@ GRIB component flags and CF wind metadata (including standard names). A conflict
 inconsistent pair, missing angle, unsupported projection or unusable geometry
 must fail with the affected pair identified. Do not silently change reference
 frame or fall back from one rotation method to another. Earth-relative pairs
-need no grid-to-Earth rotation. Wind starters retain the required pair/basis
-declarations; unrelated defaults stay in this reference and effective inspection.
+need no grid-to-Earth rotation.
 See :ref:`wind-preparation-method` for equations, axis checks and limitations.
 
 Output, logging, and precedence
@@ -410,10 +401,9 @@ the difference between chunks and shards, defaults and override rules.
 
 ``output.export.enabled`` and the CLI ``--no-export`` are the overall
 product-export gate for **either** backend. ``--no-export-cartesian`` and
-``--no-export-polar`` control the respective product families. ``.cartesian`` and
-``.polar`` retain their existing selection behavior. Compression level 1 is
+``--no-export-polar`` control the respective product families. Compression level 1 is
 lossless gzip for Zarr (0 disables compression); coordinate compression remains
-opt-in. NetCDF compression behavior is unchanged.
+opt-in.
 
 ``execution.dask_scheduler`` is ``threads`` (default) or ``synchronous``.
 ``execution.dask_workers`` defaults to one effective worker;
@@ -423,12 +413,10 @@ machine, affinity and ``SLURM_CPUS_PER_TASK`` limit wins. Explicit requests that
 exceed this budget fail; when a Slurm job omits CPUs per task, the budget uses
 the conservative Slurm default of one CPU. Group export additionally caps
 process count to group count and uses spawn. Synchronous export creates no pool.
-These operational defaults can change performance relative to older releases;
-they do not select scientific methods. Other optional backends may have their
-own resource controls. See :doc:`/getting_started/hpc` for qualification.
+See :doc:`/getting_started/hpc` for batch resource checks.
 
-``execution.require_complete_tracking`` defaults to false to retain existing
-accepted-prefix behavior. When true, an incomplete tracker result fails before
+``execution.require_complete_tracking`` defaults to false, allowing an accepted
+track prefix. When true, an incomplete tracker result fails before
 export. The CLI exposes ``--require-complete-tracking``, ``--synchronous-export``,
 ``--max-workers``, ``--no-overwrite`` and ``--output-directory``. The output
 override is relative to the launch directory; YAML paths remain YAML-relative.
@@ -463,6 +451,3 @@ resource/sampling information and planned products without writing products;
 they are not exact runtime/memory predictions or scientific approval.
 Schema-only validation does not open data. ``config show`` displays resolved
 schema settings; ``config show --resolved`` also performs metadata preflight.
-
-The internal Python ``SimulationConfig`` numerical interface retains flat field
-names for existing integrations; those names are not public YAML or mapping keys.

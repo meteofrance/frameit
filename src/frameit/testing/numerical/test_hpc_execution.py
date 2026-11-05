@@ -330,6 +330,7 @@ def test_slurm_launcher_isolates_retries_and_propagates_failure(tmp_path):
     bin_dir.mkdir()
     srun = bin_dir / "srun"
     srun.write_text("""#!/bin/sh
+test "$MPLBACKEND" = caller-backend || exit 97
 while [ "$#" -gt 0 ]; do
     case "$1" in --nodes=*|--ntasks=*) shift ;; *) break ;; esac
 done
@@ -341,6 +342,7 @@ exec "$@"
     env = {
         **cli_environment(), "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
         "SLURM_NTASKS": "1", "FRAMEIT_ENV_SCRIPT": str(activation),
+        "MPLBACKEND": "caller-backend",
     }
     launcher = SLURM_EXAMPLES / "frameit.sbatch"
     for _ in range(2):

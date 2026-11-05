@@ -1,22 +1,8 @@
 FA environment and troubleshooting
 ===================================
 
-The reference installation uses **one Python-3.13 environment** for FrameIt,
-FA, GRIB, NetCDF and polar processing. From the checkout containing
-``environment.yaml``:
-
-.. code-block:: bash
-
-   conda env create -f environment.yaml --solver libmamba
-   conda activate frameit_env
-   python -m pip check
-   frameit --help
-
-The YAML installs this checkout in editable mode with ``test,grib,polar,fa,zarr``
-extras and development/documentation tools. No additional FrameIt installation
-or second environment is needed. Keep the checkout accessible; editing it affects
-environments that import this editable installation. See
-:doc:`../getting_started/installation` for the main setup instructions.
+Follow :doc:`../getting_started/installation` for the reference setup. This page
+covers dependency choices, the FA worker runtime and failure diagnosis.
 
 Other Python environments
 --------------------------
@@ -28,8 +14,7 @@ the checkout with:
 
    python -m pip install .
 
-This is an alternative to the reference environment, not an extra step after it.
-Add only the extras you need:
+Add the extras you need:
 
 * ``.[grib]`` for cfgrib/ecCodes input;
 * ``.[fa]`` for the EPyGrAM reader;
@@ -39,8 +24,7 @@ Add only the extras you need:
 * ``.[test]`` for pytest.
 
 For example, ``python -m pip install '.[grib]'`` installs GRIB support.
-Dependencies do not select processing: diagnostics and polar sampling run only
-when requested. See :ref:`sharded-zarr-output` for the Zarr requirements.
+See :ref:`sharded-zarr-output` for the Zarr requirements.
 
 Native libraries and process isolation
 --------------------------------------
@@ -52,16 +36,14 @@ The Python ecCodes binding version is distinct from the native library version.
 The YAML also selects ESMPy 8.9.1 and xESMF 0.9.2.
 
 The ``fa`` extra installs unmodified EPyGrAM 2.1.0 with ctypesForFortran 1.3.0;
-``fa-epygram`` is an identical installation alias. The FA worker checks
-falfilfa4py 1.2.1, ecTrans 1.6.0 and netCDF4 1.7.2 as well. Keep the upstream
+the FA worker also checks falfilfa4py 1.2.1, ecTrans 1.6.0 and netCDF4 1.7.2.
+Keep the upstream
 requirements intact rather than patching installed tables or package metadata.
 
 Each FA transaction runs in a fresh FA-only process using the active interpreter
 (``sys.executable``) by default. GRIB/NetCDF/ESMF processing remains in the
 consuming process. Gridpoint FA workers do not import Python GRIB/ecCodes or run
-ecTrans transforms. Installing a transform dependency does not admit spectral FA.
-Matching package versions do not establish safe FA/GRIB native coexistence in
-one process; the isolation boundary remains necessary.
+ecTrans transforms. Spectral FA execution is unsupported; see :doc:`fa_spectral`.
 
 Workers use one native thread and one serialized request per consuming process,
 with bounded time and selected full-native-record allocations. They exclude
@@ -109,19 +91,12 @@ Troubleshoot failures
   ``allow_unscaled`` opt-in. See :doc:`fa_contracts` for the exact scope.
 * **Native abort or failure during shutdown:** require a normal outer-process
   exit as well as completed products/status. A preceding success message is not
-  sufficient. Use a fresh coherent installation rather than an import-order
-  workaround or suppressed exit. The precise fault in older mixed prefixes is
-  unresolved; no single-package cause or universal MPI/wheel incompatibility is
-  established. Other platforms and future dependency resolutions need checks of
-  their own.
+  sufficient. Check the active Python and native package versions. Include them,
+  the exit code and the native error logs when reporting the failure.
 * **Unsupported source/record/geometry:** readable headers or an installed library
   do not admit a physical operation. Resolve the stated source, type, time,
   scaling or reference-evidence requirement in :doc:`fa_inputs`.
 
-Run provenance records actual parent and worker versions, interpreter/backend
-selection and per-source observations. Package versions do not identify an
-independently verified native-code revision or validate physical fields.
-Compact generated-fixture checks cover the documented engine/isolation contracts;
-producer-specific units/scaling/support/Earth-model evidence and scientific review
-remain separate requirements. Optional diagnostics and transformations execute
-only when selected, not because dependencies or input fields happen to exist.
+Run provenance records parent and worker versions, interpreter/backend selection
+and per-source observations. Use :doc:`fa_baseline` for supported source layouts
+and remaining scientific limits.

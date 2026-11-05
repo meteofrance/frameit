@@ -1,9 +1,3 @@
-.. FrameIt documentation master file, created by
-   sphinx-quickstart on Wed Jan 21 07:36:11 2026.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
-
 FrameIt |release| documentation
 ===============================
 
@@ -69,13 +63,7 @@ FrameIt |release| documentation
 
 .. toctree::
    :maxdepth: 2
-   :caption: Visualization tools
-
-   visualization_tools/rotate_polar_axes
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Developper section
+   :caption: Developer guide
 
    developper/how_to_add_my_tracker
 

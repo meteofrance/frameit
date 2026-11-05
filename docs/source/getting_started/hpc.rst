@@ -1,15 +1,13 @@
-HPC and Slurm qualification (including Belenos)
-============================================================
+HPC and Slurm
+==============
 
 FrameIt runs one configuration in one Slurm task on one node. Independent cases
 can use separate jobs or arrays. Tracking methods can depend on preceding centres
 and neighbouring times; arbitrary time splitting is not equivalent. The runner
 does not distribute a simulation over MPI ranks or multiple nodes.
 
-The repository supplies portable launchers, not a verified Belenos site profile.
-Obtain the current account, partition/QoS, environment/module setup, and work or
-scratch storage/purge policy from the site's documentation. Example CPU, memory
-and time requests are pilot values, not measured production requirements.
+Get account, partition/QoS, module setup and scratch-storage rules from your HPC
+documentation. Adapt the example CPU, memory and time requests after a pilot run.
 
 Prepare the environment before submitting jobs
 ------------------------------------------------------------
@@ -24,8 +22,8 @@ from the checkout:
    python -m pip install --no-deps -e .
    python -m frameit --help
 
-The base environment includes NetCDF/Zarr processing and pytest, without ESMF,
-plotting or documentation dependencies. Add only the selected execution paths:
+The base environment includes NetCDF/Zarr processing and pytest. Add dependencies
+for the selected input format and processing:
 
 .. code-block:: bash
 
@@ -34,10 +32,8 @@ plotting or documentation dependencies. Add only the selected execution paths:
    # When polar.enabled is true:
    conda install -n frameit_hpc -c conda-forge xesmf esmpy
 
-Core pip runtime dependencies are also declared. The ``polar`` pip extra adds
-xESMF but does not provision its required native ESMF installation. Use a
-consistent native-library/MPI stack. Launchers perform no package installation
-or downloads during processing.
+Use a consistent native-library/MPI stack. The ``polar`` pip extra does not
+supply the native ESMF installation.
 
 Create an activation script using the site's actual module or conda paths.
 For a conda installation its content resembles:
@@ -49,11 +45,7 @@ For a conda installation its content resembles:
 
 Export its absolute path as ``FRAMEIT_ENV_SCRIPT`` before submission; launchers
 source it in their noninteractive shell. Keep the environment and checkout
-accessible on compute nodes. After qualification, retain ``conda list --explicit``
-and the checkout revision with the run records. A source checkout records its
-revision and dirty flag automatically. Wheels without a checkout record no
-revision unless ``FRAMEIT_CODE_REVISION`` is supplied as an explicitly unverified
-environment claim.
+accessible on compute nodes.
 
 1. Run the compact batch qualification
 ------------------------------------------------------------
@@ -80,12 +72,9 @@ pytest's exit status. It retains:
   metadata, without dumping the environment;
 * ``pytest/``: compact fixtures, products, manifests and checker reports.
 
-Tests exercise real CLI spawned and synchronous exports, simultaneous isolated
-attempts, same-root exclusion, no-clobber races, failed writes, incomplete-track
-policy, SIGTERM and SIGKILL. They check known synthetic wind values and
-independently reopen products. They require no GRIB, ESMF, GPU or private data.
-Simulated Slurm variables inside individual tests are test inputs;
-``runtime.json`` captures the actual enclosing allocation.
+Tests check synthetic wind values, exports, concurrent attempts, overwrite
+protection and cancellation. Products are reopened independently. The tests use
+compact generated NetCDF inputs.
 
 Acceptance: successful ``sbatch --wait``, ``result.json`` with ``exit_code: 0``,
 and no failed JUnit tests. These are operational/numerical regression checks,
@@ -99,7 +88,7 @@ format, tracker, variables, output engine and polar setting. Keep scientific
 settings identical between reference and batch runs. Declare the expected number
 of matching timestamps, including any prescribed-track intersection.
 
-Merge this fragment into the existing schema-v2.1 configuration:
+Merge this fragment into your configuration:
 
 .. code-block:: yaml
 
@@ -128,8 +117,8 @@ input size:
    python -m frameit validate /absolute/path/case.yaml
    python -m frameit run /absolute/path/case.yaml --dry-run
 
-Planning reports effective execution resources without writing artifacts.
-It does not test native-backend initialization or establish memory/disk quotas.
+Planning reports effective settings and resources. Use the pilot run to measure
+memory, disk use and runtime.
 
 3. Submit and independently check the real pilot
 ------------------------------------------------------------
@@ -187,8 +176,7 @@ preparation, caches and export have separate costs.
 ``run-status.yaml`` (schema version 1) has states ``running``, ``completed``,
 ``incomplete``, ``failed`` and ``interrupted``. ``completed`` is written only
 after requested exports and input cleanup; its inventory uses relative product
-paths and sizes. It does not establish input content identity or scientific
-validity.
+paths and sizes. Check the expected times and permitted masks before using products.
 
 Without strict tracking, an accepted shortened trajectory can exit zero but is
 marked ``incomplete``. ``execution.require_complete_tracking: true`` or the
@@ -215,12 +203,9 @@ confirm its owner has stopped before manual removal. ``overwrite: true`` keeps
 its existing sequential-rerun meaning and may leave older unlisted products;
 use the current manifest inventory.
 
-Return these results for review
+Keep the run records
 ------------------------------------------------------------
 
-Provide job IDs/accounting, qualification ``result.json`` and ``junit.xml``,
-runtime/package versions, and the real pilot checker JSON plus configuration
-and run status/provenance. Include expected times, input scale, selected tracker
-and polar settings, and coverage questions. Failed checks need their scheduler
-and FrameIt error logs. No Belenos success is established until cluster results
-are available.
+Keep job accounting, checker reports, configuration, status and provenance with
+the products. For a failed run, include the scheduler and FrameIt error logs
+when asking for help.

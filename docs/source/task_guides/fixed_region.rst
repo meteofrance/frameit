@@ -11,8 +11,8 @@ Prerequisites and starter
 
 Use the :doc:`reference environment <../getting_started/installation>` and an
 inspected input stream with known fields, coordinate units and valid times.
-The executable pilot below reuses the :doc:`instructional scalar
-<../getting_started/first_run>`; it does not qualify a real AROME producer.
+The example below reuses the :doc:`instructional scalar
+<../getting_started/first_run>`.
 Start in a new directory:
 
 .. code-block:: bash
@@ -22,8 +22,7 @@ Start in a new directory:
    python -m frameit.testing.documentation_example --output data/first-run.nc
    frameit init arome --tracking fixed_box
 
-This is equivalent to ``frameit init arome-fixed-scalar``. The generator preserves
-the resource comments. Its geographical choices are:
+This is equivalent to ``frameit init arome-fixed-scalar``. Its geographical choices are:
 
 .. literalinclude:: ../../../src/frameit/templates/arome-fixed-scalar.yaml
    :language: yaml
@@ -52,8 +51,7 @@ edit ``frameit.yaml`` only after inspecting the intended stream:
   to the question, not a supplied illustrative centre.
 * Set both ``domain.width_km`` components as positive **full widths in km**.
   Rounding to native grid points changes the realised extent. Near an edge the
-  supported ``pad_nan`` policy retains centred geometry and missing outside samples;
-  it does not invent source data.
+  supported ``pad_nan`` policy retains centred geometry and missing outside samples.
 * Keep a fresh ``output.directory`` and ``overwrite: false``. Leave polar sampling
   off unless selected for a separate purpose. Adding winds or currents requires
   their own sampling/basis declarations, not just extra field names.
@@ -82,7 +80,6 @@ sample stays NaN. No polar file, wind diagnostic or unselected field is produced
 
 Use the actual status inventory for other run names or backends. Reopen products
 with your normal reader, check coordinates/units and distinguish missing support
-from physical zero. The source input stays unchanged. Keep the effective
-configuration and provenance alongside the data; a completed run is not a
-scientific-validity certificate. Details remain in
+from physical zero. Keep the effective configuration and provenance alongside
+the data. See
 :doc:`../tracker/fixed_box` and :doc:`../user_guide/output_files`.

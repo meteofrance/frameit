@@ -1,7 +1,7 @@
 """Integrated numerical qualification of geodesic cyclone point diagnostics.
 
 Run ``python -m frameit.testing.polar_qualification --output <fresh-directory>``.
-JSON evidence and optional figures record independent truth, common valid sets,
+JSON evidence records independent truth, common valid sets,
 source refinement, spectra, centre sensitivity and deliberate coverage loss.
 """
 
@@ -367,7 +367,6 @@ def coverage_experiment(vortex, output=None):
 def serialization_and_diagnostics(vortex, output):
     from frameit.io.netcdf_export import ExportMetadata, write_dataset_netcdf
     from frameit.processing.polar.diagnostics import azimuthal_mean, periodic_fourier_coefficients
-    from frameit.processing.polar.polar_utils import close_theta_for_plot
 
     result, truth, _, _ = project_fixture(vortex, 1000)
     result.attrs["analytical_parameters"] = vortex.parameters()
@@ -391,15 +390,12 @@ def serialization_and_diagnostics(vortex, output):
     coefficient = periodic_fourier_coefficients(saved.harmonic_2).sel(azimuthal_wavenumber=2)
     expected = direct_coefficients(truth["harmonic_2"], saved.theta.values, 2)
     np.testing.assert_allclose(coefficient.isel(heightAboveGround=0), expected, atol=.01, rtol=0)
-    plot = close_theta_for_plot(saved)
-    assert plot.sizes["theta"] == saved.sizes["theta"] + 1
-    np.testing.assert_allclose(plot.harmonic_2.isel(theta=0), plot.harmonic_2.isel(theta=-1))
     return {"product": path.name, "variables_preserved": len(result.variables),
-            "origin_units_topology_preserved": True, "mean_fft_plotting_checked": True}
+            "origin_units_topology_preserved": True, "mean_fft_checked": True}
 
 
-def run_analytic_example(output, *, figures=True):
-    """Generate a small analytical vortex, exported samples and truth/error/mode plots."""
+def run_analytic_example(output):
+    """Generate a small analytical vortex, exported samples and numerical comparisons."""
     output = Path(output).expanduser().resolve()
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
         raise ValueError("Example output must be fresh or empty")
@@ -415,43 +411,10 @@ def run_analytic_example(output, *, figures=True):
               "serialization": serialization_and_diagnostics(vortex, output),
               "checks": checks, "passed": all(c["ok"] for c in checks)}
     atomic_json(output / "example.json", report)
-    if figures:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-
-        fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-        radius = result.rr.values
-        profile = report["profiles"]
-        axes[0, 0].plot(radius, profile["vtan"]["truth"], label="direct truth")
-        axes[0, 0].plot(radius, profile["vtan"]["actual"], "--", label="sampled")
-        axes[0, 0].set(xlabel="radius (km)", ylabel="clockwise tangential wind (m/s)")
-        for name in ("vrad", "vtan"):
-            error = result[name].isel(time=0, heightAboveGround=0).values - truth[name][0]
-            axes[0, 1].plot(radius[1:], np.sqrt(np.mean(error[1:]**2, axis=-1)), label=name)
-        axes[0, 1].set(xlabel="radius (km)", ylabel="point-sampling RMS error (m/s)")
-        ring = int(np.argmin(abs(radius * 1000 - vortex.radius_m)))
-        for exact, label, style in ((False, "sampled", "o-"), (True, "direct truth", "x--")):
-            coefficients = []
-            for mode in (1, 2, 3):
-                field = truth[f"harmonic_{mode}"][0] if exact else result[
-                    f"harmonic_{mode}"].isel(time=0, heightAboveGround=0).values
-                coefficients.append(direct_coefficients(field, result.theta.values, mode)[ring])
-            coefficients = np.asarray(coefficients)
-            axes[1, 0].plot([1, 2, 3], abs(coefficients), style, label=label)
-            axes[1, 1].plot([1, 2, 3], -np.angle(coefficients) / [1, 2, 3], style, label=label)
-        axes[1, 0].set(xlabel="azimuthal mode", ylabel="complex coefficient amplitude")
-        axes[1, 1].set(xlabel="azimuthal mode", ylabel="peak direction clockwise from north (rad)")
-        for axis in axes.flat:
-            axis.legend()
-        fig.tight_layout()
-        fig.savefig(output / "vortex-diagnostics.png", dpi=150)
-        plt.close(fig)
     return report
 
 
-def run_polar_qualification(output, *, figures=True):
+def run_polar_qualification(output):
     output = Path(output).expanduser().resolve()
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
         raise ValueError("Qualification output must be fresh or empty")
@@ -543,8 +506,6 @@ def run_polar_qualification(output, *, figures=True):
     report["duration_s"], report["finished_at"] = perf_counter() - started, utc_now()
     atomic_json(output / "qualification.json", report)
     atomic_json(output / "summary.json", qualification_summary(report))
-    if figures:
-        _qualification_figures(report, output)
     return report
 
 
@@ -564,37 +525,13 @@ def qualification_summary(report):
             "duration_s": report["duration_s"]}
 
 
-def _qualification_figures(report, output):
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
-    for index, case in enumerate(report["cases"]):
-        h = [row["source_spacing_m"] for row in case["refinement"]]
-        errors = [row["metrics"]["vtan"]["rms"] for row in case["refinement"]]
-        axes[0].loglog(h, errors, "o-", label=f"{index}: {case['fixture']['kind']}")
-    axes[0].set(xlabel="source spacing (m)", ylabel="tangential RMS error (m/s)")
-    axes[0].legend(fontsize=7)
-    fine = report["cases"][0]["refinement"][-1]["profiles"]
-    axes[1].plot(fine["radius_km"], fine["vtan"]["truth"], label="direct truth")
-    axes[1].plot(fine["radius_km"], fine["vtan"]["actual"], "--", label="sampled")
-    axes[1].set(xlabel="geodesic radius (km)", ylabel="clockwise tangential wind (m/s)")
-    axes[1].legend()
-    fig.tight_layout()
-    fig.savefig(output / "convergence-and-profiles.png", dpi=150)
-    plt.close(fig)
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--no-figures", action="store_true")
     parser.add_argument("--example", action="store_true", help="Run the analytical vortex example")
     args = parser.parse_args(argv)
     runner = run_analytic_example if args.example else run_polar_qualification
-    report = runner(args.output, figures=not args.no_figures)
+    report = runner(args.output)
     failures = [c for c in report["checks"] if not c["ok"]]
     print(f"Polar scientific qualification: {'PASS' if report['passed'] else 'FAIL'}; "
           f"{len(report['checks'])} checks, {len(failures)} failures")

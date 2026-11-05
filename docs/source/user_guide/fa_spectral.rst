@@ -100,11 +100,9 @@ dependencies, nonfinite/incorrect results, timeout or native death fail the atte
 Failure-injection cases are lifecycle checks, not diagnoses of a particular native
 library defect. No spectral FA generator or real-field decode is qualified by them.
 
-The optional evaluation requires ctypesForFortran 1.3.0 with the pinned wrapper;
-the reference FA environment already uses that bridge. This is not an instruction
-to alter an environment or activate a transform. Gridpoint FA workers reject
-ecTrans imports. Release-matched producer conventions and scientific review
-remain missing even if the analytical evaluation succeeds.
+The optional evaluation requires ctypesForFortran 1.3.0 with the pinned wrapper.
+Gridpoint FA workers reject ecTrans imports. Release-matched producer conventions
+and scientific review remain missing even if the analytical evaluation succeeds.
 
 Metadata and output boundary
 ----------------------------

@@ -1,10 +1,8 @@
 Scientific simulation matrix
 ============================
 
-FrameIt provides two native services: preparation of a reproducible small scientific
-fixture and execution of a catalog of simulation scenarios. Both ordinary
-``frameit run`` and matrix workers use the same execution service. A matrix does not
-invoke shell scripts or recursively invoke the CLI.
+Use the matrix to run a catalogue of extraction and tracking scenarios. It uses
+the same processing path as ``frameit run``.
 
 Ready-to-use CI dataset
 -----------------------
@@ -25,16 +23,14 @@ not required for ordinary extraction with your own inputs or for schema-only che
 Reproduce the CI dataset (maintainers)
 ----------------------------------------
 
-Preparation is optional and is intended for reproducing or updating the fixture.
-
 .. code-block:: bash
 
    frameit prepare-ci-dataset \
-     --source /data/DONEE_TEST_CYCLOPY --output ./ci_dataset
+      --source /path/to/simulations --output ./ci_dataset
 
 The source tree contains ``AROME/BATSIRAI`` and ``MNH/CHIDO`` simulation directories
 and ``MNH/IBTracks_reunion_CHIDO.nc``. An optional ``--track-file`` overrides the
-track location for other layouts. The normal layout requires no environment variable.
+track location for other layouts.
 
 Preparation uses a packaged, fixed recipe. It retains five BATSIRAI forecast files,
 three CHIDO model times, the required atmospheric fields and vertical coordinates,
@@ -65,12 +61,12 @@ Run the matrix
 Run all tests with a computation benchmark
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Install pytest (``pip install 'frameit[test]'``), then run:
+With the :doc:`test dependencies <fa_environment>` installed:
 
 .. code-block:: bash
 
    frameit run-all-tests --output ./runs/all-tests
-   frameit run-all-tests --data-root /data/DONEE_TEST_CYCLOPY --output ./runs/all-full
+   frameit run-all-tests --data-root /path/to/simulations --output ./runs/all-full
 
 The default runs every packaged numerical test, the independent analytical
 scientific qualification, and the full CI matrix using the installed frozen
@@ -100,7 +96,7 @@ the repository's ordinary ``pytest`` command.
 .. code-block:: bash
 
    frameit run-matrix-test --ci --output ./runs/ci
-   frameit run-matrix-test --data-root /data/DONEE_TEST_CYCLOPY --output ./runs/full
+   frameit run-matrix-test --data-root /path/to/simulations --output ./runs/full
    frameit run-matrix-test --ci --data-root ./ci_dataset \
      --output ./runs/prescribed --case 'mnh_chido_prescribed_*'
    frameit run-matrix-test --ci --output ./runs/plan --plan-only
@@ -226,14 +222,8 @@ as planned, without a second directory search. File identity is checked before a
 after execution. Ordinary size/mtime checks on mutable full-domain inputs do not
 provide the same guarantee as verified content hashes or immutable source storage.
 
-Reference comparison and numerical validation
----------------------------------------------
-
-The artifacts are designed to support later ``frameit validate-matrix-test`` and
-``frameit full-validation`` services. These commands are not part of this release.
-Reference comparison will assess compatible scientific inputs, case contracts and
-products across FrameIt versions. The current ``run-all-tests`` command combines
-numerical tests with product-contract validation, without reference comparison.
+Numerical accuracy
+-------------------
 
 The analytical qualification evaluates source and target truth directly; it is
 distinct from a historical simulation-file comparison. The full matrix includes
