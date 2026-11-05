@@ -273,7 +273,7 @@ def validate_output_selections(horizontal, cartesian_vertical, polar_vertical):
 def validate_fa_options(options, selected=False):
     """No field identity, unit or temporal meaning is guessed from a record name."""
     if options["backend"] != "epygram":
-        raise ValueError("input.fa.backend must be epygram; the native alias is retired")
+        raise ValueError("input.fa.backend must be epygram")
     executable = options["python_executable"]
     if executable is not None and (not isinstance(executable, str) or not executable.strip()):
         raise ValueError("input.fa.python_executable must be a nonempty interpreter path")
@@ -422,7 +422,7 @@ def _resolve_sources(raw, conf, base):
 def resolve_schema(raw, *, base_dir=None):
     if not isinstance(raw, dict) or type(raw.get("schema_version")) is not str or raw["schema_version"] != "2.1":
         raise ValueError(
-            'Expected schema_version: "2.1". Retired configurations require manual upgrade.'
+            'Expected schema_version: "2.1" (a quoted YAML string).'
         )
     conf = _merge_checked(raw, DEFAULTS)
     enum_paths = (

@@ -18,8 +18,8 @@ FrameIt |release| documentation
    :caption: Getting started
 
    getting_started/installation
+   getting_started/first_run
    getting_started/quick_start
-   getting_started/upgrading_to_v2
    getting_started/hpc
 
 .. toctree::

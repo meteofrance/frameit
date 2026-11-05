@@ -5,7 +5,7 @@
 # Native vertical-header facts are retained as provenance, not pressure/height axes.
 # Adapt paths/centre and confirm the source units and producer Earth model.
 # Both FA sources use the default EPyGrAM reader (FrameIt[fa]).
-# Configuration/migration: docs/source/user_guide/configuration_file.rst.
+# Configuration reference: docs/source/user_guide/configuration_file.rst.
 schema_version: "2.1"
 model: arome
 run:

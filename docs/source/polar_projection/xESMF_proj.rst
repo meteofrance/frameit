@@ -348,7 +348,7 @@ coordinates such as ``radial_bearing``, rather than trusting an attribute.
 
 For older closed files, ``finalize_polar_output(dataset)`` verifies the
 duplicate column before removing it. An inconsistent endpoint raises an
-error; do not blindly remove the last column from every file. A legacy
+error; do not blindly remove the last column from every file. A
 nonuniform angular grid remains directional sampling after endpoint removal
 and needs resampling before ordinary Fourier analysis.
 
@@ -578,10 +578,12 @@ Illustration
 Here is an illustration for the tropical cyclone CHIDO, first row shows the cartesian coordinates, the second one shows the polar coordinates.
 
 .. figure:: ../_static/figures/Fig.cart_Chido.png
+   :target: ../_static/figures/Fig.cart_Chido.png
    :width: 80%
    :align: center
 
 .. figure:: ../_static/figures/Fig.polar_Chido.png
+   :target: ../_static/figures/Fig.polar_Chido.png
    :width: 80%
    :align: center
 

@@ -12,12 +12,35 @@ FA, GRIB, NetCDF and polar processing. From the checkout containing
    python -m pip check
    frameit --help
 
-The YAML installs this checkout in editable mode with ``test,grib,polar,fa``
+The YAML installs this checkout in editable mode with ``test,grib,polar,fa,zarr``
 extras and development/documentation tools. No additional FrameIt installation
 or second environment is needed. Keep the checkout accessible; editing it affects
 environments that import this editable installation. See
-:doc:`../getting_started/installation` for core-only installations (Python 3.13)
-and optional dependencies.
+:doc:`../getting_started/installation` for the main setup instructions.
+
+Other Python environments
+--------------------------
+
+If you manage your own Python-3.13 environment, install core NetCDF support from
+the checkout with:
+
+.. code-block:: bash
+
+   python -m pip install .
+
+This is an alternative to the reference environment, not an extra step after it.
+Add only the extras you need:
+
+* ``.[grib]`` for cfgrib/ecCodes input;
+* ``.[fa]`` for the EPyGrAM reader;
+* ``.[polar]`` for xESMF/Shapely. A compatible native ESMF/ESMPy installation is
+  also required; the pip extra does not supply it;
+* ``.[zarr]`` for sharded Zarr v3 output;
+* ``.[test]`` for pytest.
+
+For example, ``python -m pip install '.[grib]'`` installs GRIB support.
+Dependencies do not select processing: diagnostics and polar sampling run only
+when requested. See :ref:`sharded-zarr-output` for the Zarr requirements.
 
 Native libraries and process isolation
 --------------------------------------
@@ -46,28 +69,6 @@ inherited ecCodes definition/sample overrides only in the child, use private
 FA-only library configuration and leave parent GRIB settings unchanged. Custom
 FA definition-table loading is not an adapter option. See :doc:`fa_inputs` for
 read-only source handling, point budgets and unsupported operations.
-
-Fresh-environment migration
----------------------------
-
-Preserve an older mixed Conda/pip installation and create a fresh named prefix:
-
-.. code-block:: bash
-
-   conda env create -f environment.yaml --solver libmamba -n frameit_unified
-   conda activate frameit_unified
-   python -m pip check
-   frameit --help
-
-Review existing YAML after activating the new environment. An explicit
-``input.fa.python_executable`` continues to select its old runtime; omit it or
-set it to null to use the new active Python. Environments sharing one editable
-checkout also share that checkout's code.
-
-``input.fa.backend`` accepts only ``epygram`` (the default). The retired
-``native`` alias is rejected. Source, geometry, field/scaling and resource checks
-still apply. All other existing declarations and budgets retain their meanings.
-For retired YAML, follow :doc:`../getting_started/upgrading_to_v2` manually.
 
 Optional interpreter override
 ------------------------------

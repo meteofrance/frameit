@@ -14,6 +14,25 @@ from check_publication import check_artifact, check_text
 
 
 class PublicationBoundaryTests(unittest.TestCase):
+    def test_first_run_and_quick_start_have_different_roles(self):
+        source = Path(__file__).parent / 'source/getting_started'
+        self.assertTrue((source / 'first_run.rst').is_file())
+        first = (source / 'first_run.rst').read_text()
+        quick = (source / 'quick_start.rst').read_text()
+        self.assertTrue(first.startswith('Your first run\n'))
+        self.assertTrue(quick.startswith('Quick start\n'))
+        self.assertIn('testing.documentation_example', first)
+        self.assertIn('run.name', first)
+        self.assertIn('output.directory', first)
+        self.assertIn('literalinclude:: ../../../src/frameit/templates/arome-fixed-scalar.yaml', first)
+        self.assertNotIn('testing.documentation_example', quick)
+        self.assertIn('frameit init mesonh --tracking fixed_box --output region.yaml', quick)
+        self.assertIn('frameit run region.yaml', quick)
+
+    def test_schema_upgrade_page_is_not_public_content(self):
+        self.assertTrue(check_text(Path('topic.rst'),
+                                  'See getting_started/upgrading_to_v2.html'))
+
     def test_brand_assets_require_local_valid_font_independent_svg(self):
         from check_publication import check_brand_assets
 

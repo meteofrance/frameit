@@ -18,11 +18,25 @@ local Git hook or a dependency of scientific processing.
 Writing for researchers
 -----------------------
 
-Write for a graduate-level researcher familiar with a README, Conda and bash;
-do not assume Python programming experience. Use plain, professional language,
+Write for researchers who know bash, YAML, Python and their data, but not FrameIt.
+Use plain, professional language,
 without slogans or artificial encouragement. Explain consequential scientific
 choices where the reader makes them, then link to the equations, evidence and
 reference details rather than repeating them throughout the site.
+
+Use short sentences and direct verbs. Put one main idea in each sentence.
+Explain FrameIt, not basic YAML, bash or meteorology. Remove repeated cautions
+and words that do not help the reader make a choice.
+
+Keep **Your first run** and **Quick start** distinct. The first run teaches the
+YAML through a checked example. Quick start is a short template/edit/check/run
+reminder for users who know their data. Installation should show one clear route;
+advanced setup belongs in the environment reference. The reference environment
+already installs FrameIt, so do not add a second pip installation step.
+
+Document the current ``schema_version: "2.1"`` only. Do not publish schema history,
+conversion instructions or upgrade pages. Internal development and provenance
+records are separate from user guidance.
 
 Keep the README short. Use a guided first run followed by task-oriented guides,
 with scientific concepts, reference and troubleshooting available separately.
@@ -46,9 +60,8 @@ non-obvious consequences. Do not hide a consequential scientific declaration
 merely to shorten the YAML. Exhaustive settings belong in reference/inspection;
 the effective configuration belongs in provenance, not in a starter catalogue.
 
-The v2.1 key map and concrete template catalogue have G1 approval; catalogue
-implementation and editorial G2 review are separate gates. Describe commands as
-runnable only after verification. Do not silently substitute quantities, infer ambiguous units, change
+Describe commands as runnable only after verification. Do not silently substitute
+quantities, infer ambiguous units, change
 defaults, fill missing samples or enable unrequested processing to make an
 example work. Preserve the distinction between missing and zero, sampling
 location, vector basis, reference-frame motion and time support.
@@ -68,8 +81,14 @@ evidence accurately. Keep the editable SVG or a reproducible generation recipe
 with the figure. Avoid decorative illustrations and do not change scientific
 data colormaps to match documentation branding.
 
-The supplied FrameIt artwork and shared accessible styling are being reviewed
-with the editorial pilots at G2. Preserve that artwork and existing scientific
+Check every figure at desktop and narrow widths, including 320 px. Check its
+displayed bounds **and** the SVG drawing/text bounds; a correct image box does not
+prove that labels fit. Keep space around text and strokes. Fit the image to the
+page and viewport without distortion, and add a full-size image target. Do not
+use a fixed height that crops content. Remove the screen-height limit for print.
+
+Use the supplied FrameIt artwork and shared accessible styling throughout the
+documentation. Preserve that artwork and existing scientific
 distinctions; do not introduce another logo or theme during an unrelated edit.
 
 Brand assets and restrained styling

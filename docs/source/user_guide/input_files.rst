@@ -21,8 +21,7 @@ globs. Relative paths are resolved from the YAML file. GRIB/NetCDF content-based
 format detection rejects mixed inputs; ``input.format`` may explicitly specify
 ``grib`` or ``netcdf``. FA requires explicit ``format: fa`` and its profile/declarations.
 Mixed formats require separate named sources, not a mixed ordinary inventory.
-See :doc:`configuration_file` for schema-v2.1 examples, units and
-native-grid inference, and :doc:`../getting_started/upgrading_to_v2` for old configurations.
+See :doc:`configuration_file` for YAML settings, units and native-grid inference.
 
 Inspect a deliberately selected stream before choosing quantities and methods:
 
@@ -36,7 +35,7 @@ Inspection reads metadata/coordinates, not scientific field payloads, and does
 not prove decoded scaling or scientific suitability. ``validate --schema-only``
 checks configuration without opening inputs; ``validate`` and ``run --dry-run``
 perform metadata preflight for the configured selections. See
-:doc:`../getting_started/quick_start` for the full workflow.
+:doc:`../getting_started/first_run` for a worked example.
 
 Sources are read-only. FrameIt keeps GRIB indexes in the designated output
 ``cache/``, not beside input files. In coupled runs, streams keep their own grids,

@@ -36,13 +36,13 @@ required.** FA workers run in isolated processes using the active Python; omit
 
 The package supports Python 3.13 only. Core NetCDF processing can also be installed
 without FA, GRIB or polar extras. See [installation](docs/source/getting_started/installation.rst)
-for core/optional dependencies and [FA environment and troubleshooting](docs/source/user_guide/fa_environment.rst)
-for fresh-environment migration and the optional interpreter override.
+for setup and [FA environment and troubleshooting](docs/source/user_guide/fa_environment.rst)
+for dependency details and interpreter selection.
 
 ## Quick start
 
 For a first run without model data, use the
-[self-contained instructional example](docs/source/getting_started/quick_start.rst).
+[Your first run](docs/source/getting_started/first_run.rst).
 
 1. Inspect a deliberately selected input stream and create an annotated configuration:
 
@@ -86,10 +86,8 @@ in YAML to use it. The same products become
 and `output.zarr_shard_size` tune storage, not scientific values; see
 [chunks versus shards](docs/source/user_guide/output_files.rst#sharded-zarr-v3).
 
-Run configurations require the exact string `schema_version: "2.1"`.
-Retired versions, flat YAML and old aliases are rejected; there is no converter.
-Follow the [manual upgrade map](docs/source/getting_started/upgrading_to_v2.rst)
-and review the scientific declarations before running.
+Use `schema_version: "2.1"` in run configurations. The generated templates set it
+for you.
 
 The [configuration reference](docs/source/user_guide/configuration_file.rst) explains
 the minimal named/composed starters, defaults, CLI precedence, and wind/level selections.
@@ -226,7 +224,7 @@ version DOI listed on the [Zenodo record](https://doi.org/10.5281/zenodo.2212819
 
 FrameIt is released under the Apache 2.0 License.
 
-Copyright 2026 Soufflet Clément - Météo-France
+Copyright 2026 Clément Soufflet and Maxence DEFEREZ — Météo-France
 
 ## Authors
 
@@ -236,4 +234,4 @@ FrameIt was developed at Météo-France.
 - Kevin Hoarau — CNRS
 - Adrien Colomb — Météo-France
 - Rémi Laxenaire — Météo-France
-- Maxence Deferrez — Météo-France
+- Maxence DEFEREZ — Météo-France

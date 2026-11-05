@@ -22,11 +22,8 @@ isolated processes; omit ``input.fa.python_executable`` or leave it null.
 An explicit override selects a separate coherent runtime containing FrameIt and
 the FA stack. ``fa`` is the optional reader extra; ``fa-epygram`` is an identical
 installation alias. See :doc:`FA environment and troubleshooting <fa_environment>`
-for installation, interpreter selection and fresh-environment migration.
-``backend: epygram`` is the default for all FA operations. Legacy ``backend: native``
-remains accepted as a deprecated, warned alias with requested/effective provenance.
-It selects the same reader and cannot bypass admission checks; see
-:doc:`configuration_file` for the settings and migration contract.
+for installation and interpreter selection. The FA reader is ``backend: epygram``.
+See :doc:`configuration_file` for its settings.
 Ordinary NetCDF/GRIB processing and schema-only validation do not
 require the FA package.
 
@@ -278,11 +275,9 @@ scaling-warning/fallback facts. A representative input descriptor is also stored
 as a JSON variable attribute; it does not replace per-file run provenance.
 ``geometry_contract`` records library axes/CRS/native zones
 and origin evidence. ``horizontal_header_signature`` has a library-derived JSON
-value; consumers must not assume a raw-header layout. This applies to the default
-and deprecated alias. ``backend`` / ``FA_backend`` identify
+value; consumers must not assume a raw-header layout. ``backend`` / ``FA_backend`` identify
 the effective ``epygram`` implementation; ``requested_backend`` /
-``FA_backend_requested`` retain the request. ``FA_backend_migration`` records a
-legacy alias and its replacement, in addition to visible deprecation warnings.
+``FA_backend_requested`` retain the request.
 
 Existing atomic publication, exclusive run ownership and final ``run-status.yaml``
 handle helper/export failures. Failed required sources never publish a completed

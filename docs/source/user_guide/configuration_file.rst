@@ -16,10 +16,12 @@ Create a model-specific, annotated configuration:
    frameit init arome --coupling nemo
 
 Starters contain only the selected workflow and retain their scientific comments.
-``--full`` is removed. Use ``frameit config show`` for complete defaults or
+Use ``frameit config show`` for complete defaults or
 ``config show --resolved`` for metadata-dependent settings. ``--force`` replaces
 only the selected configuration, not input files. Generation otherwise refuses
 existing destinations; it opens no datasets and loads no optional scientific stack.
+
+.. _starter-catalogue:
 
 Starter catalogue
 ------------------
@@ -30,7 +32,7 @@ All explicitly disable polar sampling and refuse product overwrites.
 
 .. list-table:: Named starters and equivalent compositions
    :header-rows: 1
-   :class: manual-upgrade-map
+   :class: config-table
 
    * - Named command
      - Equivalent command and selected quantities
@@ -83,9 +85,7 @@ duplicate keys, invalid types, and conflicting selections are rejected.
 Identity and input
 ------------------
 
-``schema_version`` must be the exact string ``"2.1"`` (quoted in YAML), not a
-number. Missing versions, retired versions and old aliases fail before dataset
-access. See :doc:`../getting_started/upgrading_to_v2` for the manual upgrade map.
+Set ``schema_version: "2.1"``. The value is a quoted string, not a number.
 ``run.name`` names the analysis and exported
 products; ``run.description`` is optional. ``metadata.extra`` holds user
 annotations, not algorithm options. Optional ocean/wave identifiers belong in
@@ -159,16 +159,13 @@ profiles are ``arome_history`` and ``surfex_history``; these do not admit arbitr
 producers or layouts. The full input, source/type/time, geometry and scaling
 contracts are in :doc:`fa_inputs`.
 
-* ``input.fa.backend`` accepts only ``epygram`` (the default). The retired
-  ``native`` alias is rejected. Inventories and decoder provenance retain the
-  requested and effective backends.
+* ``input.fa.backend`` is ``epygram``. Inventories and provenance record the reader.
 * ``input.fa.python_executable`` defaults to null: FA workers use the active
   Python in fresh isolated processes. Omit it for the single reference environment.
   An explicit nonempty path selects a runtime containing FrameIt and the coherent
   FA stack. Paths are YAML-relative without dereferencing interpreter symlinks,
   including inside named sources. There is no automatic fallback interpreter.
-  See :doc:`FA environment and troubleshooting <fa_environment>` for migration;
-  the ``fa`` and compatibility ``fa-epygram`` extras select the same dependencies.
+  See :doc:`FA environment and troubleshooting <fa_environment>` for setup.
 * ``subdomain`` is ``CI`` (default) or ``C``; the spectral extension is excluded.
   Projected FA requires explicit positive ``earth_radius_m`` based on producer
   evidence, not a fitted/default Earth model.
@@ -325,8 +322,7 @@ Missing geographic/wind units follow documented AROME/MesoNH adapter contracts
 and are recorded. Unsupported or incompatible declarations fail. Geographic
 coordinates are normalized before tracking as well as polar projection.
 Use pair-specific declarations below to make each scientific choice explicit.
-The file-wide ``input.wind_reference_frame`` is removed; use explicit
-``input.wind_pairs`` for each selected horizontal pair, including mixed
+Use ``input.wind_pairs`` for each selected horizontal pair, including mixed
 model-level grid winds and Earth-relative surface winds.
 Pass-through scalar fields preserve their source units; computationally prepared
 winds and derived products carry normalized units.
@@ -447,7 +443,7 @@ Exclusive run-directory ownership rejects concurrent writers even with overwrite
 enabled. ``--no-overwrite`` rejects prior artifacts before computation.
 ``run-status.yaml`` records completion separately from provenance.
 
-Inspection, validation, and upgrade
+Inspection and validation
 ----------------------------------------
 
 .. code-block:: bash
@@ -467,13 +463,6 @@ resource/sampling information and planned products without writing products;
 they are not exact runtime/memory predictions or scientific approval.
 Schema-only validation does not open data. ``config show`` displays resolved
 schema settings; ``config show --resolved`` also performs metadata preflight.
-
-Retired public YAML is rejected, including through Python mapping loaders.
-There is no executable converter. Follow :doc:`../getting_started/upgrading_to_v2`,
-then run ``validate --schema-only`` and metadata preflight on selected inputs.
-Environment migration is separate: preserve old prefixes as described in
-:doc:`fa_environment`, review interpreter overrides, and retain scientific
-declarations and resource budgets.
 
 The internal Python ``SimulationConfig`` numerical interface retains flat field
 names for existing integrations; those names are not public YAML or mapping keys.

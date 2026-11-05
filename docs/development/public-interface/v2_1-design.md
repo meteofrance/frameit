@@ -543,8 +543,9 @@ other real workflows require their stated inputs and later risk-based checks.
 
 ## 7. Complete content / figure map
 
-All current `.rst` URLs remain. Rewrite navigation/content, not a wholesale page
-rename. Preserve existing explicit labels and heading IDs where retained; when
+Keep useful `.rst` URLs. The maintainer's G2 correction removes public schema
+history and adds `getting_started/first_run.rst`; `quick_start.rst` becomes the
+short refresher. Preserve existing explicit labels and heading IDs where retained; when
 consolidating content leave a short destination link and retain the old anchor,
 not two copied references. Validate resulting local paths/fragments in Task 9.
 
@@ -552,14 +553,15 @@ not two copied references. Validate resulting local paths/fragments in Task 9.
 | --- | --- |
 | `index.rst` | Rewrite navigation: first run, task guides, concepts, reference/troubleshooting, contribution; no archive toctree. |
 | `what_is_frameit.rst` | Rewrite focused mission/current capabilities/limits; preserve URL and attribution; no all-in-one/future-app claims. |
-| `getting_started/installation.rst` | Rewrite Task 7 pilot: Linux-qualified scope, Python 3.13 frameit_env/reference tools, optional dependency paths. |
-| `getting_started/quick_start.rst` | Rewrite Task 7 pilot: self-contained instructional scalar route, exact generation/check/run/ordinary-reader commands. |
+| `getting_started/installation.rst` | One Linux/Python 3.13 reference-environment route; it already installs FrameIt. Link advanced setup separately. |
+| `getting_started/first_run.rst` | Guided scalar example: read the YAML, change run name/output directory, check/run and inspect independent values. |
+| `getting_started/quick_start.rst` | Short template/edit/check/run reminder and CLI links for users who know their data. |
 | `getting_started/hpc.rst` | Retain bounded Slurm/operational procedure; update support/CLI/config literals, distinguish unrun site qualification. |
 | `user_guide/input_files.rst` | Retain canonical input/layout/metadata contracts; link task field/coupled guides. |
 | `user_guide/ocean_netcdf.rst` | Retain authoritative NEMO/CROCO/SURFEX/time/scientific scope and formulas; clearer task entry links, update selectors only. |
 | `user_guide/fa_inputs.rst` | Retain native FA admission/declarations; consolidate duplicated task steps by linking coupled guide. |
 | `user_guide/fa_environment.rst` | Retain canonical native-stack setup/troubleshooting; Python 3.13 only, no stale development-environment advice. |
-| `user_guide/configuration_file.rst` | Rewrite complete v2.1 reference from implemented schema/G1 map, values/defaults/precedence/failures. Link upgrade guide, no legacy loader or full starter. |
+| `user_guide/configuration_file.rst` | Current v2.1 keys, values/defaults/precedence/failures. No public schema-history page or conversion instructions. |
 | `user_guide/fa_baseline.rst` | Retain current compatibility/limits, preserve anchors/evidence distinction; no archived development publication. |
 | `user_guide/fa_contracts.rst` | Retain metadata/provenance specification; link output and current declarations, not development history. |
 | `user_guide/fa_geometry.rst` | Retain native geometry/Earth/grid/centre contract, link fixed/moving/frames guides. |
@@ -575,7 +577,7 @@ not two copied references. Validate resulting local paths/fragments in Task 9.
 | `tracker/multifield_vortex.rst` | Retain explicit experimental status and remaining reference/real-case qualification; manual current-schema example, no invented approval. |
 | `tracker/utrack.rst` | Retain optional weights/dependencies/input scope; manual current-schema example, no automatic download. |
 | `polar_projection/xESMF_proj.rst` | Retain technical sampling/reference details; workflow steps link polar_sampling; preserve labels/equations. |
-| `polar_projection/scientific_qualification.rst` | Retain independent qualification methodology/results with revision/scope; separate from new YAML upgrade claims. |
+| `polar_projection/scientific_qualification.rst` | Retain independent qualification methodology/results with revision/scope and current sampling conventions. |
 | `polar_projection/conservative_experiment.rst` | Retain experimental method/evidence, not a stable production choice. |
 | `polar_projection/wind_method_comparison.rst` | Retain experimental comparison and limitations; do not turn method comparison into automatic selection. |
 | `visualization_tools/rotate_polar_axes.rst` | Retain optional downstream utility, distinguish displayed-domain rotation from vector basis/frame. |
@@ -590,20 +592,20 @@ New canonical pages (proposed):
 - Concepts: `concepts/sampling_and_frames.rst`, `time_support.rst`,
   `missingness_and_status.rst` (all beneath concepts). Short linked explanations,
   not a compulsory theory course or copied output/configuration reference.
-- `getting_started/upgrading_to_v2.rst`: static release-specific upgrade/removal
-  guide, with this map's exact old/new syntax and compatibility limits.
+- `getting_started/first_run.rst`: the guided YAML introduction, separate from
+  the quick-start refresher. Document only the current configuration format.
 - `troubleshooting.rst`: actionable index by failure phase, linking native/method
   specifics rather than duplicating every caveat.
 - README stays short: implemented mission, installation/first-run/deeper links,
-  limits, preserved credits/citation; development credit includes Maxence DEFERREZ
-  in docs, existing Maxence Deferrez spelling retained in metadata.
+  limits and preserved credits/citation. G2 specifies **Maxence DEFEREZ** in
+  project credits, package author metadata and documentation copyright.
 
 Proposed editable SVGs beneath `_static/figures/` (captions label **schematics**,
 not data/validation; units/alt text/legends and non-color distinctions required):
 
 | Asset | Placed beside the relevant decision |
 | --- | --- |
-| `processing-products.svg` | quick_start + output_files: input → checks → chosen processing → products/status/provenance |
+| `processing-products.svg` | first_run + output_files: input → checks → chosen processing → products/status/provenance |
 | `fixed-moving-regions.svg` | fixed_region + moving_region: continuous centre versus native cropped samples, full widths |
 | `sampling-frames.svg` | sampling_and_frames + scalars_and_vectors/polar_sampling: native/Cartesian/polar locations, basis rotation and frame motion distinct |
 | `exact-time-association.svg` | time_support + coupled_inputs: exact labels versus explicitly bounded preceding-hour means |

@@ -46,7 +46,8 @@ def test_input_creation_refuses_overwrite_without_changing_bytes(tmp_path):
     assert list(tmp_path.iterdir()) == [path]
 
 
-def test_exact_first_run_commands_and_fresh_ordinary_reader(tmp_path):
+@pytest.mark.parametrize("tutorial_edits", [False, True], ids=["starter", "guided-first-run"])
+def test_exact_first_run_commands_and_fresh_ordinary_reader(tmp_path, tutorial_edits):
     def run(*args):
         result = subprocess.run([sys.executable, *args], cwd=tmp_path,
                                 capture_output=True, text=True, timeout=60)
@@ -58,26 +59,35 @@ def test_exact_first_run_commands_and_fresh_ordinary_reader(tmp_path):
     source.chmod(0o444)
     before = source.read_bytes(), source.stat().st_mtime_ns
     run("-m", "frameit", "init", "arome-fixed-scalar")
+    root, name = ("results", "first-run") if tutorial_edits else ("output", "arome-fixed-scalar")
+    if tutorial_edits:
+        path = tmp_path / "frameit.yaml"
+        raw = yaml.safe_load(path.read_text())
+        raw["run"]["name"] = name
+        raw["output"]["directory"] = f"./{root}"
+        path.write_text(yaml.safe_dump(raw))
     run("-m", "frameit", "validate", "--schema-only")
     run("-m", "frameit", "validate")
     plan = yaml.safe_load(run("-m", "frameit", "run", "--dry-run"))
-    assert not (tmp_path / "output").exists()
+    assert not (tmp_path / root).exists()
     assert len(plan["planned_products"]) == 2
     run("-m", "frameit", "run")
-    status = yaml.safe_load((tmp_path / "output/run-status.yaml").read_text())
+    status = yaml.safe_load((tmp_path / root / "run-status.yaml").read_text())
     assert status["state"] == "completed" and status["tracking_complete"]
     assert {(p["role"], p["group"]) for p in status["products"]} == {
         ("track", None), ("cart", "surface")}
-    resolved = yaml.safe_load((tmp_path / "output/resolved-config.yaml").read_text())
+    resolved = yaml.safe_load((tmp_path / root / "resolved-config.yaml").read_text())
     assert resolved["schema_version"] == "2.1"
     assert resolved["variables"] == {"surface": {"names": ["instructional_scalar"]}}
     assert resolved["polar"]["enabled"] is False
     assert resolved["domain"]["width_km"] == {"x": 4, "y": 4}
     assert resolved["input"]["wind_pairs"] == []
-    assert (tmp_path / "output/run-provenance.yaml").is_file()
+    assert resolved["run"]["name"] == name
+    assert (tmp_path / root / "run-provenance.yaml").is_file()
     run("-c", """
 import sys, numpy as np, xarray as xr
-with xr.open_dataset('output/products/arome-fixed-scalar.cart.surface.nc', engine='netcdf4') as d:
+root, name = sys.argv[1:]
+with xr.open_dataset(f'{root}/products/{name}.cart.surface.nc', engine='netcdf4') as d:
     assert dict(d.sizes) == {'time': 2, 'y_box': 5, 'x_box': 5}
     assert set(d.data_vars) == {'instructional_scalar'}
     first = np.array([[-22, -21, -20, -19, -18], [-12, -11, -10, np.nan, -8],
@@ -87,14 +97,55 @@ with xr.open_dataset('output/products/arome-fixed-scalar.cart.surface.nc', engin
     np.testing.assert_allclose(d.latitude[0, :, 0], [-20.02, -20.01, -20, -19.99, -19.98])
     np.testing.assert_allclose(d.longitude[0, 0, :], [59.98, 59.99, 60, 60.01, 60.02])
     np.testing.assert_array_equal(d.time, np.array(['2000-01-01T00', '2000-01-01T01'], dtype='datetime64[ns]'))
-with xr.open_dataset('output/products/arome-fixed-scalar.track.nc', engine='netcdf4') as d:
+with xr.open_dataset(f'{root}/products/{name}.track.nc', engine='netcdf4') as d:
     np.testing.assert_array_equal(d.cx, [8, 8])
     np.testing.assert_array_equal(d.cy, [8, 8])
     np.testing.assert_allclose(d.lat, -20)
     np.testing.assert_allclose(d.lon, 60)
 assert 'frameit' not in sys.modules
-""")
+""", root, name)
     assert (source.read_bytes(), source.stat().st_mtime_ns) == before
+
+
+def test_quick_start_commands_use_the_selected_mesonh_scalar(tmp_path):
+    from frameit.testing.numerical.test_configuration_v2_1 import dataset
+
+    data = tmp_path / 'data'
+    data.mkdir()
+    dataset(data)
+
+    def run(*args):
+        result = subprocess.run([sys.executable, '-m', 'frameit', *args], cwd=tmp_path,
+                                capture_output=True, text=True, timeout=60)
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result.stdout
+
+    run('init', 'mesonh', '--tracking', 'fixed_box', '--output', 'region.yaml')
+    path = tmp_path / 'region.yaml'
+    raw = yaml.safe_load(path.read_text())
+    raw['input'].update(directory='./data', pattern='native.nc')
+    raw['domain']['width_km'] = {'x': 4, 'y': 4}
+    path.write_text(yaml.safe_dump(raw))
+    run('inspect', './data', '--model', 'mesonh', '--format', 'netcdf', '--pattern', '*.nc')
+    run('validate', 'region.yaml', '--schema-only')
+    run('validate', 'region.yaml')
+    assert yaml.safe_load(run('config', 'show', 'region.yaml'))['variables'] == {
+        'surface': {'names': ['MSLP']}}
+    run('run', 'region.yaml', '--dry-run')
+    assert not (tmp_path / 'output').exists()
+    run('run', 'region.yaml')
+    status = yaml.safe_load((tmp_path / 'output/run-status.yaml').read_text())
+    assert status['state'] == 'completed' and status['tracking_complete']
+    result = subprocess.run([sys.executable, '-c', """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset('output/products/mesonh-fixed-scalar.cart.surface.nc', engine='netcdf4') as d:
+    assert set(d.data_vars) == {'MSLP'}
+    assert dict(d.sizes) == {'time': 2, 'y_box': 3, 'x_box': 3}
+    np.testing.assert_array_equal(d.MSLP, np.full((2, 3, 3), 100000.))
+    assert d.MSLP.attrs['units'] == 'Pa'
+assert 'frameit' not in sys.modules
+"""], cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_input_creation_and_explicit_reader_need_no_optional_scientific_stack(tmp_path):

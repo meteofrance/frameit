@@ -80,8 +80,10 @@ def test_every_public_loader_rejects_retired_versions_before_access(tmp_path, mo
              "presets": lambda: loader.resolve_config_with_model_presets(raw),
              "yaml": lambda: SimulationConfig.from_yaml(path),
              "yaml_preset": lambda: SimulationConfig.from_yaml_with_model_preset(path)}
-    with pytest.raises(ValueError, match="schema_version"):
+    with pytest.raises(ValueError, match="schema_version") as error:
         calls[route]()
+    assert '"2.1"' in str(error.value)
+    assert 'upgrade' not in str(error.value).lower()
     assert not (tmp_path / "products").exists()
 
 
@@ -294,7 +296,7 @@ def test_yaml_duplicates_unknown_locations_and_legacy_rejection(tmp_path):
         SimulationConfig.from_yaml(path)
     assert "line 4" in str(error.value)
     path.write_text("atm_model: AROME\nresolution: 2500\n")
-    with pytest.raises(ValueError, match="manual upgrade"):
+    with pytest.raises(ValueError, match="schema_version"):
         SimulationConfig.from_yaml(path)
 
 

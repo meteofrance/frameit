@@ -55,7 +55,14 @@ body { color: var(--frameit-navy); }
 .rst-content .danger .admonition-title, .rst-content .error .admonition-title { background: #9f2d26; }
 .rst-content .admonition-title, .rst-content .admonition-title a { color: white; }
 .rst-content figure, .rst-content .figure { margin: 1.75rem 0; }
-.rst-content figure img, .rst-content .figure img { display: block; max-width: 100%; height: auto; margin: auto; }
+.rst-content figure img, .rst-content .figure img {
+    display: block;
+    max-width: 100%;
+    max-height: 75vh;
+    height: auto;
+    object-fit: contain;
+    margin: auto;
+}
 .rst-content figcaption, .rst-content .figure .caption { margin-top: .75rem; line-height: 1.5; }
 .rst-content div.math { overflow-x: auto; }
 .rst-content footer { color: var(--frameit-muted); }
@@ -70,18 +77,19 @@ body { color: var(--frameit-navy); }
     .wy-nav-content-wrap { margin-left: 0; }
     .wy-nav-content { max-width: none; padding: 0; }
     .rst-content figure, .rst-content .figure, .rst-content .admonition { break-inside: avoid; }
+    .rst-content figure img, .rst-content .figure img { max-height: none; }
     .wy-nav-content a, .wy-nav-content a:visited { color: var(--frameit-navy); }
 }
 
-.manual-upgrade-map {
+.config-table {
     table-layout: fixed;
     width: 100%;
 }
 
-.rst-content .manual-upgrade-map td,
-.rst-content .manual-upgrade-map th,
-.manual-upgrade-map code,
-.manual-upgrade-map .pre {
+.rst-content .config-table td,
+.rst-content .config-table th,
+.config-table code,
+.config-table .pre {
     white-space: normal;
     overflow-wrap: anywhere;
 }

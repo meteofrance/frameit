@@ -135,6 +135,7 @@ with ``domain.width_km: {x: 50, y: 75}`` (full widths in kilometres).
 The red line shows the extracted box.
 
 .. figure:: ../_static/figures/Fig.tracking_Chido.png
+   :target: ../_static/figures/Fig.tracking_Chido.png
    :width: 100%
    :align: center
 

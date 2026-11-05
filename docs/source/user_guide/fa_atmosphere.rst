@@ -16,9 +16,8 @@ Use the reference :doc:`fa_environment` for the single Python-3.13 stack. FA wor
 use the active interpreter in isolated processes; ``python_executable`` is an
 optional deliberate override. The ``fa`` extra and identical ``fa-epygram`` alias
 use unmodified EPyGrAM 2.1.0, falfilfa4py 1.2.1 and ctypesForFortran 1.3.0, with
-the qualified upstream dependencies. ``backend: epygram`` is the only admitted
-public backend; the retired ``native`` alias is rejected. Installing dependencies
-does not change scientific admission.
+the qualified upstream dependencies. The reader is ``backend: epygram``.
+Installing dependencies does not change which scientific operations are supported.
 
 EPyGrAM remains external software, copyright Météo-France (2014-), under
 `CeCILL-C <https://github.com/UMR-CNRM/EPyGrAM/blob/2.1.0/LICENSE.txt>`_. No

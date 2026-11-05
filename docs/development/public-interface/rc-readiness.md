@@ -110,8 +110,9 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
   and starter catalogue and source-checkout first run are verified below;
    editorial pilots are drafted for G2 review below. G1 is not scientific
   sign-off, G2 or publication/deployment authorization.
-- **G2 pending:** first-run/deeper-guide pilots and supplied artwork/art direction
-  need actual live-preview editorial approval before the wider rewrite.
+- **G2 approved subject to completed corrections:** the maintainer said, "Once this
+  is fixed, you have my approval." The requested corrections and checks are
+  recorded below. This is editorial approval, not scientific or reader sign-off.
 - Required scientific/human review, unfamiliar-reader acceptance, wheel/sdist and
   fresh-environment checks, operational safety, authorized real-fixture checks,
   hosted CI and final candidate freeze are not complete.
@@ -234,6 +235,9 @@ This is not an upstream native-stack repair or an environment/backend substituti
 
 ## Task 7 draft pilots — G2 review pending
 
+Historical draft receipt at `8500c3c`; the G2 correction receipt below supersedes
+its pending status and stop instruction.
+
 The installation, first-run and fixed-region pilots are implemented as a **draft**,
 not approved editorial guidance for the remaining site rewrite. Both supplied SVG
 masters were copied byte-identically; their 2172×724 wordmark and 1024×1024 symbol
@@ -299,6 +303,67 @@ are retained for the later approved presentation work. No new scientific method,
 default, configuration/output semantics, release qualification, push or deployment
 is implied. Commit the verified draft, then wait for page-specific G2 feedback;
 do not mark Task 7 complete or start Task 8.
+
+## Task 7 G2 corrections and approval
+
+The maintainer reviewed `pilots-05` and requested shorter wording, clearer
+installation, separate first-run/quick-start pages, Maxence DEFEREZ credit,
+current-only YAML guidance and fully visible figures. They accepted the
+fixed-region prose. Their exact approval condition was: **"Once this is fixed,
+you have my approval."** The following checks establish completion of those
+corrections; no additional human inspection or scientific approval is invented.
+
+- Installation now has one reference-environment route. `environment.yaml`
+  already installs FrameIt, so no duplicate pip step is added. Advanced core/extra
+  setup is linked separately. No environment was rebuilt during this review.
+- **Your first run** explains the generated YAML and has the reader change
+  `run.name` to `first-run` and `output.directory` to `./results`. **Quick start**
+  is a short Meso-NH template/edit/check/run reminder with CLI/template links.
+  Navigation and callers distinguish them. The contribution guide records these
+  rules and shorter, direct wording for the rest of the documentation.
+- Public schema-history/conversion guidance and its page/links are removed.
+  Current YAML uses `schema_version: "2.1"`; strict admission is unchanged.
+  Only the shared error text changed in processing code. Independent scientific
+  data, manifest/status and FA worker/provenance contracts were not rewritten.
+- Maxence DEFEREZ is included in the documentation copyright, README credits and
+  package author metadata. Other author credits and the existing citation remain.
+- All eight figures have full-size links. Screen display is limited to 75vh with
+  `object-fit: contain`; print has no screen-height cap. Scientific raster data,
+  SVG geometry and colormaps are unchanged. A nearby output table reuses the
+  existing wrapping style to remove its narrow-page overflow.
+
+Verification in `frameit_env` (Python 3.13):
+
+- Two documentation checks and the current-only loader-error check were observed
+  RED before the corrections. `python -m unittest discover -s docs -p
+  test_check_publication.py` now passes **6 tests**, no skips.
+- `python -m pytest -q` → **1185 passed, 4590 known warnings, 2 subtests passed,
+  no skips, 566.69 s**. Tests retain source-read-only/unchanged bytes, independent
+  literal values, valid zero versus NaN and normal subprocess exit checks.
+- The six instructional tests include both unchanged starter and edited first-run
+  configurations, plus the refresher's Meso-NH case. Both documented console
+  routes were also replayed in fresh owned directories. The edited first run
+  completed with 2×5×5 scalar values/units 1; the Meso-NH reader checked 2×3×3
+  MSLP = 100000 Pa. Reader processes imported no FrameIt. Help, inspection,
+  settings/resolved settings and the refresher's three extra starter commands ran.
+- Strict Sphinx and publication checks passed for `pilots-09`; `pip check`,
+  targeted Ruff F and diff checks passed. `pilots-06` caught a short heading
+  underline and is not a passing iteration. Public sources/artifacts contain no
+  link to the deleted schema-history page.
+- Browser checks covered all **8 figures at 320/390/768/1200 px** (32 placements):
+  image boxes fit, height limits hold, aspect is contained and full-size targets
+  return HTTP 200. All **44 SVG text labels**, as well as drawing bounds, lie
+  within their viewBoxes. Existing raster images were inspected without changing
+  data. The revised onboarding pages and output page have no overflow at 390 px;
+  changed reference pages load with no broken images/history links. Copyright
+  credit and the print height-cap reset were checked in the rendered pages.
+
+The maintainer's G2 condition is met by the corrections above. Keep the live
+preview available. Actual desktop screenshots, real key delivery and paginated
+print inspection remain unavailable in this browser session; bounds/focus/print
+rules are not misreported as those checks. Fresh installation, installed artifacts,
+unassisted-reader acceptance, scientific review and release qualification remain
+their separate later gates. No push, publication or deployment is authorized.
 
 ## Task 1 verification receipt
 

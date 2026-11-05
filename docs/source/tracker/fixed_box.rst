@@ -130,5 +130,6 @@ Illustration
 Here is an illustration for the tropical cyclone Batsirai, using the fixed box method.
 
 .. figure:: ../_static/figures/Fig.FixedBox_Batsirai.png
+   :target: ../_static/figures/Fig.FixedBox_Batsirai.png
    :width: 100%
    :align: center

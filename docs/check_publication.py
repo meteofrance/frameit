@@ -15,7 +15,7 @@ FORBIDDEN = re.compile(
     r"fa_epygram_c\d+|fa_(?:p\d+|c\d+|environment)\.ya?ml"
     r"|(?:docs/)?development/fa|fa_\w+_history(?:\.|/)"
     r"|Frozen\s+developer\s+evidence|\bFA\s+P\d+\b|\bEPyGrAM\s+C\d+\b"
-    r"|\b(?:stage|increment)\s+[PC]\d+\b",
+    r"|\b(?:stage|increment)\s+[PC]\d+\b|upgrading_to_v2",
     re.IGNORECASE,
 )
 TEXT_SUFFIXES = {".html", ".js", ".txt", ".rst", ".yaml", ".yml", ".json"}

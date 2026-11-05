@@ -1,4 +1,4 @@
-Scientific qualification and product migration
+Scientific qualification
 ==============================================
 
 Run and retain the evidence
@@ -191,39 +191,18 @@ across Meso-NH releases/projections and independent scientific review remain
 outstanding; large or strongly curved cells need separate assessment. No stable
 diagnostic admission or general conservation claim follows from these checks.
 
-Migrating older numerical products
+Sampling conventions and units
 ------------------------------------
 
-Intentional changes affect radial/tangential winds (local rather than launch
-bearing), MNH native collocation, speed as the norm of sampled components,
-continuous subgrid origins, and exactly uniform endpoint-exclusive angle grids.
+Radial/tangential winds use the local bearing. Meso-NH components are collocated
+on the native grid. Speed is the norm of sampled components. The origin can lie
+between grid points, and full-ring angle grids are uniform and endpoint-exclusive.
 At zero radius, radial/tangential components are undefined even when east/north
 winds and speed are finite. Coverage and missing-data policies are explicit.
 
-Schema-v2.1 configuration uses ``polar.radial_step_m`` in metres; manually rewrite the old
-``radial_resolution`` key explicitly. Output ``rr`` uses kilometres, ``theta``
+``polar.radial_step_m`` uses metres. Output ``rr`` uses kilometres, ``theta``
 radians and ``theta_deg`` degrees. Requested angular steps are maxima; effective
 steps are uniform ``360/N`` and may differ for nondivisor requests.
-
-For an old closed file, use the tested validation helper:
-
-.. code-block:: python
-
-   import xarray as xr
-   from frameit.processing.polar.polar_utils import finalize_polar_output
-
-   with xr.open_dataset("old-polar.nc") as source:
-       migrated = finalize_polar_output(source.load())
-   migrated.to_netcdf("endpoint-exclusive-polar.nc")
-
-This removes a last column only when its angular separation is exactly one cycle
-within coordinate precision and all angular fields and auxiliary coordinates
-duplicate the first slice (including matching missing values). Already-open
-files retain every column; inconsistent closed files fail. Irregular old grids
-remain labelled directional samples and are rejected by full-ring FFT/mean
-helpers. This topology migration does not recompute old winds or interpolation;
-regenerate those products from native model inputs when numerical equivalence
-with corrected sampling is required.
 
 Compare files only after examining centres, Earth model, requested/effective
 angles, masks, collocation and wind reference frames. Different choices describe

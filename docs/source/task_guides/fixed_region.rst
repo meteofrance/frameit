@@ -12,7 +12,7 @@ Prerequisites and starter
 Use the :doc:`reference environment <../getting_started/installation>` and an
 inspected input stream with known fields, coordinate units and valid times.
 The executable pilot below reuses the :doc:`instructional scalar
-<../getting_started/quick_start>`; it does not qualify a real AROME producer.
+<../getting_started/first_run>`; it does not qualify a real AROME producer.
 Start in a new directory:
 
 .. code-block:: bash
@@ -32,6 +32,7 @@ the resource comments. Its geographical choices are:
 
 .. figure:: ../_static/figures/fixed-moving-regions.svg
    :width: 480px
+   :target: ../_static/figures/fixed-moving-regions.svg
    :alt: Schematic of a fixed centre at both times and a moving centre with two separately located boxes. Labels distinguish times and full widths in kilometres; boxes do not imply vector rotation or motion subtraction.
 
    Schematic, not to scale. The centre defines the requested location; the native

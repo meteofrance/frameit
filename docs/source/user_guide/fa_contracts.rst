@@ -127,7 +127,7 @@ these factors are present. The published CNRM implementation emits it for an
 unknown parameter number (255), separately from reading the factors. Encoded
 observations therefore take precedence over this warning, which remains logged.
 If factors cannot be observed, the warning still fails execution by default.
-An explicitly justified ``allow_unscaled: true`` retains the legacy unverified
+An explicitly justified ``allow_unscaled: true`` permits an unverified
 ``identity_explicit_opt_in`` fallback; it does not establish physical scaling.
 Other encodings retain ``not_exposed`` when no warning is emitted: absence of a
 warning is not proof of identity scaling. No installed definitions are patched.
@@ -180,8 +180,7 @@ JSON signature, not a vertical, quantity or content-checksum contract.
 
 ``backend`` and ``backend_versions.FA_backend`` identify effective ``epygram``;
 ``requested_backend`` / ``FA_backend_requested`` retain the request.
-``FA_backend_migration`` remains an independent protocol/provenance field for
-historical records; current public configurations admit only ``epygram``.
+The reader is ``epygram``.
 Scientific/source/resource checks still apply. Parent GRIB versions
 and worker-native versions are separate observations.
 

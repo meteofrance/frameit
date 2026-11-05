@@ -81,8 +81,7 @@ fail after the library call. This is execution evidence, not producer-scaling pr
 
 Per-input ``backend`` and ``backend_versions.FA_backend`` record
 the effective ``epygram`` reader; ``requested_backend`` / ``FA_backend_requested``
-retain the request. Current public configurations admit only ``epygram``;
-``FA_backend_migration`` remains a historical protocol/provenance field.
+retain the request. The reader is ``epygram``.
 The reader records library geometry/CRS/zone origins and returned-mask provenance.
 No backend label supplies field/scaling validation.
 Malformed or over-budget helper transfers fail before array materialization;
@@ -110,12 +109,6 @@ Completion, provenance and ordinary readers
 GRIB indexes are stored in ``cache/``, never beside the input files. Cache
 filenames distinguish input paths and cfgrib indexing keys. Meso-NH NetCDF
 loading does not create disk indexes; its processing caches remain in memory.
-Migration removes the ineffective legacy ``grib_index_dir`` YAML field;
-indexes always use the run's ``cache/`` directory.
-
-Legacy products/logs already in a run root are not moved automatically; current
-runs use the layout above.
-
 Normal execution atomically publishes each complete NetCDF/YAML file through a
 same-directory temporary file. Interrupted attempts can retain complete earlier
 products or hidden ``*.partial`` files. The authoritative completion record is
@@ -330,6 +323,7 @@ Collocation changes sampling locations; rotation changes the vector basis.
 Neither operation subtracts storm motion.
 
 .. figure:: ../_static/wind_horizontal_c_grid.svg
+   :target: ../_static/wind_horizontal_c_grid.svg
    :alt: Horizontal C-grid cell: U at left and right faces, V at bottom and top faces, and a mass point at the centre. U values 10 and 20 give 15 at the midpoint.
    :width: 100%
 
@@ -342,6 +336,7 @@ Choose Cartesian horizontal representation independently of vertical W:
 .. list-table:: Native versus mass-point products
    :header-rows: 1
    :widths: 22 39 39
+   :class: config-table
 
    * - Choice
      - Benefit
@@ -389,6 +384,7 @@ Vertical W and level selection
 ''''''''''''''''''''''''''''''
 
 .. figure:: ../_static/wind_vertical_w.svg
+   :target: ../_static/wind_vertical_w.svg
    :alt: Vertical column with W equal to 0 metres per second at the lower interface coordinate 0 metres and 2 at the upper interface coordinate 10 metres. Linear interpolation gives W equal to 1 at mass coordinate 5 metres.
    :width: 100%
 
@@ -417,7 +413,7 @@ Level selection follows these rules:
   the native coordinate and its units.
 * If mass-level fields are explicitly selected, their selected mass levels set
   the W-to-mass targets. Otherwise, physical W selection targets the validated
-  physical mass levels, not the physical interface range. For legacy sparse
+  physical mass levels, not the physical interface range. For explicit sparse
   interface-index requests, interface index ``k`` maps to the same native mass
   index ``k``; the source-interface/target-mass mapping is reported.
   This compatibility map is not an assertion that their coordinates coincide.
