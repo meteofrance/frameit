@@ -194,6 +194,19 @@ Keep interfaces small, dependencies justified, and errors actionable. Follow exi
 
 Documentation MUST distinguish implemented capabilities, planned work, experimental features, and unresolved validation. Update configuration examples, scientific method notes, output descriptions, and migration guidance when the change affects them. Preserve attribution and license requirements for reused methods and code.
 
+### Per-commit documentation obligation
+
+Before every commit, agents MUST assess the effect on user commands,
+configuration/defaults, processing, outputs, installation and limitations. Update
+the affected canonical pages, examples, template comments and figures, or record
+`Docs: no user-facing impact because ...` in the commit or handover. For
+documentation-impacting changes, MUST run a strict Sphinx build and publication
+check in `frameit_env` and inspect the affected rendered pages. Visual changes
+MUST be shown in the live OpenCode GUI preview and kept available for feedback.
+Follow the [documentation contribution guide](docs/source/contributing/documentation.rst)
+for writing, scientific safeguards, figures and the local preview workflow. Do
+not add a local Git hook for this obligation.
+
 ## 11. Completion and handover
 
 Completed, verified changes MUST be committed locally in focused commits before

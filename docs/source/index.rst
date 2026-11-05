@@ -72,4 +72,10 @@ FrameIt |release| documentation
 
    developper/how_to_add_my_tracker
 
+.. toctree::
+   :maxdepth: 1
+   :caption: Contributing
+
+   contributing/documentation
+
  

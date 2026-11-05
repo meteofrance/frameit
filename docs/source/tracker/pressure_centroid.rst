@@ -9,7 +9,7 @@ is an independent implementation, not a bitwise reproduction of the authors'
 analysis code.
 
 Troubleshooting reference-ring coverage
---------------------------------------
+---------------------------------------
 
 The full 500-km reference ring must have finite pressure interpolated to
 2,000 m ASL, including the horizontal interpolation stencil. An invalid sample

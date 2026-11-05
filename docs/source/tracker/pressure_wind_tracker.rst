@@ -139,6 +139,7 @@ The red line shows the extracted box.
    :align: center
 
    Example of tracking and extraction using the wind_pressure tracking method.
+
 Optional initial position
 -------------------------
 
