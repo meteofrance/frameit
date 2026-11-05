@@ -1,119 +1,80 @@
 Installation of FrameIt
-=======================
+========================
 
-The reference ``environment.yaml`` installs **FrameIt and its FA/GRIB/NetCDF/Zarr/polar
-stack in one Python-3.13 Conda environment**. Use this path when you need the
-complete native stack. You need Git and a working Conda/mamba installation.
+Use **Python 3.13**. The reference workflow targets Linux; these checks do not
+certify every distribution, filesystem or cluster, and do not qualify macOS or
+Windows. Apply these instructions to the source revision containing this guide,
+not an older installed release.
 
 Create the reference environment
---------------------------------
+---------------------------------
+
+You need a working Conda/mamba installation and a checkout from the
+`FrameIt repository <https://github.com/meteofrance/frameit>`_. Run these commands
+in the checkout's root, beside ``environment.yaml`` and ``pyproject.toml``:
 
 .. code-block:: bash
 
-   git clone https://github.com/meteofrance/frameit
-   cd frameit
    conda env create -f environment.yaml --solver libmamba
    conda activate frameit_env
    python -m pip check
    frameit --help
 
-Run environment creation from the checkout containing ``environment.yaml``. Its
-pip section installs ``-e .[test,grib,polar,fa,zarr]`` plus development/documentation
-tools. FrameIt is already installed when the command completes; a second
-environment or a subsequent pip installation is not required.
+The YAML installs **FrameIt and the FA/GRIB/NetCDF/Zarr/polar stack in one
+Python-3.13 environment**, including test/documentation tools. FrameIt is already
+installed when creation finishes; do not add a second environment or repeat the
+FrameIt installation afterward.
 
-Conda supplies the shared NetCDF/HDF5/ecCodes/ESMF stack. The declared Python
-netCDF4 1.7.2 and python-eccodes 2.44.0 packages match EPyGrAM 2.1.0's requirements;
-pip supplies the unmodified FA bindings with ctypesForFortran 1.3.0. Native and
-Python-binding version numbers are distinct. Keep a coherent library stack rather
-than replacing individual packages to suppress a dependency error.
+This is an **editable installation**: it imports code from the checkout. Keep the
+checkout accessible; switching or editing its revision changes the code used by
+that environment. A separately installed wheel does not depend on this source path.
 
-This is an **editable installation**: the environment imports code from this
-checkout. Keep it accessible, and remember that editing or switching its revision
-affects every environment using it. A separately deployed wheel does not rely on
-that editable source location.
+Conda supplies the shared native libraries; the maintained FA bindings use their
+unmodified upstream dependencies. Do not replace individual native packages merely
+to suppress a dependency error. FA workers use the active interpreter in isolated
+processes: omit ``input.fa.python_executable`` unless deliberately choosing another
+coherent runtime. Stack details and failure diagnosis belong in
+:doc:`../user_guide/fa_environment`.
 
-FA metadata and decoding run in fresh isolated worker processes using the active
-Python. Omit ``input.fa.python_executable`` or leave it null in the reference
-setup. That optional key selects a deliberately separate runtime when needed;
-see :doc:`FA environment and troubleshooting <../user_guide/fa_environment>`.
-
-``pip check`` checks installed dependency metadata, and ``--help`` checks the CLI.
-Neither verifies native data decoding or scientific suitability. Continue with
-:doc:`quick_start` and inspect your own inputs before selecting fields/methods.
+``pip check`` verifies dependency metadata; ``--help`` checks the command entry
+point. Neither verifies scientific values or native data decoding. Continue with
+the :doc:`self-contained first run <quick_start>` for a small executable check.
 
 Core and optional installations
--------------------------------
+--------------------------------
 
-The package supports **Python 3.13 only**. If you manage a scientific Python
-environment yourself and only need core NetCDF processing, install from the
-checkout without native extras:
+If you maintain a coherent Python-3.13 environment yourself, core NetCDF extraction
+does not require FA, GRIB or polar dependencies. Install from the selected checkout:
 
 .. code-block:: bash
 
    python -m pip install .
 
-Core dependencies include NumPy, SciPy, xarray/Dask, PyYAML, pyproj and NetCDF/HDF5
-readers. Optional extras are selected only for the paths you need:
+Core includes NumPy, SciPy, xarray/Dask, PyYAML, pyproj and NetCDF/HDF5 readers.
+Select extras only for the path you need:
 
-.. list-table:: Optional package extras
-   :header-rows: 1
+* ``grib``: cfgrib/ecCodes input, for example ``python -m pip install '.[grib]'``.
+* ``fa``: maintained EPyGrAM 2.1.0 and ctypesForFortran 1.3.0 stack.
+  ``fa-epygram`` is an identical installation alias, not another reader.
+* ``polar``: xESMF/Shapely; a compatible native ESMF/ESMPy installation is also
+  required. The pip extra alone does not provision it.
+* ``zarr``: optional sharded Zarr v3 output (xarray ≥ 2026.9.0 and
+  Zarr-Python ≥ 3.4.2, < 4). Select ``output.backend: zarr`` explicitly.
+* ``test``: pytest for regression workflows.
 
-   * - Extra
-     - Purpose and requirements
-   * - ``grib``
-     - cfgrib/ecCodes for GRIB input.
-   * - ``polar``
-     - xESMF and Shapely for polar processing; a compatible native ESMF/ESMPy
-       installation is also required. The pip extra alone does not provision it.
-   * - ``fa``
-     - EPyGrAM 2.1.0 and ctypesForFortran 1.3.0 with unmodified upstream
-       dependencies. The reference FA stack uses Python 3.13.
-   * - ``fa-epygram``
-     - Compatibility installation alias with exactly the same requirements as ``fa``.
-   * - ``test``
-     - pytest for the optional regression workflows.
-   * - ``zarr``
-     - Sharded Zarr v3 output: Python 3.13, xarray >= 2026.9.0 and
-       Zarr-Python >= 3.4.2, < 4. Not needed for NetCDF output.
-
-For example, ``python -m pip install '.[grib]'`` selects core plus GRIB from the
-checkout. The full reference YAML already installs its listed extras. Installed
-extras do not enable diagnostics or scientific transformations by themselves;
-those follow the selected configuration. Model weights are not supplied by this
-environment. See :doc:`../user_guide/fa_inputs` for FA producer/layout limits.
-
-Both environment YAMLs include the required Zarr and xarray versions. For a
-core-only pip installation, add ``python -m pip install '.[zarr]'`` from the
-checkout (or ``'frameit[zarr]'`` for a published version containing this feature).
-Select ``output.backend: zarr`` in the processing YAML to use it; NetCDF remains
-the default. Dependency availability is checked before
-processing when Zarr export is enabled; schema-only validation and metadata
-planning do not certify writer availability. The supported dependency floors
-are deliberately conservative; older library combinations are not qualified.
-See :ref:`sharded-zarr-output` for ordinary-reader examples and storage settings.
+The reference YAML already installs these extras. Installing dependencies does
+not enable diagnostics or sampling, establish a wind basis, or supply UTrack
+weights. Output storage details are in :ref:`sharded-zarr-output`.
 
 Migrate an existing environment
--------------------------------
+--------------------------------
 
-For an older mixed Conda/pip installation, preserve it and create a fresh named
-environment from the current YAML:
+Preserve an old mixed Conda/pip prefix and create a fresh named prefix using the
+procedure in :doc:`../user_guide/fa_environment`. Review any explicit FA interpreter
+path: activating another environment does not override that declaration.
+Retired YAML needs the separate :doc:`manual upgrade <upgrading_to_v2>`; it is not
+made current by changing environments or only changing the version header.
 
-.. code-block:: bash
-
-   conda env create -f environment.yaml --solver libmamba -n frameit_unified
-   conda activate frameit_unified
-   python -m pip check
-   frameit --help
-
-Review an existing explicit ``input.fa.python_executable``: it continues to select
-that runtime even after activating the new environment. Omit it or set it to null
-to use the new active Python. Retired ``input.fa.backend: native`` is rejected;
-replace it with ``epygram`` or omit it. Scientific
-declarations and budgets still apply. See :doc:`FA environment and troubleshooting
-<../user_guide/fa_environment>` for failure diagnosis and
-:doc:`../user_guide/configuration_file` for YAML migration.
-
-HPC execution is optional. ``environment-hpc.yaml`` is a minimal NetCDF/Zarr/test
-environment, not an additional prerequisite for this reference installation.
-Use :doc:`hpc` for its setup and site-specific Slurm/resource guidance.
+HPC execution is optional. ``environment-hpc.yaml`` describes a smaller NetCDF/Zarr
+batch environment, not an additional prerequisite for the reference installation.
+Use :doc:`hpc` for site-specific resource and Slurm requirements.

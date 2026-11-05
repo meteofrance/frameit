@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import ast
+import math
 import re
 import sys
+import xml.etree.ElementTree as ET
 import zlib
 from pathlib import Path
 
@@ -16,6 +19,50 @@ FORBIDDEN = re.compile(
     re.IGNORECASE,
 )
 TEXT_SUFFIXES = {".html", ".js", ".txt", ".rst", ".yaml", ".yml", ".json"}
+
+
+def check_brand_assets(source: Path, artifact: Path | None = None) -> list[str]:
+    """Check the configured marks, not the intentionally text-bearing master SVG."""
+    settings = {
+        node.targets[0].id: node.value.value
+        for node in ast.parse((source / 'conf.py').read_text()).body
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+        and isinstance(node.value, ast.Constant)
+    }
+    errors = []
+    for name in ('html_logo', 'html_favicon'):
+        value = settings.get(name)
+        if (not isinstance(value, str) or not value or Path(value).is_absolute()
+                or '..' in Path(value).parts or Path(value).suffix != '.svg'):
+            errors.append(f'{name}: select a local relative SVG path')
+            continue
+        paths = [source / value]
+        if artifact is not None:
+            paths.append(artifact / '_static' / Path(value).name)
+        for path in paths:
+            try:
+                root = ET.parse(path).getroot()
+                box = [float(v) for v in root.get('viewBox', '').split()]
+                if (root.tag != '{http://www.w3.org/2000/svg}svg' or len(box) != 4
+                        or not all(math.isfinite(v) for v in box) or min(box[2:]) <= 0):
+                    raise ValueError('expected SVG with a finite positive viewBox')
+            except (OSError, ET.ParseError, ValueError) as exc:
+                errors.append(f'{path}: invalid or missing SVG: {exc}')
+                continue
+            for node in root.iter():
+                tag = node.tag.rsplit('}', 1)[-1]
+                if tag in {'text', 'tspan', 'script', 'foreignObject', 'image'}:
+                    errors.append(f'{path}: published mark contains live text/script/image: {tag}')
+                if any(k.rsplit('}', 1)[-1].lower().startswith('on') for k in node.attrib):
+                    errors.append(f'{path}: published mark contains a script event handler')
+                if any(k.rsplit('}', 1)[-1] in {'href', 'src'} and not v.startswith('#')
+                       for k, v in node.attrib.items()):
+                    errors.append(f'{path}: published mark references an external resource')
+                styles = node.get('style', '') + (node.text or '' if tag == 'style' else '')
+                if ('font' in styles.lower() or 'url(' in styles.lower() or '@import' in styles.lower()
+                        or any(k.startswith('font') for k in node.attrib)):
+                    errors.append(f'{path}: published mark requires a font or CSS resource')
+    return errors
 
 
 def check_text(path: Path, text: str) -> list[str]:
@@ -58,7 +105,7 @@ def main() -> int:
     if not artifact.is_dir():
         print(f"Not a documentation artifact directory: {artifact}")
         return 2
-    errors = []
+    errors = check_brand_assets(ROOT / 'docs/source', artifact)
     for source in sorted((ROOT / "docs/source").rglob("*.rst")):
         errors.extend(check_text(source, source.read_text(encoding="utf-8")))
     errors.extend(check_artifact(artifact))

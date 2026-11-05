@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="750" viewBox="0 0 480 750" role="img" aria-labelledby="title desc">
+  <title id="title">Fixed and moving geographical centres</title>
+  <desc id="desc">Schematic, not to scale. A fixed window uses the same geographical centre at both times. Moving windows follow a continuous centre and select native grid samples at each time. Widths are full widths in kilometres; this does not change the vector basis or reference-frame motion.</desc>
+  <defs>
+    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse"><path d="M30 0H0V30" fill="none" stroke="#788997" stroke-width="1"/></pattern>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto-start-reverse"><path d="M0 0L8 4L0 8" fill="none" stroke="#021633" stroke-width="1.5"/></marker>
+  </defs>
+  <g font-family="sans-serif" fill="#021633">
+    <text x="25" y="35" font-size="26" font-weight="bold">Fixed centre</text>
+    <text x="25" y="66" font-size="21">One geographical point at every time</text>
+    <rect x="25" y="90" width="430" height="210" fill="url(#grid)" stroke="#788997" stroke-width="2"/>
+    <rect x="180" y="140" width="120" height="100" fill="#fff" fill-opacity=".7" stroke="#00978f" stroke-width="4"/>
+    <circle cx="240" cy="190" r="7" fill="#021633"/>
+    <text x="257" y="181" font-size="22">t₀, t₁</text>
+    <path d="M180 264H300" fill="none" stroke="#021633" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <text x="240" y="292" font-size="19" text-anchor="middle">full width (km)</text>
+    <text x="25" y="330" font-size="19">Grid lines represent native sampling locations.</text>
+    <text x="25" y="400" font-size="26" font-weight="bold">Moving centre</text>
+    <text x="25" y="431" font-size="21">Map each continuous centre to the grid</text>
+    <rect x="25" y="455" width="430" height="210" fill="url(#grid)" stroke="#788997" stroke-width="2"/>
+    <rect x="75" y="495" width="120" height="100" fill="#fff" fill-opacity=".7" stroke="#00978f" stroke-width="4" stroke-dasharray="10 5"/>
+    <rect x="280" y="520" width="120" height="100" fill="#fff" fill-opacity=".7" stroke="#00978f" stroke-width="4"/>
+    <path d="M135 545C200 490 260 590 340 570" fill="none" stroke="#9a4400" stroke-width="4"/>
+    <circle cx="135" cy="545" r="7" fill="#021633"/>
+    <circle cx="340" cy="570" r="7" fill="#ec7600" stroke="#021633" stroke-width="2"/>
+    <text x="147" y="535" font-size="22">t₀</text>
+    <text x="353" y="558" font-size="22">t₁</text>
+    <text x="25" y="700" font-size="20">Boxes describe locations, not a vector rotation.</text>
+    <text x="25" y="730" font-size="18">Schematic · not to scale · no motion subtraction</text>
+  </g>
+</svg>

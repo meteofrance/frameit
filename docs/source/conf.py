@@ -44,6 +44,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "sphinx_rtd_theme"  # or "furo" or "alabaster" sphinx_rtd_theme sphinx_book_theme to install
 html_static_path = ["_static"]
-html_logo = None
+html_logo = "_static/logo/frameit_logo.svg"
+html_favicon = "_static/logo/frameit_logo_symbol_vector.svg"
 html_css_files = ["custom.css"]
 html_title=f"FrameIt {release} documentation"

@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:ns1="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:ns2="http://www.inkscape.org/namespaces/inkscape" width="2172" height="724" viewBox="0 0 2172 724" role="img" aria-labelledby="title description" version="1.1" id="svg1" ns1:docname="frameit_logo_vector.svg" ns2:version="1.4.4 (dcaf3e7d9e, 2026-05-05)" ns2:export-filename="frameit_logo_vector.png" ns2:export-xdpi="96" ns2:export-ydpi="96">
+  <defs id="defs1" />
+  <ns1:namedview id="namedview1" pagecolor="#ffffff" bordercolor="#000000" borderopacity="0.25" ns2:showpageshadow="2" ns2:pageopacity="0.0" ns2:pagecheckerboard="0" ns2:deskcolor="#d1d1d1" ns2:zoom="0.55478821" ns2:cx="1086.9013" ns2:cy="493.88216" ns2:window-width="1707" ns2:window-height="989" ns2:window-x="0" ns2:window-y="0" ns2:window-maximized="1" ns2:current-layer="svg1" ns2:export-bgcolor="#ffffff00" />
+  <title id="title">FrameIt logo</title>
+  <desc id="description">A teal F nested in four framing corners, an orange curved scientific trajectory, and the word FrameIt in navy and orange.</desc>
+  <g id="symbol" aria-label="FrameIt symbol">
+    <g id="letter-f" fill="#00978F">
+      <path id="f-shape" d="M142 142 H386 Q399 142 399 155 V197 Q399 210 386 210 H184 V266 H331 Q344 266 344 279 V321 Q344 334 331 334 H184 V421 Q184 434 171 434 H128 Q115 434 115 421 V169 Q115 142 142 142 Z" />
+    </g>
+    <g id="viewfinder" fill="#00978F" aria-label="Framing corners">
+      <path id="upper-right-corner" d="M444 142 H535 Q570 142 570 178 V263 Q570 280 553 280 H540 Q526 280 526 265 V193 Q526 184 517 184 H445 Q431 184 431 170 V155 Q431 142 444 142 Z" />
+      <path id="lower-left-corner" d="M128 462 H146 Q159 462 159 476 V520 Q159 525 164 525 H252 Q265 525 265 538 V555 Q265 568 252 568 H143 Q115 568 115 540 V476 Q115 462 128 462 Z" />
+      <path id="lower-right-corner" d="M542 435 H555 Q569 435 569 449 V540 Q569 568 543 568 H434 Q421 568 421 555 V539 Q421 526 434 526 H522 Q526 526 526 521 V449 Q526 435 542 435 Z" />
+    </g>
+    <g id="trajectory" fill="none" stroke="#F79335" stroke-width="26" stroke-linecap="round" aria-label="Curved track">
+      <path id="trajectory-before-point" d="m 199,479 c 33,-35 59,-67 96,-58 19,4 34,11 48,5 m -162.75154,33.43033 35.25937,38.32849" ns1:nodetypes="ccccc" />
+      <path id="trajectory-after-point" d="m 435.36122,381.69698 c 41.36849,-12.64241 35.31757,1.39396 63.00364,1.04365 24.32484,-2.35395 40.63878,-7.07275 53.95999,-27.12368 m -9.64606,-22.31393 30.58422,30.98181" ns1:nodetypes="ccccc" />
+    </g>
+    <circle id="trajectory-point" cx="387" cy="403" r="33" fill="#EC7600" />
+  </g>
+  <g id="outlined-wordmark" aria-label="FrameIt">
+    <path d="M462 1121V737H1083V509H462V0H167V1349H1106V1121Z" fill="#00978F" transform="translate(600.71523345 488.11777) rotate(0) scale(0.1666665039 -0.1666665039)" />
+    <path d="M1081 848Q969 867 869 867Q713 867 621.5 749.0Q530 631 530 438V0H250V701Q250 777 236.5 880.0Q223 983 198 1082H469Q505 952 515 854H519Q569 990 654.0 1046.0Q739 1102 875 1102Q979 1102 1081 1085Z" fill="#021633" transform="translate(805.54836675 488.11777) rotate(0) scale(0.1666665039 -0.1666665039)" />
+    <path d="M439 -20Q282 -20 194.0 65.5Q106 151 106 306Q106 474 210.5 561.5Q315 649 523 652L746 656V711Q746 814 711.0 867.0Q676 920 598 920Q525 920 490.5 883.5Q456 847 448 767L155 781Q209 1102 610 1102Q812 1102 919.5 1003.0Q1027 904 1027 712V320Q1027 229 1047.5 194.5Q1068 160 1116 160Q1148 160 1178 166V14Q1153 8 1133.0 3.0Q1113 -2 1093.0 -5.0Q1073 -8 1050.5 -10.0Q1028 -12 998 -12Q892 -12 841.5 40.0Q791 92 781 193H775Q712 80 631.5 30.0Q551 -20 439 -20ZM746 501 612 499Q522 497 481.5 480.5Q441 464 420.0 427.5Q399 391 399 328Q399 176 519 176Q616 176 681.0 252.5Q746 329 746 446Z" fill="#021633" transform="translate(1010.38150005 488.11777) rotate(0) scale(0.1666665039 -0.1666665039)" />
+    <path d="M501 0V658Q501 807 482.5 865.0Q464 923 414 923Q363 923 333.5 829.0Q304 735 304 582V0H75V851Q75 1040 69 1082H278L284 955V907H286Q320 1009 372.0 1055.5Q424 1102 502 1102Q590 1102 633.5 1054.0Q677 1006 696 906H698Q738 1012 793.5 1057.0Q849 1102 934 1102Q1052 1102 1103.0 1016.0Q1154 930 1154 721V0H926V658Q926 807 907.5 865.0Q889 923 839 923Q788 923 758.5 842.5Q729 762 729 601V0Z" fill="#021633" transform="translate(1215.21463335 488.11777) rotate(0) scale(0.1666665039 -0.1666665039)" />
+    <path d="M626 -20Q374 -20 237.0 128.5Q100 277 100 546Q100 726 164.5 850.0Q229 974 348.0 1038.0Q467 1102 630 1102Q867 1102 998.0 944.0Q1129 786 1129 495V487H395Q395 340 460.5 254.0Q526 168 640 168Q714 168 771.0 199.5Q828 231 848 297L1113 274Q1058 133 930.0 56.5Q802 -20 626 -20ZM626 925Q523 925 462.0 855.5Q401 786 397 663H857Q850 783 788.5 854.0Q727 925 626 925Z" fill="#021633" transform="translate(1420.04776665 488.11777) rotate(0) scale(0.1666665039 -0.1666665039)" />
+    <path d="M157 1349H1073V1121H762V228H1073V0H157V228H468V1121H157Z" fill="#EC7600" transform="translate(1624.88089995 488.11777) rotate(355) scale(0.1666665039 -0.1666665039)" />
+    <path d="M328 892H161V1082H342L430 1364H606V1082H991V892H606V362Q606 274 622.5 243.5Q639 213 676.0 195.5Q713 178 780 178Q904 178 1035 205V19Q893 -4 834.0 -8.5Q775 -13 711 -13Q584 -13 498.5 21.5Q413 56 369.5 129.5Q326 203 326 336Z" fill="#EC7600" transform="translate(1829.71403325 488.11777) rotate(355) scale(0.1666665039 -0.1666665039)" />
+  </g>
+</svg>

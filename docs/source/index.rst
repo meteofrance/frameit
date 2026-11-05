@@ -23,6 +23,12 @@ FrameIt |release| documentation
    getting_started/hpc
 
 .. toctree::
+   :maxdepth: 1
+   :caption: Task guides
+
+   task_guides/fixed_region
+
+.. toctree::
    :maxdepth: 2
    :caption: User guide
 

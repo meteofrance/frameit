@@ -68,9 +68,60 @@ evidence accurately. Keep the editable SVG or a reproducible generation recipe
 with the figure. Avoid decorative illustrations and do not change scientific
 data colormaps to match documentation branding.
 
-The supplied FrameIt artwork and the planned shared accessible styling will be
-reviewed with the editorial pilots. Preserve that artwork and existing scientific
+The supplied FrameIt artwork and shared accessible styling are being reviewed
+with the editorial pilots at G2. Preserve that artwork and existing scientific
 distinctions; do not introduce another logo or theme during an unrelated edit.
+
+Brand assets and restrained styling
+------------------------------------
+
+The unchanged masters are ``_static/logo/frameit_logo_vector.svg`` and
+``frameit_logo_symbol_vector.svg``. The **full wordmark** identifies the site on a
+light background; the **symbol** is the favicon/compact mark. Keep the original
+colors, aspect ratio and clear space. Do not crop, stretch, invert or recolor them.
+
+``html_logo`` uses the outlined ``_static/logo/frameit_logo.svg``, not the
+text-bearing master. The source uses **Liberation Mono Bold**; the verified export
+used version 2.1.5. Its 2172×724 composition, centred baseline and 355° I/t rotations
+are preserved by ``docs/outline_logo.py``. This is a recipe for this artwork, not a
+general SVG text engine. Regeneration needs FontTools and that exact font face;
+building/reading the committed documentation does not. From the repository root:
+
+.. code-block:: bash
+
+   fc-match -f '%{family} %{style}\n%{file}\n' 'Liberation Mono:style=Bold'
+   FONT=$(fc-match -f '%{file}' 'Liberation Mono:style=Bold')
+   conda run --no-capture-output -n frameit_env python docs/outline_logo.py --font "$FONT" --output docs/source/_static/logo/frameit_logo.svg
+
+Verify the font identity, compare the outlined result to the supplied artwork,
+and run the asset checks. If the exact face cannot be verified, request an
+outlined master; never accept font substitution. The published wordmark must
+contain no live text, script, bitmap or external font/resource dependency. Keep
+the unchanged source masters separate from the served derivative.
+
+Shared tokens live in ``_static/custom.css``:
+
+* Navy ``#021633``: text, headings and structure.
+* Teal ``#00978F``: artwork/diagram accent; darker ``#006B65`` for text links.
+* Orange ``#EC7600``: sparse artwork emphasis; ``#9A4400`` for text/focus on light surfaces.
+* Light orange ``#F79335``: trajectory details and focus on dark navigation.
+
+Keep normal text/link contrast at least 4.5:1 and large text/relevant control
+boundaries at least 3:1. Retain underlined links and visible keyboard focus.
+The small ``_templates/layout.html`` override keeps the existing theme's menu
+behavior while supplying heading levels and a native keyboard-operable mobile
+button. Keep that control labelled and check menu targets at narrow widths.
+Notes, warnings and errors keep distinct labels and contrast-tested headings;
+color alone must not carry status. Body text remains a reading face, not the
+wordmark's monospace typeface. Do not add hosted fonts or change the Sphinx theme.
+Explanatory SVGs share these tokens and readable labels, but **scientific data
+colormaps retain their scientific meaning** rather than adopting a brand palette.
+
+``python docs/check_publication.py <artifact>`` checks configured source/build
+marks as well as the publication boundary. Its standard-library tests exercise
+missing/invalid SVG, live font text, scripts and external resources. Logo export
+tests use optional regeneration tooling when present; the committed asset checks
+do not depend on a locally installed typeface.
 
 Local HTML preview
 ------------------

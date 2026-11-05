@@ -1,0 +1,13 @@
+{% extends "!layout.html" %}
+
+{% block menu %}
+  {# Keep RTD navigation while supplying its omitted caption heading levels. #}
+  {{ super() | replace('role="heading"', 'role="heading" aria-level="2"') }}
+{% endblock %}
+
+{% block mobile_nav %}
+  <button type="button" data-toggle="wy-nav-top" aria-label="{{ _('Toggle navigation') }}">
+    <span class="fa fa-bars" aria-hidden="true"></span>
+  </button>
+  <a href="{{ pathto(root_doc) }}">{{ project }}</a>
+{% endblock %}

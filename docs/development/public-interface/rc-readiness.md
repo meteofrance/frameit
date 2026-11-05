@@ -108,7 +108,7 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
 - **G1 approved on 2026-11-05:** the maintainer replied **"Approved"** to the
   complete [v2_1-design.md](v2_1-design.md) proposal at `ab0be01`. The strict loader
   and starter catalogue and source-checkout first run are verified below;
-  editorial pilots remain outstanding. G1 is not scientific
+   editorial pilots are drafted for G2 review below. G1 is not scientific
   sign-off, G2 or publication/deployment authorization.
 - **G2 pending:** first-run/deeper-guide pilots and supplied artwork/art direction
   need actual live-preview editorial approval before the wider rewrite.
@@ -191,7 +191,8 @@ input-data target when force replaces the selected configuration path.
 No runtime dependency or numerical method changed. Package-data already includes
 every `templates/*.yaml` resource; executing the same catalogue from installed
 wheel/sdist artifacts remains a Task 12 obligation, not a result claimed here.
-The self-contained instructional input and G2 editorial approval are still pending.
+At the Task 5 receipt, the instructional input and G2 editorial approval were still
+pending; see the later receipts below for their current status.
 
 ## Task 6 instructional example verification
 
@@ -230,6 +231,74 @@ loading those optional readers. The new test now selects `engine="netcdf4"`, as
 the guide/fixture writer already do, and also checks a fresh-process read/import
 and normal exit. Final combined focused run passed 71 with normal shutdown.
 This is not an upstream native-stack repair or an environment/backend substitution.
+
+## Task 7 draft pilots — G2 review pending
+
+The installation, first-run and fixed-region pilots are implemented as a **draft**,
+not approved editorial guidance for the remaining site rewrite. Both supplied SVG
+masters were copied byte-identically; their 2172×724 wordmark and 1024×1024 symbol
+compositions/colors are unchanged. The served wordmark was outlined with the
+verified Liberation Mono Bold 2.1.5 face using existing FontTools. The export
+recipe, logo roles, contrast tokens and scientific-colormap exception are in the
+contribution guide. Documentation builds/readers do not require that font or tool.
+Browser-rasterized outlines were compared to the supplied PNG artwork; this is
+not human approval of branding or page appearance.
+
+Two editable, captioned/alt-labelled schematics explain the chosen processing
+products and fixed/moving sampling locations. No scientific data colormap was
+restyled. A small existing-theme template override supplies navigation heading
+levels and a native labelled mobile button, without another theme, script or
+dependency. The wider documentation rewrite has not begun.
+
+Verification in `frameit_env` (Python 3.13.18):
+
+- `python -m unittest discover -s docs -p test_check_publication.py` → **4 passed,
+  no skips**. Asset/export tests were observed RED then GREEN. They check missing
+  or malformed configured source/build SVGs, live font text/CSS, scripts including
+  event handlers, external resources, and the outline's geometry/color/glyphs.
+- `python -m pytest -q src/frameit/testing/numerical/test_documentation_example.py
+  src/frameit/testing/numerical/test_templates.py` → **71 passed**, normal exit,
+  3 known native-ABI/NumPy deprecation warnings. The full numerical suite was not
+  repeated for this documentation/tooling-only task; Task 6's result is above.
+- Both console pilot routes were replayed in fresh owned directories, including
+  input creation, inspection where shown, the exact `init`, schema/preflight,
+  dry-run, execution, status and ordinary xarray/netCDF4 reader commands. Both
+  completed with only track/scalar products, the expected 2×5×5 values, units 1,
+  valid zero versus NaN and no FrameIt import in the reader. `pip check`, help and
+  info also completed. Environment creation/installation commands were not rerun;
+  fresh-prefix/installed-artifact qualification remains Task 12.
+- Strict `sphinx-build -q -W --keep-going -b html docs/source
+  build/docs-preview/pilots-05`, `python docs/check_publication.py
+  build/docs-preview/pilots-05`, targeted Ruff F and staged diff checks passed.
+  The staged check caught whitespace retained by the SVG serializer; a regression
+  test observed RED, standard-library XML indentation fixed it, and all 4 docs
+  tests passed again. Regenerated geometry, colors and labels are identical to
+  the reviewed preview; only XML whitespace changed.
+- Rendered DOM checks on installation, quick start, fixed region and contribution
+  pages passed at desktop/narrow widths without page-wide overflow or broken
+  images. Figures retain aspect ratios, unclipped labels and alt text; wordmark
+  renders at 240×80 with clear space and the symbol favicon loads. Print-rule
+  simulation at A4-like width hides navigation, removes its margin and avoids
+  figure breaks; actual paginated printing was not available.
+- Contrast checks: body **18.02:1**, links **6.38:1**, status headings ≥ **6.38:1**,
+  focus ≥ **5.63:1**, relevant diagram/control boundaries ≥ **3.61:1**. The browser
+  audit caught inherited footer contrast (3.95:1), missing navigation heading
+  levels and small expand controls; browser assertions observed RED then GREEN
+  after the focused fixes. Footer text is now **6.16:1**, expand controls 24×24,
+  mobile control 44×44, and visible focus/menu click-open/close checks passed.
+- Lighthouse on both the fixed-region and first-run pilots: accessibility **100**,
+  best practices **100**, SEO **80** (missing meta description). This is an automated sample,
+  not accessibility certification. No SEO extension was added.
+
+Limitations for G2: the invisible desktop prevented screenshot capture and tool
+key delivery, so real Tab/Enter/Space traversal remains a human check. Native
+button semantics, focus styling and click behavior were checked, not misreported
+as real key events. Actual print pagination and unassisted-reader/editorial
+acceptance remain open. Existing narrow-layout issues on older technical pages
+are retained for the later approved presentation work. No new scientific method,
+default, configuration/output semantics, release qualification, push or deployment
+is implied. Commit the verified draft, then wait for page-specific G2 feedback;
+do not mark Task 7 complete or start Task 8.
 
 ## Task 1 verification receipt
 

@@ -3,12 +3,77 @@
 import tempfile
 import unittest
 import zlib
+import importlib.util
+import shutil
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from check_publication import check_artifact, check_text
 
 
 class PublicationBoundaryTests(unittest.TestCase):
+    def test_brand_assets_require_local_valid_font_independent_svg(self):
+        from check_publication import check_brand_assets
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / 'conf.py').write_text(
+                "html_logo = '_static/logo/wordmark.svg'\n"
+                "html_favicon = '_static/logo/symbol.svg'\n")
+            self.assertEqual(len(check_brand_assets(source)), 2)
+            folder = source / '_static/logo'
+            folder.mkdir(parents=True)
+            good = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 10"><path d="M0 0h10v10z"/></svg>'
+            (folder / 'wordmark.svg').write_text(good)
+            (folder / 'symbol.svg').write_text(good)
+            self.assertEqual(check_brand_assets(source), [])
+            for bad in ('<svg', good.replace('<path', '<text>FrameIt</text><path'),
+                        good.replace('<path', '<script>alert(1)</script><path'),
+                        good.replace('<path', '<path onload="alert(1)"'),
+                        good.replace('<path', '<use href="https://example.org/logo.svg"/><path'),
+                        good.replace('<path', '<style>@font-face {src:url(font.woff)}</style><path'),
+                        good.replace('30 10', '0 10')):
+                with self.subTest(bad=bad):
+                    (folder / 'wordmark.svg').write_text(bad)
+                    self.assertTrue(check_brand_assets(source))
+            (folder / 'wordmark.svg').write_text(good)
+            artifact = source / 'html'
+            self.assertTrue(check_brand_assets(source, artifact))
+            (artifact / '_static').mkdir(parents=True)
+            for name in ('wordmark.svg', 'symbol.svg'):
+                (artifact / '_static' / name).write_text(good)
+            self.assertEqual(check_brand_assets(source, artifact), [])
+
+    @unittest.skipUnless(importlib.util.find_spec('fontTools') and shutil.which('fc-match'),
+                         'Logo regeneration needs optional FontTools and the exact local typeface')
+    def test_outlined_wordmark_preserves_composition_and_source(self):
+        root = Path(__file__).resolve().parent
+        master = root / 'source/_static/logo/frameit_logo_vector.svg'
+        font = subprocess.check_output([
+            'fc-match', '-f', '%{file}', 'Liberation Mono:style=Bold'], text=True).strip()
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / 'outlined.svg'
+            before = master.read_bytes()
+            result = subprocess.run([sys.executable, str(root / 'outline_logo.py'),
+                                     '--font', font, '--output', str(destination)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(master.read_bytes(), before)
+            for line in destination.read_text().splitlines():
+                self.assertEqual(line, line.rstrip())
+            svg = ET.parse(destination).getroot()
+            self.assertEqual(svg.get('viewBox'), '0 0 2172 724')
+            self.assertEqual((svg.get('width'), svg.get('height')), ('2172', '724'))
+            self.assertFalse(svg.findall('.//{http://www.w3.org/2000/svg}text'))
+            wordmark = svg.find("{http://www.w3.org/2000/svg}g[@id='outlined-wordmark']")
+            self.assertIsNotNone(wordmark)
+            self.assertEqual(len(wordmark), 7)
+            self.assertEqual([p.get('fill').lower() for p in wordmark],
+                             ['#00978f'] + ['#021633']*4 + ['#ec7600']*2)
+            self.assertTrue(all('rotate(355)' in p.get('transform') for p in list(wordmark)[-2:]))
+
     def test_native_identities_and_scientific_terms_are_not_roadmap_labels(self):
         self.assertEqual(check_text(Path("topic.rst"),
             "Native C0/C1, quintic C2 smoothness, SFX.TG1P1 and SFX.WG1P1; schema 2."), [])
