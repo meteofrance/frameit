@@ -104,10 +104,10 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
 - Task 2: current `dev_md` selected by the maintainer, integrated contracts
   inspected, seven adapter suites passing and bounded baseline recorded below.
   Full RC qualification and human scientific review remain outstanding.
-- **G1 pending:** complete key/value/default map, precedence, generator interface,
-  concrete commented catalogue, page/figure map and behavioral exceptions need
-  actual maintainer approval before Task 4. The audited proposal is now in
-  [v2_1-design.md](v2_1-design.md); its recommendations are not approved decisions.
+- **G1 approved on 2026-11-05:** the maintainer replied **"Approved"** to the
+  complete [v2_1-design.md](v2_1-design.md) proposal at `ab0be01`. Implementation
+  and verification of that contract remain outstanding; G1 is not scientific
+  sign-off, G2 or publication/deployment authorization.
 - **G2 pending:** first-run/deeper-guide pilots and supplied artwork/art direction
   need actual live-preview editorial approval before the wider rewrite.
 - Required scientific/human review, unfamiliar-reader acceptance, wheel/sdist and
@@ -262,6 +262,7 @@ git diff --check
 
 Strict build and publication check: exit 0; documentation unit tests: 2 passed;
 diff check: passed. No full numerical/FA/GRIB suite or installed-artifact checks
-are claimed for this documentation-only audit. **Task 3 is not complete:** G1
-approval, contract freezing and approved downstream plan literals remain blocked.
-Tasks 4 onward have not started; G2 and remaining qualification gates stay pending.
+are claimed for this documentation-only audit. G1 was subsequently approved by
+the maintainer's **"Approved"** reply on 2026-11-05; the external plan is updated
+with its exact implementation literals before Task 4. G2 and remaining
+qualification gates stay pending.

@@ -1,13 +1,14 @@
-# YAML v2.1 public contract — G1 review proposal
+# YAML v2.1 public contract — G1 approved
 
-**Status: PROPOSED, NOT APPROVED OR IMPLEMENTED (2026-11-05).**
+**Status: G1 APPROVED, NOT YET IMPLEMENTED (2026-11-05).**
 Baseline: `288c532a03a0805c7cfe50ab049b019b1b676e8d` on `dev_md`;
 scientific implementation unchanged from `212fcca`. Task 2's capability/evidence
 matrix is in [rc-readiness.md](rc-readiness.md). The approved external plan's
 design/safeguards are authoritative; this record supplies its missing exact
-interface proposal. Nothing below establishes scientific validity or G1 approval.
-Do not execute Task 4, advertise the proposed commands as working, or update
-downstream implementation literals until the maintainer approves this record.
+interface contract. The maintainer approved the complete proposal at `ab0be01`
+with the reply **"Approved"** on 2026-11-05. This authorizes Tasks 4 onward under
+the existing plan, not G2, scientific sign-off, publication or deployment. Do not
+advertise the commands as implemented until their implementation is verified.
 
 ## 1. Intent, approach and decisions requested
 
@@ -30,7 +31,7 @@ than either a monolithic handbook or disconnected recipes. Within that approach:
 - A new general vector/processing hierarchy would separate more concerns but
   add scope and abstractions without another demonstrated task; not recommended.
 
-### G1 decisions (all still pending)
+### G1 decisions (approved in full on 2026-11-05)
 
 1. Approve the full inventory below, including unchanged entries, strict string
    version, removals, source inheritance, defaults and CLI/effective records.
@@ -641,13 +642,15 @@ native scientific scope still need Tasks 9–11. No code is implemented here.
 
 ### G1 approval record
 
-- Maintainer approval: **NOT RECEIVED**.
-- Agreed exceptions / edits: **none recorded**; recommendations above are agent
-  proposals, not maintainer decisions.
-- Task 3 remains incomplete at its approval gate. Tasks 4–12 stay conditional;
-  downstream test examples/commands in the external plan remain unchanged until
-  actual G1 decisions are recorded. G2 and human scientific/reader acceptance
-  remain separate later gates.
+- Maintainer approval: **RECEIVED, 2026-11-05**, exact reply **"Approved"** to the
+  request to approve the complete G1 proposal at `ab0be01`.
+- Scope: all seven decisions above, the complete key/value/default/removal map,
+  generator/catalogue/conflicts, source inheritance, admission tightenings,
+  starter-only advanced-selector removal, explicit starter overwrite refusal,
+  content/figure map and stated scientific boundaries. No amendments requested.
+- Downstream implementation literals are frozen from this record in the existing
+  external plan. G2 and human scientific/reader acceptance remain separate gates;
+  this approval does not supply scientific validity or permission to push/deploy.
 
 ### Audit verification receipt (not approval)
 
