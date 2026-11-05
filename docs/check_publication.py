@@ -8,7 +8,9 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 import zlib
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 FORBIDDEN = re.compile(
@@ -74,8 +76,59 @@ def check_text(path: Path, text: str) -> list[str]:
     return [f"{path}:{line}: non-public reference {match.group()!r}"]
 
 
-def check_artifact(artifact: Path) -> list[str]:
+class _HTMLLinks(HTMLParser):
+    def __init__(self, path: Path):
+        super().__init__()
+        self.anchors = set()
+        self.links = []
+        self.feed(path.read_text(encoding="utf-8"))
+
+    def handle_starttag(self, tag, attrs):
+        for name, value in attrs:
+            if name == "id" or (tag == "a" and name == "name"):
+                self.anchors.add(value)
+            if name in {"href", "src"} and value is not None:
+                self.links.append((self.getpos()[0], name, value))
+
+
+def check_local_links(artifact: Path) -> list[str]:
+    """Check HTML href/src targets and HTML fragments without network access."""
+    root = artifact.resolve()
+    pages = {path.resolve(): _HTMLLinks(path) for path in sorted(root.rglob("*.html"))}
     errors = []
+    for path, page in pages.items():
+        for line, attribute, value in page.links:
+            location = f"{path.relative_to(root)}:{line}"
+            if not value and attribute == "src":
+                errors.append(f"{location}: empty asset source")
+                continue
+            try:
+                url = urlsplit(value)
+            except ValueError as exc:
+                errors.append(f"{location}: invalid URL {value!r}: {exc}")
+                continue
+            if url.scheme == "file":
+                errors.append(f"{location}: nonportable file URL {value!r}")
+                continue
+            if url.scheme or url.netloc:
+                continue
+            decoded = unquote(url.path)
+            base = root if decoded.startswith("/") else path.parent
+            target = (base / decoded.lstrip("/")).resolve() if decoded else path
+            if not target.is_relative_to(root):
+                errors.append(f"{location}: target leaves artifact {value!r}")
+                continue
+            if target.is_dir():
+                target /= "index.html"
+            if not target.is_file():
+                errors.append(f"{location}: missing local target {value!r}")
+            elif url.fragment and target in pages and unquote(url.fragment) not in pages[target].anchors:
+                errors.append(f"{location}: missing HTML anchor {value!r}")
+    return errors
+
+
+def check_artifact(artifact: Path) -> list[str]:
+    errors = check_local_links(artifact)
     for name in ("index.html", "searchindex.js", "objects.inv", "_sources/index.rst.txt"):
         if not (artifact / name).is_file():
             errors.append(f"{artifact / name}: missing expected Sphinx product")
@@ -113,7 +166,7 @@ def main() -> int:
     if errors:
         print("\n".join(errors))
         return 1
-    print("Public documentation boundary passed (sources, artifact, search, downloads, inventory).")
+    print("Public documentation boundary passed (sources, artifact, search, downloads, inventory, local links).")
     return 0
 
 

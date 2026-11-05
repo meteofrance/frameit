@@ -14,6 +14,58 @@ from check_publication import check_artifact, check_text
 
 
 class PublicationBoundaryTests(unittest.TestCase):
+    def test_local_links_resolve_relative_encoded_downloads_and_fragments(self):
+        from check_publication import check_local_links
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'guide').mkdir()
+            (root / 'downloads').mkdir()
+            (root / 'downloads/data #1.nc').write_bytes(b'instructional download')
+            (root / 'symbol.svg').write_text('<svg/>')
+            (root / 'index.html').write_text('''
+                <h1 id="top">Native SFX.TG1P1; C0/C1; schema 2.</h1>
+                <a href="guide/?highlight=units#native%20levels">Guide</a>
+                <a href="downloads/data%20%231.nc" download>Download</a>
+                <img src="/symbol.svg"><a href="#top">Top</a>
+                <a href="https://example.org/unavailable#id">External</a>
+                <a href="//example.org/topic">Remote</a>
+                <a href="mailto:author@example.org">Author</a>
+            ''')
+            (root / 'guide/index.html').write_text('''
+                <h1 id="native levels">Levels</h1>
+                <a href="../index.html#top">Start</a><a href="?q=native">Search</a>
+            ''')
+            self.assertEqual(check_local_links(root), [])
+            for target in ('downloads/data #1.nc', 'symbol.svg', 'guide/index.html'):
+                with self.subTest(target=target):
+                    path = root / target
+                    content = path.read_bytes()
+                    path.unlink()
+                    self.assertTrue(check_local_links(root))
+                    path.write_bytes(content)
+            (root / 'guide/index.html').write_text('<h1 id="different">Levels</h1>')
+            self.assertTrue(check_local_links(root))
+
+    def test_local_links_reject_missing_assets_anchors_and_nonportable_paths(self):
+        from check_publication import check_local_links
+
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / 'html'
+            root.mkdir()
+            (parent / 'private.txt').write_text('not a published artifact')
+            for link in ('<a href="missing.html">Missing</a>',
+                         '<a href="#absent">Absent anchor</a>',
+                         '<img src="missing.svg">', '<script src="missing.js"></script>',
+                         '<link href="missing.css" rel="stylesheet">', '<img src="">',
+                         '<a href="../private.txt">Outside</a>',
+                         '<a href="file:///private.txt">Local machine</a>',
+                         '<a href="http://[invalid">Malformed URL</a>'):
+                with self.subTest(link=link):
+                    (root / 'index.html').write_text(link)
+                    self.assertTrue(check_local_links(root))
+
     def test_first_run_and_quick_start_have_different_roles(self):
         source = Path(__file__).parent / 'source/getting_started'
         self.assertTrue((source / 'first_run.rst').is_file())
@@ -121,6 +173,9 @@ class PublicationBoundaryTests(unittest.TestCase):
             (root / "objects.inv").write_bytes(
                 header + zlib.compress(b"index std:doc 1 index.html -\n"))
             self.assertEqual(check_artifact(root), [])
+            (root / 'index.html').write_text('<a href="missing.html">Broken</a>')
+            self.assertTrue(check_artifact(root))
+            (root / 'index.html').write_text('<h1>Current user topics</h1>')
             for name, content in (("fa_epygram_c1.html", "A hidden orphan page"),
                                   ("visualization_tools.html", "A stale plotting page"),
                                   ("_sources/copied.rst.txt", "Frozen developer evidence"),

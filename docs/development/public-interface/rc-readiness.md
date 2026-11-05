@@ -509,6 +509,37 @@ in the second Task 8 page group; Task 8 is not yet marked complete.
   print pagination, unfamiliar-reader and scientific/release approval remain
   unrun; DOM/geometry checks are not human acceptance.
 
+## Task 9 candidate CI and local links
+
+- Added standard-library `check_local_links(artifact)` to the existing publication
+  checker. It validates HTML href/src targets, downloads, URL-encoded paths and
+  HTML fragments inside the artifact; missing assets, escaped paths and file URLs
+  fail. External URLs are not fetched. Native scientific identifiers are not
+  mistaken for links or development labels.
+- RED: two new link tests found the absent checker; the artifact integration test
+  accepted a broken target. GREEN: **9 documentation tests**, actual `handbook-05`
+  and fresh strict/publication `candidate-ci-01`, targeted Ruff F and diff checks.
+- Existing docs workflow failed the local `dev_md` trigger assertion before
+  changes. It now builds for main/dev pushes and PRs targeting either, without
+  path-based skips. Review artifacts contain only generated public HTML. Pages
+  artifact upload and deploy are both guarded to push/main; only that guarded
+  deploy job grants Pages/OIDC writes. Runtime core checks now include the current
+  schema, every starter command and compact first run; native/full jobs remain.
+- Parsed-workflow checks passed for triggers, Python 3.13, unconditional build/core
+  gates, upload scope and least privilege. A truth table evaluated the actual
+  Pages/deploy expressions: main push true; dev push and pull request false.
+  `actionlint`/`zizmor` were unavailable; no hosted CI or repository-protection
+  configuration is claimed. Maintainers must require both build/core statuses.
+- The contribution guide records these checks. Its rendered `candidate-ci-01`
+  page fits at 320/390/768/1200 px with no broken image. The live preview stays
+  available. Full `conda run --no-capture-output -n frameit_env python -m pytest -q`
+  exited normally: **1186 passed, 4590 known warnings, 2 subtests, no skips,
+  556.05 s**. No native shutdown failure occurred in this run.
+
+These are documentation tooling/CI changes, not scientific processing or schema
+changes. No environment creation, source-data upload, package publication, hook,
+push or deployment was performed.
+
 ## Task 1 verification receipt
 
 - `conda run --no-capture-output -n frameit_env python -c 'import sys; assert sys.version_info[:2] == (3, 13); print(sys.version)'`

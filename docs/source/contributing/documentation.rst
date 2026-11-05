@@ -143,7 +143,24 @@ Explanatory SVGs share these tokens and readable labels, but **scientific data
 colormaps retain their scientific meaning** rather than adopting a brand palette.
 
 ``python docs/check_publication.py <artifact>`` checks configured source/build
-marks and rejects non-public pages and references in the generated site.
+marks, publication boundaries and local HTML links/assets/fragments. Downloads
+and URL-encoded filenames must resolve inside the artifact. External URLs are
+not fetched; this does not verify scientific references.
+
+Candidate CI
+------------
+
+``Documentation / build`` runs strict Sphinx and publication/link checks on
+``dev_md``/``main`` pushes and pull requests targeting those branches. It uploads
+only the public HTML artifact. Pages upload/deployment is restricted to a push
+on ``main``; candidate branches and pull requests have no Pages write permission.
+
+``Batch runtime / core-batch`` checks all advertised starter commands, current
+schema and the compact first run on Python 3.13 without GRIB/FA/ESMF dependencies.
+Native-stack and full numerical checks remain separate jobs in ``runtime.yml``.
+Keep both build/core checks required in repository branch-protection settings;
+a skipped check is not a pass. Run local equivalents in ``frameit_env`` before
+committing. Hosted results require an authorized push and an actual completed job.
 
 Local HTML preview
 ------------------

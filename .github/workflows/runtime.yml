@@ -27,6 +27,9 @@ jobs:
       - name: Exercise batch CLI, export and failure lifecycle
         run: >-
           python -m pytest -q
+          src/frameit/testing/numerical/test_configuration_v2_1.py
+          src/frameit/testing/numerical/test_templates.py
+          src/frameit/testing/numerical/test_documentation_example.py
           src/frameit/testing/numerical/test_hpc_execution.py
           src/frameit/testing/numerical/test_logging.py
           src/frameit/testing/numerical/test_netcdf_assembly.py
