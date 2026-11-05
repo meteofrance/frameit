@@ -21,10 +21,24 @@ FrameIt |release| documentation
    :caption: Task guides
 
    task_guides/fixed_region
+   task_guides/field_selection
+   task_guides/moving_region
+   task_guides/scalars_and_vectors
+   task_guides/polar_sampling
+   task_guides/coupled_inputs
+   task_guides/storage_and_resources
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Concepts
+
+   concepts/sampling_and_frames
+   concepts/time_support
+   concepts/missingness_and_status
 
 .. toctree::
    :maxdepth: 2
-   :caption: User guide
+   :caption: Reference and troubleshooting
 
    user_guide/input_files
    user_guide/ocean_netcdf
@@ -39,6 +53,7 @@ FrameIt |release| documentation
    user_guide/fa_spectral
    user_guide/output_files
    user_guide/matrix_testing
+   troubleshooting
 
 
 .. toctree::

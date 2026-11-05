@@ -1,6 +1,9 @@
 Polar projection with xESMF regridding
 ======================================
 
+For the workflow, start with :doc:`../task_guides/polar_sampling`. This page
+specifies target geometry, interpolation, coverage and numerical conventions.
+
 Polar projection using xESMF
 ----------------------------
 

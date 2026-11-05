@@ -1,6 +1,10 @@
 Native ocean NetCDF
 ===================
 
+For the workflow, use :doc:`../task_guides/coupled_inputs` and
+:doc:`../task_guides/scalars_and_vectors`. This page specifies native quantities,
+grids, vertical coordinates, temporal support and admitted transformations.
+
 NEMO regional native scalars
 ----------------------------
 

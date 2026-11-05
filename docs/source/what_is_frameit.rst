@@ -21,3 +21,8 @@ Start with :doc:`getting_started/first_run`, or use
 :doc:`getting_started/quick_start` as a CLI reminder. Before comparing results,
 check the quantities, units, time support and reference frames in
 :doc:`user_guide/output_files`.
+
+For your own data, go directly to :doc:`task_guides/field_selection`,
+:doc:`task_guides/moving_region` or :doc:`task_guides/coupled_inputs`.
+The :doc:`configuration reference <user_guide/configuration_file>` and
+:doc:`troubleshooting` remain available without repeating the tutorial.

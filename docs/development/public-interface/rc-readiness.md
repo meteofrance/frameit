@@ -441,6 +441,45 @@ human approval. Fresh installation, hosted CI, real HPC jobs, keyboard traversal
 paginated print and scientific/release sign-off were not run here. Existing data,
 unrelated `opencode.json`, font files and supplied originals were not modified.
 
+## Task 8 reader guides — first page group
+
+The maintainer approved `5fb4b57` and said "Approved. Proceed." Native execution
+continues from Task 8. The current wording, logos, site-neutral HPC guidance and
+plotting removal remain binding; no scientific/release acceptance is inferred.
+
+- Added six task routes (fields/levels, moving regions, scalars/vectors, polar,
+  coupled inputs, storage/resources), three linked concepts and phase-oriented
+  troubleshooting. Existing method pages, equations, figures and URLs remain.
+  Navigation separates tasks/concepts from detailed reference; README stays short.
+- Five editable SVG schematics clarify location/basis/motion, time association,
+  independent source support, missing/zero and compute chunks/storage shards.
+  They contain labels, alt text/captions and no new rendering dependency.
+- `conda run --no-capture-output -n frameit_env python -m pytest -q
+  src/frameit/testing/numerical/test_templates.py
+  src/frameit/testing/numerical/test_documentation_example.py` → **73 passed,
+  3 known warnings**, normal exit. All five new contextual YAML fragments passed
+  the current resolver against their actual generated starters.
+- Exact inspect/init/validate/resolved-config/dry-run/run routes were replayed on
+  compact instructional inputs in fresh `build/rc/task-8-guides-02` directories:
+  polar NetCDF, prescribed moving centres and bounded synchronous Zarr. All exited
+  normally with completed/complete status. Fresh readers importing no FrameIt
+  checked axes, units, quality arrays, source zero/NaN, moving centres and Zarr
+  values. Source SHA-256 values were unchanged. No real-producer claim follows.
+- The first polar replay correctly rejected a 1000 m step finer than the resolved
+  1076.76 m native spacing. The guide now requests 1500 m, giving radii 0/1.5/2 km.
+  No validator, sampling method or scientific default was changed to fit the guide.
+- Strict Sphinx `handbook-01` found 14 short heading underlines; corrected at
+  source. Fresh `handbook-02/03` strict builds and publication checks passed;
+  **7 documentation tests** passed. Rendered inspection covered 12 topic/index
+  pages at four widths (320/390/768/1200), with no overflow or broken images.
+  All five new SVG drawings and **57 labels** fit their viewBoxes. Screenshot
+  capture remains blocked by the invisible desktop window; no pixel/human check
+  is claimed. The live `handbook-03` polar guide remains available for feedback.
+
+This page group changes documentation only. No runtime, output-schema, scientific
+default, dependency or logo changes. Reference/ordinary-reader completion follows
+in the second Task 8 page group; Task 8 is not yet marked complete.
+
 ## Task 1 verification receipt
 
 - `conda run --no-capture-output -n frameit_env python -c 'import sys; assert sys.version_info[:2] == (3, 13); print(sys.version)'`

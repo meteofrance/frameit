@@ -1,6 +1,8 @@
 Prescribed-track method
 ========================
 
+For setup and run checks, use :doc:`../task_guides/moving_region`.
+
 Purpose
 -------
 

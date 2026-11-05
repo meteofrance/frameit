@@ -1,6 +1,8 @@
 Pressure-wind tracker
 =====================
 
+For setup and run checks, use :doc:`../task_guides/moving_region`.
+
 Overview
 --------
 

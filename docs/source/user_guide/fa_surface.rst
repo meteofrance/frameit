@@ -8,7 +8,8 @@ AROME-47 / SURFEX-8.1 FA histories. Native atmospheric FA/SURFEX FA and compatib
 NetCDF sources use the same coupling contract, subject to each adapter's limits.
 See :doc:`fa_inputs`, :doc:`fa_baseline` and :doc:`fa_geometry`.
 
-Use ``example/config_file/coupled_fa.yaml`` for base extraction,
+For the workflow, start with :doc:`../task_guides/coupled_inputs`. Native FA
+examples are ``example/config_file/coupled_fa.yaml`` for base extraction,
 ``coupled_cyclone_polar.yaml`` for selected scalar polar fields with a supplied
 track, or ``coupled_arome_fa_polar.yaml`` for separate native FA streams.
 Adapt paths/centres and verify all source declarations. The example radius and

@@ -1,6 +1,8 @@
 Fixed-box method
 ================
 
+For a worked run, use :doc:`../task_guides/fixed_region`.
+
 Overview
 --------
 

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="540" viewBox="0 0 540 540" role="img" aria-labelledby="title desc">
+  <title id="title">Shared centres, independent source support</title>
+  <desc id="desc">Schematic of atmosphere and ocean sources with different grid spacing, levels and masks. Both map one geographical centre onto their own grids. A selected common polar target fixes point coordinates, but values, vertical axes and missing support remain separate in source-qualified products.</desc>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#788997"/></pattern>
+    <pattern id="ocean" width="42" height="37" patternUnits="userSpaceOnUse"><path d="M42 0H0V37" fill="none" stroke="#788997"/></pattern>
+  </defs>
+  <g font-family="sans-serif" fill="#021633">
+    <text x="20" y="34" font-size="24" font-weight="bold">One geographical centre</text>
+    <text x="20" y="65" font-size="19">Each source performs its own native lookup</text>
+    <rect x="20" y="90" width="230" height="150" fill="url(#grid)" stroke="#006b65" stroke-width="2"/>
+    <rect x="290" y="90" width="230" height="150" fill="url(#ocean)" stroke="#9a4400" stroke-width="2"/>
+    <path d="M290 180L360 150L390 220L450 190L520 230V240H290Z" fill="#e7ebee" stroke="#021633" stroke-dasharray="5 4"/>
+    <path d="M125 148H145M135 138V158M395 148H415M405 138V158" stroke="#021633" stroke-width="3"/>
+    <text x="20" y="275" font-size="20" font-weight="bold">Atmosphere source</text>
+    <text x="20" y="303" font-size="18">Native levels / own mask</text>
+    <text x="290" y="275" font-size="20" font-weight="bold">Ocean source</text>
+    <text x="290" y="303" font-size="18">Depth or sigma / own mask</text>
+    <rect x="20" y="337" width="500" height="76" rx="8" fill="#f4f8f8" stroke="#006b65"/>
+    <text x="35" y="367" font-size="20">Optional common polar point coordinates</text>
+    <text x="35" y="397" font-size="18">Same r, θ, latitude, longitude · separate values</text>
+    <text x="20" y="454" font-size="20" font-weight="bold">Keep source-qualified products separate</text>
+    <text x="20" y="485" font-size="19">Equal locations ≠ equal physical quantities</text>
+    <text x="20" y="520" font-size="18">Schematic · not to scale · shaded support is illustrative</text>
+  </g>
+</svg>

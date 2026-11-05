@@ -22,6 +22,8 @@ format detection rejects mixed inputs; ``input.format`` may explicitly specify
 ``grib`` or ``netcdf``. FA requires explicit ``format: fa`` and its profile/declarations.
 Mixed formats require separate named sources, not a mixed ordinary inventory.
 See :doc:`configuration_file` for YAML settings, units and native-grid inference.
+For a task route, use :doc:`../task_guides/field_selection` or
+:doc:`../task_guides/coupled_inputs`.
 
 Inspect a deliberately selected stream before choosing quantities and methods:
 

@@ -126,6 +126,10 @@ from the current HPC documentation.
 ## Documentation
 
 [Read the documentation](https://meteofrance.github.io/frameit/).
+For your own data: [fields and levels](docs/source/task_guides/field_selection.rst),
+[moving regions](docs/source/task_guides/moving_region.rst),
+[coupled inputs](docs/source/task_guides/coupled_inputs.rst), and
+[storage/resources](docs/source/task_guides/storage_and_resources.rst).
 
 ## Citation
 

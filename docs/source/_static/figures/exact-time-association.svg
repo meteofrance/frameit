@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="430" viewBox="0 0 540 430" role="img" aria-labelledby="title desc">
+  <title id="title">A label does not define temporal support</title>
+  <desc id="desc">Schematic timeline in hours. An atmospheric snapshot is labelled 06:00. A NEMO mean spans 05:00 to 06:00 and is labelled 05:30. Exact common matching does not pair these. The explicit preceding-hour convention pairs their records without interpolating or changing values.</desc>
+  <g font-family="sans-serif" fill="#021633">
+    <text x="20" y="35" font-size="23" font-weight="bold">Snapshot versus one-hour mean</text>
+    <path d="M70 100H475M70 90V110M270 90V110M470 90V110" stroke="#021633" stroke-width="2"/>
+    <text x="70" y="80" text-anchor="middle" font-size="20">05:00</text>
+    <text x="270" y="80" text-anchor="middle" font-size="20">05:30</text>
+    <text x="470" y="80" text-anchor="middle" font-size="20">06:00</text>
+    <circle cx="470" cy="140" r="8" fill="#00978f" stroke="#021633"/>
+    <text x="20" y="147" font-size="20">AROME instantaneous · label 06:00</text>
+    <rect x="70" y="180" width="400" height="30" fill="#fff0df" stroke="#9a4400" stroke-width="2"/>
+    <path d="M270 173V217" stroke="#021633" stroke-width="3"/>
+    <text x="20" y="249" font-size="20">NEMO mean · bounds 05:00–06:00</text>
+    <text x="20" y="278" font-size="20">Native sample label: 05:30</text>
+    <text x="20" y="327" font-size="20" font-weight="bold">common: no exact label match</text>
+    <text x="20" y="361" font-size="20">preceding_hour: explicitly associate records</text>
+    <text x="20" y="403" font-size="18">Schematic · time in hours · no mean-to-snapshot conversion</text>
+  </g>
+</svg>

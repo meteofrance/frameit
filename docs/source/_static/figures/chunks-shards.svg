@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="500" viewBox="0 0 540 500" role="img" aria-labelledby="title desc">
+  <title id="title">Compute chunks and storage shards</title>
+  <desc id="desc">Schematic. Source input chunks and polar compute chunks divide processing work. Storage chunks independently encode blocks of values. A shard stores several compressed chunks in one local file. Example extents in elements: chunk 1 by 128 by 128; shard 8 by 512 by 512, containing 128 chunks. This changes neither resolution nor precision.</desc>
+  <g font-family="sans-serif" fill="#021633">
+    <rect x="20" y="15" width="500" height="90" rx="8" fill="#f4f8f8" stroke="#006b65"/>
+    <text x="35" y="48" font-size="23" font-weight="bold">Compute chunks: schedule work</text>
+    <text x="35" y="80" font-size="19">Input chunks ≠ polar computation chunks</text>
+    <text x="20" y="148" font-size="23" font-weight="bold">Storage shard: one local file</text>
+    <rect x="20" y="167" width="500" height="158" rx="8" fill="#fff8f1" stroke="#9a4400" stroke-width="2"/>
+    <rect x="38" y="186" width="135" height="54" fill="#fff" stroke="#006b65" stroke-width="2"/>
+    <rect x="191" y="186" width="135" height="54" fill="#fff" stroke="#006b65" stroke-width="2"/>
+    <rect x="344" y="186" width="158" height="54" fill="#fff" stroke="#006b65" stroke-width="2"/>
+    <text x="52" y="220" font-size="20">chunk 1</text>
+    <text x="205" y="220" font-size="20">chunk 2</text>
+    <text x="358" y="220" font-size="20">… chunk n</text>
+    <text x="38" y="275" font-size="19">Each chunk compressed independently</text>
+    <text x="38" y="304" font-size="18">Illustrative packing; not a physical sampling grid</text>
+    <text x="20" y="368" font-size="20">Example dimensions: time × y × x (elements)</text>
+    <text x="20" y="401" font-size="20">Chunk 1 × 128 × 128 · shard 8 × 512 × 512</text>
+    <text x="20" y="434" font-size="20">8 × 4 × 4 = 128 chunks per full shard</text>
+    <text x="20" y="478" font-size="18">Schematic · no change to resolution, precision or values</text>
+  </g>
+</svg>
