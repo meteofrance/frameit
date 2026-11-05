@@ -2,8 +2,67 @@ FrameIt Quick Start
 ===================
 
 Use :doc:`installation` to create and activate the single reference environment
-first. The workflow is **inspect, select, check, run, then interpret**. You supply
-the model inputs; the commands below do not download them.
+first. Start below without a model archive; the later sections explain adapting
+the workflow to your own inputs. No command downloads scientific data.
+
+Self-contained instructional first run
+--------------------------------------
+
+In the activated reference environment, choose a **new** working directory:
+
+.. code-block:: bash
+
+   mkdir frameit-first-run
+   cd frameit-first-run
+   python -m frameit.testing.documentation_example --output data/first-run.nc
+   frameit init arome-fixed-scalar
+   frameit validate --schema-only
+   frameit validate
+   frameit run --dry-run
+   frameit run
+
+No template edits are needed for this example. If the directory already exists,
+choose another name. The input generator and starter refuse existing files, and
+the starter refuses existing products. A new attempt should use a fresh directory.
+
+The generated input is **instructional, not an AROME producer file or a physical
+simulation**. It exercises the structured AROME NetCDF adapter with a dimensionless
+``instructional_scalar`` on two hour labels and a 17-by-17 geographical grid.
+Its zero-based index expression is ``1000*t + 10*(j-8) + (i-8)``; samples at
+``j=7,i=9`` are missing. The valid centre value at the first time is zero.
+The template requests full widths of 4 km around (-20°, 60°), only this scalar,
+and no wind, optional diagnostic or polar sampling.
+
+For this grid the requested window rounds to 5-by-5 native samples at each time.
+The two NetCDF products are:
+
+* ``output/products/arome-fixed-scalar.track.nc``: the fixed centre and native indices;
+* ``output/products/arome-fixed-scalar.cart.surface.nc``: the extracted scalar and geography.
+
+Check completion and open the scalar through an ordinary reader, without importing
+FrameIt (the Python command can be copied as written):
+
+.. code-block:: bash
+
+   grep -E '^(state|tracking_complete):' output/run-status.yaml
+   python -c 'import xarray as xr; d=xr.open_dataset("output/products/arome-fixed-scalar.cart.surface.nc", engine="netcdf4"); print(d.instructional_scalar.isel(time=0).values); print(d.instructional_scalar.attrs); d.close()'
+
+Expect ``state: completed``, ``tracking_complete: true``, units ``1`` and this
+first-time array:
+
+.. code-block:: text
+
+   [[-22. -21. -20. -19. -18.]
+    [-12. -11. -10.  nan  -8.]
+    [ -2.  -1.   0.   1.   2.]
+    [  8.   9.  10.  11.  12.]
+    [ 18.  19.  20.  21.  22.]]
+
+The second time adds 1000 to finite samples. Zero remains a valid value; ``nan``
+remains missing, not a value to replace with zero. The source input is not modified.
+Inspect ``resolved-config.yaml`` and ``run-provenance.yaml`` under ``output`` for
+effective settings and processing facts. Passing this instructional run checks
+the software route, not suitability for a real producer or scientific regime.
 
 Check the active installation
 -----------------------------

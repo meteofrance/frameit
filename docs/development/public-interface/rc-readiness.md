@@ -107,8 +107,8 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
   Full RC qualification and human scientific review remain outstanding.
 - **G1 approved on 2026-11-05:** the maintainer replied **"Approved"** to the
   complete [v2_1-design.md](v2_1-design.md) proposal at `ab0be01`. The strict loader
-  and starter catalogue are verified below; the first run and editorial pilots remain
-  outstanding. G1 is not scientific
+  and starter catalogue and source-checkout first run are verified below;
+  editorial pilots remain outstanding. G1 is not scientific
   sign-off, G2 or publication/deployment authorization.
 - **G2 pending:** first-run/deeper-guide pilots and supplied artwork/art direction
   need actual live-preview editorial approval before the wider rewrite.
@@ -192,6 +192,34 @@ No runtime dependency or numerical method changed. Package-data already includes
 every `templates/*.yaml` resource; executing the same catalogue from installed
 wheel/sdist artifacts remains a Task 12 obligation, not a result claimed here.
 The self-contained instructional input and G2 editorial approval are still pending.
+
+## Task 6 instructional example verification
+
+`frameit.testing.documentation_example.create_first_run_input(path)` and its
+`--output` module command create two labelled times on a 17×17 geographical grid,
+using only core NumPy/xarray/NetCDF dependencies. The dimensionless scalar follows
+`1000*t + 10*(j-8) + (i-8)`, with two explicitly missing samples and a valid zero.
+It is labelled synthetic/instructional, not an AROME producer or physical simulation.
+Creation uses the existing atomic no-clobber writer; inputs are not overwritten.
+
+- Four tests observed RED before implementation, then **4 passed**. A fresh
+  ordinary-reader subprocess checks the literal 5×5 window, units, geography,
+  times, track indices, valid zero versus NaN and unchanged read-only source bytes.
+- Exact documented console commands replayed in a fresh owned directory:
+  generator → `frameit init arome-fixed-scalar` → schema-only → metadata validation
+  → dry-run → run. Result: `state: completed`, `tracking_complete: true`, only
+  track and surface Cartesian NetCDF products. The independent reader printed
+  the documented values without importing FrameIt.
+- `conda run --no-capture-output -n frameit_env python -m pytest -q` →
+  **1183 passed, 4590 known warnings, 2 subtests passed, no skips, 543.93 s**.
+- Strict Sphinx/publication `first-run-01`, documentation unit tests (2), targeted
+  Ruff F and diff checks passed. The linked quick-start rendered correctly in the
+  live GUI at desktop/narrow widths, without page overflow or broken images.
+
+This is source-checkout engineering evidence, not an installed wheel/sdist check,
+real-producer qualification or human acceptance. The same installed-artifact
+procedure remains mandatory in Task 12. No numerical algorithm or scientific
+output schema was changed; illustration and editorial G2 review follow in Task 7.
 
 ## Task 1 verification receipt
 

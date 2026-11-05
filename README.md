@@ -41,6 +41,9 @@ for fresh-environment migration and the optional interpreter override.
 
 ## Quick start
 
+For a first run without model data, use the
+[self-contained instructional example](docs/source/getting_started/quick_start.rst).
+
 1. Inspect a deliberately selected input stream and create an annotated configuration:
 
 ```bash
