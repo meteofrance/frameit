@@ -17,6 +17,11 @@ Execution logs and qualification payloads belong under ignored `build/rc/`.
   Do not repeat the merge or overwrite the adapter owner's worktree. Task 2 must
   verify the integrated contracts and record the integration-readiness evidence;
   the existing merge is not scientific sign-off.
+- On 2026-11-05 the maintainer confirmed the working baseline by directing this
+  execution to the current `dev_md`: everything had been merged cleanly the
+  previous day. No additional merge or adapter-owner worktree edit is needed.
+  Verification includes the later CROCO vector/shared-target tests as well as
+  the five suites named in Task 2.
 - Subsequent NetCDF-read and runtime optimizations are retained. Their historical
   evidence is in `../input-reading.md` and `../runtime-optimization.md`, not a
   claim that this plan reran or qualified those workloads.
@@ -25,22 +30,38 @@ Execution logs and qualification payloads belong under ignored `build/rc/`.
   The target `2.0.0rc1`, Python 3.13-only support and exact string YAML `"2.1"`
   are not implemented or qualified by establishing this baseline.
 
-## Inspected capability / maturity inventory
+## Integrated support / evidence matrix
 
-This is a starting inventory, not the Task 2 support/evidence matrix. No method
-is promoted to scientifically validated status here.
+Read this together with `docs/source/user_guide/ocean_netcdf.rst` and the native
+FA guides for the full contracts. "Present" means implementation inspected, not
+new scientific approval. Tests named below live in
+`src/frameit/testing/numerical/`; the Task 2 run status is recorded separately.
+No untested Cartesian product of these capabilities is implied.
 
-| Area | Present implementation/documentation | Remaining admission or qualification work |
-| --- | --- | --- |
-| Atmospheric extraction | AROME GRIB/NetCDF and Meso-NH NetCDF; fixed/prescribed and selected atmospheric trackers | Map exact grids, selected quantities, metadata, fixtures and independent verification. |
-| Native FA | Explicitly declared instantaneous gridpoint records and associated atmospheric cubes | Retain producer/scaling/Earth-model evidence requirements; no spectral or packed-SURFEX admission. |
-| NEMO | Regional native scalar and separate component copies; exact native levels and time bounds | No inferred current/stress rotation, physical-depth diagnosis or mean/snapshot equivalence. |
-| NEMO/AROME association | Explicit `preceding_hour` profile for declared one-hour means paired with instantaneous AROME records | Not the global default, not interpolation; inspect participants, bounds, exclusions and provenance. |
-| CROCO | Regional history/Vtransform=2 native scalars/faces and explicitly selected rho/Earth currents | Preserve sigma dependencies and separate native/analysed contracts; not arbitrary CROCO products or NEMO time policy. |
-| Embedded SURFEX | Opt-in supported sea-field interpretation in Meso-NH NetCDF | Preserve field-specific sentinel/support/unit evidence; do not infer flux sign, basis or averaging configuration. |
-| Polar sampling | Optional bilinear point sampling and explicit shared targets | No area-conservation claim; conservative/patch/additional transport methods remain experimental. |
-| Tracking/diagnostics | Documented pressure-wind/centroid paths; experimental multi-field tracker; optional UTrack | Inventory method evidence, dependencies, applicability and outstanding human review. |
-| Export | NetCDF and optional sharded Zarr v3; per-product atomic publication and run-root locking | Independently reopen both formats and test failure/overwrite/concurrency contracts within the admitted scope. |
+| Input family / admitted quantities and grids | Centre/reference and time policy | Optional sampling / output | Evidence and maturity; exclusions |
+| --- | --- | --- | --- |
+| AROME GRIB/NetCDF: selected atmospheric scalars and declared vector pairs; admitted regular/regional geometry | Fixed/prescribed; atmospheric trackers subject to their input/method requirements. Named sources use exact `common` (default) or `strict` and compatible forecast cycles | Optional selected polar fields; NetCDF or optional Zarr v3 | Present. Task 2 synthetic NetCDF variable-shard checks in `test_netcdf_assembly.py`; real GRIB and tracker qualification not rerun by that evidence. No inference of arbitrary statistical intervals or wind basis. |
+| Meso-NH NetCDF: surface/native-level scalars and explicitly represented staggered winds/W | Fixed/prescribed; selected atmospheric tracker with required fields; exact coupled time labels | Optional polar; NetCDF/Zarr | Present; `test_netcdf_assembly.py` reuse/native-branch tests. Broader native-level/tracker methods need their own later qualification. No inferred physical-height equivalence from stored labels. |
+| AROME/SURFEX native FA streams: declared instantaneous gridpoint fields, admitted atmospheric full/interface cubes | Atmospheric reference where admitted; SURFEX is a separate named source/FA profile, not a new model selector. Exact times and compatible forecast identity | Selected polar/shared targets subject to geometry/support; NetCDF/Zarr | Present with bounded engineering evidence in existing `test_fa_*.py`/`test_arome_fa_coupling.py`, not rerun in Task 2. Scaling, support, units and Earth model need explicit evidence. No spectral FA, packed SURFEX or implicit pressure/height diagnostic. |
+| NEMO regional native T-grid scalars and separate U/V/W, barotropic and stress components: `(y,x)` geography; `deptht/u/v/w` retained | Fixed/prescribed ocean reference; or secondary source mapped independently to continuous atmospheric centres. Exact `common`/`strict` sample labels and native bounds | Scalar polar only if selected and eligible; NetCDF/Zarr; native component copies require the current `horizontal_winds: native` selector | Present, bounded synthetic oracles in `test_nemo_netcdf.py` and `test_nemo_arome_coupling.py`. No inferred mesh/mask/angle, component rotation/collocation, current speed, W mass conversion or component polar analysis. Regional spacing limits remain; not arbitrary global/folded grids. |
+| Explicit AROME/NEMO preceding-hour association: instantaneous AROME fields and unique NEMO one-hour means with decoded bounds | Named NetCDF only; AROME reference, at least one NEMO participant, no other model. Pair `(T-1h,T]` by bounds; omit missing whole pairings with warning/record; never nearest matching | Native components and selected scalar polar under their own contracts; NetCDF/Zarr. Product `time` labels reference/end; `source_time` retains native mean label and bounds | Present explicit comparison policy, `test_nemo_arome_coupling.py`. Not the global default, interpolation, reconstruction of snapshots or mean/snapshot equivalence. Invalid/ambiguous required metadata fails. |
+| CROCO regional declared history/Vtransform=2 rho scalars, N-1 native faces, `s_rho/s_w` and formula dependencies | Fixed/prescribed, alone or as secondary source; only exact `common`/`strict`. Do not apply the NEMO preceding-hour policy | Native NetCDF/Zarr; eligible scalar polar requires explicit static water support | Present, `test_croco_netcdf.py`, `test_croco_vectors.py`, `test_croco_mnh_coupling.py`. Native missing cells and zeros retained; copies do not interpret finite land placeholders. No arbitrary restart/averaged family, other Vtransform or diagnosed depth cube. |
+| Explicit CROCO rho/Earth `u/v` and `ubar/vbar` analysis: midpoint collocation then declared angle rotation, same native sigma index | Same centres/exact times as CROCO above; explicit representation selection or selected polar current path loads required companion | NetCDF/Zarr; selected current polar points after preparation. Static binary rho support, optional restricting face masks, both valid brackets and joint finite vector mask | Bounded transformation, analytical constant/linear/rotated/reversed-axis oracles at 1e-12 in `test_croco_vectors.py`; no new stable diagnostic claim. No stress analysis, wet/dry, single-bracket fill, physical-depth interpolation, conservation or storm-motion subtraction. |
+| Embedded SURFEX sea interpretation in Meso-NH NetCDF time series: explicit finite SEA field list plus `FRAC_SEA` support | Meso-NH source remains independent of ocean; fixed/prescribed or atmospheric reference when its required inputs exist. Exact coupled clocks | Native/scalar polar selected explicitly; NetCDF/Zarr | Opt-in producer-specific interpretation; `test_mnh_surfex_support.py` and `test_croco_mnh_coupling.py`. Exact source-999 invalidation only for interpreted fields; positive finite physical sea fraction, no fraction weighting. Unit comments complete labels only; no guessed sign/basis/timing or universal sentinel rule. |
+
+Shared polar targets require explicit selection, compatible target geometry and
+resource budgets. Identical target coordinates do not equate source masks,
+depths, intervals or physical definitions. Continuous bilinear point sampling is
+not conservative area/transport remapping; experimental alternatives are not
+promoted by this baseline. Optional dependencies are forbidden by import guards
+in the base-copy tests, and installed optional paths must actually execute rather
+than be counted as covered through skips.
+
+The inspected ocean tests retain independent source-window comparisons,
+valid-zero versus missing checks, native axis/bounds/formula metadata, replay,
+NetCDF/Zarr ordinary-reader subprocesses without FrameIt, synchronous/spawned
+export and selected failure/overwrite behavior. This establishes bounded
+engineering/numerical scope, not all production regimes or human acceptance.
 
 ## Reference environment observed
 
@@ -80,8 +101,9 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
 
 ## Gates and blockers
 
-- Task 2: integrated adapter review/tests, support matrix and bounded baseline
-  measurement outstanding; establish owner-confirmed integration readiness.
+- Task 2: current `dev_md` selected by the maintainer, integrated contracts
+  inspected, seven adapter suites passing and bounded baseline recorded below.
+  Full RC qualification and human scientific review remain outstanding.
 - **G1 pending:** complete key/value/default map, precedence, generator interface,
   concrete commented catalogue, page/figure map and behavioral exceptions need
   actual maintainer approval before Task 4.
@@ -126,3 +148,86 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
   Applicable checks are the strict build, publication check/unit tests, rendered
   inspection and `git diff --check`; no unrelated numerical benchmark is required
   for this documentation-only task.
+
+## Task 2 verification and bounded measurement
+
+Revision tested: `7027aa88630db7c957ba8dad6b79ed800c7a1f40`, with scientific
+implementation unchanged from the initial `212fcca` baseline. Both branches'
+instructions were reviewed; the only instruction difference was Task 1's new
+documentation obligation. Credits, FA/Zarr work and subsequent optimizations
+were retained. No new integration defect was reproduced or numerical code
+changed in this task.
+
+```bash
+conda run --no-capture-output -n frameit_env python -m pytest -q \
+  src/frameit/testing/numerical/test_netcdf_assembly.py \
+  src/frameit/testing/numerical/test_nemo_netcdf.py \
+  src/frameit/testing/numerical/test_croco_netcdf.py \
+  src/frameit/testing/numerical/test_mnh_surfex_support.py \
+  src/frameit/testing/numerical/test_nemo_arome_coupling.py \
+  src/frameit/testing/numerical/test_croco_vectors.py \
+  src/frameit/testing/numerical/test_croco_mnh_coupling.py
+```
+
+Result: **214 passed, no skips, 2,522 warnings, 84.53 s**. The warnings include
+the NumPy ndarray-size/native-ABI warning at netCDF import and xarray/netCDF4's
+NumPy 2.5 shape-setting deprecation; they are recorded, not suppressed or
+represented as warning-free native-stack qualification. Full output is under
+ignored `build/rc/baseline-01/adapter-tests.log`. Only these suites, not the full
+numerical/FA/GRIB suite, were run for Task 2.
+
+### Reproducible compact baseline
+
+Use the existing independently checked test, not a new benchmark framework:
+
+```bash
+conda run --no-capture-output -n frameit_env env \
+  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  /usr/bin/time -v -o build/rc/baseline-01/timing-01.time \
+  python -m pytest -q \
+  'src/frameit/testing/numerical/test_nemo_arome_coupling.py::test_nemo_arome_exact_track_maps_each_grid_independently[True-False]' \
+  --basetemp build/rc/baseline-01/timing-01
+```
+
+The pytest ID was verified by `--collect-only`: synchronous export, fixed centre.
+Choose a **nonexistent owned** `--basetemp` for each run (pytest replaces an
+existing one); measurements used suffixes `01`, `02`, `03`. The three fresh
+Python processes ran sequentially after the adapter suite, with warm filesystem
+cache and no cache flushing. No production/private input was read. The plan's
+bounded synthetic-fixture policy covers this workload; no expensive run, large
+download or new data authorization was inferred.
+
+Workload: two exact sample labels, three 9×9 AROME surface-variable shards plus
+four independent 7×7 NEMO T/U/V/W sources, two native depths per ocean source;
+fixed centre (-20°, 60°), 2×2 km full-width box. Selected atmospheric pressure/U/V
+retain their existing speed companion; selected ocean scalars/components remain
+native. No polar processing is enabled. One Dask worker, one native thread and
+one synchronous export worker; h5netcdf input, ordinary NETCDF4 output through
+netCDF4 with existing level-1 compression. Environment/platform are above.
+
+| Run | Total wall time | GNU time maximum RSS (KiB) | Filesystem inputs / outputs (blocks) | Numerical result |
+| --- | ---: | ---: | ---: | --- |
+| 01 | 2.95 s | 244252 | 0 / 1840 | 1 passed, 28 warnings |
+| 02 | 2.89 s | 244232 | 0 / 1872 | 1 passed, 28 warnings |
+| 03 | 2.96 s | 244088 | 0 / 1744 | 1 passed, 28 warnings |
+
+Median wall time: **2.95 s**; median reported maximum RSS: **244232 KiB**. This
+includes pytest startup/imports, fixture generation, configuration, processing,
+publication and the independent-reader subprocess, not Conda startup. Maximum
+RSS is GNU time's reported process/child high-water statistic, not summed
+concurrent-worker memory. Filesystem block counters are not decoded bytes or a
+throughput measurement; zero input blocks reflects cache, not an absence of reads.
+
+The reader subprocess imports xarray/NumPy, not FrameIt, and compares every
+ocean crop to its own source window, including NaNs and legitimate zeros;
+checks exact times, separate grids, native depth/time bounds, forecast identity,
+source IDs and absence of ocean wind-representation metadata. Test success is
+bounded decoded numerical agreement and metadata verification, **not** bytewise
+product identity or scientific validation of real producers. Reuse the same
+effective request, thread caps, filesystem/cache conditions and measurement
+scope for the later comparison; no performance acceptance threshold is invented.
+
+Task 2 is a development-evidence update only; public commands/configuration and
+scientific output semantics are unchanged. Strict Sphinx build into fresh
+`build/docs-preview/baseline-04` and its publication check both exited 0;
+`git diff --check` passed. The public HTML is unchanged from Task 1's guide.
