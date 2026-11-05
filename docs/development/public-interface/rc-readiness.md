@@ -221,6 +221,16 @@ real-producer qualification or human acceptance. The same installed-artifact
 procedure remains mandatory in Task 12. No numerical algorithm or scientific
 output schema was changed; illustration and editorial G2 review follow in Task 7.
 
+The first post-commit combined focused run passed 71 assertions but exited 134
+at native-library shutdown. Reproduction isolated xarray **automatic** backend
+discovery loading cfgrib/ecCodes before a later pyproj import, matching the already
+documented native PROJ collision in `../runtime-optimization.md`. Automatic reader
+→ pyproj exited -6; explicitly named NetCDF reader → pyproj exited 0 without
+loading those optional readers. The new test now selects `engine="netcdf4"`, as
+the guide/fixture writer already do, and also checks a fresh-process read/import
+and normal exit. Final combined focused run passed 71 with normal shutdown.
+This is not an upstream native-stack repair or an environment/backend substitution.
+
 ## Task 1 verification receipt
 
 - `conda run --no-capture-output -n frameit_env python -c 'import sys; assert sys.version_info[:2] == (3, 13); print(sys.version)'`

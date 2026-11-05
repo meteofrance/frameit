@@ -14,7 +14,8 @@ def test_input_is_deterministic_labelled_and_not_a_physical_field(tmp_path):
 
     first = create_first_run_input(tmp_path / "first.nc")
     second = create_first_run_input(tmp_path / "second.nc")
-    with xr.open_dataset(first) as a, xr.open_dataset(second) as b:
+    # Avoid discovering unrelated optional readers for this known NetCDF input.
+    with xr.open_dataset(first, engine="netcdf4") as a, xr.open_dataset(second, engine="netcdf4") as b:
         xr.testing.assert_identical(a, b)
         assert a.sizes == {"valid_time": 2, "latitude": 17, "longitude": 17}
         assert set(a.data_vars) == {"instructional_scalar"}
@@ -96,11 +97,14 @@ assert 'frameit' not in sys.modules
     assert (source.read_bytes(), source.stat().st_mtime_ns) == before
 
 
-def test_input_creation_needs_no_optional_scientific_stack(tmp_path):
+def test_input_creation_and_explicit_reader_need_no_optional_scientific_stack(tmp_path):
     result = subprocess.run([sys.executable, "-c", """
-import sys
+import sys, xarray as xr
 from frameit.testing.documentation_example import create_first_run_input
 create_first_run_input(sys.argv[1])
+with xr.open_dataset(sys.argv[1], engine='netcdf4') as d:
+    assert d.sizes['valid_time'] == 2
+import pyproj
 assert not {'cfgrib', 'epygram', 'xesmf', 'esmpy', 'torch', 'zarr'} & sys.modules.keys()
 """, str(tmp_path / "input.nc")], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
