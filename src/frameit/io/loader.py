@@ -190,7 +190,7 @@ def load_config_with_model_presets(
     """
     from frameit.core.configuration import load_runtime
 
-    return resolve_config_with_model_presets(
+    return _apply_model_presets(
         load_runtime(run_yaml_path), strict_locked=strict_locked
     )
 
@@ -198,15 +198,17 @@ def load_config_with_model_presets(
 def resolve_config_with_model_presets(
     mapping: Mapping[str, Any], *, strict_locked: bool = False
 ) -> dict[str, Any]:
-    """Resolve YAML and in-memory configurations through the same presets."""
+    """Resolve a strict public run document, then apply internal model presets."""
     if not isinstance(mapping, Mapping):
         raise ValueError("The configuration must be a key-value mapping")
+    from frameit.core.configuration import to_runtime
+
+    return _apply_model_presets(to_runtime(dict(mapping)), strict_locked=strict_locked)
+
+
+def _apply_model_presets(mapping, *, strict_locked=False):
+    """Apply package-owned coordinate/dependency definitions to resolved runtime data."""
     run = copy.deepcopy(dict(mapping))
-
-    if "schema_version" in run and "model" in run:
-        from frameit.core.configuration import to_runtime
-
-        run = to_runtime(run)
 
     model = run.get("atm_model")
     if not model:

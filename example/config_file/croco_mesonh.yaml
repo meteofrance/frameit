@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: "2.1"
 model: mesonh
 run:
   name: croco-mesonh
@@ -46,7 +46,7 @@ tracking:
     # Illustrative common-ocean centre, not an identified cyclone position.
     center: {latitude: -11.0, longitude: 55.0}
 domain:
-  size_km: {x: 100, y: 100}
+  width_km: {x: 100, y: 100}
 polar:
   enabled: false  # Opt in to spatial point sampling; not a constant-depth section.
   shared_target: true
@@ -59,8 +59,8 @@ execution:
 output:
   directory: ./output/croco-mesonh
   overwrite: false
-  engine: netcdf4
+  backend: netcdf4
   synchronous_export: true
   max_workers: 1
-  # native copies native faces/basis/units; mass_earth selects CROCO rho/Earth currents.
-  cartesian: {horizontal_winds: mass_earth}
+  # native copies native faces/basis/units; earth_centered selects CROCO rho/Earth currents.
+  cartesian: {horizontal_vectors: earth_centered}

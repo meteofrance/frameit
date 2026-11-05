@@ -42,13 +42,13 @@ class ExecutionOptions:
         output = config.yaml_config.get("output", {})
         execution = config.yaml_config.get("execution", {})
         values = {
-            "export_netcdf": output.get("export", {}).get("netcdf", True),
+            "export_netcdf": output.get("export", {}).get("enabled", True),
             "export_cart": output.get("export", {}).get("cartesian", True),
             "export_polar": output.get("export", {}).get("polar", True),
             "compress_level": output.get("compression", {}).get("level", 1),
             "compress_coords": output.get("compression", {}).get("coordinates", False),
             "institution": output.get("institution", DEFAULT_INSTITUTION),
-            "engine": output.get("engine", "netcdf4"), "fmt": output.get("format", "NETCDF4"),
+            "engine": output.get("backend", "netcdf4"), "fmt": output.get("netcdf_format", "NETCDF4"),
             "overwrite": output.get("overwrite", True),
             "unlimited_time": output.get("unlimited_time", True),
             "max_workers": output.get("max_workers"), "log_level": config.log_level,
@@ -68,7 +68,7 @@ class ExecutionOptions:
 
         validate_zarr_sizes(self.zarr_chunk_size, self.zarr_shard_size)
         if self.engine not in {"netcdf4", "h5netcdf", "zarr"}:
-            raise ValueError("output.engine must be netcdf4, h5netcdf or zarr")
+            raise ValueError("output.backend must be netcdf4, h5netcdf or zarr")
         if not 0 <= int(self.compress_level) <= 9:
             raise ValueError("compress_level must be in [0, 9]")
         for name in ("max_workers", "dask_workers", "native_threads"):
@@ -251,7 +251,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
                 if config.simulation_parameter.get("common_polar_target") is not None:
                     status["common_polar_target"] = config.simulation_parameter[
                         "common_polar_target"]
-            if config.schema_version == 2:
+            if config.schema_version == "2.1":
                 from frameit.utils.atomic import write_yaml_atomic
 
                 resolved_path = config.output_dir / "resolved-config.yaml"
@@ -319,7 +319,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
                     )
                 log.debug("Product export finished (engine=%s)", options.engine)
             else:
-                log.info("Product export skipped (--no-export-netcdf).")
+                log.info("Product export skipped (--no-export).")
             runner.timer.log_summary(log, title="FrameIt runtime summary")
             products = _product_descriptors(exports, runner)
             log.info("Run complete: %d input file(s) · %d product(s)",

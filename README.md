@@ -2,7 +2,7 @@
 *Focused Regional Analysis of Modeled Events with Integrated Tracking*
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22128192.svg)](https://doi.org/10.5281/zenodo.22128192)
 
 FrameIt is a configurable Python tool for fixed or moving subdomain extraction,
@@ -34,7 +34,7 @@ installed package. **No second environment or subsequent FrameIt installation is
 required.** FA workers run in isolated processes using the active Python; omit
 `input.fa.python_executable` unless deliberately selecting a different runtime.
 
-The package supports Python 3.10+. Core NetCDF processing can also be installed
+The package supports Python 3.13 only. Core NetCDF processing can also be installed
 without FA, GRIB or polar extras. See [installation](docs/source/getting_started/installation.rst)
 for core/optional dependencies and [FA environment and troubleshooting](docs/source/user_guide/fa_environment.rst)
 for fresh-environment migration and the optional interpreter override.
@@ -77,20 +77,19 @@ See the [quick-start guide](docs/source/getting_started/quick_start.rst).
    rejected. See [output files and interpretation](docs/source/user_guide/output_files.rst).
 
 Both environment YAMLs include Zarr support. For a core-only pip installation,
-add `python -m pip install '.[zarr]'` (Python 3.12+). Set `output.engine: zarr`
+add `python -m pip install '.[zarr]'`. Set `output.backend: zarr`
 in YAML to use it. The same products become
 `.zarr` directory stores instead of `.nc` files. Optional `output.zarr_chunk_size`
 and `output.zarr_shard_size` tune storage, not scientific values; see
 [chunks versus shards](docs/source/user_guide/output_files.rst#sharded-zarr-v3).
 
-For legacy flat YAML, migrate explicitly and review the result:
-
-```bash
-frameit config migrate old.yml --output frameit.yaml --launch-directory /original/workdir
-```
+Run configurations require the exact string `schema_version: "2.1"`.
+Retired versions, flat YAML and old aliases are rejected; there is no converter.
+Follow the [manual upgrade map](docs/source/getting_started/upgrading_to_v2.rst)
+and review the scientific declarations before running.
 
 The [configuration reference](docs/source/user_guide/configuration_file.rst) explains
-defaults, CLI precedence, wind/level selections and migration.
+defaults, CLI precedence, and wind/level selections.
 
 ## Supported tasks and limits
 

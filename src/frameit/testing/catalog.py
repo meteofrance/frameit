@@ -74,49 +74,44 @@ def load_cases(mode="ci", profile="full", patterns=()):
             requests[group]["polar_variables"] = list(variables)
         user, polar = {}, {}
         for group, spec in requests.items():
-            req = {"variables": spec["variables"]}
+            req = {"names": spec["variables"]}
             if group != "surface":
                 selection = definition.get("selection") or (
                     "values" if "values" in spec else "indices"
                 )
-                req.update(level_selection=selection, level_indices=[], level_values=[])
-                if selection == "indices":
-                    req["level_indices"] = spec["indices"]
-                elif selection == "values":
+                if selection == "all":
+                    req["levels"] = "stored"
+                elif selection == "indices":
+                    req["levels"] = {"indices": spec["indices"]}
+                else:
                     # Physical values derived from indices are bound during
                     # preflight, not guessed from a different simulation.
-                    req["level_values"] = spec.get("values", [])
+                    req["levels"] = {"values": spec.get("values", [])}
             user[group] = req
-            polar[group] = {"variables": spec.get("polar_variables", spec["variables"])}
-        config = dict(
-            simulation_name=definition["id"].upper(),
-            file_name_prefix="",
-            file_name=dataset["stem"],
-            file_name_suffix="0P." if model == "AROME" else "diag.",
-            file_type="grib" if model == "AROME" else "nc",
-            atm_model=model,
-            ocean_model="None",
-            wave_model="None",
-            resolution=dataset["resolution"],
-            comment=f"Scientific matrix: {definition['id']}",
-            DEBUG=False,
-            tracking_method=definition["tracker"],
-            fix_subdomain_center=binding.get("centre"),
-            prescribed_track_file="",
-            x_boxsize_km=definition.get("x_boxsize_km", binding["box_km"]),
-            y_boxsize_km=definition.get("y_boxsize_km", binding["box_km"]),
-            simulation_output_dir=definition["dataset"],
-            frameit_output_dir="",
-            requested_variables_user=user,
-            compute_polar_proj=definition.get("polar", True),
-            radial_resolution=dataset["resolution"],
-            azimuthal_resolution=definition.get("azimuth", 10),
-            field_orientation="geodesic",
-            polar_variables=polar,
-            simulation_parameter={},
-            wind_pairs=copy.deepcopy(catalog["wind_pairs"][model]),
-            **catalog["output_conventions"],
-        )
+            polar[group] = {"names": spec.get("polar_variables", spec["variables"])}
+        suffix = "0P.grib" if model == "AROME" else "diag.nc"
+        centre = binding.get("centre") or [None, None]
+        config = {
+            "schema_version": "2.1", "model": "arome" if model == "AROME" else "mesonh",
+            "run": {"name": definition["id"].upper(),
+                    "description": f"Scientific matrix: {definition['id']}"},
+            "input": {"directory": definition["dataset"], "pattern": f"{dataset['stem']}???{suffix}",
+                      "format": "grib" if model == "AROME" else "netcdf",
+                      "grid_spacing_m": dataset["resolution"],
+                      "exclude": [] if model == "AROME" else [f"{dataset['stem']}000{suffix}"],
+                      "wind_pairs": copy.deepcopy(catalog["wind_pairs"][model])},
+            "tracking": {"method": "pressure_wind" if definition["tracker"] == "wind_pressure" else definition["tracker"],
+                         "fixed_box": {"center": dict(zip(("latitude", "longitude"), centre, strict=True))}},
+            "domain": {"width_km": {"x": definition.get("x_boxsize_km", binding["box_km"]),
+                                    "y": definition.get("y_boxsize_km", binding["box_km"])}},
+            "variables": user,
+            "polar": {"enabled": definition.get("polar", True), "variables": polar,
+                      "radial_step_m": dataset["resolution"], "azimuth_step_deg": definition.get("azimuth", 10)},
+            "output": {"directory": "./output", "cartesian": {"horizontal_vectors": "earth_centered",
+                       "vertical_velocity": catalog["output_conventions"]["cartesian_vertical_velocity"]},
+                       "polar": {"vertical_velocity": catalog["output_conventions"]["polar_vertical_velocity"]}},
+            "metadata": {"ocean_model": "None", "wave_model": "None"},
+        }
         result.append(
             dict(
                 id=definition["id"],
@@ -124,14 +119,14 @@ def load_cases(mode="ci", profile="full", patterns=()):
                 profile=definition["profile"],
                 dataset_id=definition["dataset"],
                 tracker=definition["tracker"],
-                polar=config["compute_polar_proj"],
+                polar=config["polar"]["enabled"],
                 coverage=definition["coverage"],
                 config=config,
                 mode=mode,
                 catalog_version=catalog["catalog_version"],
                 revision="1",
                 expected_file_count=binding["count"],
-                filename_glob=f"{dataset['stem']}???{config['file_name_suffix']}{config['file_type']}",
+                filename_glob=config["input"]["pattern"],
                 excluded_reason=definition.get("ci_exclusion") if mode == "ci" else None,
                 binding=binding,
                 request_fragments=requests,
@@ -385,27 +380,27 @@ def _finish_inventory(records, shape, coordinates, model):
 
 
 def _selected_levels(case, inventory):
-    requests = case["config"]["requested_variables_user"]
+    requests = case["config"]["variables"]
     selected = {}
     for group, request in requests.items():
         if group == "surface":
             continue
         available = inventory["levels"].get(group, [])
-        mode = request["level_selection"]
+        levels = request["levels"]
         if not available:
             raise ValueError(f"Missing requested vertical group {group}")
-        if mode == "all":
+        if levels == "stored":
             vals = available
-        elif mode == "indices":
-            indices = request["level_indices"]
+        elif "indices" in levels:
+            indices = levels["indices"]
             if any(i < -len(available) or i >= len(available) for i in indices):
                 raise ValueError(f"{group}: requested level indices exceed available coordinates")
             vals = [available[i] for i in indices]
         else:
-            vals = request["level_values"]
+            vals = levels["values"]
             if not vals:
                 vals = [available[i] for i in case["request_fragments"][group]["indices"]]
-                request["level_values"] = vals
+                levels["values"] = vals
             if not all(any(abs(float(v) - float(a)) <= 1e-6 for a in available) for v in vals):
                 raise ValueError(f"{group}: requested physical levels {vals} are absent")
         selected[group] = list(vals)
@@ -413,7 +408,8 @@ def _selected_levels(case, inventory):
 
 
 def _check_fields(case, inventory, selected):
-    requests = copy.deepcopy(case["config"]["requested_variables_user"])
+    requests = {group: {"variables": list(spec["names"])}
+                for group, spec in case["config"]["variables"].items()}
     model = inventory["model"]
     tracker = case["tracker"]
     if tracker in {"wind_pressure", "utrack"}:
@@ -426,7 +422,7 @@ def _check_fields(case, inventory, selected):
     from frameit.core.preflight import wind_dependencies
 
     requests, _ = wind_dependencies(SimpleNamespace(
-        wind_pairs=case["config"]["wind_pairs"], wind_reference_frame=None,
+        wind_pairs=case["config"]["input"]["wind_pairs"], wind_reference_frame=None,
     ), requests)
     for request in requests.values():
         request["variables"] = [n for n in request["variables"] if n != "wind_speed"]
@@ -480,6 +476,7 @@ def _prescribed(case, root, output, inventory):
     from netCDF4 import Dataset, date2num, num2date
 
     if inventory["model"] == "AROME":
+        point = case["config"]["tracking"]["fixed_box"]["center"]
         path = output.parent / "inputs" / "stationary-reference-track.nc"
         path.parent.mkdir(parents=True, exist_ok=True)
         with Dataset(path, "w") as dataset:
@@ -491,7 +488,7 @@ def _prescribed(case, root, output, inventory):
             time[:] = date2num(dates, time.units, time.calendar)
             for name, value, units in zip(
                 ("latitude", "longitude"),
-                case["config"]["fix_subdomain_center"],
+                (point["latitude"], point["longitude"]),
                 ("degrees_north", "degrees_east"),
                 strict=True,
             ):
@@ -501,7 +498,8 @@ def _prescribed(case, root, output, inventory):
             dataset.provenance = (
                 "Stationary reference centre; model validity times; not an observed best track"
             )
-        centre = _nearest(inventory["coordinates"], *case["config"]["fix_subdomain_center"])
+        point = case["config"]["tracking"]["fixed_box"]["center"]
+        centre = _nearest(inventory["coordinates"], point["latitude"], point["longitude"])
         return path, inventory["times"], [centre.copy() for _ in inventory["times"]]
     path = root / "MNH" / "IBTracks_reunion_CHIDO.nc"
     if not path.exists():
@@ -531,7 +529,8 @@ def _prescribed(case, root, output, inventory):
                 raise ValueError(f"Invalid prescribed position at common time {stamp}")
             centre = _nearest(inventory["coordinates"], a, b)
             half = int(
-                np.ceil(case["config"]["x_boxsize_km"] * 1000 / case["config"]["resolution"] / 2)
+                np.ceil(case["config"]["domain"]["width_km"]["x"] * 1000 /
+                        case["config"]["input"]["grid_spacing_m"] / 2)
             )
             ny, nx = inventory["shape"]
             if min(centre["cx"], nx - 1 - centre["cx"], centre["cy"], ny - 1 - centre["cy"]) < half:
@@ -568,12 +567,12 @@ def probe_dependencies(case):
 
 
 def _products_expected(case, selected, inventory=None):
-    config, model = case["config"], case["config"]["atm_model"]
+    config, model = case["config"], case["config"]["model"]
     contract = [{"role": "track", "group": None, "variables": ["cx", "cy", "valid_box"]}]
-    wind_group = "heightAboveGround" if model == "AROME" else "level"
-    wind_names = {"u", "v"} if model == "AROME" else {"UT", "VT"}
-    for group, request in config["requested_variables_user"].items():
-        variables = list(request["variables"])
+    wind_group = "heightAboveGround" if model == "arome" else "level"
+    wind_names = {"u", "v"} if model == "arome" else {"UT", "VT"}
+    for group, request in config["variables"].items():
+        variables = list(request["names"])
         if group == wind_group and wind_names <= set(variables):
             variables.append("wind_speed")
         contract.append(
@@ -586,20 +585,20 @@ def _products_expected(case, selected, inventory=None):
         )
     if case["polar"]:
         merged = {}
-        for group, request in config["polar_variables"].items():
+        for group, request in config["polar"]["variables"].items():
             out_group = "level" if group == "level_w" else group
             source = "level" if group == "level_w" and "level" in selected else group
             entry = merged.setdefault(
                 out_group, {"role": "polar", "group": out_group, "variables": [], "levels": {}}
             )
-            entry["variables"].extend(request["variables"])
+            entry["variables"].extend(request["names"])
             if source in selected:
                 if group == "level_w" and source == "level_w" and inventory is not None:
                     # A W-only polar request uses the corresponding native mass
                     # indices; Cartesian W retains the requested interfaces.
                     native = inventory["levels"]["level_w"]
                     mass = inventory["levels"]["level"]
-                    if config["requested_variables_user"][group].get("level_selection") == "all":
+                    if config["variables"][group].get("levels") == "stored":
                         entry["levels"]["level"] = mass
                     else:
                         entry["levels"]["level"] = [mass[native.index(v)] for v in selected[source]]
@@ -629,10 +628,8 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
     root, output = Path(data_root).expanduser().absolute(), Path(case_output).absolute()
     value["mode"] = mode or value["mode"]
     config = value["config"]
-    config.update(
-        simulation_output_dir=str(root / value["dataset_id"]),
-        frameit_output_dir=str(output),
-    )
+    config["input"]["directory"] = str(root / value["dataset_id"])
+    config["output"]["directory"] = str(output)
     value.update(input_files=[], input_records=[], expected={}, preflight="READY", reason="")
     if value.get("excluded_reason"):
         value.update(preflight="EXCLUDED", reason=value["excluded_reason"])
@@ -652,17 +649,21 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
             with weights.open("rb") as stream:
                 if not stream.read(1):
                     raise ValueError("UTrack checkpoint is empty")
-            config.update(
-                utrack_weights_file=str(weights), utrack_use_gpu=False, utrack_batch_size=16
-            )
+            config["tracking"]["utrack"] = {"weights_file": str(weights), "use_gpu": False, "batch_size": 16}
             value["input_records"].append(file_record(weights))
-        key = (str(root), value["dataset_id"], config["file_name"])
+        key = (str(root), value["dataset_id"], config["input"]["pattern"])
         cache = context.setdefault("inventories", {})
         if key not in cache:
             progress = context.get("progress")
             if progress:
                 progress(f"Discovering inputs for {value['dataset_id']}")
-            raw = SimulationConfig.from_mapping_with_model_preset(config)
+            # Discovery uses coordinates only; centres/level values bind from this inventory.
+            discovery = copy.deepcopy(config)
+            discovery["variables"] = {}
+            discovery["polar"] = {"enabled": False}
+            discovery["tracking"] = {"method": "fixed_box", "fixed_box": {
+                "center": {"latitude": 0., "longitude": 0.}}}
+            raw = SimulationConfig.from_mapping_with_model_preset(discovery)
             try:
                 paths = discover_input_files(raw)
             except FileNotFoundError:
@@ -677,7 +678,7 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
                 return value
             inventory = (
                 _grib_inventory(paths, progress=progress)
-                if config["atm_model"] == "AROME"
+                if config["model"] == "arome"
                 else _netcdf_inventory(paths, progress=progress)
             )
             inventory["input_records"] = [file_record(r["path"]) for r in inventory["records"]]
@@ -713,7 +714,7 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
 
             if not all(math.isfinite(position) for position in centre):
                 raise ValueError("Frozen fixed centre has invalid source coordinates")
-            config["fix_subdomain_center"] = centre
+            config["tracking"]["fixed_box"]["center"] = dict(zip(("latitude", "longitude"), centre, strict=True))
         if value["tracker"] == "utrack":
             if any(
                 850.0 not in r["fields"].get("isobaricInhPa", {}).get("absv", set())
@@ -738,12 +739,13 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
             complete_boxes=True,
         )
         if value["tracker"] == "fixed_box":
-            centre = _nearest(inventory["coordinates"], *config["fix_subdomain_center"])
+            point = config["tracking"]["fixed_box"]["center"]
+            centre = _nearest(inventory["coordinates"], point["latitude"], point["longitude"])
             import math
 
             ny, nx = inventory["shape"]
-            half_x = math.ceil(config["x_boxsize_km"] * 1000 / config["resolution"] / 2)
-            half_y = math.ceil(config["y_boxsize_km"] * 1000 / config["resolution"] / 2)
+            half_x = math.ceil(config["domain"]["width_km"]["x"] * 1000 / config["input"]["grid_spacing_m"] / 2)
+            half_y = math.ceil(config["domain"]["width_km"]["y"] * 1000 / config["input"]["grid_spacing_m"] / 2)
             if (
                 min(centre["cx"], nx - 1 - centre["cx"]) < half_x
                 or min(centre["cy"], ny - 1 - centre["cy"]) < half_y
@@ -756,7 +758,7 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
             except FileNotFoundError as exc:
                 value.update(preflight="SKIPPED_PREREQUISITE", reason=str(exc))
                 return value
-            config["prescribed_track_file"] = str(path)
+            config["tracking"]["prescribed_track"] = {"file": str(path)}
             value["input_records"].append(file_record(path, content=True))
             expected.update(times=times, centres=centres, prescribed_track=str(path))
         expected["products"] = _products_expected(value, selected, inventory)

@@ -47,7 +47,7 @@ def _benchmark_worker(case, root, output, mode, cache_size, completion):
             if resolved["preflight"] != "READY":
                 raise ValueError(f"Benchmark case unavailable: {resolved['reason']}")
             config = copy.deepcopy(resolved["config"])
-            config.update(polar_regrid_cache_size=cache_size, polar_profile=True)
+            config["polar"].update(plan_cache={"entries": cache_size}, profile=True)
             target_motion = "case tracker"
             if mode == "ci" and case["id"] == "arome_batsirai_prescribed_polar":
                 import numpy as np
@@ -56,14 +56,15 @@ def _benchmark_worker(case, root, output, mode, cache_size, completion):
                 # Small continuous motion inside the same frozen extraction
                 # cell exercises moving target weights without enlarging the CI domain.
                 times = np.array(resolved["expected"]["times"], dtype="datetime64[ns]")
-                latitude, longitude = config["fix_subdomain_center"]
+                point = config["tracking"]["fixed_box"]["center"]
+                latitude, longitude = point["latitude"], point["longitude"]
                 track = xr.Dataset(
                     {"lon": ("time", longitude + np.linspace(-.001, .001, len(times))),
                      "lat": ("time", np.full(len(times), latitude))}, coords={"time": times},
                 )
                 track_path = output / "continuous-origin.nc"
                 track.to_netcdf(track_path)
-                config["prescribed_track_file"] = str(track_path)
+                config["tracking"]["prescribed_track"] = {"file": str(track_path)}
                 target_motion = "continuous longitude +/-0.001 degree within the fixed CI cell"
             result = execute_simulation(
                 SimulationConfig.from_mapping_with_model_preset(config),

@@ -16,7 +16,7 @@ The YAML installs this checkout in editable mode with ``test,grib,polar,fa``
 extras and development/documentation tools. No additional FrameIt installation
 or second environment is needed. Keep the checkout accessible; editing it affects
 environments that import this editable installation. See
-:doc:`../getting_started/installation` for core-only installations (Python 3.10+)
+:doc:`../getting_started/installation` for core-only installations (Python 3.13)
 and optional dependencies.
 
 Native libraries and process isolation
@@ -64,12 +64,10 @@ Review existing YAML after activating the new environment. An explicit
 set it to null to use the new active Python. Environments sharing one editable
 checkout also share that checkout's code.
 
-``input.fa.backend`` defaults to ``epygram``. Legacy ``native`` is an accepted,
-deprecated alias of the same reader, with warnings and requested/effective-backend
-provenance. Replace it with ``epygram`` or omit it. The alias cannot select a
-different decoder or bypass source, geometry, field/scaling or resource checks.
-All other existing declarations and budgets retain their meanings. For legacy
-flat YAML, use :doc:`configuration_file` to migrate the configuration explicitly.
+``input.fa.backend`` accepts only ``epygram`` (the default). The retired
+``native`` alias is rejected. Source, geometry, field/scaling and resource checks
+still apply. All other existing declarations and budgets retain their meanings.
+For retired YAML, follow :doc:`../getting_started/upgrading_to_v2` manually.
 
 Optional interpreter override
 ------------------------------

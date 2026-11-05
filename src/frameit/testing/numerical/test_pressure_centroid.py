@@ -36,7 +36,7 @@ def test_reference_ring_reports_invalid_support(missing):
     assert "3/180 samples invalid" in message
     assert "longitude=51.2750, latitude=-5.1750" in message
     assert "2,000 m ASL" in message
-    assert "output domain.size_km does not extend" in message
+    assert "output domain.width_km does not extend" in message
 
 
 def test_reference_ring_rejects_northern_boundary_like_arome_sample():

@@ -159,8 +159,8 @@ def coupled_document(directory, *, synchronous=True):
                          "variables": {"surface": {"names": ["temperature"]}}}
     track = directory / "track.nc"
     moving_track().rename(lon="longitude", lat="latitude").to_netcdf(track)
-    return {"schema_version": 2, "model": "mesonh", "run": {"name": "shared"},
-            "input": {"sources": sources}, "domain": {"size_km": {"x": 8, "y": 8}},
+    return {"schema_version": "2.1", "model": "mesonh", "run": {"name": "shared"},
+            "input": {"sources": sources}, "domain": {"width_km": {"x": 8, "y": 8}},
             "tracking": {"source": "atmosphere", "method": "prescribed_track",
                          "prescribed_track": {"file": str(track)}},
             "polar": {"enabled": True, "shared_target": True},

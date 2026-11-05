@@ -126,7 +126,7 @@ def test_raw_vertical_header_survives_without_coordinate_or_field_assumptions():
 
 
 @pytest.mark.parametrize("group, levels", [
-    ("level", "all"), ("surface", "physical"), ("surface", {"indices": [0]}),
+    ("level", "stored"), ("surface", "physical"), ("surface", {"indices": [0]}),
     ("surface", {"values": [850]}),
 ])
 def test_native_atmospheric_cubes_and_vertical_selectors_remain_gated(tmp_path, group, levels):

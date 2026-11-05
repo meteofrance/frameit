@@ -53,7 +53,4 @@ dependencies:
   - pip:
       - -e .[test,grib,polar,fa,zarr]
       - ruff
-      - sphinx==9.2.0
-      - sphinx-rtd-theme
-      - furo
-      - sphinx-autodoc-typehints
+      - -r docs/docs-requirements.txt

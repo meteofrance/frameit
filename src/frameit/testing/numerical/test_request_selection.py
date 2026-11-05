@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from frameit.core.configuration import migrate_mapping, resolve_schema, to_runtime
+from frameit.core.configuration import resolve_schema, to_runtime
 from frameit.processing.requests import build_group_ds, normalize_requests, selected_native_indices
 
 
 def schema():
-    return {"schema_version": 2, "model": "mesonh", "input": {"pattern": "*.nc"},
+    return {"schema_version": "2.1", "model": "mesonh", "input": {"pattern": "*.nc"},
             "tracking": {"method": "fixed_box", "fixed_box": {
                 "center": {"latitude": 0, "longitude": 0}}},
             "variables": {"level": {"names": ["T"], "levels": "physical"}}}
@@ -116,7 +116,7 @@ def test_physical_filter_does_not_renumber_explicit_indices():
     xr.testing.assert_identical(result.T, ds.T.isel(level=[2]))
 
 
-@pytest.mark.parametrize("levels,domain", [("all", "stored"), ("stored", "stored"),
+@pytest.mark.parametrize("levels,domain", [("stored", "stored"),
                                          ("physical", "physical")])
 def test_schema_level_domain_and_no_implicit_wind_declaration(levels, domain):
     raw = schema()
@@ -170,7 +170,7 @@ def test_explicit_grid_rotation_roundtrip(method):
 
 
 @pytest.mark.parametrize("section,key,value", [
-    ("cartesian", "horizontal_winds", "auto"), ("cartesian", "horizontal_winds", []),
+    ("cartesian", "horizontal_vectors", "auto"), ("cartesian", "horizontal_vectors", []),
     ("cartesian", "vertical_velocity", "native"), ("polar", "vertical_velocity", False),
 ])
 def test_invalid_output_selectors(section, key, value):
@@ -180,18 +180,14 @@ def test_invalid_output_selectors(section, key, value):
         resolve_schema(raw)
 
 
-def test_output_selections_and_legacy_explicit_frame_are_preserved():
+def test_output_selections_are_preserved():
     raw = schema()
-    raw["output"] = {"cartesian": {"horizontal_winds": "native", "vertical_velocity": "mass"},
+    raw["output"] = {"cartesian": {"horizontal_vectors": "native", "vertical_velocity": "mass"},
                      "polar": {"vertical_velocity": "interfaces"}}
     runtime = to_runtime(raw)
     assert runtime["cartesian_horizontal_winds"] == "native"
     assert runtime["cartesian_vertical_velocity"] == "mass"
     assert runtime["polar_vertical_velocity"] == "interfaces"
-    for frame in (None, "earth", "grid"):
-        old = {"atm_model": "MNH", "wind_reference_frame": frame}
-        migrated, _ = migrate_mapping(old)
-        assert migrated["input"]["wind_reference_frame"] == frame
 
 
 def test_no_auto_global_frame():

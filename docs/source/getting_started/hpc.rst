@@ -99,7 +99,7 @@ format, tracker, variables, output engine and polar setting. Keep scientific
 settings identical between reference and batch runs. Declare the expected number
 of matching timestamps, including any prescribed-track intersection.
 
-Merge this fragment into the existing schema-v2 configuration:
+Merge this fragment into the existing schema-v2.1 configuration:
 
 .. code-block:: yaml
 

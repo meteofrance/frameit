@@ -108,7 +108,7 @@ Practical considerations and limitations
 - **Distance metric**: the method uses a squared Euclidean distance in (lat, lon) space, not a true geodesic distance. This is generally adequate for small domains.
 - **Masked coordinates**: if latitude/longitude contain NaNs (masked areas), the minimization must avoid all-NaN distance fields. If all candidate distances are NaN, the selection will fail.
 - **Fixed-box versus extraction box**: the fixed-box tracker defines the *center* used by FrameIt.
-  The extraction domain size is controlled separately by ``domain.size_km.x`` and ``.y``.
+  The extraction domain size is controlled separately by ``domain.width_km.x`` and ``.y``.
 
 Example
 -------
@@ -121,7 +121,7 @@ Example
      fixed_box:
        center: {latitude: -18, longitude: 58}
    domain:
-     size_km: {x: 500, y: 500}
+     width_km: {x: 500, y: 500}
 
 
 Illustration

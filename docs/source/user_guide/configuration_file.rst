@@ -1,4 +1,4 @@
-Configuration file (YAML schema version 2)
+Configuration file (YAML schema version 2.1)
 ============================================
 
 After :doc:`installation <../getting_started/installation>`, use this reference
@@ -26,13 +26,17 @@ Minimal example
    :language: yaml
 
 Paths are relative to the YAML file, including explicit input inventories and
-tracker auxiliary files. Model names are ``arome`` and ``mesonh``. Unknown keys,
+tracker auxiliary files. Model names are ``arome``, ``mesonh``, ``nemo`` and ``croco``.
+Ocean references admit NetCDF and fixed/prescribed centres only. Unknown keys,
 duplicate keys, invalid types, and conflicting selections are rejected.
 
 Identity and input
 ------------------
 
-``schema_version`` must be ``2``. ``run.name`` names the analysis and exported
+``schema_version`` must be the exact string ``"2.1"`` (quoted in YAML), not a
+number. Missing versions, retired versions and old aliases fail before dataset
+access. See :doc:`../getting_started/upgrading_to_v2` for the manual upgrade map.
+``run.name`` names the analysis and exported
 products; ``run.description`` is optional. ``metadata.extra`` holds user
 annotations, not algorithm options. Optional ocean/wave identifiers belong in
 ``metadata.ocean_model`` / ``metadata.wave_model``.
@@ -45,7 +49,8 @@ annotations, not algorithm options. Optional ocean/wave identifiers belong in
 ``*`` matches text and ``?`` matches a single character; no timestep width is
 imposed. ``input.exclude`` lists glob exclusions. For MesoNH, exclude the exact
 000 timeseries filename where applicable rather than every filename containing
-``000``. Explicit inventories also apply explicit exclusions. Missing inventory
+``000``. ``exclude`` must be a list, not null; an explicit ``files`` list must be
+nonempty, even beside a pattern. Explicit inventories also apply explicit exclusions. Missing inventory
 entries fail rather than disappear. Discovery ordering is deterministic.
 
 GRIB/NetCDF format is detected from file content; optional ``input.format`` can
@@ -75,6 +80,11 @@ and optional ``polar`` settings. ``tracking.source`` names the reference source;
 top-level ``model`` must match it. Variables belong inside each source, not a
 shared top-level block. Source grids, vertical groups, masks and units remain
 independent. See :doc:`fa_inputs` and ``example/config_file/coupled_fa.yaml``.
+Parent input contains only ``sources`` and ``time_alignment``. Neither key is
+allowed inside a source input, even if empty. Source input defaults are
+independent; source polar settings inherit parent polar settings and then override
+them, except that ``shared_target`` must agree globally. Source variable maps do
+not inherit top-level selections.
 
 ``input.time_alignment: common`` is the coupled default: select the exact
 intersection of valid times, warn for each source losing times and retain every
@@ -99,10 +109,9 @@ profiles are ``arome_history`` and ``surfex_history``; these do not admit arbitr
 producers or layouts. The full input, source/type/time, geometry and scaling
 contracts are in :doc:`fa_inputs`.
 
-* ``input.fa.backend`` defaults to ``epygram``. Legacy ``native`` is an accepted,
-  deprecated alias of that same reader, with migration warnings. It does not
-  select another decoder. Resolved YAML preserves an explicit alias for replay;
-  inventories and decoder provenance record requested and effective backends.
+* ``input.fa.backend`` accepts only ``epygram`` (the default). The retired
+  ``native`` alias is rejected. Inventories and decoder provenance retain the
+  requested and effective backends.
 * ``input.fa.python_executable`` defaults to null: FA workers use the active
   Python in fresh isolated processes. Omit it for the single reference environment.
   An explicit nonempty path selects a runtime containing FrameIt and the coherent
@@ -158,12 +167,12 @@ effective value and its source are retained in run provenance.
 Tracking and extraction
 -----------------------
 
-For an optional first-time geographic search with ``wind_pressure``, set
-``tracking.wind_pressure.initial_guess`` to a mapping of ``latitude``,
+For an optional first-time geographic search with ``pressure_wind``, set
+``tracking.pressure_wind.initial_guess`` to a mapping of ``latitude``,
 ``longitude`` and ``search_radius_km``. See
 :doc:`../tracker/pressure_wind_tracker` for scope, validation and failure policy.
 
-``tracking.method`` defaults to ``wind_pressure``. Supported alternatives are
+``tracking.method`` defaults to ``pressure_wind``. Supported alternatives are
 ``fixed_box``, ``prescribed_track``, ``pressure_centroid`` (AROME and Meso-NH), and
 ``utrack``. An experimental ``multifield_vortex`` native-grid adaptation of
 Marchok's ALL_NO_THICK configuration supports both models; see
@@ -194,8 +203,8 @@ sampling controls are nested under ``tracking.pressure_centroid``; see
 For native-level Meso-NH input use ``frameit init mesonh --tracking pressure_centroid``;
 the tracker documentation lists required fields and version-specific DIAG settings.
 
-``domain.size_km: {x: 500, y: 500}`` gives full box widths in kilometres. Omit
-``size_km`` for full-domain extraction. ``domain.edge_policy: pad_nan`` retains
+``domain.width_km: {x: 500, y: 500}`` gives full box widths in kilometres. Omit
+``width_km`` for full-domain extraction. ``domain.edge_policy: pad_nan`` retains
 centred geometry and pads outside the source domain; other policies are not
 currently supported.
 
@@ -213,7 +222,7 @@ Requests use native group/variable names:
        names: [u, v]
        levels: {values: [850, 700]}
 
-``levels`` is ``all`` (also the omission default), ``stored``, ``physical``,
+``levels`` is ``stored`` (the omission default), ``physical``,
 ``{indices: [...]}``, or ``{values: [...]}``. Select exactly one strategy.
 Indices are zero-based, nonnegative integers. Values and matching tolerances
 use the native vertical
@@ -229,7 +238,7 @@ Polar computation
 -----------------
 
 ``polar.enabled`` defaults to false; enabling requires a finite extraction box
-and selected polar variables. ``polar.variables: all`` means every variable
+and selected polar variables. ``polar.variables: extracted`` means every variable
 selected for extraction, not every variable in source files. Alternatively use
 a native group mapping with ``names`` lists that are subsets of extraction
 requests. Polar processing inherits extracted levels.
@@ -266,9 +275,9 @@ Missing geographic/wind units follow documented AROME/MesoNH adapter contracts
 and are recorded. Unsupported or incompatible declarations fail. Geographic
 coordinates are normalized before tracking as well as polar projection.
 Use pair-specific declarations below to make each scientific choice explicit.
-The legacy file-wide ``input.wind_reference_frame`` cannot describe mixed
-model-level grid winds and Earth-relative surface winds; replace it with
-``input.wind_pairs`` for such inputs.
+The file-wide ``input.wind_reference_frame`` is removed; use explicit
+``input.wind_pairs`` for each selected horizontal pair, including mixed
+model-level grid winds and Earth-relative surface winds.
 Pass-through scalar fields preserve their source units; computationally prepared
 winds and derived products carry normalized units.
 
@@ -294,7 +303,7 @@ Earth-relative surface winds:
          reference_frame: earth
    output:
      cartesian:
-       horizontal_winds: mass_earth  # native | mass_earth
+        horizontal_vectors: earth_centered  # native | earth_centered
        vertical_velocity: interfaces  # interfaces | mass
      polar:
        vertical_velocity: mass  # interfaces | mass
@@ -325,25 +334,26 @@ See :ref:`wind-preparation-method` for equations, axis checks and limitations.
 Output, logging, and precedence
 ----------------------------------
 
-``output.directory`` sets the run root. ``output.export.netcdf``, ``.cartesian``,
+``output.directory`` sets the run root. ``output.export.enabled``, ``.cartesian``,
 and ``.polar`` default to true; writing still requires an available product.
 Polar computation is independent of polar export. Compression defaults to level
-1 with coordinate compression disabled. Other supported controls are ``engine``,
-``format``, ``unlimited_time``, ``overwrite``, ``max_workers``,
+1 with coordinate compression disabled. Other supported controls are ``backend``,
+``netcdf_format``, ``unlimited_time``, ``overwrite``, ``max_workers``,
 ``synchronous_export`` (default false), and ``institution``.
 
-``output.engine`` selects ``netcdf4`` (default), ``h5netcdf``, or ``zarr``.
+``output.backend`` selects ``netcdf4`` (default), ``h5netcdf``, or ``zarr``.
 The first two write NetCDF files; ``zarr`` writes sharded Zarr v3 directory
-stores with the same products and ``.zarr`` instead of ``.nc``. ``output.format``
-is optional, defaults to ``NETCDF4``, and is unused for Zarr, as is
-``output.unlimited_time``. Zarr export does not support append/resume.
+stores with the same products and ``.zarr`` instead of ``.nc``.
+``output.netcdf_format`` accepts only ``NETCDF4`` (the default), including when
+the selected backend is Zarr; it does not control Zarr encoding.
+``output.unlimited_time`` is unused for Zarr. Zarr export does not support append/resume.
 
 For Zarr only, ``output.zarr_chunk_size`` and ``output.zarr_shard_size`` are
 optional mappings from dimension names to positive integer element counts.
 Both default to ``{}``, meaning the documented automatic layout. For example::
 
     output:
-      engine: zarr
+      backend: zarr
       zarr_chunk_size: {time: 1, y_box: 128, x_box: 128}
       zarr_shard_size: {time: 8, y_box: 512, x_box: 512}
 
@@ -352,9 +362,9 @@ Dimensions absent from a particular product are ignored. Explicit shard sizes
 must be multiples of explicit chunk sizes. See :ref:`sharded-zarr-output` for
 the difference between chunks and shards, defaults and override rules.
 
-For backward compatibility, ``output.export.netcdf`` and the CLI
-``--no-export-netcdf`` remain the overall product-export gate for **either**
-engine; the legacy name does not force NetCDF output. ``.cartesian`` and
+``output.export.enabled`` and the CLI ``--no-export`` are the overall
+product-export gate for **either** backend. ``--no-export-cartesian`` and
+``--no-export-polar`` control the respective product families. ``.cartesian`` and
 ``.polar`` retain their existing selection behavior. Compression level 1 is
 lossless gzip for Zarr (0 disables compression); coordinate compression remains
 opt-in. NetCDF compression behavior is unchanged.
@@ -387,7 +397,7 @@ Exclusive run-directory ownership rejects concurrent writers even with overwrite
 enabled. ``--no-overwrite`` rejects prior artifacts before computation.
 ``run-status.yaml`` records completion separately from provenance.
 
-Inspection, validation, and migration
+Inspection, validation, and upgrade
 ----------------------------------------
 
 .. code-block:: bash
@@ -398,7 +408,6 @@ Inspection, validation, and migration
    frameit config show --resolved
    frameit run --dry-run
    frameit run
-   frameit config migrate old.yml --output frameit.yaml --launch-directory /original/workdir
 
 Dataset preflight checks files, required variables/levels, units, geometry,
 geometry-dependent defaults, and output accessibility without computing scientific
@@ -409,18 +418,12 @@ they are not exact runtime/memory predictions or scientific approval.
 Schema-only validation does not open data. ``config show`` displays resolved
 schema settings; ``config show --resolved`` also performs metadata preflight.
 
-Legacy flat YAML is rejected by ordinary loading with a migration instruction.
-Migration reconstructs exact filename globs/exclusions, preserves physical values
-and selections, resolves old paths against the original launch directory, and
-reports removed ineffective fields. It retains the old nominal resolution as an
-advanced override; remove that key deliberately to enable fully inferred spacing.
-Source-unit validation still requires dataset preflight.
-
-The migration command refuses an existing output configuration unless ``--force``
-is explicit. Review the report and generated YAML, then run ``validate
---schema-only`` and metadata preflight on the selected inputs. Environment migration
-is separate: use a fresh prefix as described in :doc:`fa_environment`, review any
-explicit interpreter override, and retain all scientific declarations/budgets.
+Retired public YAML is rejected, including through Python mapping loaders.
+There is no executable converter. Follow :doc:`../getting_started/upgrading_to_v2`,
+then run ``validate --schema-only`` and metadata preflight on selected inputs.
+Environment migration is separate: preserve old prefixes as described in
+:doc:`fa_environment`, review interpreter overrides, and retain scientific
+declarations and resource budgets.
 
 The internal Python ``SimulationConfig`` numerical interface retains flat field
-names for existing integrations; those names are not accepted as schema-v2 YAML.
+names for existing integrations; those names are not public YAML or mapping keys.

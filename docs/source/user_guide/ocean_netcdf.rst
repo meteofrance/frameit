@@ -76,11 +76,11 @@ unrequested companions or interpreting their basis, sign or scaling. Separate
 contexts preserve shifted native sampling even when every file uses ``x/y``.
 ``depthw`` is not relabelled as ``deptht`` merely because their lengths agree.
 
-For any native component selection explicitly declare the existing legacy-named
-selector ``output.cartesian.horizontal_winds: native``. Its name is retained for
-configuration compatibility; it does not turn currents/stresses into winds.
+For any native component selection explicitly declare
+``output.cartesian.horizontal_vectors: native``. This does not turn
+currents/stresses into winds.
 The native ocean path never derives wind speed, radial/tangential winds or
-atmospheric reference-frame metadata. The default ``mass_earth`` selection fails
+atmospheric reference-frame metadata. The default ``earth_centered`` selection fails
 for NEMO components rather than silently returning a different representation.
 For W, retain ``output.cartesian.vertical_velocity: interfaces`` (the default):
 it preserves the native ``depthw`` axis, not a diagnosed mass-level velocity.
@@ -225,14 +225,14 @@ Native CROCO faces and current analysis
 
 Regional history fields on ``xi_u/eta_v`` retain their actual N-1 midpoint
 locations and ``lat_u/lon_u`` or ``lat_v/lon_v`` geography. With the existing
-``output.cartesian.horizontal_winds: native`` selector, values, source units and
+``output.cartesian.horizontal_vectors: native`` selector, values, source units and
 vector basis are copied unchanged; no wet-mask interpretation, companion current
 or angle is required. Local face dimensions are ``x_u_box`` and ``y_v_box``;
 unavailable bounding faces are missing, not fabricated or extrapolated. Source
 coordinate labels remain available. Rho dimensions use ``x_box/y_box``. This
-legacy-named selector applies to ocean currents without making them winds.
+selector applies to ocean currents without making them winds.
 
-Explicit ``mass_earth`` selects rho/Earth analysis for ``u/v`` on ``s_rho`` and
+Explicit ``earth_centered`` selects rho/Earth analysis for ``u/v`` on ``s_rho`` and
 ``ubar/vbar`` on ``surface``. Selecting either component loads its companion.
 The method requires regular labelled N-1 midpoint faces, declared velocity units,
 finite rho-point ``angle`` with angular units, and static ``mask_rho`` with
@@ -289,7 +289,7 @@ Optional shared point sampling
 ``example/config_file/croco_mesonh.yaml`` demonstrates exact-time named sources,
 different native vertical groups, opt-in SURFEX interpretation and selected
 CROCO rho/Earth currents. Adapt its paths, native indices and illustrative centre
-to the inspected inputs. Set ``horizontal_winds: native`` for unchanged native
+to the inspected inputs. Set ``horizontal_vectors: native`` for unchanged native
 Cartesian faces. Polar processing is off by default; enabling it uses the existing
 shared target, separately selected fields, and ordinary optional polar dependencies.
 The fixed or prescribed continuous geographical centres are shared, but each source

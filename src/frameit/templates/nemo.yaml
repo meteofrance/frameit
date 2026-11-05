@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: "2.1"
 model: nemo
 input:
   directory: ./data
@@ -15,4 +15,4 @@ tracking:
 output:
   directory: ./output
   overwrite: false
-  cartesian: {horizontal_winds: native}
+  cartesian: {horizontal_vectors: native}

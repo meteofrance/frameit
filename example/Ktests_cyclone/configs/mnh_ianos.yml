@@ -1,5 +1,5 @@
 # Adapt paths and native variables to the actual files. Paths are YAML-relative.
-schema_version: 2
+schema_version: "2.1"
 model: mesonh
 run: {name: IANOS_MNH_16, description: Ianos MesoNH simulation}
 input:
@@ -14,7 +14,7 @@ tracking:
   fixed_box:
     center: {latitude: 37.5, longitude: 19.5}
 domain:
-  size_km: {x: 300, y: 300}
+  width_km: {x: 300, y: 300}
 variables:
   level:
     names: [UT, VT, THT, POVOT]
@@ -26,10 +26,10 @@ variables:
     names: [UM10, VM10, MSLP, LE, H]
 polar:
   enabled: true
-  variables: all
+  variables: extracted
   azimuth_step_deg: 10
 output:
-  cartesian: {horizontal_winds: mass_earth, vertical_velocity: interfaces}
+  cartesian: {horizontal_vectors: earth_centered, vertical_velocity: interfaces}
   polar: {vertical_velocity: mass}
   directory: ./output/IANOS
 logging: {level: DEBUG}

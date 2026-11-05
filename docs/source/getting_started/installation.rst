@@ -45,7 +45,7 @@ Neither verifies native data decoding or scientific suitability. Continue with
 Core and optional installations
 -------------------------------
 
-The package supports **Python 3.10 or newer**. If you manage a scientific Python
+The package supports **Python 3.13 only**. If you manage a scientific Python
 environment yourself and only need core NetCDF processing, install from the
 checkout without native extras:
 
@@ -74,7 +74,7 @@ readers. Optional extras are selected only for the paths you need:
    * - ``test``
      - pytest for the optional regression workflows.
    * - ``zarr``
-     - Sharded Zarr v3 output: Python 3.12+, xarray >= 2026.9.0 and
+     - Sharded Zarr v3 output: Python 3.13, xarray >= 2026.9.0 and
        Zarr-Python >= 3.4.2, < 4. Not needed for NetCDF output.
 
 For example, ``python -m pip install '.[grib]'`` selects core plus GRIB from the
@@ -86,7 +86,7 @@ environment. See :doc:`../user_guide/fa_inputs` for FA producer/layout limits.
 Both environment YAMLs include the required Zarr and xarray versions. For a
 core-only pip installation, add ``python -m pip install '.[zarr]'`` from the
 checkout (or ``'frameit[zarr]'`` for a published version containing this feature).
-Select ``output.engine: zarr`` in the processing YAML to use it; NetCDF remains
+Select ``output.backend: zarr`` in the processing YAML to use it; NetCDF remains
 the default. Dependency availability is checked before
 processing when Zarr export is enabled; schema-only validation and metadata
 planning do not certify writer availability. The supported dependency floors
@@ -108,8 +108,8 @@ environment from the current YAML:
 
 Review an existing explicit ``input.fa.python_executable``: it continues to select
 that runtime even after activating the new environment. Omit it or set it to null
-to use the new active Python. Legacy ``input.fa.backend: native`` is a deprecated,
-warned alias of ``epygram``; replace it with ``epygram`` or omit it. Scientific
+to use the new active Python. Retired ``input.fa.backend: native`` is rejected;
+replace it with ``epygram`` or omit it. Scientific
 declarations and budgets still apply. See :doc:`FA environment and troubleshooting
 <../user_guide/fa_environment>` for failure diagnosis and
 :doc:`../user_guide/configuration_file` for YAML migration.

@@ -2,7 +2,7 @@ Output files
 ============
 
 FrameIt writes NetCDF products that can be opened without FrameIt, for example
-with xarray/netCDF4, NCO or CDO. Alternatively, ``output.engine: zarr`` selects
+with xarray/netCDF4, NCO or CDO. Alternatively, ``output.backend: zarr`` selects
 sharded Zarr v3 directory stores, readable with compatible xarray/Zarr readers
 (not the NetCDF readers NCO/CDO). Existing scripts still need compatible variable
 definitions, dimensions, coordinates and reader support; a matching format alone
@@ -39,7 +39,7 @@ Artifacts use the same layout for ordinary runs and each matrix case::
         cache/       # GRIB index files
         products/    # Track, Cartesian and polar .nc files or .zarr stores
         logs/        # Simulation logs
-        resolved-config.yaml  # Reloadable effective schema-v2 configuration
+        resolved-config.yaml  # Reloadable effective schema-v2.1 configuration
         run-provenance.yaml   # Geometry, inputs, units, and execution settings
         run-status.yaml       # Completion state, runtime/resources, product inventory
         .frameit-run.lock     # Present while an attempt owns this root
@@ -81,9 +81,10 @@ fail after the library call. This is execution evidence, not producer-scaling pr
 
 Per-input ``backend`` and ``backend_versions.FA_backend`` record
 the effective ``epygram`` reader; ``requested_backend`` / ``FA_backend_requested``
-retain the request and ``FA_backend_migration`` explains an alias. The default
-and deprecated ``native`` alias both record library geometry/CRS/zone origins
-and returned-mask provenance. No backend label supplies field/scaling validation.
+retain the request. Current public configurations admit only ``epygram``;
+``FA_backend_migration`` remains a historical protocol/provenance field.
+The reader records library geometry/CRS/zone origins and returned-mask provenance.
+No backend label supplies field/scaling validation.
 Malformed or over-budget helper transfers fail before array materialization;
 that product cannot be published or mark the run completed. Earlier complete
 products can remain under the per-product atomicity contract.
@@ -160,8 +161,8 @@ can be read with ``json.loads`` from Python's standard library.
 Sharded Zarr v3
 ---------------
 
-Select ``output.engine: zarr`` after installing the optional ``zarr`` extra
-(Python 3.12+, xarray >= 2026.9.0, Zarr-Python >= 3.4.2 and < 4). NetCDF remains
+Select ``output.backend: zarr`` after installing the optional ``zarr`` extra
+(Python 3.13, xarray >= 2026.9.0, Zarr-Python >= 3.4.2 and < 4). NetCDF remains
 the default. The same track, Cartesian groups and requested polar groups are
 written as local directory stores: ``SIMU.track.zarr``,
 ``SIMU.cart.<group>.zarr`` and ``SIMU.polar.<group>.zarr``. Source-qualified
@@ -204,7 +205,7 @@ settings do **not** change scientific resolution, sampling, precision or values.
 Defaults and tuning
 ~~~~~~~~~~~~~~~~~~~
 
-Both mappings are optional; ``output.engine: zarr`` alone works. For each product:
+Both mappings are optional; ``output.backend: zarr`` alone works. For each product:
 
 * Time chunks contain one element; a time shard spans eight chunks.
 * The last two non-time dimensions in dataset order use chunk extents of
@@ -316,7 +317,7 @@ Wind locations, reference frames and output choices
 
 .. note::
 
-   Defaults are Cartesian horizontal ``mass_earth``, Cartesian vertical
+   Defaults are Cartesian horizontal ``earth_centered``, Cartesian vertical
    ``interfaces`` and polar vertical ``mass``. Generated templates show these
    choices explicitly. Numerical conventions and qualification limits are in
    :ref:`wind-preparation-method`; source references do not establish scientific
@@ -345,12 +346,12 @@ Choose Cartesian horizontal representation independently of vertical W:
    * - Choice
      - Benefit
      - Trade-off
-   * - ``horizontal_winds: native``
+   * - ``horizontal_vectors: native``
      - Preserves source staggering and declared vector basis; useful for
        model-grid calculations. Velocity units are still normalized.
      - U/V need their own coordinates; collocate and, when needed, rotate
        before geographic vector analysis.
-   * - ``horizontal_winds: mass_earth`` (default)
+   * - ``horizontal_vectors: earth_centered`` (default)
      - Collocated east/north components suit comparison and ordinary plotting.
      - Interpolation can smooth gradients; original face samples are not retained.
    * - ``vertical_velocity: interfaces``
@@ -406,7 +407,7 @@ and does not move or discard other interface variables or their coordinates.
 
 Level selection follows these rules:
 
-* ``levels: all`` and ``levels: stored`` retain the original stored levels,
+* ``levels: stored`` retains the original stored levels,
   including stored extra levels; neither means physical-domain trimming.
 * ``levels: physical`` uses adapter-validated physical mass and interface ranges,
   separately. Missing or ambiguous ranges fail; no universal first/last-level

@@ -179,9 +179,10 @@ and Earth-model evidence; ``horizontal_header_signature`` is a library-derived
 JSON signature, not a vertical, quantity or content-checksum contract.
 
 ``backend`` and ``backend_versions.FA_backend`` identify effective ``epygram``;
-``requested_backend`` / ``FA_backend_requested`` retain the request and
-``FA_backend_migration`` reports the deprecated ``native`` alias. The same
-scientific/source/resource checks apply to both requests. Parent GRIB versions
+``requested_backend`` / ``FA_backend_requested`` retain the request.
+``FA_backend_migration`` remains an independent protocol/provenance field for
+historical records; current public configurations admit only ``epygram``.
+Scientific/source/resource checks still apply. Parent GRIB versions
 and worker-native versions are separate observations.
 
 Decoder JSONL logs retain individual requests and post-read mask/scaling facts.

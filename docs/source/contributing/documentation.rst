@@ -46,9 +46,9 @@ non-obvious consequences. Do not hide a consequential scientific declaration
 merely to shorten the YAML. Exhaustive settings belong in reference/inspection;
 the effective configuration belongs in provenance, not in a starter catalogue.
 
-The v2.1 key map and concrete template catalogue are still subject to maintainer
-approval. Until implemented and verified, describe them as proposals, not runnable
-commands. Do not silently substitute quantities, infer ambiguous units, change
+The v2.1 key map and concrete template catalogue have G1 approval; catalogue
+implementation and editorial G2 review are separate gates. Describe commands as
+runnable only after verification. Do not silently substitute quantities, infer ambiguous units, change
 defaults, fill missing samples or enable unrequested processing to make an
 example work. Preserve the distinction between missing and zero, sampling
 location, vector basis, reference-frame motion and time support.

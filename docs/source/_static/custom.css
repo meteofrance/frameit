@@ -2,3 +2,16 @@ img.logo {
     width: 200px !important;
     max-width: none !important;
 }
+
+.manual-upgrade-map {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.wy-table-responsive .manual-upgrade-map td,
+.wy-table-responsive .manual-upgrade-map th,
+.manual-upgrade-map code,
+.manual-upgrade-map .pre {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}

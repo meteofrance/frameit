@@ -2,7 +2,7 @@
 # This is an annotated mapping, not a release-qualified AROME field catalogue.
 # Verify source encodings, units, level locations and physical wind basis first.
 # Spectral/-91 records remain gated even when EPyGrAM is installed.
-schema_version: 2
+schema_version: "2.1"
 model: arome
 run:
   name: native-atmosphere
@@ -59,7 +59,7 @@ tracking:
   fixed_box:
     center: {latitude: -15.0, longitude: 50.15}
 domain:
-  size_km: {x: 40, y: 40}
+  width_km: {x: 40, y: 40}
 polar:
   enabled: false
 output:
@@ -68,5 +68,5 @@ output:
   synchronous_export: true
   max_workers: 1
   cartesian:
-    horizontal_winds: native
+    horizontal_vectors: native
     vertical_velocity: interfaces

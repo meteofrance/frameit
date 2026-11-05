@@ -191,10 +191,10 @@ def configuration(tmp_path, paths, *, coupled=False):
     from frameit.core.settings_class import SimulationConfig
 
     source = {'model': 'arome', 'input': {'format': 'netcdf', 'files': list(map(str, paths)),
-                                        'wind_reference_frame': 'earth',
+                                        'wind_pairs': [{'group': 'surface', 'u': 'u10', 'v': 'v10', 'reference_frame': 'earth'}],
                                         'netcdf': {'file_layout': 'variables'}},
               'variables': {'surface': {'names': ['prmsl', 'u10']}}}
-    raw = {'schema_version': 2, **source,
+    raw = {'schema_version': '2.1', **source,
            'tracking': {'method': 'fixed_box', 'fixed_box': {'center': {'latitude': -19.99,
                                                                        'longitude': 60.01}}},
            'output': {'directory': str(tmp_path / 'out'), 'overwrite': False}}
@@ -231,7 +231,7 @@ def test_netcdf_layout_rejects_invalid_configuration(tmp_path, value):
     from frameit.core.configuration import resolve_schema
 
     with pytest.raises(ValueError, match='file_layout'):
-        resolve_schema({'schema_version': 2, 'model': 'arome',
+        resolve_schema({'schema_version': '2.1', 'model': 'arome',
                         'input': {'pattern': '*.nc', 'netcdf': {'file_layout': value}}})
 
 
@@ -359,7 +359,7 @@ def test_runner_reuses_netcdf_metadata_without_reading_fields(tmp_path, monkeypa
     from frameit.core.runner import FrameitRunner
     from frameit.core.settings_class import SimulationConfig
 
-    from .test_configuration_v2 import dataset, document
+    from .test_configuration_v2_1 import dataset, document
     from .test_croco_netcdf import croco_document, croco_scene
     from .test_nemo_netcdf import nemo_document, nemo_scene
 
@@ -376,12 +376,12 @@ def test_runner_reuses_netcdf_metadata_without_reading_fields(tmp_path, monkeypa
     elif model == 'nemo':
         scene = nemo_scene().isel(time_counter=slice(0, 2))
         raw = nemo_document(tmp_path, paths, variables={
-            'deptht': {'names': ['votemper'], 'levels': 'all'}})
+            'deptht': {'names': ['votemper'], 'levels': 'stored'}})
         field, group, clock = 'votemper', 'deptht', 'time_counter'
     else:
         scene = croco_scene()
         raw = croco_document(tmp_path, paths, variables={
-            's_rho': {'names': ['temp'], 'levels': 'all'}})
+            's_rho': {'names': ['temp'], 'levels': 'stored'}})
         field, group, clock = 'temp', 's_rho', 'time'
     scene['unrequested'] = xr.ones_like(scene[field])
     for i, path in enumerate(paths):
@@ -477,7 +477,7 @@ def test_runner_only_prepares_selected_cartesian_branch(tmp_path, representation
     from frameit.core.runner import FrameitRunner
     from frameit.core.settings_class import SimulationConfig
 
-    from .test_configuration_v2 import document
+    from .test_configuration_v2_1 import document
     from .test_wind_collocation import native
 
     source = native()
@@ -486,10 +486,10 @@ def test_runner_only_prepares_selected_cartesian_branch(tmp_path, representation
     raw = document(tmp_path,
         input={'files': [str(path)], 'wind_pairs': [
             {'group': 'level', 'u': 'UT', 'v': 'VT', 'reference_frame': 'earth'}]},
-        variables={'level': {'names': ['UT', 'VT'], 'levels': 'all'},
-                   'level_w': {'names': ['WT'], 'levels': 'all'}},
+        variables={'level': {'names': ['UT', 'VT'], 'levels': 'stored'},
+                   'level_w': {'names': ['WT'], 'levels': 'stored'}},
         output={'directory': str(tmp_path / 'out'),
-                'cartesian': {'horizontal_winds': representation}})
+                'cartesian': {'horizontal_vectors': 'earth_centered' if representation == 'mass_earth' else representation}})
     with FrameitRunner(SimulationConfig.from_mapping_with_model_preset(raw)) as runner:
         groups, _, _ = runner.load_dataset()
         assert bool(runner._native_cartesian_groups) == (representation == 'native')

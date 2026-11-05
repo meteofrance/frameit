@@ -1,6 +1,6 @@
-# FrameIt schema v2. Adapt example paths and native variables to your dataset.
+# FrameIt schema v2.1. Adapt example paths and native variables to your dataset.
 # Paths are relative to this YAML file. Grid spacing is inferred automatically.
-schema_version: 2
+schema_version: "2.1"
 model: arome
 run:
   name: BATSIRAI
@@ -12,10 +12,10 @@ input:
     - {group: surface, u: u10, v: v10, reference_frame: earth}
     - {group: isobaricInhPa, u: u, v: v, reference_frame: earth}
 tracking:
-  method: wind_pressure
+  method: pressure_wind
 domain:
-  # Full widths in kilometres; omit size_km for the full domain.
-  size_km: {x: 500, y: 500}
+  # Full widths in kilometres; omit width_km for the full domain.
+  width_km: {x: 500, y: 500}
 variables:
   surface:
     names: [u10, v10, prmsl]
@@ -25,10 +25,10 @@ variables:
   #   levels: {values: [850, 700]}
 polar:
   enabled: false
-  variables: all
+  variables: extracted
   # radial_step_m: 2500  # Metres; omitted means inferred native spacing.
   # azimuth_count: 64   # Alternatively azimuth_step_deg; never both.
 output:
-  cartesian: {horizontal_winds: mass_earth, vertical_velocity: interfaces}
+  cartesian: {horizontal_vectors: earth_centered, vertical_velocity: interfaces}
   polar: {vertical_velocity: mass}
   directory: ./output/BATSIRAI

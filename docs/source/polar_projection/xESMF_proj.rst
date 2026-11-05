@@ -26,7 +26,7 @@ General strategy
 
    The target grid is parameterised by:
 
-   - **radius** ``rr`` (km), from 0 to half the smaller ``domain.size_km`` width
+   - **radius** ``rr`` (km), from 0 to half the smaller ``domain.width_km`` width
    - **azimuth** ``theta`` (radians), with ``theta_deg`` in degrees, clockwise from North:
      0° North, 90° East, 180° South, 270° West.
    - For each time step, the polar grid points are converted to geographic
@@ -63,7 +63,7 @@ The polar grid is derived from the extracted storm-centred box size and the requ
 .. code-block:: yaml
 
   domain:
-    size_km: {x: 100, y: 100}  # Full widths in kilometres
+    width_km: {x: 100, y: 100}  # Full widths in kilometres
   polar:
     enabled: true
     radial_step_m: 5000       # Metres; omission means resolved native spacing
@@ -81,7 +81,7 @@ Notes:
   7 degrees produces 52 uniformly spaced angles with an effective step of
   approximately 6.923 degrees, including the seam interval.
 - ``polar.azimuth_count`` must be an integer of at least 3. Count and step are
-  mutually exclusive in YAML schema version 2.
+  mutually exclusive in YAML schema version 2.1.
 - Omitting both angular options, or setting both to null, selects
   ``N = max(3, ceil(2*pi*rmax_km/dr_km))``. This targets radial spacing at the
   outer ring, without a one-degree floor. The previous implicit 10-degree
@@ -100,7 +100,7 @@ The behaviour differs depending on the tracking method:
 - ``tracking.method: fixed_box``
   - The storm centre is taken at the first time step and kept fixed, the same polar grid is reused for all times.
 
-- Any other tracking method ``wind_pressure, prescribed_track...``
+- Any other tracking method ``pressure_wind, prescribed_track...``
   - The storm centre can move in time, the polar grid is recomputed for each time step.
 
 Selecting variables to project
@@ -124,7 +124,7 @@ Shortcut to project all extracted variables:
 .. code-block:: yaml
 
   polar:
-    variables: all
+    variables: extracted
 
 Important behaviour:
 
@@ -432,7 +432,7 @@ Interpolation and physical interpretation
 Grid geometry constraints
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 - The maximum usable radius is limited by the extracted box size:
-  ``rmax_km = 0.5 * min(domain.size_km.x, domain.size_km.y)``.
+  ``rmax_km = 0.5 * min(domain.width_km.x, domain.width_km.y)``.
   If your need larger radii, increase the extraction box size accordingly.
 - The polar grid is computed using WGS84 geodesics, which is robust at regional scales, but it remains a sampling of geographic coordinates, not a true conformal map projection.
 
@@ -565,7 +565,7 @@ Troubleshooting
   - Ensure the requested group exists in the extracted outputs.
 
 - **Many NaNs on the polar grid**
-  - Adjust ``domain.size_km.x`` and ``.y`` to change the extraction extent and ``rmax_km``.
+  - Adjust ``domain.width_km.x`` and ``.y`` to change the extraction extent and ``rmax_km``.
   - Verify the storm centre remains inside the extracted box for moving-centre configurations.
 
 - **ImportError for xESMF**

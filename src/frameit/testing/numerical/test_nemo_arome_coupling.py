@@ -37,7 +37,8 @@ def coupled_document(directory, *, moving=False, exact=True, scalar_polar=False)
         ds.to_netcdf(path)
         atmosphere.append(str(path))
     sources["arome"] = {"model": "arome", "input": {"format": "netcdf", "files": atmosphere,
-        "netcdf": {"file_layout": "variables"}, "wind_reference_frame": "earth"},
+        "netcdf": {"file_layout": "variables"}, "wind_pairs": [
+            {"group": "surface", "u": "u10", "v": "v10", "reference_frame": "earth"}]},
         "variables": {"surface": {"names": ["prmsl", "u10", "v10"]}}}
     for source, depth, field, dx, dy in (("nemo_t", "deptht", "votemper", 0., 0.),
                                        ("nemo_u", "depthu", "vozocrtx", .006, 0.),
@@ -50,15 +51,15 @@ def coupled_document(directory, *, moving=False, exact=True, scalar_polar=False)
         path = directory / f"{source}.nc"
         ds.to_netcdf(path)
         sources[source] = {"model": "nemo", "input": {"format": "netcdf", "files": [str(path)]},
-                           "variables": {depth: {"names": [field], "levels": "all"}}}
-    raw = {"schema_version": 2, "model": "arome", "run": {"name": "coupled-ocean"},
-           "input": {"sources": sources}, "domain": {"size_km": {"x": 2., "y": 2.}},
+                           "variables": {depth: {"names": [field], "levels": "stored"}}}
+    raw = {"schema_version": "2.1", "model": "arome", "run": {"name": "coupled-ocean"},
+           "input": {"sources": sources}, "domain": {"width_km": {"x": 2., "y": 2.}},
            "tracking": {"source": "arome", "method": "fixed_box", "fixed_box": {
                "center": {"latitude": -20., "longitude": 60.}}},
            "execution": {"native_threads": 1, "dask_workers": 1},
            "output": {"directory": str(directory / "out"), "overwrite": False,
                       "synchronous_export": True, "max_workers": 1,
-                      "cartesian": {"horizontal_winds": "native"}}}
+                       "cartesian": {"horizontal_vectors": "native"}}}
     if moving:
         track = directory / "track.nc"
         xr.Dataset({"latitude": ("time", [-20., -19.99]),
@@ -66,7 +67,7 @@ def coupled_document(directory, *, moving=False, exact=True, scalar_polar=False)
                    coords={"time": times}).to_netcdf(track)
         raw["tracking"] = {"source": "arome", "method": "prescribed_track", "prescribed_track": {"file": str(track)}}
     if scalar_polar:
-        raw["domain"]["size_km"] = {"x": 4., "y": 4.}
+        raw["domain"]["width_km"] = {"x": 4., "y": 4.}
         raw["polar"] = {"enabled": True, "shared_target": True, "azimuth_count": 8}
         for source in sources:
             sources[source]["polar"] = {"enabled": source in {"arome", "nemo_t"}}
@@ -290,7 +291,7 @@ def test_nemo_arome_interrupted_export_and_overwrite_protection(tmp_path, monkey
 def test_nemo_products_zarr_roundtrip(tmp_path):
     pytest.importorskip("zarr")
     raw = coupled_document(tmp_path, moving=True)
-    raw["output"].update(engine="zarr",
+    raw["output"].update(backend="zarr",
         zarr_chunk_size={"time": 1, "deptht": 1, "depthu": 1, "depthv": 1, "depthw": 1, "x_box": 2, "y_box": 2},
         zarr_shard_size={"time": 2, "deptht": 2, "depthu": 2, "depthv": 2, "depthw": 2, "x_box": 4, "y_box": 4})
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
@@ -361,7 +362,7 @@ def test_preceding_hour_coupled_native_copies_and_replay(tmp_path, moving, synch
     if engine == "zarr":
         pytest.importorskip("zarr")
     raw = preceding_document(tmp_path, moving=moving)
-    raw["output"].update(synchronous_export=synchronous, engine=engine)
+    raw["output"].update(synchronous_export=synchronous, backend=engine)
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     result = execute_simulation(conf)
     assert result.ok, result

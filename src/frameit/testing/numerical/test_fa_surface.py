@@ -23,7 +23,7 @@ from frameit.testing.numerical.test_fa_pipeline import single_fa_document
 pytestmark = pytest.mark.skipif(not NATIVE, reason="optional EPyGrAM FA stack not installed")
 
 
-@pytest.fixture(params=["native", pytest.param("epygram", marks=EPYGRAM)])
+@pytest.fixture(params=[pytest.param("epygram", marks=EPYGRAM)])
 def backend_options(request):
     return {"backend": request.param,
             "python_executable": EPYTHON if request.param == "epygram" else None}
@@ -228,5 +228,5 @@ assert not {'frameit', 'falfilfa4py', 'epygram'} & sys.modules.keys()
     versions = provenance["fa_inputs"][0]["backend_versions"]
     assert versions["FA_backend"] == "epygram"
     assert versions["FA_backend_requested"] == backend_options["backend"]
-    assert bool(versions["FA_backend_migration"]) == (backend_options["backend"] == "native")
+    assert not versions["FA_backend_migration"]
     assert provenance["fa_decoder"]["backend_versions"]["EPyGrAM"] == "2.1.0"

@@ -33,7 +33,7 @@ def check_products(case, products):
         if key in by_key:
             record("descriptor-uniqueness", False, f"Duplicate product descriptor: {key}")
         by_key[key] = product
-    if not case["config"].get("compute_polar_proj", False):
+    if not case["config"].get("polar", {}).get("enabled", False):
         record(
             "polar-disabled",
             not any(k[0] == "polar" for k in by_key),

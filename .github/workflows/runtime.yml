@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.13"]
+        python-version: ["3.13"]
     env:
       OMP_NUM_THREADS: "1"
       OPENBLAS_NUM_THREADS: "1"
@@ -48,7 +48,7 @@ jobs:
           src/frameit/testing/numerical/test_fa_surface.py
           src/frameit/testing/numerical/test_fa_mapping.py
           src/frameit/testing/numerical/test_fa_geometry.py
-          src/frameit/testing/numerical/test_fa_migration.py
+          src/frameit/testing/numerical/test_fa_replay.py
           src/frameit/testing/numerical/test_fa_spectral.py
           src/frameit/testing/numerical/test_coupled_shared_polar.py
           src/frameit/testing/numerical/test_arome_fa_coupling.py
@@ -140,7 +140,7 @@ jobs:
           python -c "import eccodes, cfgrib, xesmf, esmpy; assert esmpy.__version__ == '8.9.1' and xesmf.__version__ == '0.9.2'"
       - name: Check default-interpreter coupled exports and normal process shutdown
         run: python -m pytest -q src/frameit/testing/numerical/test_fa_environment.py
-      - name: Full regressions including primary pair, shared targets, migration and cubes
+      - name: Full regressions including primary pair, shared targets, replay and cubes
         run: >-
           python -m pytest -q
           --junitxml=fa-epygram-tests.xml

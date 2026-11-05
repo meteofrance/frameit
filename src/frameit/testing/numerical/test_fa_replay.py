@@ -1,4 +1,4 @@
-"""C4 old YAML replay, effective implementation and independent output compatibility."""
+"""Current YAML replay, effective implementation and independent output compatibility."""
 
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ from frameit.testing.numerical.test_fa_pipeline import (
 
 
 @pytest.mark.parametrize("coupled", [False, True])
-@pytest.mark.parametrize("backend", [None, "native", "epygram"])
-def test_old_yaml_acceptance_all_settings_and_resolved_replay(tmp_path, caplog, coupled, backend):
+@pytest.mark.parametrize("backend", [None, "epygram"])
+def test_current_yaml_all_settings_and_resolved_replay(tmp_path, coupled, backend):
     raw = (document(tmp_path, tmp_path / "atmosphere.nc", [tmp_path / "surface.fa"])
            if coupled else single_fa_document(tmp_path, [tmp_path / "surface.fa"]))
     inp = raw["input"]["sources"]["surfex"]["input"] if coupled else raw["input"]
@@ -37,7 +37,7 @@ def test_old_yaml_acceptance_all_settings_and_resolved_replay(tmp_path, caplog, 
     if backend is not None:
         inp["fa"]["backend"] = backend
     original = copy.deepcopy(raw)
-    path = tmp_path / "old.yaml"
+    path = tmp_path / "current.yaml"
     path.write_text(yaml.safe_dump(raw))
     conf = SimulationConfig.from_yaml(path)
     resolved = resolved_configuration(conf)
@@ -50,16 +50,15 @@ def test_old_yaml_acceptance_all_settings_and_resolved_replay(tmp_path, caplog, 
     assert fa == expected
     assert resolved_configuration(replay) == resolved
     assert raw == original and not (tmp_path / "surface.fa").exists()
-    assert ("native is deprecated" in caplog.text) == (backend == "native")
 
 
-def test_init_and_inspect_use_maintained_default_and_report_legacy_alias(
+def test_init_and_inspect_use_maintained_default(
     tmp_path, monkeypatch, capsys,
 ):
     from frameit.cli import _build_parser, _cmd_inspect
 
     path = write_template("arome", tmp_path / "init.yaml", full=True)
-    assert yaml.safe_load(path.read_text())["input"]["fa"]["backend"] == "epygram"
+    assert SimulationConfig.from_yaml(path).fa_options["backend"] == "epygram"
     source = tmp_path / "unopened.fa"
     source.touch()
     calls = []
@@ -70,7 +69,7 @@ def test_init_and_inspect_use_maintained_default_and_report_legacy_alias(
                                      "FA_backend_requested": options["backend"]}}
 
     monkeypatch.setattr("frameit.io.fa_backend.inspect_fa", inspect)
-    for backend in (None, "native"):
+    for backend in (None, "epygram"):
         args = _build_parser().parse_args([
             "inspect", str(tmp_path), "--model", "arome", "--format", "fa", "--pattern", "*.fa",
             *(["--fa-backend", backend] if backend else [])])
@@ -87,8 +86,8 @@ def test_init_and_inspect_use_maintained_default_and_report_legacy_alias(
 
 @NATIVE
 @pytest.mark.parametrize("coupled", [False, True])
-@pytest.mark.parametrize("backend", [None, "native"])
-def test_replayed_legacy_or_implicit_backend_exports_independent_values(
+@pytest.mark.parametrize("backend", [None, "epygram"])
+def test_replayed_current_or_implicit_backend_exports_independent_values(
     tmp_path, coupled, backend,
 ):
     from frameit.testing.numerical.test_fa_io import fa_files
@@ -109,7 +108,7 @@ def test_replayed_legacy_or_implicit_backend_exports_independent_values(
     inp["fa"]["field_metadata"]["SFX.T2M"]["allow_unscaled"] = False
     if backend is not None:
         inp["fa"]["backend"] = backend
-    path = tmp_path / "old.yaml"
+    path = tmp_path / "current.yaml"
     path.write_text(yaml.safe_dump(raw))
     original = SimulationConfig.from_yaml(path)
     preflight(original)
@@ -124,7 +123,7 @@ def test_replayed_legacy_or_implicit_backend_exports_independent_values(
     assert facts["backend"] == facts["backend_versions"]["FA_backend"] == "epygram"
     assert facts["requested_backend"] == (backend or "epygram")
     assert facts["backend_versions"]["FA_backend_requested"] == (backend or "epygram")
-    assert bool(facts["backend_versions"]["FA_backend_migration"]) == (backend == "native")
+    assert not facts["backend_versions"]["FA_backend_migration"]
     assert all(observation["library"] == "EPyGrAM" for fields in
                source["fa_decoder"]["payload_reads"].values() for observation in fields.values())
     product = next(p["path"] for p in result.products if p["role"] == "cart"

@@ -35,7 +35,7 @@ DECLARATION = {"units": "K", "kind": "continuous", "temporal_kind": "instantaneo
 
 def document(directory, files, *, latitude=-20., synchronous=True):
     return {
-        "schema_version": 2, "model": "arome", "run": {"name": "native-cubes"},
+        "schema_version": "2.1", "model": "arome", "run": {"name": "native-cubes"},
         "input": {"format": "fa", "files": [str(p) for p in files], "fa": {
             "backend": "epygram", "python_executable": EPYTHON, "profile": "arome_history",
             "earth_radius_m": 6371229., "field_metadata": {
@@ -50,7 +50,7 @@ def document(directory, files, *, latitude=-20., synchronous=True):
                       "level_w": {"names": ["w_if"], "levels": {"indices": [3, 0]}}},
         "tracking": {"method": "fixed_box", "fixed_box": {
             "center": {"latitude": latitude, "longitude": 50.}}},
-        "domain": {"size_km": {"x": 6., "y": 4.}},
+        "domain": {"width_km": {"x": 6., "y": 4.}},
         "output": {"directory": str(directory / "run"), "synchronous_export": synchronous,
                    "max_workers": 1},
     }
@@ -177,7 +177,7 @@ def test_epygram_optionality_and_native_contradictions(tmp_path, monkeypatch):
 
 @NATIVE
 @pytest.mark.parametrize("synchronous", [True, False])
-@pytest.mark.parametrize("backend", ["epygram", "native"])
+@pytest.mark.parametrize("backend", ["epygram"])
 def test_native_cube_export_indices_coefficients_masks_and_sparse_decodes(
     tmp_path, synchronous, backend,
 ):
@@ -305,7 +305,7 @@ def test_native_and_analysis_winds_basis_masks_neighbours_and_idempotence(tmp_pa
     assert native["level"].u.attrs["wind_reference_frame"] == "grid"
     assert "frameit_wind_prepared" not in native["level"].u.attrs
     raw["variables"]["level"]["names"] = ["u", "v"]
-    raw["output"]["cartesian"] = {"horizontal_winds": "native"}
+    raw["output"]["cartesian"] = {"horizontal_vectors": "native"}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     product = next(p["path"] for p in result.products if p["role"] == "cart")
     with xr.open_dataset(product, engine="netcdf4") as data:

@@ -2,7 +2,7 @@
 # Full inputs must cover the 500-km environmental-pressure ring at all times.
 # MNH 6.0 DIAG1.nam: enable LTPZH, LVAR_RS, LWIND_ZM, LMSLP in &NAM_DIAG.
 # Include UM10/VM10 from your MNH/SURFEX surface diagnostics.
-schema_version: 2
+schema_version: "2.1"
 model: mesonh
 run:
   name: MNH_PRESSURE_CENTROID
@@ -18,13 +18,13 @@ input:
 tracking:
   method: pressure_centroid
 domain:
-  size_km: {x: 500, y: 500}
+  width_km: {x: 500, y: 500}
 variables:
   surface:
     names: [MSLP, UM10, VM10]
 polar:
   enabled: false
 output:
-  cartesian: {horizontal_winds: mass_earth, vertical_velocity: interfaces}
+  cartesian: {horizontal_vectors: earth_centered, vertical_velocity: interfaces}
   polar: {vertical_velocity: mass}
   directory: ./output/MNH_PRESSURE_CENTROID

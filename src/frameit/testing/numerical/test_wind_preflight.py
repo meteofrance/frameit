@@ -10,7 +10,7 @@ import pytest
 import xarray as xr
 from dask import delayed
 
-from frameit.core.configuration import migrate_mapping, to_runtime
+from frameit.core.configuration import to_runtime
 from frameit.core.preflight import (
     inspect_wind_pairs,
     preflight,
@@ -123,11 +123,11 @@ def test_arome_vertical_quantities_have_no_horizontal_frame_requirement(tmp_path
     path = tmp_path / "vertical.nc"
     source.to_netcdf(path, engine="h5netcdf")
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": 2, "model": "arome",
+        "schema_version": "2.1", "model": "arome",
         "input": {"directory": str(tmp_path), "pattern": "vertical.nc"},
         "tracking": {"method": "fixed_box", "fixed_box": {
             "center": {"latitude": -20.01, "longitude": 60.01}}},
-        "variables": {"heightAboveGround": {"names": [name], "levels": "all"}},
+        "variables": {"heightAboveGround": {"names": [name], "levels": "stored"}},
         "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "output")},
     })
     assert conf.velocity_aliases["w_velocity"] == "wz"
@@ -183,21 +183,23 @@ def test_centroid_explicit_native_rotation_and_independent_surface_basis(method)
         prepare_mnh_inputs(source, conf)
 
 
-def test_catalog_migration_preserves_source_and_output_conventions(tmp_path):
+def test_catalog_preserves_source_and_output_conventions(tmp_path):
     for case in load_cases():
-        old = deepcopy(case["config"])
+        raw = deepcopy(case["config"])
+        # This checks declarations only; source-dependent levels bind at inventory.
+        raw["variables"] = {}
+        raw["polar"].update(enabled=False, variables="extracted")
         # Normally bound from the frozen fixture's centre_grid/track at resolution.
-        old["fix_subdomain_center"] = old["fix_subdomain_center"] or [-10.3, 55.]
-        if old["tracking_method"] == "prescribed_track":
-            old["prescribed_track_file"] = "fixture-track.nc"
-        if old["tracking_method"] == "utrack":
-            old["utrack_weights_file"] = "fixture-weights.pt"
-        migrated, _ = migrate_mapping(old, launch_dir=tmp_path)
-        assert migrated["input"]["wind_pairs"] == old["wind_pairs"]
-        runtime = to_runtime(migrated, base_dir=tmp_path)
-        for key in ("wind_pairs", "cartesian_horizontal_winds", "cartesian_vertical_velocity",
-                    "polar_vertical_velocity"):
-            assert runtime[key] == old[key]
+        raw["tracking"]["fixed_box"]["center"] = {"latitude": -10.3, "longitude": 55.}
+        if raw["tracking"]["method"] == "prescribed_track":
+            raw["tracking"]["prescribed_track"] = {"file": "fixture-track.nc"}
+        if raw["tracking"]["method"] == "utrack":
+            raw["tracking"]["utrack"] = {"weights_file": "fixture-weights.pt"}
+        runtime = to_runtime(raw, base_dir=tmp_path)
+        assert runtime["wind_pairs"] == raw["input"]["wind_pairs"]
+        assert runtime["cartesian_horizontal_winds"] == "mass_earth"
+        assert runtime["cartesian_vertical_velocity"] == "interfaces"
+        assert runtime["polar_vertical_velocity"] == "mass"
 
 
 def test_source_examples_declare_conventions():
@@ -218,13 +220,13 @@ def test_explicit_centroid_preflight_and_export(tmp_path):
     source, _ = native_vortex()
     source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": 2, "model": "mesonh",
+        "schema_version": "2.1", "model": "mesonh",
         "input": {"directory": str(tmp_path), "pattern": "native.nc", "wind_pairs": [
             {"group": "level", "u": "UT_ZM", "v": "VT_ZM", "reference_frame": "earth"},
             {"group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "earth"},
         ]},
         "tracking": {"method": "pressure_centroid"},
-        "domain": {"size_km": {"x": 100, "y": 100}},
+        "domain": {"width_km": {"x": 100, "y": 100}},
         "variables": {"surface": {"names": ["MSLP"]}},
         "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "output")},
     })

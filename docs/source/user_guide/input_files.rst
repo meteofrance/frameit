@@ -21,8 +21,8 @@ globs. Relative paths are resolved from the YAML file. GRIB/NetCDF content-based
 format detection rejects mixed inputs; ``input.format`` may explicitly specify
 ``grib`` or ``netcdf``. FA requires explicit ``format: fa`` and its profile/declarations.
 Mixed formats require separate named sources, not a mixed ordinary inventory.
-See :doc:`configuration_file` for schema-v2 examples, units,
-native-grid inference, and migration from the old filename fragments.
+See :doc:`configuration_file` for schema-v2.1 examples, units and
+native-grid inference, and :doc:`../getting_started/upgrading_to_v2` for old configurations.
 
 Inspect a deliberately selected stream before choosing quantities and methods:
 
@@ -65,7 +65,7 @@ The input reader and chunks are existing, explicit settings:
 Compare readers with your actual selection. On the tested large Meso-NH files,
 ``netcdf4`` has cheaper metadata setup but a higher process memory peak; it is
 not a universally faster or lower-memory choice. This setting selects the input
-reader, independently of ``output.engine``. No automatic reader substitution
+reader, independently of ``output.backend``. No automatic reader substitution
 is performed.
 
 Keep ``chunks: {}`` as the starting point. Oversized chunks (especially ``-1``

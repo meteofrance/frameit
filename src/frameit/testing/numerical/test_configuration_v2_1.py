@@ -1,4 +1,4 @@
-"""Schema, migration, scientific unit equivalence, and real pipeline regressions."""
+"""Strict public configuration, scientific equivalence, and pipeline regressions."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import xarray as xr
 import yaml
 
 from frameit.cli import _build_parser, main
-from frameit.core.configuration import migrate_mapping, resolve_schema, write_template
+from frameit.core.configuration import resolve_schema, to_runtime, write_template
 from frameit.core.execution import ExecutionOptions, execute_simulation
 from frameit.core.grid_geometry import inspect_grid
 from frameit.core.preflight import preflight
@@ -22,10 +22,204 @@ from frameit.processing.polar.polar_utils import ensure_theta_rad_dim
 from frameit.utils.units import convert_units
 
 
+def minimal_document():
+    return {"schema_version": "2.1", "model": "arome",
+            "input": {"pattern": "*.nc", "format": "netcdf"},
+            "tracking": {"method": "fixed_box", "fixed_box": {
+                "center": {"latitude": -20., "longitude": 60.}}},
+            "variables": {"surface": {"names": ["instructional_scalar"]}},
+            "output": {"directory": "./products", "overwrite": False}}
+
+
+def test_current_string_schema_preserves_numerical_requests(tmp_path):
+    raw = minimal_document()
+    raw["tracking"] = {"method": "pressure_wind", "pressure_wind": {
+        "search_half_width_km": 75., "refine_half_width_km": 25.}}
+    raw["domain"] = {"width_km": {"x": 4., "y": 6.}}
+    raw["polar"] = {"variables": "extracted"}
+    raw["output"].update(backend="zarr", export={"enabled": False},
+                         cartesian={"horizontal_vectors": "earth_centered"})
+    runtime = to_runtime(raw, base_dir=tmp_path)
+    assert runtime["schema_version"] == "2.1"
+    assert runtime["tracking_method"] == "wind_pressure"
+    assert runtime["wind_pressure_search_half_width_km"] == 75.
+    assert runtime["wind_pressure_refine_half_width_km"] == 25.
+    assert (runtime["x_boxsize_km"], runtime["y_boxsize_km"]) == (4., 6.)
+    assert runtime["cartesian_horizontal_winds"] == "mass_earth"
+    assert runtime["requested_variables_user"]["surface"]["variables"] == ["instructional_scalar"]
+    assert runtime["requested_variables_user"]["surface"]["level_domain"] == "stored"
+    assert runtime["polar_variables"] == {"surface": {"variables": ["instructional_scalar"]}}
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    options = ExecutionOptions.from_config(conf)
+    assert options.engine == "zarr" and not options.export_netcdf
+    assert conf.wind_pairs == [] and conf.wind_reference_frame is None
+
+
+@pytest.mark.parametrize("version", [None, 1, 2, "1", "2", "2.0", 2.1, True, False, "9", "2.1.0"])
+@pytest.mark.parametrize("route", ["resolve", "runtime", "mapping", "presets", "yaml", "yaml_preset"])
+def test_every_public_loader_rejects_retired_versions_before_access(tmp_path, monkeypatch, version, route):
+    import subprocess
+
+    from frameit.io import loader
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Retired public configuration reached dataset access")
+
+    monkeypatch.setattr(xr, "open_dataset", forbidden)
+    monkeypatch.setattr(loader, "discover_input_files", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    raw = minimal_document()
+    if version is None:
+        raw.pop("schema_version")
+    else:
+        raw["schema_version"] = version
+    path = tmp_path / "retired.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    calls = {"resolve": lambda: resolve_schema(raw), "runtime": lambda: to_runtime(raw),
+             "mapping": lambda: SimulationConfig.from_mapping_with_model_preset(raw),
+             "presets": lambda: loader.resolve_config_with_model_presets(raw),
+             "yaml": lambda: SimulationConfig.from_yaml(path),
+             "yaml_preset": lambda: SimulationConfig.from_yaml_with_model_preset(path)}
+    with pytest.raises(ValueError, match="schema_version"):
+        calls[route]()
+    assert not (tmp_path / "products").exists()
+
+
+@pytest.mark.parametrize("route", ["mapping", "presets", "yaml"])
+def test_flat_public_documents_cannot_use_runtime_dispatch(tmp_path, route):
+    from frameit.io.loader import resolve_config_with_model_presets
+
+    raw = {"atm_model": "AROME", "simulation_output_dir": str(tmp_path),
+           "frameit_output_dir": str(tmp_path / "out"), "tracking_method": "fixed_box"}
+    path = tmp_path / "flat.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    with pytest.raises(ValueError, match="schema_version"):
+        if route == "mapping":
+            SimulationConfig.from_mapping_with_model_preset(raw)
+        elif route == "presets":
+            resolve_config_with_model_presets(raw)
+        else:
+            SimulationConfig.from_yaml(path)
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("path,value", [
+    (("domain", "size_km"), {"x": 4, "y": 4}),
+    (("tracking", "method"), "wind_pressure"),
+    (("tracking", "wind_pressure"), {}),
+    (("input", "wind_reference_frame"), "earth"),
+    (("input", "fa", "backend"), "native"),
+    (("polar", "variables"), "all"),
+    (("variables", "surface", "levels"), "all"),
+    (("output", "engine"), "zarr"),
+    (("output", "format"), "NETCDF4"),
+    (("output", "export", "netcdf"), False),
+    (("output", "cartesian", "horizontal_winds"), "native"),
+    (("output", "cartesian", "horizontal_vectors"), "mass_earth"),
+])
+def test_retired_keys_and_values_fail_in_current_document(path, value):
+    raw = minimal_document()
+    target = raw
+    for key in path[:-1]:
+        target = target.setdefault(key, {})
+    target[path[-1]] = value
+    with pytest.raises(ValueError, match=path[-1]):
+        resolve_schema(raw)
+
+
+@pytest.mark.parametrize("change", [
+    {"input": {"pattern": "*.nc", "exclude": None}},
+    {"input": {"pattern": "*.nc", "files": []}},
+    {"variables": {"surface": {"names": [""]}}},
+    {"variables": {"surface": {"names": [" "]}}},
+    {"variables": {1: {"names": ["scalar"]}}},
+    {"output": {"backend": "zarr", "netcdf_format": "unused"}},
+    {"input": {"pattern": "*.nc", "netcdf": {"chunks": {1: 2}}}},
+    {"input": {"pattern": "*.nc", 1: "invalid"}},
+    {"polar": {"variables": {"surface": {"names": ["instructional_scalar"], "levels": "stored"}}}},
+])
+def test_current_schema_rejects_invalid_dynamic_declarations(change):
+    raw = minimal_document()
+    raw.update(change)
+    with pytest.raises(ValueError):
+        resolve_schema(raw)
+
+
+def test_named_sources_inherit_only_declared_polar_settings_and_replay(tmp_path):
+    from frameit.core.configuration import resolved_configuration, source_document
+
+    raw = minimal_document()
+    raw.pop("variables")
+    raw["tracking"]["source"] = "atmosphere"
+    raw["input"] = {"time_alignment": "common", "sources": {
+        "atmosphere": {"model": "arome", "input": {"files": ["atmosphere.nc"], "format": "netcdf"},
+                       "variables": {"surface": {"names": ["scalar"]}}},
+        "ocean": {"model": "nemo", "input": {"files": ["ocean.nc"], "format": "netcdf"},
+                  "variables": {"deptht": {"names": ["votemper"], "levels": {"indices": [1, 0]}}},
+                  "polar": {"azimuth_count": 8}}}}
+    raw["polar"] = {"enabled": False, "radial_step_m": 3000.}
+    resolved, _, _ = resolve_schema(raw, base_dir=tmp_path)
+    for name in ("atmosphere", "ocean"):
+        source = resolved["input"]["sources"][name]
+        assert source["input"]["files"] == [str(tmp_path / f"{name}.nc")]
+        assert source["polar"]["radial_step_m"] == 3000.
+        child = source_document(resolved, name)
+        assert child["schema_version"] == "2.1"
+        resolve_schema(child, base_dir=tmp_path)
+    assert resolved["input"]["sources"]["ocean"]["polar"]["azimuth_count"] == 8
+    assert resolved["input"]["sources"]["atmosphere"]["polar"]["azimuth_count"] is None
+    config = SimulationConfig.from_mapping_with_model_preset(resolved)
+    replay = resolved_configuration(config)
+    assert resolve_schema(replay)[0] == replay
+    declared = SimulationConfig.from_mapping_with_model_preset(raw)
+    assert declared.schema_sources["input.sources.ocean.polar.radial_step_m"] == "yaml"
+    assert declared.schema_sources["input.sources.ocean.polar.azimuth_count"] == "yaml"
+    assert declared.schema_sources["input.sources.atmosphere.polar.azimuth_count"] == "default"
+    for key, value in (("time_alignment", "common"), ("sources", {})):
+        bad = yaml.safe_load(yaml.safe_dump(raw))
+        bad["input"]["sources"]["ocean"]["input"][key] = value
+        with pytest.raises(ValueError, match=key):
+            resolve_schema(bad)
+
+
+def test_effective_record_preserves_unresolved_automatic_spacing(tmp_path):
+    from frameit.core.configuration import resolved_configuration
+
+    conf = SimulationConfig.from_mapping_with_model_preset(minimal_document())
+    effective = resolved_configuration(conf)
+    assert effective["input"]["grid_spacing_m"] is None
+    assert resolve_schema(effective)[0] == effective
+
+
+def test_current_cli_exposes_unambiguous_export_controls_and_no_converter():
+    parser = _build_parser()
+    args = parser.parse_args(["run", "--no-export", "--no-export-cartesian"])
+    assert not args.export_netcdf and not args.export_cart
+    for retired in (["run", "--no-export-netcdf"], ["run", "--no-export-cart"],
+                    ["config", "migrate", "old.yaml"]):
+        with pytest.raises(SystemExit) as result:
+            parser.parse_args(retired)
+        assert result.value.code == 2
+
+
+def test_catalog_emits_current_requests_without_legacy_conversion():
+    from frameit.testing.catalog import load_cases
+
+    cases = load_cases()
+    assert all(case["config"].get("schema_version") == "2.1" for case in cases)
+    case = next(case for case in cases if case["id"] == "arome_batsirai_fixed_polar")
+    conf = SimulationConfig.from_mapping_with_model_preset(case["config"])
+    assert conf.requests_user()["isobaricInhPa"]["level_values"] == [1000, 850, 400]
+    assert conf.requests_user()["heightAboveGround"]["level_indices"] == [0, 2, 5]
+    assert conf.requests_user()["surface"]["variables"] == ["u10", "v10", "prmsl", "sshf", "slhf"]
+    assert conf.resolution == 2500 and conf.radial_resolution == 2500
+    assert conf.polar_n_theta is None and conf.azimuthal_resolution == 10
+
+
 def document(tmp_path, **sections):
     # This synthetic fixture defines UM10/VM10 as Earth-relative components.
     wind_pairs = [{"group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
-    value = {"schema_version": 2, "model": "mesonh",
+    value = {"schema_version": "2.1", "model": "mesonh",
              "input": {"directory": str(tmp_path), "pattern": "*.nc", "wind_pairs": wind_pairs},
              "output": {"directory": str(tmp_path / "output")},
              "tracking": {"method": "fixed_box", "fixed_box": {
@@ -59,15 +253,15 @@ def dataset(tmp_path, name="native.nc", *, dx=2500, dy=2500, units="m s-1", spee
 @pytest.mark.parametrize("model", ["arome", "mesonh"])
 @pytest.mark.parametrize("full", [False, True])
 @pytest.mark.parametrize(
-    "method", ["wind_pressure", "fixed_box", "prescribed_track", "utrack", "pressure_centroid"]
+    "method", ["pressure_wind", "fixed_box", "prescribed_track", "utrack", "pressure_centroid"]
 )
 def test_generated_templates(tmp_path, model, full, method):
     path = tmp_path / "frameit.yaml"
     write_template(model, path, full=full, tracking=method)
     conf = SimulationConfig.from_yaml(path)
-    assert conf.schema_version == 2 and conf.infer_grid_geometry
+    assert conf.schema_version == "2.1" and conf.infer_grid_geometry
     assert conf.resolution == 0
-    assert conf.tracking_method == method
+    assert conf.tracking_method == ("wind_pressure" if method == "pressure_wind" else method)
     assert conf.data_dir == tmp_path / "data"
     assert conf.wind_pairs == [{"group": "surface", "u": "u10" if model == "arome" else "UM10",
                                 "v": "v10" if model == "arome" else "VM10",
@@ -82,7 +276,7 @@ def test_generated_templates(tmp_path, model, full, method):
 @pytest.mark.parametrize("section", [
     {"polar": {"radial_step_m": "2500"}}, {"polar": {"enabled": "false"}},
     {"polar": {"azimuth_count": 64, "azimuth_step_deg": 10}},
-    {"domain": {"size_km": {"x": 500}}}, {"domain": {"size_km": {"x": -1, "y": 50}}},
+    {"domain": {"width_km": {"x": 500}}}, {"domain": {"width_km": {"x": -1, "y": 50}}},
     {"output": {"compression": {"level": 10}}}, {"logging": {"levle": "INFO"}},
     {"input": {"pattern": "*.nc", "files": ["native.nc"]}},
     {"variables": {"level": {"names": ["UT"], "levels": {"indices": [-1]}}}},
@@ -96,39 +290,16 @@ def test_schema_rejects_ambiguous_or_invalid_values(tmp_path, section):
 
 def test_yaml_duplicates_unknown_locations_and_legacy_rejection(tmp_path):
     path = tmp_path / "frameit.yaml"
-    path.write_text("schema_version: 2\nmodel: arome\nmodel: mesonh\n")
+    path.write_text('schema_version: "2.1"\nmodel: arome\nmodel: mesonh\n')
     with pytest.raises(ValueError, match="Duplicate.*line 3"):
         SimulationConfig.from_yaml(path)
-    path.write_text("schema_version: 2\nmodel: arome\ninput:\n  patten: '*.nc'\n")
+    path.write_text('schema_version: "2.1"\nmodel: arome\ninput:\n  patten: \'*.nc\'\n')
     with pytest.raises(ValueError, match="input.patten") as error:
         SimulationConfig.from_yaml(path)
     assert "line 4" in str(error.value)
     path.write_text("atm_model: AROME\nresolution: 2500\n")
-    with pytest.raises(ValueError, match="config migrate"):
+    with pytest.raises(ValueError, match="manual upgrade"):
         SimulationConfig.from_yaml(path)
-
-
-def test_migration_preserves_patterns_paths_and_physical_values(tmp_path):
-    old = {"atm_model": "MNH", "simulation_name": "test", "file_name_prefix": "3",
-           "file_name": "CH09.1.MXX30.", "file_name_suffix": "diag.", "file_type": "nc",
-           "resolution": 2500, "simulation_output_dir": "data", "frameit_output_dir": "out",
-           "tracking_method": "wind_pressure", "x_boxsize_km": 500, "y_boxsize_km": 400,
-           "requested_variables_user": {"level": {
-               "variables": ["UT"], "level_selection": "indices", "level_indices": [0, 2]}},
-           "radial_resolution": 5000, "azimuthal_resolution": 10,
-           "field_orientation": "geodesic",
-           "simulation_parameter": {"author": "test", "preset_model_used": "MNH"}}
-    c, reports = migrate_mapping(old, launch_dir=tmp_path)
-    assert c["input"]["pattern"] == "3CH09.1.MXX30.???diag.nc"
-    assert c["input"]["exclude"] == ["3CH09.1.MXX30.000diag.nc"]
-    assert c["input"]["directory"] == str(tmp_path / "data")
-    assert c["input"]["grid_spacing_m"] == 2500
-    assert c["input"]["wind_reference_frame"] is None
-    assert c["input"]["wind_pairs"] == []
-    assert c["polar"]["radial_step_m"] == 5000
-    assert c["variables"]["level"]["levels"] == {"indices": [0, 2]}
-    assert c["metadata"]["extra"] == {"author": "test"}
-    assert any("field_orientation" in r for r in reports)
 
 
 def test_inventory_order_exclusion_and_config_relative_paths(tmp_path, monkeypatch):
@@ -145,7 +316,7 @@ def test_inventory_order_exclusion_and_config_relative_paths(tmp_path, monkeypat
 
 def test_preflight_inference_units_defaults_and_no_outputs(tmp_path):
     dataset(tmp_path)
-    raw = document(tmp_path, domain={"size_km": {"x": 20, "y": 20}},
+    raw = document(tmp_path, domain={"width_km": {"x": 20, "y": 20}},
                    polar={"enabled": True, "azimuth_count": 16})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan = preflight(conf)
@@ -306,10 +477,10 @@ def test_pressure_wind_direct_call_normalizes_components_before_minimum():
 
 def test_all_shipped_example_yaml_uses_new_schema():
     root = Path(__file__).parents[4]
-    paths = list((root / "example").rglob("*.yml"))
+    paths = [p for p in (root / "example").rglob("*") if p.suffix in {".yml", ".yaml"}]
     assert paths
     for path in paths:
-        assert SimulationConfig.from_yaml(path).schema_version == 2
+        assert SimulationConfig.from_yaml(path).schema_version == "2.1"
 
 
 def test_prescribed_track_radians_preflight_and_tracking_without_polar(tmp_path):
@@ -324,7 +495,7 @@ def test_prescribed_track_radians_preflight_and_tracking_without_polar(tmp_path)
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, input={
         "files": [str(tmp_path / "native.nc")]}, tracking={
         "method": "prescribed_track", "prescribed_track": {"file": str(path)}},
-        domain={"size_km": {"x": 20, "y": 20}}))
+        domain={"width_km": {"x": 20, "y": 20}}))
     plan = preflight(conf)
     assert plan["track_time_count"] == 2
     assert any(r["source_units"] == "rad" for r in plan["unit_provenance"])
@@ -344,7 +515,7 @@ def test_cli_dry_run_options_and_no_products(tmp_path, capsys):
     path = tmp_path / "frameit.yaml"
     path.write_text(yaml.safe_dump(document(tmp_path)))
     with pytest.raises(SystemExit) as result:
-        main(["run", str(path), "--dry-run", "--no-export-netcdf", "--compress-level", "0"])
+        main(["run", str(path), "--dry-run", "--no-export", "--compress-level", "0"])
     assert result.value.code == 0
     plan = yaml.safe_load(capsys.readouterr().out)
     assert plan["planned_products"] == []
@@ -375,7 +546,7 @@ def test_cli_yaml_precedence_and_optional_config(tmp_path):
 
 def test_new_yaml_real_pipeline_exports_and_replay(tmp_path):
     dataset(tmp_path, units="km/h", speed=36.)
-    raw = document(tmp_path, domain={"size_km": {"x": 20, "y": 20}},
+    raw = document(tmp_path, domain={"width_km": {"x": 20, "y": 20}},
                    polar={"enabled": True, "azimuth_count": 16},
                    variables={"surface": {"names": ["UM10", "VM10", "MSLP", "temperature"]}})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
@@ -396,8 +567,8 @@ def test_new_yaml_real_pipeline_exports_and_replay(tmp_path):
 
 
 @pytest.mark.parametrize("model", ["AROME", "MNH"])
-def test_frozen_matrix_new_schema_matches_legacy_configuration(tmp_path, model):
-    """Exercise both real adapters through migrated nested configuration."""
+def test_frozen_matrix_yaml_and_mapping_requests_match(tmp_path, model):
+    """Exercise both real adapters through strict YAML and mapping boundaries."""
     from importlib import resources
 
     from frameit.core.runner import FrameitRunner
@@ -405,14 +576,14 @@ def test_frozen_matrix_new_schema_matches_legacy_configuration(tmp_path, model):
 
     root = Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
     case = next(
-        c for c in load_cases() if c["config"]["atm_model"] == model and c["polar"]
+        c for c in load_cases() if c["config"]["model"] == {"AROME": "arome", "MNH": "mesonh"}[model] and c["polar"]
         and c["tracker"] == ("fixed_box" if model == "AROME" else "wind_pressure")
     )
-    case = resolve_case(case, root, tmp_path / "legacy")
+    case = resolve_case(case, root, tmp_path / "mapping")
     assert case["preflight"] == "READY", case["reason"]
     # Both replay paths use the same explicit source conventions. This is a
     # configuration-equivalence regression, not scientific validation of them.
-    case["config"]["wind_pairs"] = (
+    case["config"]["input"]["wind_pairs"] = (
         [{"group": group, "u": "u", "v": "v", "reference_frame": "earth"}
          for group in ("heightAboveGround", "isobaricInhPa")]
         + [{"group": "surface", "u": "u10", "v": "v10", "reference_frame": "earth"}]
@@ -421,11 +592,12 @@ def test_frozen_matrix_new_schema_matches_legacy_configuration(tmp_path, model):
           "rotation": {"method": "geolocation"}},
          {"group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
     )
-    legacy = SimulationConfig.from_mapping_with_model_preset(case["config"])
-    nested, _ = migrate_mapping(case["config"])
-    nested["output"]["directory"] = str(tmp_path / "nested")
-    conf = SimulationConfig.from_mapping_with_model_preset(nested)
-    with FrameitRunner(legacy, input_files=case["input_files"]) as a, FrameitRunner(
+    mapping = SimulationConfig.from_mapping_with_model_preset(case["config"])
+    raw = {**case["config"], "output": {**case["config"]["output"], "directory": str(tmp_path / "yaml")}}
+    path = tmp_path / "run.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    conf = SimulationConfig.from_yaml(path)
+    with FrameitRunner(mapping, input_files=case["input_files"]) as a, FrameitRunner(
         conf, input_files=case["input_files"]
     ) as b:
         a.run()

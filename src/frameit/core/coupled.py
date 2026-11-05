@@ -297,6 +297,8 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
                 plans[name]["polar_sampling"] = {
                     **plans[name].get("polar_sampling", {}), **sampling}
         resolved = resolved_configuration(child)
+        resolved["input"] = {key: value for key, value in resolved["input"].items()
+                             if key not in {"sources", "time_alignment"}}
         conf.yaml_config["input"]["sources"][name] = {
             key: resolved[key] for key in ("model", "input", "variables", "polar")}
     if check_output:

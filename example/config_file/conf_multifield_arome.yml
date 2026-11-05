@@ -1,6 +1,6 @@
 # Experimental native-grid multi-field tracker. Edit paths, seed and initial motion.
 # Retain winds at 850/700/500 hPa, geopotential at 850/700 hPa and broad steering coverage.
-schema_version: 2
+schema_version: "2.1"
 model: arome
 run:
   name: AROME_MULTIFIELD
@@ -17,7 +17,7 @@ tracking:
     seed: {latitude: -20.0, longitude: 60.0, motion_u_m_s: 0.0, motion_v_m_s: 0.0}
     on_track_loss: stop
 domain:
-  size_km: {x: 500, y: 500}
+  width_km: {x: 500, y: 500}
 variables:
   surface:
     names: [prmsl, u10, v10]

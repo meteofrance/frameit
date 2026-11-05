@@ -18,7 +18,7 @@ def prepare_nemo(ds: xr.Dataset, conf) -> xr.Dataset:
         raise ValueError("NEMO wind diagnostics are unsupported; request native ocean quantities")
     if requested & native_components:
         if getattr(conf, "cartesian_horizontal_winds", "mass_earth") != "native":
-            raise ValueError("NEMO components require output.cartesian.horizontal_winds: native; "
+            raise ValueError("NEMO components require output.cartesian.horizontal_vectors: native; "
                              "analysed vectors lack a qualified angle/mesh/support contract")
         polar = getattr(conf, "polar_variables", {})
         polar_names = {name for spec in polar.values() for name in spec.get("variables", [])} if isinstance(

@@ -43,12 +43,12 @@ def surfex_conf():
 
 
 def surfex_document(directory, paths):
-    return {"schema_version": 2, "model": "mesonh", "run": {"name": "sea-support"},
+    return {"schema_version": "2.1", "model": "mesonh", "run": {"name": "sea-support"},
             "input": {"format": "netcdf", "files": list(map(str, paths)),
                       "netcdf": {"surfex_fields": ["SST", "SSS", "H_SEA"]}},
             "variables": {"surface": {"names": ["SST", "SSS", "H_SEA", "PRES", "FRAC_SEA"]}},
             "tracking": {"method": "fixed_box", "fixed_box": {"center": {"latitude": -20., "longitude": 60.}}},
-            "domain": {"size_km": {"x": 4., "y": 4.}},
+            "domain": {"width_km": {"x": 4., "y": 4.}},
             "execution": {"native_threads": 1, "dask_workers": 1},
             "output": {"directory": str(directory/"out"), "overwrite": False,
                        "synchronous_export": True, "max_workers": 1}}

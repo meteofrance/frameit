@@ -23,7 +23,7 @@ def check_zarr_dependencies() -> None:
     except (PackageNotFoundError, ImportError):
         pass
     raise ValueError(
-        "output.engine: zarr requires xarray>=2026.9.0 and zarr>=3.4.2,<4; "
+        "output.backend: zarr requires xarray>=2026.9.0 and zarr>=3.4.2,<4; "
         "install FrameIt's optional extra: pip install 'frameit[zarr]'"
     )
 

@@ -4,7 +4,7 @@
 # Source geometry/metadata: docs/source/user_guide/fa_geometry.rst.
 # Coupled grid/time products: docs/source/user_guide/fa_surface.rst.
 # Compact fixture success does not establish real-producer scaling/units/support.
-schema_version: 2
+schema_version: "2.1"
 model: arome
 run:
   name: coupled-surface
@@ -64,7 +64,7 @@ tracking:
   fixed_box:
     center: {latitude: -15.0, longitude: 50.15}
 domain:
-  size_km: {x: 40, y: 40}
+  width_km: {x: 40, y: 40}
 polar:
   enabled: false
   # Opt in when enabling polar output to guarantee a common atmosphere/surface target.

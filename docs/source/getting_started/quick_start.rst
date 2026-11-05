@@ -106,8 +106,8 @@ level of 1. ``--output-directory`` is a launch-directory-relative override.
 NetCDF, Cartesian and polar export switches default to true, but writing requires
 an available product. Polar computation is enabled separately with
 ``polar.enabled``. ``--no-export-polar`` disables its writing, not its computation;
-``--no-export-cart`` omits Cartesian files, and ``--no-export-netcdf`` disables
-all NetCDF writing. Only the selected processing should be enabled when it is
+``--no-export-cartesian`` omits Cartesian files, and ``--no-export`` disables
+all product writing for either backend. Only the selected processing should be enabled when it is
 needed.
 
 Logs and products are written under ``output.directory``. Inspect

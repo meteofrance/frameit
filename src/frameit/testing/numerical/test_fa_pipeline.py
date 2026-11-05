@@ -44,7 +44,7 @@ def atmospheric_file(directory):
 
 def document(directory, atmosphere, surface_files, *, synchronous=True):
     return {
-        "schema_version": 2, "model": "mesonh", "run": {"name": "coupled"},
+        "schema_version": "2.1", "model": "mesonh", "run": {"name": "coupled"},
         "input": {"sources": {
             "atmosphere": {"model": "mesonh", "input": {"files": [str(atmosphere)],
                             "format": "netcdf", "netcdf": {"engine": "netcdf4"}},
@@ -58,7 +58,7 @@ def document(directory, atmosphere, surface_files, *, synchronous=True):
         }},
         "tracking": {"source": "atmosphere", "method": "fixed_box", "fixed_box": {
             "center": {"latitude": -20., "longitude": 60.}}},
-        "domain": {"size_km": {"x": 4., "y": 4.}},
+        "domain": {"width_km": {"x": 4., "y": 4.}},
         "output": {"directory": str(directory / "run"), "synchronous_export": synchronous,
                    "max_workers": 1},
     }
@@ -67,7 +67,7 @@ def document(directory, atmosphere, surface_files, *, synchronous=True):
 def single_fa_document(directory, files):
     coupled = document(directory, directory / "unused.nc", files)
     source = coupled["input"]["sources"]["surfex"]
-    return {"schema_version": 2, "model": "arome", "input": source["input"],
+    return {"schema_version": "2.1", "model": "arome", "input": source["input"],
             "variables": source["variables"], "domain": coupled["domain"],
             "tracking": {"method": "fixed_box", "fixed_box": {
                 "center": {"latitude": -20., "longitude": 60.}}},
@@ -399,7 +399,7 @@ def primary_pair_document(directory, *, synchronous=True, cycles=None, surface_o
                                      dtype="datetime64[ns]")}).to_netcdf(track)
     track.chmod(0o444)
     return {
-        "schema_version": 2, "model": "arome", "run": {"name": "primary-pair"},
+        "schema_version": "2.1", "model": "arome", "run": {"name": "primary-pair"},
         "input": {"sources": {
             "atmosphere": {"model": "arome", "input": {
                 "files": atmosphere, "format": "grib", "wind_pairs": [
@@ -422,11 +422,11 @@ def primary_pair_document(directory, *, synchronous=True, cycles=None, surface_o
         }},
         "tracking": {"source": "atmosphere", "method": "prescribed_track",
                      "prescribed_track": {"file": str(track)}},
-        "domain": {"size_km": {"x": 8., "y": 8.}},
+        "domain": {"width_km": {"x": 8., "y": 8.}},
         "polar": {"enabled": False, "shared_target": True, "max_points": 60},
         "output": {"directory": str(directory / "run"), "overwrite": False,
                    "synchronous_export": synchronous, "max_workers": 1,
-                   "cartesian": {"horizontal_winds": "native"}},
+                   "cartesian": {"horizontal_vectors": "native"}},
     }
 
 
@@ -609,7 +609,7 @@ def test_automatic_coupling_preserves_centres_and_scaling_guard(tmp_path, packin
     for source in raw["input"]["sources"].values():
         source["input"]["files"] = [path for path in source["input"]["files"]
                                     if Path(path).stem.endswith(suffixes)]
-    raw["tracking"] = {"source": "atmosphere", "method": "wind_pressure"}
+    raw["tracking"] = {"source": "atmosphere", "method": "pressure_wind"}
     raw["execution"] = {"require_complete_tracking": True}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     assert preflight(conf)["track_time_count"] == nt

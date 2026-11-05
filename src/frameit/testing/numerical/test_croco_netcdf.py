@@ -48,17 +48,17 @@ def croco_scene():
 
 
 def croco_document(directory, paths, *, variables=None):
-    return {"schema_version": 2, "model": "croco", "run": {"name": "native-sigma"},
+    return {"schema_version": "2.1", "model": "croco", "run": {"name": "native-sigma"},
             "input": {"format": "netcdf", "files": list(map(str, paths))},
             "variables": variables or {"s_rho": {"names": ["temp", "salt"], "levels": {"indices": [1, 0]}},
                                        "s_w": {"names": ["tracer_w"], "levels": {"indices": [2, 0]}},
                                        "surface": {"names": ["zeta"]}},
             "tracking": {"method": "fixed_box", "fixed_box": {"center": {"latitude": -20., "longitude": 60.}}},
-            "domain": {"size_km": {"x": 2., "y": 2.}},
+            "domain": {"width_km": {"x": 2., "y": 2.}},
             "execution": {"native_threads": 1, "dask_workers": 1},
             "output": {"directory": str(directory/"out"), "overwrite": False,
                        "synchronous_export": True, "max_workers": 1,
-                       "cartesian": {"horizontal_winds": "native"}}}
+                       "cartesian": {"horizontal_vectors": "native"}}}
 
 
 def test_croco_scalar_sigma_roundtrip(tmp_path, monkeypatch):
@@ -145,7 +145,7 @@ def test_croco_rejects_unresolved_native_definitions(problem):
 
 
 @pytest.mark.parametrize("selection", [{"s_rho": {"names": ["temp"], "levels": {"values": [-.50001]}}},
-                                       {"s_rho": {"names": ["missing"], "levels": "all"}},
+                                       {"s_rho": {"names": ["missing"], "levels": "stored"}},
                                        {"surface": {"names": ["temp"]}}])
 def test_croco_invalid_selection_fails_preflight_and_direct_loader(tmp_path, selection):
     path = tmp_path/"ocean.nc"
@@ -221,7 +221,7 @@ def test_croco_unlabelled_faces_do_not_silently_use_scalar_path(tmp_path):
     ds = croco_scene()
     raw = croco_document(tmp_path, [path])
     ds["u"] = (("time", "s_rho", "eta_rho", "xi_u"), np.ones((2,3,7,6)), {"units": "meter second-1"})
-    raw["variables"] = {"s_rho": {"names": ["u"], "levels": "all"}}
+    raw["variables"] = {"s_rho": {"names": ["u"], "levels": "stored"}}
     ds.to_netcdf(path)
     with pytest.raises(ValueError, match="CROCO.*(?:qualified|labelled)"):
         preflight(SimulationConfig.from_mapping_with_model_preset(raw))

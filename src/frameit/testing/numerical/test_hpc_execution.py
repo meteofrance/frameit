@@ -28,7 +28,7 @@ from frameit.core.settings_class import SimulationConfig
 from frameit.io.netcdf_export import ExportMetadata, write_dataset_netcdf, write_group_dict
 from frameit.utils.atomic import atomic_output
 
-from .test_configuration_v2 import dataset, document
+from .test_configuration_v2_1 import dataset, document
 
 SLURM_EXAMPLES = Path(__file__).parents[4] / "example" / "slurm"
 
@@ -216,7 +216,7 @@ def cli_attempts(tmp_path_factory):
     dataset(tmp_path)
     config = tmp_path / "case.yaml"
     config.write_text(yaml.safe_dump(document(
-        tmp_path, domain={"size_km": {"x": 20, "y": 20}},
+        tmp_path, domain={"width_km": {"x": 20, "y": 20}},
     )))
 
     def run(mode):
@@ -378,7 +378,7 @@ def test_incomplete_tracking_is_explicit_and_strict_policy_fails(tmp_path, monke
     for strict in (False, True):
         root = tmp_path / str(strict)
         conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, output={
-            "directory": str(root), "export": {"netcdf": False},
+            "directory": str(root), "export": {"enabled": False},
         }, execution={"require_complete_tracking": strict}))
         if strict:
             with pytest.raises(ValueError, match="Tracking is incomplete"):

@@ -6,7 +6,7 @@
 # Adapt paths/centre and confirm the source units and producer Earth model.
 # Both FA sources use the default EPyGrAM reader (FrameIt[fa]).
 # Configuration/migration: docs/source/user_guide/configuration_file.rst.
-schema_version: 2
+schema_version: "2.1"
 model: arome
 run:
   name: arome-sfx-fa
@@ -70,7 +70,7 @@ tracking:
   fixed_box:
     center: {latitude: -15.0, longitude: 50.15}
 domain:
-  size_km: {x: 40, y: 40}
+  width_km: {x: 40, y: 40}
 polar:
   enabled: true
   shared_target: true

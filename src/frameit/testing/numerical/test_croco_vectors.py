@@ -131,7 +131,7 @@ def test_croco_native_nminus1_faces_keep_locations(tmp_path, representation):
     vector_scene().to_netcdf(source)
     raw = croco_document(tmp_path, [source], variables={"s_rho": {
         "names": ["u", "v"], "levels": {"indices": [1, 0]}}})
-    raw["output"]["cartesian"]["horizontal_winds"] = representation
+    raw["output"]["cartesian"]["horizontal_vectors"] = "earth_centered" if representation == "mass_earth" else representation
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     path = next(p["path"] for p in result.products if p["role"] == "cart")
@@ -200,7 +200,7 @@ def test_croco_preflight_current_payload_stays_unread(tmp_path, monkeypatch):
     path = tmp_path/"ocean.nc"
     vector_scene().to_netcdf(path)
     raw = croco_document(tmp_path, [path], variables={"s_rho": {"names": ["u"]}})
-    raw["output"]["cartesian"]["horizontal_winds"] = "mass_earth"
+    raw["output"]["cartesian"]["horizontal_vectors"] = "earth_centered"
     original = H5NetCDFArrayWrapper.__getitem__
 
     def metadata_only(self, key):
@@ -230,7 +230,7 @@ def test_croco_analysis_sequence_rejects_changed_support_or_companion_metadata(t
         ds.to_netcdf(path)
         paths.append(path)
     raw = croco_document(tmp_path, paths, variables={"s_rho": {"names": ["u"]}})
-    raw["output"]["cartesian"]["horizontal_winds"] = "mass_earth"
+    raw["output"]["cartesian"]["horizontal_vectors"] = "earth_centered"
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match="CROCO"):
         preflight(conf, check_output=False)

@@ -3,7 +3,7 @@
 # At reference T, select the native NEMO mean bounded by [T-1 hour, T].
 # Omit unmatched temporal pairings with warnings; means are NOT instantaneous states.
 # Source times/bounds are retained; no interpolation, averaging or extrapolation.
-schema_version: 2
+schema_version: "2.1"
 model: arome
 run:
   name: native-atmosphere-ocean
@@ -16,7 +16,8 @@ input:
         format: netcdf
         files: [./data/prmsl.nc, ./data/u10.nc, ./data/v10.nc]
         netcdf: {file_layout: variables}
-        wind_reference_frame: earth
+        wind_pairs:
+          - {group: surface, u: u10, v: v10, reference_frame: earth}
       variables:
         surface: {names: [prmsl, u10, v10]}
     nemo_t:
@@ -46,7 +47,7 @@ tracking:
     # Illustrative geographical point, not a qualified cyclone centre.
     center: {latitude: -20., longitude: 60.}
 domain:
-  size_km: {x: 100., y: 100.}
+  width_km: {x: 100., y: 100.}
 polar:
   enabled: false
 execution:
@@ -58,5 +59,5 @@ output:
   synchronous_export: true
   max_workers: 1
   cartesian:
-    horizontal_winds: native
+    horizontal_vectors: native
     vertical_velocity: interfaces

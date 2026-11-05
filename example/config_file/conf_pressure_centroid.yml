@@ -1,6 +1,6 @@
 # Full-domain AROME example: inputs must cover the 500-km reference ring.
 # Adapt paths; these relative paths are resolved from this YAML file.
-schema_version: 2
+schema_version: "2.1"
 model: arome
 run:
   name: BATSIRAI_PRESSURE_CENTROID
@@ -18,7 +18,7 @@ tracking:
     motion: {max_iterations: 50, solver: aitken, relaxation: 0.25, tolerance_m: 250}
     sampling: {r80_max_distance_km: 250, radial_step_km: 2.5, azimuth_step_deg: 5}
 domain:
-  size_km: {x: 500, y: 500}
+  width_km: {x: 500, y: 500}
 variables:
   surface:
     names: [u10, v10, prmsl]
@@ -27,9 +27,9 @@ variables:
     levels: {values: [850, 700]}
 polar:
   enabled: true
-  variables: all
+  variables: extracted
   azimuth_step_deg: 10
 output:
-  cartesian: {horizontal_winds: mass_earth, vertical_velocity: interfaces}
+  cartesian: {horizontal_vectors: earth_centered, vertical_velocity: interfaces}
   polar: {vertical_velocity: mass}
   directory: ./output/BATSIRAI_PRESSURE_CENTROID

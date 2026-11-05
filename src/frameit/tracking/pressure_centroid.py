@@ -171,7 +171,7 @@ def reference_pressure(center, sample_p):
             "its interpolation stencil. Check the candidate centre, atmospheric "
             "input boundaries and vertical brackets/masks; provide wider valid "
             "input coverage or select another tracking method. Increasing the "
-            "output domain.size_km does not extend atmospheric input coverage."
+            "output domain.width_km does not extend atmospheric input coverage."
         )
     return float(sampled.mean())
 

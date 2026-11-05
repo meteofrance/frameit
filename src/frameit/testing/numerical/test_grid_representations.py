@@ -26,16 +26,16 @@ def test_real_mnh_native_faces_match_source_file(tmp_path):
         expected_v = source.VT.isel(time=0, level=[1, 3, 5],
                                     nj_v=slice(34, 38), ni_v=slice(36, 39)).values
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": 2, "model": "mesonh",
+        "schema_version": "2.1", "model": "mesonh",
         "input": {"files": [str(path)], "wind_pairs": [
             {"group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
              "rotation": {"method": "geolocation"}}]},
         "tracking": {"method": "fixed_box", "fixed_box": {
             "center": {"latitude": latitude, "longitude": longitude}}},
-        "domain": {"size_km": {"x": 6, "y": 6}},
+        "domain": {"width_km": {"x": 6, "y": 6}},
         "variables": {"level": {"names": ["UT", "VT"], "levels": {"indices": [1, 3, 5]}}},
         "output": {"directory": str(tmp_path / "real-native"),
-                   "cartesian": {"horizontal_winds": "native"}},
+                   "cartesian": {"horizontal_vectors": "native"}},
     })
     result = execute_simulation(
         conf, ExecutionOptions.from_config(conf, synchronous_export=True))
@@ -110,7 +110,7 @@ def test_sparse_w_only_keeps_selected_mass_targets(tmp_path):
     path = tmp_path / "native.nc"
     native_scene().to_netcdf(path, engine="netcdf4")
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": 2, "model": "mesonh",
+        "schema_version": "2.1", "model": "mesonh",
         "input": {"files": [str(path)]},
         "tracking": {"method": "fixed_box", "fixed_box": {
             "center": {"latitude": -20., "longitude": 60.}}},
@@ -134,7 +134,7 @@ def native_files(tmp_path):
 def run_export(directory, horizontal="native", vertical="interfaces", *,
                polar=False, polar_vertical="mass", label="run"):
     config = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": 2, "model": "mesonh", "run": {"name": label},
+        "schema_version": "2.1", "model": "mesonh", "run": {"name": label},
         "input": {"directory": str(directory), "pattern": "native*.nc", "wind_pairs": [
             {"group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
              "rotation": {"method": "coordinate", "coordinate": "angle"}},
@@ -142,16 +142,17 @@ def run_export(directory, horizontal="native", vertical="interfaces", *,
         ]},
         "tracking": {"method": "fixed_box", "fixed_box": {
             "center": {"latitude": -20., "longitude": 60.}}},
-        "domain": {"size_km": {"x": 2, "y": 2}},
+        "domain": {"width_km": {"x": 2, "y": 2}},
         "variables": {
             "level": {"names": ["UT", "VT", "THT"], "levels": "physical"},
             "level_w": {"names": ["WT", "Q"], "levels": "physical"},
             "surface": {"names": ["UM10", "VM10", "MSLP"]},
         },
-        "polar": {"enabled": polar, "variables": "all", "radial_step_m": 1000,
+        "polar": {"enabled": polar, "variables": "extracted", "radial_step_m": 1000,
                   "azimuth_count": 8},
-        "output": {"directory": str(directory / label), "engine": "netcdf4",
-                   "cartesian": {"horizontal_winds": horizontal, "vertical_velocity": vertical},
+        "output": {"directory": str(directory / label), "backend": "netcdf4",
+                   "cartesian": {"horizontal_vectors": "earth_centered" if horizontal == "mass_earth" else horizontal,
+                                 "vertical_velocity": vertical},
                    "polar": {"vertical_velocity": polar_vertical}},
     })
     result = execute_simulation(
@@ -331,7 +332,7 @@ def test_native_face_geography_normalizes_each_file_before_concat(native_files):
 
 def loader_config(path, variables, pairs):
     return SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": 2, "model": "mesonh",
+        "schema_version": "2.1", "model": "mesonh",
         "input": {"files": [str(path)], "wind_pairs": pairs},
         "tracking": {"method": "fixed_box", "fixed_box": {
             "center": {"latitude": -20., "longitude": 60.}}},

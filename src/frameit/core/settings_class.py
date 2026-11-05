@@ -144,7 +144,7 @@ class SimulationConfig:
     grib_index_dir: str = "cache"
 
     # Public nested YAML resolves into this internal numerical interface.
-    schema_version: int = 1
+    schema_version: int | str = 1
     yaml_config: dict[str, Any] = field(default_factory=dict)
     schema_sources: dict[str, str] = field(default_factory=dict)
     infer_grid_geometry: bool = False
@@ -496,7 +496,7 @@ class SimulationConfig:
             True only when ``atm_model == "MNH"`` and the file name matches
             the "000" timeseries entry of the current file pattern.
         """
-        if self.schema_version == 2 or self.atm_model != "MNH":
+        if self.schema_version == "2.1" or self.atm_model != "MNH":
             return False
 
         try:

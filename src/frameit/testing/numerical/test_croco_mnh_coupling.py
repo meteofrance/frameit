@@ -34,7 +34,7 @@ def coupled_document(directory, *, moving=False, polar=False, currents=False):
         path_mnh = directory/f"mnh-{index}.nc"
         surfex_scene(index).to_netcdf(path_mnh)
         paths.append(str(path_mnh))
-    raw = {"schema_version": 2, "model": "mesonh", "run": {"name": "paired-native"},
+    raw = {"schema_version": "2.1", "model": "mesonh", "run": {"name": "paired-native"},
            "input": {"sources": {
                "ocean": {"model": "croco", "input": {"format": "netcdf", "files": [str(path)]},
                          "variables": {"s_rho": {"names": ["temp", "u", "v"], "levels": {"indices": [1, 0]}}}},
@@ -43,11 +43,11 @@ def coupled_document(directory, *, moving=False, polar=False, currents=False):
                               "variables": {"surface": {"names": ["SST", "SSS", "FRAC_SEA"]}}}}},
            "tracking": {"source": "atmosphere", "method": "fixed_box", "fixed_box": {
                "center": {"latitude": -20., "longitude": 60.}}},
-           "domain": {"size_km": {"x": 2., "y": 2.}},
+           "domain": {"width_km": {"x": 2., "y": 2.}},
            "execution": {"native_threads": 1, "dask_workers": 1},
            "output": {"directory": str(directory/"out"), "overwrite": False,
                       "synchronous_export": True, "max_workers": 1,
-                      "cartesian": {"horizontal_winds": "native"}}}
+                       "cartesian": {"horizontal_vectors": "native"}}}
     if moving:
         track = directory/"track.nc"
         xr.Dataset({"latitude": ("time", [-20., -19.9905]), "longitude": ("time", [60., 60.0095])},
@@ -141,11 +141,11 @@ def test_croco_scalar_polar_masks_water_support_without_current_dependencies(tmp
         ds = header.drop_vars(["u", "v", "angle"]).load()
     ds.to_netcdf(path, mode="w")
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": 2, "model": "croco", "input": source["input"],
+        "schema_version": "2.1", "model": "croco", "input": source["input"],
         "variables": source["variables"], "polar": source["polar"],
-        "domain": {"size_km": {"x": 2., "y": 2.}},
+        "domain": {"width_km": {"x": 2., "y": 2.}},
         "tracking": {"method": "fixed_box", "fixed_box": {"center": {"latitude": -20., "longitude": 60.}}},
-        "output": {"cartesian": {"horizontal_winds": "native"}}})
+        "output": {"cartesian": {"horizontal_vectors": "native"}}})
     sampled = prepare_croco_currents(ds, conf)
     assert bool(sampled.temp.isel(eta_rho=1, xi_rho=1).isnull().all())
     assert bool((ds.temp.isel(eta_rho=1, xi_rho=1) == 20.).all())
@@ -233,7 +233,7 @@ def test_croco_mnh_existing_two_dimensional_pressure_wind_tracking(tmp_path):
         ds["UM10"] = (("nj", "ni"), wind, {"units": "m s-1"})
         ds["VM10"] = (("nj", "ni"), np.zeros((7, 7)), {"units": "m s-1"})
         ds.to_netcdf(path, mode="w")
-    raw["tracking"] = {"source": "atmosphere", "method": "wind_pressure"}
+    raw["tracking"] = {"source": "atmosphere", "method": "pressure_wind"}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     path = next(p["path"] for p in result.products if p["role"] == "track")
@@ -246,7 +246,7 @@ def test_croco_mnh_existing_two_dimensional_pressure_wind_tracking(tmp_path):
 def test_croco_mnh_products_zarr_roundtrip(tmp_path):
     pytest.importorskip("zarr")
     raw = coupled_document(tmp_path)
-    raw["output"]["engine"] = "zarr"
+    raw["output"]["backend"] = "zarr"
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     paths = {p["source"]: p["path"] for p in result.products if p["role"] == "cart"}
@@ -269,7 +269,7 @@ def test_croco_mnh_partial_native_write_is_not_published(tmp_path, monkeypatch, 
     if engine == "zarr":
         pytest.importorskip("zarr")
     raw = coupled_document(tmp_path)
-    raw["output"]["engine"] = engine
+    raw["output"]["backend"] = engine
     method = "to_zarr" if engine == "zarr" else "to_netcdf"
     original = getattr(xr.Dataset, method)
 
@@ -329,9 +329,9 @@ def test_croco_mnh_portable_example_runs_both_current_representations(tmp_path, 
     raw["input"]["sources"]["ocean"]["variables"]["s_rho"]["levels"] = {"indices": [0, 2]}
     raw["input"]["sources"]["atmosphere"]["variables"]["level"]["levels"] = {"indices": [1, 2]}
     raw["tracking"]["fixed_box"]["center"] = {"latitude": -20., "longitude": 60.}
-    raw["domain"]["size_km"] = {"x": 2., "y": 2.}
+    raw["domain"]["width_km"] = {"x": 2., "y": 2.}
     raw["output"]["directory"] = str(tmp_path/"example-output")
-    raw["output"]["cartesian"]["horizontal_winds"] = representation
+    raw["output"]["cartesian"]["horizontal_vectors"] = "earth_centered" if representation == "mass_earth" else representation
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     ocean = next(p["path"] for p in result.products if p["role"] == "cart"

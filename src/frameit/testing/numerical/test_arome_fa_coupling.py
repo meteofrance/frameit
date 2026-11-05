@@ -40,8 +40,8 @@ def arome_netcdf_document(directory, *, surface_spacing_m=3000.):
         sources[name] = {"model": "arome", "input": {"format": "netcdf", "files": [str(path)],
                                                      "grid_spacing_m": spacing},
                          "variables": {"surface": {"names": ["temperature"]}}}
-    return {"schema_version": 2, "model": "arome", "run": {"name": "arome-budget"},
-            "input": {"sources": sources}, "domain": {"size_km": {"x": 8., "y": 8.}},
+    return {"schema_version": "2.1", "model": "arome", "run": {"name": "arome-budget"},
+            "input": {"sources": sources}, "domain": {"width_km": {"x": 8., "y": 8.}},
             "tracking": {"source": "atmosphere", "method": "fixed_box", "fixed_box": {
                 "center": {"latitude": -20., "longitude": 60.}}},
             "polar": {"enabled": True, "shared_target": True, "max_points": 60},
@@ -150,7 +150,7 @@ def test_disabled_source_never_allocates_an_unused_target(tmp_path):
     raw = arome_netcdf_document(tmp_path, surface_spacing_m=500.)
     raw["input"]["sources"]["surface"]["variables"] = {}
     raw["input"]["sources"]["surface"]["polar"] = {"enabled": False}
-    raw["domain"]["size_km"] = {"x": 4., "y": 4.}
+    raw["domain"]["width_km"] = {"x": 4., "y": 4.}
     raw["polar"]["max_points"] = 100
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan = preflight(conf)
@@ -228,8 +228,8 @@ def test_arome_fa_and_surfex_fa_share_the_effective_target_on_distinct_grids(tmp
                     field: {"units": "K", "kind": "continuous",
                             "temporal_kind": "instantaneous"}}}},
             "variables": {"surface": {"names": [field]}}}
-    raw = {"schema_version": 2, "model": "arome", "run": {"name": "arome-sfx"},
-           "input": {"sources": sources}, "domain": {"size_km": {"x": 8., "y": 8.}},
+    raw = {"schema_version": "2.1", "model": "arome", "run": {"name": "arome-sfx"},
+           "input": {"sources": sources}, "domain": {"width_km": {"x": 8., "y": 8.}},
            "tracking": {"source": "atmosphere", "method": "prescribed_track",
                         "prescribed_track": {"file": str(track)}},
            "polar": {"enabled": True, "shared_target": True, "max_points": 60},

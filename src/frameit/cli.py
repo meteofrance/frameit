@@ -74,7 +74,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     # run
-    pr = sub.add_parser("run", help="Run FrameIt from a YAML configuration file.")
+    pr = sub.add_parser("run", help="Run FrameIt from a YAML configuration file.", allow_abbrev=False)
     pr.add_argument(
         "config", nargs="?", default=Path("frameit.yaml"), type=Path,
         help="YAML file (default: frameit.yaml)",
@@ -97,7 +97,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # Exports enabled by default, disable with --no-*
     pr.add_argument(
-        "--no-export-netcdf",
+        "--no-export",
         dest="export_netcdf",
         action="store_false",
         default=None,
@@ -111,7 +111,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Disable polar export (enabled by default).",
     )
     pr.add_argument(
-        "--no-export-cart",
+        "--no-export-cartesian",
         dest="export_cart",
         action="store_false",
         default=None,
@@ -150,27 +150,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--schema-only", action="store_true", help="Validate YAML without opening datasets"
     )
 
-    pin = sub.add_parser("init", help="Create an annotated schema-v2 configuration")
+    pin = sub.add_parser("init", help="Create an annotated schema-v2.1 configuration")
     pin.add_argument("model", choices=("arome", "mesonh", "nemo", "croco"))
     pin.add_argument("--output", type=Path, default=Path("frameit.yaml"))
     pin.add_argument(
         "--tracking", default=None,
-        choices=("wind_pressure", "fixed_box", "prescribed_track", "pressure_centroid",
+        choices=("pressure_wind", "fixed_box", "prescribed_track", "pressure_centroid",
                  "multifield_vortex", "utrack"),
     )
     pin.add_argument("--full", action="store_true")
     pin.add_argument("--force", action="store_true")
 
-    pc = sub.add_parser("config", help="Migrate or display configuration")
+    pc = sub.add_parser("config", help="Display effective configuration")
     pcs = pc.add_subparsers(dest="config_command", required=True)
-    pcm = pcs.add_parser("migrate", help="Explicitly translate legacy flat YAML")
-    pcm.add_argument("config", type=Path)
-    pcm.add_argument("--output", type=Path, default=Path("frameit.yaml"))
-    pcm.add_argument(
-        "--launch-directory", type=Path, default=None,
-        help="Original launch directory for legacy relative paths (default: current directory)",
-    )
-    pcm.add_argument("--force", action="store_true")
     pcs_show = pcs.add_parser("show", help="Show effective settings")
     pcs_show.add_argument("config", nargs="?", type=Path, default=Path("frameit.yaml"))
     pcs_show.add_argument(
@@ -185,8 +177,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pins.add_argument("--fa-profile", choices=("arome_history", "surfex_history"), default=None)
     pins.add_argument("--fa-fields", nargs="+", default=[],
                       help="Probe native FA encoding flags without decoding values")
-    pins.add_argument("--fa-backend", choices=("epygram", "native"), default=None,
-                      help="FA decoder: epygram (default); native is a deprecated alias")
+    pins.add_argument("--fa-backend", choices=("epygram",), default=None,
+                      help="FA decoder: epygram (default)")
     pins.add_argument("--fa-python", default=None,
                       help="Optional path to the FA helper's Python interpreter")
 
@@ -371,30 +363,15 @@ def _print_yaml(value):
 
 
 def _cmd_config(args):
-    from frameit.core.configuration import migrate_mapping, read_yaml
+    from frameit.core.settings_class import SimulationConfig
 
-    if args.config_command == "migrate":
-        if args.output.exists() and not args.force:
-            raise FileExistsError(f"Configuration exists: {args.output}; use --force")
-        config, reports = migrate_mapping(read_yaml(args.config), launch_dir=args.launch_directory)
-        import yaml
+    conf = SimulationConfig.from_yaml(args.config)
+    if args.resolved:
+        from frameit.core.preflight import preflight
 
-        args.output.write_text(
-            yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8"
-        )
-        print(f"Migrated configuration: {args.output}")
-        for report in reports:
-            print(report)
+        _print_yaml(preflight(conf))
     else:
-        from frameit.core.settings_class import SimulationConfig
-
-        conf = SimulationConfig.from_yaml(args.config)
-        if args.resolved:
-            from frameit.core.preflight import preflight
-
-            _print_yaml(preflight(conf))
-        else:
-            _print_yaml(conf.yaml_config)
+        _print_yaml(conf.yaml_config)
     return 0
 
 
@@ -419,7 +396,7 @@ def _cmd_inspect(args):
     from frameit.core.settings_class import SimulationConfig
 
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": 2, "model": args.model,
+        "schema_version": "2.1", "model": args.model,
         "input": {"directory": str(args.directory.resolve()), "pattern": args.pattern,
                   "format": args.format},
         "tracking": {"method": "fixed_box", "fixed_box": {

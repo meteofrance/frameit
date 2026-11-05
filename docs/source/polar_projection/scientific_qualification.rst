@@ -200,7 +200,7 @@ continuous subgrid origins, and exactly uniform endpoint-exclusive angle grids.
 At zero radius, radial/tangential components are undefined even when east/north
 winds and speed are finite. Coverage and missing-data policies are explicit.
 
-Schema-v2 configuration uses ``polar.radial_step_m`` in metres; migrate the old
+Schema-v2.1 configuration uses ``polar.radial_step_m`` in metres; manually rewrite the old
 ``radial_resolution`` key explicitly. Output ``rr`` uses kilometres, ``theta``
 radians and ``theta_deg`` degrees. Requested angular steps are maxima; effective
 steps are uniform ``360/N`` and may differ for nondivisor requests.

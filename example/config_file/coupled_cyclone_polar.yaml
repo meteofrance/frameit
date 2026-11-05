@@ -1,7 +1,7 @@
 # Separate atmosphere/surface products on one explicitly selected polar target.
 # Adapt paths, centre and selections. This is not a scientific qualification preset.
 # Coupled sampling and producer limits: docs/source/user_guide/fa_surface.rst.
-schema_version: 2
+schema_version: "2.1"
 model: arome
 run:
   name: cyclone-coupled-polar
@@ -71,7 +71,7 @@ tracking:
     # Every continuous atmospheric centre is applied to SURFEX at that same time.
     file: ./data/track.nc
 domain:
-  size_km: {x: 40, y: 40}
+  width_km: {x: 40, y: 40}
 polar:
   enabled: true
   shared_target: true
@@ -86,4 +86,4 @@ output:
   max_workers: 1
   synchronous_export: true
   cartesian:
-    horizontal_winds: native
+    horizontal_vectors: native

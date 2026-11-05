@@ -72,14 +72,12 @@ def test_explicit_count_and_serialized_configuration(tmp_path):
     assert copied.polar_n_theta == 64
     assert copied.polar_max_points == 2_000_000
     path = tmp_path / "sampling.yml"
-    from frameit.core.configuration import migrate_mapping
-
-    legacy = config.to_dict()
-    legacy["tracking_method"] = "wind_pressure"
-    legacy["requested_variables_user"] = {"surface": {"variables": ["u10", "v10"]}}
-    legacy["polar_variables"] = {"surface": {"variables": ["u10", "v10"]}}
-    migrated, _ = migrate_mapping(legacy)
-    path.write_text(yaml.safe_dump(migrated))
+    raw = {"schema_version": "2.1", "model": "arome", "input": {"pattern": "*.grib"},
+           "tracking": {"method": "pressure_wind"},
+           "variables": {"surface": {"names": ["u10", "v10"]}},
+           "domain": {"width_km": {"x": 200, "y": 200}},
+           "polar": {"enabled": True, "azimuth_count": 64, "radial_step_m": 3000}}
+    path.write_text(yaml.safe_dump(raw))
     assert SimulationConfig.from_yaml(path).polar_n_theta == 64
     grid = configured_grid(polar_n_theta=64)
     assert grid.theta_deg.size == 64

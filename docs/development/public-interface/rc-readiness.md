@@ -25,8 +25,9 @@ Execution logs and qualification payloads belong under ignored `build/rc/`.
 - Subsequent NetCDF-read and runtime optimizations are retained. Their historical
   evidence is in `../input-reading.md` and `../runtime-optimization.md`, not a
   claim that this plan reran or qualified those workloads.
-- Current package metadata is **1.1.0**, `requires-python = ">=3.10"`; current
-  YAML/templates use schema 2 and still expose migration and `init --full`.
+- At the inspected baseline, package metadata was **1.1.0** with
+  `requires-python = ">=3.10"`; YAML/templates used schema 2 and exposed migration
+  and `init --full`.
   The target `2.0.0rc1`, Python 3.13-only support and exact string YAML `"2.1"`
   are not implemented or qualified by establishing this baseline.
 
@@ -80,9 +81,9 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
   ectrans4py 1.6.0, xESMF 0.9.2, ESMPy 8.9.1. Package presence alone is not a
   successful native reader or processing check. The recorded GRIB native-library
   initialization limitation remains in `../runtime-optimization.md`.
-- Actual docs tooling: Sphinx 9.2.0, sphinx-rtd-theme 3.1.0. The docs requirements
-  pin Sphinx 8.1.3 and docs CI currently selects Python 3.12; runtime CI still
-  includes Python 3.10. Align these in the planned support/CI tasks, not by
+- Baseline docs tooling: Sphinx 9.2.0, sphinx-rtd-theme 3.1.0. At baseline, docs
+  requirements pinned Sphinx 8.1.3, docs CI selected Python 3.12 and runtime CI
+  included Python 3.10. Align these in the planned support/CI tasks, not by
   silently reinstalling tooling for this baseline.
 
 ## Fixtures and authorization boundary
@@ -105,8 +106,9 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
   inspected, seven adapter suites passing and bounded baseline recorded below.
   Full RC qualification and human scientific review remain outstanding.
 - **G1 approved on 2026-11-05:** the maintainer replied **"Approved"** to the
-  complete [v2_1-design.md](v2_1-design.md) proposal at `ab0be01`. Implementation
-  and verification of that contract remain outstanding; G1 is not scientific
+  complete [v2_1-design.md](v2_1-design.md) proposal at `ab0be01`. The strict loader
+  is verified below; the catalogue, first run and editorial pilots remain
+  outstanding. G1 is not scientific
   sign-off, G2 or publication/deployment authorization.
 - **G2 pending:** first-run/deeper-guide pilots and supplied artwork/art direction
   need actual live-preview editorial approval before the wider rewrite.
@@ -115,6 +117,52 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
   hosted CI and final candidate freeze are not complete.
 - No push, merge into `main`, tag, package publication or documentation deployment
   is authorized by this record.
+
+## Task 4 strict-interface verification
+
+The public resolver and every YAML/mapping/preset route now require exact string
+`"2.1"`. Old keys/values, flat dispatch and the public converter are removed.
+The approved names translate to unchanged numerical tracker/vector settings;
+current effective records reload, source-local input records omit global controls,
+and inherited polar declarations retain YAML origins. Unresolved automatic spacing
+stays null, not physical zero. Independent scientific-data, manifest, status and
+FA worker/descriptor contracts were not renamed. The catalogue generator's full
+mode remains for Task 5, not a completed minimal-template implementation.
+
+Support metadata now requires Python `>=3.13,<3.14`; both environment recipes and
+all runtime/docs CI interpreter selections agree. Reference and CI documentation
+tools share `docs/docs-requirements.txt` (Sphinx 9.2.0). No runtime dependency or
+environment upgrade was added; `python -m pip check` passed in `frameit_env`.
+Hosted CI and installation from newly built artifacts were not run.
+
+Checks in `frameit_env` (Python 3.13.18):
+
+- `python -m pytest -q` → **1132 passed, 4588 warnings, 2 subtests passed,
+  no skips, 505.01 s**. The earlier red run had 12 retired-fixture failures;
+  they were migrated without removing independent values/masks/zero/basis/time/
+  read-only and ordinary-reader assertions. The warnings are the known ndarray
+  native-ABI, netCDF/NumPy shape and cfgrib combination warnings, not suppressed.
+- Focused current-schema/NEMO/FA admission/surface run → **213 passed**.
+  Added boundary tests were observed failing before fixes, including all public
+  loader version guards, rejected aliases, source replay and automatic spacing.
+- All **15** shipped YAML examples passed `frameit validate <path> --schema-only`;
+  no old run-schema documents remain in active examples or templates. Low-level
+  scientific structures and historical development evidence remain distinct.
+- Strict `sphinx-build -q -W --keep-going -b html docs/source
+  build/docs-preview/v2_1-05` and the publication check exited 0; publication unit
+  tests passed (2). Direct reference, error, upgrade, installation and example
+  documentation was refreshed, not the wider editorial rewrite reserved for G2.
+- Affected pages were opened in the live GUI, with desktop/narrow rendered DOM
+  checks and no broken images. The new upgrade table fits the 390 px iframe after
+  scoped wrapping. Existing narrow-layout issues on some technical pages remain
+  for planned presentation work. Screenshot capture still needs a visible desktop
+  window; no visual/human approval is claimed. `git diff --check` and targeted
+  Ruff F checks passed.
+
+Scientific impact: no new calculation, diagnostic, unit interpretation or output
+schema; these are public syntax/admission and runtime-support changes. Retired run
+YAML must be manually reviewed using the published upgrade map. Passing this suite
+is bounded regression evidence, not scientific sign-off or RC qualification.
 
 ## Task 1 verification receipt
 

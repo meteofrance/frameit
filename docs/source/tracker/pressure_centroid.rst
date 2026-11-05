@@ -18,7 +18,7 @@ centre and invalid sample count. Check whether the centre belongs to the intende
 disturbance, whether the ring crosses the atmospheric input boundary, and whether
 vertical brackets or masks leave missing pressure at that height. Supply wider
 valid atmospheric coverage or choose another suitable tracker when these
-requirements cannot be met. Increasing ``domain.size_km`` changes the output box,
+requirements cannot be met. Increasing ``domain.width_km`` changes the output box,
 not the atmospheric input coverage. The reference radius is not a configuration
 workaround. Motion coupling also requires at least two increasing valid times;
 a single snapshot can test spatial support but cannot validate a full track.

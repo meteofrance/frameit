@@ -82,11 +82,11 @@ def wind_settings(*, grid_native=False):
 
 def config(tmp_path):
     return SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": 2, "model": "mesonh",
+        "schema_version": "2.1", "model": "mesonh",
         "input": {"directory": str(tmp_path), "pattern": "native*.nc",
                   "wind_pairs": wind_settings().wind_pairs},
         "tracking": {"method": "pressure_centroid"},
-        "domain": {"size_km": {"x": 100, "y": 100}},
+        "domain": {"width_km": {"x": 100, "y": 100}},
         "variables": {"surface": {"names": ["MSLP"]}},
         "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "output")},
     })

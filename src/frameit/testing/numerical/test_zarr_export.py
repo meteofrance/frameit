@@ -163,9 +163,9 @@ def test_empty_dimension_fails_actionably(tmp_path):
 
 
 def test_zarr_schema_only_needs_no_optional_imports(tmp_path):
-    from frameit.testing.numerical.test_configuration_v2 import document
+    from frameit.testing.numerical.test_configuration_v2_1 import document
 
-    raw = document(tmp_path, output={"engine": "zarr", "zarr_chunk_size": {"x_box": 2},
+    raw = document(tmp_path, output={"backend": "zarr", "zarr_chunk_size": {"x_box": 2},
                                      "zarr_shard_size": {"x_box": 4}})
     subprocess.run([sys.executable, "-c", """
 import json, sys
@@ -182,10 +182,10 @@ assert 'zarr' not in sys.modules
 ])
 def test_schema_rejects_invalid_zarr_sizes(tmp_path, setting):
     from frameit.core.configuration import resolve_schema
-    from frameit.testing.numerical.test_configuration_v2 import document
+    from frameit.testing.numerical.test_configuration_v2_1 import document
 
     with pytest.raises(ValueError, match="chunk|shard"):
-        resolve_schema(document(tmp_path, output={"engine": "zarr", **setting}))
+        resolve_schema(document(tmp_path, output={"backend": "zarr", **setting}))
 
 
 @pytest.mark.parametrize("synchronous", [True, False])
@@ -224,10 +224,10 @@ def test_pipeline_planning_inventory_and_replay(tmp_path):
     from frameit.core.execution import execute_simulation
     from frameit.core.preflight import preflight
     from frameit.core.settings_class import SimulationConfig
-    from frameit.testing.numerical.test_configuration_v2 import dataset, document
+    from frameit.testing.numerical.test_configuration_v2_1 import dataset, document
 
     dataset(tmp_path)
-    raw = document(tmp_path, output={"directory": str(tmp_path / "run"), "engine": "zarr",
+    raw = document(tmp_path, output={"directory": str(tmp_path / "run"), "backend": "zarr",
                                      "synchronous_export": True,
                                      "zarr_chunk_size": {"time": 1, "x_box": 2},
                                      "zarr_shard_size": {"time": 2, "x_box": 4}})
@@ -264,7 +264,7 @@ def test_coupled_preview_and_execution(tmp_path):
 
     raw = arome_netcdf_document(tmp_path)
     raw["polar"]["enabled"] = False
-    raw["output"]["engine"] = "zarr"
+    raw["output"]["backend"] = "zarr"
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan = preflight(conf)
     assert all(p.endswith(".zarr") for p in plan["planned_products"])
@@ -281,7 +281,7 @@ def test_missing_optional_dependency_fails_before_processing(tmp_path, monkeypat
 
     from frameit.core.execution import ExecutionOptions, execute_simulation
     from frameit.core.settings_class import SimulationConfig
-    from frameit.testing.numerical.test_configuration_v2 import dataset, document
+    from frameit.testing.numerical.test_configuration_v2_1 import dataset, document
 
     original = importlib.metadata.version
 
@@ -291,7 +291,7 @@ def test_missing_optional_dependency_fails_before_processing(tmp_path, monkeypat
         return original(name)
 
     monkeypatch.setattr(importlib.metadata, "version", missing_zarr)
-    raw = document(tmp_path, output={"directory": str(tmp_path / "run"), "engine": "zarr"})
+    raw = document(tmp_path, output={"directory": str(tmp_path / "run"), "backend": "zarr"})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match=r"frameit\[zarr\]"):
         execute_simulation(conf)

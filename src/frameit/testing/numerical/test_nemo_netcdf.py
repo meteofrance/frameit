@@ -42,12 +42,12 @@ def nemo_scene(*, depth="deptht", field="votemper", shift_x=0., shift_y=0.):
 
 
 def nemo_document(tmp_path, paths, *, variables=None):
-    return {"schema_version": 2, "model": "nemo", "run": {"name": "native-ocean"},
+    return {"schema_version": "2.1", "model": "nemo", "run": {"name": "native-ocean"},
             "input": {"format": "netcdf", "files": list(map(str, paths)),
                       "netcdf": {"file_layout": "variables"}},
             "variables": variables or {"deptht": {"names": ["votemper"], "levels": {"indices": [0, 1]}}},
             "tracking": {"method": "fixed_box", "fixed_box": {"center": {"latitude": -20., "longitude": 60.}}},
-            "domain": {"size_km": {"x": 2., "y": 2.}},
+            "domain": {"width_km": {"x": 2., "y": 2.}},
             "execution": {"dask_workers": 1, "native_threads": 1},
             "output": {"directory": str(tmp_path / "out"), "overwrite": False,
                        "synchronous_export": True, "max_workers": 1}}
@@ -139,7 +139,7 @@ def test_nemo_missingness_is_per_field_and_zero_is_valid(tmp_path):
     ds["unrequested"] = ds.votemper * 100
     ds.to_netcdf(path, encoding={"votemper": {"_FillValue": 1e20}})
     conf = SimulationConfig.from_mapping_with_model_preset(nemo_document(tmp_path, [path], variables={
-        "deptht": {"names": ["votemper", "vosaline"], "levels": "all"}}))
+        "deptht": {"names": ["votemper", "vosaline"], "levels": "stored"}}))
     with DatasetResources() as resources:
         groups, _ = concat_nc2ds_by_vert_coord([path], conf.requested_variables_user, {},
             concat_dimension="time_counter", wind_conf=conf, resources=resources)
@@ -181,7 +181,7 @@ def test_nemo_scalar_shards_reject_equal_shape_different_geography(tmp_path):
     nemo_scene().to_netcdf(paths[0])
     nemo_scene(field="vosaline", shift_x=.005).to_netcdf(paths[1])
     raw = nemo_document(tmp_path, paths, variables={"deptht": {"names": ["votemper", "vosaline"],
-                                                             "levels": "all"}})
+                                                             "levels": "stored"}})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match="coordinate|geography"):
         preflight(conf)
@@ -224,7 +224,7 @@ def test_nemo_equal_dimension_names_keep_independent_geography(tmp_path):
         path = tmp_path / f"{depth}.nc"
         source.to_netcdf(path)
         raw = nemo_document(tmp_path, [path], variables={depth: {"names": [field], "levels": {"indices": [1, 0]}}})
-        raw["output"].update(directory=str(tmp_path / depth), cartesian={"horizontal_winds": "native"})
+        raw["output"].update(directory=str(tmp_path / depth), cartesian={"horizontal_vectors": "native"})
         result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
         assert result.ok, result
         product = next(p["path"] for p in result.products if p["role"] == "cart")
@@ -257,9 +257,9 @@ with nc.Dataset(path) as out, nc.Dataset(source_path) as source:
     # A T/U source cannot be assembled as complementary fields on one grid.
     raw = nemo_document(
         tmp_path, [tmp_path / "deptht.nc", tmp_path / "depthu.nc"], variables={
-            "deptht": {"names": ["votemper"], "levels": "all"},
-            "depthu": {"names": ["vozocrtx"], "levels": "all"}})
-    raw["output"]["cartesian"] = {"horizontal_winds": "native"}
+            "deptht": {"names": ["votemper"], "levels": "stored"},
+            "depthu": {"names": ["vozocrtx"], "levels": "stored"}})
+    raw["output"]["cartesian"] = {"horizontal_vectors": "native"}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match="coordinate|geography"):
         concat_nc2ds_by_vert_coord(conf.input_files, conf.requested_variables_user, {},
@@ -286,8 +286,8 @@ def test_nemo_native_components_never_call_wind_preparation(tmp_path, monkeypatc
     path = tmp_path / "components.nc"
     ds.to_netcdf(path)
     raw = nemo_document(tmp_path, [path], variables={
-        "depthu": {"names": ["vozocrtx"], "levels": "all"}, "surface": {"names": ["sozotaux"]}})
-    raw["output"]["cartesian"] = {"horizontal_winds": "native"}
+        "depthu": {"names": ["vozocrtx"], "levels": "stored"}, "surface": {"names": ["sozotaux"]}})
+    raw["output"]["cartesian"] = {"horizontal_vectors": "native"}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     for product in result.products:
@@ -308,8 +308,8 @@ def test_unqualified_nemo_vector_analysis_fails_actionably(tmp_path, analysis):
 
     path = tmp_path / "current.nc"
     component_scene("depthu", "vozocrtx").to_netcdf(path)
-    raw = nemo_document(tmp_path, [path], variables={"depthu": {"names": ["vozocrtx"], "levels": "all"}})
-    raw["output"]["cartesian"] = {"horizontal_winds": "native" if analysis == "polar" else "mass_earth"}
+    raw = nemo_document(tmp_path, [path], variables={"depthu": {"names": ["vozocrtx"], "levels": "stored"}})
+    raw["output"]["cartesian"] = {"horizontal_vectors": "native" if analysis == "polar" else "earth_centered"}
     if analysis == "polar":
         raw["polar"] = {"enabled": True}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
@@ -325,8 +325,8 @@ def test_nemo_vertical_mass_analysis_is_not_a_native_copy(tmp_path):
 
     path = tmp_path / "vertical.nc"
     component_scene("depthw", "vovecrtz").to_netcdf(path)
-    raw = nemo_document(tmp_path, [path], variables={"depthw": {"names": ["vovecrtz"], "levels": "all"}})
-    raw["output"]["cartesian"] = {"horizontal_winds": "native", "vertical_velocity": "mass"}
+    raw = nemo_document(tmp_path, [path], variables={"depthw": {"names": ["vovecrtz"], "levels": "stored"}})
+    raw["output"]["cartesian"] = {"horizontal_vectors": "native", "vertical_velocity": "mass"}
     with pytest.raises(ValueError, match="NEMO.*depthw|NEMO.*native"):
         preflight(SimulationConfig.from_mapping_with_model_preset(raw))
 

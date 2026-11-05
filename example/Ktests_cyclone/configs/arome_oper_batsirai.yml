@@ -1,5 +1,5 @@
 # Adapt paths and selections to the actual model files. Paths are YAML-relative.
-schema_version: 2
+schema_version: "2.1"
 model: arome
 run: {name: BATSIRAI, description: AROME Batsirai analysis}
 input:
@@ -14,7 +14,7 @@ tracking:
   fixed_box:
     center: {latitude: -18, longitude: 58}
 domain:
-  size_km: {x: 500, y: 500}  # Full widths in km
+  width_km: {x: 500, y: 500}  # Full widths in km
 variables:
   heightAboveGround:
     names: [u, v, t, r, tke]
@@ -26,9 +26,9 @@ variables:
     names: [u10, v10, prmsl, sshf, slhf]
 polar:
   enabled: true
-  variables: all
+  variables: extracted
   azimuth_step_deg: 10
 output:
-  cartesian: {horizontal_winds: mass_earth, vertical_velocity: interfaces}
+  cartesian: {horizontal_vectors: earth_centered, vertical_velocity: interfaces}
   polar: {vertical_velocity: mass}
   directory: ./output/BATSIRAI

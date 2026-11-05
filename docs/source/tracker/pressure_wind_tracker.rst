@@ -4,7 +4,7 @@ Pressure-wind tracker
 Overview
 --------
 
-The pressure-wind tracker (``tracking.method: wind_pressure``) estimates the cyclone center at each time step using a sequential two-stage procedure combining:
+The pressure-wind tracker (``tracking.method: pressure_wind``) estimates the cyclone center at each time step using a sequential two-stage procedure combining:
 
 1. a *pressure-based first guess* from mean sea-level pressure (MSLP),
 2. a *wind-based refinement* using the 10 m wind speed magnitude.
@@ -98,8 +98,8 @@ Window sizes and conversion from physical half-widths
 
 The tracker uses two configurable square half-widths (in kilometres):
 
-- ``tracking.wind_pressure.search_half_width_km = 100``: MSLP search,
-- ``tracking.wind_pressure.refine_half_width_km = 50``: wind refinement.
+- ``tracking.pressure_wind.search_half_width_km = 100``: MSLP search,
+- ``tracking.pressure_wind.refine_half_width_km = 50``: wind refinement.
 
 These windows are converted into grid-point half-widths using resolved native
 grid geometry. Grid spacing is inferred before tracker construction.
@@ -121,8 +121,8 @@ To activate this tracker in the YAML configuration, set:
 .. code-block:: yaml
 
    tracking:
-     method: wind_pressure
-     wind_pressure:
+     method: pressure_wind
+     pressure_wind:
        search_half_width_km: 100
        refine_half_width_km: 50
 
@@ -131,14 +131,14 @@ Illustration
 ------------
 
 Here is an illustration for tropical cyclone CHIDO, using wind-pressure tracking
-with ``domain.size_km: {x: 50, y: 75}`` (full widths in kilometres).
+with ``domain.width_km: {x: 50, y: 75}`` (full widths in kilometres).
 The red line shows the extracted box.
 
 .. figure:: ../_static/figures/Fig.tracking_Chido.png
    :width: 100%
    :align: center
 
-   Example of tracking and extraction using the wind_pressure tracking method.
+   Example of tracking and extraction using the pressure_wind tracking method.
 
 Optional initial position
 -------------------------
@@ -149,8 +149,8 @@ Restrict the first MSLP search to a user-selected position and radius:
 
    tracking:
      source: atmosphere  # For coupled atmosphere/SURFEX inputs
-     method: wind_pressure
-     wind_pressure:
+     method: pressure_wind
+     pressure_wind:
        initial_guess:
          latitude: -5.8
          longitude: 50.0

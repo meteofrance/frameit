@@ -1,6 +1,6 @@
 # YAML v2.1 public contract — G1 approved
 
-**Status: G1 APPROVED, NOT YET IMPLEMENTED (2026-11-05).**
+**Status: G1 APPROVED (2026-11-05); implementation receipts are in rc-readiness.md.**
 Baseline: `288c532a03a0805c7cfe50ab049b019b1b676e8d` on `dev_md`;
 scientific implementation unchanged from `212fcca`. Task 2's capability/evidence
 matrix is in [rc-readiness.md](rc-readiness.md). The approved external plan's

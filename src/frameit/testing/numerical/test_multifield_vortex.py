@@ -37,7 +37,7 @@ def document(tmp_path, model="mesonh", latitude=-20.):
                  dict(group="surface", u="u10", v="v10", reference_frame="earth"),
                  dict(group="isobaricInhPa", u="u", v="v", reference_frame="earth")])
     return {
-        "schema_version": 2, "model": model,
+        "schema_version": "2.1", "model": model,
         "input": {"directory": str(tmp_path), "pattern": "native*.nc", "wind_pairs": pairs},
         "tracking": {"method": "multifield_vortex", "multifield_vortex": {
             "seed": {"latitude": latitude, "longitude": 60.,
@@ -45,7 +45,7 @@ def document(tmp_path, model="mesonh", latitude=-20.):
             "mnh_gravity_m_s2": G0 if model == "mesonh" else None,
         }},
         "variables": {"surface": {"names": ["MSLP" if model == "mesonh" else "prmsl"]}},
-        "domain": {"size_km": {"x": 150, "y": 150}},
+        "domain": {"width_km": {"x": 150, "y": 150}},
         "output": {"directory": str(tmp_path / "output")},
     }
 
