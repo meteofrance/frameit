@@ -42,7 +42,7 @@ No untested Cartesian product of these capabilities is implied.
 | --- | --- | --- | --- |
 | AROME GRIB/NetCDF: selected atmospheric scalars and declared vector pairs; admitted regular/regional geometry | Fixed/prescribed; atmospheric trackers subject to their input/method requirements. Named sources use exact `common` (default) or `strict` and compatible forecast cycles | Optional selected polar fields; NetCDF or optional Zarr v3 | Present. Task 2 synthetic NetCDF variable-shard checks in `test_netcdf_assembly.py`; real GRIB and tracker qualification not rerun by that evidence. No inference of arbitrary statistical intervals or wind basis. |
 | Meso-NH NetCDF: surface/native-level scalars and explicitly represented staggered winds/W | Fixed/prescribed; selected atmospheric tracker with required fields; exact coupled time labels | Optional polar; NetCDF/Zarr | Present; `test_netcdf_assembly.py` reuse/native-branch tests. Broader native-level/tracker methods need their own later qualification. No inferred physical-height equivalence from stored labels. |
-| AROME/SURFEX native FA streams: declared instantaneous gridpoint fields, admitted atmospheric full/interface cubes | Atmospheric reference where admitted; SURFEX is a separate named source/FA profile, not a new model selector. Exact times and compatible forecast identity | Selected polar/shared targets subject to geometry/support; NetCDF/Zarr | Present with bounded engineering evidence in existing `test_fa_*.py`/`test_arome_fa_coupling.py`, not rerun in Task 2. Scaling, support, units and Earth model need explicit evidence. No spectral FA, packed SURFEX or implicit pressure/height diagnostic. |
+| AROME/SURFEX native FA streams: declared instantaneous gridpoint fields, admitted atmospheric full/interface cubes | FA references admit fixed/prescribed centres only; a separate atmospheric GRIB/NetCDF reference can supply tracking. SURFEX is a named source/FA profile, not a new model selector. Exact times and compatible forecast identity | Selected polar/shared targets subject to geometry/support; NetCDF/Zarr | Present with bounded engineering evidence in existing `test_fa_*.py`/`test_arome_fa_coupling.py`, not rerun in Task 2. Scaling, support, units and Earth model need explicit evidence. No spectral FA, packed SURFEX or implicit pressure/height diagnostic. |
 | NEMO regional native T-grid scalars and separate U/V/W, barotropic and stress components: `(y,x)` geography; `deptht/u/v/w` retained | Fixed/prescribed ocean reference; or secondary source mapped independently to continuous atmospheric centres. Exact `common`/`strict` sample labels and native bounds | Scalar polar only if selected and eligible; NetCDF/Zarr; native component copies require the current `horizontal_winds: native` selector | Present, bounded synthetic oracles in `test_nemo_netcdf.py` and `test_nemo_arome_coupling.py`. No inferred mesh/mask/angle, component rotation/collocation, current speed, W mass conversion or component polar analysis. Regional spacing limits remain; not arbitrary global/folded grids. |
 | Explicit AROME/NEMO preceding-hour association: instantaneous AROME fields and unique NEMO one-hour means with decoded bounds | Named NetCDF only; AROME reference, at least one NEMO participant, no other model. Pair `(T-1h,T]` by bounds; omit missing whole pairings with warning/record; never nearest matching | Native components and selected scalar polar under their own contracts; NetCDF/Zarr. Product `time` labels reference/end; `source_time` retains native mean label and bounds | Present explicit comparison policy, `test_nemo_arome_coupling.py`. Not the global default, interpolation, reconstruction of snapshots or mean/snapshot equivalence. Invalid/ambiguous required metadata fails. |
 | CROCO regional declared history/Vtransform=2 rho scalars, N-1 native faces, `s_rho/s_w` and formula dependencies | Fixed/prescribed, alone or as secondary source; only exact `common`/`strict`. Do not apply the NEMO preceding-hour policy | Native NetCDF/Zarr; eligible scalar polar requires explicit static water support | Present, `test_croco_netcdf.py`, `test_croco_vectors.py`, `test_croco_mnh_coupling.py`. Native missing cells and zeros retained; copies do not interpret finite land placeholders. No arbitrary restart/averaged family, other Vtransform or diagnosed depth cube. |
@@ -106,7 +106,8 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
   Full RC qualification and human scientific review remain outstanding.
 - **G1 pending:** complete key/value/default map, precedence, generator interface,
   concrete commented catalogue, page/figure map and behavioral exceptions need
-  actual maintainer approval before Task 4.
+  actual maintainer approval before Task 4. The audited proposal is now in
+  [v2_1-design.md](v2_1-design.md); its recommendations are not approved decisions.
 - **G2 pending:** first-run/deeper-guide pilots and supplied artwork/art direction
   need actual live-preview editorial approval before the wider rewrite.
 - Required scientific/human review, unfamiliar-reader acceptance, wheel/sdist and
@@ -231,3 +232,36 @@ Task 2 is a development-evidence update only; public commands/configuration and
 scientific output semantics are unchanged. Strict Sphinx build into fresh
 `build/docs-preview/baseline-04` and its publication check both exited 0;
 `git diff --check` passed. The public HTML is unchanged from Task 1's guide.
+
+## Task 3 audit receipt — stopped for G1
+
+The proposal covers 117/117 static default/open-map paths, dynamic validator
+paths, public/mapping/generated/replay callers, exact proposed template commands
+and comments/key sets, and 31/31 current reST page decisions. Mechanical
+coverage checks ran in `frameit_env`; results are retained under ignored
+`build/rc/g1-audit-01/inventory-check.log`. They measure inventory coverage,
+**not** v2.1 runtime correctness or scientific validity. Current permissive cases
+(null exclusions, empty file/name selections, ignored child controls and Zarr
+format strings) were confirmed without data access and proposed tightenings
+are explicit for approval.
+
+A single fresh read-only design check found an omitted existing atmospheric
+virtual-speed selection. Its implementation and independent FA speed-only oracle
+were inspected; the proposal now explicitly preserves this path and non-exported
+companions. No source code, template, fixture/oracle or numerical method was
+changed. This is not human scientific or G1 approval, nor final whole-branch review.
+
+Commands on the audit revision's unchanged public sources:
+
+```bash
+conda run --no-capture-output -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/baseline-05
+conda run --no-capture-output -n frameit_env python docs/check_publication.py build/docs-preview/baseline-05
+conda run --no-capture-output -n frameit_env python -m unittest discover -s docs -p test_check_publication.py
+git diff --check
+```
+
+Strict build and publication check: exit 0; documentation unit tests: 2 passed;
+diff check: passed. No full numerical/FA/GRIB suite or installed-artifact checks
+are claimed for this documentation-only audit. **Task 3 is not complete:** G1
+approval, contract freezing and approved downstream plan literals remain blocked.
+Tasks 4 onward have not started; G2 and remaining qualification gates stay pending.
