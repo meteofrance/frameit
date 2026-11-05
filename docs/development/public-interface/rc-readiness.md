@@ -113,9 +113,12 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
 - **G2 approved subject to completed corrections:** the maintainer said, "Once this
   is fixed, you have my approval." The requested corrections and checks are
   recorded below. This is editorial approval, not scientific or reader sign-off.
-- Required scientific/human review, unfamiliar-reader acceptance, wheel/sdist and
-  fresh-environment checks, operational safety, authorized real-fixture checks,
-  hosted CI and final candidate freeze are not complete.
+- **Task 10 engineering checks complete:** bounded numerical, analytical, reduced
+  real-fixture, ordinary-reader, optionality and operational-safety evidence is
+  recorded below. Final regression at `63faa89`: 1187 passed, no skips.
+- Scientific/human review, unfamiliar-reader acceptance, wheel/sdist,
+  fresh-environment checks, hosted CI and final candidate freeze remain open.
+  Bounded fixture checks do not resolve the broader scientific evidence gaps.
 - No push, merge into `main`, tag, package publication or documentation deployment
   is authorized by this record.
 
@@ -662,8 +665,22 @@ confirmed and addressed in one fix pass:
   regraded as a functional publication false-pass rather than visual polish.
 
 Hosted CI still needs actual fixture provisioning and an authorized push; these
-local checks are not hosted results. Final whole-suite verification of the fix
-pass follows before handover. There is no second review pass or scientific sign-off.
+local checks are not hosted results. Final verification of the fix pass at
+**63faa897aa1c8badd33a7bec2aa0ff59f48a5b06** completed with normal exit 0:
+
+- `conda run --no-capture-output -n frameit_env python -m pytest -q`:
+  **1187 passed, 4590 known warnings, two subtests passed, no skips, 506.39 s**.
+- `conda run --no-capture-output -n frameit_env python -m unittest discover -s docs -p test_check_publication.py`:
+  **10 tests passed**, no skips.
+- `conda run --no-capture-output -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/final-review-02`
+  and `conda run --no-capture-output -n frameit_env python docs/check_publication.py build/docs-preview/final-review-02`:
+  strict build and publication/local-link checks passed.
+- Targeted Ruff F and `git diff --check` passed. The Task 10 ledger receipt
+  retains the complete commands and log. The later review fixes changed tests,
+  CI and documentation tooling, not the scientific runtime qualified at `27dc486`.
+
+Task 10 is complete within its bounded engineering scope. There is no second
+review pass, scientific sign-off, artifact qualification or frozen RC claim.
 
 ## Tasks 11–12 human and artifact gates — open
 
@@ -680,6 +697,45 @@ unfamiliar reader's unassisted first run/navigation feedback. Existing experimen
 and beta methods remain labelled; no method was promoted, silently removed or
 scientifically approved by the agent or engineering reviewer. Full-domain native
 centroid/NOAA/real-ocean evidence gaps require their documented data and review.
+
+### Scientific/technical review request — pending
+
+Please review revision `63faa89`, the support/evidence matrix above, and the
+method records in `docs/source/tracker/`, `docs/source/polar_projection/` and
+`docs/source/user_guide/ocean_netcdf.rst` against `AGENTS.md` section 6:
+
+- For each supported scientific claim, check the primary method, evidence of
+  community use, actual implementation/departures, independent oracles/tolerances
+  and applicable regimes. Include core interpolation, vector/unit transformations,
+  time association and native depth/sigma/support semantics, not only trackers.
+- Resolve the full-domain centroid/native-adaptation and independent NOAA evidence
+  gaps explicitly. Retain experimental/beta labels and record unavailable UTrack
+  weights; passing software checks do not close these gaps.
+- Return the reviewer/role, date, revision, reviewed claims, evidence consulted,
+  required corrections and a per-claim scope decision. A decision to restrict or
+  defer a claim needs explicit maintainer review; it is not silent removal.
+
+### Unfamiliar-reader and final reading request — pending
+
+Ask a graduate-level researcher or intern unfamiliar with FrameIt to follow
+**Your first run** through its ordinary-reader check in a new directory, using
+only the documentation and without maintainer assistance. Then ask them to find
+one deeper task from the navigation without repeating onboarding.
+
+Record the revision, environment/installation used, commands, output/status
+interpretation, guessed steps, blocking errors and confusing choices or figures.
+Distinguish reuse of an existing environment from a fresh installation. Ask for
+page-specific desktop/narrow feedback, including labels/logos and real keyboard
+navigation; report print pagination separately if it is actually checked.
+
+No human reviewer/reader result has been received. These requests are a handover,
+not acceptance receipts. Record actual feedback and resulting corrections before
+checking Task 11 complete; leave Task 12 unstarted meanwhile.
+
+This evidence-only handover changes no public pages, commands, scientific claims
+or executable files. A fresh strict `human-review-01` build, publication check and
+10 documentation tests passed; first-run and coupled-task pages loaded with
+intact images at desktop/narrow widths. This is not a human reading receipt.
 
 Version remains 1.1.0 until Task 12. Wheel/sdist, source-data redistribution audit,
 fresh reference installation, final candidate metadata, hosted CI and release
