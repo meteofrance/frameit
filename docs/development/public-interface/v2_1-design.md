@@ -584,7 +584,7 @@ not two copied references. Validate resulting local paths/fragments in Task 9.
 | `developper/how_to_add_my_tracker.rst` | Retain URL, update contributor interface examples and method evidence/optionality obligations; correct navigation label without gratuitous URL break. |
 | `contributing/documentation.rst` | Refine Task 1 guide with G2 feedback, branding tokens/logo export recipe, precise checks. |
 
-New canonical pages (proposed):
+New canonical pages (implemented in Task 8, following the approved G2 pattern):
 
 - Task guides: `task_guides/fixed_region.rst` (pilot), `field_selection.rst`,
   `moving_region.rst`, `scalars_and_vectors.rst`, `polar_sampling.rst`,
@@ -601,7 +601,7 @@ New canonical pages (proposed):
   credits, package author metadata and documentation copyright (spelling corrected
   by the maintainer after G2).
 
-Proposed editable SVGs beneath `_static/figures/` (captions label **schematics**,
+Editable SVGs beneath `_static/figures/` (implemented in Tasks 7–8; captions label **schematics**,
 not data/validation; units/alt text/legends and non-color distinctions required):
 
 | Asset | Placed beside the relevant decision |

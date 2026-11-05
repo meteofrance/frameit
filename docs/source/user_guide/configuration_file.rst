@@ -2,6 +2,8 @@ Configuration file (YAML schema version 2.1)
 ============================================
 
 Use this reference to select inputs, fields, levels, methods and products.
+For a task route, start with :doc:`../task_guides/field_selection`,
+:doc:`../task_guides/moving_region` or :doc:`../task_guides/coupled_inputs`.
 
 Create a model-specific, annotated configuration:
 
@@ -85,6 +87,8 @@ Set ``schema_version: "2.1"``. The value is a quoted string, not a number.
 products; ``run.description`` is optional. ``metadata.extra`` holds user
 annotations, not algorithm options. Optional ocean/wave identifiers belong in
 ``metadata.ocean_model`` / ``metadata.wave_model``.
+Defaults are ``run.name: analysis``, empty description/model-annotation strings and
+``metadata.extra: {}``. ``model`` and ``schema_version`` must be explicitly supplied.
 
 ``input.directory`` contains model files. Supply exactly one of:
 
@@ -116,6 +120,13 @@ dependencies with exact alignment, without time concatenation or deduplication.
 Duplicate selected field providers, inconsistent coordinates/depths/clocks and
 mixed time-block/variable-shard inventories fail. See :doc:`input_files`.
 
+``input.netcdf.engine`` accepts ``h5netcdf``, ``netcdf4`` or ``scipy``; the last
+requires input compatible with SciPy's NetCDF reader. It does not select the
+output writer. ``input.netcdf.chunks`` maps native dimensions to positive integers
+or ``-1`` for a whole axis. ``input.netcdf.surfex_fields`` defaults to ``[]``;
+only explicit supported Meso-NH SEA fields receive the producer-specific
+interpretation in :doc:`ocean_netcdf`.
+
 Named sources and exact times
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -136,6 +147,11 @@ exclusion in provenance/status. A prescribed track restricts the plan to its
 exact matching times too. ``strict`` requires identical source times and track
 coverage. No nearest-time interpolation or implicit interval conversion occurs;
 ambiguous cycles and conflicting clocks fail.
+
+``preceding_hour`` is a separate, explicit AROME/NEMO NetCDF association with
+required instantaneous/mean metadata and one-hour bounds. It is not a general
+time-matching fallback; see :doc:`../concepts/time_support` and
+:doc:`ocean_netcdf` for eligibility and changed time-label semantics.
 
 ``polar.shared_target: true`` selects common target coordinates for participating
 sources; it defaults to false. Participating sources inherit the reference target
@@ -173,6 +189,8 @@ contracts are in :doc:`fa_inputs`.
   missing-native-scaling warning fails unless an explicit justified identity
   fallback is permitted. Permission/observed fallback and warnings are recorded;
   see :doc:`fa_contracts` for scaling observations and limits.
+  Optional ``long_name`` and ``standard_name`` are strings; use a standard name
+  only when its definition matches the actual quantity.
 * ``native_cubes`` defaults to ``{}``. It associates exact native records with
   declared full/interface positions and centre sampling, retaining original
   labels/indices and checked A/B/reference-pressure metadata. It does not infer
@@ -228,7 +246,7 @@ Method-specific controls belong under the matching section:
      fixed_box:
        center: {latitude: -18.0, longitude: 58.0}
 
-Geographic centres use degrees north/east. Wind-pressure controls
+Geographic centres use degrees north/east. Pressure-wind controls
 ``search_half_width_km`` and ``refine_half_width_km`` default to 100 and 50 km:
 they describe square half-widths, not circular radii.
 
@@ -273,12 +291,14 @@ group/unit metadata is rejected.
 
 The ``stored`` and ``physical`` strategies, original stored-index semantics,
 and W-to-mass target mapping are described in :ref:`wind-grid-contract`.
+``physical`` selects an evidenced non-halo index range; it does not diagnose
+pressure, altitude or ocean depth. An omitted group selects no fields from it.
 
 Polar computation
 -----------------
 
 ``polar.enabled`` defaults to false; enabling requires a finite extraction box
-and selected polar variables. ``polar.variables: extracted`` means every variable
+and selected polar variables. ``polar.variables: extracted`` (default) means every variable
 selected for extraction, not every variable in source files. Alternatively use
 a native group mapping with ``names`` lists that are subsets of extraction
 requests. Polar processing inherits extracted levels.
@@ -286,14 +306,43 @@ requests. Polar processing inherits extracted levels.
 ``polar.radial_step_m`` is metres and defaults to resolved native spacing.
 ``polar.azimuth_step_deg`` is degrees; alternatively use integer
 ``polar.azimuth_count``. The two are mutually exclusive; omit both for automatic
-outer-ring spacing. Analytical angles are endpoint-exclusive.
+outer-ring spacing. The radial step cannot be finer than native spacing; angular
+steps must be in (0,120] degrees and counts at least 3. Analytical angles are
+endpoint-exclusive. The actual radii include half the shorter full box width;
+the last radial interval can be shorter than the requested step.
 
-Other controls include ``interpolation_method`` (``bilinear`` or ``nearest_s2d``),
-``missing_data_policy`` (``strict`` or ``renormalize``), weight-support thresholds,
-source halo, ellipsoid, geometry point budget, plan-cache limits, ``chunks``, and
-``profile``. ``frameit config show`` exposes their authoritative defaults. Input chunks and
-polar computation chunks are separate; NetCDF storage chunks remain backend-selected.
-Zarr storage chunks and shards have separate optional output settings described below.
+The remaining keys are under ``polar``:
+
+.. list-table:: Sampling, support and execution controls
+   :header-rows: 1
+   :class: config-table
+
+   * - Key / default
+     - Meaning and constraint
+   * - ``interpolation_method: bilinear``
+     - ``bilinear`` or explicit ``nearest_s2d`` point sampling.
+   * - ``missing_data_policy: strict``
+     - All contributors finite; ``renormalize`` instead uses declared valid-weight support.
+   * - ``min_valid_weight_fraction: 0.5``
+     - Fraction in [0,1] for renormalization. Unmapped/all-missing points stay NaN.
+   * - ``weight_zero_tolerance: 1.0e-14``
+     - Remove negligible absolute stencil weights; range [0,1e-6), not a field-value cutoff.
+   * - ``source_halo_points: 1``
+     - Positive integer native neighbours beyond the crop; no extrapolation.
+   * - ``ellipsoid: WGS84``
+     - Target geodesic ellipsoid accepted by ``pyproj.Geod``; source geometry is checked separately.
+   * - ``max_points: 2000000``
+     - Positive integer time × radius × angle geometry budget, not a peak-memory quota.
+   * - ``plan_cache: {entries: 8, max_bytes: 134217728}``
+     - Nonnegative retained-plan count/estimated bytes. Zero disables retention.
+   * - ``chunks: {}``
+     - Polar output dimensions → positive integer or ``-1``. Internal ``x_box/y_box/locations/dummy/theta_deg`` names are not valid overrides.
+   * - ``profile: false``
+     - Boolean timing instrumentation, not extra scientific diagnostics.
+
+Input chunks, polar computation chunks and output storage chunks are separate;
+see :doc:`../task_guides/storage_and_resources`. Full equations, quality flags
+and effective angular spacing are in :doc:`../polar_projection/xESMF_proj`.
 
 Bilinear is the production default for continuous point samples, without an
 area-budget conservation guarantee. Categorical fields require an explicit
@@ -347,6 +396,7 @@ Earth-relative surface winds:
        vertical_velocity: mass  # interfaces | mass
 
 ``input.wind_pairs`` is a list of explicit pairs scoped by native ``group``.
+It defaults to ``[]``; no declared basis or rotation is selected by that empty list.
 Choose ``reference_frame: earth`` or ``grid`` based on the actual source.
 Grid-relative pairs require one declared rotation method:
 
@@ -371,12 +421,13 @@ See :ref:`wind-preparation-method` for equations, axis checks and limitations.
 Output, logging, and precedence
 ----------------------------------
 
-``output.directory`` sets the run root. ``output.export.enabled``, ``.cartesian``,
+``output.directory`` sets the run root (default ``./output``). ``output.export.enabled``, ``.cartesian``,
 and ``.polar`` default to true; writing still requires an available product.
 Polar computation is independent of polar export. Compression defaults to level
 1 with coordinate compression disabled. Other supported controls are ``backend``,
 ``netcdf_format``, ``unlimited_time``, ``overwrite``, ``max_workers``,
 ``synchronous_export`` (default false), and ``institution``.
+``unlimited_time`` defaults to true. Compression levels are integers from 0 to 9.
 
 ``output.backend`` selects ``netcdf4`` (default), ``h5netcdf``, or ``zarr``.
 The first two write NetCDF files; ``zarr`` writes sharded Zarr v3 directory
@@ -384,6 +435,12 @@ stores with the same products and ``.zarr`` instead of ``.nc``.
 ``output.netcdf_format`` accepts only ``NETCDF4`` (the default), including when
 the selected backend is Zarr; it does not control Zarr encoding.
 ``output.unlimited_time`` is unused for Zarr. Zarr export does not support append/resume.
+
+``output.overwrite`` defaults to **true** in the runtime; all shipped starters
+explicitly set it to **false**. It never authorizes source-data replacement.
+Use a fresh output directory for each attempt. ``output.institution`` defaults
+to ``LACy, Université de La Réunion, CNRS, Météo-France``; set appropriate product
+attribution for your run.
 
 For Zarr only, ``output.zarr_chunk_size`` and ``output.zarr_shard_size`` are
 optional mappings from dimension names to positive integer element counts.
@@ -421,7 +478,8 @@ export. The CLI exposes ``--require-complete-tracking``, ``--synchronous-export`
 ``--max-workers``, ``--no-overwrite`` and ``--output-directory``. The output
 override is relative to the launch directory; YAML paths remain YAML-relative.
 
-``logging.level`` defaults to ``INFO``. Explicit CLI overrides take precedence
+``logging.level`` accepts ``DEBUG/INFO/WARNING/ERROR`` and defaults to ``INFO``.
+Explicit CLI overrides take precedence
 over YAML, which takes precedence over defaults. Omitted CLI flags do not reset
 YAML values. Products go under ``products/``, indexes under ``cache/``, and logs
 under the run root's logging layout. Each run saves a reloadable
@@ -451,3 +509,21 @@ resource/sampling information and planned products without writing products;
 they are not exact runtime/memory predictions or scientific approval.
 Schema-only validation does not open data. ``config show`` displays resolved
 schema settings; ``config show --resolved`` also performs metadata preflight.
+
+Defaults and omissions
+----------------------
+
+Omitted keys receive schema defaults; explicit YAML values override them, then
+explicit CLI options override YAML. ``null`` means automatic/unset only for keys
+that admit it (for example grid spacing and worker caps). It is not zero, an
+empty variable list or a substitute for a required centre, path or scientific
+declaration. Booleans do not count as numeric sizes/counts.
+
+Model presets supply the selected tracker's required internal inputs. User
+extraction selections remain separate. Method-specific defaults and constraints
+are canonical in :doc:`../tracker/pressure_centroid`,
+:doc:`../tracker/multifield_vortex` and :doc:`../tracker/utrack`; those numerical
+controls do not enable optional polar exports. Named source inputs use independent
+defaults, while source polar settings inherit and override the parent as described
+above. Use ``config show --resolved`` and the saved effective configuration to
+inspect the resulting choices and their origins.

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="500" viewBox="0 0 540 500" role="img" aria-labelledby="title desc">
+  <title id="title">Check products, final status and provenance together</title>
+  <desc id="desc">Schematic. A declared configuration requests selected products. Final status distinguishes completed, incomplete and failed attempts. Some complete earlier products may exist after a failure. Resolved configuration records effective choices, provenance records inputs and transformations, and status inventories products. One file alone does not prove run completion.</desc>
+  <g font-family="sans-serif" fill="#021633">
+    <rect x="20" y="15" width="500" height="69" rx="7" fill="#f4f8f8" stroke="#006b65"/>
+    <text x="35" y="45" font-size="23" font-weight="bold">Declared request → selected products</text>
+    <text x="35" y="70" font-size="18">Each product is published separately</text>
+    <text x="20" y="128" font-size="23" font-weight="bold">Final run-status.yaml</text>
+    <text x="20" y="164" font-size="20">completed · requested execution finished</text>
+    <text x="20" y="197" font-size="20">incomplete · accepted shortened track</text>
+    <text x="20" y="230" font-size="20">failed / missing · do not infer success</text>
+    <path d="M20 251H520" stroke="#788997" stroke-width="2"/>
+    <text x="20" y="289" font-size="22" font-weight="bold">Keep the explanation with the data</text>
+    <text x="20" y="328" font-size="20">resolved-config.yaml · effective choices</text>
+    <text x="20" y="361" font-size="20">run-provenance.yaml · inputs and methods</text>
+    <text x="20" y="394" font-size="20">run-status.yaml · state and product inventory</text>
+    <text x="20" y="440" font-size="19">Earlier complete products can survive a failure.</text>
+    <text x="20" y="477" font-size="18">Schematic · file presence alone does not establish completion</text>
+  </g>
+</svg>

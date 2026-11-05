@@ -13,6 +13,14 @@ and optionally selected polar samples. Review ``run-status.yaml`` and provenance
 before interpreting them, including tracking completeness, time exclusions and
 scaling/missing-data observations. A completed run is not scientific approval.
 
+.. figure:: ../_static/figures/processing-products.svg
+   :target: ../_static/figures/processing-products.svg
+   :width: 480px
+   :alt: Schematic of inspected inputs, declared selections and checks leading to chosen processing, separate scientific products and completion/provenance records.
+
+   Schematic. Select processing in the configuration; retain products and their
+   effective settings, provenance and completion record together.
+
 Naming convention
 -----------------
 
@@ -109,6 +117,14 @@ See :doc:`/getting_started/hpc` for states, ownership and retry policy.
 ``metadata.extra`` is serialized as the JSON global attribute
 ``frameit_user_metadata_json`` for ordinary readers of either output backend.
 
+.. figure:: ../_static/figures/status-provenance.svg
+   :target: ../_static/figures/status-provenance.svg
+   :width: 540px
+   :alt: Schematic distinguishing completed, incomplete and failed or missing final status. Effective settings, provenance and the product inventory explain separate products; file presence alone does not prove a successful run.
+
+   Schematic. Final status describes execution; provenance describes how the
+   data were produced. Neither replaces scientific inspection of the result.
+
 For a run using the default AROME template, an ordinary-reader inspection is:
 
 .. code-block:: python
@@ -130,6 +146,30 @@ and accumulation/averaging intervals are distinct and must not be conflated.
 FA temporal declarations are instantaneous only; no interval conversion is
 inferred to complete a product. JSON attributes such as ``fa_field_descriptor``
 can be read with ``json.loads`` from Python's standard library.
+
+For the self-contained :doc:`first run <../getting_started/first_run>`, the
+ordinary-reader check is:
+
+.. code-block:: python
+
+   import numpy as np
+   import xarray as xr
+
+   with xr.open_dataset("results/products/first-run.cart.surface.nc",
+                        engine="netcdf4") as ds:
+       q = ds["instructional_scalar"].transpose("time", "y_box", "x_box")
+       assert dict(ds.sizes) == {"time": 2, "y_box": 5, "x_box": 5}
+       assert q.attrs["units"] == "1"
+       assert q.values[0, 2, 2] == 0
+       assert np.isnan(q.values[0, 1, 3])
+       print(ds.time.values, ds.latitude.attrs, ds.longitude.attrs)
+
+Use :doc:`../concepts/missingness_and_status` to distinguish missing support from
+zero, and :doc:`../concepts/time_support` when labels and averaging intervals differ.
+For NEMO ``preceding_hour`` association, inspect ``source_time`` and unchanged
+bounds as well as coupling ``time``. Native ocean depth and CROCO sigma groups
+retain their own axes/dependencies; polar sigma samples are not constant-depth
+sections. See :doc:`ocean_netcdf` before reconstructing or comparing depth fields.
 
 .. _sharded-zarr-output:
 
@@ -214,6 +254,9 @@ Zarr's internal concurrency is capped to one while writing, leaving parallelism
 to the configured Dask/export workers. There is no universally optimal layout:
 start with defaults and measure representative selections before tuning.
 
+The :doc:`storage/resource guide <../task_guides/storage_and_resources>` includes
+the chunks/shards schematic and a bounded pilot configuration.
+
 Completion and reading
 ~~~~~~~~~~~~~~~~~~~~~~
 
@@ -254,7 +297,7 @@ Produced files
 SIMU.track.nc
 ~~~~~~~~~~~~~
 
-This file contains the cyclone trajectory and kinematic diagnostics computed by the tracking module and typically includes:
+This file contains the fixed or moving geographical centres and track diagnostics:
 
 - Coordinates: ``time``
 - Data variables: center indices (for example ``cx``, ``cy``), latitude and longitude, motion estimates
@@ -268,7 +311,9 @@ one position cannot establish motion, and missing motion is not physical zero.
 SIMU.cart.<group>.nc
 ~~~~~~~~~~~~~~~~~~~~
 
-These files contain user-requested fields extracted on a cartesian box around the storm center or the fixed subdomain center.
+These files contain selected fields on a native Cartesian crop around each
+geographical centre. A Cartesian product is not automatically a common regridded
+mesh across sources.
 
 Typical structure:
 
@@ -403,8 +448,8 @@ See :doc:`input_files` for authoritative model/GRIB definitions and
 SIMU.polar.<group>.nc
 ~~~~~~~~~~~~~~~~~~~~~
 
-These files contain the polar-projected products. 
-They are typically created after the cartesian extraction, using the polar projection module.
+These files contain selected polar point samples. Their interpolation support
+can extend beyond the exported Cartesian crop through the declared source halo.
 
 Typical structure:
 
@@ -415,6 +460,13 @@ Typical structure:
   - Derived cartesian coordinates on the polar grid: ``x_km`` and ``y_km``
   - Geolocation: ``lat(time, rr, theta)``, ``lon(time, rr, theta)``
 - Data variables depend on the requested fields (see :doc:`configuration_file`).
+
+``radial_bearing`` records the local geodesic direction used for vector
+components. Each sampled field has support/validity/status/ring-coverage arrays,
+marked ``frameit_role="interpolation_quality"``. They describe interpolation
+support, not additional physical fields or area fractions. Analytical ``theta``
+is endpoint-exclusive. See :doc:`../polar_projection/xESMF_proj` for their flag
+values, complete-ring eligibility and origin conventions.
 
 The polar files also include a set of attributes that document the angular convention (for example the
 zero-angle location and rotation direction) as produced by the polar projection module.
@@ -463,6 +515,9 @@ Notes:
 Coordinates are not compressed by default. Configure storage with
 ``output.compression: {level: 2, coordinates: false}``. The default level is 1;
 storage chunks are backend-selected.
+Compression is lossless. The NetCDF writer adds no quantization or requested
+reduced-precision encoding; inspect each variable's actual dtype/encoding with
+the reader rather than assuming every prepared quantity has the source dtype.
 
 Export selection
 -----------------

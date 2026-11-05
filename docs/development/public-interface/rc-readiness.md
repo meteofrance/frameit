@@ -480,6 +480,35 @@ This page group changes documentation only. No runtime, output-schema, scientifi
 default, dependency or logo changes. Reference/ordinary-reader completion follows
 in the second Task 8 page group; Task 8 is not yet marked complete.
 
+## Task 8 reference and reader completion
+
+- Completed the current reference's polar defaults/constraints, input/SURFEX and
+  time-policy links, null/omission/precedence explanation and explicit overwrite
+  distinction (runtime true; generated starters false). Detailed tracker/FA
+  specifications remain canonical rather than copied into onboarding.
+- Extended ordinary-reader guidance with the exact guided scalar check, native
+  source/vertical/time distinctions, polar quality flags, lossless storage/dtypes
+  and an editable final-status/provenance schematic. Numerical algorithms,
+  defaults, source data, configuration admission and output schemas are unchanged.
+- `conda run --no-capture-output -n frameit_env python -m pytest -q
+  src/frameit/testing/numerical/test_configuration_v2_1.py
+  src/frameit/testing/numerical/test_zarr_export.py
+  src/frameit/testing/numerical/test_documentation_example.py` → **167 passed,
+  587 known warnings, 41.47 s**, normal exit. The exact new reader snippet also ran
+  in a fresh process without FrameIt against the guided first-run products.
+- Strict Sphinx `handbook-04`, its publication check, **7 docs tests** and diff
+  check passed. All **44 HTML pages / 3065 local links and fragments** resolve;
+  **306 previous topic anchors** and their URLs remain. Final rendered review:
+  **41 topics × four widths = 164** checks, **14 unique figures / 68 placements**,
+  **10 SVG drawings / 113 labels**, no overflow, clipping or broken images.
+  One long browser call timed out after page checks; state was inspected before
+  a separate completed drawing/label pass. No timed-out return is counted as a pass.
+- The complete reading path now separates first run, quick reminder, tasks,
+  concepts, reference/troubleshooting and method detail. The live `handbook-04`
+  output page remains available. Actual desktop screenshots, real keyboard input,
+  print pagination, unfamiliar-reader and scientific/release approval remain
+  unrun; DOM/geometry checks are not human acceptance.
+
 ## Task 1 verification receipt
 
 - `conda run --no-capture-output -n frameit_env python -c 'import sys; assert sys.version_info[:2] == (3, 13); print(sys.version)'`
