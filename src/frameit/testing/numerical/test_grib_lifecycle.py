@@ -1,6 +1,7 @@
 """Fresh-process checks: native import order and interpreter shutdown matter."""
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -43,3 +44,20 @@ print('native cleanup completed', flush=True)
 """, str(source), str(tmp_path / "index")], capture_output=True, text=True, timeout=90)
     assert run.returncode == 0, run.stdout + run.stderr
     assert "native cleanup completed" in run.stdout
+
+
+@pytest.mark.skipif(importlib.util.find_spec("cfgrib") is None, reason="Optional GRIB backend")
+def test_matrix_fixture_planning_and_native_shutdown_in_fresh_interpreter(tmp_path):
+    output = tmp_path / "plan"
+    run = subprocess.run([sys.executable, "-c", """
+import resource, sys
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+from frameit.cli import main
+main(['run-matrix-test', '--ci', '--plan-only', '--case',
+      'arome_batsirai_fixed_cart_only', '--output', sys.argv[1]])
+""", str(output)], capture_output=True, text=True, timeout=90)
+    assert run.returncode == 0, run.stdout + run.stderr
+    report = json.loads((output / "run.json").read_text())
+    assert report["exit_code"] == 0
+    assert [case["status"] for case in report["results"]] == ["PLANNED"]
+    assert len(json.loads((output / "plan.json").read_text())["fixture"]["files"]) == 5

@@ -93,6 +93,9 @@ Troubleshoot failures
   exit as well as completed products/status. A preceding success message is not
   sufficient. Check the active Python and native package versions. Include them,
   the exit code and the native error logs when reporting the failure.
+  FrameIt initializes core PROJ before matrix GRIB inventories; external code
+  that preloads conflicting native libraries can still fail. Use a fresh process
+  with a coherent stack rather than treating native libraries as unloadable.
 * **Unsupported source/record/geometry:** readable headers or an installed library
   do not admit a physical operation. Resolve the stated source, type, time,
   scaling or reference-evidence requirement in :doc:`fa_inputs`.

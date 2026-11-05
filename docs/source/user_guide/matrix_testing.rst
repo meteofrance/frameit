@@ -81,6 +81,8 @@ pytest results; ``qualification/summary.json`` contains compact convergence evid
 ``qualification/qualification.json`` retains profiles and complex coefficients,
 and ``matrix/`` contains the normal matrix artifacts. Exit code 0 means all
 services passed, 1 indicates a test failure, 2 a setup error, and 130 interruption.
+Require a normal outer-process exit too: a report written before a native
+shutdown failure is not completed qualification. See :doc:`fa_environment`.
 
 Benchmark workers load inputs before computation, and materialize lazy results
 within the timed processing stages. Computation time is the sum of tracking,

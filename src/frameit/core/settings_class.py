@@ -24,6 +24,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+# Initialize core PROJ before optional GRIB inventories load native libraries.
+from pyproj import Geod
+
 from frameit.io.loader import load_config_with_model_presets, resolve_config_with_model_presets
 
 logger = logging.getLogger(__name__)
@@ -328,7 +331,6 @@ class SimulationConfig:
             self.polar_source_halo_points, int
         ) or self.polar_source_halo_points < 1:
             raise ValueError("polar_source_halo_points must be an integer of at least one")
-        from pyproj import Geod
 
         try:
             Geod(ellps=self.polar_ellipsoid)

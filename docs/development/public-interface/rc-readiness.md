@@ -540,6 +540,49 @@ These are documentation tooling/CI changes, not scientific processing or schema
 changes. No environment creation, source-data upload, package publication, hook,
 push or deployment was performed.
 
+## Task 10 qualification — native shutdown blocker reproduced and corrected
+
+Revision `550a5ef` was tested with a clean tracked tree, Python 3.13.18 on
+Bazzite 44.20261026.0 / Linux x86_64 / local Btrfs. Dependency/native versions
+match the recorded reference stack above; `python -m pip check` passed. No
+environment, native library or backend selection was changed.
+
+The installed reduced fixture was verified read-only: **9 files / 61,387,047
+bytes**, recipe `frozen-ci-1`, manifest version 1, content identity
+`5346576eed1ef8e8c488b88c00592ec7c410830a65dad20eb8293a33771084b3`, manifest SHA-256
+`2dd8103dbc9c864e1f9440cbe04114b48c2954ca8b7bfd799d926c8b6b80a138`.
+Every declared file hash/size and required metadata matched. The supplemental
+prescribed track passed its own schema/exact-time check (12:00 only); its new
+fingerprint is not misrepresented as a claim by the older manifest. Fixture file
+set, sizes and mtimes were unchanged. No full/private source archive was acquired.
+
+`conda run --no-capture-output -n frameit_env frameit run-all-tests --output
+build/rc/all-tests-01` completed its internal numerical run (**1186 passed,
+4589 warnings**), analytical service (**463 checks**) and reduced matrix
+(**24 PASS, one explicitly EXCLUDED UTrack case**). However, the **outer process
+aborted at shutdown, exit 134**, after writing `all-tests.json` with exit_code=0.
+This attempt is **not a passing qualification**, regardless of those inner results.
+
+Minimal reproduction: a single AROME matrix **plan-only** CLI reported success,
+then exited -6. Import audit traced ecCodes initialization during fixture metadata
+verification before `SimulationConfig` later initialized pyproj. A fresh-process
+controlled differential (same inputs/options; core geometry initialized first)
+exited 0. This matches the existing global native-PROJ collision described in
+`../runtime-optimization.md`, not corrupt scientific data or failed cleanup.
+
+The small fix moves the already required `Geod` import from configuration
+construction to its module import, before matrix inventories. It changes core
+initialization order only. No decoder/library substitution, native-stack upgrade,
+scientific equation/default, unit convention or output-schema change is made.
+A regression executes the real one-case matrix plan and requires normal process
+exit and a valid five-file plan, not only a success message. Observed RED (-6)
+then GREEN; **203** lifecycle/configuration/catalogue/combined-service checks passed,
+583 known warnings, normal exit. Ruff F and diff checks passed.
+
+Full post-fix numerical/analytical/matrix verification remains required before
+Task 10 can be marked complete. External ecCodes-first/pyproj-later code can still
+expose the incompatible native stack; this scoped fix is not an upstream repair.
+
 ## Task 1 verification receipt
 
 - `conda run --no-capture-output -n frameit_env python -c 'import sys; assert sys.version_info[:2] == (3, 13); print(sys.version)'`
