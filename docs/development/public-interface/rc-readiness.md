@@ -44,7 +44,7 @@ No untested Cartesian product of these capabilities is implied.
 | AROME GRIB/NetCDF: selected atmospheric scalars and declared vector pairs; admitted regular/regional geometry | Fixed/prescribed; atmospheric trackers subject to their input/method requirements. Named sources use exact `common` (default) or `strict` and compatible forecast cycles | Optional selected polar fields; NetCDF or optional Zarr v3 | Present. Task 2 synthetic NetCDF variable-shard checks in `test_netcdf_assembly.py`; real GRIB and tracker qualification not rerun by that evidence. No inference of arbitrary statistical intervals or wind basis. |
 | Meso-NH NetCDF: surface/native-level scalars and explicitly represented staggered winds/W | Fixed/prescribed; selected atmospheric tracker with required fields; exact coupled time labels | Optional polar; NetCDF/Zarr | Present; `test_netcdf_assembly.py` reuse/native-branch tests. Broader native-level/tracker methods need their own later qualification. No inferred physical-height equivalence from stored labels. |
 | AROME/SURFEX native FA streams: declared instantaneous gridpoint fields, admitted atmospheric full/interface cubes | FA references admit fixed/prescribed centres only; a separate atmospheric GRIB/NetCDF reference can supply tracking. SURFEX is a named source/FA profile, not a new model selector. Exact times and compatible forecast identity | Selected polar/shared targets subject to geometry/support; NetCDF/Zarr | Present with bounded engineering evidence in existing `test_fa_*.py`/`test_arome_fa_coupling.py`, not rerun in Task 2. Scaling, support, units and Earth model need explicit evidence. No spectral FA, packed SURFEX or implicit pressure/height diagnostic. |
-| NEMO regional native T-grid scalars and separate U/V/W, barotropic and stress components: `(y,x)` geography; `deptht/u/v/w` retained | Fixed/prescribed ocean reference; or secondary source mapped independently to continuous atmospheric centres. Exact `common`/`strict` sample labels and native bounds | Scalar polar only if selected and eligible; NetCDF/Zarr; native component copies require the current `horizontal_winds: native` selector | Present, bounded synthetic oracles in `test_nemo_netcdf.py` and `test_nemo_arome_coupling.py`. No inferred mesh/mask/angle, component rotation/collocation, current speed, W mass conversion or component polar analysis. Regional spacing limits remain; not arbitrary global/folded grids. |
+| NEMO regional native T-grid scalars and separate U/V/W, barotropic and stress components: `(y,x)` geography; `deptht/u/v/w` retained | Fixed/prescribed ocean reference; or secondary source mapped independently to continuous atmospheric centres. Exact `common`/`strict` sample labels and native bounds | Scalar polar only if selected and eligible; NetCDF/Zarr; native component copies require `horizontal_vectors: native` | Present, bounded synthetic oracles in `test_nemo_netcdf.py` and `test_nemo_arome_coupling.py`. No inferred mesh/mask/angle, component rotation/collocation, current speed, W mass conversion or component polar analysis. Regional spacing limits remain; not arbitrary global/folded grids. |
 | Explicit AROME/NEMO preceding-hour association: instantaneous AROME fields and unique NEMO one-hour means with decoded bounds | Named NetCDF only; AROME reference, at least one NEMO participant, no other model. Pair `(T-1h,T]` by bounds; omit missing whole pairings with warning/record; never nearest matching | Native components and selected scalar polar under their own contracts; NetCDF/Zarr. Product `time` labels reference/end; `source_time` retains native mean label and bounds | Present explicit comparison policy, `test_nemo_arome_coupling.py`. Not the global default, interpolation, reconstruction of snapshots or mean/snapshot equivalence. Invalid/ambiguous required metadata fails. |
 | CROCO regional declared history/Vtransform=2 rho scalars, N-1 native faces, `s_rho/s_w` and formula dependencies | Fixed/prescribed, alone or as secondary source; only exact `common`/`strict`. Do not apply the NEMO preceding-hour policy | Native NetCDF/Zarr; eligible scalar polar requires explicit static water support | Present, `test_croco_netcdf.py`, `test_croco_vectors.py`, `test_croco_mnh_coupling.py`. Native missing cells and zeros retained; copies do not interpret finite land placeholders. No arbitrary restart/averaged family, other Vtransform or diagnosed depth cube. |
 | Explicit CROCO rho/Earth `u/v` and `ubar/vbar` analysis: midpoint collocation then declared angle rotation, same native sigma index | Same centres/exact times as CROCO above; explicit representation selection or selected polar current path loads required companion | NetCDF/Zarr; selected current polar points after preparation. Static binary rho support, optional restricting face masks, both valid brackets and joint finite vector mask | Bounded transformation, analytical constant/linear/rotated/reversed-axis oracles at 1e-12 in `test_croco_vectors.py`; no new stable diagnostic claim. No stress analysis, wet/dry, single-bracket fill, physical-depth interpolation, conservation or storm-motion subtraction. |
@@ -579,9 +579,118 @@ exit and a valid five-file plan, not only a success message. Observed RED (-6)
 then GREEN; **203** lifecycle/configuration/catalogue/combined-service checks passed,
 583 known warnings, normal exit. Ruff F and diff checks passed.
 
-Full post-fix numerical/analytical/matrix verification remains required before
-Task 10 can be marked complete. External ecCodes-first/pyproj-later code can still
-expose the incompatible native stack; this scoped fix is not an upstream repair.
+The fix was committed as **27dc486**. Against that exact clean revision,
+`conda run --no-capture-output -n frameit_env env
+FRAMEIT_BUILD_REVISION=27dc4860b9f38fa4441fb86c529c0825ef9c3a2d frameit run-all-tests
+--output build/rc/all-tests-02` **exited normally with code 0**:
+
+- **1187 numerical tests passed**, 4589 known warnings, 577.98 s. JUnit records
+  1189 cases including two dynamic subtests, zero errors/failures/skips. The
+  ordinary project command and combined runner collect the same 1187 test IDs.
+- **463 analytical checks passed**, zero failures; the existing seven cases,
+  error profiles, harmonics and coverage records remain.
+- **24 reduced matrix cases passed**, with one explicitly excluded UTrack case:
+  the frozen crop does not establish its spatial context/margins. Required cases
+  executed; the prescribed case used its exact single-time overlap. This matrix
+  checks execution/product contracts, not real-field accuracy against a reference.
+- Total combined wall time was 737.26 s. Its separate computation-only matrix
+  metric was 29.29 s, not whole-pipeline or throughput performance.
+- A fresh xarray/NumPy/netCDF4 process importing no FrameIt reopened **107 matrix
+  products plus two analytical products**. It checked literal constant values,
+  units, endpoint-exclusive axes, undefined origin directions, changing support,
+  schema/time metadata and bounded one-plane readability. Independent coupled
+  NetCDF/Zarr value/depth/sigma/bounds/mask oracles also executed in the full suite.
+- Post-run fixture content identity, manifest hash, every recorded content hash,
+  size and mtime remained unchanged after both attempts.
+
+### Risk-based coverage and safety
+
+| Risk / admitted scope | Executed evidence |
+| --- | --- |
+| Current schema, CLI precedence, named/composed starters, replay | Configuration, template and first-run suites; current emitted YAML in 24 matrix cases |
+| AROME/MNH native/scalar/staggered vectors and tracking | Reduced real-fixture matrix; wind/units/level tests; independent synthetic centroid/multi-field oracles with their documented limits |
+| NEMO native depths/components and explicit preceding-hour means | `test_nemo_netcdf.py`, `test_nemo_arome_coupling.py`; source-window/ordinary-reader checks, native bounds/zero/missingness |
+| CROCO native sigma/current masks, SEA support and coupled sampling | `test_croco_netcdf.py`, `test_croco_vectors.py`, `test_croco_mnh_coupling.py`, `test_mnh_surfex_support.py`; 1e-12 analytic rotations and independent native samples |
+| FA isolation, declarations, gridpoint/cube boundaries | Maintained-stack `test_fa_*.py`, primary/shared-pair suites; actual worker timeout/SIGSEGV and normal parent/child shutdown |
+| Optional polar/support and output backends | Scalar/vector/periodic/coverage suites and analytical service; actual optional stack plus simulated missing/invalid dependencies; ordinary NetCDF/Zarr readers |
+| Ownership, overwrite, interruption and completion | `test_hpc_execution.py`, `test_zarr_export.py`, coupled failed-write cases; sources/prior products retained under the documented policy |
+
+Additional bounded fault injections used owned synthetic products only. SIGKILL
+after payload writing preserved original NetCDF/Zarr bytes; a controlled kill
+after Zarr's backup rename retained the prior store in a readable hidden backup
+and left the documented final-path visibility gap. Unpublished partial products
+remained separate. Fresh readers checked old values/units without FrameIt. This
+does not establish fsync durability or an all-products transaction.
+
+The independent NetCDF completion checker accepted a normal compact run and
+rejected missing final status, running/incomplete states, stale sizes and missing
+products on owned copies. Original run/status bytes were unchanged.
+
+The exact Task 2 workload was remeasured after the fix with the same request,
+one synchronous export/Dask/native worker and sequential fresh processes. A
+first measurement incurred 696 input blocks and is retained as warm-up, not
+silently mixed into the zero-input-block baseline comparison. Three subsequent
+warm runs were **3.08/2.84/2.87 s**, RSS **244480/244272/244872 KiB**, input blocks
+**0/0/0**, output blocks **1808/1840/2160**. Median **2.87 s / 244480 KiB** versus
+baseline **2.95 s / 244232 KiB** shows no material resource trade-off in this
+bounded sample; it is not a general speedup or statistical equivalence claim.
+
+External ecCodes-first/pyproj-later code can still expose the incompatible native
+stack. No full-domain centroid, independent NOAA execution, unavailable UTrack
+weights, arbitrary real ocean producer or all-Linux qualification is implied.
+
+## Fresh implementation review and final fix pass
+
+A read-only fresh-context review covered the 15 implementation commits from the
+maintainer's assignment baseline `212fcca` through `27dc486`, including connected
+current code. Earlier user branch work was not reset or treated as a new refactor
+assignment. No Critical issue was found. Two functional verification gaps were
+confirmed and addressed in one fix pass:
+
+- Core CI selected three configuration integration cases requiring polar/GRIB
+  dependencies and frozen data absent from a core checkout. They moved unchanged
+  to `test_configuration_integration.py`, retained by the required native full
+  suite. Function ASTs, all assertions and tolerances are identical. With optional
+  imports/fixture reads blocked, the mandatory core set went from **3 failed / 200
+  passed** to **200 passed, no skips**. The three native cases separately passed
+  with their actual dependencies/fixture. No second development environment was
+  created and no required scientific case was converted into a skip.
+- The artifact checker treated `/...` URLs as artifact-relative, unlike browsers
+  under `/frameit/` or iteration prefixes. Three present-target regression cases
+  failed first, then passed after rejecting root-relative local URLs. **10 docs
+  tests** and the actual artifact pass. The reviewer labelled this Minor; it was
+  regraded as a functional publication false-pass rather than visual polish.
+
+Hosted CI still needs actual fixture provisioning and an authorized push; these
+local checks are not hosted results. Final whole-suite verification of the fix
+pass follows before handover. There is no second review pass or scientific sign-off.
+
+## Tasks 11–12 human and artifact gates — open
+
+Reference identities and abstracts were checked against publisher-deposited
+Crossref records for Nguyen/Molinari/Thomas (2014), Marchok (2021), Ullrich/Taylor
+(2015), Fischer et al. (2022), Ryglicki/Hodyss (2016), Zhao et al. (2019) and
+Raynaud et al. (2024). Springer's publisher record verifies Karney (2013),
+`10.1007/s00190-012-0578-z`. Direct AMS article retrieval returned 405; registered
+metadata/abstracts do not verify every equation, method departure, threshold or
+community-adoption claim. Required detailed scientific review remains open.
+
+Before an RC freeze, obtain actual human scientific/technical scope review and an
+unfamiliar reader's unassisted first run/navigation feedback. Existing experimental
+and beta methods remain labelled; no method was promoted, silently removed or
+scientifically approved by the agent or engineering reviewer. Full-domain native
+centroid/NOAA/real-ocean evidence gaps require their documented data and review.
+
+Version remains 1.1.0 until Task 12. Wheel/sdist, source-data redistribution audit,
+fresh reference installation, final candidate metadata, hosted CI and release
+freeze are uncompleted. In particular, local ignored fixture availability does
+not authorize redistributing it in an artifact; `build` is not installed in the
+current reference environment. Do not substitute another runtime or claim a
+fresh installation from this existing prefix. Real keyboard input, screenshots,
+print pagination and final human reading acceptance remain unrun.
+
+The live public preview and persistent plan ledger remain available. No push,
+main merge, remote tag, package publication or documentation deployment occurred.
 
 ## Task 1 verification receipt
 

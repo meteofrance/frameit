@@ -27,7 +27,7 @@ class PublicationBoundaryTests(unittest.TestCase):
                 <h1 id="top">Native SFX.TG1P1; C0/C1; schema 2.</h1>
                 <a href="guide/?highlight=units#native%20levels">Guide</a>
                 <a href="downloads/data%20%231.nc" download>Download</a>
-                <img src="/symbol.svg"><a href="#top">Top</a>
+                <img src="symbol.svg"><a href="#top">Top</a>
                 <a href="https://example.org/unavailable#id">External</a>
                 <a href="//example.org/topic">Remote</a>
                 <a href="mailto:author@example.org">Author</a>
@@ -62,6 +62,21 @@ class PublicationBoundaryTests(unittest.TestCase):
                          '<a href="../private.txt">Outside</a>',
                          '<a href="file:///private.txt">Local machine</a>',
                          '<a href="http://[invalid">Malformed URL</a>'):
+                with self.subTest(link=link):
+                    (root / 'index.html').write_text(link)
+                    self.assertTrue(check_local_links(root))
+
+    def test_root_relative_links_are_not_portable_under_a_site_prefix(self):
+        from check_publication import check_local_links
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'symbol.svg').write_text('<svg/>')
+            (root / 'topic.html').write_text('<h1 id="ok">Topic</h1>')
+            (root / 'theme.css').write_text('body { color: navy }')
+            for link in ('<img src="/symbol.svg">',
+                         '<a href="/topic.html#ok">Topic</a>',
+                         '<link href="/%74heme.css" rel="stylesheet">'):
                 with self.subTest(link=link):
                     (root / 'index.html').write_text(link)
                     self.assertTrue(check_local_links(root))

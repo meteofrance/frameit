@@ -113,8 +113,10 @@ def check_local_links(artifact: Path) -> list[str]:
             if url.scheme or url.netloc:
                 continue
             decoded = unquote(url.path)
-            base = root if decoded.startswith("/") else path.parent
-            target = (base / decoded.lstrip("/")).resolve() if decoded else path
+            if decoded.startswith("/"):
+                errors.append(f"{location}: root-relative URL loses the site prefix {value!r}")
+                continue
+            target = (path.parent / decoded).resolve() if decoded else path
             if not target.is_relative_to(root):
                 errors.append(f"{location}: target leaves artifact {value!r}")
                 continue
