@@ -6,6 +6,12 @@ is the supported runtime. Retired versions (including numeric ``2.1``), flat
 documents and old aliases are rejected by every public YAML/mapping loader.
 Preserve old configurations and results as historical records; do not edit source
 data. There is no ``frameit config migrate`` command or automatic converter.
+``init --full`` and its Python ``full=`` argument are removed. Use minimal named
+or model/composed starters, the configuration reference and ``frameit config show``.
+Python generator calls use ``write_template(name, path, *, tracking=None,
+coupling=None, force=False)``; the former ``model=`` keyword becomes ``name=``.
+Advanced UTrack/multi-field methods remain runnable in explicit YAML, not starter
+selectors with guessed checkpoints/seeds.
 
 Manual syntax map
 ------------------

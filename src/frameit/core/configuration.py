@@ -872,73 +872,78 @@ def load_runtime(path):
         raise ValueError(f"{path}: {message}") from exc
 
 
-def write_template(model, path, *, full=False, tracking=None, force=False):
-    """Templates and reference defaults share the schema's source of truth."""
-    if model not in {"arome", "mesonh", "nemo", "croco"}:
-        raise ValueError("model must be arome, mesonh, nemo or croco")
-    tracking = tracking or ("fixed_box" if model in {"nemo", "croco"} else "pressure_wind")
+TEMPLATES = {
+    "arome-pressure-wind": "arome", "mesonh-pressure-wind": "mesonh",
+    "arome-fixed-scalar": "arome-fixed-scalar", "nemo-native": "nemo", "croco-native": "croco",
+    "arome-nemo": "arome-nemo", "mesonh-croco": "mesonh-croco",
+}
+
+
+def write_template(name, path, *, tracking=None, coupling=None, force=False):
+    """Select a declared starter; preserve its comments, not an exhaustive defaults dump."""
     from importlib import resources
 
-    template = yaml.safe_load(resources.files("frameit").joinpath(
-        f"templates/{model}.yaml").read_text(encoding="utf-8"))
-    c = _merge_checked(template, DEFAULTS)
-    c["model"] = model
-    c["input"]["pattern"] = "*.grib" if model == "arome" else "*.nc"
-    c["tracking"]["method"] = tracking
-    if tracking == "fixed_box":
-        c["tracking"]["fixed_box"]["center"] = {"latitude": -18., "longitude": 58.}
-    elif tracking == "prescribed_track":
-        c["tracking"]["prescribed_track"]["file"] = "./track.nc"
-    elif tracking == "utrack":
-        c["tracking"]["utrack"]["weights_file"] = "./weights.pt"
-    elif tracking == "multifield_vortex":
-        mf = c["tracking"]["multifield_vortex"]
-        mf["seed"].update(latitude=-20., longitude=60., motion_u_m_s=0., motion_v_m_s=0.)
-        if model == "mesonh":
-            mf["mnh_gravity_m_s2"] = 9.80665
-            c["input"]["wind_pairs"].append({"group": "level", "u": "UT", "v": "VT",
-                                           "reference_frame": "grid",
-                                           "rotation": {"method": "geolocation"}})
+    from frameit.utils.atomic import atomic_output
+
+    if not isinstance(name, str):
+        raise ValueError("Template selector must be a model or named workflow")
+    if name in TEMPLATES:
+        if tracking is not None or coupling is not None:
+            raise ValueError("Named workflows reject tracking/coupling flags; select a model to compose")
+        resource = TEMPLATES[name]
+    elif name in {"arome", "mesonh", "nemo", "croco"}:
+        if coupling is not None:
+            if (name, coupling) not in {("arome", "nemo"), ("mesonh", "croco")}:
+                raise ValueError("Starter coupling supports only arome+nemo or mesonh+croco")
+            tracking = tracking or "fixed_box"
+            allowed = {"fixed_box", "prescribed_track"}
+            if name == "mesonh":
+                allowed.add("pressure_wind")
+            resource = f"{name}-{coupling}"
         else:
-            c["input"]["wind_pairs"].append({"group": "isobaricInhPa", "u": "u", "v": "v",
-                                           "reference_frame": "earth"})
-    c["domain"]["width_km"] = {"x": 500, "y": 500}
-    resolve_schema(c)
-    if not full:
-        c["input"] = {"directory": "./data", "pattern": c["input"]["pattern"],
-                      "wind_pairs": c["input"]["wind_pairs"]}
-        c["tracking"] = {"method": tracking, **(
-            {tracking: c["tracking"][tracking]} if tracking != "pressure_wind" else {}
-        )}
-        c["domain"] = {"width_km": c["domain"]["width_km"]}
-        c["polar"] = {"enabled": False, "variables": "extracted"}
-        c["output"] = {"directory": "./output", "backend": c["output"]["backend"],
-                       "cartesian": c["output"]["cartesian"],
-                       "polar": c["output"]["polar"]}
-        c.pop("logging")
-        c.pop("metadata")
+            atmospheric = name in {"arome", "mesonh"}
+            tracking = tracking or ("pressure_wind" if atmospheric else "fixed_box")
+            allowed = {"fixed_box", "prescribed_track"}
+            if atmospheric:
+                allowed |= {"pressure_wind", "pressure_centroid"}
+            resource = (f"{name}-fixed-scalar" if atmospheric and tracking in {
+                "fixed_box", "prescribed_track"} else name)
+        if tracking not in allowed:
+            raise ValueError(f"Unsupported starter tracking selection: {name}/{coupling}/{tracking}")
+    else:
+        raise ValueError(f"Unknown template selector: {name}")
+
+    text = resources.files("frameit").joinpath(f"templates/{resource}.yaml").read_text(encoding="utf-8")
+    starter = yaml.safe_load(text)
+    method = tracking or starter["tracking"]["method"]
+    if method != starter["tracking"]["method"]:
+        block = "tracking:\n" + ("  source: atmosphere\n" if coupling else "")
+        block += f"  method: {method}\n"
+        if method == "prescribed_track":
+            block += ("  # Exact timestamps and geographic degrees; no nearest-time matching.\n"
+                      "  # Replace both instructional data and track when using real inputs.\n"
+                      "  prescribed_track:\n    file: ./track.nc\n")
+        text = re.sub(r"(?ms)^tracking:\n.*?(?=^domain:)", lambda _: block, text, count=1)
+        text = text.replace(f"  name: {starter['run']['name']}\n",
+                            f"  name: {name}{'-' + coupling if coupling else ''}-{method.replace('_', '-')}\n")
+    if method == "pressure_centroid":
+        pair = ("{group: isobaricInhPa, u: u, v: v, reference_frame: earth}" if name == "arome"
+                else "{group: level, u: UT_ZM, v: VT_ZM, reference_frame: earth}")
+        text = text.replace("tracking:\n", f"    - {pair}\n"
+                            "# Verify wind declarations and source ASL/pressure/native brackets.\n"
+                            "# Keep full 500-km reference-ring support; Meso-NH must bracket 2000 m ASL.\n"
+                            "tracking:\n", 1)
+    if coupling and method == "pressure_wind":
+        text = text.replace("        netcdf:\n",
+                            "        # Atmospheric tracker winds, independent of ocean sampling.\n"
+                            "        # Verify the actual source wind basis and velocity/pressure units.\n"
+                            "        wind_pairs:\n"
+                            "          - {group: surface, u: UM10, v: VM10, reference_frame: earth}\n"
+                            "        netcdf:\n", 1)
+        text = text.replace("          names: [SST, SSS]", "          names: [SST, SSS, UM10, VM10, MSLP]")
+        text += "  cartesian:\n    horizontal_vectors: earth_centered\n"
     path = Path(path)
-    if path.exists() and not force:
-        raise FileExistsError(f"Configuration exists: {path}; use --force")
-    text = "# FrameIt schema v2.1. Adapt paths, variables, centres, and box sizes to your data.\n"
-    text += "# Paths are relative to this YAML. Spacing is inferred from native coordinates.\n"
-    text += "# domain.width_km contains full widths; omit it for full-domain extraction.\n"
-    text += "# polar.radial_step_m is metres; polar.azimuth_step_deg is degrees.\n"
-    text += "# Choose azimuth_step_deg OR azimuth_count; neither means automatic sampling.\n"
-    text += "# output.backend: netcdf4 (default), h5netcdf, or zarr (optional extra).\n"
-    text += "# NetCDF: input.netcdf.file_layout: variables merges complementary same-grid files.\n"
-    text += "# Zarr: optional zarr_chunk_size / zarr_shard_size map dimension names to element counts.\n"
-    if full:
-        text += "# FA: FrameIt[fa]/EPyGrAM in an isolated helper; backend: epygram only.\n"
-    if model == "mesonh":
-        text += "# Exclude the exact MesoNH 000 timeseries name using input.exclude if needed.\n"
-        if tracking == "pressure_centroid":
-            text += "# MNH DIAG: LTPZH, LVAR_RS, LWIND_ZM, LMSLP; include UM10/VM10.\n"
-            text += "# Keep native levels bracketing 2000 m ASL and a full 500-km reference ring.\n"
-    if tracking == "multifield_vortex":
-        text += "# Experimental multi-field adaptation: real-case/NOAA qualification is pending.\n"
-        text += "# Replace the example seed/motion and verify MNH gravity and wind declarations.\n"
-        text += "# Winds at 850/700/500 hPa and 1000-km steering support are required.\n"
-    text += yaml.safe_dump(c, sort_keys=False, allow_unicode=True)
-    path.write_text(text, encoding="utf-8")
+    resolve_schema(yaml.safe_load(text), base_dir=path.absolute().parent)
+    with atomic_output(path, overwrite=force) as temporary:
+        temporary.write_text(text, encoding="utf-8")
     return path

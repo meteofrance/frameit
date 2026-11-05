@@ -150,16 +150,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--schema-only", action="store_true", help="Validate YAML without opening datasets"
     )
 
-    pin = sub.add_parser("init", help="Create an annotated schema-v2.1 configuration")
-    pin.add_argument("model", choices=("arome", "mesonh", "nemo", "croco"))
+    from frameit.core.configuration import TEMPLATES
+
+    pin = sub.add_parser(
+        "init", help="Create a minimal commented schema-v2.1 starter", allow_abbrev=False,
+        epilog="Named workflows reject composition flags. Coupling: arome+nemo or mesonh+croco; "
+               "fixed_box by default, prescribed_track for both, pressure_wind for mesonh+croco only.")
+    pin.add_argument("name", choices=("arome", "mesonh", "nemo", "croco", *TEMPLATES))
     pin.add_argument("--output", type=Path, default=Path("frameit.yaml"))
     pin.add_argument(
         "--tracking", default=None,
-        choices=("pressure_wind", "fixed_box", "prescribed_track", "pressure_centroid",
-                 "multifield_vortex", "utrack"),
+        choices=("pressure_wind", "fixed_box", "prescribed_track", "pressure_centroid"),
     )
-    pin.add_argument("--full", action="store_true")
-    pin.add_argument("--force", action="store_true")
+    pin.add_argument("--coupling", choices=("nemo", "croco"), default=None)
+    pin.add_argument("--force", action="store_true", help="Replace only the selected configuration file")
 
     pc = sub.add_parser("config", help="Display effective configuration")
     pcs = pc.add_subparsers(dest="config_command", required=True)
@@ -480,7 +484,7 @@ def main(argv: list[str] | None = None) -> None:
             from frameit.core.configuration import write_template
 
             path = write_template(
-                args.model, args.output, full=args.full, tracking=args.tracking, force=args.force
+                args.name, args.output, tracking=args.tracking, coupling=args.coupling, force=args.force
             )
             print(
                 f"Created {path}. Edit the examples, then run 'frameit validate {path}' "

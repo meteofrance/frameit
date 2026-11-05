@@ -251,17 +251,13 @@ def dataset(tmp_path, name="native.nc", *, dx=2500, dy=2500, units="m s-1", spee
 
 
 @pytest.mark.parametrize("model", ["arome", "mesonh"])
-@pytest.mark.parametrize("full", [False, True])
-@pytest.mark.parametrize(
-    "method", ["pressure_wind", "fixed_box", "prescribed_track", "utrack", "pressure_centroid"]
-)
-def test_generated_templates(tmp_path, model, full, method):
+def test_model_starter_loads_runtime_defaults(tmp_path, model):
     path = tmp_path / "frameit.yaml"
-    write_template(model, path, full=full, tracking=method)
+    write_template(model, path)
     conf = SimulationConfig.from_yaml(path)
     assert conf.schema_version == "2.1" and conf.infer_grid_geometry
     assert conf.resolution == 0
-    assert conf.tracking_method == ("wind_pressure" if method == "pressure_wind" else method)
+    assert conf.tracking_method == "wind_pressure"
     assert conf.data_dir == tmp_path / "data"
     assert conf.wind_pairs == [{"group": "surface", "u": "u10" if model == "arome" else "UM10",
                                 "v": "v10" if model == "arome" else "VM10",

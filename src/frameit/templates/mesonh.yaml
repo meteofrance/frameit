@@ -1,29 +1,29 @@
+# Paths are relative to this YAML. Adapt the inspected fields and geometry.
 schema_version: "2.1"
 model: mesonh
 run:
-  name: analysis
+  name: mesonh-pressure-wind
 input:
   directory: ./data
   pattern: "*.nc"
-  # Optional embedded SEA interpretation; also select these names under variables.
-  # netcdf: {surfex_fields: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA]}
-  # UM10/VM10 are declared Earth-relative; adapt this to your source diagnostics.
+  format: netcdf
+  # Exclude the exact 000 timeseries filename via input.exclude when needed.
+  # Verify the source wind basis of UM10/VM10, pressure and velocity units.
   wind_pairs:
     - {group: surface, u: UM10, v: VM10, reference_frame: earth}
 tracking:
   method: pressure_wind
 domain:
+  # Illustrative full widths in km, NOT tracker search half-widths.
   width_km: {x: 500, y: 500}
 variables:
   surface:
     names: [UM10, VM10, MSLP]
 polar:
+  # No polar sampling or embedded SURFEX interpretation is selected.
   enabled: false
-  variables: extracted
 output:
   directory: ./output
-  backend: netcdf4  # Or zarr (optional extra); see output documentation for chunks vs shards.
-  # zarr_chunk_size: {time: 1, y_box: 128, x_box: 128}
-  # zarr_shard_size: {time: 8, y_box: 512, x_box: 512}
-  cartesian: {horizontal_vectors: earth_centered, vertical_velocity: interfaces}
-  polar: {vertical_velocity: mass}
+  overwrite: false
+  cartesian:
+    horizontal_vectors: earth_centered

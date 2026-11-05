@@ -57,7 +57,7 @@ def test_init_and_inspect_use_maintained_default(
 ):
     from frameit.cli import _build_parser, _cmd_inspect
 
-    path = write_template("arome", tmp_path / "init.yaml", full=True)
+    path = write_template("arome", tmp_path / "init.yaml")
     assert SimulationConfig.from_yaml(path).fa_options["backend"] == "epygram"
     source = tmp_path / "unopened.fa"
     source.touch()

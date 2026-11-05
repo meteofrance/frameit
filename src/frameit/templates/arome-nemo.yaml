@@ -1,0 +1,44 @@
+# Paths are relative to this YAML. Adapt fields, centre and full widths to your inputs.
+# Independent grids, masks and depths remain independent scientific representations.
+# Exact common labels only: half-hour means do not pair with whole-hour snapshots.
+schema_version: "2.1"
+model: arome
+run:
+  name: arome-nemo
+input:
+  time_alignment: common
+  sources:
+    atmosphere:
+      model: arome
+      input:
+        directory: ./data/arome
+        pattern: '*.nc'
+        format: netcdf
+      variables:
+        surface:
+          names: [prmsl]
+    ocean:
+      model: nemo
+      input:
+        directory: ./data/nemo
+        pattern: '*.nc'
+        format: netcdf
+      variables:
+        deptht:
+          # Source potential temperature and native depth; not a reconstructed snapshot.
+          names: [votemper]
+          levels: {indices: [0]}
+tracking:
+  source: atmosphere
+  method: fixed_box
+  fixed_box:
+    center: {latitude: -20., longitude: 60.}
+domain:
+  # Illustrative full widths in km; each grid samples the geographical centre independently.
+  width_km: {x: 100, y: 100}
+polar:
+  # No polar/shared target, winds, currents or preceding-hour association is selected.
+  enabled: false
+output:
+  directory: ./output
+  overwrite: false

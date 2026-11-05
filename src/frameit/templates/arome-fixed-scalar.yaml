@@ -1,0 +1,28 @@
+# Paths are relative to this YAML. Instructional structured-adapter example only:
+# this is NOT an AROME producer file or a physical simulation.
+schema_version: "2.1"
+model: arome
+run:
+  name: arome-fixed-scalar
+input:
+  directory: ./data
+  pattern: first-run.nc
+  format: netcdf
+tracking:
+  method: fixed_box
+  fixed_box:
+    # Geographic degrees north/east; replace with an inspected point for real data.
+    center: {latitude: -20., longitude: 60.}
+domain:
+  # Full widths in km; this small box is for the instructional input.
+  width_km: {x: 4, y: 4}
+variables:
+  surface:
+    # Dimensionless instructional scalar: valid zero is distinct from missing (NaN).
+    names: [instructional_scalar]
+polar:
+  # No wind declarations, optional diagnostics or polar sampling are needed.
+  enabled: false
+output:
+  directory: ./output
+  overwrite: false

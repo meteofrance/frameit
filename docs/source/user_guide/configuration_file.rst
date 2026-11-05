@@ -13,11 +13,61 @@ Create a model-specific, annotated configuration:
    frameit init arome
    frameit init mesonh --output chido.yaml
    frameit init arome --tracking prescribed_track
-   frameit init arome --full --output full.yaml
+   frameit init arome --coupling nemo
 
-Short templates show essential settings. ``--full`` renders all supported keys
-and defaults from the same schema used by validation. ``--force`` is required to
-replace an existing file. Initialization does not open datasets or load AI weights.
+Starters contain only the selected workflow and retain their scientific comments.
+``--full`` is removed. Use ``frameit config show`` for complete defaults or
+``config show --resolved`` for metadata-dependent settings. ``--force`` replaces
+only the selected configuration, not input files. Generation otherwise refuses
+existing destinations; it opens no datasets and loads no optional scientific stack.
+
+Starter catalogue
+------------------
+
+Each command below writes ``frameit.yaml``. Adapt the inspected inputs and the
+illustrative centres/widths; these are not scientifically qualified presets.
+All explicitly disable polar sampling and refuse product overwrites.
+
+.. list-table:: Named starters and equivalent compositions
+   :header-rows: 1
+   :class: manual-upgrade-map
+
+   * - Named command
+     - Equivalent command and selected quantities
+   * - ``frameit init arome-pressure-wind``
+     - ``frameit init arome``: GRIB u10/v10/prmsl with declared Earth winds
+   * - ``frameit init mesonh-pressure-wind``
+     - ``frameit init mesonh``: NetCDF UM10/VM10/MSLP with declared Earth winds
+   * - ``frameit init arome-fixed-scalar``
+     - ``frameit init arome --tracking fixed_box``: instructional scalar, 4 km full widths
+   * - ``frameit init nemo-native``
+     - ``frameit init nemo``: native T-grid votemper at stored index 0
+   * - ``frameit init croco-native``
+     - ``frameit init croco``: native temp/salt at sigma index 0 and surface zeta
+   * - ``frameit init arome-nemo``
+     - ``frameit init arome --coupling nemo``: independent prmsl/votemper, exact common labels
+   * - ``frameit init mesonh-croco``
+     - ``frameit init mesonh --coupling croco``: explicit SEA SST/SSS and native temp/salt
+
+A named selector rejects **any** tracking/coupling flag. To compose, use a model
+selector. Single models admit ``fixed_box/prescribed_track``; AROME/Meso-NH also
+admit ``pressure_wind/pressure_centroid``. Coupling admits only AROME+NEMO and
+Meso-NH+CROCO: fixed-box by default, prescribed-track for either, pressure-wind
+additionally for Meso-NH+CROCO. Reverse/other starter combinations are rejected.
+
+For example, ``frameit init mesonh --tracking fixed_box`` selects only MSLP;
+``frameit init nemo --tracking prescribed_track`` selects the same native ocean
+scalar with an explicit track file. Prescribed matching stays exact; replacing
+instructional data for real use also requires a suitable real track.
+``frameit init mesonh --coupling croco --tracking pressure_wind`` adds only the
+atmospheric tracker's declared UM10/VM10/MSLP, not ocean current processing.
+``init`` does not furnish guessed UTrack checkpoints or experimental multi-field
+seeds: those methods remain runnable through explicit reviewed YAML.
+
+The fixed-scalar resource is the same commented source used by the generator:
+
+.. literalinclude:: ../../../src/frameit/templates/arome-fixed-scalar.yaml
+   :language: yaml
 
 Minimal example
 ---------------
@@ -199,7 +249,7 @@ nearest/interpolated matching is not introduced by this schema.
 ``tracking.utrack.weights_file`` is required for UTrack; ``use_gpu`` defaults to
 false and ``batch_size`` to 16. The pressure-centroid convergence, motion, and
 sampling controls are nested under ``tracking.pressure_centroid``; see
-:doc:`/tracker/pressure_centroid` and ``frameit init arome --tracking pressure_centroid --full``.
+:doc:`/tracker/pressure_centroid` and ``frameit init arome --tracking pressure_centroid``.
 For native-level Meso-NH input use ``frameit init mesonh --tracking pressure_centroid``;
 the tracker documentation lists required fields and version-specific DIAG settings.
 
@@ -251,7 +301,7 @@ outer-ring spacing. Analytical angles are endpoint-exclusive.
 Other controls include ``interpolation_method`` (``bilinear`` or ``nearest_s2d``),
 ``missing_data_policy`` (``strict`` or ``renormalize``), weight-support thresholds,
 source halo, ellipsoid, geometry point budget, plan-cache limits, ``chunks``, and
-``profile``. ``--full`` exposes their authoritative defaults. Input chunks and
+``profile``. ``frameit config show`` exposes their authoritative defaults. Input chunks and
 polar computation chunks are separate; NetCDF storage chunks remain backend-selected.
 Zarr storage chunks and shards have separate optional output settings described below.
 
@@ -327,8 +377,8 @@ GRIB component flags and CF wind metadata (including standard names). A conflict
 inconsistent pair, missing angle, unsupported projection or unusable geometry
 must fail with the affected pair identified. Do not silently change reference
 frame or fall back from one rotation method to another. Earth-relative pairs
-need no grid-to-Earth rotation. Generated templates show explicit pair
-declarations for their selected winds and the three output defaults above.
+need no grid-to-Earth rotation. Wind starters retain the required pair/basis
+declarations; unrelated defaults stay in this reference and effective inspection.
 See :ref:`wind-preparation-method` for equations, axis checks and limitations.
 
 Output, logging, and precedence

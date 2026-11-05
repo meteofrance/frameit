@@ -47,7 +47,7 @@ for fresh-environment migration and the optional interpreter override.
 frameit inspect ./data --model arome --format grib --pattern '*.grib'
 frameit init arome
 # For Meso-NH: frameit init mesonh --output chido.yaml
-# To expose every supported setting: frameit init arome --full --output full.yaml
+# Coupled native scalars: frameit init arome --coupling nemo
 ```
 
 2. Edit `frameit.yaml`: set input paths, quantities and levels, tracking method,
@@ -89,7 +89,8 @@ Follow the [manual upgrade map](docs/source/getting_started/upgrading_to_v2.rst)
 and review the scientific declarations before running.
 
 The [configuration reference](docs/source/user_guide/configuration_file.rst) explains
-defaults, CLI precedence, and wind/level selections.
+the minimal named/composed starters, defaults, CLI precedence, and wind/level selections.
+`frameit config show` displays complete defaults.
 
 ## Supported tasks and limits
 

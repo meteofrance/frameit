@@ -318,8 +318,8 @@ Wind locations, reference frames and output choices
 .. note::
 
    Defaults are Cartesian horizontal ``earth_centered``, Cartesian vertical
-   ``interfaces`` and polar vertical ``mass``. Generated templates show these
-   choices explicitly. Numerical conventions and qualification limits are in
+   ``interfaces`` and polar vertical ``mass``. Minimal starters show only needed
+   declarations; complete settings remain inspectable. Numerical conventions and qualification limits are in
    :ref:`wind-preparation-method`; source references do not establish scientific
    validation for every input grid.
 

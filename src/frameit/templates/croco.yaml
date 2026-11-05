@@ -1,12 +1,17 @@
+# Paths are relative to this YAML; adapt files, centre and box to your region.
+# Admitted CROCO history/Vtransform=2 only; this is not arbitrary restart support.
 schema_version: "2.1"
 model: croco
+run:
+  name: croco-native
 input:
   directory: ./data
-  pattern: '*.nc'
+  pattern: '*_his.nc'
   format: netcdf
 variables:
   s_rho:
     names: [temp, salt]
+    # Zero-based stored sigma index, NOT metres; retain formula dependencies and masks.
     levels: {indices: [0]}
   surface:
     names: [zeta]
@@ -14,7 +19,12 @@ tracking:
   method: fixed_box
   fixed_box:
     center: {latitude: -20., longitude: 60.}
+domain:
+  # Illustrative full widths in km; inspect available regional coverage.
+  width_km: {x: 100, y: 100}
+polar:
+  # Polar sampling is disabled; adding currents needs an explicit representation choice.
+  enabled: false
 output:
   directory: ./output
   overwrite: false
-  cartesian: {horizontal_vectors: native}

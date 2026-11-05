@@ -1,0 +1,25 @@
+# Paths are relative to this YAML. Replace the MSLP selection using inspected data.
+schema_version: "2.1"
+model: mesonh
+run:
+  name: mesonh-fixed-scalar
+input:
+  directory: ./data
+  pattern: '*.nc'
+  format: netcdf
+tracking:
+  method: fixed_box
+  fixed_box:
+    center: {latitude: -20., longitude: 60.}
+domain:
+  # Illustrative full widths in km; adapt centre and available coverage.
+  width_km: {x: 100, y: 100}
+variables:
+  surface:
+    names: [MSLP]
+polar:
+  # Scalar extraction needs no winds or polar sampling.
+  enabled: false
+output:
+  directory: ./output
+  overwrite: false

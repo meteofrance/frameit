@@ -1,27 +1,28 @@
+# Paths are relative to this YAML. Adapt the inspected fields, centre and box.
 schema_version: "2.1"
 model: arome
 run:
-  name: analysis
+  name: arome-pressure-wind
 input:
   directory: ./data
   pattern: "*.grib"
-  # Explicit source convention for the standard requested surface winds.
+  format: grib
+  # Verify the source wind basis, pressure units (Pa/hPa) and velocity units.
   wind_pairs:
     - {group: surface, u: u10, v: v10, reference_frame: earth}
 tracking:
   method: pressure_wind
 domain:
+  # Illustrative full widths in km, NOT tracker search half-widths.
   width_km: {x: 500, y: 500}
 variables:
   surface:
     names: [u10, v10, prmsl]
 polar:
+  # Polar sampling is disabled; available fields do not select extra processing.
   enabled: false
-  variables: extracted
 output:
   directory: ./output
-  backend: netcdf4  # Or zarr (optional extra); see output documentation for chunks vs shards.
-  # zarr_chunk_size: {time: 1, y_box: 128, x_box: 128}
-  # zarr_shard_size: {time: 8, y_box: 512, x_box: 512}
-  cartesian: {horizontal_vectors: earth_centered, vertical_velocity: interfaces}
-  polar: {vertical_velocity: mass}
+  overwrite: false
+  cartesian:
+    horizontal_vectors: earth_centered

@@ -107,7 +107,7 @@ conda-forge, GCC 15.3.0. No environment was created, upgraded or substituted.
   Full RC qualification and human scientific review remain outstanding.
 - **G1 approved on 2026-11-05:** the maintainer replied **"Approved"** to the
   complete [v2_1-design.md](v2_1-design.md) proposal at `ab0be01`. The strict loader
-  is verified below; the catalogue, first run and editorial pilots remain
+  and starter catalogue are verified below; the first run and editorial pilots remain
   outstanding. G1 is not scientific
   sign-off, G2 or publication/deployment authorization.
 - **G2 pending:** first-run/deeper-guide pilots and supplied artwork/art direction
@@ -127,7 +127,7 @@ current effective records reload, source-local input records omit global control
 and inherited polar declarations retain YAML origins. Unresolved automatic spacing
 stays null, not physical zero. Independent scientific-data, manifest, status and
 FA worker/descriptor contracts were not renamed. The catalogue generator's full
-mode remains for Task 5, not a completed minimal-template implementation.
+mode was retained in Task 4 for replacement in Task 5 below.
 
 Support metadata now requires Python `>=3.13,<3.14`; both environment recipes and
 all runtime/docs CI interpreter selections agree. Reference and CI documentation
@@ -163,6 +163,35 @@ Scientific impact: no new calculation, diagnostic, unit interpretation or output
 schema; these are public syntax/admission and runtime-support changes. Retired run
 YAML must be manually reviewed using the published upgrade map. Passing this suite
 is bounded regression evidence, not scientific sign-off or RC qualification.
+
+## Task 5 starter catalogue verification
+
+The generator now uses the approved `write_template(name, path, *, tracking=None,
+coupling=None, force=False)` interface. Seven named selectors and the admitted
+model/composed commands retain authoritative resource comments, active sections
+and explicit declarations only. `--full` and guessed advanced-method starters are
+removed; explicit UTrack/experimental multi-field YAML remains runnable. Existing
+atomic publication prevents unforced replacement and avoids modifying a symlink's
+input-data target when force replaces the selected configuration path.
+
+- New catalogue tests were observed RED (**55 failed, 12 passed**) then GREEN
+  (**67 passed**). They execute all 30 advertised command forms and pin minimal
+  keys, fields, comments, same-base equivalence, invalid composition, no optional
+  imports/access, complete effective inspection and overwrite behavior.
+- Focused catalogue/configuration/multi-field/Meso-NH centroid tests:
+  **234 passed, 583 known warnings**.
+- `conda run --no-capture-output -n frameit_env python -m pytest -q`:
+  **1179 passed, 4588 known warnings, 2 subtests, no skips, 529.54 s**.
+- Strict Sphinx/publication `templates-02` passed; documentation unit tests (2),
+  targeted Ruff F checks and diff check passed. The live catalogue, upgrade and
+  other affected pages were inspected at desktop/narrow widths. Catalogue and
+  upgrade tables fit the 390 px iframe; existing output-page overflow is recorded
+  for later presentation work. No new screenshot/visual approval is claimed.
+
+No runtime dependency or numerical method changed. Package-data already includes
+every `templates/*.yaml` resource; executing the same catalogue from installed
+wheel/sdist artifacts remains a Task 12 obligation, not a result claimed here.
+The self-contained instructional input and G2 editorial approval are still pending.
 
 ## Task 1 verification receipt
 

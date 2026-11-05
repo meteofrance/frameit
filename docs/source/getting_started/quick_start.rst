@@ -45,8 +45,7 @@ Select the requested processing
 
    frameit init arome
    # Or: frameit init mesonh --output chido.yaml
-   # Show every supported setting:
-   frameit init arome --full --output full.yaml
+    # Or selected coupled scalars: frameit init arome --coupling nemo
 
 Edit ``frameit.yaml`` before running it:
 
@@ -64,7 +63,7 @@ Relative input, output, track and interpreter paths are resolved from the YAML
 file, not the launch directory. Requests can load necessary tracking/wind
 companions internally; available inputs do not enable unrelated diagnostics.
 See :doc:`../user_guide/configuration_file` for selections, scientific defaults
-and migration from flat YAML.
+and :doc:`upgrading_to_v2` for retired YAML.
 
 Check schema and preview metadata
 ----------------------------------
@@ -127,7 +126,7 @@ AROME template run:
 
    import xarray as xr
 
-   with xr.open_dataset("output/products/analysis.track.nc", engine="netcdf4") as track:
+    with xr.open_dataset("output/products/arome-pressure-wind.track.nc", engine="netcdf4") as track:
        print(track.sizes)
        print(track.data_vars)
 

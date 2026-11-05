@@ -9,7 +9,7 @@ import pytest
 import xarray as xr
 from pyproj import CRS, Transformer
 
-from frameit.core.configuration import resolve_schema, write_template
+from frameit.core.configuration import resolve_schema
 from frameit.core.execution import ExecutionOptions, execute_simulation
 from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
@@ -375,10 +375,8 @@ def test_mnh_per_file_pressure_and_height_units_are_normalized(tmp_path):
 
 
 @pytest.mark.parametrize("model", ["arome", "mesonh"])
-@pytest.mark.parametrize("full", [False, True])
-def test_template_and_seed_configuration(tmp_path, model, full):
-    path = write_template(model, tmp_path / "frameit.yaml", full=full, tracking="multifield_vortex")
-    conf = SimulationConfig.from_yaml_with_model_preset(path)
+def test_explicit_seed_configuration(tmp_path, model):
+    conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, model))
     assert conf.tracking_method == "multifield_vortex"
     raw = document(tmp_path, model)
     raw["tracking"]["multifield_vortex"]["seed"].pop("motion_u_m_s")

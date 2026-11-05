@@ -8,8 +8,8 @@ img.logo {
     width: 100%;
 }
 
-.wy-table-responsive .manual-upgrade-map td,
-.wy-table-responsive .manual-upgrade-map th,
+.rst-content .manual-upgrade-map td,
+.rst-content .manual-upgrade-map th,
 .manual-upgrade-map code,
 .manual-upgrade-map .pre {
     white-space: normal;
