@@ -1,0 +1,8 @@
+name_time_dim: time
+name_vertical_dim: s_rho
+name_lat_dim: eta_rho
+name_lon_dim: xi_rho
+name_latitude: lat_rho
+name_longitude: lon_rho
+velocity_aliases: {}
+tracking_var_aliases: {}

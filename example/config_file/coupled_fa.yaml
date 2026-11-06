@@ -1,0 +1,76 @@
+# Paths are relative to this YAML. Adapt them and review the field declarations.
+# Limited dense instantaneous scalar example, not full FA qualification.
+# Reader scope/scaling limits: docs/source/user_guide/fa_inputs.rst.
+# Source geometry/metadata: docs/source/user_guide/fa_geometry.rst.
+# Coupled grid/time products: docs/source/user_guide/fa_surface.rst.
+# Compact fixture success does not establish real-producer scaling/units/support.
+schema_version: "2.1"
+model: arome
+run:
+  name: coupled-surface
+input:
+  # Default: exact intersection, with warnings and a complete exclusion report.
+  # Choose strict to require identical source times instead.
+  time_alignment: common
+  sources:
+    atmosphere:
+      model: arome
+      input:
+        directory: ./data/atmosphere
+        pattern: "*.grib"
+        format: grib
+      variables:
+        heightAboveGround:
+          names: [t2m]
+          levels: {values: [2]}
+    surfex:
+      model: arome
+      input:
+        directory: ./data/surfex
+        pattern: "historic.surfex*.fa"
+        format: fa
+        fa:
+          backend: epygram
+          # environment.yaml installs the full Python-3.13 stack in one environment.
+          # Omit python_executable: FA workers use that same Python in isolated processes.
+          profile: surfex_history
+          # Optional exact assertions, not overrides or scientific definitions.
+          # E.g. {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0}
+          # only after checking the actual source metadata.
+          expected_source: {}
+          subdomain: CI
+          # Admitted projected FA uses its source CRS/native axes for index lookup.
+          # Track products record requested vs selected centres and snapping offsets.
+          # Explicit source-geometry declaration, NOT a universal FA default.
+          # Obtain the actual Earth model from the producer before scientific use.
+          earth_radius_m: 6371229.0
+          max_points: 20000000
+          timeout_seconds: 120
+          field_metadata:
+            SFX.T2M:
+              units: K
+              long_name: "2 metre air temperature (explicit source declaration)"
+              kind: continuous
+              temporal_kind: instantaneous
+              # Missing native scaling is fatal. An opt-in needs independent
+              # producer-specific justification; units alone cannot establish it.
+              allow_unscaled: false
+      variables:
+        fields_2d:
+          names: [SFX.T2M]
+tracking:
+  source: atmosphere
+  method: fixed_box
+  fixed_box:
+    center: {latitude: -15.0, longitude: 50.15}
+domain:
+  width_km: {x: 40, y: 40}
+polar:
+  enabled: false
+  # Opt in when enabling polar output to guarantee a common atmosphere/surface target.
+  shared_target: true
+  # To request the same polar target, set a shared radial_step_m no finer than
+  # the coarsest source spacing.
+output:
+  directory: ./output/coupled-surface
+  overwrite: false

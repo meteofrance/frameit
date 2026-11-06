@@ -1,61 +1,36 @@
 Installation of FrameIt
 =======================
 
-In this section, we describe the minimal steps required to install **FrameIt** for development and reproducible scientific workflows.
+These instructions target **Linux with Python 3.13**. You need Git and Conda
+or mamba.
 
-1. Prerequisites
-----------------
-
-- **Python**: 3.10 or newer.
-- **Git**: to clone the repository.
-- **a dedicated environment manager** : conda/mamba.
-
-2. Get the source code
+Create the environment
 ----------------------
 
-In a terminal, go to your installation directory and run:
+Get the code, then create and activate the environment:
 
 .. code-block:: bash
 
-   git clone <FrameIt_REPO_URL>
+   git clone https://github.com/meteofrance/frameit
    cd frameit
-
-You should end up with a structure similar to:
-
-.. code-block:: text
-
-   .
-   ├── docs
-   ├── environment.yaml
-   ├── pyproject.toml
-   ├── scripts
-   └── src
-
-The file ``environment.yaml`` define the dependencies required by **FrameIt**.
-
-3. Create and activate the Python environment using a conda/mamba environment
------------------------------------------------------------------------------
-
-
-If you already have conda/mamba installed, use the file ``environment.yaml``:
-
-.. code-block:: bash
-
-   conda env create -f environment.yaml
+   conda env create -f environment.yaml --solver libmamba
    conda activate frameit_env
 
+``environment.yaml`` installs **FrameIt and its dependencies**, including the
+FA, GRIB, NetCDF, Zarr and polar stack.
 
-4. Install the FrameIt package
-------------------------------
+FrameIt is installed in **editable mode**. Keep the checkout: this environment
+uses its code, so edits to the checkout affect what runs.
 
-From the repository root (where ``pyproject.toml`` is located):
-
-.. code-block:: bash
-
-   pip install -e .
-
-Quick verification:
+Check the installation
+-----------------------
 
 .. code-block:: bash
 
-   python -c "import frameit; print('frameit import OK')"
+   python -m pip check
+   frameit --help
+
+Continue with :doc:`first_run` for a small processing example.
+
+If you manage your own Python environment or need native-library troubleshooting,
+see :doc:`../user_guide/fa_environment`. For cluster use, see :doc:`hpc`.

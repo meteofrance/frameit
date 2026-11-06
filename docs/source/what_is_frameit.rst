@@ -1,20 +1,28 @@
 What is FrameIt
 ===============
 
-Global Goal
------------
-The primary goal of **FrameIt** is to provide a robust, modular, and user‑friendly Python library for analysing and visualising atmospheric cyclone data. 
-It aims to streamline the workflow from raw model output to formatted data, enabling researchers to focus on scientific questions rather than data managing.
+FrameIt turns model outputs into regional datasets for analysis with your own
+scripts. A YAML file selects inputs, quantities, levels, a fixed or moving region,
+and optional diagnostics. Products use NetCDF or sharded Zarr v3.
 
-Description
------------
-FrameIt offers a collection of tools for:
+Use it to:
 
-- Loading and preprocessing model data (GRIB, NetCDF) with automatic handling of metadata.
-- Running various cyclone tracking methods, including prescribed‑track, pressure‑wind, AI-based tracker and fixed‑box method.
-- Performing polar stereographic projections for accurate visualisation of polar data.
-- In the future : generating plots and diagnostics to aid interpretation of cyclone behaviour.
+* extract native fields around a fixed location or along a track;
+* use a prescribed trajectory or an atmospheric tracking method;
+* process coupled sources while keeping their grids, masks and quantities distinct;
+* sample selected fields on a storm-centred geodesic polar grid.
 
-The library is built with extensibility in mind, allowing users to plug in custom trackers and in the future custom diagnostics while leveraging the existing utilities for I/O, 
-logging, and configuration management.
+Input adapters cover AROME, Meso-NH and selected regional NEMO/CROCO NetCDF
+layouts. See :doc:`user_guide/input_files` and
+:doc:`user_guide/ocean_netcdf` for supported conventions. Native FA has a
+:doc:`limited AROME/SURFEX scope <user_guide/fa_baseline>`.
 
+Start with :doc:`getting_started/first_run`, or use
+:doc:`getting_started/quick_start` as a CLI reminder. Before comparing results,
+check the quantities, units, time support and reference frames in
+:doc:`user_guide/output_files`.
+
+To start processing your model outputs, follow the
+:doc:`task-oriented guides <task_guides/index>`.
+The :doc:`configuration reference <user_guide/configuration_file>` and
+:doc:`troubleshooting` remain available without repeating the tutorial.

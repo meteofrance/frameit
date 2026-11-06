@@ -1,0 +1,74 @@
+# Evidence only: neither a field preset nor a production spectral admission switch.
+schema_version: 1
+checked_on: '2026-10-26'
+baseline_revision: cce8934b949178f2ccb9eb5f2f3017f8d80f7f61
+initial_unrelated_work: untracked opencode.json preserved
+status: implemented-limited candidate evaluation; P4 production admission blocked
+scientific_approval: not established
+candidate:
+  project: ECMWF ecTrans; maintained upstream, separate from the PyPI wrapper release schedule
+  upstream_release_observed: 2.0.0
+  latest_pypi_wrapper_observed: 1.6.0
+  selected_evaluation_versions: {ectrans4py: 1.6.0, ctypesForFortran: 1.3.0}
+  python: 3.13.16
+  platform: Linux x86_64
+  cp313_wheel_sha256: 99ca01cc79042c04dfcf20b349157eace0e6c03fb5abe2e5e5dde2b98a23c504
+  cp313_wheel_bytes: 3843195
+  native_version_observed: 1.6.0
+  native_banner_revision: 2c4c818d79effe56d30bb2896866aba590a5fad8
+  production_version_qualification: absent; no claim of ongoing support for this older wheel
+  references:
+    - https://pypi.org/pypi/ectrans4py/1.6.0/json
+    - https://github.com/ecmwf-ifs/ectrans/releases/tag/2.0.0
+    - https://github.com/ecmwf-ifs/ectrans/blob/1.6.0/src/ectrans4py/__init__.py
+    - https://github.com/ecmwf-ifs/ectrans/blob/1.6.0/src/ectrans4py/etrans_inq4py.F90
+    - https://github.com/ecmwf-ifs/ectrans/blob/1.6.0/src/ectrans4py/sp2gp_lam4py.F90
+    - https://github.com/ecmwf-ifs/ectrans/blob/1.6.0/src/ectrans4py/sp2gp_gauss4py.F90
+evaluation:
+  generator: frameit.testing.fa_spectral_probe
+  native_fa_payloads_decoded: 0
+  source_files_read: 0
+  scope: independent analytical regional double-Fourier scalar modes, not FA record transforms
+  coefficient_count_origin: native ETRANS_INQ; never gridpoint count or indexed/compressed length
+  cases:
+    - {grid_y_x: [12, 12], physical_y_x: [12, 12], truncation_x_y: [3, 3], coefficient_count: 44}
+    - {grid_y_x: [12, 18], physical_y_x: [12, 18], truncation_x_y: [5, 3], coefficient_count: 64}
+    - {grid_y_x: [12, 12], physical_y_x: [12, 12], truncation_x_y: [2, 2], coefficient_count: 24}
+  modes_per_case: [ZERO, CONSTANT, COSX, SINX, COSY, SINY, CC, CS, SC, SS, EDGEX, EDGEY]
+  tolerance: {rtol: 0.0, atol: 5.0e-13}
+  tolerance_basis: float64 roundoff for unit coefficients, at most five waves and 216 points
+  maximum_error_observed: 5.551115123125783e-15
+  order: ecTrans FA-order argument, LREORDER=True; not qualified for real FA records
+  resources: {native_threads: 1, resolutions: 3, timeout_seconds: 30, unlimited_stack: false}
+families:
+  - id: regional-transform-library-only
+    status: verified-limited analytical library evaluation
+    fa_decode: not qualified
+    dataset_extract_polar_diagnostic: blocked
+  - id: real-regional-spectral-103-18
+    records: [S001TEMPERATURE, S001WIND.U.PHYS]
+    inspect: P0 native flags observed
+    decode_dataset_extract_polar_diagnostic: blocked
+    blockers:
+      - P0 has no verified coefficient decode, scaling or undefined-value reference
+      - release-matched active FA header, coefficient order/space, normalization and truncation contract
+      - independently transformed real fields on the original native grid and zones, with tolerances
+      - production coefficient/workspace/mask/transfer resource qualification
+  - id: native-error-minus91
+    records: [SURFPRESSION, S090TEMPERATURE, S090WIND.U.PHYS]
+    status: unchanged P0 native blocker; no encoding assigned or transform attempted
+  - id: global-gaussian-legendre
+    status: API inspected only; outside this regional phase, not executed or qualified
+  - id: existing-gridpoint
+    status: existing limited admission retained; independent regression and no-transform tests
+exploratory_failure:
+  scope: compact generated native coefficient fixture, not a supplied source
+  result: native abort; fixture header/coefficient contract was not established
+  interpretation: neither decoder qualification nor a diagnosis of the real 103/18 or -91 encodings
+  disposition: unqualified fixture not retained as a supported generator or execution path
+next_admission_requirements:
+  - authoritative native header-to-transform and active-array contracts for a specific decodable encoding
+  - independently known coefficients, scaling, masks and trusted native-grid field values
+  - original grid/Earth model/CI/C/extension-zone references and justified numerical tolerances
+  - upstream-supported compatible native/wrapper versions and bounded production resource evidence
+  - P5 additionally needs field-level vertical/sampling/vector definitions; no automatic derivations

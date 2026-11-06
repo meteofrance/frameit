@@ -1,0 +1,89 @@
+# Separate atmosphere/surface products on one explicitly selected polar target.
+# Adapt paths, centre and selections. This is not a scientific qualification preset.
+# Coupled sampling and producer limits: docs/source/user_guide/fa_surface.rst.
+schema_version: "2.1"
+model: arome
+run:
+  name: cyclone-coupled-polar
+input:
+  time_alignment: common
+  # Exact common valid times, warnings and full exclusions; strict fails on unequal sets.
+  sources:
+    atmosphere:
+      model: arome
+      input:
+        directory: ./data/atmosphere
+        pattern: "*.grib"
+        format: grib
+        # Explicit declarations: check the actual GRIB uvRelativeToGrid flags first.
+        wind_pairs:
+          - {group: fields_2d, u: u10, v: v10, reference_frame: earth}
+          - {group: isobaricInhPa, u: u, v: v, reference_frame: earth}
+      variables:
+        fields_2d:
+          names: [prmsl, u10, v10]
+        isobaricInhPa:
+          names: [u, v, t, r, z]
+          levels: {values: [850, 700, 500]}
+      polar:
+        # Native winds stay in cartesian products. Select scalar polar quantities here;
+        # no wind diagnostic, pressure/height diagnosis or interval conversion is requested.
+        variables:
+          fields_2d: {names: [prmsl]}
+          isobaricInhPa: {names: [t, r, z]}
+    surface:
+      model: arome
+      input:
+        directory: ./data/surface
+        pattern: "historic.surfex*.fa"
+        format: fa
+        fa:
+          backend: epygram
+          # environment.yaml supplies FrameIt[fa]; the active Python runs isolated FA workers.
+          profile: surfex_history
+          subdomain: CI
+          # Library-derived geometry is checked before shared-target sampling/budgets.
+          expected_source: {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0}
+          # Inspection declaration only: confirm the actual producer Earth model.
+          earth_radius_m: 6371229.0
+          field_metadata:
+            # These are explicit source-unit/time declarations requiring review.
+            # Labels do not repair native codec scaling. The supplied real T2M
+            # currently fails the missing-scaling guard; no fallback is enabled.
+            SFX.T2M:
+              units: K
+              kind: continuous
+              temporal_kind: instantaneous
+              allow_unscaled: false
+            SFX.SST:
+              units: K
+              kind: continuous
+              temporal_kind: instantaneous
+              allow_unscaled: false
+      variables:
+        fields_2d:
+          names: [SFX.T2M, SFX.SST]
+tracking:
+  source: atmosphere
+  method: prescribed_track
+  prescribed_track:
+    # Exact Gregorian time, latitude/longitude in geographic degrees; no index reuse.
+    # Every continuous atmospheric centre is applied to SURFEX at that same time.
+    file: ./data/track.nc
+domain:
+  width_km: {x: 40, y: 40}
+polar:
+  enabled: true
+  shared_target: true
+  # Common target must be no finer than any participating source's native spacing.
+  radial_step_m: 4000
+  azimuth_count: 72
+  interpolation_method: bilinear
+  missing_data_policy: strict
+output:
+  directory: ./output/cyclone-coupled-polar
+  overwrite: false
+  max_workers: 1
+  synchronous_export: true
+  cartesian:
+    horizontal_vectors: native

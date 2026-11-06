@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="1024"
+   height="1024"
+   viewBox="0 0 1024 1024"
+   role="img"
+   aria-labelledby="title description"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="frameit_logo_symbol_vector.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   inkscape:export-filename="frameit_logo_symbol_vector.png"
+   inkscape:export-xdpi="150"
+   inkscape:export-ydpi="150"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.92265414"
+     inkscape:cx="674.1421"
+     inkscape:cy="508.31615"
+     inkscape:window-width="1707"
+     inkscape:window-height="989"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="symbol"
+     inkscape:export-bgcolor="#ffffffff"
+     showguides="true">
+    <sodipodi:guide
+       position="207.17161,399.30109"
+       orientation="1,0"
+       id="guide1"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="703.45483,795.17253"
+       orientation="0,-1"
+       id="guide2"
+       inkscape:locked="false" />
+  </sodipodi:namedview>
+  <title
+     id="title">FrameIt logo</title>
+  <desc
+     id="description">A teal F nested in four framing corners, an orange curved scientific trajectory, and the word FrameIt in navy and orange.</desc>
+  <!-- Reconstructed from deliberately authored geometric SVG paths. No bitmap, tracing, filters or embedded fonts. -->
+  <g
+     id="symbol"
+     aria-label="FrameIt symbol"
+     transform="matrix(1.6725097,0,0,1.6725097,-57.755944,-79.386148)">
+    <g
+       id="letter-f"
+       fill="#00978f">
+      <path
+         id="f-shape"
+         d="m 142,142 h 244 c 8.66667,0 13,4.33333 13,13 v 15.69223 c 0,8.66667 -4.33333,13 -13,13 H 157.69223 v 87.091 H 331 c 8.66667,0 13,4.33333 13,13 v 10.909 c 0,8.66667 -4.33333,13 -13,13 H 157.69223 V 421 c 0,8.66667 -4.33333,13 -13,13 H 128 c -8.66667,0 -13,-4.33333 -13,-13 V 169 c 0,-18 9,-27 27,-27 z"
+         sodipodi:nodetypes="sssssccsssscssssss" />
+    </g>
+    <g
+       id="viewfinder"
+       fill="#00978f"
+       aria-label="Framing corners">
+      <path
+         id="upper-right-corner"
+         d="m 444,142 h 91 q 35,0 35,36 v 85 q 0,17 -17,17 h -13 q -14,0 -14,-15 v -72 q 0,-9 -9,-9 h -72 q -14,0 -14,-14 v -15 q 0,-13 13,-13 z" />
+      <path
+         id="lower-left-corner"
+         d="m 128,462 h 18 q 13,0 13,14 v 44 q 0,5 5,5 h 88 q 13,0 13,13 v 17 q 0,13 -13,13 H 143 q -28,0 -28,-28 v -64 q 0,-14 13,-14 z" />
+      <path
+         id="lower-right-corner"
+         d="m 542,435 h 13 q 14,0 14,14 v 91 q 0,28 -26,28 H 434 q -13,0 -13,-13 v -16 q 0,-13 13,-13 h 88 q 4,0 4,-5 v -72 q 0,-14 16,-14 z" />
+    </g>
+    <g
+       id="trajectory"
+       fill="none"
+       stroke="#f79335"
+       stroke-width="26"
+       stroke-linecap="round"
+       aria-label="Curved track">
+      <path
+         id="trajectory-before-point"
+         d="m 199,479 c 33,-35 59,-67 96,-58 19,4 34,11 48,5 m -162.75154,33.43033 35.25937,38.32849"
+         sodipodi:nodetypes="ccccc" />
+      <path
+         id="trajectory-after-point"
+         d="m 435.36122,381.69698 c 41.36849,-12.64241 35.31757,1.39396 63.00364,1.04365 24.32484,-2.35395 48.41509,-12.90498 53.31196,-44.62038 m -9.64606,-22.31393 30.58422,30.98181"
+         sodipodi:nodetypes="ccccc" />
+    </g>
+    <circle
+       id="trajectory-point"
+       cx="387"
+       cy="403"
+       r="33"
+       fill="#ec7600" />
+  </g>
+  <metadata
+     id="metadata1">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:title>FrameIt logo</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+</svg>

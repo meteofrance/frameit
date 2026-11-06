@@ -5,51 +5,49 @@
 # To create and activate the environment:
 #
 # 1. Create the environment:
-#    conda env create -f environment.yaml
+#    conda env create -f environment.yaml --solver libmamba
 #
 # 2. Activate it:
 #    conda activate frameit_env
 #
-# 3. To update later:
-#    conda env update -f environment.yaml --prune
-#
-# 4. To deactivate:
+# 3. To deactivate:
 #    conda deactivate
 #
-# Procedure to recreate the env:
-#    conda deactivate
-#    conda env remove -n frameit_env
-#    conda env create -f environment.yaml
-#
-# Python 3.10 is recommended for compatibility.
-# This file is recommended for users with conda.
-# Once the environment is activated, install frameit with:
-#    pip install frameit
+# FrameIt and its maintained FA extra are installed from this checkout below.
+# One Python-3.13 environment supplies GRIB/NetCDF/Zarr/ESMF and EPyGrAM. FA still runs
+# in fresh isolated subprocesses using that Python; omit input.fa.python_executable.
+# Conda owns the shared NetCDF/HDF5/ecCodes stack. Exact Python-package versions
+# satisfy unmodified EPyGrAM 2.1.0 requirements, preventing pip replacements.
+# Qualification uses Conda's resolved serial ESMF/shared NetCDF/HDF5 stack.
+# See docs/source/user_guide/fa_environment.rst for setup and troubleshooting.
 
 name: frameit_env
 channels:
   - conda-forge
+  - nodefaults
 dependencies:
-  - python=3.10
-  - xarray>=2023.8.0
-  - dask
-  - numpy>=1.26
+  - python=3.13
+  - xarray>=2026.9.0
+  - zarr>=3.4.2,<4
+  - dask-core
+  - numpy
   - scipy
-  - cfgrib>=0.9.15
-  - eccodes>=2.37
-  - pyyaml>=6.0
-  - pyproj>=3.0
-  - xesmf
-  - matplotlib
-  - netcdf4>=1.7
+  - cfgrib
+  - python-eccodes=2.44.0
+  - pyyaml
+  - pyproj
+  - esmpy=8.9.1
+  - xesmf=0.9.2
+  - shapely>=2
+  - netcdf4=1.7.2
   - h5netcdf
   - h5py
+  - threadpoolctl
   - pip
-# For developpers : 
-  - ruff
-  - sphinx
-  - sphinx_rtd_theme
-  - furo
-  - sphinx-autodoc-typehints
+  - pytest
+  - setuptools>=77
+  - wheel
   - pip:
-    - pytest
+      - -e .[test,grib,polar,fa,zarr]
+      - ruff
+      - -r docs/docs-requirements.txt

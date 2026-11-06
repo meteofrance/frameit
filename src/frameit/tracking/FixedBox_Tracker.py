@@ -20,7 +20,7 @@ class FixedBoxTracker(TcTracker):
     Fixed-position tracker: returns the grid point closest to a prescribed centre.
 
     The returned ``cy`` and ``cx`` arrays are constant over time.
-    Both AROME (1-D lat/lon) and MNH (2-D lat/lon) grids are supported.
+    Static 1-D axes and 2-D geography are supported independently of model/format.
     """
 
     name = "fixed_box"
@@ -33,6 +33,7 @@ class FixedBoxTracker(TcTracker):
         atm_model: str | None = None,
         lat_name: str = "latitude",
         lon_name: str = "longitude",
+        horizontal_dims: tuple[str, str] | None = None,
     ) -> None:
         """
         Parameters
@@ -69,6 +70,7 @@ class FixedBoxTracker(TcTracker):
 
         self.lat_name = lat_name
         self.lon_name = lon_name
+        self.horizontal_dims = horizontal_dims
         self.atm_model = atm_model.upper() if atm_model is not None else ""
 
     # ------------- configuration-specific construction -------------
@@ -113,6 +115,8 @@ class FixedBoxTracker(TcTracker):
             atm_model=atm_model,
             lat_name=lat_name,
             lon_name=lon_name,
+            horizontal_dims=(conf.name_lat_dim, conf.name_lon_dim) if
+            getattr(conf, "name_lat_dim", None) and getattr(conf, "name_lon_dim", None) else None,
         )
 
     def _track_method(self, ds: xr.Dataset) -> xr.Dataset:
@@ -130,13 +134,13 @@ class FixedBoxTracker(TcTracker):
         -------
         xr.Dataset
             Dataset with variables ``cy(time)`` and ``cx(time)``, both
-            constant over time.
+            constant over time, and the declared ``lon(time)``/``lat(time)``
+            geographical centre.
 
         Raises
         ------
         ValueError
-            If required coordinates or the ``"time"`` dimension are missing,
-            or if ``atm_model`` is neither ``"AROME"`` nor ``"MNH"``.
+            If required coordinates/time are missing or geography is unsupported.
         """
         if self.lat_name not in ds.coords or self.lon_name not in ds.coords:
             raise ValueError(
@@ -153,66 +157,22 @@ class FixedBoxTracker(TcTracker):
         time_coord = ds["time"]
         nt = time_coord.size
 
-        lat = ds[self.lat_name]
-        lon = ds[self.lon_name]
-        model = self.atm_model
+        from .geographic import locate_track, nearest_grid_point, uses_native_fa_lookup
 
-        # AROME case: 1D lat, 1D lon
-        if model == "AROME":
-            if not (lat.ndim == 1 and lon.ndim == 1):
-                raise ValueError(
-                    f"FixedBoxTracker (AROME): expected 1D lat/lon, got "
-                    f"lat.ndim={lat.ndim}, lon.ndim={lon.ndim}"
-                )
-
-            lat_vals = lat.values
-            lon_vals = lon.values
-
-            j = int(np.nanargmin((lat_vals - self.lat0) ** 2))
-            i = int(np.nanargmin((lon_vals - self.lon0) ** 2))
-
-            cy_scalar = j
-            cx_scalar = i
-
-        # MNH case: 2D lat, 2D lon
-        elif model == "MNH":
-            if not (lat.ndim == 2 and lon.ndim == 2):
-                raise ValueError(
-                    f"FixedBoxTracker (MNH): expected 2D lat/lon, got "
-                    f"lat.ndim={lat.ndim}, lon.ndim={lon.ndim}"
-                )
-            if lat.shape != lon.shape:
-                raise ValueError(
-                    "FixedBoxTracker (MNH): 2D latitude and longitude must have the same shape"
-                )
-
-            dlat = lat - self.lat0
-            dlon = lon - self.lon0
-            dist2 = dlat**2 + dlon**2
-
-            dist_vals = dist2.values
-            j_flat, i_flat = np.unravel_index(int(np.nanargmin(dist_vals)), dist_vals.shape)
-            cy_scalar = int(j_flat)
-            cx_scalar = int(i_flat)
-
-        else:
-            raise ValueError(
-                f"FixedBoxTracker: unknown or unsupported atm_model: {self.atm_model!r}"
-            )
-
-        # Replicate over the time dimension
-        cy = xr.DataArray(
-            np.full(nt, cy_scalar, dtype=int),
-            dims=("time",),
-            coords={"time": time_coord},
-            name="cy",
+        out = xr.Dataset(coords={"time": time_coord})
+        out["lon"] = xr.DataArray(
+            np.full(nt, self.lon0), dims=("time",), coords={"time": time_coord},
+            attrs={"units": "degrees_east", "long_name": "declared fixed centre longitude"},
         )
-        cx = xr.DataArray(
-            np.full(nt, cx_scalar, dtype=int),
-            dims=("time",),
-            coords={"time": time_coord},
-            name="cx",
+        out["lat"] = xr.DataArray(
+            np.full(nt, self.lat0), dims=("time",), coords={"time": time_coord},
+            attrs={"units": "degrees_north", "long_name": "declared fixed centre latitude"},
         )
-
-        out = xr.Dataset({"cy": cy, "cx": cx})
+        if uses_native_fa_lookup(ds):
+            return locate_track(out, ds, axes=self.horizontal_dims,
+                                lat_name=self.lat_name, lon_name=self.lon_name)
+        # Preserve the legacy fixed-box single scan, not one full-grid scan per time.
+        j, i = nearest_grid_point(ds[self.lat_name], ds[self.lon_name], self.lat0, self.lon0,
+                                   axes=self.horizontal_dims)
+        out["cy"], out["cx"] = ("time", np.full(nt, j)), ("time", np.full(nt, i))
         return out

@@ -1,0 +1,186 @@
+{
+  "arome": {
+    "crop_grid": [
+      81,
+      81
+    ],
+    "crop_xy_python": [
+      1050,
+      1131,
+      370,
+      451
+    ],
+    "files": [
+      "arome_BATSIRAI_20220201+0000P.grib",
+      "arome_BATSIRAI_20220201+0600P.grib",
+      "arome_BATSIRAI_20220201+1200P.grib",
+      "arome_BATSIRAI_20220201+1800P.grib",
+      "arome_BATSIRAI_20220201+2400P.grib"
+    ],
+    "fixed_box_center_lat_lon": [
+      -17.5,
+      60.0
+    ],
+    "full_grid": [
+      747,
+      1395
+    ]
+  },
+  "files": [
+    {
+      "bytes": 2652057,
+      "path": "AROME/BATSIRAI/arome_BATSIRAI_20220201+0000P.grib",
+      "sha256": "6180dc344a2cf6dc96e52a5f920a4a36e6bcd7b07959a7db142c0084d658b581"
+    },
+    {
+      "bytes": 3429755,
+      "path": "AROME/BATSIRAI/arome_BATSIRAI_20220201+0600P.grib",
+      "sha256": "bbf0bff601a73f6e180405d12c920a90e4b4e5ec0748f0c57f69700f00f349ed"
+    },
+    {
+      "bytes": 3810469,
+      "path": "AROME/BATSIRAI/arome_BATSIRAI_20220201+1200P.grib",
+      "sha256": "c9f5fb8910fdf0e7ab781626f6ed411e966972ab847565e9054bd93cb75adb17"
+    },
+    {
+      "bytes": 3792719,
+      "path": "AROME/BATSIRAI/arome_BATSIRAI_20220201+1800P.grib",
+      "sha256": "a5a662e5f94b6697545e7f65111ba785faa1002b279dfcc304b155a2b8327697"
+    },
+    {
+      "bytes": 3685964,
+      "path": "AROME/BATSIRAI/arome_BATSIRAI_20220201+2400P.grib",
+      "sha256": "ff768f22adac3617c7dfecd5fab0b79d88e3f77c0028eb86258121eae0b585d5"
+    },
+    {
+      "bytes": 14672693,
+      "path": "MNH/CHIDO/3CH09.1.MXX30.011diag.nc",
+      "sha256": "b7fc0fb32d18160f344458454e07b0eb2d21473f6b92e5f393a2f815455f92e7"
+    },
+    {
+      "bytes": 14663507,
+      "path": "MNH/CHIDO/3CH09.1.MXX30.012diag.nc",
+      "sha256": "0f60694d33c6a07dba796e721a8d9b170a8d99ac982cc69379b4ce1544e3ed29"
+    },
+    {
+      "bytes": 14655105,
+      "path": "MNH/CHIDO/3CH09.1.MXX30.013diag.nc",
+      "sha256": "825774de7c494720c0defbb270f3648b640f408a1c6f4a61c3dfe32a635a26c2"
+    }
+  ],
+  "format": "frameit-ci-dataset-v1",
+  "mnh": {
+    "crop_grid": [
+      70,
+      72
+    ],
+    "crop_xy_python": [
+      730,
+      802,
+      315,
+      385
+    ],
+    "files": [
+      "3CH09.1.MXX30.011diag.nc",
+      "3CH09.1.MXX30.012diag.nc",
+      "3CH09.1.MXX30.013diag.nc"
+    ],
+    "full_grid": [
+      578,
+      1154
+    ],
+    "level_count": 87,
+    "level_w_count": 87,
+    "variables_by_file": {
+      "3CH09.1.MXX30.011diag.nc": [
+        "H",
+        "LE",
+        "MSLP",
+        "POVOT",
+        "THT",
+        "UM10",
+        "UT",
+        "VM10",
+        "VT",
+        "WT",
+        "ZS",
+        "ZTOP",
+        "latitude",
+        "latitude_u",
+        "latitude_v",
+        "level",
+        "level_w",
+        "longitude",
+        "longitude_u",
+        "longitude_v",
+        "ni",
+        "ni_u",
+        "ni_v",
+        "nj",
+        "nj_u",
+        "nj_v",
+        "time"
+      ],
+      "3CH09.1.MXX30.012diag.nc": [
+        "H",
+        "LE",
+        "MSLP",
+        "POVOT",
+        "THT",
+        "UM10",
+        "UT",
+        "VM10",
+        "VT",
+        "WT",
+        "ZS",
+        "ZTOP",
+        "latitude",
+        "latitude_u",
+        "latitude_v",
+        "level",
+        "level_w",
+        "longitude",
+        "longitude_u",
+        "longitude_v",
+        "ni",
+        "ni_u",
+        "ni_v",
+        "nj",
+        "nj_u",
+        "nj_v",
+        "time"
+      ],
+      "3CH09.1.MXX30.013diag.nc": [
+        "H",
+        "LE",
+        "MSLP",
+        "POVOT",
+        "THT",
+        "UM10",
+        "UT",
+        "VM10",
+        "VT",
+        "WT",
+        "ZS",
+        "ZTOP",
+        "latitude",
+        "latitude_u",
+        "latitude_v",
+        "level",
+        "level_w",
+        "longitude",
+        "longitude_u",
+        "longitude_v",
+        "ni",
+        "ni_u",
+        "ni_v",
+        "nj",
+        "nj_u",
+        "nj_v",
+        "time"
+      ]
+    }
+  },
+  "script_version": "0.2",
+  "source_layout": "DONEE_TEST_CYCLOPY/AROME/BATSIRAI + DONEE_TEST_CYCLOPY/MNH/CHIDO"
+}

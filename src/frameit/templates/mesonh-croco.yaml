@@ -1,0 +1,49 @@
+# Paths are relative to this YAML. Adapt fields, centre and full widths to your inputs.
+# Atmosphere SEA support and ocean sigma coordinates/masks remain independent.
+schema_version: "2.1"
+model: mesonh
+run:
+  name: mesonh-croco
+input:
+  # Exact common labels only; no interpolation or NEMO preceding-hour association.
+  time_alignment: common
+  sources:
+    atmosphere:
+      model: mesonh
+      input:
+        directory: ./data/mesonh
+        pattern: '*diag.nc'
+        format: netcdf
+        netcdf:
+          # Explicit producer-specific SEA interpretation needs valid FRAC_SEA support.
+          # Verify source/comment units; source 999 is invalid only for these fields.
+          # No inferred flux sign, timing or vector basis, and no temperature equivalence.
+          surfex_fields: [SST, SSS]
+      variables:
+        fields_2d:
+          names: [SST, SSS]
+    ocean:
+      model: croco
+      input:
+        directory: ./data/croco
+        pattern: '*_his.nc'
+        format: netcdf
+      variables:
+        s_rho:
+          # History/Vtransform=2; native stored sigma index is not metres.
+          names: [temp, salt]
+          levels: {indices: [0]}
+tracking:
+  source: atmosphere
+  method: fixed_box
+  fixed_box:
+    center: {latitude: -20., longitude: 60.}
+domain:
+  # Illustrative full widths in km; check coverage of each independent grid.
+  width_km: {x: 100, y: 100}
+polar:
+  # No currents, diagnosed physical depths or polar sampling are selected.
+  enabled: false
+output:
+  directory: ./output
+  overwrite: false

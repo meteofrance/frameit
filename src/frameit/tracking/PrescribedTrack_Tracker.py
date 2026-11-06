@@ -26,7 +26,7 @@ class PrescribedTrack(TcTracker):
 
     The track file must contain at minimum ``time(time)``, a latitude
     variable, and a longitude variable (names configurable via conf).
-    Both AROME (1-D lat/lon) and MNH (2-D lat/lon) grids are supported.
+    Static 1-D axes and 2-D geography are supported independently of model/format.
     """
 
     name = "prescribed_track"
@@ -42,6 +42,7 @@ class PrescribedTrack(TcTracker):
         track_time_name: str = "time",
         track_lat_name: str = "latitude",
         track_lon_name: str = "longitude",
+        horizontal_dims: tuple[str, str] | None = None,
     ) -> None:
         """
         Parameters
@@ -74,6 +75,7 @@ class PrescribedTrack(TcTracker):
 
         self.lat_name = lat_name
         self.lon_name = lon_name
+        self.horizontal_dims = horizontal_dims
 
         self.track_time_name = track_time_name
         self.track_lat_name = track_lat_name
@@ -106,7 +108,7 @@ class PrescribedTrack(TcTracker):
         var_aliases = getattr(conf, "tracking_var_aliases", {}) or {}
 
         track_file = getattr(conf, "prescribed_track_file", None)
-        if track_file is None:
+        if not track_file:
             raise ValueError(
                 "tracking_method='prescribed_tracker' but "
                 "'prescribed_track_file' is not defined in the configuration."
@@ -129,6 +131,8 @@ class PrescribedTrack(TcTracker):
             track_time_name=track_time_name,
             track_lat_name=track_lat_name,
             track_lon_name=track_lon_name,
+            horizontal_dims=(conf.name_lat_dim, conf.name_lon_dim) if
+            getattr(conf, "name_lat_dim", None) and getattr(conf, "name_lon_dim", None) else None,
         )
 
     # ------------- tracking method core -------------
@@ -148,114 +152,55 @@ class PrescribedTrack(TcTracker):
         -------
         xr.Dataset
             Dataset restricted to common dates, with variables ``cy(time)``
-            and ``cx(time)``.
+            and ``cx(time)``, plus the supplied continuous ``lon(time)`` and
+            ``lat(time)`` used by geographical diagnostics.
 
         Raises
         ------
         ValueError
             If required coordinates are missing from the track file or model
-            dataset, if no common dates are found, or if ``atm_model`` is
-            not ``"AROME"`` or ``"MNH"``.
+            dataset, if no common dates are found, or geography is unsupported.
         """
-        lat = ds.coords[self.lat_name]
-        lon = ds.coords[self.lon_name]
+        from frameit.io.track_file import load_track_coordinates
+        from frameit.utils.units import convert_units
+
+        lat = convert_units(ds.coords[self.lat_name], "angle",
+                            target="degrees_north", assumed="degrees_north")
+        lon = convert_units(ds.coords[self.lon_name], "angle",
+                            target="degrees_east", assumed="degrees_east")
         time_model = ds["time"].values
 
         # 1) Read the external track file
-        trk = xr.open_dataset(self.track_file)
-
-        # Check that temporal and spatial fields are present
-        if self.track_time_name not in trk.coords:
-            raise ValueError(
-                f"PrescribedTrack: time coordinate {self.track_time_name!r} "
-                f"not found in the track file."
-            )
-        if self.track_lat_name not in trk:
-            raise ValueError(
-                f"PrescribedTrack: variable {self.track_lat_name!r} not found in the track file."
-            )
-        if self.track_lon_name not in trk:
-            raise ValueError(
-                f"PrescribedTrack: variable {self.track_lon_name!r} not found in the track file."
-            )
-
-        time_trk = trk[self.track_time_name].values
-
-        # 2) Restrict to dates common to the model and the track file
-        common_times = np.intersect1d(time_model, time_trk)
+        trk = load_track_coordinates(
+            self.track_file, time_name=self.track_time_name,
+            latitude_name=self.track_lat_name, longitude_name=self.track_lon_name,
+        )
+        common_times = np.intersect1d(time_model, trk.time.values)
         if common_times.size == 0:
-            raise ValueError(
-                "PrescribedTrack: no common dates between the model Dataset and the track file."
-            )
-
-        # Select only the common dates from the track file
-        trk_sel = trk.sel({self.track_time_name: common_times})
-
-        lat_trk = trk_sel[self.track_lat_name].values
-        lon_trk = trk_sel[self.track_lon_name].values
-
-        ntime = common_times.size
-        cy = np.empty(ntime, dtype="int64")
-        cx = np.empty(ntime, dtype="int64")
-
-        model = self.atm_model
-
-        # 3) Calcul des indices (cy, cx) pour chaque date
-
-        # AROME case: 1D lat (nj), 1D lon (ni)
-        if model == "AROME":
-            if not (lat.ndim == 1 and lon.ndim == 1):
-                raise ValueError(
-                    f"PrescribedTrack (AROME): expected 1D lat/lon, got "
-                    f"lat.ndim={lat.ndim}, lon.ndim={lon.ndim}"
-                )
-
-            lat_vals = lat.values
-            lon_vals = lon.values
-
-            for k in range(ntime):
-                lat0 = float(lat_trk[k])
-                lon0 = float(lon_trk[k])
-
-                j = int(np.nanargmin((lat_vals - lat0) ** 2))
-                i = int(np.nanargmin((lon_vals - lon0) ** 2))
-
-                cy[k] = j
-                cx[k] = i
-
-        # MNH case: 2D lat (nj, ni), 2D lon (nj, ni)
-        elif model == "MNH":
-            if not (lat.ndim == 2 and lon.ndim == 2):
-                raise ValueError(
-                    f"PrescribedTrack (MNH): expected 2D lat/lon, got "
-                    f"lat.ndim={lat.ndim}, lon.ndim={lon.ndim}"
-                )
-            if lat.shape != lon.shape:
-                raise ValueError(
-                    "PrescribedTrack (MNH): 2D latitude and longitude must have the same shape"
-                )
-
-            for k in range(ntime):
-                lat0 = float(lat_trk[k])
-                lon0 = float(lon_trk[k])
-
-                dlat = lat - lat0
-                dlon = lon - lon0
-                dist2 = dlat * dlat + dlon * dlon
-
-                dist_vals = dist2.values
-                j_flat, i_flat = np.unravel_index(int(np.nanargmin(dist_vals)), dist_vals.shape)
-                cy[k] = int(j_flat)
-                cx[k] = int(i_flat)
+            raise ValueError("PrescribedTrack: no common dates between model and track file")
+        trk_sel = trk.sel(time=common_times)
+        lat_trk, lon_trk = trk_sel.latitude.values, trk_sel.longitude.values
+        if not (np.isfinite(lat_trk).all() and np.isfinite(lon_trk).all()):
+            raise ValueError("PrescribedTrack: common-time track positions must be finite")
 
         # 4) Construction du Dataset de sortie
         time_da = xr.DataArray(common_times, dims=("time",), name="time")
 
         out = xr.Dataset(
             data_vars={
-                "cy": xr.DataArray(cy, dims=("time",), coords={"time": time_da}),
-                "cx": xr.DataArray(cx, dims=("time",), coords={"time": time_da}),
+                "lon": xr.DataArray(
+                    lon_trk, dims=("time",), coords={"time": time_da},
+                    attrs={"units": "degrees_east", "long_name": "prescribed cyclone longitude"},
+                ),
+                "lat": xr.DataArray(
+                    lat_trk, dims=("time",), coords={"time": time_da},
+                    attrs={"units": "degrees_north", "long_name": "prescribed cyclone latitude"},
+                ),
             },
             coords={"time": time_da},
         )
-        return out
+        from .geographic import locate_track
+
+        geography = ds.assign_coords({self.lat_name: lat, self.lon_name: lon})
+        return locate_track(out, geography, axes=self.horizontal_dims,
+                            lat_name=self.lat_name, lon_name=self.lon_name)

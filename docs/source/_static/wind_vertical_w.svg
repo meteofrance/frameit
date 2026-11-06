@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 340" role="img" aria-labelledby="title desc">
+  <title id="title">Vertical W: interfaces and mass-point interpolation</title>
+  <desc id="desc">A column has lower interface coordinate 0 metres with W equal to 0 metres per second, upper interface coordinate 10 metres with W equal to 2, and mass coordinate 5 metres with interpolated W equal to 1. Coordinates and compatible auxiliaries must also describe the new locations. This is not a constant-altitude grid.</desc>
+  <rect width="860" height="340" rx="12" fill="#f5f8fc"/>
+  <g font-family="sans-serif" fill="#192d45">
+    <text x="28" y="35" font-size="21" font-weight="bold">Vertical W in one model column</text>
+    <text x="28" y="60" font-size="15">Markers show locations — not vertical flow</text>
+    <rect x="65" y="105" width="230" height="150" fill="#fff" stroke="#c0cbd8"/>
+    <path d="M65 105H295M65 255H295" stroke="#146b9b" stroke-width="3"/>
+    <path d="M65 180H295" stroke="#247652" stroke-width="2" stroke-dasharray="6 5"/>
+    <g fill="#146b9b" stroke="#fff" stroke-width="2">
+      <rect x="172" y="97" width="16" height="16"/>
+      <rect x="172" y="247" width="16" height="16"/>
+    </g>
+    <circle cx="180" cy="180" r="9" fill="#247652" stroke="#fff" stroke-width="2"/>
+    <g font-size="17">
+      <text x="320" y="111" fill="#146b9b">Upper interface: 10 m, W = 2 m s⁻¹</text>
+      <text x="320" y="186" fill="#247652">Mass point: 5 m, W = 1 m s⁻¹</text>
+      <text x="320" y="261" fill="#146b9b">Lower interface: 0 m, W = 0 m s⁻¹</text>
+    </g>
+    <text x="28" y="301" font-size="15">Linear interpolation uses native coordinates; transform compatible auxiliaries too.</text>
+    <text x="28" y="324" font-size="15">Illustrative model coordinates, not fixed geometric altitudes or a constant-altitude grid.</text>
+  </g>
+</svg>

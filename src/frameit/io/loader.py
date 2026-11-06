@@ -4,7 +4,10 @@
 
 from __future__ import annotations
 
+import copy
 import logging
+from collections.abc import Mapping
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +16,128 @@ import yaml
 log = logging.getLogger("frameit.io.loader")
 
 DEFAULT_PRESETS_ROOT = Path(__file__).resolve().parents[1] / "presets"
+
+
+class DatasetResources:
+    """Own the original opened datasets until computation and export finish."""
+
+    def __init__(self):
+        self._datasets = []
+        self._ids = set()
+        self._netcdf = {}
+
+    def add(self, dataset):
+        if id(dataset) not in self._ids:
+            self._ids.add(id(dataset))
+            self._datasets.append(dataset)
+        return dataset
+
+    def open_netcdf(self, path, *, engine, chunks=None):
+        """Reuse the same lazy input only within this owner's open lifetime."""
+        import xarray as xr
+
+        chunk_key = tuple(sorted(chunks.items())) if isinstance(chunks, Mapping) else chunks
+        key = (Path(path).absolute(), engine, chunk_key)
+        if key not in self._netcdf:
+            self._netcdf[key] = self.add(xr.open_dataset(path, engine=engine, chunks=chunks))
+        return self._netcdf[key]
+
+    def close_from(self, start=0):
+        datasets = self._datasets[start:]
+        del self._datasets[start:]
+        for dataset in reversed(datasets):
+            self._ids.discard(id(dataset))
+            try:
+                dataset.close()
+            except Exception:
+                log.exception("Failed to close a loaded dataset")
+        self._netcdf = {key: ds for key, ds in self._netcdf.items() if id(ds) in self._ids}
+
+    def close(self):
+        self.close_from()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def managed_loading(function):
+    """Give direct loader callers a close hook; roll back failed opens."""
+
+    @wraps(function)
+    def wrapper(*args, resources=None, **kwargs):
+        owned = resources is None
+        registry = resources if resources is not None else DatasetResources()
+        start = len(registry._datasets)
+        try:
+            result = function(*args, resources=registry, **kwargs)
+        except BaseException:
+            registry.close_from(start)
+            raise
+        if owned:
+
+            def attach(value):
+                if hasattr(value, "set_close"):
+                    # Do not overwrite an original backend's close callback
+                    # with a callback that would recursively close itself.
+                    if id(value) in registry._ids:
+                        value = value.copy(deep=False)
+                    value.set_close(registry.close)
+                    return value
+                elif isinstance(value, Mapping):
+                    return {key: attach(item) for key, item in value.items()}
+                elif isinstance(value, tuple):
+                    return tuple(attach(item) for item in value)
+                elif isinstance(value, list):
+                    return [attach(item) for item in value]
+                return value
+
+            result = attach(result)
+        return result
+
+    return wrapper
+
+
+def resolve_input_files(files, *, strict=False):
+    """Validate an explicit inventory without sorting or omitting its entries."""
+    paths = [Path(path) for path in files]
+    missing = [str(path) for path in paths if not path.is_file()]
+    if strict and missing:
+        raise FileNotFoundError(
+            "Resolved input file is missing or not a file: " + ", ".join(missing)
+        )
+    if not strict:
+        paths = sorted(path for path in paths if path.is_file())
+    if not paths:
+        raise FileNotFoundError("No valid input file found")
+    return paths
+
+
+def discover_input_files(config):
+    """Ordinary run discovery, shared with native matrix planning."""
+    inventory = getattr(config, "input_files", None)
+    files = ([Path(p) for p in inventory] if inventory is not None else
+             sorted(p for p in config.data_dir.glob(config.build_pattern()) if p.is_file()))
+    if inventory is not None:
+        resolve_input_files(files, strict=True)
+    files = [path for path in files if not input_path_excluded(path, config)]
+    files = [path for path in files if not config.is_mnh_timeseries_name(path)]
+    return resolve_input_files(files, strict=True)
+
+
+def input_path_excluded(path, config):
+    """Exclusions match names, absolute paths, or paths relative to input.directory."""
+    import fnmatch
+
+    candidates = [path.name, str(path)]
+    try:
+        candidates.append(path.relative_to(config.data_dir).as_posix())
+    except ValueError:
+        pass
+    return any(fnmatch.fnmatch(candidate, pattern)
+               for candidate in candidates for pattern in getattr(config, "input_exclude", []))
 
 
 def _load_yaml(p: Path) -> dict[str, Any]:
@@ -63,8 +188,27 @@ def load_config_with_model_presets(
     FileNotFoundError
         If the coordinate or tracker preset file for the model is not found.
     """
-    run_yaml_path = Path(run_yaml_path)
-    run = _load_yaml(run_yaml_path)
+    from frameit.core.configuration import load_runtime
+
+    return _apply_model_presets(
+        load_runtime(run_yaml_path), strict_locked=strict_locked
+    )
+
+
+def resolve_config_with_model_presets(
+    mapping: Mapping[str, Any], *, strict_locked: bool = False
+) -> dict[str, Any]:
+    """Resolve a strict public run document, then apply internal model presets."""
+    if not isinstance(mapping, Mapping):
+        raise ValueError("The configuration must be a key-value mapping")
+    from frameit.core.configuration import to_runtime
+
+    return _apply_model_presets(to_runtime(dict(mapping)), strict_locked=strict_locked)
+
+
+def _apply_model_presets(mapping, *, strict_locked=False):
+    """Apply package-owned coordinate/dependency definitions to resolved runtime data."""
+    run = copy.deepcopy(dict(mapping))
 
     model = run.get("atm_model")
     if not model:
@@ -80,6 +224,9 @@ def load_config_with_model_presets(
         raise FileNotFoundError(f"tracker preset not found for {model}: {tracker_p}")
 
     coords = _load_yaml(coords_p)
+    if run.get("file_type") == "fa":
+        # Native FA geometry differs from the AROME GRIB sampling contract.
+        coords.update(name_time_dim="time", name_lat_dim="y", name_lon_dim="x")
     tracker_yaml_raw = _load_yaml(tracker_p)
 
     # Wrap the tracker content under a dedicated key for the dataclass.
@@ -117,6 +264,10 @@ def load_config_with_model_presets(
     sp["preset_coords_path"] = str(coords_p)
     sp["preset_tracker_path"] = str(tracker_p)
     sp["preset_fields_coords_dims"] = {k: merged[k] for k in sorted(coords_keys)}
+    if run.get("file_type") == "fa":
+        sp["preset_input_format"] = "fa"
+        sp["preset_fa_profile"] = run.get("fa_options", {}).get("profile")
+        sp["preset_coordinate_override"] = "FA adapter: labelled time/y/x; geographic auxiliaries"
     sp["preset_fields_tracker"] = {
         k: merged[k] for k in sorted(tracker_keys)
     }  # -> requested_variables_tracker

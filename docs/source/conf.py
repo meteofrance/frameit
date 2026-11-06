@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath("../../src"))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "FrameIt"
-author = "Soufflet Clément"
+author = "Clément Soufflet, Maxence DEFERREZ"
 copyright = f"{date.today().year}, {author}"
 release = get_version("frameit")
 
@@ -43,7 +43,10 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 
 html_theme = "sphinx_rtd_theme"  # or "furo" or "alabaster" sphinx_rtd_theme sphinx_book_theme to install
+# Retain inactive branches so the theme can offer expand/collapse controls.
+html_theme_options = {"collapse_navigation": False, "navigation_depth": 4}
 html_static_path = ["_static"]
-html_logo = "_static/logo/logo_FrameIt.png"
+html_logo = "_static/logo/frameit_logo.svg"
+html_favicon = "_static/logo/frameit_logo_symbol_vector.svg"
 html_css_files = ["custom.css"]
 html_title=f"FrameIt {release} documentation"

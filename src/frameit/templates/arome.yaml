@@ -1,0 +1,28 @@
+# Paths are relative to this YAML. Adapt the inspected fields, centre and box.
+schema_version: "2.1"
+model: arome
+run:
+  name: arome-pressure-wind
+input:
+  directory: ./data
+  pattern: "*.grib"
+  format: grib
+  # Verify the source wind basis, pressure units (Pa/hPa) and velocity units.
+  wind_pairs:
+    - {group: fields_2d, u: u10, v: v10, reference_frame: earth}
+tracking:
+  method: pressure_wind
+domain:
+  # Illustrative full widths in km, NOT tracker search half-widths.
+  width_km: {x: 500, y: 500}
+variables:
+  fields_2d:
+    names: [u10, v10, prmsl]
+polar:
+  # Polar sampling is disabled; available fields do not select extra processing.
+  enabled: false
+output:
+  directory: ./output
+  overwrite: false
+  cartesian:
+    horizontal_vectors: earth_centered

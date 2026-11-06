@@ -80,7 +80,7 @@ class RunTimer:
         """
         total = self.total_seconds()
         if not (total > 0.0):
-            logger.info("%s: total time undefined.", title)
+            logger.debug("%s: total time undefined.", title)
             return
 
         accounted = sum(self.sections.values())
@@ -90,8 +90,14 @@ class RunTimer:
         if other > 1e-6:
             items.append(("other", other))
 
-        logger.info("%s (total = %.2f min)", title, total / 60.0)
+        logger.info("%s · %.2f s total", title, total)
 
-        for name, dt_s in sorted(items, key=lambda kv: kv[1], reverse=True):
+        labels = {
+            "loading_data": "Input loading", "tracking": "Tracking",
+            "extraction": "Cartesian extraction", "polar_projection": "Polar / collocation",
+            "Netcdf export": "NetCDF export", "other": "Setup / overhead",
+        }
+
+        for name, dt_s in items:
             pct = 100.0 * dt_s / total
-            logger.info("  %-22s %8.2f s  (%5.1f%%)", name, dt_s, pct)
+            logger.info("  %-22s %8.2f s  %5.1f%%", labels.get(name, name), dt_s, pct)

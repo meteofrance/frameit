@@ -223,7 +223,53 @@ def make_tracking_dataset(
     if not datasets:
         raise ValueError(f"No Dataset found for method {method!r} in ds_tree")
 
-    ds_flat = xr.merge(datasets, compat="no_conflicts")
+    # Outer joins are appropriate for independent vertical groups/time labels,
+    # but must never silently align different horizontal sampling locations.
+    horizontal_names = {"ni", "nj", "ni_u", "nj_u", "ni_v", "nj_v", "x", "y",
+                        "latitude", "longitude", "lat", "lon"}
+    for dataset in datasets:
+        for name, coord in dataset.coords.items():
+            if name in {"latitude", "longitude", "lat", "lon"} or coord.attrs.get(
+                    "standard_name") in {"latitude", "longitude"}:
+                horizontal_names.update(d for d in coord.dims if d not in {
+                    "time", "level", "level_w", "isobaricInhPa", "heightAboveGround"}
+                    and dataset[d].attrs.get("axis") != "Z")
+    for i, left in enumerate(datasets):
+        for right in datasets[i + 1:]:
+            for dim in set(left.dims) & set(right.dims) & horizontal_names:
+                if left.sizes[dim] != right.sizes[dim] or (
+                        (dim in left.coords) != (dim in right.coords)):
+                    raise ValueError(
+                        f"Tracker {method!r}: shared horizontal coordinate {dim!r} "
+                        "must match exactly before merging")
+            shared = set(left.coords) & set(right.coords)
+            for name in shared:
+                a, b = left[name], right[name]
+                horizontal = (name in horizontal_names
+                              or a.attrs.get("axis") in {"X", "Y"}
+                              or a.attrs.get("standard_name") in {"latitude", "longitude"})
+                if not horizontal:
+                    continue
+                # Geography can legitimately carry different time/vertical
+                # selections. Compare overlapping labels only on those axes.
+                nonhorizontal = set(a.dims) | set(b.dims)
+                nonhorizontal -= horizontal_names
+                try:
+                    aa, bb = xr.align(a, b, join="inner", exclude=horizontal_names)
+                    # Static geography may accompany time/level-dependent
+                    # geography if every shared location agrees.
+                    if set(a.dims) ^ set(b.dims) <= nonhorizontal:
+                        aa, bb = xr.broadcast(aa, bb)
+                    if set(aa.dims) == set(bb.dims):
+                        bb = bb.transpose(*aa.dims)
+                    xr.testing.assert_equal(aa.variable, bb.variable)
+                except (AssertionError, ValueError) as exc:
+                    raise ValueError(
+                        f"Tracker {method!r}: shared horizontal coordinate {name!r} "
+                        "must match exactly before merging"
+                    ) from exc
+
+    ds_flat = xr.merge(datasets, compat="no_conflicts", join="outer")
     return ds_flat
 
 

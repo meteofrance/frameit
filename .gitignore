@@ -235,9 +235,6 @@ DRAFT/
 # Superseded dependency files
 old/
 
-# Test suite and generated test artefacts
-tests/
-
 # Claude Code local settings
 .claude/
 

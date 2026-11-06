@@ -7,9 +7,11 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import multiprocessing
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass
+from contextlib import nullcontext
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,7 @@ import numpy as np
 import xarray as xr
 
 from frameit._version import __version__ as frameit_version
+from frameit.utils.atomic import atomic_output
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +121,7 @@ class ExportMetadata:
     source: str
     conventions: str = "CF-1.8"
     frameit_version: str = frameit_version
+    user_metadata: dict[str, Any] = field(default_factory=dict)
 
     def base_attrs(self) -> dict[str, Any]:
         """
@@ -137,6 +141,8 @@ class ExportMetadata:
             "simulation_id": self.simulation_id,
             "frameit_version": self.frameit_version,
         }
+        if self.user_metadata:
+            attrs["frameit_user_metadata"] = self.user_metadata
         return attrs
 
 
@@ -193,6 +199,7 @@ def build_metadata_from_conf(
         institution=institution,
         source=source,
         frameit_version=frameit_version,
+        user_metadata=getattr(conf, "yaml_config", {}).get("metadata", {}).get("extra", {}),
     )
 
     logger.debug(
@@ -205,6 +212,21 @@ def build_metadata_from_conf(
     )
     logger.debug("Metadata source string: %s", meta.source)
     return meta
+
+
+def _prepare_dataset(ds, metadata, product_type, group=None, track_filename=None):
+    """Keep metadata meaning and JSON attribute conventions identical across writers."""
+    ds_out = ds.copy(deep=False)
+    ds_out.attrs = _sanitize_attrs(ds_out.attrs)
+    for name in ds_out.variables:
+        ds_out[name].attrs = _sanitize_attrs(ds_out[name].attrs)
+    ds_out.attrs.update(_sanitize_attrs(metadata.base_attrs()))
+    ds_out.attrs["product_type"] = str(product_type)
+    if group is not None:
+        ds_out.attrs["group"] = str(group)
+    if track_filename is not None:
+        ds_out.attrs["track_filename"] = str(track_filename)
+    return ds_out
 
 
 def write_dataset_netcdf(
@@ -276,7 +298,7 @@ def write_dataset_netcdf(
         logger.error("Refusing to overwrite existing file (overwrite=False): %s", str(path))
         raise FileExistsError(f"File exists and overwrite=False: {path}")
 
-    logger.info(
+    logger.debug(
         "Writing NetCDF: %s (product_type=%s, group=%s, engine=%s, fmt=%s,"
         " compress_level=%s, compress_coords=%s, unlimited_time=%s).",
         str(path),
@@ -289,19 +311,7 @@ def write_dataset_netcdf(
         bool(unlimited_time),
     )
 
-    ds_out = ds.copy()
-    # Sanitize global attrs
-    ds_out.attrs = _sanitize_attrs(ds_out.attrs)
-    # Sanitize attrs on all variables and coords (fixes units=None, etc.)
-    for name in list(ds_out.data_vars) + list(ds_out.coords):
-        ds_out[name].attrs = _sanitize_attrs(ds_out[name].attrs)
-
-    ds_out.attrs.update(metadata.base_attrs())
-    ds_out.attrs["product_type"] = str(product_type)
-    if group is not None:
-        ds_out.attrs["group"] = str(group)
-    if track_filename is not None:
-        ds_out.attrs["track_filename"] = str(track_filename)
+    ds_out = _prepare_dataset(ds, metadata, product_type, group, track_filename)
 
     ds_out = _append_history(ds_out, f"{_utc_now_iso()}: written by frameit io.netcdf_export")
 
@@ -317,25 +327,35 @@ def write_dataset_netcdf(
     if unlimited_dims is not None:
         logger.debug("Unlimited dims: %s", unlimited_dims)
 
-    ds_out.to_netcdf(
-        path,
-        mode="w",
-        engine=engine,
-        format=fmt,
-        encoding=encoding,
-        unlimited_dims=unlimited_dims,
-    )
+    with atomic_output(path, overwrite=overwrite) as temporary:
+        ds_out.to_netcdf(
+            temporary,
+            mode="w",
+            engine=engine,
+            format=fmt,
+            encoding=encoding,
+            unlimited_dims=unlimited_dims,
+        )
 
-    logger.info("NetCDF written: %s", str(path))
+    logger.debug("NetCDF written: %s", str(path))
     return path
 
 
-def _write_single_group(
-    args: tuple[str, xr.Dataset, Path, str, ExportMetadata, str, str, str, bool, int, bool, bool],
-) -> Path:
+def _write_dataset(ds, path, *, engine, zarr_chunk_size=None, zarr_shard_size=None, **kwargs):
+    if engine == "zarr":
+        from frameit.io.zarr_export import write_dataset_zarr
+
+        kwargs.pop("fmt", None)
+        kwargs.pop("unlimited_time", None)
+        return write_dataset_zarr(ds, path, chunk_size=zarr_chunk_size,
+                                  shard_size=zarr_shard_size, **kwargs)
+    return write_dataset_netcdf(ds, path, engine=engine, **kwargs)
+
+
+def _write_single_group(args: tuple) -> Path:
     """
     Worker function for ProcessPoolExecutor — must be a top-level callable.
-    Unpacks all arguments and calls write_dataset_netcdf.
+    Unpacks all arguments and calls the selected dataset writer.
     """
     (
         group,
@@ -350,9 +370,11 @@ def _write_single_group(
         compress_level,
         compress_coords,
         unlimited_time,
+        zarr_chunk_size,
+        zarr_shard_size,
     ) = args
 
-    return write_dataset_netcdf(
+    return _write_dataset(
         ds,
         out_path,
         metadata=metadata,
@@ -365,6 +387,23 @@ def _write_single_group(
         compress_level=compress_level,
         compress_coords=compress_coords,
         unlimited_time=unlimited_time,
+        zarr_chunk_size=zarr_chunk_size,
+        zarr_shard_size=zarr_shard_size,
+    )
+
+
+def _export_pool(group_count, max_workers, dask_scheduler, dask_workers, native_threads):
+    from frameit.core.runtime import cpu_budget, initialize_export_worker
+
+    cpus, _ = cpu_budget()
+    per_process = (1 if dask_scheduler == "synchronous" else dask_workers) * native_threads
+    if per_process > cpus:
+        raise ValueError("Export thread counts exceed CPU budget")
+    workers = min(max_workers or cpus // per_process, group_count, cpus // per_process)
+    return ProcessPoolExecutor(
+        max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
+        initializer=initialize_export_worker,
+        initargs=(dask_scheduler, dask_workers, native_threads),
     )
 
 
@@ -383,12 +422,18 @@ def write_group_dict(
     compress_coords: bool = False,
     unlimited_time: bool = True,
     max_workers: int | None = None,
+    synchronous: bool = False,
+    dask_scheduler: str = "threads",
+    dask_workers: int = 1,
+    native_threads: int = 1,
+    zarr_chunk_size: dict[str, int] | None = None,
+    zarr_shard_size: dict[str, int] | None = None,
+    _executor: ProcessPoolExecutor | None = None,
 ) -> list[Path]:
     """
-    Write a dictionary of Datasets to individual NetCDF files, optionally in parallel.
+    Write grouped products as NetCDF files or Zarr stores, optionally in parallel.
 
-    Each group produces one file named ``{simu_name}.{grid}.{group}.nc``
-    inside ``out_dir``.
+    Each group produces ``{simu_name}.{grid}.{group}.nc`` or ``.zarr`` inside ``out_dir``.
 
     Parameters
     ----------
@@ -417,8 +462,8 @@ def write_group_dict(
     unlimited_time : bool, optional
         Declare the "time" dimension unlimited. Default True.
     max_workers : int or None, optional
-        Maximum number of parallel worker processes.  ``None`` lets Python
-        choose based on available CPU cores. Default None.
+        Maximum parallel worker processes, also capped by group count and CPU
+        budget. Default None resolves from the allocation/affinity.
 
     Returns
     -------
@@ -428,7 +473,7 @@ def write_group_dict(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(
+    logger.debug(
         "Writing group dictionary: out_dir=%s, simu_name=%s, grid=%s, n_groups=%s, max_workers=%s.",
         str(out_dir),
         simu_name,
@@ -439,10 +484,16 @@ def write_group_dict(
 
     # Build the list of argument tuples for each worker
     tasks_args = []
+    destinations = set()
     for group, ds in ds_dict.items():
         group_token = _sanitize_filename_token(str(group))
-        fn = f"{simu_name}.{grid}.{group_token}.nc"
+        suffix = ".zarr" if engine == "zarr" else ".nc"
+        fn = f"{simu_name}.{grid}.{group_token}{suffix}"
         out_path = out_dir / fn
+        if out_path in destinations:
+            kind = "Zarr" if engine == "zarr" else "NetCDF"
+            raise ValueError(f"Group names map to the same {kind} destination: {out_path}")
+        destinations.add(out_path)
 
         logger.debug(
             "Queuing group=%s -> %s (vars=%s, dims=%s).",
@@ -455,7 +506,7 @@ def write_group_dict(
         tasks_args.append(
             (
                 group,
-                ds.compute() if hasattr(ds, "dask") else ds,
+                ds,
                 out_path,
                 grid,
                 metadata,
@@ -466,11 +517,22 @@ def write_group_dict(
                 compress_level,
                 compress_coords,
                 unlimited_time,
+                zarr_chunk_size,
+                zarr_shard_size,
             )
         )
 
+    if synchronous:
+        # A matrix case already runs in an isolated worker. Do not create a
+        # nested process pool, even a one-worker pool, for group serialization.
+        return [_write_single_group(args) for args in tasks_args]
+
     written: list[Path] = []
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    if not tasks_args:
+        return written
+    pool = nullcontext(_executor) if _executor is not None else _export_pool(
+        len(tasks_args), max_workers, dask_scheduler, dask_workers, native_threads)
+    with pool as executor:
         futures = {
             executor.submit(_write_single_group, args): args[0]  # args[0] = group name
             for args in tasks_args
@@ -480,11 +542,12 @@ def write_group_dict(
             try:
                 path = future.result()
                 written.append(path)
+                logger.debug("NetCDF written: %s", path)
             except Exception:
                 logger.exception("Failed to write group=%s.", group_name)
                 raise
 
-    logger.info("Group dictionary written: n_files=%s.", len(written))
+    logger.debug("Group dictionary written: n_files=%s.", len(written))
     return written
 
 
@@ -504,9 +567,15 @@ def export_outputs(
     compress_coords: bool = False,
     unlimited_time: bool = True,
     max_workers: int | None = None,
+    synchronous: bool = False,
+    dask_scheduler: str = "threads",
+    dask_workers: int = 1,
+    native_threads: int = 1,
+    zarr_chunk_size: dict[str, int] | None = None,
+    zarr_shard_size: dict[str, int] | None = None,
 ) -> dict[str, Path | list[Path]]:
     """
-    Export all FrameIt products (track, polar, Cartesian) from a completed run.
+    Export all FrameIt products using the selected NetCDF or Zarr engine.
 
     The track file is always written.  Polar and Cartesian exports are
     conditional on the corresponding flag and on data being available.
@@ -524,7 +593,7 @@ def export_outputs(
     out_dir : Path or None, optional
         Root output directory.  Falls back to ``runner.output_dir`` when None.
     out_subdir : str, optional
-        Sub-directory appended to ``out_dir``.  Default "" (no sub-directory).
+        Sub-directory appended inside ``out_dir/products``. Default "".
     export_polar : bool, optional
         Write polar-projection datasets when available. Default True.
     export_cart : bool, optional
@@ -556,11 +625,15 @@ def export_outputs(
     conf = runner.conf
     simu_name = str(getattr(conf, "simulation_name", "UNKNOWN_SIMU"))
 
-    base_out = Path(out_dir) if out_dir is not None else Path(runner.output_dir)
+    from frameit.utils.output_paths import OutputPaths
+
+    root = Path(out_dir) if out_dir is not None else Path(runner.output_dir)
+    base_out = OutputPaths(root).products
     out_path = base_out / out_subdir if out_subdir else base_out
     out_path.mkdir(parents=True, exist_ok=True)
 
-    logger.info(
+    logger.info("Exporting products: engine=%s, compression=%d", engine, int(compress_level))
+    logger.debug(
         "Export outputs: simu_name=%s, out_path=%s, export_polar=%s, export_cart=%s,"
         " engine=%s, fmt=%s, overwrite=%s, compress_level=%s, max_workers=%s.",
         simu_name,
@@ -577,10 +650,11 @@ def export_outputs(
     meta = build_metadata_from_conf(conf, frameit_version=frameit_version, institution=institution)
 
     # Track
-    track_file = out_path / f"{simu_name}.track.nc"
-    logger.info("Exporting track to %s.", str(track_file))
+    suffix = ".zarr" if engine == "zarr" else ".nc"
+    track_file = out_path / f"{simu_name}.track{suffix}"
+    logger.debug("Exporting track to %s", track_file)
 
-    track_written = write_dataset_netcdf(
+    track_written = _write_dataset(
         runner.track,
         track_file,
         metadata=meta,
@@ -591,59 +665,38 @@ def export_outputs(
         compress_level=compress_level,
         compress_coords=compress_coords,
         unlimited_time=unlimited_time,
+        zarr_chunk_size=zarr_chunk_size,
+        zarr_shard_size=zarr_shard_size,
     )
 
     results: dict[str, Path | list[Path]] = {"track": track_written}
 
-    # Polar
-    if export_polar and getattr(runner, "dict_polar_user", None):
-        logger.info("Exporting polar groups (n_groups=%s).", len(runner.dict_polar_user))
-        results["polar"] = write_group_dict(
-            runner.dict_polar_user,
-            out_path,
-            simu_name=simu_name,
-            grid="polar",
-            metadata=meta,
-            track_filename=track_written.name,
-            engine=engine,
-            fmt=fmt,
-            overwrite=overwrite,
-            compress_level=compress_level,
-            compress_coords=compress_coords,
-            unlimited_time=unlimited_time,
-            max_workers=max_workers,
-        )
-    else:
-        logger.debug(
-            "Polar export skipped (export_polar=%s, dict_polar_user present=%s).",
-            bool(export_polar),
-            bool(getattr(runner, "dict_polar_user", None)),
-        )
+    groups = {}
+    for grid, enabled, attribute in (("polar", export_polar, "dict_polar_user"),
+                                      ("cart", export_cart, "dict_crop_user")):
+        datasets = getattr(runner, attribute, None)
+        if enabled and datasets:
+            groups[grid] = datasets
+        else:
+            logger.debug("%s export skipped (enabled=%s, data present=%s).",
+                         grid, bool(enabled), bool(datasets))
+    pool = (_export_pool(max(map(len, groups.values())), max_workers,
+                         dask_scheduler, dask_workers, native_threads)
+            if groups and not synchronous else nullcontext(None))
+    # Share native-safe workers across phases, retaining serial phase ordering.
+    with pool as executor:
+        for grid, datasets in groups.items():
+            logger.info("  %s: %d group(s)", grid, len(datasets))
+            results[grid] = write_group_dict(
+                datasets, out_path, simu_name=simu_name, grid=grid, metadata=meta,
+                track_filename=track_written.name, engine=engine, fmt=fmt,
+                overwrite=overwrite, compress_level=compress_level, compress_coords=compress_coords,
+                unlimited_time=unlimited_time, max_workers=max_workers, synchronous=synchronous,
+                dask_scheduler=dask_scheduler, dask_workers=dask_workers, native_threads=native_threads,
+                zarr_chunk_size=zarr_chunk_size, zarr_shard_size=zarr_shard_size, _executor=executor,
+            )
 
-    # Cartesian crop
-    if export_cart and getattr(runner, "dict_crop_user", None):
-        logger.info("Exporting cart groups (n_groups=%s).", len(runner.dict_crop_user))
-        results["cart"] = write_group_dict(
-            runner.dict_crop_user,
-            out_path,
-            simu_name=simu_name,
-            grid="cart",
-            metadata=meta,
-            track_filename=track_written.name,
-            engine=engine,
-            fmt=fmt,
-            overwrite=overwrite,
-            compress_level=compress_level,
-            compress_coords=compress_coords,
-            unlimited_time=unlimited_time,
-            max_workers=max_workers,
-        )
-    else:
-        logger.debug(
-            "Cart export skipped (export_cart=%s, dict_crop_user present=%s).",
-            bool(export_cart),
-            bool(getattr(runner, "dict_crop_user", None)),
-        )
-
-    logger.info("Export completed. Results keys: %s.", list(results.keys()))
+    for role, paths in results.items():
+        for path in ([paths] if isinstance(paths, Path) else paths):
+            logger.info("  Saved %s: %s", role, path.name)
     return results

@@ -1,0 +1,28 @@
+# Same two read-only inputs; only horizontal fields are required.
+schema_version: "2.1"
+model: mesonh
+run:
+  name: batsirai-moving
+input:
+  directory: ./data/BATSIRAI-10mins
+  pattern: '*dg.nc'
+  format: netcdf
+  wind_pairs:
+    # These files explicitly describe zonal/meridian 10-m winds, in m s-1.
+    - {group: fields_2d, u: UM10, v: VM10, reference_frame: earth}
+tracking:
+  method: pressure_wind
+domain:
+  width_km: {x: 500, y: 500}
+variables:
+  fields_2d:
+    names: [UM10]
+polar:
+  enabled: false
+output:
+  directory: ./batsirai-moving
+  overwrite: false
+  synchronous_export: true
+execution:
+  dask_scheduler: synchronous
+  native_threads: 1

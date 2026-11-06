@@ -1,9 +1,8 @@
 How to add a new tracker
 ========================
 
-FrameIt uses a plugin-based system that makes it straightforward to integrate a new tracking method.
-This guide walks you through the four steps required: creating the tracker class, registering it,
-declaring the required input variables, and exposing the configuration parameters.
+To add a tracker, implement its class, register it, declare its inputs and expose
+its settings in the configuration schema.
 
 The ``UtrackTracker`` is used as a concrete reference throughout.
 
@@ -14,8 +13,8 @@ All trackers inherit from the abstract base class ``TcTracker`` defined in
 ``src/frameit/tracking/tracker_core.py``. A tracker must:
 
 - be decorated with ``@register_tracker`` so the factory can discover it;
-- declare a ``name`` attribute that matches the value of ``tracking_method`` in the configuration;
-- declare a ``required_fields`` tuple listing the physical fields it consumes;
+- declare a ``name`` attribute that matches YAML ``tracking.method`` (internal Python ``tracking_method``);
+- declare a ``logical_fields`` tuple listing the aliased physical fields it consumes;
 - implement ``from_config(cls, conf: SimulationConfig)`` to build itself from the global configuration;
 - implement ``_track_method(self, ds: xr.Dataset) -> xr.Dataset`` to perform the actual tracking.
 
@@ -37,8 +36,8 @@ Minimal skeleton::
 
     @register_tracker
     class MyTracker(TcTracker):
-        name = "my_tracker"                  # must match tracking_method in the config
-        required_fields = ("u10m", "v10m")   # fields your method needs
+        name = "my_tracker"                  # must match YAML tracking.method
+        logical_fields = ("u10m", "v10m")   # fields your method needs
 
         def __init__(self, var_aliases, **kwargs):
             super().__init__(var_aliases=var_aliases)
@@ -67,24 +66,22 @@ Minimal skeleton::
 Output contract
 ^^^^^^^^^^^^^^^
 
-``_track_method`` must return an ``xr.Dataset`` with exactly two variables:
+``_track_method`` must return an ``xr.Dataset`` with at least two variables:
 
 - ``cx`` — the **column** (longitude) index of the detected cyclone centre, dtype ``int``.
 - ``cy`` — the **row** (latitude) index of the detected cyclone centre, dtype ``int``.
 
 Both must share a ``time`` coordinate aligned with ``ds["time"]``.
-If no cyclone is detected at a given time step, return ``0`` rather than ``NaN``, since the output is cast to ``int``.
+Trackers may additionally return continuous ``lon(time)`` and ``lat(time)``
+and method-specific diagnostics. Geographic centres are preserved by kinematic
+post-processing; integer indices remain the Cartesian extraction anchors.
+If detection fails, raise an explicit error rather than inventing a centre.
 
 Optional dependencies
 ^^^^^^^^^^^^^^^^^^^^^
 
-If your tracker depends on a library that is not always installed, guard the import with a bare
-``try/except`` so that FrameIt can still be imported without the optional dependency::
-
-    try:
-        from my_optional_lib import SomeClass
-    except ImportError:
-        pass
+Load optional dependencies only when the tracker is selected. If one is missing,
+raise an ``ImportError`` that names the dependency and how to install it.
 
 Step 2 — Register the tracker
 ------------------------------
@@ -138,7 +135,9 @@ internal name and the model-file name are identical::
 Step 4 — Expose configuration parameters
 -----------------------------------------
 
-If your tracker requires parameters beyond the standard ones, add them to the ``SimulationConfig`` dataclass in
+Add tracker-specific settings to the public defaults and validation in
+``src/frameit/core/configuration.py``, then translate them in ``to_runtime``.
+Add the corresponding internal fields to ``SimulationConfig`` in
 ``src/frameit/core/settings_class.py``::
 
     # My tracker options
@@ -196,3 +195,5 @@ Summary of files to modify
      - Add any variable aliases your tracker needs.
    * - ``src/frameit/core/settings_class.py``
      - Add configuration fields for tracker-specific parameters.
+   * - ``src/frameit/core/configuration.py``
+     - Add public keys, validation and runtime translation.

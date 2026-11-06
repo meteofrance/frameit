@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="590" viewBox="0 0 440 590" role="img" aria-labelledby="title desc">
+  <title id="title">A declared processing route and its products</title>
+  <desc id="desc">Schematic: selected inputs and YAML are checked, then only chosen processing runs. Data products are separate from completion status, effective configuration and provenance.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#021633" stroke-width="1.5"/></marker>
+  </defs>
+  <g font-family="sans-serif" text-anchor="middle" fill="#021633">
+    <g stroke="#021633" stroke-width="2" fill="#f5f8fa">
+      <rect x="25" y="20" width="390" height="80" rx="8"/>
+      <rect x="25" y="140" width="390" height="92" rx="8"/>
+      <rect x="25" y="272" width="390" height="86" rx="8" stroke="#00978f" stroke-width="3"/>
+      <rect x="25" y="398" width="390" height="72" rx="8"/>
+      <rect x="25" y="500" width="390" height="72" rx="8"/>
+    </g>
+    <g stroke="#021633" stroke-width="2" marker-end="url(#arrow)">
+      <path d="M220 102V130"/><path d="M220 234V262"/><path d="M220 360V388"/><path d="M220 472V490"/>
+    </g>
+    <text x="220" y="52" font-size="24" font-weight="bold">Selected inputs + YAML</text>
+    <text x="220" y="80" font-size="19">Fields, units, grids and choices</text>
+    <text x="220" y="174" font-size="24" font-weight="bold">Check the declared plan</text>
+    <text x="220" y="202" font-size="19">Schema → metadata / coordinates</text>
+    <text x="220" y="222" font-size="17">No scientific field payloads yet</text>
+    <text x="220" y="307" font-size="24" font-weight="bold">Run chosen processing</text>
+    <text x="220" y="336" font-size="19">Here: fixed scalar extraction only</text>
+    <text x="220" y="429" font-size="24" font-weight="bold">Data products</text>
+    <text x="220" y="454" font-size="19">NetCDF track + scalar window</text>
+    <text x="220" y="530" font-size="24" font-weight="bold">Inspect the run records</text>
+    <text x="220" y="556" font-size="18">Status · effective settings · provenance</text>
+  </g>
+</svg>

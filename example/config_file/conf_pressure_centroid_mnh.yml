@@ -1,0 +1,30 @@
+# MNH native-level example; edit paths relative to this file.
+# Full inputs must cover the 500-km environmental-pressure ring at all times.
+# MNH 6.0 DIAG1.nam: enable LTPZH, LVAR_RS, LWIND_ZM, LMSLP in &NAM_DIAG.
+# Include UM10/VM10 from your MNH/SURFEX surface diagnostics.
+schema_version: "2.1"
+model: mesonh
+run:
+  name: MNH_PRESSURE_CENTROID
+  description: Native-level adaptive pressure centroid at 2000 m altitude ASL
+input:
+  directory: ./data/MNH
+  pattern: "*diag.nc"
+  # These diagnostics supply Earth-relative UT_ZM/VT_ZM. For native UT/VT,
+  # declare that actual pair as grid and select its rotation method explicitly.
+  wind_pairs:
+    - {group: level, u: UT_ZM, v: VT_ZM, reference_frame: earth}
+    - {group: fields_2d, u: UM10, v: VM10, reference_frame: earth}
+tracking:
+  method: pressure_centroid
+domain:
+  width_km: {x: 500, y: 500}
+variables:
+  fields_2d:
+    names: [MSLP, UM10, VM10]
+polar:
+  enabled: false
+output:
+  cartesian: {horizontal_vectors: earth_centered, vertical_velocity: interfaces}
+  polar: {vertical_velocity: mass}
+  directory: ./output/MNH_PRESSURE_CENTROID

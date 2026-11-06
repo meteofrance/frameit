@@ -1,15 +1,17 @@
 Pressure-wind tracker
 =====================
 
+For setup and run checks, use :doc:`../task_guides/moving_region`.
+
 Overview
 --------
 
-The pressure-wind tracker (``tracking_method: "wind_pressure"``) estimates the cyclone center at each time step using a sequential two-stage procedure combining:
+The pressure-wind tracker (``tracking.method: pressure_wind``) estimates the cyclone center at each time step using a sequential two-stage procedure combining:
 
 1. a *pressure-based first guess* from mean sea-level pressure (MSLP),
 2. a *wind-based refinement* using the 10 m wind speed magnitude.
 
-The tracker outputs a time series of cyclone center indices ``(cy, cx)`` in the model grid.
+The output contains native centre indices ``cy(time)`` and ``cx(time)``.
 
 Required input fields
 ---------------------
@@ -37,8 +39,6 @@ Let:
 
 Sequential procedure
 ~~~~~~~~~~~~~~~~~~~~
-
-The procedure is defined as follows.
 
 Initialization (t = 0)
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -79,37 +79,23 @@ For each time step ``t = 1..nt-1``:
 
 3. Store the refined indices as ``(cy_t, cx_t)`` and proceed to the next time step.
 
-Output
-------
+Window sizes and conversion from physical half-widths
+--------------------------------------------------------
 
-The core tracking function returns two 1D arrays:
+The tracker uses two configurable square half-widths (in kilometres):
 
-- ``cy(time)``: row index of the estimated center,
-- ``cx(time)``: column index of the estimated center,
+- ``tracking.pressure_wind.search_half_width_km = 100``: MSLP search,
+- ``tracking.pressure_wind.refine_half_width_km = 50``: wind refinement.
 
-both returned as integers and packaged in an ``xarray.Dataset``:
+These windows are converted into grid-point half-widths using resolved native
+grid geometry. Grid spacing is inferred before tracker construction.
 
-.. code-block:: python
-
-   xr.Dataset({"cy": cy, "cx": cx})
-
-Window sizes and conversion from physical radii
------------------------------------------------
-
-The tracker class defines two physical radii (in kilometers):
-
-- ``SEARCH_RADIUS_KM = 150.0``: MSLP search radius around the previous center,
-- ``REFINE_RADIUS_KM = 50.0``: wind refinement radius around the MSLP first guess.
-
-These radii are converted into grid-point half-widths using the grid spacing provided
-in the simulation configuration.
-
-Given the grid spacing ``resolution`` (assumed to be in meters in the configuration),
+Given the resolved grid spacing ``grid_spacing_m`` in metres,
 the tracker computes:
 
-- ``resolution_km = resolution / 1000``,
-- ``half_search = ceil(SEARCH_RADIUS_KM / resolution_km)``,
-- ``half_refine = ceil(REFINE_RADIUS_KM / resolution_km)``,
+- ``grid_spacing_km = grid_spacing_m / 1000``,
+- ``half_search = ceil(search_half_width_km / grid_spacing_km)``,
+- ``half_refine = ceil(refine_half_width_km / grid_spacing_km)``,
 
 and enforces a minimum value of 1 grid point for both.
 
@@ -120,19 +106,77 @@ To activate this tracker in the YAML configuration, set:
 
 .. code-block:: yaml
 
-   tracking_method: "wind_pressure"
+   tracking:
+     method: pressure_wind
+     pressure_wind:
+       search_half_width_km: 100
+       refine_half_width_km: 50
 
 
 Illustration
 ------------
 
-Here is an illustration for the tropical cyclone CHIDO, using the wind_pressure tracking method, and a box define by ``x_boxsize_km``: 50.0 and ``y_boxsize_km``: 75.0 
-The red line shows the extracted box.
+Pressure-wind tracking on the two BATSIRAI times, with
+``domain.width_km: {x: 500, y: 500}`` (full widths in kilometres).
+The outline shows the final native crop. The two centres are only one native
+grid point apart; no artificial displacement or second centre marker is added.
 
-.. figure:: ../_static/figures/Fig.tracking_Chido.png
+.. figure:: ../_static/figures/batsirai-tracking.png
+   :target: ../_static/figures/batsirai-tracking.png
    :width: 100%
    :align: center
+   :alt: Two real pressure-wind tracking centres separated by one native point, with the final crop outline over stored 10-m zonal wind at 00:20 in m/s. No extracted-centre cross or graticule is added.
 
-   Example of tracking and extraction using the wind_pressure tracking method.
+   Actual tracking output over stored 10-m zonal wind at 00:20, not independent
+   evidence of track accuracy. The :doc:`external plotting recipe
+   <../reference/illustrations>` declares the source, time and wind convention.
 
+Optional initial position
+-------------------------
 
+Restrict the first MSLP search to a user-selected position and radius:
+
+.. code-block:: yaml
+
+   tracking:
+     source: atmosphere  # For coupled atmosphere/SURFEX inputs
+     method: pressure_wind
+     pressure_wind:
+       initial_guess:
+         latitude: -5.8
+         longitude: 50.0
+         search_radius_km: 100
+       search_half_width_km: 100
+       refine_half_width_km: 50
+
+Adapt these coordinates to the intended disturbance. The seed applies to the
+first selected input timestamp; it does not filter input times.
+Latitude/longitude are degrees north/east in [-90, 90]/[-180, 180], and the
+radius must be finite and positive. Distances use the WGS84 geodesic and include
+grid points at the radius. The method searches finite MSLP candidates within
+the circle on the available grid; it does not require complete circular coverage.
+No valid candidate causes an error, never a global-search fallback at initialization.
+Wind refinement may move the centre outside this circle. Later times use the
+search and fallback policy described above.
+
+Omit ``initial_guess`` (or set it to ``null``) to retain the global initial MSLP
+search. The effective configuration and seeded track attributes record the
+position, radius and search convention. Check the first centre against the
+intended disturbance.
+
+Known limitations
+------------------
+
+* **Minima are not unique cyclone identifiers:** another low-pressure system or
+  weak-wind area can be selected. Disorganised or asymmetric systems need manual
+  inspection; the pressure minimum and wind-refined centre need not coincide.
+* **Initial selection:** without ``initial_guess``, the first pressure search is
+  global. A seed restricts pressure candidates, not the following wind refinement.
+* **Search windows:** large movement between saved times or poorly chosen window
+  widths can lose the intended disturbance. Windows are square native-index
+  searches, not exact geodesic disks.
+* **Missing-data fallbacks:** an all-missing local window triggers the documented
+  full-domain search. This can jump to another disturbance; inspect the trajectory.
+* **Grid-point centres:** positions and Cartesian crops are quantized to native
+  points. This method does not diagnose a continuous sub-grid centre or provide
+  calibrated position uncertainty.

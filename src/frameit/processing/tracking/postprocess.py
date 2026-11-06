@@ -81,9 +81,10 @@ def enrich_track_with_kinematics(
 
     Notes
     -----
+    A single-time track retains geographical centres but has NaN motion values.
     Returns ``track_ds`` unchanged when ``tracking_method == "fixed_box"``,
-    when fewer than two time steps are present, or when required fields are
-    missing from ``track_ds`` or ``ds_flat``.
+    when no time steps are present, or when required fields are missing from
+    ``track_ds`` or ``ds_flat``.
     """
 
     tracking_method = str(getattr(conf, "tracking_method", "")).lower()
@@ -113,7 +114,7 @@ def enrich_track_with_kinematics(
         return track_ds
 
     nt = int(track_ds.sizes.get(tdim, 0))
-    if nt < 2:
+    if nt == 0:
         return track_ds
 
     lon_src = ds_flat[lonv_name]
@@ -122,13 +123,15 @@ def enrich_track_with_kinematics(
     # Align lon/lat time axis to track time if present
     if tdim in lon_src.dims and tdim in track_ds.coords:
         try:
-            lon_src = lon_src.sel({tdim: track_ds[tdim]})
-            lat_src = lat_src.sel({tdim: track_ds[tdim]})
+            lon_src = lon_src.sel({tdim: track_ds[tdim].values})
+            lat_src = lat_src.sel({tdim: track_ds[tdim].values})
         except Exception:
             pass
 
-    cy = track_ds[cy_name]
-    cx = track_ds[cx_name]
+    # Only time labels belong on positional indexers. Auxiliary coordinates
+    # sampled by an earlier tracking stage can conflict with the source grid.
+    cy = track_ds[cy_name].reset_coords(drop=True)
+    cx = track_ds[cx_name].reset_coords(drop=True)
 
     # Identify spatial dims (excluding time)
     non_time_dims_lon = [d for d in lon_src.dims if d != tdim]
@@ -137,7 +140,14 @@ def enrich_track_with_kinematics(
     is_2d = len(non_time_dims_lon) >= 2 and len(non_time_dims_lat) >= 2
     is_1d = len(non_time_dims_lon) == 1 and len(non_time_dims_lat) == 1
 
-    if is_2d:
+    if "lon" in track_ds and "lat" in track_ds:
+        lon_c = track_ds["lon"]
+        lat_c = track_ds["lat"]
+        if lon_c.dims != (tdim,) or lat_c.dims != (tdim,):
+            raise ValueError("Tracker geographic centres must have dimensions (time,)")
+        if not (np.isfinite(lon_c.values).all() and np.isfinite(lat_c.values).all()):
+            raise ValueError("Tracker geographic centres must be finite")
+    elif is_2d:
         # Standard case: lon(y, x) and lat(y, x)
         ydim, xdim = non_time_dims_lon[-2], non_time_dims_lon[-1]
         try:
@@ -206,22 +216,26 @@ def enrich_track_with_kinematics(
     d_m[:-1] = dist_m / 1e3
     speed_ms[:-1] = speed
 
-    # Copy last
-    heading_deg[-1] = heading_deg[-2]
-    d_m[-1] = d_m[-2]
-    speed_ms[-1] = speed_ms[-2]
+    # A single centre defines a position, not motion.
+    if nt > 1:
+        heading_deg[-1] = heading_deg[-2]
+        d_m[-1] = d_m[-2]
+        speed_ms[-1] = speed_ms[-2]
 
     # Guard against near-stationary steps, keep previous heading when possible
     if min_step_m is not None and float(min_step_m) > 0.0:
-        bad = d_m < float(min_step_m)
+        bad = d_m < float(min_step_m) / 1000.0
         if np.any(bad):
             for i in range(1, nt):
                 if bad[i]:
                     heading_deg[i] = heading_deg[i - 1]
 
     out = track_ds.copy()
-    out["lon"] = lon_c.astype(float)
-    out["lat"] = lat_c.astype(float)
+    # Vectorized sampling attaches source-grid positions as coordinates. Keep
+    # the geographic values without leaking ni/nj or latitude/longitude(time)
+    # into downstream selection indexers.
+    out["lon"] = lon_c.astype(float).reset_coords(drop=True)
+    out["lat"] = lat_c.astype(float).reset_coords(drop=True)
     out["heading_deg"] = xr.DataArray(heading_deg, dims=(tdim,))
     out["dist"] = xr.DataArray(d_m, dims=(tdim,))
     out["speed"] = xr.DataArray(speed_ms, dims=(tdim,))

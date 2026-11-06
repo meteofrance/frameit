@@ -1,0 +1,388 @@
+# Changelog
+
+## 2.0.0rc1 — 2026-11-06 (unpublished local candidate)
+
+This candidate is prepared for local engineering checks, not a published release
+or scientific sign-off. Scientific scope review, an unfamiliar reader's unassisted
+run, hosted CI and the final release decision remain separate gates.
+
+### Breaking public-interface changes
+
+- Require Python `>=3.13,<3.14`. Local qualification targets Linux x86_64; it is
+  not evidence for every Linux distribution, macOS, Windows or shared cluster.
+- Accept only quoted `schema_version: "2.1"`. Use the current nested configuration
+  and `fields_2d` for selections without a vertical axis; internal `surface` groups
+  and `.surface` product filenames remain unchanged.
+- Remove the public schema converter, legacy run keys/aliases and `init --full`.
+  Use `frameit init <model>` or the documented named/composed starters. Inspect,
+  edit, validate and dry-run the current configuration rather than translating
+  ambiguous scientific meaning automatically.
+- Public choices include `domain.width_km`, `output.backend`,
+  `output.cartesian.horizontal_vectors: earth_centered|native`, explicit wind pairs,
+  and opt-in `polar.enabled`/`polar.variables`. CLI resource controls use
+  `--output-directory`, `--synchronous-export`, `--max-workers`, `--no-overwrite`
+  and `--require-complete-tracking`; see current help for each command's scope.
+- Remove FrameIt's plotting APIs and figure-generation switches. Keep plotting
+  downstream; the standalone documentation examples do not form a plotting API.
+- Use one `environment.yaml`/`frameit_env` for local and HPC work. Distributions
+  exclude private GRIB/NetCDF fixtures and generated indexes; the manifest,
+  preparation recipe and generator remain available. Supply authorized fixture
+  data separately for the reduced scientific matrix. Set `FRAMEIT_CI_DATA_ROOT`
+  to their absolute directory for installed numerical/combined scientific checks;
+  `run-all-tests --data-root` retains its separate full-domain matrix meaning.
+
+### Preserved contracts and remaining limits
+
+Scientific output definitions, units, masks, native selections and reference frames
+are not renamed merely to match public configuration. Diagnostics/polar sampling
+remain optional, and completed runs or passing tests are not scientific validation.
+Full-domain native-centroid, independent NOAA multi-field and broader real-ocean
+evidence remain incomplete; multi-field/UTrack maturity and missing-weight limits
+remain explicit. No candidate-specific DOI or publication is claimed.
+
+See the current [configuration](docs/source/user_guide/configuration_file.rst),
+[starter commands](docs/source/getting_started/quick_start.rst),
+[output contract](docs/source/user_guide/output_files.rst) and the dated
+[engineering receipts](docs/development/public-interface/rc-readiness.md).
+
+## Development history before 2.0.0rc1
+
+The entries below record intermediate interfaces; they are not current
+configuration examples. The candidate notes and current documentation take precedence.
+
+- Reuse managed lazy NetCDF opens across ordinary-run preflight and loading for
+  every NetCDF model, and skip unused native Cartesian preparation across input
+  formats. Preserve per-file scientific checks, native chunks, reader defaults
+  and output values. Document the bounded BATSIRAI profile and measured reader
+  speed/memory trade-offs in [input-reading performance](docs/development/input-reading.md).
+- Add optional sharded Zarr v3 output selected by `output.engine: zarr`, with
+  dimension-based `zarr_chunk_size` / `zarr_shard_size` overrides. Preserve the
+  existing product groups, scientific values and default NetCDF workflow;
+  inventory directory-store bytes and publish only complete stores. Document
+  chunks versus shards, reader requirements and replacement/crash limitations.
+- Observe encoded FA factors in packing-120 GRIB2 centre-85/local-1 records using
+  the isolated worker's bundled ecCodes metadata API. An unknown-parameter warning
+  no longer rejects explicitly scaled fields; preserve native decoding, logged
+  warnings, actual factor provenance and fail-closed unresolved/invalid cases.
+- Preserve geographical centres for single-time automatic tracks, including
+  GRIB/FA coupling. Motion values remain missing (NaN) without a second time;
+  native FA scaling checks and multi-time tracking conventions are unchanged.
+- Install FrameIt and the reference FA/GRIB/NetCDF/polar stack in one Python-3.13
+  Conda environment. Conda owns the shared NetCDF/HDF5/ecCodes libraries; isolated
+  FA workers use the active Python by default. An explicit interpreter override
+  remains optional. See [installation](docs/source/getting_started/installation.rst)
+  and [FA environment and troubleshooting](docs/source/user_guide/fa_environment.rst)
+  for editable-checkout ownership and fresh-environment migration.
+- Use unmodified EPyGrAM 2.1.0 as the sole FA reader/default, with the
+  ctypesForFortran 1.3.0 bridge. The `fa` and compatibility `fa-epygram` extras
+  have identical requirements. Retain `backend: native` as a warned deprecated
+  alias of the same reader, with requested/effective-backend provenance and
+  existing single/coupled YAML replay. See the
+  [configuration reference](docs/source/user_guide/configuration_file.rst).
+- Read evidenced AROME-47 / SURFEX-8.1 dense `PACK=0/X1` instantaneous histories
+  through one read-only EPyGrAM resource per transaction. Preserve source,
+  directory, type, clock, native-error and scaling checks; incomplete or
+  contradictory directories, unsupported layouts and missing native scaling fail.
+- Retire the parallel raw decode/header/date/typed-reader path, manual geometry
+  reconstruction and temporary dual comparisons. Keep format-isolated transport,
+  narrow same-resource evidence checks and independent numerical references.
+- Adapt library geometry/CRS/CI/C/E zones to labelled source grids, preserving
+  canonical CF origins, original native indices, explicit Earth models and
+  independent encoded-corner checks. Check source-level library interface A/B
+  against original normalized A/PREFER once per transaction.
+- Assemble explicitly declared gridpoint records into native full/interface cubes,
+  retaining labels/indices/record IDs and checked PREFER-scaled hybrid coefficients.
+  Preserve sparse selection, native/analysis wind branches and polar auxiliaries;
+  require declared collocated physical-vector basis and explicitly requested magnitude.
+- Couple multi-time AROME-convention GRIB and dense SURFEX FA on independent grids,
+  with separate source/vertical-qualified products and moving centres. Exact-common
+  times warn and record all exclusions; strict/cycle/clock/source/scaling failures
+  remain explicit. Discover native geometry before resolving shared-target budgets.
+  Independent compact fixtures check values/masks/zeroes and exact selected shared
+  coordinates through synchronous/spawn exports and ordinary readers.
+- Record actual payload resource/accessor observations and helper versions in
+  decoder logs and per-source provenance. Coupled examples declare wind pairs and
+  selected scalar polar quantities with scaling fallback disabled. Real-producer
+  units/scaling/support/Earth-model evidence and scientific review remain unresolved;
+  compact engine checks do not validate arbitrary physical fields. See
+  [native FA and coupled inputs](docs/source/user_guide/fa_inputs.rst).
+- Evaluate optional ecTrans 1.6.0 in an isolated analytical library probe, with
+  independent Fourier-mode/sign/normalization/truncation references, bounded
+  failure handling and atomic evidence reports. Retain unresolved native spectral
+  header contracts and reject coefficient-shaped responses at the parent boundary.
+  Spectral FA execution remains blocked without an encoding-qualified coefficient
+  contract and independent native-grid reference; library-only results do not
+  qualify real-field extraction. Physical-coordinate, map-scaled/staggered and
+  FA atmospheric-tracker operations retain their documented limits. See
+  [spectral FA support and limitations](docs/source/user_guide/fa_spectral.rst).
+
+- Add an opt-in wind point-method comparison separating bilinear/ESMF patch
+  weights from component-wise/WGS84 geodesic-transport vector treatment. Retain
+  strict joint masks (including signed patch stencils), independent vector/peak/
+  RMW/harmonic errors, centre/angular sweeps and production-bilinear parity.
+- Add analytical broad/compact/sharp/curvilinear/high-latitude/dateline fixtures,
+  optional Earth-relative BATSIRAI CI winds, portable profiles/complex coefficients,
+  independent transport/phase oracles, numerical gates and method documentation.
+  Candidates remain experimental; ordinary wind defaults and flux semantics are unchanged.
+
+- Add an optional `--ci-thermodynamics` polar-cell comparison for instantaneous
+  BATSIRAI temperature, relative humidity and specific TKE at 100/750 m above
+  ground. Compare geometric area and equal-cell/sample weighting, conservative
+  means and bilinear reconstructions against independent overlap means; retain
+  quadrature sensitivity, valid coverage, source ranges and original units.
+- Preserve humidity above 100% and original TKE values without clipping/floors;
+  retain time-zero temperature/humidity while reporting absent TKE separately.
+  Export instantaneous metadata and area-mean numerators explicitly distinguished
+  from physical budgets; mark mass weighting unavailable without layer air masses.
+
+- Extend the optional BATSIRAI polar-cell experiment to accumulated `sshf`/`slhf`
+  through `polar_cell_comparison --ci-heat-fluxes`. Preserve source signs and time
+  bounds, integrate J/m2 to J, and compare independent per-cell energy overlaps
+  using an absolute-contribution scale that remains meaningful under cancellation.
+  Retain separate reports/NetCDF products, reconstruction comparisons and failure
+  reporting for both quantities; ordinary processing defaults are unchanged.
+
+- Exercise experimental polar cells on the matrix's frozen BATSIRAI accumulated
+  rain (`tirf`) records through `polar_cell_comparison --ci`. Preserve source
+  accumulation bounds and GRIB sphere, declare midpoint analysis-cell semantics,
+  verify per-cell rain mass against independent overlap and reopen fixed/moving,
+  coarse, clipped and explicitly masked NetCDF products. Report missing time zero,
+  verified fixture identity, resource observations and failed/partial attempts.
+
+- Add an opt-in experimental conservative polar-cell scalar API with supplied
+  source bounds, float64 ESMPy spherical overlaps, explicit areas and separate
+  full/covered means and integrals. Keep ordinary point products/defaults.
+- Add independent overlap, mask, Dask and NetCDF checks, a reproducible rainfall
+  point/cell/integrated-bilinear comparison, compact-vortex baseline and method
+  record. Real-model/vector qualification and scientific review remain open.
+
+- Add optional isolated AROME/SURFEX FA input for explicitly defined instantaneous
+  2-D gridpoint records, typed metadata, declared geometry, masks and bounded native
+  decoding. Spectral and unsupported encodings remain actionable failures.
+- Couple named GRIB/NetCDF/FA sources with one geographical track and independent
+  source-grid extraction. Default to exact common times with warnings and complete
+  exclusion reports; offer strict exact-time equality as a user choice.
+- Export source-qualified products, per-source track indices and native helper
+  provenance/diagnostics through existing atomic/final-status handling. Use Python
+  3.13 and a published falfilfa4py wheel in the reference environment.
+
+- Add an experimental built-in `multifield_vortex` tracker for AROME and Meso-NH,
+  using the nine-parameter ALL_NO_THICK selection from Marchok (2021): Barnes
+  mass/vorticity fixes, wind-circulation fixes, weighted combination, steering
+  and explicit structural/continuity quality checks. Require a declared seed
+  position/motion and record per-parameter fixes, weights and rejection flags.
+- Prepare MNH native fields on 850/700/500-hPa surfaces without extrapolation;
+  require an explicit model-gravity convention for geometric-to-geopotential
+  height conversion. Validate inputs per file and document MNH diagnostic settings.
+- Export accepted track prefixes under an explicit stop policy, retaining failed
+  attempts and termination diagnostics; expose requested-time coverage separately
+  from processing success in execution results and run provenance.
+- Validate GRIB variable/level/time coverage, align single-cycle multi-step files
+  on valid time, and expose canonical MSLP/wind aliases while retaining originals.
+- Add AROME/MNH configuration examples, method/provenance documentation, analytic
+  kernel and hemisphere tests, GRIB/NetCDF integration, and independent-reader checks.
+  **Qualification limit:** native-grid adaptations are experimental; unrounded
+  NOAA-reference comparisons, real landfall qualification and scientific review
+  remain outstanding. No landfall-accuracy or stable-method claim is made.
+
+- Require explicit wind-pair frames and grid-rotation methods; validate against
+  GRIB/CF metadata, with no automatic selection or silent method/frame fallback.
+- Make Cartesian native/mass-Earth winds and Cartesian/polar interface/mass W
+  selectable; retain defaults `mass_earth`/`interfaces`/`mass`. Native box products
+  use distinct U/V axes and bounding faces; tracking/polar analysis stays separate.
+- Add stored/physical level selection with original stored indexing, validated
+  mass/interface ranges and reported sparse W mapping; preserve other interface fields.
+- Normalize NetCDF velocity units per file; share tracker wind preparation and
+  enforce coordinate/axis checks, retaining source-frame and transformation metadata.
+- Keep AROME pressure velocity `w` (Pa/s) distinct from geometric `wz` (m/s),
+  without implicit hydrostatic conversion.
+- Add original C-grid/W SVGs, concise configuration/output guides and a numerical
+  method record with source references, tests and scientific qualification limits.
+
+### 2026-10-16 — `207b6e8` — Conditional Meso-NH pressure-centroid support
+
+- Extend `pressure_centroid` tracking to Meso-NH native-level NetCDF inputs on
+  stationary regional structured grids, including projected grids with 2-D
+  geographic coordinates.
+- Resolve and validate absolute pressure, physical altitude, model-level winds,
+  and required surface fields across every input file. Collocate and rotate
+  native winds as needed; interpolate winds linearly and pressure logarithmically
+  to 2,000 m geometric altitude above mean sea level without extrapolation.
+- Add native-quadrilateral sampling and WGS84 nodal-area weighting; record input
+  choices, height reference, wind frames, and transformations in track metadata
+  and run provenance. Existing output names, dimensions, units, and encodings
+  are retained.
+- Document MNH DIAG preparation, explicit failure conditions, and the full
+  500-km reference-ring coverage requirement; add an example configuration and
+  synthetic numerical, failure-path, and NetCDF reopening tests.
+- **Qualification limit:** full-domain real-MNH qualification and independent
+  scientific review remain outstanding. MNH geometric altitude and AROME
+  geopotential height are distinct definitions, not assumed equivalent.
+
+### 2026-10-16 — `aeae9e8` — Remove example visualization notebook
+
+- Remove `example/Ktests_cyclone/viz.ipynb`.
+
+### 2026-10-16 — `4ec3936` — Correct near-stationary heading threshold units
+
+- Convert the metre-valued `min_step_m` threshold to kilometres before comparing
+  it with track step distances, so heading retention uses the intended threshold.
+
+### 2026-10-14 — `014329f` — Fit the BELNA moving-track extraction box
+
+- Allow per-case X/Y box-size overrides in the scientific test catalogue.
+- Set the full-domain BELNA pressure-wind case to a 200-km by 40-km box because
+  its initial centre is only nine grid points from the input domain's Y boundary.
+
+### 2026-10-14 — `d2a6755` — Versioned YAML and explicit scientific units
+
+- Introduce grouped YAML schema version 2 with strict key/type validation,
+  configuration-relative paths, ordinary globs, inventories, and explicit exclusions.
+- Add `init`, `inspect`, `config show`, `config migrate`, schema-only validation,
+  and `run --dry-run`; persist YAML export options with correct CLI precedence.
+- Infer native X/Y grid geometry before tracker construction, retain provenance,
+  and reject unsupported anisotropy/nonuniformity instead of silently averaging it.
+- Centralize lazy unit conversion; harmonize wind, radius, angle, pressure,
+  geopotential, and prescribed-track coordinate boundaries. Preserve native
+  vertical selections and existing physical output conventions.
+- Save reloadable resolved configuration and run provenance; update templates,
+  examples, documentation, and the scientific CI matrix to exercise schema v2.
+- **Migration required:** ordinary loading rejects legacy flat YAML. Use
+  `frameit config migrate old.yml --output frameit.yaml --launch-directory /original/workdir`.
+  The internal flat Python interface remains available; the misleading tracker
+  `resolution_km` keyword is deprecated with its original metre meaning preserved.
+
+### 2026-10-14 — `f795da4` — Correct full-domain AROME vertical requests
+
+**Issue:** Six AROME matrix cases failed preflight with `Missing requested vertical group level` and exit code 2.
+
+- Remove the unsupported `level` wind request from the shared full-domain AROME
+  fragment; BATSIRAI and BELNA GRIB inventories contain no such vertical group.
+- Retain height-above-ground winds at selected indices `[0, 2, 5]` (20, 100,
+  and 750 m), pressure-level winds at 1000, 850, and 400 hPa, and surface fields.
+
+### 2026-10-14 — `bbc32df` — Matrix progress and live logs
+
+**Issue:** Silent planning and hidden worker output made runs appear stalled.
+
+- Show matrix startup settings, per-case planning progress, input-file inspection,
+  and elapsed times.
+- Stream worker logs to the terminal while retaining them in each case's log file;
+  emit a heartbeat after 30 seconds without worker output.
+- Add regression tests for quiet workers and complete forwarding of final log output.
+
+### 2026-10-14 — `6da0adc` — Consistent run artifacts and AROME requests
+
+**Issue:** Inconsistent output paths, GRIB cache collisions, and unnecessary AROME `w` requests.
+
+- Standardize ordinary runs, matrix cases, and polar benchmarks on `products/`,
+  `logs/`, and `cache/` beneath the run root.
+- Keep GRIB indexes inside the run cache; distinguish source paths and cfgrib
+  indexing keys to prevent collisions and permit reuse.
+- Remove unused AROME vertical-velocity (`w`) requests from the full matrix and
+  BATSIRAI example; add output-layout and cache-isolation regression tests.
+
+### 2026-10-13 — `3986386` — Scientific polar qualification
+
+**Issue:** Product-contract checks alone did not establish numerical accuracy or convergence.
+
+- Add independent analytical scalar/vortex references and a qualification workflow
+  measuring convergence, wind errors, harmonic amplitude/phase, and centre sensitivity.
+- Check changing masks, clipped domains, cached/uncached and eager/Dask equivalence,
+  and NetCDF reloads; export numerical reports, diagnostic plots, and example products.
+- Integrate qualification into `frameit run-all-tests`; expand AROME/MNH matrix
+  cases to U-only, V-only, speed-only, and scalar-only products, with quality-mask
+  and wind-speed invariant checks. Document numerical-product migration.
+
+### 2026-10-13 — `c190906` — Logging cleanup
+
+**Issue:** Verbose logs and dependency notices obscured useful progress and warnings.
+
+- Use compact console records and timestamped file records, with source locations
+  in DEBUG; route Python warnings through scoped logging.
+- Suppress selected dependency performance/default-change notices outside DEBUG
+  and move verbose processing details to DEBUG.
+- Clarify run-completion and stage-timing summaries; test formatting, warning
+  visibility, and logging-scope restoration.
+
+### 2026-10-13 — `ef7f842` — Reusable polar regridding plans
+
+**Issue:** Identical geometries repeatedly rebuilt interpolation weights.
+
+- Separate geometry-owned interpolation weights from field application; share
+  plans across compatible groups and times using geometry/backend-aware keys.
+- Add bounded in-memory LRU caching, configurable Dask output chunks, and plan
+  build/hit/eviction, timing, and optional task/memory diagnostics.
+- Add cached-versus-uncached benchmarks and tests for geometry invalidation,
+  changing field masks, cache eviction, and lazy/eager equivalence.
+
+### 2026-10-13 — `c0858ee` — Automated test and benchmark command
+
+**Issue:** Separate test workflows and deferred computation complicated validation and timing.
+
+- Add `frameit run-all-tests` to run packaged numerical tests and the simulation
+  matrix, retaining both suites' results even when one fails.
+- Report computation-stage timings separately from loading and export; eagerly
+  materialize benchmark inputs/results so lazy work is timed in the correct stage.
+- Package numerical tests under `frameit.testing.numerical`, add the `test`
+  dependency extra, and write combined JSON, pytest log, and JUnit artifacts.
+
+### 2026-10-13 — `c7f1eed` — Correct polar geometry, winds, and interpolation
+
+**Issue:** Incorrect wind basis/collocation and ambiguous angular/missing-data handling distorted polar diagnostics.
+
+- Use continuous storm centres and terminal-forward geodesic bearings for wind
+  rotation; make radial/tangential winds undefined at zero radius and validate
+  wind units/reference frames, including explicit grid-to-earth rotation.
+- Collocate MNH winds on native mass coordinates before cropping/level selection;
+  compute speed from interpolated components and support speed-only requests.
+- Enforce uniform endpoint-exclusive angular sampling, configurable sample counts
+  and allocation limits, exact time alignment, valid source footprints, and a
+  separate native-source halo for polar interpolation.
+- Add explicit strict/renormalized missing-data policies, joint vector masks,
+  support/status/ring-coverage outputs, metadata handling, azimuthal mean/Fourier
+  diagnostics, plotting-only closure, and numerical regression tests.
+
+### 2026-10-12 — `9d4b888` — Adaptive pressure-centroid tracker
+
+**Issue:** Adaptive pressure-centroid tracking and subgrid-centre preservation were missing.
+
+- Add `pressure_centroid` tracking for regular AROME latitude/longitude grids,
+  using 2-km-height pressure/winds, a 500-km environmental-pressure ring, and an
+  adaptive pressure-deficit centroid coupled to storm motion.
+- Provide fixed/Aitken motion solvers, configurable tolerances, explicit failure
+  conditions, AROME field presets, an example configuration, and synthetic tests.
+- Preserve continuous track centres for kinematics and polar origins; retain
+  nearest-grid extraction indices and export centre-offset/solver diagnostics.
+
+### 2026-10-12 — `40349f2` — Latitude-aware UTrack inputs
+
+**Issue:** Missing latitude prevented hemisphere-aware vorticity preprocessing; field validation was skipped.
+
+- Pass NumPy wind/vorticity arrays and latitude to UTrack preprocessing for its
+  Southern Hemisphere vorticity-sign correction.
+- Declare UTrack's required logical fields correctly and document the requirement
+  to supply raw signed absolute vorticity.
+
+### 2026-10-09 — `6347f65` — Native scientific simulation matrix
+
+**Issue:** No native reproducible simulation matrix; prescribed-track time/coordinate alignment was fragile.
+
+- Add `frameit prepare-ci-dataset` and `frameit run-matrix-test`, scientific case
+  catalogs, reproducible fixture preparation/verification, and CI/full-domain modes.
+- Run cases in isolated workers with input preflight, output-contract checks,
+  immutable plans, per-case checkpoints, aggregate reports, and provenance.
+- Share execution/configuration resolution with ordinary runs; manage dataset
+  handles through export and support synchronous NetCDF writes in matrix workers.
+- Validate prescribed tracks, accept `lat`/`lon` aliases and configurable coordinate
+  names, and align extraction to exact common times. Update package/documentation
+  version metadata to `1.1.0` and add Maxence to citation authors.
+
+### 2026-10-09 — `4769693` — Python environment and GRIB concatenation
+
+**Issue:** Outdated environment settings and implicit xarray defaults hindered dependency updates.
+
+- Move the Conda environment to Python 3.14 and remove selected dependency minimum
+  pins so Conda resolves compatible versions.
+- Specify xarray GRIB concatenation options explicitly, preserving conflict,
+  coordinate, join, and attribute behavior as upstream defaults evolve.

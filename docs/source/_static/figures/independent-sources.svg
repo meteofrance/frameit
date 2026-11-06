@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="470" viewBox="0 0 540 470" role="img" aria-labelledby="title desc">
+  <title id="title">One centre, two independent extractions</title>
+  <desc id="desc">A shared geographical centre leads to separate atmosphere and ocean extractions. Sea-level pressure and native ocean temperature keep their own samples, missing values and output files. This diagram does not equate their vertical coordinates or physical definitions.</desc>
+  <defs>
+    <pattern id="atmosphere-grid" x="50" y="215" width="30" height="25" patternUnits="userSpaceOnUse"><path d="M30 0H0V25" fill="none" stroke="#788997"/></pattern>
+    <pattern id="ocean-grid" x="310" y="215" width="40" height="37" patternUnits="userSpaceOnUse"><path d="M40 0H0V37" fill="none" stroke="#788997"/></pattern>
+  </defs>
+  <g font-family="sans-serif" fill="#021633">
+    <text x="270" y="35" text-anchor="middle" font-size="23" font-weight="bold">One geographical centre</text>
+    <circle cx="270" cy="69" r="7"/>
+    <path d="M270 82V103H140V127M270 103H400V127" fill="none" stroke="#788997" stroke-width="2"/>
+    <rect x="20" y="130" width="240" height="200" rx="8" fill="#f4f8f8" stroke="#006b65" stroke-width="2"/>
+    <rect x="280" y="130" width="240" height="200" rx="8" fill="#fff8f1" stroke="#9a4400" stroke-width="2"/>
+    <text x="140" y="165" text-anchor="middle" font-size="22" font-weight="bold">Atmosphere</text>
+    <text x="140" y="200" text-anchor="middle" font-size="19">Sea-level pressure</text>
+    <rect x="50" y="215" width="180" height="75" fill="url(#atmosphere-grid)" stroke="#788997"/>
+    <text x="140" y="315" text-anchor="middle" font-size="18">Its own native samples</text>
+    <text x="400" y="165" text-anchor="middle" font-size="22" font-weight="bold">Ocean</text>
+    <text x="400" y="200" text-anchor="middle" font-size="19">Temperature at a level</text>
+    <rect x="310" y="215" width="180" height="75" fill="url(#ocean-grid)" stroke="#788997"/>
+    <text x="400" y="315" text-anchor="middle" font-size="18">Its own native samples</text>
+    <path d="M140 340V362M400 340V362" stroke="#788997" stroke-width="2"/>
+    <text x="140" y="390" text-anchor="middle" font-size="20">Atmosphere file</text>
+    <text x="400" y="390" text-anchor="middle" font-size="20">Ocean file</text>
+    <text x="270" y="450" text-anchor="middle" font-size="18">Each field keeps its own missing samples.</text>
+  </g>
+</svg>

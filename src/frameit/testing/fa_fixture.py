@@ -1,0 +1,200 @@
+"""Compact analytical FA fixtures, written only in an isolated test process.
+
+This is test infrastructure, not a supported FA product writer. Values are
+known physical scalars on an asymmetric regular-lon/lat grid. No spectral
+transformation, pressure diagnosis, or producer-specific surface mapping occurs.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from uuid import uuid4
+
+import numpy as np
+
+
+def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_history", packing=0,
+                  state_hours=None, source_version=8, source_bug=1, program="AROME",
+                  extra_metadata=False, projection_latitude=None, surface_fields=None,
+                  surface_pack=0, projected_spacing_m=1000., field_values=None,
+                  atmospheric_fields=None, hybrid_header=None, surface_directory=None,
+                  structural_overrides=None, ci_bounds=None, i_widths=(0, 0),
+                  projection_center=None, angular_steps_degrees=(.01064, .01),
+                  encoded_scaling=None, omit_scaling_section=False):
+    from falfilfa4py import FA, LFI
+
+    if path.exists():
+        raise FileExistsError(path)
+    sizes = FA.get_facst()
+    k = np.zeros(sizes[0], dtype="int64")
+    z = np.zeros(sizes[1], dtype="int64")
+    p = np.zeros(18, dtype="float64")
+    k[2:6] = 1, nx, 1, ny
+    x0, x1, y0, y1 = ci_bounds or (0, nx, 0, ny)
+    if not (0 <= x0 < x1 <= nx and 0 <= y0 < y1 <= ny):
+        raise ValueError("Fixture CI bounds must lie inside native storage")
+    if ci_bounds is not None and projection_latitude is None:
+        raise ValueError("Fixture CI/CIE distinction requires projected geometry")
+    k[2:6] = x0 + 1, x1, y0 + 1, y1
+    if any(w < 0 or 2*w >= n for w, n in zip(
+            i_widths, (x1 - x0, y1 - y0), strict=True)):
+        raise ValueError("Fixture I-zone widths must leave a nonempty C zone")
+    k[6:8] = i_widths
+    p[0:2] = -1, -9
+    p[4:8] = np.deg2rad([60., -20., *angular_steps_degrees])
+    p[8:10] = p[6] * (nx - 1), p[7] * (ny - 1)
+    p[12:16] = [p[4] - (nx - 1) * p[6] / 2, p[5] - (ny - 1) * p[7] / 2,
+                 p[4] + (nx - 1) * p[6] / 2, p[5] + (ny - 1) * p[7] / 2]
+    if projection_latitude is not None:
+        if not np.isfinite(projected_spacing_m) or projected_spacing_m <= 0:
+            raise ValueError("Fixture projected spacing must be finite and positive")
+        # Independent spherical equations, not FrameIt's pyproj geometry builder.
+        phi0, lam0 = np.deg2rad([projection_latitude, 50.])
+        n = np.sin(phi0)
+        f = np.cos(phi0) * np.tan(np.pi / 4 + phi0 / 2)**n / n
+        rho0 = 6371229. * f / np.tan(np.pi / 4 + phi0 / 2)**n
+        anchor_lon, anchor_lat = np.deg2rad(projection_center or (50., projection_latitude))
+        anchor_rho = 6371229. * f / np.tan(np.pi / 4 + anchor_lat / 2)**n
+        anchor_x = anchor_rho * np.sin(n * (anchor_lon - lam0))
+        anchor_y = rho0 - anchor_rho * np.cos(n * (anchor_lon - lam0))
+        xx = np.array([-1., 1.]) * (x1 - x0 - 1) * projected_spacing_m / 2
+        yy = np.array([-1., 1.]) * (y1 - y0 - 1) * projected_spacing_m / 2
+        xx, yy = xx + anchor_x, yy + anchor_y
+        rho = np.sign(n) * np.hypot(xx, rho0 - yy)
+        theta = np.arctan2(np.sign(n) * xx, np.sign(n) * (rho0 - yy))
+        corners_lon = lam0 + theta / n
+        corners_lat = 2 * np.arctan((6371229. * f / rho)**(1 / n)) - np.pi / 2
+        p[1] = abs(n)
+        p[2:6] = lam0, phi0, anchor_lon, anchor_lat
+        p[6:10] = (projected_spacing_m, projected_spacing_m,
+                    nx * projected_spacing_m, ny * projected_spacing_m)
+        p[12:16] = corners_lon[0], corners_lat[0], corners_lon[1], corners_lat[1]
+        k[1] = 1
+    header = uuid4().hex[:16]
+    hybrid = hybrid_header or {"a_normalized": [0., 0.], "b": [0., 1.],
+                               "reference_pressure_pa": 101325.}
+    a, b = (np.asarray(hybrid[key], dtype="float64") for key in ("a_normalized", "b"))
+    if a.ndim != 1 or a.shape != b.shape or not 2 <= len(a) <= 200:
+        raise ValueError("Fixture hybrid header requires N+1 one-dimensional A/B arrays")
+    FA.wfacade(header, -11 if projection_latitude is None else -5, 0., 0., 0., 0.,
+               11 if projection_latitude is None else 3, ny, nx,
+               len(k), k, len(z), z, len(p), p, len(a) - 1, hybrid["reference_pressure_pa"],
+               a, b, False)
+    unit = FA.wfaitou(str(path), "NEW", header)
+    try:
+        FA.wfautif(unit, "ALD")
+        date = np.array([2026, 1, 1, 0, 0, 1, hours, 0, 10, 0, 0, 1,
+                         0, 0, hours * 3600, 0, 0, 0, 0, 0, 0, 0], dtype="int64")
+        FA.wfandax(unit, date)
+        FA.wfagote(unit, packing, 24, 24, 0, 0, 0)
+        field = "CLSTEMPERATURE"
+        y, x = np.indices((ny, nx))
+        values = (280. + offset + 10 * y + x).astype("float64")
+        if field_values is not None:
+            values = np.asarray(field_values, dtype="float64") + offset
+        fields = [{"name": field, "values": values, "mask": "FULL"}]
+        if atmospheric_fields is not None:
+            if profile != "arome_history":
+                raise ValueError("atmospheric_fields requires the atmospheric fixture profile")
+            fields = atmospheric_fields
+        if profile == "surfex_history":
+            field = "SFX.T2M"
+            fields = [{"name": "T2M", "values": values, "mask": "FULL"}]
+            if surface_fields is not None:
+                fields = surface_fields
+            directory = fields if surface_directory is None else surface_directory
+
+            def words(name, values):
+                values = np.asarray(values, dtype="int64")
+                LFI.wlfiecr(unit, "SFX." + name, values.size, values)
+
+            def text(name, value, width):
+                words(name, [ord(c) for c in value.ljust(width)])
+
+            text("PROGRAM", program, 40)
+            text("GRID_TYPE", "LONLAT", 40)
+            for name, value in (("VERSION", source_version), ("BUG", source_bug),
+                                ("PACK", surface_pack),
+                                ("MASDEV", 47), ("BUGFIX", 0),
+                                ("DIM_FULL", (x1 - x0) * (y1 - y0)),
+                                ("IMAX", x1 - x0), ("JMAX", y1 - y0),
+                                ("_FBUF_SIZE", len(directory))):
+                words(name, [value])
+            for column, width, entries in (
+                ("NAME", 32, [f["name"] for f in directory]),
+                ("TYPE", 2, [f.get("type", "X1") for f in directory]),
+                ("MASK", 16, [f["mask"] for f in directory]),
+            ):
+                text("_FBUF_" + column, "".join(value.ljust(width) for value in entries),
+                     len(directory) * width)
+            words("_FBUF_DIM1", [f.get("dim1", nx * ny) for f in directory])
+            words("_FBUF_DIM2", [f.get("dim2", -1) for f in directory])
+            current = np.array([2026, 1, 1, 0], dtype="int64")
+            current.view(np.float64)[3] = 3600. * (hours if state_hours is None else state_hours)
+            words("DTCUR", current)
+            if extra_metadata:
+                words("L1D", [0])
+                words("L2D", [1])
+                words("LAT0", np.array([-20.25], dtype="float64").view("int64"))
+        for item in fields:
+            field = ("SFX." + item["name"] if profile == "surfex_history" else item["name"])
+            values = np.asarray(item["values"], dtype="float64")
+            if values.shape != (ny, nx):
+                raise ValueError("Fixture field must match the declared native grid")
+            undefined = bool(np.any(~np.isfinite(values)))
+            # Raw packing-0 does not encode the undefined flag/sentinel. Preserve
+            # IEEE NaNs there, rather than writing an unflagged physical 1e20.
+            encoded = values if packing == 0 else np.where(np.isfinite(values), values, 1.e20)
+            FA.wfaieno(unit, field[:4], 0, field[4:], encoded.size, encoded.ravel(),
+                       False, undefined and packing != 0, 1.e20)
+            if encoded_scaling is not None or omit_scaling_section:
+                # Independent byte-level fixture: change metadata, not packed samples.
+                count = int(LFI.wlfinfo(unit, field)[0])
+                words = LFI.wlfilec(unit, field, count, False)
+                message = bytearray(words[3:].tobytes())
+                assert message[:4] == b"GRIB" and message[7] == 2
+                length = int.from_bytes(message[8:16], "big")
+                message = message[:length]
+                position = 16
+                while message[position:position+4] != b"7777":
+                    size = int.from_bytes(message[position:position+4], "big")
+                    assert size >= 5 and position + size <= length - 4
+                    if message[position+4] == 2:
+                        if omit_scaling_section:
+                            del message[position:position+size]
+                            message[8:16] = len(message).to_bytes(8, "big")
+                        else:
+                            # local.85.1 ends with two eight-octet sign-magnitude integers.
+                            for index, value in enumerate(encoded_scaling):
+                                bits = abs(value) | ((1 << 63) if value < 0 else 0)
+                                start = position + size - 16 + index * 8
+                                message[start:start+8] = bits.to_bytes(8, "big")
+                        break
+                    position += size
+                else:
+                    raise AssertionError("Fixture has no GRIB2 local section")
+                message.extend(b"\x00" * (-len(message) % 8))
+                rewritten = np.concatenate((words[:3], np.frombuffer(message, dtype="int64")))
+                LFI.wlfiecr(unit, field, rewritten.size, rewritten)
+        # Negative fixtures only: independently prescribed structural/raw words.
+        # Source datasets are never passed to this writer (it refuses overwrite).
+        for name, words in (structural_overrides or {}).items():
+            if words is None:
+                LFI.wlfisup(unit, name)
+            else:
+                values = np.asarray(words, dtype="int64")
+                LFI.wlfiecr(unit, name, values.size, values)
+    finally:
+        FA.wfairme(unit, "KEEP")
+
+
+def main():
+    request = json.load(sys.stdin)
+    for item in request:
+        write_fixture(Path(item.pop("path")), **item)
+
+
+if __name__ == "__main__":
+    main()

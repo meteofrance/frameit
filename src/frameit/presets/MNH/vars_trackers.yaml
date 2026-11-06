@@ -4,14 +4,23 @@
 #  => lev 0 is not physic in MNH
 
 requested_variables_by_method:
-  wind_pressure:
+  multifield_vortex:
     surface:
       variables: ["UM10", "VM10", "MSLP"]
     level:
-      variables: ["UT", "VT", "THT"]
-      level_selection: "indices"         # ou "values" "indices"; "all"
-      level_values:  []                  # if level_selection = "values" 
-      level_indices: [1,3,5]             # if level_selection = "indices" ; lev 0 is not physic in MNH
+      variables: ["PABST", "ALT", "UT", "VT"]
+      level_selection: "all"
+  pressure_centroid:
+    # Resolved against each file: PABST/PRES, diagnostic/native wind pairs,
+    # ALT or the explicitly documented terrain-following level formula.
+    surface:
+      variables: ["UM10", "VM10", "MSLP"]
+    level:
+      variables: ["PABST", "ALT", "UT_ZM", "VT_ZM"]
+      level_selection: "all"
+  wind_pressure:
+    surface:
+      variables: ["UM10", "VM10", "MSLP"]
 
   other_method:
     level:
@@ -33,4 +42,3 @@ requested_variables_by_method:
   utrack:
     surface:
       variables: ["UM10", "VM10"]
-

@@ -1,11 +1,14 @@
 Fixed-box method
 ================
 
+For a worked run, use :doc:`../task_guides/fixed_region`.
+
 Overview
 --------
 
-The fixed-box tracker (``tracking_method: "fixed_box"``) defines a *time-independent* analysis center.
-At all time steps, FrameIt uses the same grid point as the cyclone center, computed once from a user-defined geographic location.
+``tracking.method: fixed_box`` keeps one geographical centre at every time.
+FrameIt selects its native grid indices once and repeats them along the time axis.
+The requested latitude/longitude remain the polar origin.
 
 This option is useful when:
 
@@ -33,102 +36,84 @@ Minimal configuration
 
 .. code-block:: yaml
 
-   tracking_method: "fixed_box"
-
-   # Fixed center location, [lat, lon] in degrees
-   fix_subdomain_center: [-17.5, 60.0]
-
-Optional (recommended) parameters
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: yaml
-
-   # Atmospheric model identifier used to interpret the latitude/longitude geometry
-   atm_model: "AROME"     # or "MNH"
-
-Key definitions
-~~~~~~~~~~~~~~~
-
-``tracking_method``
-   Must be set to ``"fixed_box"``.
-
-``fix_subdomain_center``
-   Fixed center location given as ``[lat, lon]`` (degrees).
+   tracking:
+     method: fixed_box
+     fixed_box:
+       center: {latitude: -17.5, longitude: 60.0}  # Degrees north/east
 
 Algorithm
 ---------
 
-Step 1, read the fixed target location
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The tracker reads the target point from the configuration:
-
-.. code-block:: text
-
-   (lat0, lon0) = fix_subdomain_center
-
-Step 2, locate the closest model grid point
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-FrameIt selects the nearest grid point by minimizing a squared distance in latitude/longitude space.
+For NetCDF/GRIB and regular lon/lat FA, FrameIt minimizes squared distance in
+latitude/longitude space, with longitude differences wrapped modulo 360.
+Projected FA uses :doc:`source-CRS axes <../user_guide/fa_geometry>` instead.
 
 Rectilinear grid (latitude 1D, longitude 1D)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If latitude and longitude are 1D arrays:
 
 .. code-block:: text
 
    cy = argmin_j (lat[j] - lat0)^2
-   cx = argmin_i (lon[i] - lon0)^2
+   cx = argmin_i wrap(lon[i] - lon0)^2
 
 Curvilinear grid (latitude 2D, longitude 2D)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If latitude and longitude are 2D arrays:
 
 .. code-block:: text
 
-   dist2(j, i) = (lat(j, i) - lat0)^2 + (lon(j, i) - lon0)^2
+   dist2(j, i) = (lat(j, i) - lat0)^2 + wrap(lon(j, i) - lon0)^2
    (cy, cx) = argmin_{j,i} dist2(j, i)
 
-Step 3, build a time-dependent output
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Output
+~~~~~~
 
 The index pair ``(cy, cx)`` is repeated for each model timestamp, producing:
 
 - ``cy(time) = constant``
 - ``cx(time) = constant``
 
-Practical considerations and limitations
-----------------------------------------
-
-- **Longitude convention**: ensure that the fixed longitude and the dataset longitudes use the same convention (for example ``[-180, 180]`` or ``[0, 360]``). A mismatch can produce an incorrect nearest-point selection.
-- **Distance metric**: the method uses a squared Euclidean distance in (lat, lon) space, not a true geodesic distance. This is generally adequate for small domains.
-- **Masked coordinates**: if latitude/longitude contain NaNs (masked areas), the minimization must avoid all-NaN distance fields. If all candidate distances are NaN, the selection will fail.
-- **Fixed-box versus extraction box**: the fixed-box tracker defines the *center* used by FrameIt.
-  The extraction domain size is controlled separately (for example ``x_boxsize_km`` and ``y_boxsize_km``).
-
 Example
 -------
 
 .. code-block:: yaml
 
-   atm_model: "AROME"
-   tracking_method: "fixed_box"
-
-   fix_subdomain_center: [-18, 58.0]
-
-   x_boxsize_km: 500.0
-   y_boxsize_km: 500.0
+   model: mesonh
+   tracking:
+     method: fixed_box
+     fixed_box:
+        center: {latitude: -16.342215392786485, longitude: 62.15487544109405}
+   domain:
+     width_km: {x: 500, y: 500}
 
 
 Illustration
 ------------
 
-Here is an illustration for the tropical cyclone Batsirai, using the fixed box method.
+Fixed-box extraction of the real BATSIRAI 10-m zonal wind:
 
-.. figure:: ../_static/figures/Fig.FixedBox_Batsirai.png
+.. figure:: ../_static/figures/batsirai-fixed.png
+   :target: ../_static/figures/batsirai-fixed.png
    :width: 100%
    :align: center
+   :alt: Stored BATSIRAI 10-m zonal wind at 00:20 in m/s, with a fixed centre and native 500-km crop outline; no geographical grid lines are drawn.
 
+   The outline follows the selected native indices, not a continuously recentered
+   box. Colours show stored eastward wind in m/s; negative values are westward.
+   See the :doc:`data conventions and regeneration script <../reference/illustrations>`.
+
+Known limitations
+------------------
+
+* **Not event detection:** the centre stays fixed even if the event leaves the box.
+* **Grid-aligned extraction:** a native point supplies ``cx/cy``. Requested widths
+  round to native point counts; neither location nor extent is imposed by regridding.
+  The requested geographical centre remains the polar origin.
+* **Lookup convention:** ordinary geographic lookup uses squared degrees, not
+  geodesic distance. Admitted projected FA uses its declared source CRS.
+* **Coverage:** no finite geographical candidate causes failure. A crop extending
+  beyond the model boundary retains its shape with NaN padding.
+* **Stationary geometry:** this lookup does not implement an evolving source mesh.

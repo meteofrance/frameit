@@ -1,0 +1,29 @@
+# Paths are relative to this YAML; adapt files, centre and box to your region.
+schema_version: "2.1"
+model: nemo
+run:
+  name: nemo-native
+input:
+  directory: ./data
+  pattern: '*.nc'
+  format: netcdf
+variables:
+  deptht:
+    # Native T-grid potential temperature: source units and depth are retained.
+    names: [votemper]
+    # Zero-based stored index, NOT a diagnosed physical depth.
+    levels: {indices: [0]}
+tracking:
+  method: fixed_box
+  fixed_box:
+    center: {latitude: -20., longitude: 60.}
+domain:
+  # Illustrative full widths in km; inspect available regional coverage.
+  width_km: {x: 100, y: 100}
+polar:
+  # Polar sampling is disabled. No current analysis is requested.
+  enabled: false
+output:
+  directory: ./output
+  overwrite: false
+# Adding native components needs explicit horizontal_vectors: native and separate grids.

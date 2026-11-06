@@ -1,14 +1,14 @@
 cff-version: 1.2.0
-message: If you use FrameIt, please cite it using the metadata from this file.
+message: >-
+  Unpublished local release candidate. If you use FrameIt, cite the version you
+  actually used. The DOI below identifies the project, not a published candidate.
 title: "FrameIt: Focused Regional Analysis of Modeled Events with Integrated Tracking"
 abstract: >-
-  FrameIt is a modular Python library for tracking atmospheric events in
-  numerical model outputs and extracting a moving sub-domain centred on them.
-  It reads and normalises outputs from several models, locates the event with
-  one of four tracking methods, and writes the surrounding fields as
-  self-contained NetCDF files on the model native cartesian grid and on a
-  geodesic polar grid. It is designed to reduce the volume of regional,
-  kilometre-scale simulations to datasets that can be archived and shared.
+  FrameIt extracts fixed or moving regional datasets from selected AROME,
+  Meso-NH, NEMO and CROCO outputs. Configuration declares fields, levels,
+  tracking and optional polar sampling. NetCDF and optional Zarr products retain
+  source distinctions for analysis with ordinary readers and researchers' own
+  tools. Method-specific applicability and scientific qualification limits apply.
 type: software
 authors:
   - family-names: Soufflet
@@ -27,8 +27,12 @@ authors:
     given-names: Rémi
     affiliation: Météo-France
     orcid: https://orcid.org/0000-0001-5157-1821
-version: 1.0.0
-date-released: 2026-08-27
+  - family-names: Deferrez
+    given-names: Maxence
+    affiliation: Université de La Réunion
+    orcid: https://orcid.org/0009-0006-5921-4101
+version: 2.0.0rc1
+date-released: 2026-11-06
 license: Apache-2.0
 repository-code: https://github.com/meteofrance/frameit
 url: https://meteofrance.github.io/frameit/

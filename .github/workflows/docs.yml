@@ -1,17 +1,20 @@
-name: Deploy Documentation
+name: Documentation
 
 on:
   push:
     branches:
       - main
+      - dev_md
+  pull_request:
+    branches:
+      - main
+      - dev_md
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: docs-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,7 +25,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Install dependencies
         run: |
@@ -30,15 +33,36 @@ jobs:
           pip install .
 
       - name: Build documentation
-        run: make -C docs html
+        env:
+          LC_ALL: C
+          LANG: C
+        run: |
+          make -C docs clean
+          make -C docs html SPHINXOPTS="-q -W --keep-going"
+
+      - name: Check publication boundary and local links
+        run: |
+          python -m unittest discover -s docs -p test_check_publication.py
+          python docs/check_publication.py docs/build/html
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: documentation-html
+          path: docs/build/html
+          if-no-files-found: error
 
       - uses: actions/upload-pages-artifact@v3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           path: docs/build/html
 
   deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
