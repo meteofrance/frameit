@@ -1,8 +1,6 @@
 """Exact synthetic atmosphere/ocean coupling does not authorise real time pairing."""
 
 import json
-from pathlib import Path
-import shutil
 import subprocess
 import sys
 
@@ -238,24 +236,6 @@ def test_nemo_arome_prescribed_track_coverage_remains_exact(tmp_path, strict):
     else:
         plan, _, _ = prepare_sources(conf)
         assert len(plan["time_alignment"]["selected_times"]) == 1
-
-
-def test_portable_nemo_arome_example_with_preceding_hour_inputs(tmp_path):
-    example = Path(__file__).resolve().parents[4] / "example/config_file/nemo_arome.yaml"
-    if not example.exists():
-        pytest.skip("Repository example is not installed with the package")
-    data = tmp_path / "data"
-    data.mkdir()
-    preceding_document(data)
-    config = tmp_path / "nemo_arome.yaml"
-    shutil.copyfile(example, config)
-    conf = SimulationConfig.from_yaml_with_model_preset(config)
-    result = execute_simulation(conf)
-    assert result.ok, result
-    assert len([p for p in result.products if p["role"] == "cart"]) == 5
-    replay = SimulationConfig.from_yaml_with_model_preset(conf.output_dir / "resolved-config.yaml")
-    assert replay.time_alignment == "preceding_hour"
-    assert replay.input_sources["nemo_u"]["input"]["files"] == [str(data / "nemo_u.nc")]
 
 
 def test_nemo_arome_interrupted_export_and_overwrite_protection(tmp_path, monkeypatch):

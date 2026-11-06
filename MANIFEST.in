@@ -1,0 +1,4 @@
+include CITATION.cff CHANGELOG.md environment.yaml
+include docs/docs-requirements.txt docs/test_release.py docs/test_repository_examples.py docs/test_documentation_plots.py
+recursive-include example *.py *.yaml *.yml *.sbatch
+global-exclude *.nc *.grib *.idx

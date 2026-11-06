@@ -30,9 +30,6 @@ from frameit.utils.atomic import atomic_output
 
 from .test_configuration_v2_1 import dataset, document
 
-SLURM_EXAMPLES = Path(__file__).parents[4] / "example" / "slurm"
-
-
 def test_resource_limits_use_strictest_allocation_and_affinity(monkeypatch):
     monkeypatch.setattr(os, "cpu_count", lambda: 16)
     monkeypatch.setattr(os, "sched_getaffinity", lambda _: {0, 1, 2, 3})
@@ -264,24 +261,6 @@ def test_concurrent_cli_attempts_spawn_and_sync_export_exactly(cli_attempts):
                 xr.testing.assert_identical(actual[name], reference[name])
 
 
-@pytest.mark.skipif(
-    not (SLURM_EXAMPLES / "check_run.py").is_file(), reason="Requires checkout examples"
-)
-def test_independent_checker_accepts_reference_and_rejects_wrong_time_count(cli_attempts):
-    tmp_path = cli_attempts
-    checker = SLURM_EXAMPLES / "check_run.py"
-    checked = subprocess.run([
-        sys.executable, str(checker), str(tmp_path / "spawn"), "--expected-times", "2",
-        "--reference", str(tmp_path / "sync"), "--report", str(tmp_path / "check.json"),
-    ], capture_output=True, text=True, timeout=30, env=cli_environment())
-    assert checked.returncode == 0, checked.stdout + checked.stderr
-
-    wrong_count = subprocess.run([
-        sys.executable, str(checker), str(tmp_path / "spawn"), "--expected-times", "3",
-    ], capture_output=True, text=True, env=cli_environment(), timeout=30)
-    assert wrong_count.returncode == 1 and '"ok": false' in wrong_count.stdout
-
-
 def test_batch_overrides_dry_run_does_not_claim_output(tmp_path):
     dataset(tmp_path)
     config = tmp_path / "case.yaml"
@@ -312,61 +291,6 @@ def test_cli_processing_failure_never_marks_completed(tmp_path):
     status = yaml.safe_load((root / "run-status.yaml").read_text())
     assert status["state"] == "failed" and status["products"] == []
     assert not (root / ".frameit-run.lock").exists()
-
-
-@pytest.mark.skipif(
-    not (SLURM_EXAMPLES / "frameit.sbatch").is_file(), reason="Requires checkout examples"
-)
-def test_slurm_launcher_isolates_retries_and_propagates_failure(tmp_path):
-    """Exercise the shell boundary locally; the srun shim is not a scheduler test."""
-    inputs = tmp_path / "input with spaces"
-    inputs.mkdir()
-    dataset(inputs)
-    config = inputs / "case.yaml"
-    config.write_text(yaml.safe_dump(document(inputs, input={"files": ["native.nc"]})))
-    parent = tmp_path / "attempts with spaces"
-    parent.mkdir()
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    srun = bin_dir / "srun"
-    srun.write_text("""#!/bin/sh
-test "$MPLBACKEND" = caller-backend || exit 97
-while [ "$#" -gt 0 ]; do
-    case "$1" in --nodes=*|--ntasks=*) shift ;; *) break ;; esac
-done
-exec "$@"
-""")
-    srun.chmod(0o755)
-    activation = tmp_path / "activate.sh"
-    activation.write_text(f'export PATH="{Path(sys.executable).parent}:$PATH"\n')
-    env = {
-        **cli_environment(), "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
-        "SLURM_NTASKS": "1", "FRAMEIT_ENV_SCRIPT": str(activation),
-        "MPLBACKEND": "caller-backend",
-    }
-    launcher = SLURM_EXAMPLES / "frameit.sbatch"
-    for _ in range(2):
-        run = subprocess.run(
-            ["bash", str(launcher), str(config), str(parent)], cwd=tmp_path,
-            env=env, capture_output=True, text=True, timeout=45,
-        )
-        assert run.returncode == 0, run.stdout + run.stderr
-    attempts = list(parent.iterdir())
-    assert len(attempts) == 2
-    for attempt in attempts:
-        assert (attempt / "work").is_dir()
-        status = yaml.safe_load((attempt / "run" / "run-status.yaml").read_text())
-        assert status["state"] == "completed"
-        assert status["effective_execution_options"]["overwrite"] is False
-        assert status["effective_execution_options"]["require_complete_tracking"] is True
-
-    # An actual CLI input failure must remain nonzero across exec/srun/the wrapper.
-    (inputs / "native.nc").unlink()
-    failed = subprocess.run(
-        ["bash", str(launcher), str(config), str(parent)], cwd=tmp_path,
-        env=env, capture_output=True, text=True, timeout=30,
-    )
-    assert failed.returncode == 1
 
 
 def test_incomplete_tracking_is_explicit_and_strict_policy_fails(tmp_path, monkeypatch):

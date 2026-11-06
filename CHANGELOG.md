@@ -1,6 +1,52 @@
 # Changelog
 
-## Unreleased
+## 2.0.0rc1 — 2026-11-06 (unpublished local candidate)
+
+This candidate is prepared for local engineering checks, not a published release
+or scientific sign-off. Scientific scope review, an unfamiliar reader's unassisted
+run, hosted CI and the final release decision remain separate gates.
+
+### Breaking public-interface changes
+
+- Require Python `>=3.13,<3.14`. Local qualification targets Linux x86_64; it is
+  not evidence for every Linux distribution, macOS, Windows or shared cluster.
+- Accept only quoted `schema_version: "2.1"`. Use the current nested configuration
+  and `fields_2d` for selections without a vertical axis; internal `surface` groups
+  and `.surface` product filenames remain unchanged.
+- Remove the public schema converter, legacy run keys/aliases and `init --full`.
+  Use `frameit init <model>` or the documented named/composed starters. Inspect,
+  edit, validate and dry-run the current configuration rather than translating
+  ambiguous scientific meaning automatically.
+- Public choices include `domain.width_km`, `output.backend`,
+  `output.cartesian.horizontal_vectors: earth_centered|native`, explicit wind pairs,
+  and opt-in `polar.enabled`/`polar.variables`. CLI resource controls use
+  `--output-directory`, `--synchronous-export`, `--max-workers`, `--no-overwrite`
+  and `--require-complete-tracking`; see current help for each command's scope.
+- Remove FrameIt's plotting APIs and figure-generation switches. Keep plotting
+  downstream; the standalone documentation examples do not form a plotting API.
+- Use one `environment.yaml`/`frameit_env` for local and HPC work. Distributions
+  exclude private GRIB/NetCDF fixtures and generated indexes; the manifest,
+  preparation recipe and generator remain available. Supply authorized fixture
+  data separately for the reduced scientific matrix.
+
+### Preserved contracts and remaining limits
+
+Scientific output definitions, units, masks, native selections and reference frames
+are not renamed merely to match public configuration. Diagnostics/polar sampling
+remain optional, and completed runs or passing tests are not scientific validation.
+Full-domain native-centroid, independent NOAA multi-field and broader real-ocean
+evidence remain incomplete; multi-field/UTrack maturity and missing-weight limits
+remain explicit. No candidate-specific DOI or publication is claimed.
+
+See the current [configuration](docs/source/user_guide/configuration_file.rst),
+[starter commands](docs/source/getting_started/quick_start.rst),
+[output contract](docs/source/user_guide/output_files.rst) and the dated
+[engineering receipts](docs/development/public-interface/rc-readiness.md).
+
+## Development history before 2.0.0rc1
+
+The entries below record intermediate interfaces; they are not current
+configuration examples. The candidate notes and current documentation take precedence.
 
 - Reuse managed lazy NetCDF opens across ordinary-run preflight and loading for
   every NetCDF model, and skip unused native Cartesian preparation across input

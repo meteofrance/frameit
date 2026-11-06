@@ -1,7 +1,6 @@
 """Header-only wind contracts and explicit catalog/centroid conventions."""
 
 from copy import deepcopy
-from pathlib import Path
 from types import SimpleNamespace
 
 import dask.array as da
@@ -203,18 +202,6 @@ def test_catalog_preserves_source_and_output_conventions(tmp_path):
         assert runtime["cartesian_horizontal_winds"] == "mass_earth"
         assert runtime["cartesian_vertical_velocity"] == "interfaces"
         assert runtime["polar_vertical_velocity"] == "mass"
-
-
-def test_source_examples_declare_conventions():
-    import yaml
-
-    root = Path(__file__).parents[4]
-    for path in (root / "example").rglob("*.yml"):
-        source = yaml.safe_load(path.read_text())
-        conf = SimulationConfig.from_mapping_with_model_preset(source)
-        assert conf.wind_pairs, path
-        assert conf.wind_reference_frame is None
-        assert conf.cartesian_horizontal_winds == "mass_earth"
 
 
 def test_explicit_centroid_preflight_and_export(tmp_path):

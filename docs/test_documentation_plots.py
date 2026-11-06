@@ -43,7 +43,7 @@ def test_batsirai_plot_cli_reads_time_dependent_cartesian_coordinates(tmp_path):
                        coords={"time": times, "rr": [0., 2., 4.],
                                "theta": np.arange(8) * np.pi / 4})
     polar.to_netcdf(products / "batsirai-fixed.polar.surface.nc", engine="netcdf4")
-    script = Path(__file__).parents[4] / "example/plots/batsirai_wind.py"
+    script = Path(__file__).parents[1] / "example/plots/batsirai_wind.py"
     args = [sys.executable, str(script), str(data), str(tmp_path / "batsirai-fixed"),
             str(tmp_path / "batsirai-moving"), str(tmp_path / "figures")]
     result = subprocess.run(args, capture_output=True, text=True, timeout=60)
@@ -79,7 +79,7 @@ def test_first_run_plot_cli_reads_only_the_selected_time(tmp_path):
             longitude=(("time", "y_box", "x_box"), np.broadcast_to(lon, (2, 5, 5))))
         crop.to_netcdf(product, engine="netcdf4")
     before = source.read_bytes(), product.read_bytes()
-    script = Path(__file__).parents[4] / "example/plots/first_run.py"
+    script = Path(__file__).parents[1] / "example/plots/first_run.py"
     figure = tmp_path / "first-run.png"
     args = [sys.executable, str(script), str(source), str(product), str(figure)]
     result = subprocess.run(args, capture_output=True, text=True, timeout=60)

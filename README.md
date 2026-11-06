@@ -9,6 +9,9 @@ FrameIt extracts fixed or moving regions from **AROME, Meso-NH, NEMO and CROCO**
 outputs. A YAML file selects inputs, fields, tracking and optional polar sampling.
 Products use NetCDF or sharded Zarr v3 for analysis with your own tools.
 
+**Development candidate: 2.0.0rc1, not a published release.** Scientific and
+unfamiliar-reader acceptance remain open. See the [candidate notes](CHANGELOG.md).
+
 ## Installation
 
 On Linux, with Git and Conda/mamba:

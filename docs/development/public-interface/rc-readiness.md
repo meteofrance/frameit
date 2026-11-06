@@ -929,6 +929,77 @@ Historical rain-figure receipts above describe `fc42908`, not the current plots.
 Scientific/unassisted-reader acceptance and RC qualification remain open. No
 runtime plotting API, reflectivity diagnostic, publication or push is added.
 
+## Task 12 candidate preparation — 2026-11-06
+
+The maintainer instructed **"Proceed with task 12+"** after the preceding feedback.
+This authorizes local candidate preparation and installation checks, not scientific
+approval, unfamiliar-reader acceptance or publication. The candidate identity is
+**2.0.0rc1**, dated **2026-11-06**. The existing DOI remains a project identifier;
+no candidate-specific DOI, remote tag or published release is asserted. Breaking
+interface changes and preserved output semantics are summarized in `CHANGELOG.md`.
+The complete development team, including Maxence DEFERREZ, remains credited in the
+README, package/CFF metadata and the public Development page.
+
+### Packaging corrections and source gates
+
+The original distribution rules could include ignored local GRIB/NetCDF data and
+stale generated indexes. A compact synthetic build reproduced that leak in both
+wheel and source distribution before the fix. Package data now use an explicit
+runtime-resource whitelist, and the source manifest excludes those payloads/indexes
+even with stale `egg-info/SOURCES.txt`. The manifest, recipe and fixture generator
+remain shipped; actual fixture availability does not establish redistribution rights.
+
+Installed-wheel checks also reproduced failures in tests looking outside the
+package for repository-only scripts/YAML. Nine source-dependent cases moved to
+`docs/test_documentation_plots.py` and `docs/test_repository_examples.py`, without
+weakening any assertion or numerical tolerance. AST comparison confirms every
+transferred assertion and parameterization is retained. Ordinary source pytest
+collection includes them plus two new release gates: **1197 collected cases**.
+The runtime package retains its reusable synthetic fixtures and numerical tests;
+source gates remain in the sdist and relevant core/native CI selections, not skips.
+
+Pre-freeze checks in `frameit_env`, Python 3.13.18:
+
+- The affected source suites passed **254 tests and two subtests**, with 1904
+  existing warnings, normal exit 0. Both release gates passed after observed RED.
+- The second draft's wheel contains all eight template resources, presets,
+  preparation/generator modules and the Apache-2.0 license. The sdist also contains
+  CFF/changelog, the reference recipe, source-owned tests and their examples.
+  Neither contains GRIB/NetCDF payloads, generated indexes or bytecode. A bounded
+  text scan found no private-home-path or credential-pattern matches in the wheel;
+  this is not an exhaustive security certification.
+- Strict `rc-preparation-02` Sphinx and publication/local-link checks passed;
+  **13 documentation checks** passed. The affected public pages loaded in the
+  live GUI with candidate-version titles, intact images and no document overflow
+  at 320 and 1200 px. A stale local source `egg-info` was refreshed before that
+  rebuild; the earlier 1.1.0-titled preview is not candidate-version evidence.
+- Targeted Ruff F and `git diff --check` passed. Draft builds and an existing
+  editable environment are **not** final artifact or fresh-install qualification.
+
+### Frozen-source qualification and remaining gates
+
+Commit the candidate source before final qualification. Export that exact Git
+revision to an owned clean tree, preserving unrelated local work; build a fresh
+wheel/sdist there, rebuild a wheel from the sdist, and inspect both distributions.
+Use the documented Python 3.13 recipe in a fresh, separate `frameit_env` prefix.
+Require actual installed import paths, normal process exit, `pip check`, all
+starter commands, the guided first run and ordinary-reader/provenance checks.
+Keep separately authorized scientific fixtures outside distributable artifacts.
+
+Final commands, results, dependency/native versions, content checksums, coverage,
+review findings and exact source revision belong under the ignored
+`build/rc/qualification/`, not in a post-freeze tracked report that changes the
+tested revision. New source fixes require a new recorded revision and repetition
+of the affected gates. The evidence bundle is the authority for final outcomes;
+this section records preparation and the procedure, not anticipated success.
+
+Scientific/technical scope review, an unfamiliar reader's unassisted run, final
+human visual/keyboard/print acceptance and actual hosted CI remain open. Existing
+full-domain native-centroid, independent NOAA, real-ocean and UTrack-weight limits
+remain unchanged. No passing engineering check substitutes for those gates.
+No push, main merge, remote tag, package publication or documentation deployment
+is authorized by this preparation.
+
 ## Task 1 verification receipt
 
 - `conda run --no-capture-output -n frameit_env python -c 'import sys; assert sys.version_info[:2] == (3, 13); print(sys.version)'`

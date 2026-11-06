@@ -522,14 +522,6 @@ def test_pressure_wind_direct_call_normalizes_components_before_minimum():
     assert cy.item() == 1 and cx.item() == 2
 
 
-def test_all_shipped_example_yaml_uses_new_schema():
-    root = Path(__file__).parents[4]
-    paths = [p for p in (root / "example").rglob("*") if p.suffix in {".yml", ".yaml"}]
-    assert paths
-    for path in paths:
-        assert SimulationConfig.from_yaml(path).schema_version == "2.1"
-
-
 def test_prescribed_track_radians_preflight_and_tracking_without_polar(tmp_path):
     from frameit.core.runner import FrameitRunner
 

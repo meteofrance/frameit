@@ -8,9 +8,9 @@ Ready-to-use CI dataset
 -----------------------
 
 The ``--ci`` matrix requires the frozen simulation fixture, its manifest and
-``MNH/IBTracks_reunion_CHIDO.nc``. When these payloads are included in the installed
-package, ``frameit run-matrix-test --ci --output ./runs/ci`` selects that package
-location automatically, from any working directory. No full source simulations
+``MNH/IBTracks_reunion_CHIDO.nc``. Distributions include the manifest and preparation
+tools, **not the GRIB/NetCDF payloads or generated indexes**. Supply an authorized
+complete fixture with ``--ci --data-root ./ci_dataset``. No full source simulations
 are needed to run a complete, verified reduced fixture.
 
 A fresh Git checkout contains the manifest but not the ignored GRIB/NetCDF
@@ -51,9 +51,14 @@ The native manifest records the recipe, crop, source geometry, fields, levels, t
 byte sizes and content hashes, including the track. Existing compatible fixture
 manifests are supported through a read-only adapter. Matrix execution verifies the
 selected fixture families and does not generate, repair, or download missing data.
-Packaging declares the fixture files as package data, but their inclusion in a
-wheel/source distribution depends on the payloads available when it is built;
-the manifest alone is not a complete dataset.
+Packaging excludes those payloads even when present in the builder's checkout.
+The manifest alone is not a complete dataset. Keep local fixture data separate
+from distributable software; do not infer redistribution rights from availability.
+
+The installed numerical suite checks runtime behavior. Repository-only YAML,
+standalone plotting and Slurm-launcher checks run from the source tree with
+``python -m pytest``; they are also included in the source distribution, not the
+wheel. These checks do not require the frozen simulation fixture.
 
 Run the matrix
 --------------
