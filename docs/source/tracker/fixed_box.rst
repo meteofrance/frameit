@@ -93,18 +93,17 @@ Example
 Illustration
 ------------
 
-Fixed-box extraction from the real BATSIRAI rainfall fields:
+Fixed-box extraction of the real BATSIRAI 10-m zonal wind:
 
 .. figure:: ../_static/figures/batsirai-fixed.png
    :target: ../_static/figures/batsirai-fixed.png
    :width: 100%
    :align: center
-   :alt: Real BATSIRAI rain-only dBZ estimate for 00:10–00:20 with a fixed centre and the native 500-km crop outline; no geographical grid lines are drawn.
+   :alt: Stored BATSIRAI 10-m zonal wind at 00:20 in m/s, with a fixed centre and native 500-km crop outline; no geographical grid lines are drawn.
 
    The outline follows the selected native indices, not a continuously recentered
-   box. Colours are an **illustrative rain-only estimate**, derived externally from
-   accumulated rainfall, not stored model reflectivity. See the
-   :doc:`formula, limits and regeneration script <../reference/illustrations>`.
+   box. Colours show stored eastward wind in m/s; negative values are westward.
+   See the :doc:`data conventions and regeneration script <../reference/illustrations>`.
 
 Known limitations
 ------------------

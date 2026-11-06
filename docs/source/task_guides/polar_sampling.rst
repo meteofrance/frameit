@@ -33,6 +33,17 @@ degrees without duplicating 360 degrees. The radial step must not be finer than
 the resolved native spacing; the last interval can be shorter to reach the outer
 radius. See :doc:`../concepts/sampling_and_frames`.
 
+.. figure:: ../_static/figures/batsirai-polar.png
+   :target: ../_static/figures/batsirai-polar.png
+   :width: 100%
+   :alt: Stored BATSIRAI 10-m zonal wind at 00:20 sampled at 43 radii and 180 azimuths. Colours show eastward or westward wind in m/s, and grey marks missing values.
+
+   Real-data example, separate from the instructional settings above: BATSIRAI
+   uses 6 km radial spacing and 180 azimuths. Colours show stored eastward wind
+   in m/s, not radial wind. See the
+   :doc:`Cartesian comparison <../polar_projection/xESMF_proj>` and the
+   :doc:`data conventions and standalone script <../reference/illustrations>`.
+
 Choose coverage deliberately
 ----------------------------
 

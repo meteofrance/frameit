@@ -5,8 +5,8 @@ Documentation plots are made with small standalone Python scripts, not a FrameIt
 plotting API. The scripts use NumPy, xarray and Matplotlib; Matplotlib is a
 downstream plotting dependency, not a requirement for core extraction.
 
-BATSIRAI: real rainfall, illustrative rain-only dBZ
----------------------------------------------------
+BATSIRAI: stored 10-m zonal wind
+--------------------------------
 
 The fixed-box, pressure-wind and Cartesian/polar illustrations use these Meso-NH
 files, supplied separately from the repository:
@@ -14,37 +14,26 @@ files, supplied separately from the repository:
 * ``1BT01.1.MXX30.001dg.nc``: 2022-02-01 00:10;
 * ``1BT01.1.MXX30.002dg.nc``: 2022-02-01 00:20.
 
-Neither file contains stored radar reflectivity. Their ``ACPRR`` field is
-accumulated rainfall amount in mm. The plotting script derives a ten-minute mean
-rain rate and applies a declared rain-only Z–R approximation:
+All four plots show the stored ``UM10`` at **00:20**, in m/s. The source describes
+it as zonal wind at 10 m: positive values point east, negative values west. There
+is no rainfall-to-reflectivity approximation, time differencing, smoothing or
+storm-motion subtraction. A common symmetric colour scale spans ±30 m/s, the
+largest absolute physical-domain value rounded up to a multiple of 5 m/s. Zero
+wind remains valid; grey marks missing samples.
 
-.. math::
-
-   R = \frac{A_{00:20}-A_{00:10}}{1/6\ \mathrm{h}},\qquad
-   Z = 200 R^{1.6},\qquad
-   \mathrm{dBZ} = 10\log_{10}\!\left(\frac{Z}{1\ \mathrm{mm}^{6}\,\mathrm{m}^{-3}}\right).
-
-Here :math:`R` is in mm/h and :math:`Z` in mm⁶/m³. This is an illustrative
-Marshall–Palmer-type choice, **not instantaneous model reflectivity**, an
-observation, a calibrated tropical-rain retrieval or a validated FrameIt diagnostic.
-It omits ice scattering and does not use a model drop-size distribution.
-The historical background is Marshall and Palmer (1948),
-`The Distribution of Raindrops with Size
-<https://doi.org/10.1175/1520-0469(1948)005%3C0165:TDORWS%3E2.0.CO;2>`_;
-a reference does not validate this approximation for these files.
-
-Missing rainfall stays missing. Zero rain has :math:`Z=0` and dBZ :math:`-\infty`;
-the display shows it below the colour scale, not as missing. White also includes
-values below −10 dBZ; grey denotes missing values. Negative accumulation increments
-cause failure rather than clipping a possible reset. No negative finite increment
-was found in this pair. Sparse rain patches reflect this actual short interval;
-they have not been filled, smoothed or extended.
+The source axes declare physical ranges ``ni: 2:961`` and ``nj: 2:601`` in
+one-based inclusive notation. The outer one-cell halo is outside these ranges
+and contains finite ``1e20`` wind values. The standalone source-context plot
+excludes that **declared nonphysical halo**, not values above an invented wind
+threshold. The script verifies this layout before plotting. The interior
+extraction boxes are unaffected.
 
 The fixed geographical centre is the first file's MSLP minimum,
 (-16.342215°, 62.154875°). Both extractions request full 500×500 km widths, which
 give 167×167 native points at the resolved 3000 m spacing. The fixed run samples
-``ACPRR`` on 43 radii at 6 km spacing and 180 azimuths. It interpolates rainfall
-amounts **before** the external dBZ calculation; it does not interpolate dBZ.
+``UM10`` on 43 radii at 6 km spacing and 180 azimuths. It interpolates wind
+components using the declared Earth-relative basis. Polar coordinates
+describe sampling locations: ``UM10`` remains eastward wind, not radial wind.
 The moving run uses the pressure-wind method with default 100/50 km search/refine
 half-widths. Its centres move from native ``(cy,cx)=(380,732)`` to ``(380,731)``.
 The files describe ``UM10/VM10`` as zonal/meridian 10-m winds in m/s, declared here
@@ -68,15 +57,16 @@ their actual directory; relative paths use the YAML's location.
    frameit validate figures-batsirai/batsirai-moving.yaml
    frameit run figures-batsirai/batsirai-fixed.yaml
    frameit run figures-batsirai/batsirai-moving.yaml
-   python example/plots/batsirai_reflectivity.py \
+   python example/plots/batsirai_wind.py \
      /path/to/BATSIRAI-10mins \
      figures-batsirai/batsirai-fixed figures-batsirai/batsirai-moving \
      figures-batsirai/figures
 
-The :download:`plotting script <../../../example/plots/batsirai_reflectivity.py>`
+The :download:`plotting script <../../../example/plots/batsirai_wind.py>`
 imports no FrameIt code. It requires a new figure directory outside the source
-data directory. The configurations export ``ACPRR`` only; the moving tracker also
-reads MSLP and the two horizontal winds. No three-dimensional field is needed.
+data directory. Both configurations select ``UM10``; vector preparation also
+loads its declared companion ``VM10``. The moving tracker additionally reads
+MSLP. No three-dimensional field is needed.
 Check both ``run-status.yaml`` files before using the products. Raw source files
 are not bundled or downloaded by this example.
 

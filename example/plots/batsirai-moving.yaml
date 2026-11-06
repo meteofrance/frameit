@@ -16,7 +16,7 @@ domain:
   width_km: {x: 500, y: 500}
 variables:
   fields_2d:
-    names: [ACPRR]
+    names: [UM10]
 polar:
   enabled: false
 output:

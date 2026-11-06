@@ -557,24 +557,22 @@ Troubleshooting
 Illustration
 ------------
 
-The same BATSIRAI rainfall interval on native Cartesian and polar points:
+The same stored BATSIRAI 10-m zonal wind at 00:20 on native and polar points:
 
 .. figure:: ../_static/figures/batsirai-cartesian.png
    :target: ../_static/figures/batsirai-cartesian.png
    :width: 80%
    :align: center
-   :alt: Rain-only dBZ estimate derived from the real fixed Cartesian rainfall crop, shown without grid lines.
+   :alt: Stored BATSIRAI 10-m zonal wind at 00:20 in m/s on the native Cartesian crop, shown without grid lines.
 
-   Native Cartesian crop. Both times use one fixed centre so that accumulation
-   differencing compares the same locations.
+   Native Cartesian crop at the fixed geographical centre.
 
 .. figure:: ../_static/figures/batsirai-polar.png
    :target: ../_static/figures/batsirai-polar.png
    :width: 80%
    :align: center
-   :alt: Rain-only dBZ estimate calculated after polar sampling of real accumulated rainfall at 6-km radial spacing and 180 azimuths. Angle labels start north and increase clockwise; circular grid lines are absent.
+   :alt: Stored BATSIRAI 10-m zonal wind sampled at 6-km radial spacing and 180 azimuths, retaining its eastward basis and m/s units. Angle labels start north and increase clockwise; circular grid lines are absent.
 
-   Polar rainfall amounts are sampled before the external nonlinear dBZ
-   calculation. Radius is in km; angle starts north and increases clockwise.
-   These are **illustrative rain-only estimates**, not model-provided reflectivity.
-   See the :doc:`formula, limits and standalone script <../reference/illustrations>`.
+   Radius is in km; angle starts north and increases clockwise. The sampled field
+   remains eastward wind in m/s: changing locations does not make it radial wind.
+   See the :doc:`source conventions and standalone script <../reference/illustrations>`.

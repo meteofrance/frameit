@@ -864,6 +864,71 @@ Keep the preview and plan workspace for feedback. No push, main merge, publicati
 deployment, full qualification repeat, private-source upload, production job or
 artifact/fresh-environment qualification was performed by this correction.
 
+## Follow-up illustrations: SVG grids and stored zonal wind — 2026-11-06
+
+The maintainer clarified that only Python plots should lose grids/graticules;
+sampling grids remain essential in SVG schematics. Five SVGs now restore those
+cues while retaining the clearer labels and native-index snapping distinction.
+The polar task guide directly includes the real-data figure and distinguishes
+its 43×180 target from the separate eight-angle instructional setup.
+
+The queried −10 dBZ background was a display conflation, not a concentration of
+values exactly at −10: the native crop has 27,081/27,889 zero-rain cells, plus
+502 tiny positive increments below that display limit. No sample equals −10 dBZ.
+Negative logarithmic estimates can arise from positive rain, but the extremely
+small traces do not establish physically meaningful radar echoes.
+
+The maintainer then explicitly authorized falling back to zonal wind if rain was
+too sparse. Current figures therefore use **stored UM10 at 00:20, m/s**, not an
+estimated reflectivity. `example/plots/batsirai_wind.py` replaces the approximation
+script; its six math-only tests retire with that removed external calculation.
+The two standalone CLI tests now exercise wind plotting, source/output protection,
+and refusal of an unverified halo layout. No core method or core numerical
+assertion was removed or changed.
+
+Source UM10/VM10 comments declare zonal/meridian 10-m winds. The physical interior
+at 00:20 spans approximately −29.708 to 24.642 m/s; all four plots share ±30 m/s,
+rounded outward from the physical-domain extrema. Zero remains valid, negative
+means westward and grey denotes missing. Polar UM10 retains its Earth-relative
+eastward basis, not radial velocity or storm-relative flow. Both configurations
+declare the wind pair and select UM10; preparation reads VM10 as its companion.
+
+The source's one-based inclusive `c_grid_dynamic_range` declarations are `2:961`
+for ni and `2:601` for nj. The outer halo contains finite `1e20` wind values. The
+source-context plot verifies and excludes that declared one-cell nonphysical
+halo; it does not mask using an invented wind threshold. Cropped products are
+inside the physical region. No three-dimensional field or raw source was modified.
+
+Verification in `frameit_env`, Python 3.13.18:
+
+- Both new bounded runs completed with complete tracking. Ordinary netCDF4 readers
+  importing no FrameIt match native UM10 exactly at both times for both crops;
+  the 43×180 polar field retains m/s and its origin agrees with the raw native
+  centre to 1e-8 m/s. Source sizes/mtimes were unchanged during those checks.
+- Wind CLI regression observed RED on the missing replacement script, then GREEN:
+  `python -m pytest -q src/frameit/testing/numerical/test_documentation_plots.py`
+  → **2 passed**, including the declared-halo guard and overwrite refusals.
+- `python -m unittest discover -s docs -p test_check_publication.py` → **13 passed**.
+  Strict `sphinx-build -q -W --keep-going -b html docs/source
+  build/docs-preview/feedback-05` and `python docs/check_publication.py
+  build/docs-preview/feedback-05` passed. Targeted Ruff F and diff checks passed.
+- Live rendered checks: **11 affected pages × four widths = 44 placements**,
+  **56 image placements**, no overflow/broken/clipped images. Five restored SVGs
+  and **51 labels** fit their viewBoxes. The guide's wind figure is open in the
+  GUI. Screenshot capture still reports an invisible desktop; no pixel/human
+  acceptance is claimed.
+- One fresh bounded read-only review reported **no findings**. It checked diagram
+  alignment, wind units, raw/polar agreement, generated PNG identity and diff safety,
+  not general-purpose producer support or scientific/release validity.
+- `conda run --no-capture-output -n frameit_env python -m pytest -q` → **1195
+  passed, 4604 known warnings, two subtests passed, no skips, normal exit 0,
+  553.02 s**. The six-case decrease from the prior run is solely the retired
+  standalone Z–R approximation tests; core scientific checks remain present.
+
+Historical rain-figure receipts above describe `fc42908`, not the current plots.
+Scientific/unassisted-reader acceptance and RC qualification remain open. No
+runtime plotting API, reflectivity diagnostic, publication or push is added.
+
 ## Task 1 verification receipt
 
 - `conda run --no-capture-output -n frameit_env python -c 'import sys; assert sys.version_info[:2] == (3, 13); print(sys.version)'`

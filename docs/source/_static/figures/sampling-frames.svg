@@ -1,11 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="540" height="550" viewBox="0 0 540 550" role="img" aria-labelledby="title desc">
   <title id="title">Three questions about a moving region</title>
-  <desc id="desc">Schematic without grid lines. Choose sample locations using a native crop or polar points. Check whether components follow model axes or east/north. Exported velocity does not subtract event motion: in an illustrative example a 10 m/s eastward wind remains 10 m/s even when the event moves east at 5 m/s.</desc>
+  <desc id="desc">Schematic with native and polar sampling grids. Choose sample locations, then check whether components follow model axes or east/north. Exported velocity does not subtract event motion: in an illustrative example a 10 m/s eastward wind remains 10 m/s even when the event moves east at 5 m/s.</desc>
   <g font-family="sans-serif" fill="#021633">
     <text x="24" y="35" font-size="24" font-weight="bold">1 · Where are the samples?</text>
-    <rect x="45" y="61" width="130" height="84" fill="#f4f8f8" stroke="#006b65" stroke-width="2"/>
-    <circle cx="85" cy="90" r="4"/><circle cx="120" cy="110" r="4"/><circle cx="150" cy="80" r="4"/>
+    <rect x="45" y="55" width="120" height="90" fill="#f4f8f8" stroke="#006b65" stroke-width="2"/>
+    <path d="M45 85H165M45 115H165M75 55V145M105 55V145M135 55V145" fill="none" stroke="#788997"/>
+    <circle cx="75" cy="85" r="4"/><circle cx="105" cy="115" r="4"/><circle cx="135" cy="85" r="4"/>
     <circle cx="370" cy="105" r="43" fill="none" stroke="#9a4400" stroke-width="2"/>
+    <circle cx="370" cy="105" r="23" fill="none" stroke="#788997"/>
+    <path d="M370 62V148M327 105H413" stroke="#788997"/>
     <circle cx="370" cy="62" r="4"/><circle cx="413" cy="105" r="4"/><circle cx="370" cy="148" r="4"/>
     <text x="45" y="172" font-size="19">Native crop</text>
     <text x="305" y="172" font-size="19">Polar sample points</text>

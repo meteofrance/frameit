@@ -125,12 +125,11 @@ grid point apart; no artificial displacement or second centre marker is added.
    :target: ../_static/figures/batsirai-tracking.png
    :width: 100%
    :align: center
-   :alt: Two real pressure-wind tracking centres separated by one native point, with the final crop outline over a ten-minute rain-only reflectivity estimate. No extracted-centre cross or graticule is added.
+   :alt: Two real pressure-wind tracking centres separated by one native point, with the final crop outline over stored 10-m zonal wind at 00:20 in m/s. No extracted-centre cross or graticule is added.
 
-   Actual tracking output over an **illustrative rain-only estimate**, not stored
-   model reflectivity or evidence of track accuracy. The
-   :doc:`external plotting recipe <../reference/illustrations>` declares the
-   rainfall interval, formula, wind convention and limitations.
+   Actual tracking output over stored 10-m zonal wind at 00:20, not independent
+   evidence of track accuracy. The :doc:`external plotting recipe
+   <../reference/illustrations>` declares the source, time and wind convention.
 
 Optional initial position
 -------------------------

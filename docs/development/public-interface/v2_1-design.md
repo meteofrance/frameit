@@ -558,16 +558,21 @@ An annotated all-options **documentation reference**, explicitly not a runnable
 starter or new init mode, is now requested. Keep the minimal starter catalogue.
 Use environment.yaml/frameit_env for HPC too; retire the extra environment recipe.
 
-Regenerate grid-free illustrations and move experimental comparisons out of public
-sources. All six tracker pages end in Known limitations. Correct grid-aligned
+Regenerate Python plots without grids/graticules and move experimental comparisons
+out of public sources. The maintainer's follow-up explicitly retains essential
+sampling grids in SVG schematics. All six tracker pages end in Known limitations.
+Place the polar illustration directly in the polar task guide. Correct grid-aligned
 Cartesian extraction wording: native indices and rounded point counts define the
 crop; a continuous geographical centre can still define polar sampling.
 
 Real BATSIRAI fields—not synthetic radar patterns—must supply contextual plots.
-After read-only metadata inspection found no stored dBZ, the maintainer chose a
-documented external rain-only estimate. Keep its approximation and temporal/level
-support explicit; no new FrameIt diagnostic or plotting API is authorized. The
-first-run data remain instructional, with their own minimal downstream plot.
+After read-only metadata inspection found no stored dBZ, the maintainer initially
+chose an external rain-only estimate. A later explicit fallback authorizes stored
+zonal wind when rain is too sparse. The native crop is 97% zero rain, so current
+illustrations use UM10 at 00:20 in m/s, not estimated reflectivity. The script omits
+only the source-declared nonphysical outer halo, not an invented magnitude mask.
+No new FrameIt diagnostic or plotting API is authorized. First-run data remain
+instructional, with their own minimal downstream plot.
 
 Keep useful `.rst` URLs. The maintainer's G2 correction removes public schema
 history and adds `getting_started/first_run.rst`; `quick_start.rst` becomes the
