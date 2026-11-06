@@ -155,7 +155,7 @@ version DOI listed on the [Zenodo record](https://doi.org/10.5281/zenodo.2212819
 
 FrameIt is released under the Apache 2.0 License.
 
-Copyright 2026 Clément Soufflet and Maxence DEFERREZ — Météo-France
+Copyright 2026 Clément Soufflet and Maxence DEFERREZ — Université de La Réunion
 
 ## Authors
 
@@ -165,4 +165,4 @@ FrameIt was developed at Météo-France.
 - Kevin Hoarau — CNRS
 - Adrien Colomb — Météo-France
 - Rémi Laxenaire — Météo-France
-- Maxence DEFERREZ — Météo-France
+- Maxence DEFERREZ — Université de La Réunion
