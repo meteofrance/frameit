@@ -32,7 +32,7 @@ input:
               temporal_kind: instantaneous
               allow_unscaled: false
       variables:
-        surface:
+        fields_2d:
           names: [CLSTEMPERATURE]
     surface:
       model: arome
@@ -62,7 +62,7 @@ input:
               temporal_kind: instantaneous
               allow_unscaled: false
       variables:
-        surface:
+        fields_2d:
           names: [SFX.T2M, SFX.SST]
 tracking:
   source: atmosphere

@@ -543,6 +543,32 @@ other real workflows require their stated inputs and later risk-based checks.
 
 ## 7. Complete content / figure map
 
+### Maintainer reading-feedback amendment — 2026-11-06
+
+The maintainer selected `fields_2d` instead of the ambiguous public `surface`
+group: fields without a selectable vertical axis, not necessarily ground-level
+quantities. Apply it to extraction, polar selections and wind-pair declarations,
+including named sources and generated/replayed public YAML. Internal scientific
+groups and existing `.surface` output names remain unchanged. This is an approved
+public-interface correction before RC freeze, not a data-schema change or alias.
+
+Replace the flat sidebar with collapsible Start here / Task guides / Reference /
+Development parents; retain the existing theme and useful nonexperimental URLs.
+An annotated all-options **documentation reference**, explicitly not a runnable
+starter or new init mode, is now requested. Keep the minimal starter catalogue.
+Use environment.yaml/frameit_env for HPC too; retire the extra environment recipe.
+
+Regenerate grid-free illustrations and move experimental comparisons out of public
+sources. All six tracker pages end in Known limitations. Correct grid-aligned
+Cartesian extraction wording: native indices and rounded point counts define the
+crop; a continuous geographical centre can still define polar sampling.
+
+Real BATSIRAI fields—not synthetic radar patterns—must supply contextual plots.
+After read-only metadata inspection found no stored dBZ, the maintainer chose a
+documented external rain-only estimate. Keep its approximation and temporal/level
+support explicit; no new FrameIt diagnostic or plotting API is authorized. The
+first-run data remain instructional, with their own minimal downstream plot.
+
 Keep useful `.rst` URLs. The maintainer's G2 correction removes public schema
 history and adds `getting_started/first_run.rst`; `quick_start.rst` becomes the
 short refresher. Preserve existing explicit labels and heading IDs where retained; when

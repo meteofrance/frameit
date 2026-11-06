@@ -1,31 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="480" height="750" viewBox="0 0 480 750" role="img" aria-labelledby="title desc">
-  <title id="title">Fixed and moving geographical centres</title>
-  <desc id="desc">Schematic, not to scale. A fixed window uses the same geographical centre at both times. Moving windows follow a continuous centre and select native grid samples at each time. Widths are full widths in kilometres; this does not change the vector basis or reference-frame motion.</desc>
-  <defs>
-    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse"><path d="M30 0H0V30" fill="none" stroke="#788997" stroke-width="1"/></pattern>
-    <marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto-start-reverse"><path d="M0 0L8 4L0 8" fill="none" stroke="#021633" stroke-width="1.5"/></marker>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="470" viewBox="0 0 540 470" role="img" aria-labelledby="title desc">
+  <title id="title">Fixed and moving native crops</title>
+  <desc id="desc">Schematic without grid lines, not to scale. A fixed crop stays at the same native point. A moving crop selects a new native point at each time. Hollow circles are requested geographical centres; solid dots are the selected native points. Crop outlines follow those native points.</desc>
   <g font-family="sans-serif" fill="#021633">
-    <text x="25" y="35" font-size="26" font-weight="bold">Fixed centre</text>
-    <text x="25" y="66" font-size="21">One geographical point at every time</text>
-    <rect x="25" y="90" width="430" height="210" fill="url(#grid)" stroke="#788997" stroke-width="2"/>
-    <rect x="180" y="140" width="120" height="100" fill="#fff" fill-opacity=".7" stroke="#00978f" stroke-width="4"/>
-    <circle cx="240" cy="190" r="7" fill="#021633"/>
-    <text x="257" y="181" font-size="22">t₀, t₁</text>
-    <path d="M180 264H300" fill="none" stroke="#021633" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-    <text x="240" y="292" font-size="19" text-anchor="middle">full width (km)</text>
-    <text x="25" y="330" font-size="19">Grid lines represent native sampling locations.</text>
-    <text x="25" y="400" font-size="26" font-weight="bold">Moving centre</text>
-    <text x="25" y="431" font-size="21">Map each continuous centre to the grid</text>
-    <rect x="25" y="455" width="430" height="210" fill="url(#grid)" stroke="#788997" stroke-width="2"/>
-    <rect x="75" y="495" width="120" height="100" fill="#fff" fill-opacity=".7" stroke="#00978f" stroke-width="4" stroke-dasharray="10 5"/>
-    <rect x="280" y="520" width="120" height="100" fill="#fff" fill-opacity=".7" stroke="#00978f" stroke-width="4"/>
-    <path d="M135 545C200 490 260 590 340 570" fill="none" stroke="#9a4400" stroke-width="4"/>
-    <circle cx="135" cy="545" r="7" fill="#021633"/>
-    <circle cx="340" cy="570" r="7" fill="#ec7600" stroke="#021633" stroke-width="2"/>
-    <text x="147" y="535" font-size="22">t₀</text>
-    <text x="353" y="558" font-size="22">t₁</text>
-    <text x="25" y="700" font-size="20">Boxes describe locations, not a vector rotation.</text>
-    <text x="25" y="730" font-size="18">Schematic · not to scale · no motion subtraction</text>
+    <text x="24" y="35" font-size="24" font-weight="bold">Fixed region</text>
+    <rect x="168" y="60" width="180" height="105" rx="3" fill="#f4f8f8" stroke="#006b65" stroke-width="3"/>
+    <circle cx="258" cy="112" r="5"/>
+    <circle cx="271" cy="102" r="8" fill="none" stroke="#9a4400" stroke-width="2"/>
+    <text x="365" y="116" font-size="20">t₀ and t₁</text>
+    <text x="24" y="205" font-size="24" font-weight="bold">Moving region</text>
+    <rect x="45" y="230" width="180" height="105" rx="3" fill="#f4f8f8" stroke="#006b65" stroke-width="3" stroke-dasharray="7 4"/>
+    <rect x="315" y="260" width="180" height="105" rx="3" fill="#f4f8f8" stroke="#006b65" stroke-width="3"/>
+    <path d="M148 272C235 235 305 345 418 302" fill="none" stroke="#9a4400" stroke-width="2"/>
+    <circle cx="135" cy="282" r="5"/><circle cx="405" cy="312" r="5"/>
+    <circle cx="148" cy="272" r="8" fill="white" stroke="#9a4400" stroke-width="2"/>
+    <circle cx="418" cy="302" r="8" fill="white" stroke="#9a4400" stroke-width="2"/>
+    <text x="100" y="355" font-size="20">t₀</text><text x="390" y="390" font-size="20">t₁</text>
+    <circle cx="30" cy="418" r="8" fill="none" stroke="#9a4400" stroke-width="2"/>
+    <text x="48" y="424" font-size="18">Requested centre</text>
+    <circle cx="290" cy="418" r="5"/>
+    <text x="305" y="424" font-size="18">Selected native point</text>
+    <text x="24" y="458" font-size="18">Crop locations and widths follow native indices.</text>
   </g>
 </svg>

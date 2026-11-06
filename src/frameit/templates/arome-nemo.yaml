@@ -15,7 +15,7 @@ input:
         pattern: '*.nc'
         format: netcdf
       variables:
-        surface:
+        fields_2d:
           names: [prmsl]
     ocean:
       model: nemo

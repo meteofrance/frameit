@@ -20,7 +20,7 @@ input:
           # No inferred flux sign, timing or vector basis, and no temperature equivalence.
           surfex_fields: [SST, SSS]
       variables:
-        surface:
+        fields_2d:
           names: [SST, SSS]
     ocean:
       model: croco

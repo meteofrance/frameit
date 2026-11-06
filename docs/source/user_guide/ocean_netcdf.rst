@@ -179,7 +179,7 @@ This does not admit every CROCO release, restart/averaged products, other vertic
 transforms or a producer-specific coupling convention. The NEMO-only
 ``preceding_hour`` profile does not apply to CROCO.
 
-Native ``temp/salt`` are selected on ``s_rho``; ``zeta`` belongs to ``surface``.
+Native ``temp/salt`` are selected on ``s_rho``; ``zeta`` belongs to ``fields_2d``.
 Fields genuinely stored on ``s_w`` use a separate group. Do not infer the stored
 location of ``w`` or substitute ``omega`` from their names. Fractional sigma values
 are **dimensionless, not metres**; value selection is exact in both preflight and
@@ -234,7 +234,7 @@ coordinate labels remain available. Rho dimensions use ``x_box/y_box``. This
 selector applies to ocean currents without making them winds.
 
 Explicit ``earth_centered`` selects rho/Earth analysis for ``u/v`` on ``s_rho`` and
-``ubar/vbar`` on ``surface``. Selecting either component loads its companion.
+``ubar/vbar`` on ``fields_2d``. Selecting either component loads its companion.
 The method requires regular labelled N-1 midpoint faces, declared velocity units,
 finite rho-point ``angle`` with angular units, and static ``mask_rho`` with
 explicit ``option_0=land`` and ``option_1=water``. These options, not the supplied
@@ -340,7 +340,7 @@ snapshots. To interpret SEA-field missing values, support and unit comments:
      netcdf:
        surfex_fields: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA]
    variables:
-     surface:
+     fields_2d:
        names: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA, FRAC_SEA]
 
 This fragment supplements the ordinary paths, tracking, domain and output

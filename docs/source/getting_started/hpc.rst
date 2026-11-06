@@ -17,23 +17,14 @@ from the checkout:
 
 .. code-block:: bash
 
-   conda env create -f environment-hpc.yaml
-   conda activate frameit_hpc
-   python -m pip install --no-deps -e .
+   conda env create -f environment.yaml --solver libmamba
+   conda activate frameit_env
+   python -m pip check
    python -m frameit --help
 
-The base environment includes NetCDF/Zarr processing and pytest. Add dependencies
-for the selected input format and processing:
-
-.. code-block:: bash
-
-   # For GRIB inputs:
-   conda install -n frameit_hpc -c conda-forge cfgrib eccodes
-   # When polar.enabled is true:
-   conda install -n frameit_hpc -c conda-forge xesmf esmpy
-
-Use a consistent native-library/MPI stack. The ``polar`` pip extra does not
-supply the native ESMF installation.
+This is the same environment as :doc:`installation`, including FrameIt's
+editable installation and the GRIB/FA/polar/Zarr dependencies. Keep a consistent
+native-library stack and make the checkout accessible on compute nodes.
 
 Create an activation script using the site's actual module or conda paths.
 For a conda installation its content resembles:
@@ -41,7 +32,7 @@ For a conda installation its content resembles:
 .. code-block:: bash
 
    source /path/to/conda/etc/profile.d/conda.sh
-   conda activate frameit_hpc
+   conda activate frameit_env
 
 Export its absolute path as ``FRAMEIT_ENV_SCRIPT`` before submission; launchers
 source it in their noninteractive shell. Keep the environment and checkout

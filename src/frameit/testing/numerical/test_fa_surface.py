@@ -47,7 +47,7 @@ def test_dense_directory_order_single_native_layer_masks_and_zero(
     assert list(info["field_directory"]) == ["SFX.TG2P1", "SFX.WG1P1", "SFX.SST"]
     raw = single_fa_document(tmp_path, [path])
     raw["input"]["fa"].update(backend_options)
-    raw["variables"] = {"surface": {"names": ["SFX.WG1P1"]}}
+    raw["variables"] = {"fields_2d": {"names": ["SFX.WG1P1"]}}
     raw["input"]["fa"]["field_metadata"] = {"SFX.WG1P1": {
         "units": "m3 m-3", "kind": "continuous", "temporal_kind": "instantaneous"}}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
@@ -168,7 +168,7 @@ def categorical_document(tmp_path):
     path = fa_files(tmp_path, profile="surfex_history", surface_fields=[{
         "name": "COVERCLASS", "mask": "FULL", "values": classes.tolist()}])[0]
     raw = single_fa_document(tmp_path, [path])
-    raw["variables"] = {"surface": {"names": ["SFX.COVERCLASS"]}}
+    raw["variables"] = {"fields_2d": {"names": ["SFX.COVERCLASS"]}}
     raw["input"]["fa"]["field_metadata"] = {"SFX.COVERCLASS": {
         "units": "1", "kind": "categorical", "temporal_kind": "instantaneous"}}
     return raw

@@ -138,7 +138,7 @@ def run_export(directory, horizontal="native", vertical="interfaces", *,
         "input": {"directory": str(directory), "pattern": "native*.nc", "wind_pairs": [
             {"group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
              "rotation": {"method": "coordinate", "coordinate": "angle"}},
-            {"group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "earth"},
+            {"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"},
         ]},
         "tracking": {"method": "fixed_box", "fixed_box": {
             "center": {"latitude": -20., "longitude": 60.}}},
@@ -146,7 +146,7 @@ def run_export(directory, horizontal="native", vertical="interfaces", *,
         "variables": {
             "level": {"names": ["UT", "VT", "THT"], "levels": "physical"},
             "level_w": {"names": ["WT", "Q"], "levels": "physical"},
-            "surface": {"names": ["UM10", "VM10", "MSLP"]},
+            "fields_2d": {"names": ["UM10", "VM10", "MSLP"]},
         },
         "polar": {"enabled": polar, "variables": "extracted", "radial_step_m": 1000,
                   "azimuth_count": 8},

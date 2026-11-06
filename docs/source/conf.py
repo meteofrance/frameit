@@ -43,6 +43,8 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 
 html_theme = "sphinx_rtd_theme"  # or "furo" or "alabaster" sphinx_rtd_theme sphinx_book_theme to install
+# Retain inactive branches so the theme can offer expand/collapse controls.
+html_theme_options = {"collapse_navigation": False, "navigation_depth": 4}
 html_static_path = ["_static"]
 html_logo = "_static/logo/frameit_logo.svg"
 html_favicon = "_static/logo/frameit_logo_symbol_vector.svg"

@@ -16,6 +16,14 @@ geopotential height at 850 and 700 hPa; and wind circulation at the surface,
 operational experience that these help when terrain interferes with lower layers.
 This evidence is not a qualification of FrameIt's implementation for landfall.
 
+.. figure:: ../_static/figures/multifield-method.svg
+   :target: ../_static/figures/multifield-method.svg
+   :width: 540px
+   :alt: Schematic of pressure, vorticity, height and circulation estimates feeding a combined centre, followed by quality and continuity checks that accept a fix or stop the track.
+
+   Method schematic, not a computed result. Estimates are screened before
+   combination; a rejected attempt is not filled with a guessed position.
+
 Inputs and explicit conventions
 ------------------------------------------------------------
 
@@ -230,4 +238,23 @@ Method record and qualification gaps
 
 .. code-block:: bash
 
-   python -m pytest src/frameit/testing/numerical/test_multifield_vortex.py
+    python -m pytest src/frameit/testing/numerical/test_multifield_vortex.py
+
+Known limitations
+------------------
+
+* **Experimental adaptation:** this is not a bitwise NOAA tracker reproduction.
+  Independent executable comparisons and representative real-case/landfall
+  qualification remain outstanding.
+* **Explicit initial conditions:** the researcher supplies the seed and initial
+  motion. The method follows one disturbance; it does not detect genesis or
+  classify tropical stages. Equator crossing terminates tracking.
+* **Extensive inputs and coverage:** required pressure levels, complete circulation
+  rings and the 1000-km steering influence region can exceed the extraction box
+  by a large margin. Missing support can reject an otherwise plausible centre.
+* **Termination:** later QC failure can produce an accepted prefix under ``stop``.
+  Check tracking completeness; no missing positions are interpolated or extrapolated.
+* **Regional conventions:** supported stationary grids exclude poles and large
+  longitude spans. MNH gravity/height assumptions and masks must match the source.
+* **Uncertainty:** estimate dispersion is not calibrated confidence. Sensitivity
+  to resolution, basin, terrain and native/reference differences remains unresolved.

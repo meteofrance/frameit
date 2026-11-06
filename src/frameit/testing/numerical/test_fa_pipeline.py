@@ -48,13 +48,13 @@ def document(directory, atmosphere, surface_files, *, synchronous=True):
         "input": {"sources": {
             "atmosphere": {"model": "mesonh", "input": {"files": [str(atmosphere)],
                             "format": "netcdf", "netcdf": {"engine": "netcdf4"}},
-                           "variables": {"surface": {"names": ["temperature"]}}},
+                           "variables": {"fields_2d": {"names": ["temperature"]}}},
             "surfex": {"model": "arome", "input": {
                 "files": [str(path) for path in surface_files], "format": "fa",
                 "fa": {"profile": "surfex_history", "field_metadata": {
                     "SFX.T2M": {"units": "K", "kind": "continuous",
                                 "temporal_kind": "instantaneous", "allow_unscaled": True}}}},
-                "variables": {"surface": {"names": ["SFX.T2M"]}}},
+                "variables": {"fields_2d": {"names": ["SFX.T2M"]}}},
         }},
         "tracking": {"source": "atmosphere", "method": "fixed_box", "fixed_box": {
             "center": {"latitude": -20., "longitude": 60.}}},
@@ -108,7 +108,7 @@ def test_coupled_schema_defaults_paths_and_bad_options(tmp_path):
     with pytest.raises(ValueError, match="inside each source.input"):
         resolve_schema(bad)
     bad = copy.deepcopy(raw)
-    bad["variables"] = {"surface": {"names": ["ambiguous"]}}
+    bad["variables"] = {"fields_2d": {"names": ["ambiguous"]}}
     with pytest.raises(ValueError, match="belong to each source"):
         resolve_schema(bad)
     bad = copy.deepcopy(raw)
@@ -128,7 +128,7 @@ def test_coupled_netcdf_sources_do_not_need_fa_backend(tmp_path, monkeypatch):
     raw = document(tmp_path, atmosphere, [])
     raw["input"]["sources"]["surfex"] = {
         "model": "mesonh", "input": {"files": [str(surface)], "format": "netcdf"},
-        "variables": {"surface": {"names": ["surface_temp"]}}}
+        "variables": {"fields_2d": {"names": ["surface_temp"]}}}
 
     def forbidden(*args, **kwargs):
         raise AssertionError("NetCDF coupling must not initialize native FA")
@@ -403,11 +403,11 @@ def primary_pair_document(directory, *, synchronous=True, cycles=None, surface_o
         "input": {"sources": {
             "atmosphere": {"model": "arome", "input": {
                 "files": atmosphere, "format": "grib", "wind_pairs": [
-                    {"group": "surface", "u": "u10", "v": "v10", "reference_frame": "earth"},
+                    {"group": "fields_2d", "u": "u10", "v": "v10", "reference_frame": "earth"},
                     {"group": "isobaricInhPa", "u": "u", "v": "v", "reference_frame": "earth"}]},
-                           "polar": {"variables": {"surface": {"names": ["prmsl"]},
+                           "polar": {"variables": {"fields_2d": {"names": ["prmsl"]},
                                                     "isobaricInhPa": {"names": ["t", "r", "z"]}}},
-                           "variables": {"surface": {"names": ["prmsl", "u10", "v10"]},
+                           "variables": {"fields_2d": {"names": ["prmsl", "u10", "v10"]},
                                          "isobaricInhPa": {"names": ["u", "v", "t", "r", "z"],
                                                            "levels": {"values": [850]}}}},
             "surfex": {"model": "arome", "input": {"files": surface, "format": "fa", "fa": {
@@ -418,7 +418,7 @@ def primary_pair_document(directory, *, synchronous=True, cycles=None, surface_o
                 "field_metadata": {name: {"units": "K", "kind": "continuous",
                                           "temporal_kind": "instantaneous", "allow_unscaled": False}
                                    for name in ("SFX.T2M", "SFX.SST")}}},
-                "variables": {"surface": {"names": ["SFX.T2M", "SFX.SST"]}}},
+                "variables": {"fields_2d": {"names": ["SFX.T2M", "SFX.SST"]}}},
         }},
         "tracking": {"source": "atmosphere", "method": "prescribed_track",
                      "prescribed_track": {"file": str(track)}},

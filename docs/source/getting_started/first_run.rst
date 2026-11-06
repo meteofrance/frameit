@@ -47,7 +47,7 @@ The main choices are:
 * ``input.directory`` and ``input.pattern`` select files. Here they select
   ``data/first-run.nc``. Relative paths start at the YAML file's directory.
 * ``input.format: netcdf`` declares the file format.
-* ``variables.surface.names`` lists the fields to extract. Only the example
+* ``variables.fields_2d.names`` lists the fields to extract. Only the example
   scalar is selected here. Field names and units come from the source.
 * ``tracking.method: fixed_box`` keeps one geographical centre at every time.
   The centre uses degrees north and east.
@@ -135,6 +135,15 @@ to finite samples. The source values follow ``1000*t + 10*(j-8) + (i-8)``;
 Keep ``results/resolved-config.yaml`` and ``results/run-provenance.yaml`` with the
 products. They record the settings and processing facts. A failed run can leave
 earlier complete products, so check status before using them.
+
+.. figure:: ../_static/figures/first-run.png
+   :target: ../_static/figures/first-run.png
+   :width: 100%
+   :alt: First-time instructional input and its actual exported 5-by-5 crop. Both use the same dimensionless colour scale; the missing sample is grey and zero remains valid.
+
+   Actual input and exported crop from this tutorial, not a simulation. The
+   :doc:`standalone plotting recipe <../reference/illustrations>` uses ordinary
+   xarray and Matplotlib, without importing FrameIt.
 
 Next steps
 ----------

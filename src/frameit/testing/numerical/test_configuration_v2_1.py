@@ -27,8 +27,57 @@ def minimal_document():
             "input": {"pattern": "*.nc", "format": "netcdf"},
             "tracking": {"method": "fixed_box", "fixed_box": {
                 "center": {"latitude": -20., "longitude": 60.}}},
-            "variables": {"surface": {"names": ["instructional_scalar"]}},
-            "output": {"directory": "./products", "overwrite": False}}
+            "variables": {"fields_2d": {"names": ["instructional_scalar"]}},
+             "output": {"directory": "./products", "overwrite": False}}
+
+
+def test_fields_2d_translates_without_renaming_scientific_products(tmp_path):
+    raw = minimal_document()
+    raw["variables"] = {"fields_2d": {"names": ["instructional_scalar"]}}
+    raw["polar"] = {"variables": {"fields_2d": {"names": ["instructional_scalar"]}}}
+    raw["input"]["wind_pairs"] = [
+        {"group": "fields_2d", "u": "u10", "v": "v10", "reference_frame": "earth"}]
+    runtime = to_runtime(raw, base_dir=tmp_path)
+    assert runtime["requested_variables_user"] == {
+        "surface": {"variables": ["instructional_scalar"],
+                    "level_selection": "stored", "level_domain": "stored"}}
+    assert runtime["polar_variables"] == {"surface": {"variables": ["instructional_scalar"]}}
+    assert runtime["wind_pairs"][0]["group"] == "surface"
+    assert set(runtime["yaml_config"]["variables"]) == {"fields_2d"}
+    assert runtime["yaml_config"]["input"]["wind_pairs"][0]["group"] == "fields_2d"
+    replay = to_runtime(runtime["yaml_config"], base_dir=tmp_path)
+    assert replay["requested_variables_user"] == runtime["requested_variables_user"]
+
+
+@pytest.mark.parametrize("location", ["variables", "polar", "wind_pairs", "source"])
+def test_public_surface_group_is_rejected_actionably(tmp_path, location):
+    raw = minimal_document()
+    raw["variables"] = {"fields_2d": {"names": ["instructional_scalar"]}}
+    if location == "variables":
+        raw["variables"] = {"surface": {"names": ["instructional_scalar"]}}
+    elif location == "polar":
+        raw["polar"] = {"variables": {"surface": {"names": ["instructional_scalar"]}}}
+    elif location == "wind_pairs":
+        raw["input"]["wind_pairs"] = [
+            {"group": "surface", "u": "u10", "v": "v10", "reference_frame": "earth"}]
+    else:
+        raw["input"] = {"sources": {"atmosphere": {
+            "model": "arome", "input": {"format": "netcdf", "pattern": "*.nc"},
+            "variables": {"surface": {"names": ["instructional_scalar"]}}}}}
+        raw["variables"] = {}
+        raw["tracking"]["source"] = "atmosphere"
+    with pytest.raises(ValueError, match="fields_2d"):
+        resolve_schema(raw, base_dir=tmp_path)
+    assert not (tmp_path / "products").exists()
+
+
+def test_fields_2d_fa_selection_retains_internal_record_group(tmp_path):
+    raw = minimal_document()
+    raw["input"].update(format="fa", pattern="*.fa", fa={"profile": "arome_history"})
+    raw["variables"] = {"fields_2d": {"names": ["CLSTEMPERATURE"]}}
+    runtime = to_runtime(raw, base_dir=tmp_path)
+    assert set(runtime["requested_variables_user"]) == {"surface"}
+    assert set(runtime["yaml_config"]["variables"]) == {"fields_2d"}
 
 
 def test_current_string_schema_preserves_numerical_requests(tmp_path):
@@ -112,7 +161,7 @@ def test_flat_public_documents_cannot_use_runtime_dispatch(tmp_path, route):
     (("input", "wind_reference_frame"), "earth"),
     (("input", "fa", "backend"), "native"),
     (("polar", "variables"), "all"),
-    (("variables", "surface", "levels"), "all"),
+    (("variables", "fields_2d", "levels"), "all"),
     (("output", "engine"), "zarr"),
     (("output", "format"), "NETCDF4"),
     (("output", "export", "netcdf"), False),
@@ -132,13 +181,13 @@ def test_retired_keys_and_values_fail_in_current_document(path, value):
 @pytest.mark.parametrize("change", [
     {"input": {"pattern": "*.nc", "exclude": None}},
     {"input": {"pattern": "*.nc", "files": []}},
-    {"variables": {"surface": {"names": [""]}}},
-    {"variables": {"surface": {"names": [" "]}}},
+    {"variables": {"fields_2d": {"names": [""]}}},
+    {"variables": {"fields_2d": {"names": [" "]}}},
     {"variables": {1: {"names": ["scalar"]}}},
     {"output": {"backend": "zarr", "netcdf_format": "unused"}},
     {"input": {"pattern": "*.nc", "netcdf": {"chunks": {1: 2}}}},
     {"input": {"pattern": "*.nc", 1: "invalid"}},
-    {"polar": {"variables": {"surface": {"names": ["instructional_scalar"], "levels": "stored"}}}},
+    {"polar": {"variables": {"fields_2d": {"names": ["instructional_scalar"], "levels": "stored"}}}},
 ])
 def test_current_schema_rejects_invalid_dynamic_declarations(change):
     raw = minimal_document()
@@ -155,7 +204,7 @@ def test_named_sources_inherit_only_declared_polar_settings_and_replay(tmp_path)
     raw["tracking"]["source"] = "atmosphere"
     raw["input"] = {"time_alignment": "common", "sources": {
         "atmosphere": {"model": "arome", "input": {"files": ["atmosphere.nc"], "format": "netcdf"},
-                       "variables": {"surface": {"names": ["scalar"]}}},
+                       "variables": {"fields_2d": {"names": ["scalar"]}}},
         "ocean": {"model": "nemo", "input": {"files": ["ocean.nc"], "format": "netcdf"},
                   "variables": {"deptht": {"names": ["votemper"], "levels": {"indices": [1, 0]}}},
                   "polar": {"azimuth_count": 8}}}}
@@ -220,13 +269,13 @@ def test_catalog_emits_current_requests_without_legacy_conversion():
 
 def document(tmp_path, **sections):
     # This synthetic fixture defines UM10/VM10 as Earth-relative components.
-    wind_pairs = [{"group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
+    wind_pairs = [{"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
     value = {"schema_version": "2.1", "model": "mesonh",
              "input": {"directory": str(tmp_path), "pattern": "*.nc", "wind_pairs": wind_pairs},
              "output": {"directory": str(tmp_path / "output")},
              "tracking": {"method": "fixed_box", "fixed_box": {
                  "center": {"latitude": -20., "longitude": 60.}}},
-             "variables": {"surface": {"names": ["UM10", "VM10", "MSLP"]}}}
+             "variables": {"fields_2d": {"names": ["UM10", "VM10", "MSLP"]}}}
     value.update(sections)
     value["input"].setdefault("wind_pairs", wind_pairs)
     return value
@@ -420,7 +469,7 @@ def test_unit_boundary_angle_consistency_and_grid_rotation(tmp_path):
                        coords={"grid_rotation": xr.DataArray(90., attrs={"units": "degree"})},
                        attrs={"wind_reference_frame": "grid"})
     raw = document(tmp_path)
-    raw["input"]["wind_pairs"] = [{"group": "surface", "u": "UM10", "v": "VM10",
+    raw["input"]["wind_pairs"] = [{"group": "fields_2d", "u": "UM10", "v": "VM10",
                                     "reference_frame": "grid", "rotation": {
                                         "method": "coordinate", "coordinate": "grid_rotation"}}]
     conf = SimulationConfig.from_mapping_with_model_preset(raw)

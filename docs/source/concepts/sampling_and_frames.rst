@@ -1,10 +1,8 @@
 Sampling locations, vector basis and frame motion
 =================================================
 
-A moving crop changes **where** samples are selected. A vector rotation changes
-the axes in which components are expressed. Subtracting the velocity of a moving
-frame changes the physical velocity being reported. These operations are not
-interchangeable.
+Three different questions arise when following an event. Choose the sampling
+location first, then check what the exported vector components mean.
 
 .. figure:: ../_static/figures/sampling-frames.svg
    :target: ../_static/figures/sampling-frames.svg
@@ -14,21 +12,31 @@ interchangeable.
    Schematic, not to scale. Polar positions follow the centre, but exported winds
    and ocean currents do not have its translation subtracted.
 
-Native/Cartesian crops select source samples around a centre. Staggered U, V and
-W can have different locations. Collocation needs actual neighbouring samples
-and their coordinates; equal dimension lengths do not prove collocation.
-See the C-grid and W examples in :ref:`wind-grid-contract`.
+Where are the samples?
+----------------------
 
-Polar output samples selected fields at geodesically located points. Launch
-azimuth increases clockwise from north; local terminal bearing supplies the
-radial/tangential vector directions. The bearing generally differs from launch
-azimuth on a curved Earth. At the centre, radial direction is undefined.
+A Cartesian crop selects existing native points around a grid-aligned centre.
+Polar sampling interpolates selected fields at new points, described by distance
+and angle around the continuous geographical centre. Moving either selection
+changes where data are sampled, not the wind's physical meaning.
 
-Some trackers use motion-relative winds internally, as specified in their method
-records. That does not change the frame of exported field products.
+Which directions do U and V describe?
+-------------------------------------
 
-Atmospheric polar winds are prepared in an Earth-relative basis. Radial wind is
-positive outward and tangential wind is positive clockwise. A finer target grid
-does not improve native resolution or make point sampling conservative. Use
-:doc:`../task_guides/scalars_and_vectors` to choose representations and
-:doc:`../task_guides/polar_sampling` to select target geometry and coverage.
+In an Earth-relative pair, U points east and V north. A grid-relative pair follows
+the model's axes, which may not align with east/north. Rotation changes those
+component directions. Preparing staggered winds can also require moving U/V
+samples to a common location; see :ref:`wind-grid-contract` for examples.
+
+Is event motion subtracted?
+---------------------------
+
+Not from exported winds or currents. A window following an event moving east at
+5 m/s does not automatically subtract 5 m/s from U. That is a separate downstream
+scientific choice. Some trackers use motion-relative winds internally; their
+method records specify this without changing exported field products.
+
+Use :doc:`../task_guides/scalars_and_vectors` for representation choices and
+:doc:`../task_guides/polar_sampling` for target spacing and coverage. The
+:doc:`polar reference <../polar_projection/xESMF_proj>` defines angle conventions,
+local radial directions and undefined components at the origin.

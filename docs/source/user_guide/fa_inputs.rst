@@ -166,7 +166,7 @@ Profiles are ``arome_history`` and ``surfex_history``. The latter reads
 AROME-produced SURFEX ``SFX.PACK=0`` histories with horizontal ``X1`` entries
 matching the full storage grid. Layer/patch/tile record names and mask labels are
 retained, not averaged or assembled into an invented vertical coordinate. Use
-the logical ``surface`` group for individually selected 2-D records; this does
+the logical ``fields_2d`` group for individually selected 2-D records; this does
 not label every quantity as a physical ground-surface variable.
 
 SURFEX execution requires the evidenced source tags

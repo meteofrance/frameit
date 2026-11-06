@@ -13,7 +13,7 @@ variables:
     names: [temp, salt]
     # Zero-based stored sigma index, NOT metres; retain formula dependencies and masks.
     levels: {indices: [0]}
-  surface:
+  fields_2d:
     names: [zeta]
 tracking:
   method: fixed_box

@@ -76,24 +76,16 @@ The index pair ``(cy, cx)`` is repeated for each model timestamp, producing:
 - ``cy(time) = constant``
 - ``cx(time) = constant``
 
-Practical considerations and limitations
-----------------------------------------
-
-- **Distance metric**: squared geographic degrees are not a geodesic distance.
-- **Masked coordinates**: if latitude/longitude contain NaNs (masked areas), the minimization must avoid all-NaN distance fields. If all candidate distances are NaN, the selection will fail.
-- **Fixed-box versus extraction box**: the fixed-box tracker defines the *center* used by FrameIt.
-  The extraction domain size is controlled separately by ``domain.width_km.x`` and ``.y``.
-
 Example
 -------
 
 .. code-block:: yaml
 
-   model: arome
+   model: mesonh
    tracking:
      method: fixed_box
      fixed_box:
-       center: {latitude: -18, longitude: 58}
+        center: {latitude: -16.342215392786485, longitude: 62.15487544109405}
    domain:
      width_km: {x: 500, y: 500}
 
@@ -101,9 +93,28 @@ Example
 Illustration
 ------------
 
-Fixed-box extraction for tropical cyclone Batsirai:
+Fixed-box extraction from the real BATSIRAI rainfall fields:
 
-.. figure:: ../_static/figures/Fig.FixedBox_Batsirai.png
-   :target: ../_static/figures/Fig.FixedBox_Batsirai.png
+.. figure:: ../_static/figures/batsirai-fixed.png
+   :target: ../_static/figures/batsirai-fixed.png
    :width: 100%
    :align: center
+   :alt: Real BATSIRAI rain-only dBZ estimate for 00:10–00:20 with a fixed centre and the native 500-km crop outline; no geographical grid lines are drawn.
+
+   The outline follows the selected native indices, not a continuously recentered
+   box. Colours are an **illustrative rain-only estimate**, derived externally from
+   accumulated rainfall, not stored model reflectivity. See the
+   :doc:`formula, limits and regeneration script <../reference/illustrations>`.
+
+Known limitations
+------------------
+
+* **Not event detection:** the centre stays fixed even if the event leaves the box.
+* **Grid-aligned extraction:** a native point supplies ``cx/cy``. Requested widths
+  round to native point counts; neither location nor extent is imposed by regridding.
+  The requested geographical centre remains the polar origin.
+* **Lookup convention:** ordinary geographic lookup uses squared degrees, not
+  geodesic distance. Admitted projected FA uses its declared source CRS.
+* **Coverage:** no finite geographical candidate causes failure. A crop extending
+  beyond the model boundary retains its shape with NaN padding.
+* **Stationary geometry:** this lookup does not implement an evolving source mesh.

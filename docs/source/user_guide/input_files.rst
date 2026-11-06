@@ -88,7 +88,7 @@ For one physical field per file, declare the layout within that source:
      netcdf:
        file_layout: variables
    variables:
-     surface:
+     fields_2d:
        names: [prmsl, u10, v10]
 
 Adapt names and wind declarations to the source metadata. A wind companion may

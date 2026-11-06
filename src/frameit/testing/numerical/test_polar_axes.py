@@ -74,7 +74,7 @@ def test_explicit_count_and_serialized_configuration(tmp_path):
     path = tmp_path / "sampling.yml"
     raw = {"schema_version": "2.1", "model": "arome", "input": {"pattern": "*.grib"},
            "tracking": {"method": "pressure_wind"},
-           "variables": {"surface": {"names": ["u10", "v10"]}},
+           "variables": {"fields_2d": {"names": ["u10", "v10"]}},
            "domain": {"width_km": {"x": 200, "y": 200}},
            "polar": {"enabled": True, "azimuth_count": 64, "radial_step_m": 3000}}
     path.write_text(yaml.safe_dump(raw))

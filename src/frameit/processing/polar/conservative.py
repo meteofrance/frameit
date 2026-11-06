@@ -2,7 +2,7 @@
 
 Inputs are declared cell means with supplied corners, not inferred point values.
 All edges and areas use one explicit sphere. No velocity/flux conservation is
-implied. See docs/source/polar_projection/conservative_experiment.rst.
+implied. See docs/development/polar/conservative_experiment.rst.
 """
 
 from __future__ import annotations

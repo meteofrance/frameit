@@ -38,8 +38,8 @@ def coupled_document(directory, *, moving=False, exact=True, scalar_polar=False)
         atmosphere.append(str(path))
     sources["arome"] = {"model": "arome", "input": {"format": "netcdf", "files": atmosphere,
         "netcdf": {"file_layout": "variables"}, "wind_pairs": [
-            {"group": "surface", "u": "u10", "v": "v10", "reference_frame": "earth"}]},
-        "variables": {"surface": {"names": ["prmsl", "u10", "v10"]}}}
+            {"group": "fields_2d", "u": "u10", "v": "v10", "reference_frame": "earth"}]},
+        "variables": {"fields_2d": {"names": ["prmsl", "u10", "v10"]}}}
     for source, depth, field, dx, dy in (("nemo_t", "deptht", "votemper", 0., 0.),
                                        ("nemo_u", "depthu", "vozocrtx", .006, 0.),
                                        ("nemo_v", "depthv", "vomecrty", 0., .006),
@@ -71,7 +71,7 @@ def coupled_document(directory, *, moving=False, exact=True, scalar_polar=False)
         raw["polar"] = {"enabled": True, "shared_target": True, "azimuth_count": 8}
         for source in sources:
             sources[source]["polar"] = {"enabled": source in {"arome", "nemo_t"}}
-        sources["arome"]["polar"]["variables"] = {"surface": {"names": ["prmsl"]}}
+        sources["arome"]["polar"]["variables"] = {"fields_2d": {"names": ["prmsl"]}}
         sources["nemo_t"]["polar"]["variables"] = {"deptht": {"names": ["votemper"]}}
     return raw
 

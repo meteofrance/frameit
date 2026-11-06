@@ -71,7 +71,7 @@ S000 is not repaired into index zero when library metadata says otherwise.
 Original record IDs remain ``<variable>_native_record`` string coordinates.
 Wrong fixed-surface type, unavailable labels, out-of-range positions, incompatible
 axes or changed hybrid definitions across files fail before physical output.
-Individually named 2-D ``variables.surface`` requests remain supported separately.
+Individually named 2-D ``variables.fields_2d`` requests remain supported separately.
 
 Hybrid coefficients and reference pressure
 ------------------------------------------

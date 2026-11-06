@@ -116,16 +116,21 @@ To activate this tracker in the YAML configuration, set:
 Illustration
 ------------
 
-Pressure-wind tracking for tropical cyclone CHIDO,
-with ``domain.width_km: {x: 50, y: 75}`` (full widths in kilometres).
-The red line shows the extracted box.
+Pressure-wind tracking on the two BATSIRAI times, with
+``domain.width_km: {x: 500, y: 500}`` (full widths in kilometres).
+The outline shows the final native crop. The two centres are only one native
+grid point apart; no artificial displacement or second centre marker is added.
 
-.. figure:: ../_static/figures/Fig.tracking_Chido.png
-   :target: ../_static/figures/Fig.tracking_Chido.png
+.. figure:: ../_static/figures/batsirai-tracking.png
+   :target: ../_static/figures/batsirai-tracking.png
    :width: 100%
    :align: center
+   :alt: Two real pressure-wind tracking centres separated by one native point, with the final crop outline over a ten-minute rain-only reflectivity estimate. No extracted-centre cross or graticule is added.
 
-   Example of tracking and extraction using the pressure_wind tracking method.
+   Actual tracking output over an **illustrative rain-only estimate**, not stored
+   model reflectivity or evidence of track accuracy. The
+   :doc:`external plotting recipe <../reference/illustrations>` declares the
+   rainfall interval, formula, wind convention and limitations.
 
 Optional initial position
 -------------------------
@@ -159,3 +164,20 @@ Omit ``initial_guess`` (or set it to ``null``) to retain the global initial MSLP
 search. The effective configuration and seeded track attributes record the
 position, radius and search convention. Check the first centre against the
 intended disturbance.
+
+Known limitations
+------------------
+
+* **Minima are not unique cyclone identifiers:** another low-pressure system or
+  weak-wind area can be selected. Disorganised or asymmetric systems need manual
+  inspection; the pressure minimum and wind-refined centre need not coincide.
+* **Initial selection:** without ``initial_guess``, the first pressure search is
+  global. A seed restricts pressure candidates, not the following wind refinement.
+* **Search windows:** large movement between saved times or poorly chosen window
+  widths can lose the intended disturbance. Windows are square native-index
+  searches, not exact geodesic disks.
+* **Missing-data fallbacks:** an all-missing local window triggers the documented
+  full-domain search. This can jump to another disturbance; inspect the trajectory.
+* **Grid-point centres:** positions and Cartesian crops are quantized to native
+  points. This method does not diagnose a continuous sub-grid centre or provide
+  calibrated position uncertainty.

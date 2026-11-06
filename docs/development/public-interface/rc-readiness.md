@@ -1,8 +1,9 @@
 # v2 public-interface RC readiness
 
 This development record is not published documentation or an RC qualification
-certificate. Status below describes the inspected checkout on 2026-11-05;
-historical results are explicitly separated from checks run during this plan.
+certificate. Dated receipts include the inspected baseline on 2026-11-05 and
+maintainer feedback corrections on 2026-11-06. Historical results are explicitly
+separated from checks run during this plan.
 Execution logs and qualification payloads belong under ignored `build/rc/`.
 
 ## Baseline and integration
@@ -747,6 +748,121 @@ print pagination and final human reading acceptance remain unrun.
 
 The live public preview and persistent plan ledger remain available. No push,
 main merge, remote tag, package publication or documentation deployment occurred.
+
+## Maintainer reading-feedback corrections — 2026-11-06
+
+Actual editorial feedback was received after `c4559c2`; the preceding pending
+requests describe that earlier handover, not the absence of this feedback.
+Independent scientific approval, an unfamiliar reader's unassisted run and final
+human reading acceptance remain separate open gates. Task 12 has not started.
+
+### Changes and compatibility
+
+- Four expandable parent sections: Start here, Task guides, Reference, Development.
+  Inactive branches are retained so the existing RTD theme provides real controls.
+  Existing nonexperimental topic URLs remain; experimental comparison records
+  moved byte-for-byte to `docs/development/polar/`, outside public search/downloads.
+- Public `fields_2d` selects fields without a selectable vertical axis. Extraction,
+  explicit polar selection, wind declarations, source-local inputs, starters,
+  examples, catalogue emission and replay use that name. Old public `surface` is
+  rejected actionably. Internal groups, native GRIB identifiers, source IDs and
+  `.surface` product names/metadata are unchanged; no scientific kernel changed.
+- The full annotated key reference covers the current schema and open maps. It is
+  explicitly non-runnable, with alternatives and dedicated contract links. Plain
+  explanations distinguish native snapping/rounded widths, levels, time support,
+  sampling, basis rotation and frame motion. Six tracker pages end in limitations;
+  centroid troubleshooting follows the method, and two method schematics were added.
+- HPC now uses `environment.yaml`/`frameit_env`; the extra recipe is removed.
+  Accepted installation/Quick start structure, supplied artwork and credits remain.
+- Standalone scripts/configurations in `example/plots/` generate five new PNGs.
+  They import no FrameIt, add no runtime dependency/diagnostic and draw no grids or
+  graticules. Captions and `reference/illustrations.rst` record data, assumptions,
+  units, temporal support, display limits and regeneration commands.
+
+### Real-data scope and scientific limits
+
+The maintainer named the two BATSIRAI Meso-NH diagnostic files and explicitly
+selected **Derived rain-only dBZ** after read-only headers found no reflectivity.
+Only horizontal fields/coordinates were read. `ACPRR` is rainfall amount in mm;
+the 2022-02-01 00:10–00:20 increment has no negative finite values. The external
+illustration uses `R=(A2-A1)/(1/6 h)`, `Z=200 R**1.6`, then `10 log10(Z)` with
+the documented units. Zero rain is `-inf`, missing remains NaN, and reset-like
+decreases fail. The −10 dBZ display limit is not a data mask or physical zero.
+
+This is not instantaneous model reflectivity, ice scattering, a locally calibrated
+retrieval, a validated FrameIt method or evidence of track accuracy. Crossref
+verifies the Marshall/Palmer (1948) publication identity; it does not validate these
+constants or their applicability to BATSIRAI. The primary equations and local
+microphysical applicability were not independently established here.
+
+Both small FrameIt runs completed with complete tracking. Native spacing is
+3000 m; requested 500×500 km crops have 167×167 points. The fixed centre is the
+first source MSLP minimum (-16.342215392786485°, 62.15487544109405°); the fixed polar
+product has 43 radii at 6 km spacing and 180 azimuths. Rainfall amounts are sampled
+before the nonlinear estimate. Moving fixes are `(380,732)` then `(380,731)`:
+only one grid point apart, with no artificial trajectory extension. Source metadata
+describes `UM10/VM10` as zonal/meridian 10-m winds in m/s, declared Earth-relative.
+
+Ordinary netCDF4/xarray readers importing no FrameIt checked status, axes, units,
+geography and tracks. Twenty independent native-window value/geography/metadata
+assertions match exported rainfall to the raw source. Source sizes/mtimes were
+unchanged across those checks; no complete-archive checksum/identity claim is made.
+The actual instructional workflow also completed, its source SHA-256 unchanged;
+its separate plot retains dimensionless values, valid zero and missing samples.
+
+### Verification and review
+
+All Python work used Conda `frameit_env`, Python 3.13.18. No environment was created
+or upgraded. Commands and complete logs remain in the ignored plan workspace.
+
+- `conda run --no-capture-output -n frameit_env python -m pytest -q` → **1201
+  passed, 4604 known warnings, two subtests, no skips, normal exit 0, 527.99 s**.
+  Subsequent review fixes affected documentation prose/example indentation and a
+  documentation parsing test only, not the tested numerical implementation.
+  The earlier full run's six stale-fixture failures were corrected without
+  changing independent numerical assertions; focused verification passed 297 tests.
+- Public group regressions observed RED→GREEN. Six approximation checks passed;
+  two CLI checks reproduced time-coordinate mismatch, then passed after the fix.
+  All eight plot tests are included in the full run and test overwrite refusal.
+- `conda run --no-capture-output -n frameit_env python -m unittest discover -s docs
+  -p test_check_publication.py` → **13 passed**, no skips. The new UTrack example
+  parsing regression was observed failing before the indentation correction.
+  All **32** public YAML code blocks parse; fragments are not called standalone runs.
+- `conda run --no-capture-output -n frameit_env sphinx-build -q -W --keep-going -b
+  html docs/source build/docs-preview/feedback-04` and
+  `conda run --no-capture-output -n frameit_env python docs/check_publication.py
+  build/docs-preview/feedback-04` → **passed**. Strict warnings were fixed at source,
+  not suppressed. Targeted Ruff F and `git diff --check` passed.
+- Rendered review at 320/390/768/1200 px: **51 topics / 204 placements**, **80 image
+  placements**, no page overflow or broken/clipped images. All **12 SVG drawings /
+  120 text labels** fit their viewBoxes. All four parent controls expand/collapse;
+  each tracker ends in Known limitations. The three final review-corrected pages
+  were rechecked at all widths in `feedback-04`. A timed-out image-decode helper
+  was inspected/removed and the full successful measurement rerun; no timeout is
+  counted as a pass. Final live pages are open in the GUI; pixel capture failed
+  because the desktop window was not visible. DOM checks are not human acceptance.
+- One fresh-context read-only review found no Critical issue, two Important
+  (three stale public group references, malformed UTrack YAML) and one Minor.
+  Both Important findings were verified and corrected in one pass. **Deferred
+  minor:** an invalid explicit polar subset can still name internal `surface`
+  in its error path; rejection and accepted/generated configuration are correct.
+
+### Scope rulings and remaining gates
+
+The review's set-aside areas were resolved explicitly: scientific Z–R/track
+validity is not granted (risk: unsuitable downstream scientific use); pre-base
+numerical/UTrack behavior is preserved (existing limits remain); scripts stay
+bounded to their named examples (other producers/calendars/counters/meshes need
+adaptation); real-source regeneration is checked but HPC performance/fresh installs/
+artifacts stay open (platform/artifact-only defects may remain); rendered bounds
+do not replace human visual/keyboard/print/scientific/unassisted-reader acceptance
+(usability or validity gaps may remain); unchanged experiments are relocated, not
+scientifically promoted (their validation debt remains). Detailed rulings stay in
+the plan ledger. No new algorithm/default or output schema is scientifically approved.
+
+Keep the preview and plan workspace for feedback. No push, main merge, publication,
+deployment, full qualification repeat, private-source upload, production job or
+artifact/fresh-environment qualification was performed by this correction.
 
 ## Task 1 verification receipt
 

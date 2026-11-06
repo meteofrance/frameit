@@ -46,7 +46,7 @@ def surfex_document(directory, paths):
     return {"schema_version": "2.1", "model": "mesonh", "run": {"name": "sea-support"},
             "input": {"format": "netcdf", "files": list(map(str, paths)),
                       "netcdf": {"surfex_fields": ["SST", "SSS", "H_SEA"]}},
-            "variables": {"surface": {"names": ["SST", "SSS", "H_SEA", "PRES", "FRAC_SEA"]}},
+            "variables": {"fields_2d": {"names": ["SST", "SSS", "H_SEA", "PRES", "FRAC_SEA"]}},
             "tracking": {"method": "fixed_box", "fixed_box": {"center": {"latitude": -20., "longitude": 60.}}},
             "domain": {"width_km": {"x": 4., "y": 4.}},
             "execution": {"native_threads": 1, "dask_workers": 1},
@@ -297,7 +297,7 @@ def test_surfex_optional_polar_preserves_central_valid_zero_and_units(tmp_path):
     surfex_scene().to_netcdf(path)
     raw = surfex_document(tmp_path, [path])
     raw["polar"] = {"enabled": True, "azimuth_count": 8,
-                    "variables": {"surface": {"names": ["SST", "SSS"]}}}
+                    "variables": {"fields_2d": {"names": ["SST", "SSS"]}}}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     product = next(p["path"] for p in result.products if p["role"] == "polar")

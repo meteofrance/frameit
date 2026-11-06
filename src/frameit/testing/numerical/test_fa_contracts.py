@@ -126,8 +126,8 @@ def test_raw_vertical_header_survives_without_coordinate_or_field_assumptions():
 
 
 @pytest.mark.parametrize("group, levels", [
-    ("level", "stored"), ("surface", "physical"), ("surface", {"indices": [0]}),
-    ("surface", {"values": [850]}),
+    ("level", "stored"), ("fields_2d", "physical"), ("fields_2d", {"indices": [0]}),
+    ("fields_2d", {"values": [850]}),
 ])
 def test_native_atmospheric_cubes_and_vertical_selectors_remain_gated(tmp_path, group, levels):
     path = tmp_path / "unopened.fa"
@@ -135,8 +135,8 @@ def test_native_atmospheric_cubes_and_vertical_selectors_remain_gated(tmp_path, 
     raw["input"]["fa"].update(profile="arome_history",
                              field_metadata={"CLSTEMPERATURE": DECLARATION})
     raw["variables"] = {group: {"names": ["CLSTEMPERATURE"], "levels": levels}}
-    message = ("FA 2-D records must be selected in variables.surface" if group == "level"
-               else "variables.surface.levels cannot select a vertical axis")
+    message = ("FA 2-D records must be selected in variables.fields_2d" if group == "level"
+               else "variables.fields_2d.levels cannot select a vertical axis")
     with pytest.raises(ValueError, match=message):
         SimulationConfig.from_mapping_with_model_preset(raw)
     assert not path.exists() and not (tmp_path / "run").exists()

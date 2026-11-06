@@ -215,7 +215,7 @@ def test_native_projected_extraction_and_ordinary_reader_provenance(tmp_path):
     raw["input"]["fa"]["earth_radius_m"] = 6371229.
     raw["input"]["fa"]["field_metadata"] = {
         "CLSTEMPERATURE": {"units": "K", "kind": "continuous", "temporal_kind": "instantaneous"}}
-    raw["variables"] = {"surface": {"names": ["CLSTEMPERATURE"]}}
+    raw["variables"] = {"fields_2d": {"names": ["CLSTEMPERATURE"]}}
     centre = track_at(500.01, -100.)
     raw["tracking"]["fixed_box"]["center"] = {
         "latitude": float(centre.lat[0]), "longitude": float(centre.lon[0])}

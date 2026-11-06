@@ -35,8 +35,8 @@ interpolation. See :doc:`../tracker/prescribed_track` for the lookup contract an
    :width: 480px
    :alt: Schematic comparing a fixed geographical centre with two moving centres and their separately selected native boxes. Widths are full widths in kilometres.
 
-   Schematic, not to scale. Each continuous centre selects a native crop. Moving
-   the window neither rotates vector components nor subtracts event motion.
+   Schematic, not to scale. Each geographical centre selects a grid-aligned crop.
+   Its native centre point can differ from the continuous trajectory position.
 
 Use an atmospheric tracker
 --------------------------

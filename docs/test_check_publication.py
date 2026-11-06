@@ -1,6 +1,7 @@
 """Compact regression cases for the public documentation boundary."""
 
 import tempfile
+import textwrap
 import unittest
 import zlib
 import importlib.util
@@ -14,6 +15,47 @@ from check_publication import check_artifact, check_text
 
 
 class PublicationBoundaryTests(unittest.TestCase):
+    def test_utrack_configuration_example_is_valid_yaml(self):
+        import yaml
+
+        path = Path(__file__).parent / 'source/tracker/utrack.rst'
+        block = path.read_text().split('.. code-block:: yaml\n\n', 1)[1].split('\n\n', 1)[0]
+        example = yaml.safe_load(textwrap.dedent(block))
+        self.assertEqual(example['tracking'], {
+            'method': 'utrack', 'utrack': {
+                'weights_file': './model_latest.ckpt', 'use_gpu': False, 'batch_size': 16}})
+
+    def test_experimental_comparisons_are_development_only(self):
+        for name in ('conservative_experiment', 'wind_method_comparison'):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / f'{name}.html').write_text('<h1>Internal numerical experiment</h1>')
+                self.assertTrue(any('non-public page copied' in error
+                                    for error in check_artifact(root)))
+
+    def test_all_keys_reference_covers_the_current_schema(self):
+        import yaml
+        from frameit.core.configuration import DEFAULTS
+
+        path = Path(__file__).parent / 'source/_static/configuration-reference.yaml'
+        reference = yaml.safe_load(path.read_text())
+
+        def paths(mapping, prefix=''):
+            result = set()
+            for key, value in mapping.items():
+                name = f'{prefix}.{key}' if prefix else key
+                result.add(name)
+                if isinstance(value, dict):
+                    result |= paths(value, name)
+            return result
+
+        self.assertEqual(set(reference), set(DEFAULTS))
+        self.assertFalse(paths(DEFAULTS) - paths(reference))
+        self.assertIn('fields_2d', reference['variables'])
+        self.assertIn('sample', reference['input']['sources'])
+        self.assertIn('sample_field', reference['input']['fa']['field_metadata'])
+        self.assertIn('sample_cube', reference['input']['fa']['native_cubes'])
+
     def test_local_links_resolve_relative_encoded_downloads_and_fragments(self):
         from check_publication import check_local_links
 

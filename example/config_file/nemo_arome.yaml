@@ -17,9 +17,9 @@ input:
         files: [./data/prmsl.nc, ./data/u10.nc, ./data/v10.nc]
         netcdf: {file_layout: variables}
         wind_pairs:
-          - {group: surface, u: u10, v: v10, reference_frame: earth}
+          - {group: fields_2d, u: u10, v: v10, reference_frame: earth}
       variables:
-        surface: {names: [prmsl, u10, v10]}
+        fields_2d: {names: [prmsl, u10, v10]}
     nemo_t:
       model: nemo
       input: {format: netcdf, files: [./data/nemo_t.nc]}

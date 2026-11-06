@@ -8,20 +8,17 @@ follow the supplied ``compare_batsirai_centers_v1.4.1.py`` implementation. This
 is an independent implementation, not a bitwise reproduction of the authors'
 analysis code.
 
-Troubleshooting reference-ring coverage
----------------------------------------
+The method finds a pressure-deficit-weighted centre and adapts the region used
+around it. It needs the physical fields and wide input coverage described below;
+the small extraction box does not bound the tracking calculation.
 
-The full 500-km reference ring must have finite pressure interpolated to
-2,000 m ASL, including the horizontal interpolation stencil. An invalid sample
-causes failure, not averaging over a partial ring. The error reports the candidate
-centre and invalid sample count. Check whether the centre belongs to the intended
-disturbance, whether the ring crosses the atmospheric input boundary, and whether
-vertical brackets or masks leave missing pressure at that height. Supply wider
-valid atmospheric coverage or choose another suitable tracker when these
-requirements cannot be met. Increasing ``domain.width_km`` changes the output box,
-not the atmospheric input coverage. The reference radius is not a configuration
-workaround. Motion coupling also requires at least two increasing valid times;
-a single snapshot can test spatial support but cannot validate a full track.
+.. figure:: ../_static/figures/pressure-centroid-method.svg
+   :target: ../_static/figures/pressure-centroid-method.svg
+   :width: 540px
+   :alt: Schematic showing environmental pressure sampled on a 500-km ring, pressure-deficit weighting inside a smaller region, and an updated centre with adaptive integration radius.
+
+   Method schematic, not a computed cyclone result. The environmental reference
+   ring and adaptive integration region have different purposes and sizes.
 
 Inputs and supported grids
 --------------------------
@@ -226,6 +223,21 @@ nodal area weighting. The implementation identifier is ``frameit_mnh_native_v1``
 its geometry preparation differs from the comparison script. Resolved inputs
 are also included in ``run-provenance.yaml``.
 
+Troubleshooting reference-ring coverage
+----------------------------------------
+
+The full 500-km reference ring must have finite pressure interpolated to
+2,000 m ASL, including the horizontal interpolation stencil. An invalid sample
+causes failure, not averaging over a partial ring. The error reports the candidate
+centre and invalid sample count. Check whether the centre belongs to the intended
+disturbance, whether the ring crosses the atmospheric input boundary, and whether
+vertical brackets or masks leave missing pressure at that height. Supply wider
+valid atmospheric coverage or choose another suitable tracker when these
+requirements cannot be met. Increasing ``domain.width_km`` changes the output box,
+not the atmospheric input coverage. The reference radius is not a configuration
+workaround. Motion coupling also requires at least two increasing valid times;
+a single snapshot can test spatial support but cannot validate a full track.
+
 Dedicated verification
 ----------------------
 
@@ -275,3 +287,19 @@ MNH method record and qualification status
   as described above. Real DIAG layouts, mountainous masks, projection
   sensitivity and full-domain scientific comparisons require further
   representative-data qualification; no human scientific sign-off is implied.
+
+Known limitations
+------------------
+
+* **Wide complete input support:** the full 500-km reference ring, R80 search and
+  integration samples must be valid. A small output box cannot repair missing
+  input coverage; no partial-ring or local-reference fallback is used.
+* **Vertical requirements:** inputs must bracket 2,000 m with valid pressure,
+  height and winds. There is no vertical extrapolation or MSLP substitution.
+  MNH geometric altitude and AROME geopotential height remain distinct definitions.
+* **Coupled time solve:** at least two increasing times are needed for motion.
+  Unresolved R80, insufficient deficits or nonconvergence fail explicitly.
+* **Native Cartesian crop:** continuous centres can differ from nearest native
+  ``cx/cy``. Polar origins retain continuous positions; crops remain grid-aligned.
+* **Qualification gaps:** synthetic checks do not establish full-domain real-MNH
+  accuracy, mountainous-mask robustness or independent scientific acceptance.

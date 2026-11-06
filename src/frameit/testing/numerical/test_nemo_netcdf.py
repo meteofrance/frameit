@@ -121,7 +121,7 @@ def test_nemo_native_requests_fail_in_preflight_and_loader(tmp_path, selection):
 
     path = tmp_path / "ocean.nc"
     nemo_scene().to_netcdf(path)
-    variables = {"surface": {"names": ["votemper"]}} if selection == "surface" else {
+    variables = {"fields_2d": {"names": ["votemper"]}} if selection == "surface" else {
         "deptht": {"names": ["votemper"], "levels": {"values": [1.001]}}}
     conf = SimulationConfig.from_mapping_with_model_preset(nemo_document(tmp_path, [path], variables=variables))
     with pytest.raises(ValueError, match="surface|deptht|level|unavailable"):
@@ -286,7 +286,7 @@ def test_nemo_native_components_never_call_wind_preparation(tmp_path, monkeypatc
     path = tmp_path / "components.nc"
     ds.to_netcdf(path)
     raw = nemo_document(tmp_path, [path], variables={
-        "depthu": {"names": ["vozocrtx"], "levels": "stored"}, "surface": {"names": ["sozotaux"]}})
+        "depthu": {"names": ["vozocrtx"], "levels": "stored"}, "fields_2d": {"names": ["sozotaux"]}})
     raw["output"]["cartesian"] = {"horizontal_vectors": "native"}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result

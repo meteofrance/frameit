@@ -78,7 +78,7 @@ def test_exact_first_run_commands_and_fresh_ordinary_reader(tmp_path, tutorial_e
         ("track", None), ("cart", "surface")}
     resolved = yaml.safe_load((tmp_path / root / "resolved-config.yaml").read_text())
     assert resolved["schema_version"] == "2.1"
-    assert resolved["variables"] == {"surface": {"names": ["instructional_scalar"]}}
+    assert resolved["variables"] == {"fields_2d": {"names": ["instructional_scalar"]}}
     assert resolved["polar"]["enabled"] is False
     assert resolved["domain"]["width_km"] == {"x": 4, "y": 4}
     assert resolved["input"]["wind_pairs"] == []
@@ -130,7 +130,7 @@ def test_quick_start_commands_use_the_selected_mesonh_scalar(tmp_path):
     run('validate', 'region.yaml', '--schema-only')
     run('validate', 'region.yaml')
     assert yaml.safe_load(run('config', 'show', 'region.yaml'))['variables'] == {
-        'surface': {'names': ['MSLP']}}
+        'fields_2d': {'names': ['MSLP']}}
     run('run', 'region.yaml', '--dry-run')
     assert not (tmp_path / 'output').exists()
     run('run', 'region.yaml')

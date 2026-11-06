@@ -16,7 +16,7 @@ input:
         s_rho:
           names: [temp, salt, u, v, w]
           levels: {indices: [0, 49]}
-        surface:
+        fields_2d:
           names: [zeta]
       polar:
         variables:
@@ -31,14 +31,14 @@ input:
           # Explicit embedded SEA interpretation; no inferred flux sign or timing.
           surfex_fields: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA]
       variables:
-        surface:
+        fields_2d:
           names: [MSLP, SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA, FRAC_SEA]
         level:
           names: [PRES]
           levels: {indices: [1, 70]}
       polar:
         variables:
-          surface: {names: [MSLP, SST, SSS]}
+          fields_2d: {names: [MSLP, SST, SSS]}
 tracking:
   source: atmosphere
   method: fixed_box

@@ -87,8 +87,9 @@ def load_cases(mode="ci", profile="full", patterns=()):
                     # Physical values derived from indices are bound during
                     # preflight, not guessed from a different simulation.
                     req["levels"] = {"values": spec.get("values", [])}
-            user[group] = req
-            polar[group] = {"names": spec.get("polar_variables", spec["variables"])}
+            public_group = "fields_2d" if group == "surface" else group
+            user[public_group] = req
+            polar[public_group] = {"names": spec.get("polar_variables", spec["variables"])}
         suffix = "0P.grib" if model == "AROME" else "diag.nc"
         centre = binding.get("centre") or [None, None]
         config = {
@@ -99,7 +100,9 @@ def load_cases(mode="ci", profile="full", patterns=()):
                       "format": "grib" if model == "AROME" else "netcdf",
                       "grid_spacing_m": dataset["resolution"],
                       "exclude": [] if model == "AROME" else [f"{dataset['stem']}000{suffix}"],
-                      "wind_pairs": copy.deepcopy(catalog["wind_pairs"][model])},
+                      "wind_pairs": [{**pair, "group": "fields_2d" if pair["group"] == "surface"
+                                      else pair["group"]}
+                                     for pair in catalog["wind_pairs"][model]]},
             "tracking": {"method": "pressure_wind" if definition["tracker"] == "wind_pressure" else definition["tracker"],
                          "fixed_box": {"center": dict(zip(("latitude", "longitude"), centre, strict=True))}},
             "domain": {"width_km": {"x": definition.get("x_boxsize_km", binding["box_km"]),
@@ -383,7 +386,7 @@ def _selected_levels(case, inventory):
     requests = case["config"]["variables"]
     selected = {}
     for group, request in requests.items():
-        if group == "surface":
+        if group == "fields_2d":
             continue
         available = inventory["levels"].get(group, [])
         levels = request["levels"]
@@ -408,7 +411,9 @@ def _selected_levels(case, inventory):
 
 
 def _check_fields(case, inventory, selected):
-    requests = {group: {"variables": list(spec["names"])}
+    from frameit.core.configuration import _runtime_group
+
+    requests = {_runtime_group(group): {"variables": list(spec["names"])}
                 for group, spec in case["config"]["variables"].items()}
     model = inventory["model"]
     tracker = case["tracker"]
@@ -422,7 +427,8 @@ def _check_fields(case, inventory, selected):
     from frameit.core.preflight import wind_dependencies
 
     requests, _ = wind_dependencies(SimpleNamespace(
-        wind_pairs=case["config"]["input"]["wind_pairs"], wind_reference_frame=None,
+        wind_pairs=[{**pair, "group": _runtime_group(pair["group"])}
+                    for pair in case["config"]["input"]["wind_pairs"]], wind_reference_frame=None,
     ), requests)
     for request in requests.values():
         request["variables"] = [n for n in request["variables"] if n != "wind_speed"]
@@ -567,6 +573,8 @@ def probe_dependencies(case):
 
 
 def _products_expected(case, selected, inventory=None):
+    from frameit.core.configuration import _runtime_group
+
     config, model = case["config"], case["config"]["model"]
     contract = [{"role": "track", "group": None, "variables": ["cx", "cy", "valid_box"]}]
     wind_group = "heightAboveGround" if model == "arome" else "level"
@@ -578,7 +586,7 @@ def _products_expected(case, selected, inventory=None):
         contract.append(
             {
                 "role": "cart",
-                "group": group,
+                "group": _runtime_group(group),
                 "variables": variables,
                 "levels": {group: selected[group]} if group in selected else {},
             }
@@ -586,7 +594,7 @@ def _products_expected(case, selected, inventory=None):
     if case["polar"]:
         merged = {}
         for group, request in config["polar"]["variables"].items():
-            out_group = "level" if group == "level_w" else group
+            out_group = "level" if group == "level_w" else _runtime_group(group)
             source = "level" if group == "level_w" and "level" in selected else group
             entry = merged.setdefault(
                 out_group, {"role": "polar", "group": out_group, "variables": [], "levels": {}}

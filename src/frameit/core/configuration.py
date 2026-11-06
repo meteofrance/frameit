@@ -166,6 +166,12 @@ def _positive(value, path, *, integer=False, allow_zero=False):
                          (" integer" if integer else ""))
 
 
+def _runtime_group(group):
+    if group == "surface":
+        raise ValueError("Use fields_2d for fields without a selectable vertical axis, not surface")
+    return "surface" if group == "fields_2d" else group
+
+
 def _requests(raw, path="variables", *, polar=False):
     if polar and raw == "extracted":
         return "extracted"
@@ -175,6 +181,7 @@ def _requests(raw, path="variables", *, polar=False):
     for group, spec in raw.items():
         if not isinstance(group, str) or not group.strip():
             raise ValueError(f"{path} requires nonempty group names")
+        native_group = _runtime_group(group)
         spec = _merge_checked(spec, {"names": [], **({} if polar else {"levels": "stored"})},
                               f"{path}.{group}")
         names = spec["names"]
@@ -182,13 +189,13 @@ def _requests(raw, path="variables", *, polar=False):
             not isinstance(n, str) or not n.strip() for n in names
         ):
             raise ValueError(f"{path}.{group}.names must be a nonempty list of variable names")
-        result[group] = {"variables": names}
+        result[native_group] = {"variables": names}
         if polar:
             continue
         levels = spec["levels"]
         if isinstance(levels, str) and levels in {"stored", "physical"}:
             domain = "physical" if levels == "physical" else "stored"
-            result[group].update(level_selection=domain, level_domain=domain)
+            result[native_group].update(level_selection=domain, level_domain=domain)
         elif isinstance(levels, dict) and len(levels) == 1 and set(levels) <= {"indices", "values"}:
             strategy, values = next(iter(levels.items()))
             if not isinstance(values, list) or not values:
@@ -200,7 +207,7 @@ def _requests(raw, path="variables", *, polar=False):
                     )
                 else:
                     _finite_level(value, group)
-            result[group].update(level_selection=strategy, **{f"level_{strategy}": values})
+            result[native_group].update(level_selection=strategy, **{f"level_{strategy}": values})
         else:
             raise ValueError(
                 f"{path}.{group}.levels requires indices or values, or stored/physical"
@@ -482,6 +489,8 @@ def resolve_schema(raw, *, base_dir=None):
     if inp["duplicate_time_policy"] not in {"first", "last"}:
         raise ValueError("input.duplicate_time_policy must be first or last")
     validate_wind_pairs(inp["wind_pairs"])
+    for pair in inp["wind_pairs"]:
+        _runtime_group(pair["group"])
     horizontal = out["cartesian"]["horizontal_vectors"]
     if not isinstance(horizontal, str) or horizontal not in {"native", "earth_centered"}:
         raise ValueError("output.cartesian.horizontal_vectors must be native or earth_centered")
@@ -657,14 +666,14 @@ def resolve_schema(raw, *, base_dir=None):
     if inp["format"] == "fa":
         cubes = inp["fa"]["native_cubes"]
         if not cubes and set(user) - {"surface"}:
-            raise ValueError("FA 2-D records must be selected in variables.surface")
-        levels = conf["variables"].get("surface", {}).get("levels", "stored")
+            raise ValueError("FA 2-D records must be selected in variables.fields_2d")
+        levels = conf["variables"].get("fields_2d", {}).get("levels", "stored")
         if levels != "stored":
             raise ValueError("FA layer/patch selection uses explicit native record names; "
-                             "variables.surface.levels cannot select a vertical axis")
+                             "variables.fields_2d.levels cannot select a vertical axis")
         for group, spec in user.items():
             if group not in {"surface", "level", "level_w"}:
-                raise ValueError("FA native groups are surface, level and level_w")
+                raise ValueError("FA native groups are fields_2d, level and level_w")
             if spec.get("level_domain") == "physical":
                 raise ValueError("FA physical-coordinate selection is gated; select stored indices")
             for variable in spec["variables"]:
@@ -674,7 +683,8 @@ def resolve_schema(raw, *, base_dir=None):
                 expected = ("surface" if cube is None else
                             "level" if cube["vertical_position"] == "mass" else "level_w")
                 if expected != group:
-                    raise ValueError(f"FA variable {variable}: select in variables.{expected}")
+                    public = "fields_2d" if expected == "surface" else expected
+                    raise ValueError(f"FA variable {variable}: select in variables.{public}")
     polar = _requests(pol["variables"], "polar.variables", polar=True)
     if polar == "extracted":
         polar = {g: {"variables": list(s["variables"])} for g, s in user.items()}
@@ -732,7 +742,8 @@ def to_runtime(raw, *, base_dir=None):
         "netcdf_file_layout": inp["netcdf"]["file_layout"],
         "netcdf_surfex_fields": inp["netcdf"]["surfex_fields"],
         "wind_reference_frame": None,
-        "wind_pairs": inp["wind_pairs"],
+        "wind_pairs": [{**pair, "group": _runtime_group(pair["group"])}
+                       for pair in inp["wind_pairs"]],
         "cartesian_horizontal_winds": {"native": "native", "earth_centered": "mass_earth"}[
             c["output"]["cartesian"]["horizontal_vectors"]],
         "cartesian_vertical_velocity": c["output"]["cartesian"]["vertical_velocity"],
@@ -938,7 +949,7 @@ def write_template(name, path, *, tracking=None, coupling=None, force=False):
                             "        # Atmospheric tracker winds, independent of ocean sampling.\n"
                             "        # Verify the actual source wind basis and velocity/pressure units.\n"
                             "        wind_pairs:\n"
-                            "          - {group: surface, u: UM10, v: VM10, reference_frame: earth}\n"
+                            "          - {group: fields_2d, u: UM10, v: VM10, reference_frame: earth}\n"
                             "        netcdf:\n", 1)
         text = text.replace("          names: [SST, SSS]", "          names: [SST, SSS, UM10, VM10, MSLP]")
         text += "  cartesian:\n    horizontal_vectors: earth_centered\n"

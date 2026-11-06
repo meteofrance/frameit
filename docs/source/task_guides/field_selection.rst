@@ -15,7 +15,7 @@ this selection requests sea-level pressure and two native pressure levels:
 .. code-block:: yaml
 
    variables:
-     surface:
+     fields_2d:
        names: [prmsl]
      isobaricInhPa:
        names: [t]
@@ -29,17 +29,26 @@ height because a preferred name is absent.
 Choose one level strategy per group
 -----------------------------------
 
-* ``stored`` (default): retain stored levels, including stored extra levels.
-* ``physical``: use the adapter's validated physical range. Ambiguous or missing
-  ranges fail; this is not a universal removal of the first and last levels.
-* ``{indices: [0, 2]}``: select zero-based **original stored** indices.
-* ``{values: [850, 700]}``: select coordinate values in their native units.
-  Ocean depth/sigma matching is exact; see :doc:`../user_guide/ocean_netcdf`.
+``levels`` chooses which saved vertical layers to keep. It does not calculate
+new heights or interpolate between layers. Choose one of these forms:
 
-CROCO sigma labels are dimensionless, not metres. NEMO depth labels remain
-native coordinates, not newly diagnosed depths. Meso-NH W interfaces and mass
-levels have different positions; see :ref:`wind-grid-contract` before selecting
-sparse W-to-mass targets.
+* **Keep every saved level:** ``levels: stored`` (the default). Some model files
+  also save extra boundary levels used by the numerical model; these stay included.
+* **Keep only the model's physical levels:** ``levels: physical``. Use this when
+  the file identifies which saved levels belong to the physical model domain.
+  For example, a file may save 52 levels but identify only 50 as physical. FrameIt
+  uses that declaration; it does not guess that the first and last levels are extra.
+  Missing required range metadata causes an error.
+* **Choose positions in the saved list:** ``levels: {indices: [0, 2]}`` keeps the
+  first and third saved levels. Counting starts at zero. These are original file
+  positions, not positions in a shortened list after removing boundary levels.
+* **Choose existing coordinate labels:** ``levels: {values: [850, 700]}`` keeps
+  those pressure levels when the source coordinate is in hPa. The numbers use
+  the coordinate's own units; they do not always mean metres or hPa.
+
+For a field under ``fields_2d``, omit ``levels``: it has no selectable vertical
+axis. For ocean depth/sigma selections, use :doc:`../user_guide/ocean_netcdf`;
+for staggered wind/W locations, use :ref:`wind-grid-contract`.
 
 Check the selection
 -------------------

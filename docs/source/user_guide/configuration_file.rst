@@ -4,6 +4,8 @@ Configuration file (YAML schema version 2.1)
 Use this reference to select inputs, fields, levels, methods and products.
 For a task route, start with :doc:`../task_guides/field_selection`,
 :doc:`../task_guides/moving_region` or :doc:`../task_guides/coupled_inputs`.
+For an annotated view of every available key and its alternatives, use
+:doc:`../reference/all_keys`.
 
 Create a model-specific, annotated configuration:
 
@@ -271,10 +273,16 @@ Variables and vertical levels
 
 Requests use native group/variable names:
 
+``fields_2d`` groups fields with no selectable vertical axis. They need not be
+at the ground: sea-level pressure and 10-m winds can both belong here. Vertical
+groups such as ``isobaricInhPa`` or ``level`` use their source coordinate names.
+The public group selects the existing ``surface`` product group; output filenames
+and scientific definitions are unchanged.
+
 .. code-block:: yaml
 
    variables:
-     surface:
+     fields_2d:
        names: [u10, v10, prmsl]
      isobaricInhPa:
        names: [u, v]
@@ -384,7 +392,7 @@ Earth-relative surface winds:
          v: VT
          reference_frame: grid
          rotation: {method: mesonh_projection}
-       - group: surface
+       - group: fields_2d
          u: UM10
          v: VM10
          reference_frame: earth

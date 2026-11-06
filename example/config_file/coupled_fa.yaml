@@ -56,7 +56,7 @@ input:
               # producer-specific justification; units alone cannot establish it.
               allow_unscaled: false
       variables:
-        surface:
+        fields_2d:
           names: [SFX.T2M]
 tracking:
   source: atmosphere

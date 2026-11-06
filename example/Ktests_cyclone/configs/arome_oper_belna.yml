@@ -8,7 +8,7 @@ input:
   wind_pairs:
     - {group: heightAboveGround, u: u, v: v, reference_frame: earth}
     - {group: isobaricInhPa, u: u, v: v, reference_frame: earth}
-    - {group: surface, u: u10, v: v10, reference_frame: earth}
+    - {group: fields_2d, u: u10, v: v10, reference_frame: earth}
 tracking:
   method: pressure_wind
 domain:
@@ -20,7 +20,7 @@ variables:
   isobaricInhPa:
     names: [u, v]
     levels: {values: [1000, 850, 400]}
-  surface:
+  fields_2d:
     names: [u10, v10, prmsl, sshf, slhf]
 polar:
   enabled: true

@@ -10,14 +10,14 @@ input:
   # Exclude the exact 000 timeseries filename via input.exclude when needed.
   # Verify the source wind basis of UM10/VM10, pressure and velocity units.
   wind_pairs:
-    - {group: surface, u: UM10, v: VM10, reference_frame: earth}
+    - {group: fields_2d, u: UM10, v: VM10, reference_frame: earth}
 tracking:
   method: pressure_wind
 domain:
   # Illustrative full widths in km, NOT tracker search half-widths.
   width_km: {x: 500, y: 500}
 variables:
-  surface:
+  fields_2d:
     names: [UM10, VM10, MSLP]
 polar:
   # No polar sampling or embedded SURFEX interpretation is selected.

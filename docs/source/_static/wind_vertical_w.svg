@@ -5,9 +5,6 @@
   <g font-family="sans-serif" fill="#192d45">
     <text x="28" y="35" font-size="21" font-weight="bold">Vertical W in one model column</text>
     <text x="28" y="60" font-size="15">Markers show locations — not vertical flow</text>
-    <rect x="65" y="105" width="230" height="150" fill="#fff" stroke="#c0cbd8"/>
-    <path d="M65 105H295M65 255H295" stroke="#146b9b" stroke-width="3"/>
-    <path d="M65 180H295" stroke="#247652" stroke-width="2" stroke-dasharray="6 5"/>
     <g fill="#146b9b" stroke="#fff" stroke-width="2">
       <rect x="172" y="97" width="16" height="16"/>
       <rect x="172" y="247" width="16" height="16"/>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="530" viewBox="0 0 540 530" role="img" aria-labelledby="title desc">
+  <title id="title">Combining several centre estimates</title>
+  <desc id="desc">Experimental-method schematic, not a model result. One pressure estimate, three vorticity estimates, two height estimates and three circulation estimates provide nine possible fixes. Screened estimates form a combined centre. Quality, support and continuity checks accept it or stop the track under the selected policy.</desc>
+  <g font-family="sans-serif" fill="#021633">
+    <text x="270" y="35" text-anchor="middle" font-size="23" font-weight="bold">Nine possible centre estimates</text>
+    <g fill="#f4f8f8" stroke="#006b65" stroke-width="2">
+      <rect x="25" y="65" width="235" height="66" rx="7"/><rect x="280" y="65" width="235" height="66" rx="7"/>
+      <rect x="25" y="150" width="235" height="66" rx="7"/><rect x="280" y="150" width="235" height="66" rx="7"/>
+    </g>
+    <text x="142" y="105" text-anchor="middle" font-size="21">Pressure × 1</text>
+    <text x="397" y="105" text-anchor="middle" font-size="21">Vorticity × 3</text>
+    <text x="142" y="190" text-anchor="middle" font-size="21">Height × 2</text>
+    <text x="397" y="190" text-anchor="middle" font-size="21">Circulation × 3</text>
+    <path d="M142 226V247H397V226M270 247V269" fill="none" stroke="#788997" stroke-width="2"/>
+    <text x="270" y="297" text-anchor="middle" font-size="21" font-weight="bold">Screen and combine accepted estimates</text>
+    <path d="M270 310V337" stroke="#788997" stroke-width="2"/>
+    <text x="270" y="366" text-anchor="middle" font-size="20">Quality + support + continuity checks</text>
+    <path d="M270 380V402H140V423M270 402H400V423" fill="none" stroke="#788997" stroke-width="2"/>
+    <text x="140" y="453" text-anchor="middle" font-size="21" font-weight="bold">Accept fix</text>
+    <text x="400" y="453" text-anchor="middle" font-size="21" font-weight="bold">Reject / stop</text>
+    <text x="270" y="505" text-anchor="middle" font-size="17">Experimental-method schematic · not a computed track</text>
+  </g>
+</svg>

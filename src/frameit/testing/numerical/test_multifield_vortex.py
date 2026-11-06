@@ -31,10 +31,10 @@ from frameit.tracking.pressure_centroid import G0, GEOD
 
 
 def document(tmp_path, model="mesonh", latitude=-20.):
-    pairs = ([dict(group="surface", u="UM10", v="VM10", reference_frame="earth"),
+    pairs = ([dict(group="fields_2d", u="UM10", v="VM10", reference_frame="earth"),
               dict(group="level", u="UT_ZM", v="VT_ZM", reference_frame="earth")]
              if model == "mesonh" else [
-                 dict(group="surface", u="u10", v="v10", reference_frame="earth"),
+                 dict(group="fields_2d", u="u10", v="v10", reference_frame="earth"),
                  dict(group="isobaricInhPa", u="u", v="v", reference_frame="earth")])
     return {
         "schema_version": "2.1", "model": model,
@@ -44,7 +44,7 @@ def document(tmp_path, model="mesonh", latitude=-20.):
                      "motion_u_m_s": 0., "motion_v_m_s": 0.},
             "mnh_gravity_m_s2": G0 if model == "mesonh" else None,
         }},
-        "variables": {"surface": {"names": ["MSLP" if model == "mesonh" else "prmsl"]}},
+        "variables": {"fields_2d": {"names": ["MSLP" if model == "mesonh" else "prmsl"]}},
         "domain": {"width_km": {"x": 150, "y": 150}},
         "output": {"directory": str(tmp_path / "output")},
     }

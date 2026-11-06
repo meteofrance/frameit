@@ -196,7 +196,10 @@ def test_catalog_preserves_source_and_output_conventions(tmp_path):
         if raw["tracking"]["method"] == "utrack":
             raw["tracking"]["utrack"] = {"weights_file": "fixture-weights.pt"}
         runtime = to_runtime(raw, base_dir=tmp_path)
-        assert runtime["wind_pairs"] == raw["input"]["wind_pairs"]
+        expected = deepcopy(raw["input"]["wind_pairs"])
+        assert expected[-1]["group"] == "fields_2d"
+        expected[-1]["group"] = "surface"
+        assert runtime["wind_pairs"] == expected
         assert runtime["cartesian_horizontal_winds"] == "mass_earth"
         assert runtime["cartesian_vertical_velocity"] == "interfaces"
         assert runtime["polar_vertical_velocity"] == "mass"
@@ -223,11 +226,11 @@ def test_explicit_centroid_preflight_and_export(tmp_path):
         "schema_version": "2.1", "model": "mesonh",
         "input": {"directory": str(tmp_path), "pattern": "native.nc", "wind_pairs": [
             {"group": "level", "u": "UT_ZM", "v": "VT_ZM", "reference_frame": "earth"},
-            {"group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "earth"},
+            {"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"},
         ]},
         "tracking": {"method": "pressure_centroid"},
         "domain": {"width_km": {"x": 100, "y": 100}},
-        "variables": {"surface": {"names": ["MSLP"]}},
+        "variables": {"fields_2d": {"names": ["MSLP"]}},
         "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "output")},
     })
     plan = preflight(conf)

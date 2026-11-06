@@ -1,0 +1,204 @@
+# REFERENCE ONLY: shows alternatives together; not a runnable starter.
+# Defaults/precedence and detailed contracts are linked from "A question about a key?".
+schema_version: "2.1"             # Required quoted string.
+model: mesonh                     # arome | mesonh | nemo | croco.
+run:
+  name: analysis                  # Nonempty product prefix; no path separators.
+  description: ""                 # Optional run description.
+input:
+  directory: ./data               # Relative to this YAML, not the launch directory.
+  pattern: "*.nc"                 # Glob/exact name; use pattern OR files.
+  files: [./data/input.nc]         # Ordered explicit paths; null when using pattern.
+  exclude: []                     # Filename/path globs excluded from the inventory.
+  format: netcdf                  # netcdf | grib | fa; null enables content detection.
+  grid_spacing_m: null            # Automatic nominal spacing, or positive metres.
+  duplicate_time_policy: first    # first | last; NetCDF duplicate valid-time policy.
+  wind_pairs:                     # Default []; declare each required pair explicitly.
+    - group: fields_2d            # fields_2d or the native vertical group.
+      u: UM10                     # Actual source component name.
+      v: VM10                     # Distinct companion component.
+      reference_frame: earth      # earth | grid; no name-based basis inference.
+    - group: level
+      u: UT
+      v: VT
+      reference_frame: grid
+      rotation:                   # Required for grid; omit for Earth-relative inputs.
+        method: coordinate        # coordinate | geolocation | mesonh_projection.
+        coordinate: angle         # Required only for method: coordinate.
+  netcdf:
+    engine: h5netcdf              # h5netcdf | netcdf4 | scipy; selects input reader.
+    chunks: {}                    # Native dimension -> positive extent or -1 (whole axis).
+    file_layout: time_series      # time_series | variables (complementary field files).
+    surfex_fields: []             # Explicit supported Meso-NH SEA fields; no default opt-in.
+  fa:                             # Only for the documented native FA path.
+    profile: arome_history        # arome_history | surfex_history; default null.
+    subdomain: CI                 # CI | C; extension zones excluded.
+    earth_radius_m: null          # Positive declared source sphere radius when required.
+    backend: epygram              # Only maintained backend.
+    python_executable: null       # Default current Python; optional worker interpreter path.
+    max_points: 20000000          # Positive decoded-record point budget, not crop size.
+    timeout_seconds: 120.0        # Positive isolated-worker timeout.
+    expected_source:             # Default {}; assertions checked against actual headers.
+      PROGRAM: REPLACE_FROM_HEADER # Nonempty string; never infer producer identity.
+      VERSION: 0                 # Nonnegative integer; only set evidenced assertions.
+      BUG: 0
+      MASDEV: 0
+      BUGFIX: 0
+    field_metadata:              # Default {}; dynamic exact field/cube identifiers.
+      sample_field:
+        units: K                 # Explicit source units; changing a label is not conversion.
+        kind: continuous         # continuous | categorical.
+        temporal_kind: instantaneous # Only instantaneous FA sampling is admitted.
+        allow_unscaled: false    # True requires producer-specific scientific justification.
+        long_name: Example field # Optional descriptive string.
+        standard_name: air_temperature # Optional; must match the actual CF definition.
+      sample_cube:
+        units: K
+        kind: continuous
+        temporal_kind: instantaneous
+        allow_unscaled: false
+    native_cubes:                # Default {}; explicit gridpoint record associations.
+      sample_cube:
+        records: [S001TEMPERATURE, S002TEMPERATURE] # Exact unique record IDs, no globs.
+        vertical_position: mass  # mass | interface, defining level | level_w.
+        sampling: center         # Only center is admitted.
+        vector_basis: earth      # Optional earth | grid; velocity conventions still required.
+        component_scaling: physical_velocity # Optional; only physical_velocity is admitted.
+  time_alignment: common         # common | strict | preceding_hour (AROME/NEMO-only).
+  sources:                       # Default {}; alternative to a top-level single input.
+    sample:                      # Researcher-chosen source identifier.
+      model: mesonh              # Source adapter; reference must match top-level model.
+      input:                     # Same source-local input keys; no nested sources/time_alignment.
+        directory: ./data/sample
+        pattern: "*.nc"
+        format: netcdf
+      variables:
+        fields_2d:
+          names: [MSLP]
+      polar:                     # Optional overrides of inherited parent polar settings.
+        enabled: false
+        variables: {fields_2d: {names: [MSLP]}}
+tracking:
+  source: sample                 # Named reference source; null for a single input.
+  method: fixed_box              # fixed_box | prescribed_track | pressure_wind |
+                                 # pressure_centroid | multifield_vortex | utrack.
+  fixed_box:
+    center:
+      latitude: -20.0            # Degrees north; required for fixed_box.
+      longitude: 60.0            # Degrees east; illustrative, adapt to your data.
+  prescribed_track:
+    file: ./track.nc             # Required for prescribed_track; default null.
+    time_name: time              # Exact time-coordinate name.
+    latitude_name: latitude      # Track latitude; FrameIt tracks also accept lat.
+    longitude_name: longitude    # Track longitude; FrameIt tracks also accept lon.
+  pressure_wind:
+    search_half_width_km: 100.0   # Positive square pressure-search half-width.
+    refine_half_width_km: 50.0    # Positive square wind-refinement half-width.
+    initial_guess:               # Default null: global first-time pressure search.
+      latitude: -20.0            # [-90,90], degrees north.
+      longitude: 60.0            # [-180,180], degrees east.
+      search_radius_km: 100.0     # Positive WGS84 first-time search radius.
+  pressure_centroid:
+    convergence:
+      max_iterations: 15         # Positive centroid-iteration budget.
+      tolerance_m: 250.0         # Positive centre displacement tolerance.
+    motion:
+      max_iterations: 50         # Positive coupled-motion iteration budget.
+      solver: aitken             # aitken | fixed.
+      relaxation: 0.25           # Fixed relaxation / fallback control; see method contract.
+      tolerance_m: 250.0         # Positive full motion residual tolerance.
+    sampling:
+      r80_max_distance_km: 250.0 # Positive R80 search limit.
+      radial_step_km: 2.5        # Positive radial sampling interval.
+      azimuth_step_deg: 5.0      # Positive angular sampling interval.
+  multifield_vortex:             # Experimental; all source/support requirements still apply.
+    profile: all_no_thick        # Only admitted profile.
+    on_track_loss: stop          # stop: accepted prefix; error: fail on subsequent loss.
+    seed:
+      latitude: -20.0            # Required non-equatorial/nonpolar initial latitude.
+      longitude: 60.0            # Required initial longitude.
+      time: null                 # First input time, or an exactly matching ISO timestamp.
+      motion_u_m_s: 0.0          # Explicit initial eastward motion; zero is not an estimate.
+      motion_v_m_s: 0.0          # Explicit initial northward motion.
+    mnh_gravity_m_s2: 9.80665     # Required evidenced constant for MNH; unused for AROME.
+    numerics:
+      analysis_step_km: 25.0     # Positive initial search spacing.
+      refinement_km: 2.5         # Positive final search spacing.
+      max_iterations: 20        # Positive per-parameter search budget.
+      minimum_support: 0.8      # Required finite support fraction; method-defined meaning.
+      minimum_samples: 16       # Minimum finite nodes.
+    quality:
+      minimum_parameters: 2     # Accepted estimate count, with mandatory MSLP/RV850 fixes.
+      pressure_rise_pa: 50.0     # Required quadrant-ring pressure rise.
+      vt850_min_m_s: 1.5         # Minimum mean cyclonic 850-hPa tangential wind.
+      max_separation_km: 425.0   # Maximum MSLP/RV850 centre separation.
+      max_speed_m_s: 30.866666666666667 # Maximum evaluated translation speed.
+      speed_check_interval_hours: 6.0 # Minimum elapsed time between speed checks.
+  utrack:                        # Beta; external package and obtained model weights required.
+    weights_file: ./model.ckpt   # Required checkpoint path; default null.
+    use_gpu: false               # Explicit GPU inference request.
+    batch_size: 16               # Positive number of times per inference batch.
+domain:
+  width_km: {x: 100.0, y: 100.0}  # Positive FULL native-crop widths; null means full domain.
+  edge_policy: pad_nan           # Only admitted policy; retain shape with missing padding.
+variables:                      # Default {}; only these fields are exported.
+  fields_2d:
+    names: [MSLP]                # Source names; no selectable vertical axis.
+    levels: stored               # Omit for 2-D fields; stored is the general default.
+  level:
+    names: [THT]
+    levels: {indices: [1, 3]}     # Choose ONE: stored | physical | {indices: [...]} |
+                                 # {values: [...]} in native coordinate units.
+polar:
+  enabled: false                 # Opt-in point sampling; available fields do not enable it.
+  shared_target: false           # Explicit common target across compatible named sources.
+  variables: extracted           # extracted OR group -> {names: [...]}, subset of variables.
+  radial_step_m: null            # Resolved native spacing, or positive metres >= native spacing.
+  azimuth_step_deg: null         # Positive degrees <=120; alternative to azimuth_count.
+  azimuth_count: null            # Integer >=3; omit BOTH angular settings for automatic choice.
+  interpolation_method: bilinear # bilinear | nearest_s2d; point samples, not conservative means.
+  missing_data_policy: strict    # strict | renormalize; never fill unmapped/all-missing points.
+  min_valid_weight_fraction: 0.5 # [0,1], used for renormalization.
+  weight_zero_tolerance: 1.0e-14 # [0,1e-6), negligible stencil weights, not a field cutoff.
+  source_halo_points: 1          # Positive native-neighbour halo; no extrapolation.
+  ellipsoid: WGS84               # Valid pyproj.Geod ellipsoid; source Earth model is separate.
+  max_points: 2000000            # Positive time*radius*angle geometry budget.
+  plan_cache:
+    entries: 8                   # Nonnegative retained-plan count; zero disables retention.
+    max_bytes: 134217728          # Nonnegative estimated retained bytes; not total peak memory.
+  chunks: {}                     # Output polar dimension -> positive integer or -1.
+  profile: false                 # Timing instrumentation, not extra diagnostics.
+output:
+  directory: ./output            # Run root, relative to this YAML.
+  export:
+    enabled: true                # Master scientific-product writer switch.
+    cartesian: true              # Export selected native crops.
+    polar: true                  # Export selected polar products, if polar processing runs.
+  backend: netcdf4               # netcdf4 | h5netcdf | zarr.
+  netcdf_format: NETCDF4         # Only NETCDF4 is admitted; unused for Zarr.
+  unlimited_time: true           # NetCDF unlimited time dimension; unused for Zarr.
+  overwrite: false               # Runtime default true; every starter explicitly uses false.
+  max_workers: null              # Automatic cap, or positive spawned-export process count.
+  synchronous_export: false      # True avoids the export process pool.
+  cartesian:
+    horizontal_vectors: earth_centered # earth_centered | native, within adapter scope.
+    vertical_velocity: interfaces # interfaces | mass; independent of U/V representation.
+  polar:
+    vertical_velocity: mass      # mass | interfaces, within model support.
+  compression:
+    level: 1                     # Integer 0..9; lossless compression.
+    coordinates: false           # Also compress coordinate arrays.
+  zarr_chunk_size: {}            # Output dimension -> positive storage chunk extent.
+  zarr_shard_size: {}            # Dimension -> positive multiple of its explicit chunk extent.
+  institution: "LACy, Université de La Réunion, CNRS, Météo-France" # Set actual attribution.
+execution:
+  dask_scheduler: threads        # threads | synchronous.
+  dask_workers: null             # Automatic cap, or positive count; respects CPU allocation.
+  native_threads: 1              # Positive native-library thread count.
+  require_complete_tracking: false # True rejects shortened tracking before export.
+logging:
+  level: INFO                    # DEBUG | INFO | WARNING | ERROR.
+metadata:
+  ocean_model: ""                # Optional annotation; does not select an adapter.
+  wave_model: ""                 # Optional annotation; does not enable wave processing.
+  extra: {}                      # User annotations serialized as JSON in product metadata.

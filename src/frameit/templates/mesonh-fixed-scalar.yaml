@@ -15,7 +15,7 @@ domain:
   # Illustrative full widths in km; adapt centre and available coverage.
   width_km: {x: 100, y: 100}
 variables:
-  surface:
+  fields_2d:
     names: [MSLP]
 polar:
   # Scalar extraction needs no winds or polar sampling.

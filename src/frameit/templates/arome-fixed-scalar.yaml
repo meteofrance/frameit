@@ -17,7 +17,7 @@ domain:
   # Full widths in km; this small box is for the instructional input.
   width_km: {x: 4, y: 4}
 variables:
-  surface:
+  fields_2d:
     # Dimensionless instructional scalar: valid zero is distinct from missing (NaN).
     names: [instructional_scalar]
 polar:

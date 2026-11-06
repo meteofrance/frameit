@@ -150,12 +150,13 @@ def test_strict_wind_pair_declarations(pair):
 
 def test_duplicate_pair_components_fail_but_different_groups_are_distinct():
     raw = schema()
-    pair = {"group": "surface", "u": "U", "v": "V", "reference_frame": "earth"}
+    pair = {"group": "fields_2d", "u": "U", "v": "V", "reference_frame": "earth"}
     raw["input"]["wind_pairs"] = [pair, copy.deepcopy(pair)]
     with pytest.raises(ValueError, match="duplicate"):
         resolve_schema(raw)
     raw["input"]["wind_pairs"][1]["group"] = "level"
-    assert to_runtime(raw)["wind_pairs"] == raw["input"]["wind_pairs"]
+    assert to_runtime(raw)["wind_pairs"] == [
+        {**pair, "group": "surface"}, {**pair, "group": "level"}]
 
 
 @pytest.mark.parametrize("method", ["coordinate", "geolocation", "mesonh_projection"])

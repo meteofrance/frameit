@@ -115,7 +115,7 @@ Example:
 
   polar:
     variables:
-      surface:
+      fields_2d:
         names: [prmsl, u10, v10]
       isobaricInhPa:
         names: [u, v]
@@ -557,16 +557,24 @@ Troubleshooting
 Illustration
 ------------
 
-Tropical cyclone CHIDO on Cartesian and polar grids:
+The same BATSIRAI rainfall interval on native Cartesian and polar points:
 
-.. figure:: ../_static/figures/Fig.cart_Chido.png
-   :target: ../_static/figures/Fig.cart_Chido.png
+.. figure:: ../_static/figures/batsirai-cartesian.png
+   :target: ../_static/figures/batsirai-cartesian.png
    :width: 80%
    :align: center
+   :alt: Rain-only dBZ estimate derived from the real fixed Cartesian rainfall crop, shown without grid lines.
 
-.. figure:: ../_static/figures/Fig.polar_Chido.png
-   :target: ../_static/figures/Fig.polar_Chido.png
+   Native Cartesian crop. Both times use one fixed centre so that accumulation
+   differencing compares the same locations.
+
+.. figure:: ../_static/figures/batsirai-polar.png
+   :target: ../_static/figures/batsirai-polar.png
    :width: 80%
    :align: center
+   :alt: Rain-only dBZ estimate calculated after polar sampling of real accumulated rainfall at 6-km radial spacing and 180 azimuths. Angle labels start north and increase clockwise; circular grid lines are absent.
 
-   Example of polar projection.
+   Polar rainfall amounts are sampled before the external nonlinear dBZ
+   calculation. Radius is in km; angle starts north and increases clockwise.
+   These are **illustrative rain-only estimates**, not model-provided reflectivity.
+   See the :doc:`formula, limits and standalone script <../reference/illustrations>`.

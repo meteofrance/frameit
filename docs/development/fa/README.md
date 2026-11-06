@@ -72,18 +72,16 @@ Reinspected in `environment.yaml`, `pyproject.toml`, `core/configuration.py`,
 
 - From the checkout: `conda env create -f environment.yaml --solver libmamba`,
   then `conda activate frameit_env`. The YAML selects Python 3.13 and installs
-  `-e .[test,grib,polar,fa]` from that checkout. Keep the checkout for that editable
-  installation. A fresh migration can use `-n frameit_unified`; no second install
-  or second environment is required by the reference path.
+   `-e .[test,grib,polar,fa,zarr]` from that checkout. Keep the checkout for that
+   editable installation; HPC uses the same environment and recipe.
 - Conda declares the shared native stack, including Python netCDF4 1.7.2,
   python-eccodes 2.44.0, ESMPy 8.9.1 and xESMF 0.9.2. The `fa` extra pins
   EPyGrAM 2.1.0 and ctypesForFortran 1.3.0; `fa-epygram` has identical requirements.
   The worker checks falfilfa4py 1.2.1, ecTrans 1.6.0 and netCDF4 1.7.2 too.
   Declared versions do not by themselves establish native lifetime compatibility.
-- Package Python support remains `>=3.10`. Core dependencies do not include FA,
+- Package Python support is `>=3.13,<3.14`. Core dependencies do not include FA,
   GRIB or polar extras. `grib`, `polar` and `fa` are optional; xESMF still needs a
-  compatible ESMF installation. `environment-hpc.yaml` is a base NetCDF/test
-  environment, not a second required reference environment.
+   compatible ESMF installation. Use `environment.yaml`/`frameit_env` for HPC too.
 - `input.fa.backend` defaults to `epygram`; `native` is a warned deprecated alias
   of that same reader. Both retain scientific/source/scaling/resource guards and
   requested/effective-backend provenance. It is not a fallback decoder.

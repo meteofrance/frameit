@@ -17,7 +17,7 @@ def test_new_yaml_real_pipeline_exports_and_replay(tmp_path):
     dataset(tmp_path, units="km/h", speed=36.)
     raw = document(tmp_path, domain={"width_km": {"x": 20, "y": 20}},
                    polar={"enabled": True, "azimuth_count": 16},
-                   variables={"surface": {"names": ["UM10", "VM10", "MSLP", "temperature"]}})
+                   variables={"fields_2d": {"names": ["UM10", "VM10", "MSLP", "temperature"]}})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     result = execute_simulation(conf, ExecutionOptions.from_config(conf, synchronous_export=True))
     assert result.ok and len(result.products) == 3
@@ -55,11 +55,11 @@ def test_frozen_matrix_yaml_and_mapping_requests_match(tmp_path, model):
     case["config"]["input"]["wind_pairs"] = (
         [{"group": group, "u": "u", "v": "v", "reference_frame": "earth"}
          for group in ("heightAboveGround", "isobaricInhPa")]
-        + [{"group": "surface", "u": "u10", "v": "v10", "reference_frame": "earth"}]
+        + [{"group": "fields_2d", "u": "u10", "v": "v10", "reference_frame": "earth"}]
         if model == "AROME" else
         [{"group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
           "rotation": {"method": "geolocation"}},
-         {"group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
+         {"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
     )
     mapping = SimulationConfig.from_mapping_with_model_preset(case["config"])
     raw = {**case["config"], "output": {**case["config"]["output"], "directory": str(tmp_path / "yaml")}}

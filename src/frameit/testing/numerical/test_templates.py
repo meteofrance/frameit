@@ -16,9 +16,9 @@ B = set("schema_version model run.name input.directory input.pattern input.forma
         "tracking.method domain.width_km.x domain.width_km.y polar.enabled "
         "output.directory output.overwrite".split())
 F = {"tracking.fixed_box.center.latitude", "tracking.fixed_box.center.longitude"}
-A = {"input.wind_pairs", "variables.surface.names", "output.cartesian.horizontal_vectors"}
+A = {"input.wind_pairs", "variables.fields_2d.names", "output.cartesian.horizontal_vectors"}
 N = {"variables.deptht.names", "variables.deptht.levels.indices"}
-C = {"variables.s_rho.names", "variables.s_rho.levels.indices", "variables.surface.names"}
+C = {"variables.s_rho.names", "variables.s_rho.levels.indices", "variables.fields_2d.names"}
 K = (B - {"input.directory", "input.pattern", "input.format"}
      | {"input.time_alignment", "tracking.source"})
 
@@ -28,7 +28,7 @@ NAMED = {
     "mesonh-pressure-wind": ("mesonh", "*.nc", "netcdf", 500, B | A,
                              ("UM10/VM10", "000", "source wind basis")),
     "arome-fixed-scalar": ("arome", "first-run.nc", "netcdf", 4,
-                            B | F | {"variables.surface.names"},
+                            B | F | {"variables.fields_2d.names"},
                             ("instructional", "not an AROME producer file", "zero", "missing")),
     "nemo-native": ("nemo", "*.nc", "netcdf", 100, B | F | N,
                     ("potential temperature", "zero-based stored index", "depth", "native")),
@@ -91,7 +91,7 @@ def test_every_advertised_command_is_minimal_and_commented(tmp_path, monkeypatch
     raw = yaml.safe_load(text)
     resolve_schema(raw, base_dir=tmp_path)
     model, pattern, fmt, width, expected, comments = NAMED.get(workflow, (
-        "mesonh", "*.nc", "netcdf", 100, B | F | {"variables.surface.names"}, ("MSLP",)))
+        "mesonh", "*.nc", "netcdf", 100, B | F | {"variables.fields_2d.names"}, ("MSLP",)))
     expected = set(expected)
     method = method or ("pressure_wind" if workflow.endswith("pressure-wind") else "fixed_box")
     if method != "fixed_box":
@@ -109,10 +109,10 @@ def test_every_advertised_command_is_minimal_and_commented(tmp_path, monkeypatch
                 "model", "input.directory", "input.pattern", "input.format")}
         atmosphere = raw["input"]["sources"]["atmosphere"]
         ocean = raw["input"]["sources"]["ocean"]
-        expected.add("input.sources.atmosphere.variables.surface.names")
+        expected.add("input.sources.atmosphere.variables.fields_2d.names")
         if model == "arome":
             expected |= {f"input.sources.ocean.{p}" for p in N}
-            assert atmosphere["variables"] == {"surface": {"names": ["prmsl"]}}
+            assert atmosphere["variables"] == {"fields_2d": {"names": ["prmsl"]}}
             assert ocean["variables"] == {"deptht": {"names": ["votemper"], "levels": {"indices": [0]}}}
         else:
             expected |= {"input.sources.atmosphere.input.netcdf.surfex_fields",
@@ -126,8 +126,8 @@ def test_every_advertised_command_is_minimal_and_commented(tmp_path, monkeypatch
                 expected |= {"input.sources.atmosphere.input.wind_pairs",
                              "output.cartesian.horizontal_vectors"}
                 assert atmosphere["input"]["wind_pairs"] == [
-                    {"group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
-            assert atmosphere["variables"]["surface"]["names"] == fields
+                    {"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
+            assert atmosphere["variables"]["fields_2d"]["names"] == fields
         assert atmosphere["model"] == model
         assert atmosphere["input"]["directory"] == f"./data/{model}"
         assert ocean["input"]["directory"] == f"./data/{ocean['model']}"
@@ -135,8 +135,8 @@ def test_every_advertised_command_is_minimal_and_commented(tmp_path, monkeypatch
         assert raw["input"]["pattern"] == pattern and raw["input"]["format"] == fmt
         if workflow.endswith("pressure-wind"):
             fields = ["u10", "v10", "prmsl"] if model == "arome" else ["UM10", "VM10", "MSLP"]
-            assert raw["variables"] == {"surface": {"names": fields}}
-            pairs = [{"group": "surface", "u": fields[0], "v": fields[1], "reference_frame": "earth"}]
+            assert raw["variables"] == {"fields_2d": {"names": fields}}
+            pairs = [{"group": "fields_2d", "u": fields[0], "v": fields[1], "reference_frame": "earth"}]
             if method == "pressure_centroid":
                 pairs.append({"group": "isobaricInhPa" if model == "arome" else "level",
                               "u": "u" if model == "arome" else "UT_ZM",
@@ -144,14 +144,14 @@ def test_every_advertised_command_is_minimal_and_commented(tmp_path, monkeypatch
                 assert "500-km" in text and "bracket" in text.lower() and "ASL" in text
             assert raw["input"]["wind_pairs"] == pairs
         elif model == "arome":
-            assert raw["variables"] == {"surface": {"names": ["instructional_scalar"]}}
+            assert raw["variables"] == {"fields_2d": {"names": ["instructional_scalar"]}}
         elif workflow == "mesonh-fixed-scalar":
-            assert raw["variables"] == {"surface": {"names": ["MSLP"]}}
+            assert raw["variables"] == {"fields_2d": {"names": ["MSLP"]}}
         elif model == "nemo":
             assert raw["variables"] == {"deptht": {"names": ["votemper"], "levels": {"indices": [0]}}}
         else:
             assert raw["variables"] == {"s_rho": {"names": ["temp", "salt"], "levels": {"indices": [0]}},
-                                        "surface": {"names": ["zeta"]}}
+                                        "fields_2d": {"names": ["zeta"]}}
     assert leaves(raw) == expected
     assert raw["model"] == model and raw["schema_version"] == "2.1"
     assert raw["tracking"]["method"] == method

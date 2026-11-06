@@ -27,7 +27,7 @@ the native grid rotation:
          v: VT
          reference_frame: grid
          rotation: {method: mesonh_projection}
-       - group: surface
+       - group: fields_2d
          u: UM10
          v: VM10
          reference_frame: earth

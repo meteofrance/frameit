@@ -22,7 +22,7 @@ Start with :doc:`getting_started/first_run`, or use
 check the quantities, units, time support and reference frames in
 :doc:`user_guide/output_files`.
 
-For your own data, go directly to :doc:`task_guides/field_selection`,
-:doc:`task_guides/moving_region` or :doc:`task_guides/coupled_inputs`.
+To start processing your model outputs, follow the
+:doc:`task-oriented guides <task_guides/index>`.
 The :doc:`configuration reference <user_guide/configuration_file>` and
 :doc:`troubleshooting` remain available without repeating the tutorial.

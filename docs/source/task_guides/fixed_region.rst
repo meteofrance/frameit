@@ -2,9 +2,9 @@ Extract a fixed geographical region
 ====================================
 
 Use a fixed region when the scientific comparison concerns the same place at
-each time, rather than a window following an event. FrameIt selects native grid
-samples around a declared latitude/longitude. This does not itself interpolate
-fields, rotate vectors or subtract event motion.
+each time, rather than a window following an event. FrameIt maps the declared
+latitude/longitude to a native grid point and extracts neighbouring samples.
+The Cartesian crop is grid-aligned, not recentered by interpolation.
 
 Prerequisites and starter
 --------------------------
@@ -32,11 +32,11 @@ This is equivalent to ``frameit init arome-fixed-scalar``. Its geographical choi
 .. figure:: ../_static/figures/fixed-moving-regions.svg
    :width: 480px
    :target: ../_static/figures/fixed-moving-regions.svg
-   :alt: Schematic of a fixed centre at both times and a moving centre with two separately located boxes. Labels distinguish times and full widths in kilometres; boxes do not imply vector rotation or motion subtraction.
+   :alt: Schematic contrasting one fixed native crop with crops following a moving centre. The selected native point can differ from the requested geographical centre.
 
-   Schematic, not to scale. The centre defines the requested location; the native
-   grid determines selected samples. Full box widths are distinct from tracker
-   search half-widths and from any vector-basis or reference-frame change.
+   Schematic, not to scale. The crop snaps to native indices. Requested full
+   widths are rounded to native point counts; realised extents can differ.
+   The requested geographical centre remains available as the polar origin.
 
 Adapt it to real inputs
 ------------------------
@@ -44,7 +44,7 @@ Adapt it to real inputs
 For this instructional run, leave the generated values unchanged. For real work,
 edit ``frameit.yaml`` only after inspecting the intended stream:
 
-* Replace ``input.directory/pattern/format`` and ``variables.surface.names``
+* Replace ``input.directory/pattern/format`` and ``variables.fields_2d.names``
   together. ``instructional_scalar`` is not a producer field. Declare each needed
   vertical selection explicitly; stored indices are not physical depths.
 * Set ``tracking.fixed_box.center`` in degrees north/east. Use a location relevant

@@ -191,9 +191,9 @@ def configuration(tmp_path, paths, *, coupled=False):
     from frameit.core.settings_class import SimulationConfig
 
     source = {'model': 'arome', 'input': {'format': 'netcdf', 'files': list(map(str, paths)),
-                                        'wind_pairs': [{'group': 'surface', 'u': 'u10', 'v': 'v10', 'reference_frame': 'earth'}],
+                                        'wind_pairs': [{'group': 'fields_2d', 'u': 'u10', 'v': 'v10', 'reference_frame': 'earth'}],
                                         'netcdf': {'file_layout': 'variables'}},
-              'variables': {'surface': {'names': ['prmsl', 'u10']}}}
+              'variables': {'fields_2d': {'names': ['prmsl', 'u10']}}}
     raw = {'schema_version': '2.1', **source,
            'tracking': {'method': 'fixed_box', 'fixed_box': {'center': {'latitude': -19.99,
                                                                        'longitude': 60.01}}},
@@ -366,12 +366,12 @@ def test_runner_reuses_netcdf_metadata_without_reading_fields(tmp_path, monkeypa
     paths = [tmp_path / f'part{i}.nc' for i in range(2)]
     if model == 'mesonh':
         scene = dataset(tmp_path)
-        raw = document(tmp_path, variables={'surface': {'names': ['MSLP']}})
+        raw = document(tmp_path, variables={'fields_2d': {'names': ['MSLP']}})
         field, group, clock = 'MSLP', 'surface', 'time'
     elif model == 'arome':
         scene = shard('prmsl', 100000.)
         raw = configuration(tmp_path, paths).yaml_config
-        raw['variables'] = {'surface': {'names': ['prmsl']}}
+        raw['variables'] = {'fields_2d': {'names': ['prmsl']}}
         field, group, clock = 'prmsl', 'surface', 'valid_time'
     elif model == 'nemo':
         scene = nemo_scene().isel(time_counter=slice(0, 2))

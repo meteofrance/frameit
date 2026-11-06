@@ -39,7 +39,7 @@ def arome_netcdf_document(directory, *, surface_spacing_m=3000.):
         source.to_netcdf(path)
         sources[name] = {"model": "arome", "input": {"format": "netcdf", "files": [str(path)],
                                                      "grid_spacing_m": spacing},
-                         "variables": {"surface": {"names": ["temperature"]}}}
+                         "variables": {"fields_2d": {"names": ["temperature"]}}}
     return {"schema_version": "2.1", "model": "arome", "run": {"name": "arome-budget"},
             "input": {"sources": sources}, "domain": {"width_km": {"x": 8., "y": 8.}},
             "tracking": {"source": "atmosphere", "method": "fixed_box", "fixed_box": {
@@ -227,7 +227,7 @@ def test_arome_fa_and_surfex_fa_share_the_effective_target_on_distinct_grids(tmp
                 "profile": profile, "earth_radius_m": 6371229., "field_metadata": {
                     field: {"units": "K", "kind": "continuous",
                             "temporal_kind": "instantaneous"}}}},
-            "variables": {"surface": {"names": [field]}}}
+            "variables": {"fields_2d": {"names": [field]}}}
     raw = {"schema_version": "2.1", "model": "arome", "run": {"name": "arome-sfx"},
            "input": {"sources": sources}, "domain": {"width_km": {"x": 8., "y": 8.}},
            "tracking": {"source": "atmosphere", "method": "prescribed_track",

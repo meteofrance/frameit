@@ -38,10 +38,10 @@ track coverage. Neither interpolates time. The explicit AROME/NEMO-only
 .. figure:: ../_static/figures/independent-sources.svg
    :target: ../_static/figures/independent-sources.svg
    :width: 540px
-   :alt: Two separate source grids and masks map shared geographical centres independently. Optional equal polar target points lead to separate products, not merged quantities or physical depths.
+   :alt: One geographical centre selects atmospheric and ocean samples separately, producing a pressure file and an ocean-temperature file. Missing ocean cells do not remove atmospheric samples.
 
-   Schematic. Shared centres or target coordinates do not equate grids, masks,
-   native depths, temperatures or temporal support.
+   Schematic. Both inputs follow the same geographical centre, but select their
+   own native samples and retain their own missing values and output files.
 
 Keep source meaning visible
 ---------------------------

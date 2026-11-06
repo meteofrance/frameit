@@ -8,7 +8,7 @@ input:
   exclude: ["3CH09.1.MXX30.000diag.nc"]
   wind_pairs:
     - {group: level, u: UT, v: VT, reference_frame: grid, rotation: {method: geolocation}}
-    - {group: surface, u: UM10, v: VM10, reference_frame: earth}
+    - {group: fields_2d, u: UM10, v: VM10, reference_frame: earth}
 tracking:
   method: pressure_wind
 domain:
@@ -20,7 +20,7 @@ variables:
   level_w:
     names: [WT]
     levels: {indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
-  surface:
+  fields_2d:
     names: [UM10, VM10, MSLP, LE, H]
 polar:
   enabled: true

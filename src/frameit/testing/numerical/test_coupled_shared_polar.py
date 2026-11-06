@@ -156,7 +156,7 @@ def coupled_document(directory, *, synchronous=True):
                                   ("auxiliary", 3000., 290.)):
         path = netcdf_source(directory, name, spacing, value, masked=name == "surface")
         sources[name] = {"model": "mesonh", "input": {"files": [str(path)], "format": "netcdf"},
-                         "variables": {"surface": {"names": ["temperature"]}}}
+                         "variables": {"fields_2d": {"names": ["temperature"]}}}
     track = directory / "track.nc"
     moving_track().rename(lon="longitude", lat="latitude").to_netcdf(track)
     return {"schema_version": "2.1", "model": "mesonh", "run": {"name": "shared"},
@@ -321,7 +321,7 @@ def test_dense_fa_surface_moving_polar_values_masks_and_readonly_inputs(tmp_path
                 "SFX.SST": {"units": "K", "kind": "continuous", "temporal_kind": "instantaneous"},
                 "SFX.WG1P1": {"units": "m3 m-3", "kind": "continuous",
                               "temporal_kind": "instantaneous"}}}},
-        "variables": {"surface": {"names": ["SFX.SST", "SFX.WG1P1"]}}}
+        "variables": {"fields_2d": {"names": ["SFX.SST", "SFX.WG1P1"]}}}
     conf = SimulationConfig.from_mapping_with_model_preset(document)
     result = execute_simulation(conf)
     assert result.ok and [p.read_bytes() for p in files] == before

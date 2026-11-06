@@ -52,7 +52,7 @@ def croco_document(directory, paths, *, variables=None):
             "input": {"format": "netcdf", "files": list(map(str, paths))},
             "variables": variables or {"s_rho": {"names": ["temp", "salt"], "levels": {"indices": [1, 0]}},
                                        "s_w": {"names": ["tracer_w"], "levels": {"indices": [2, 0]}},
-                                       "surface": {"names": ["zeta"]}},
+                                       "fields_2d": {"names": ["zeta"]}},
             "tracking": {"method": "fixed_box", "fixed_box": {"center": {"latitude": -20., "longitude": 60.}}},
             "domain": {"width_km": {"x": 2., "y": 2.}},
             "execution": {"native_threads": 1, "dask_workers": 1},
@@ -146,7 +146,7 @@ def test_croco_rejects_unresolved_native_definitions(problem):
 
 @pytest.mark.parametrize("selection", [{"s_rho": {"names": ["temp"], "levels": {"values": [-.50001]}}},
                                        {"s_rho": {"names": ["missing"], "levels": "stored"}},
-                                       {"surface": {"names": ["temp"]}}])
+                                       {"fields_2d": {"names": ["temp"]}}])
 def test_croco_invalid_selection_fails_preflight_and_direct_loader(tmp_path, selection):
     path = tmp_path/"ocean.nc"
     croco_scene().to_netcdf(path)

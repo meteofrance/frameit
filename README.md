@@ -110,13 +110,10 @@ methods and tolerances. `run-all-tests` also runs the
 [AROME/MNH matrix](docs/source/user_guide/matrix_testing.rst), which requires its
 frozen input fixture. These checks do not validate every real-data regime.
 
-Separate experiments compare [scalar cells](docs/source/polar_projection/conservative_experiment.rst)
-and [wind sampling methods](docs/source/polar_projection/wind_method_comparison.rst).
-
 ## Optional HPC / Slurm execution
 
-Use one task on one node per configuration. `environment-hpc.yaml` provides a
-base NetCDF/Zarr/test environment; add GRIB and polar dependencies only when needed.
+Use one task on one node per configuration. Use the same `environment.yaml` and
+`frameit_env` as the reference installation; no separate HPC recipe is needed.
 Portable launchers and an independent output checker are in `example/slurm/`.
 See [HPC and Slurm](docs/source/getting_started/hpc.rst)
 for environment setup, resource limits, isolated attempts, cancellation behavior,

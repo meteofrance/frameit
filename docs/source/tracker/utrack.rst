@@ -109,3 +109,20 @@ contact the model authors to obtain a copy. Once you have the file, set
      method: utrack
      utrack:
        weights_file: ./model_latest.ckpt
+
+Known limitations
+------------------
+
+* **Beta and external assets:** the UTrack package and separately obtained weights
+  are required. Their presence is not verification of a new dataset or regime.
+* **AROME scope:** FrameIt's adapter supports AROME inputs; generalisation beyond
+  the model's training conditions is not established by these documentation tests.
+* **No detection:** the current implementation warns and returns native grid
+  indices ``(0,0)`` when no cyclone is found. These are not a confirmed centre or
+  geographical zero; downstream users must treat the failure explicitly.
+* **Multiple detections:** the adapter selects the first returned detection and
+  does not provide researcher-seeded multi-object association.
+* **Input conventions:** winds and signed 850-hPa vorticity must share compatible
+  geography and the expected conventions; hemisphere correction must not be applied twice.
+* **Qualification gap:** unavailable weights and the reduced fixture's limited
+  spatial context prevent treating the excluded crop case as passed qualification.

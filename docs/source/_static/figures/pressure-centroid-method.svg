@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="510" viewBox="0 0 540 510" role="img" aria-labelledby="title desc">
+  <title id="title">Adaptive pressure-centroid method</title>
+  <desc id="desc">Method schematic, not to scale and not a model result. A 500-km ring supplies environmental reference pressure. Pressure deficits weight native samples inside a smaller integration region to update the centre. R80, diagnosed from tangential wind, controls the adaptive integration radius of twice R80.</desc>
+  <g font-family="sans-serif" fill="#021633">
+    <text x="24" y="35" font-size="23" font-weight="bold">A reference ring and a weighted centre</text>
+    <circle cx="270" cy="212" r="145" fill="none" stroke="#9a4400" stroke-width="2" stroke-dasharray="6 5"/>
+    <circle cx="270" cy="212" r="67" fill="#f4f8f8" stroke="#006b65" stroke-width="2"/>
+    <circle cx="250" cy="203" r="5"/><circle cx="269" cy="186" r="9"/><circle cx="290" cy="211" r="6"/>
+    <circle cx="256" cy="234" r="8"/><circle cx="286" cy="238" r="10"/>
+    <path d="M260 214H280M270 204V224" stroke="#9a4400" stroke-width="3"/>
+    <text x="270" y="385" text-anchor="middle" font-size="20">Reference pressure: full 500-km ring</text>
+    <text x="270" y="421" text-anchor="middle" font-size="19">Inner samples: pressure-deficit weights</text>
+    <text x="270" y="455" text-anchor="middle" font-size="19">Adaptive integration radius = 2 × R80</text>
+    <text x="270" y="493" text-anchor="middle" font-size="17">Schematic · not to scale · not a computed cyclone result</text>
+  </g>
+</svg>

@@ -10,7 +10,7 @@ input:
   directory: ./data/MNH
   pattern: "*diag.nc"
   wind_pairs:
-    - {group: surface, u: UM10, v: VM10, reference_frame: earth}
+    - {group: fields_2d, u: UM10, v: VM10, reference_frame: earth}
     - {group: level, u: UT_ZM, v: VT_ZM, reference_frame: earth}
 tracking:
   method: multifield_vortex
@@ -22,7 +22,7 @@ tracking:
 domain:
   width_km: {x: 500, y: 500}
 variables:
-  surface:
+  fields_2d:
     names: [MSLP, UM10, VM10]
 polar:
   enabled: false

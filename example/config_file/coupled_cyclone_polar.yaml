@@ -17,10 +17,10 @@ input:
         format: grib
         # Explicit declarations: check the actual GRIB uvRelativeToGrid flags first.
         wind_pairs:
-          - {group: surface, u: u10, v: v10, reference_frame: earth}
+          - {group: fields_2d, u: u10, v: v10, reference_frame: earth}
           - {group: isobaricInhPa, u: u, v: v, reference_frame: earth}
       variables:
-        surface:
+        fields_2d:
           names: [prmsl, u10, v10]
         isobaricInhPa:
           names: [u, v, t, r, z]
@@ -29,7 +29,7 @@ input:
         # Native winds stay in cartesian products. Select scalar polar quantities here;
         # no wind diagnostic, pressure/height diagnosis or interval conversion is requested.
         variables:
-          surface: {names: [prmsl]}
+          fields_2d: {names: [prmsl]}
           isobaricInhPa: {names: [t, r, z]}
     surface:
       model: arome
@@ -61,7 +61,7 @@ input:
               temporal_kind: instantaneous
               allow_unscaled: false
       variables:
-        surface:
+        fields_2d:
           names: [SFX.T2M, SFX.SST]
 tracking:
   source: atmosphere

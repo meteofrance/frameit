@@ -5,8 +5,6 @@
   <g font-family="sans-serif" fill="#192d45">
     <text x="28" y="35" font-size="21" font-weight="bold">Horizontal C grid</text>
     <text x="28" y="60" font-size="15">Markers show locations — not flow</text>
-    <path d="M110 100H350V260H110Z" fill="#fff" stroke="#8294aa" stroke-width="2"/>
-    <path d="M110 180H350M230 100V260" stroke="#c0cbd8" stroke-dasharray="5 5"/>
     <g fill="#146b9b" stroke="#fff" stroke-width="2">
       <rect x="102" y="172" width="16" height="16"/>
       <rect x="342" y="172" width="16" height="16"/>

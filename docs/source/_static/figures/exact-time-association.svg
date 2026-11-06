@@ -1,20 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="540" height="430" viewBox="0 0 540 430" role="img" aria-labelledby="title desc">
-  <title id="title">A label does not define temporal support</title>
-  <desc id="desc">Schematic timeline in hours. An atmospheric snapshot is labelled 06:00. A NEMO mean spans 05:00 to 06:00 and is labelled 05:30. Exact common matching does not pair these. The explicit preceding-hour convention pairs their records without interpolating or changing values.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="380" viewBox="0 0 540 380" role="img" aria-labelledby="title desc">
+  <title id="title">Snapshot time and averaging interval</title>
+  <desc id="desc">Aligned schematic timeline. A snapshot is at 06:00. An ocean mean covers 05:00 to 06:00 and carries the native label 05:30. Exact common-label matching does not match these records. The explicitly selected preceding-hour association can pair the interval with its end-time snapshot, without reconstructing an instantaneous ocean field.</desc>
   <g font-family="sans-serif" fill="#021633">
-    <text x="20" y="35" font-size="23" font-weight="bold">Snapshot versus one-hour mean</text>
-    <path d="M70 100H475M70 90V110M270 90V110M470 90V110" stroke="#021633" stroke-width="2"/>
-    <text x="70" y="80" text-anchor="middle" font-size="20">05:00</text>
-    <text x="270" y="80" text-anchor="middle" font-size="20">05:30</text>
-    <text x="470" y="80" text-anchor="middle" font-size="20">06:00</text>
-    <circle cx="470" cy="140" r="8" fill="#00978f" stroke="#021633"/>
-    <text x="20" y="147" font-size="20">AROME instantaneous · label 06:00</text>
-    <rect x="70" y="180" width="400" height="30" fill="#fff0df" stroke="#9a4400" stroke-width="2"/>
-    <path d="M270 173V217" stroke="#021633" stroke-width="3"/>
-    <text x="20" y="249" font-size="20">NEMO mean · bounds 05:00–06:00</text>
-    <text x="20" y="278" font-size="20">Native sample label: 05:30</text>
-    <text x="20" y="327" font-size="20" font-weight="bold">common: no exact label match</text>
-    <text x="20" y="361" font-size="20">preceding_hour: explicitly associate records</text>
-    <text x="20" y="403" font-size="18">Schematic · time in hours · no mean-to-snapshot conversion</text>
+    <text x="24" y="34" font-size="23" font-weight="bold">What time does each value represent?</text>
+    <path d="M170 85H460M170 78V92M315 78V92M460 78V92" stroke="#788997" stroke-width="2"/>
+    <text x="170" y="69" text-anchor="middle" font-size="19">05:00</text>
+    <text x="315" y="69" text-anchor="middle" font-size="19">05:30</text>
+    <text x="460" y="69" text-anchor="middle" font-size="19">06:00</text>
+    <text x="24" y="141" font-size="20">Snapshot</text>
+    <circle cx="460" cy="135" r="8" fill="#006b65"/>
+    <text x="24" y="210" font-size="20">Hourly mean</text>
+    <rect x="170" y="190" width="290" height="28" rx="4" fill="#fff0df" stroke="#9a4400" stroke-width="2"/>
+    <circle cx="315" cy="204" r="5"/>
+    <text x="315" y="245" text-anchor="middle" font-size="18">Native label: 05:30</text>
+    <text x="24" y="298" font-size="20">common: labels differ — no pair here</text>
+    <text x="24" y="332" font-size="20">preceding_hour: pair by the 05:00–06:00 bounds</text>
+    <text x="24" y="366" font-size="17">Schematic · association does not turn the mean into a snapshot</text>
   </g>
 </svg>

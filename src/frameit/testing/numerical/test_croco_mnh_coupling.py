@@ -40,7 +40,7 @@ def coupled_document(directory, *, moving=False, polar=False, currents=False):
                          "variables": {"s_rho": {"names": ["temp", "u", "v"], "levels": {"indices": [1, 0]}}}},
                "atmosphere": {"model": "mesonh", "input": {"format": "netcdf", "files": paths,
                                "netcdf": {"surfex_fields": ["SST", "SSS"]}},
-                              "variables": {"surface": {"names": ["SST", "SSS", "FRAC_SEA"]}}}}},
+                              "variables": {"fields_2d": {"names": ["SST", "SSS", "FRAC_SEA"]}}}}},
            "tracking": {"source": "atmosphere", "method": "fixed_box", "fixed_box": {
                "center": {"latitude": -20., "longitude": 60.}}},
            "domain": {"width_km": {"x": 2., "y": 2.}},
@@ -59,7 +59,7 @@ def coupled_document(directory, *, moving=False, polar=False, currents=False):
         raw["input"]["sources"]["ocean"]["polar"] = {"enabled": True, "variables": {
             "s_rho": {"names": ["temp", "u", "v"] if currents else ["temp"]}}}
         raw["input"]["sources"]["atmosphere"]["polar"] = {"enabled": True, "variables": {
-            "surface": {"names": ["SST", "SSS"]}}}
+            "fields_2d": {"names": ["SST", "SSS"]}}}
     return raw
 
 
@@ -220,7 +220,7 @@ def test_croco_mnh_invalid_geometry_fails_before_export(tmp_path, problem):
 def test_croco_mnh_existing_two_dimensional_pressure_wind_tracking(tmp_path):
     raw = coupled_document(tmp_path)
     source = raw["input"]["sources"]["atmosphere"]
-    source["input"]["wind_pairs"] = [{"group": "surface", "u": "UM10", "v": "VM10",
+    source["input"]["wind_pairs"] = [{"group": "fields_2d", "u": "UM10", "v": "VM10",
                                          "reference_frame": "earth"}]
     for path in source["input"]["files"]:
         with xr.open_dataset(path) as header:

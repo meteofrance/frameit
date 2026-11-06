@@ -20,7 +20,7 @@ generated configuration:
    polar:
      enabled: true
      variables:
-       surface:
+       fields_2d:
          names: [instructional_scalar]
      radial_step_m: 1500
      azimuth_count: 8
