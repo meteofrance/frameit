@@ -1,7 +1,5 @@
 """Current-schema integration requiring the native stack and frozen fixture."""
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 import xarray as xr
@@ -38,12 +36,11 @@ def test_new_yaml_real_pipeline_exports_and_replay(tmp_path):
 @pytest.mark.parametrize("model", ["AROME", "MNH"])
 def test_frozen_matrix_yaml_and_mapping_requests_match(tmp_path, model):
     """Exercise both real adapters through strict YAML and mapping boundaries."""
-    from importlib import resources
-
     from frameit.core.runner import FrameitRunner
     from frameit.testing.catalog import load_cases, resolve_case
+    from frameit.testing.datasets import ci_dataset_root
 
-    root = Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
+    root = ci_dataset_root()
     case = next(
         c for c in load_cases() if c["config"]["model"] == {"AROME": "arome", "MNH": "mesonh"}[model] and c["polar"]
         and c["tracker"] == ("fixed_box" if model == "AROME" else "wind_pressure")

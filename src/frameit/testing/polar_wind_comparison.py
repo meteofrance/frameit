@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta
-from importlib import resources
 from pathlib import Path
 from time import perf_counter
 
@@ -18,7 +17,7 @@ from pyproj import Geod
 
 from frameit.testing.analytic_vortices import AnalyticVortex, analytic_source, displaced_centre
 from frameit.testing.artifacts import atomic_json, environment_metadata
-from frameit.testing.datasets import load_ci_recipe, sha256_file, verify_ci_dataset
+from frameit.testing.datasets import ci_dataset_root, load_ci_recipe, sha256_file, verify_ci_dataset
 from frameit.testing.polar_qualification import project_fixture
 from frameit.testing.polar_rainfall_ci import _GRID_KEYS, DATASET_ID, _decode_regular_ll
 from frameit.testing.wind_point_methods import (
@@ -347,8 +346,7 @@ def read_ci_winds(path, expected_time):
 
 
 def run_ci(output, root=None):
-    root = (Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
-            if root is None else Path(root)).resolve()
+    root = (ci_dataset_root() if root is None else Path(root)).resolve()
     output = Path(output).resolve()
     if root == output or root in output.parents or output in root.parents:
         raise ValueError("CI wind output and source fixture must not overlap")
@@ -434,7 +432,7 @@ def run_comparison(output, *, ci=False):
     from frameit.processing.polar.performance import process_peak_rss_bytes
 
     output = Path(output).expanduser().resolve()
-    root = Path(str(resources.files("frameit.testing").joinpath("ci_dataset"))).resolve()
+    root = ci_dataset_root().resolve()
     if root == output or root in output.parents or output in root.parents:
         raise ValueError("Wind comparison output and source fixture must not overlap")
     if output.exists() and (not output.is_dir() or any(output.iterdir())):

@@ -27,7 +27,9 @@ run, hosted CI and the final release decision remain separate gates.
 - Use one `environment.yaml`/`frameit_env` for local and HPC work. Distributions
   exclude private GRIB/NetCDF fixtures and generated indexes; the manifest,
   preparation recipe and generator remain available. Supply authorized fixture
-  data separately for the reduced scientific matrix.
+  data separately for the reduced scientific matrix. Set `FRAMEIT_CI_DATA_ROOT`
+  to their absolute directory for installed numerical/combined scientific checks;
+  `run-all-tests --data-root` retains its separate full-domain matrix meaning.
 
 ### Preserved contracts and remaining limits
 

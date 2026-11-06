@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from importlib import resources
 from pathlib import Path
 from time import perf_counter
 
@@ -16,7 +15,7 @@ import numpy as np
 import xarray as xr
 
 from frameit.testing.artifacts import atomic_json, environment_metadata
-from frameit.testing.datasets import load_ci_recipe, sha256_file, verify_ci_dataset
+from frameit.testing.datasets import ci_dataset_root, load_ci_recipe, sha256_file, verify_ci_dataset
 
 DATASET_ID = "AROME/BATSIRAI"
 PARAM_ID = 235015
@@ -302,8 +301,7 @@ def run_ci_scalar(output, *, quantity, data_root=None):
 
     spec = _QUANTITIES[quantity]
     rain = quantity == "tirf"
-    root = (Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
-            if data_root is None else Path(data_root)).resolve()
+    root = (ci_dataset_root() if data_root is None else Path(data_root)).resolve()
     output = Path(output).expanduser().resolve()
     if output == root or root in output.parents or output in root.parents:
         raise ValueError("CI inputs and pilot outputs must not overlap")
@@ -462,8 +460,7 @@ def run_ci_scalar(output, *, quantity, data_root=None):
 
 def run_ci_heat_fluxes(output, *, data_root=None):
     """Explicitly select the two source-signed accumulated surface-energy presets."""
-    root = (Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
-            if data_root is None else Path(data_root)).resolve()
+    root = (ci_dataset_root() if data_root is None else Path(data_root)).resolve()
     output = Path(output).expanduser().resolve()
     if output == root or root in output.parents or output in root.parents:
         raise ValueError("CI inputs and pilot outputs must not overlap")

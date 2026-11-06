@@ -103,7 +103,7 @@ and reference frames before comparing products.
 ```bash
 python -m frameit.testing.polar_qualification --output ./runs/polar-qualification
 python -m frameit.testing.polar_qualification --example --output ./runs/analytical-vortex
-frameit run-all-tests --output ./runs/all-tests
+FRAMEIT_CI_DATA_ROOT=/path/to/ci_dataset frameit run-all-tests --output ./runs/all-tests
 ```
 
 Use fresh output directories. Qualification writes numerical JSON reports and
@@ -111,7 +111,8 @@ NetCDF examples with analytical errors, profiles, harmonics and coverage checks.
 See [qualification](docs/source/polar_projection/scientific_qualification.rst) for
 methods and tolerances. `run-all-tests` also runs the
 [AROME/MNH matrix](docs/source/user_guide/matrix_testing.rst), which requires its
-frozen input fixture. These checks do not validate every real-data regime.
+frozen input fixture, supplied separately through `FRAMEIT_CI_DATA_ROOT` (use
+an absolute directory). These checks do not validate every real-data regime.
 
 ## Optional HPC / Slurm execution
 

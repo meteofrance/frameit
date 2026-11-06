@@ -4,9 +4,10 @@ import importlib.util
 import json
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
+
+from frameit.testing.datasets import ci_dataset_root
 
 
 def test_discovering_grib_loader_does_not_initialize_optional_native_decoder():
@@ -23,7 +24,7 @@ print('loader discovery completed', flush=True)
 
 @pytest.mark.skipif(importlib.util.find_spec("cfgrib") is None, reason="Optional GRIB backend")
 def test_direct_grib_loading_and_native_shutdown_in_fresh_interpreter(tmp_path):
-    source = Path(__file__).parents[1] / "ci_dataset/AROME/BATSIRAI"
+    source = ci_dataset_root() / "AROME/BATSIRAI"
     run = subprocess.run([sys.executable, "-c", """
 import resource, sys
 from pathlib import Path
@@ -54,8 +55,8 @@ import resource, sys
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 from frameit.cli import main
 main(['run-matrix-test', '--ci', '--plan-only', '--case',
-      'arome_batsirai_fixed_cart_only', '--output', sys.argv[1]])
-""", str(output)], capture_output=True, text=True, timeout=90)
+      'arome_batsirai_fixed_cart_only', '--output', sys.argv[1], '--data-root', sys.argv[2]])
+""", str(output), str(ci_dataset_root())], capture_output=True, text=True, timeout=90)
     assert run.returncode == 0, run.stdout + run.stderr
     report = json.loads((output / "run.json").read_text())
     assert report["exit_code"] == 0

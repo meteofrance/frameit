@@ -12,11 +12,11 @@ import copy
 import multiprocessing
 import os
 import traceback
-from importlib import resources
 from pathlib import Path
 from time import perf_counter
 
 from frameit.testing.artifacts import atomic_json, environment_metadata, read_json, utc_now
+from frameit.testing.datasets import ci_dataset_root
 
 DEFAULT_CASES = (
     "arome_batsirai_fixed_polar", "arome_batsirai_prescribed_polar",
@@ -115,8 +115,7 @@ def run_polar_benchmark(output, *, data_root=None, case_ids=DEFAULT_CASES, repea
     if repeats < 1 or timeout <= 0:
         raise ValueError("Benchmark repeats and timeout must be positive")
     output = Path(output).expanduser().resolve()
-    root = (Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
-            if data_root is None else Path(data_root)).expanduser().resolve()
+    root = (ci_dataset_root() if data_root is None else Path(data_root)).expanduser().resolve()
     if root == output or root in output.parents or output in root.parents:
         raise ValueError("Benchmark input and output trees must not overlap")
     if output.exists() and any(output.iterdir()):

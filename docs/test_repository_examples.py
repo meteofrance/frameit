@@ -24,6 +24,24 @@ ROOT = Path(__file__).resolve().parents[1]
 SLURM_EXAMPLES = ROOT / 'example/slurm'
 
 
+def test_factory_and_preset():
+    from frameit.tracking.PressureCentroid_Tracker import PressureCentroidTracker
+    from frameit.tracking.tracker_core import build_tracker_from_config
+
+    conf = SimulationConfig.from_yaml_with_model_preset(
+        ROOT / "example/config_file/conf_pressure_centroid.yml")
+    # Schema parsing defers geometry-dependent tracker construction.
+    assert conf.infer_grid_geometry and conf.resolution == 0
+    conf.resolution = 2500
+    tracker = build_tracker_from_config(conf)
+    assert isinstance(tracker, PressureCentroidTracker)
+    assert tracker.half_search == 40
+    assert conf.requested_variables_tracker["pressure_centroid"]["isobaricInhPa"][
+        "level_selection"] == "all"
+    conf.atm_model = "MNH"
+    assert build_tracker_from_config(conf).model == "MNH"
+
+
 def test_all_shipped_example_yaml_uses_new_schema():
     paths = [p for p in (ROOT / 'example').rglob('*') if p.suffix in {'.yml', '.yaml'}]
     assert paths

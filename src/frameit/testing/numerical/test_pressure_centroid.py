@@ -4,12 +4,10 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from frameit.core.settings_class import SimulationConfig
 from frameit.processing.polar.polar_grid import PolarLonLatGrid
 from frameit.processing.tracking.postprocess import enrich_track_with_kinematics
 from frameit.tracking import pressure_centroid as pc
 from frameit.tracking.PressureCentroid_Tracker import PressureCentroidTracker
-from frameit.tracking.tracker_core import build_tracker_from_config
 
 
 def vortex(center=(60.0, -20.0)):
@@ -132,21 +130,6 @@ def test_wrapped_descending_interpolator_and_ring_failure():
 def test_invalid_options(kwargs):
     with pytest.raises(ValueError):
         pc.CentroidOptions(**kwargs)
-
-
-def test_factory_and_preset():
-    conf = SimulationConfig.from_yaml_with_model_preset(
-        "example/config_file/conf_pressure_centroid.yml")
-    # Schema parsing defers geometry-dependent tracker construction.
-    assert conf.infer_grid_geometry and conf.resolution == 0
-    conf.resolution = 2500
-    tracker = build_tracker_from_config(conf)
-    assert isinstance(tracker, PressureCentroidTracker)
-    assert tracker.half_search == 40
-    assert conf.requested_variables_tracker["pressure_centroid"]["isobaricInhPa"][
-        "level_selection"] == "all"
-    conf.atm_model = "MNH"
-    assert build_tracker_from_config(conf).model == "MNH"
 
 
 def test_centroid_invalid_integrals():

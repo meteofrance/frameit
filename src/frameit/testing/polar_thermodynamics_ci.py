@@ -7,7 +7,6 @@ No density, layer mass, heat capacity or humidity conversion is inferred.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from importlib import resources
 from pathlib import Path
 from time import perf_counter
 
@@ -15,7 +14,7 @@ import numpy as np
 import xarray as xr
 
 from frameit.testing.artifacts import atomic_json, environment_metadata
-from frameit.testing.datasets import load_ci_recipe, sha256_file, verify_ci_dataset
+from frameit.testing.datasets import ci_dataset_root, load_ci_recipe, sha256_file, verify_ci_dataset
 from frameit.testing.polar_rainfall_ci import (
     _GRID_KEYS,
     BOUNDS_POLICY,
@@ -241,8 +240,7 @@ def run_ci_thermodynamics(output, *, data_root=None):
     from frameit.processing.polar.performance import process_peak_rss_bytes
     from frameit.testing.polar_cell_comparison import independent_overlap_sparse
 
-    root = (Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
-            if data_root is None else Path(data_root)).resolve()
+    root = (ci_dataset_root() if data_root is None else Path(data_root)).resolve()
     output = Path(output).expanduser().resolve()
     if output == root or root in output.parents or output in root.parents:
         raise ValueError("CI inputs and pilot outputs must not overlap")

@@ -70,11 +70,26 @@ With the :doc:`test dependencies <fa_environment>` installed:
 
 .. code-block:: bash
 
-   frameit run-all-tests --output ./runs/all-tests
-   frameit run-all-tests --data-root /path/to/simulations --output ./runs/all-full
+   FRAMEIT_CI_DATA_ROOT=/path/to/ci_dataset frameit run-all-tests --output ./runs/all-tests
+   FRAMEIT_CI_DATA_ROOT=/path/to/ci_dataset frameit run-all-tests --data-root /path/to/simulations --output ./runs/all-full
+
+``FRAMEIT_CI_DATA_ROOT`` selects the separately supplied reduced fixture for the
+numerical tests and, when ``--data-root`` is absent, the reduced matrix. Use an
+absolute path. The same setting applies to direct numerical pytest runs and the
+optional CI comparison/benchmark tools; it does not select inputs for ordinary
+extraction. An invalid explicit directory fails rather than falling back. Without
+the setting, tests look in the package's ``testing/ci_dataset`` directory, which
+contains only the manifest in distributions. No data are downloaded or copied.
+
+``--data-root`` still selects **full-domain matrix inputs**, not the reduced
+numerical fixture. Do not use it to pass a reduced fixture: that selects full-domain
+mode rather than the reduced matrix.
+The combined report records the effective numerical ``data_root``; matrix input
+identity is recorded separately. Explicit tool-level data-root arguments take
+precedence over the environment setting where those arguments are available.
 
 The default runs every packaged numerical test, the independent analytical
-scientific qualification, and the full CI matrix using the installed frozen
+scientific qualification, and the full CI matrix using the selected reduced
 fixture, which must be present and valid. ``--data-root`` selects the full-domain
 matrix instead; optional
 UTrack cases accept ``--utrack-weights``. All services run even if one fails.
@@ -102,11 +117,11 @@ the repository's ordinary ``pytest`` command.
 
 .. code-block:: bash
 
-   frameit run-matrix-test --ci --output ./runs/ci
+   frameit run-matrix-test --ci --data-root ./ci_dataset --output ./runs/ci
    frameit run-matrix-test --data-root /path/to/simulations --output ./runs/full
    frameit run-matrix-test --ci --data-root ./ci_dataset \
      --output ./runs/prescribed --case 'mnh_chido_prescribed_*'
-   frameit run-matrix-test --ci --output ./runs/plan --plan-only
+   frameit run-matrix-test --ci --data-root ./ci_dataset --output ./runs/plan --plan-only
 
 ``--data-root`` overrides the package fixture location with ``--ci`` and is required otherwise.
 ``--output`` must be fresh or empty. Its location must not overlap the input tree.

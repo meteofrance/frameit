@@ -10,6 +10,7 @@ from importlib import resources
 from pathlib import Path
 
 from frameit.testing.artifacts import atomic_json, environment_metadata, utc_now
+from frameit.testing.datasets import ci_dataset_root
 
 
 def run_all_tests(
@@ -19,11 +20,10 @@ def run_all_tests(
     """Run both suites even after failures, retaining separate timings and artifacts."""
     output = Path(output).expanduser().resolve()
     ci = data_root is None
-    root = (
-        Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
-        if ci else Path(data_root)
-    ).expanduser().resolve()
-    if output == root or root in output.parents or output in root.parents:
+    fixture_root = ci_dataset_root().resolve()
+    root = (fixture_root if ci else Path(data_root)).expanduser().resolve()
+    if any(output == source or source in output.parents or output in source.parents
+           for source in (root, fixture_root)):
         raise ValueError("Data and test output trees must not overlap")
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
         raise ValueError(f"Test output must be a fresh directory: {output}")
@@ -36,6 +36,7 @@ def run_all_tests(
     }
     numerical_start = time.perf_counter()
     env = dict(os.environ, PYTHONNOUSERSITE="1", PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
+    env["FRAMEIT_CI_DATA_ROOT"] = str(fixture_root)
     # Explicit paths/configuration make installed-wheel runs independent of the CWD.
     tests = Path(str(resources.files("frameit.testing.numerical")))
     if not tests.is_dir():
@@ -48,7 +49,7 @@ def run_all_tests(
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, env=env)
     report["numerical"] = {
         "exit_code": result.returncode, "duration_s": time.perf_counter() - numerical_start,
-        "log": "numerical.log", "junit": "numerical.xml",
+        "log": "numerical.log", "junit": "numerical.xml", "data_root": str(fixture_root),
     }
     qualification_start = time.perf_counter()
     with (output / "qualification.log").open("w", encoding="utf-8") as log:

@@ -1,10 +1,11 @@
 """Stored rainfall semantics, failure reporting and the real CI cell pilot."""
 
 import json
-from importlib import resources
 
 import numpy as np
 import pytest
+
+from frameit.testing.datasets import ci_dataset_root
 
 from frameit.testing.polar_rainfall_ci import (
     BOUNDS_POLICY,
@@ -19,7 +20,7 @@ from frameit.testing.polar_rainfall_ci import (
 
 def fixture_root():
     pytest.importorskip("eccodes")
-    root = resources.files("frameit.testing").joinpath("ci_dataset")
+    root = ci_dataset_root()
     if not root.joinpath("manifest.json").is_file():
         pytest.skip("Bundled CI data are not installed")
     return root

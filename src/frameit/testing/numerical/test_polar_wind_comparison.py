@@ -1,7 +1,6 @@
 """Independent transport, spectral and strict-support oracles plus the CI study."""
 
 import json
-from importlib import resources
 
 import numpy as np
 import pytest
@@ -137,7 +136,9 @@ def test_full_analytical_and_native_comparison_exports_with_plain_readers(tmp_pa
     pytest.importorskip("eccodes")
     from netCDF4 import Dataset
 
-    root = resources.files("frameit.testing").joinpath("ci_dataset")
+    from frameit.testing.datasets import ci_dataset_root
+
+    root = ci_dataset_root()
     if not root.joinpath("manifest.json").is_file():
         pytest.skip("Bundled CI fixture is not installed")
     record = read_ci_winds(root / "AROME/BATSIRAI/arome_BATSIRAI_20220201+0000P.grib",

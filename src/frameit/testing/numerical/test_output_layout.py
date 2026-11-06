@@ -1,13 +1,13 @@
 """Output isolation and scientific request regressions."""
 
 import shutil
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import xarray as xr
 
 from frameit.testing.catalog import load_cases
+from frameit.testing.datasets import ci_dataset_root
 
 
 def test_direct_export_uses_products_directory(tmp_path):
@@ -46,7 +46,7 @@ def test_grib_cache_is_local_distinct_and_reused(tmp_path):
     from frameit.io.grib_utils import concat_grib2ds_by_vert_coord
     from frameit.io.loader import DatasetResources
 
-    fixture = (Path(__file__).parents[1] / "ci_dataset" / "AROME" / "BATSIRAI"
+    fixture = (ci_dataset_root() / "AROME" / "BATSIRAI"
                / "arome_BATSIRAI_20220201+0000P.grib")
     inputs = []
     for name in ("first", "second"):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import shutil
 import tempfile
 import uuid
@@ -14,6 +15,17 @@ from pathlib import Path
 from frameit.io.subset import crop_grib, crop_netcdf, validate_grib_subset
 
 MANIFEST_FORMAT = "frameit-ci-dataset-v2"
+
+
+def ci_dataset_root() -> Path:
+    """Locate reduced test data without copying private payloads into software."""
+    value = os.environ.get("FRAMEIT_CI_DATA_ROOT")
+    if value is None:
+        return Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
+    root = Path(value).expanduser().resolve()
+    if not value.strip() or not root.is_dir():
+        raise ValueError(f"FRAMEIT_CI_DATA_ROOT must name an existing fixture directory: {value!r}")
+    return root
 
 
 def load_ci_recipe():

@@ -385,7 +385,9 @@ def test_formula_dependencies_survive_loading(tmp_path):
 
 
 def test_bundled_mnh_header_identifies_pressure_as_missing():
-    path = Path(__file__).parents[1] / "ci_dataset/MNH/CHIDO/3CH09.1.MXX30.011diag.nc"
+    from frameit.testing.datasets import ci_dataset_root
+
+    path = ci_dataset_root() / "MNH/CHIDO/3CH09.1.MXX30.011diag.nc"
     with xr.open_dataset(path, engine="h5netcdf") as header:
         with pytest.raises(ValueError) as error:
             resolve_mnh_fields(header, path.name)

@@ -1,11 +1,12 @@
 """Instantaneous semantics, independent means, weighting and ordinary-reader checks."""
 
 import json
-from importlib import resources
 
 import numpy as np
 import pytest
 import xarray as xr
+
+from frameit.testing.datasets import ci_dataset_root
 
 from frameit.testing.polar_thermodynamics_ci import (
     HEIGHTS_M,
@@ -19,7 +20,7 @@ from frameit.testing.polar_thermodynamics_ci import (
 
 def fixture_root():
     pytest.importorskip("eccodes")
-    root = resources.files("frameit.testing").joinpath("ci_dataset")
+    root = ci_dataset_root()
     if not root.joinpath("manifest.json").is_file():
         pytest.skip("Bundled CI fixture is not installed")
     return root

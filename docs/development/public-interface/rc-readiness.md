@@ -1000,6 +1000,39 @@ remain unchanged. No passing engineering check substitutes for those gates.
 No push, main merge, remote tag, package publication or documentation deployment
 is authorized by this preparation.
 
+### Final review correction: external scientific fixtures
+
+The first Task 12 preparation revision, `ce9b7d2`, is superseded, not a qualified
+candidate. Its source suite passed 1197 tests/four subtests, but the installed
+combined runner failed one remaining checkout-relative centroid-preset test
+(1185 passed, one failed). Package-local provisioning let its fixture cases run,
+but did not provide a usable external-fixture route for ordinary artifact users.
+Fresh read-only review confirmed that Important compatibility gap; the separate
+analytical service and reduced matrix passing did not erase the failed suite.
+
+The correction uses one `FRAMEIT_CI_DATA_ROOT` locator for reduced numerical/CI
+test data, records the effective numerical root in the combined report, and
+passes its absolute value to child processes. Invalid explicit roots fail without
+fallback; output overlap with either reduced fixtures or full simulation inputs
+is rejected. Existing `--data-root` retains its full-domain matrix semantics.
+The remaining repository-YAML centroid-preset case moves to the existing source
+gate with every assertion preserved. No kernel, quantity, numerical tolerance,
+output schema, processing configuration or scientific default changes.
+
+New locator/runner/overlap regressions were observed failing before their fixes.
+Final qualification must use the next committed source revision and fresh empty
+artifact-install targets, with the fixture outside those targets. The unchanged
+reference recipe's actual fresh creation remains separately recorded; do not
+describe an editable install or in-package data copy as final distribution proof.
+
+Pre-freeze correction checks: **19 locator/runner/repository tests passed** and
+**42 installed-wheel tests passed** from outside the checkout using an external
+fixture and an otherwise empty package data directory. All assertions across
+146 affected existing functions were preserved; source collection is **1205**.
+Strict `rc-fixture-fix-02` documentation, publication, release and Ruff F checks
+passed. The updated fixture commands loaded in the live GUI at 320/1200 px without
+page overflow. These focused checks precede, not replace, the new frozen full run.
+
 ## Task 1 verification receipt
 
 - `conda run --no-capture-output -n frameit_env python -c 'import sys; assert sys.version_info[:2] == (3, 13); print(sys.version)'`

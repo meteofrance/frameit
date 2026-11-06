@@ -5,19 +5,17 @@ evaluated from labelled sampling locations, not FrameIt's collocation helpers.
 These synthetic checks verify representation, not general model validity.
 """
 
-from importlib.resources import files
-
 import numpy as np
 import pytest
 import xarray as xr
 
 from frameit.core.execution import ExecutionOptions, execute_simulation
 from frameit.core.settings_class import SimulationConfig
+from frameit.testing.datasets import ci_dataset_root
 
 
 def test_real_mnh_native_faces_match_source_file(tmp_path):
-    path = files("frameit.testing").joinpath(
-        "ci_dataset/MNH/CHIDO/3CH09.1.MXX30.011diag.nc")
+    path = ci_dataset_root() / "MNH/CHIDO/3CH09.1.MXX30.011diag.nc"
     with xr.open_dataset(path, engine="netcdf4") as source:
         latitude = float(source.latitude[35, 37])
         longitude = float(source.longitude[35, 37])
