@@ -161,6 +161,12 @@ schema and the compact first run on Python 3.13 without GRIB/FA/ESMF dependencie
 Native-stack and full numerical checks remain separate jobs in ``runtime.yml``.
 ``test_configuration_integration.py`` retains the real-fixture/polar cases in
 the native full suite; they are not core-only requirements or skipped coverage.
+The native full job downloads the separately approved data-only fixture at a
+pinned commit, verifies all nine SHA-256 hashes, and sets
+``FRAMEIT_CI_DATA_ROOT`` explicitly (see :doc:`../user_guide/matrix_testing`).
+It installs Matplotlib only for the downstream illustration tests; plotting is
+not a core runtime dependency. The isolated FA job creates its temporary-output
+parent before invoking pytest.
 Keep both build/core checks required in repository branch-protection settings;
 a skipped check is not a pass. Run local equivalents in ``frameit_env`` before
 committing. Hosted results require an authorized push and an actual completed job.

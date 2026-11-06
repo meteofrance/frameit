@@ -20,6 +20,21 @@ compatible fixture with ``--ci --data-root ./ci_dataset``, or use the optional
 preparation procedure below with authorized source simulations. This fixture is
 not required for ordinary extraction with your own inputs or for schema-only checks.
 
+The approved reduced fixture is available on the repository's data-only
+``ci-fixtures-v1`` branch (about 61 MB). Hosted native CI pins commit
+``24b63e5683133ddbb349c7c492fa4b517ccbc42a`` and checks all nine payload hashes;
+it does not download full source simulations. To obtain the same fixture:
+
+.. code-block:: bash
+
+   git clone --single-branch --branch ci-fixtures-v1 https://github.com/meteofrance/frameit.git ci_dataset
+   git -C ci_dataset checkout --detach 24b63e5683133ddbb349c7c492fa4b517ccbc42a
+   (cd ci_dataset && echo 'ac631ffed5a99cdc69e4a726f98bfd8b2299b8d9a02d8e15a683ad81a24d4d45  SHA256SUMS' | sha256sum --check --strict && sha256sum --check --strict SHA256SUMS)
+
+Point ``--ci --data-root ./ci_dataset`` or ``FRAMEIT_CI_DATA_ROOT`` at this
+directory as appropriate below. These files are regression fixtures, not evidence
+that every model, dataset or scientific regime has been validated.
+
 Reproduce the CI dataset (maintainers)
 ----------------------------------------
 
