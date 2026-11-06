@@ -207,6 +207,16 @@ Follow the [documentation contribution guide](docs/source/contributing/documenta
 for writing, scientific safeguards, figures and the local preview workflow. Do
 not add a local Git hook for this obligation.
 
+For agent-driven documentation previews, start the loopback HTML server through
+OpenCode's shell tool in background mode. If its port is occupied, choose a free
+one; do not terminate another process. Load the browser skill, open the preview
+in the live OpenCode GUI, retain its tab ID, and inspect affected pages at desktop
+and narrow widths. Keep the preview available for feedback. Record the owned
+server process, iteration URL and restart command in the session handover, not
+in committed machine state. Report a disconnected GUI as a visual-review blocker;
+screenshots do not establish human acceptance. Keep these agent instructions out
+of published documentation.
+
 ## 11. Completion and handover
 
 Completed, verified changes MUST be committed locally in focused commits before

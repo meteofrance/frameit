@@ -11,7 +11,7 @@ none are affected, record ``Docs: no user-facing impact because ...`` in the
 commit or handover.
 
 Build documentation strictly in ``frameit_env``, run the publication check and
-inspect the affected HTML. Show visual changes in the OpenCode GUI browser and
+inspect the affected HTML. Show visual changes in a browser and
 keep the preview available for feedback.
 
 Writing for researchers
@@ -173,18 +173,10 @@ After the build and publication check succeed, serve only generated public HTML:
 
    conda run --no-capture-output -n frameit_env python -m http.server 8765 --bind 127.0.0.1 --directory build/docs-preview
 
-Agents must start this command through OpenCode's shell tool in background mode.
-If the port is occupied, choose a free one; do not terminate another process.
-Never serve the repository root or source datasets, and do not bind publicly.
+Open ``http://127.0.0.1:8765/baseline-01/index.html`` in your browser. Check the
+affected pages at desktop and narrow widths. Rebuild into a new iteration
+directory after edits.
 
-Load the browser skill and open
-``http://127.0.0.1:8765/baseline-01/index.html`` in the OpenCode GUI browser/Review
-pane. Keep the returned tab ID for subsequent operations, verify the page loads
-and share the actual clickable URL. Inspect the changed pages at desktop and
-narrow widths. Rebuild into a new iteration directory after edits.
-
-Keep the server running until feedback is finished or the maintainer requests a
-stop. Put the owned server process, current iteration URL and restart command in
-the session handover, not in committed machine state. If the GUI is disconnected,
-report the visual-review blocker; screenshots do not replace the live page or
-establish that the maintainer reviewed it.
+If port 8765 is occupied, choose another free port. Serve only generated HTML,
+not the repository root or source datasets, and keep the server bound to
+``127.0.0.1``. Stop the preview server with ``Ctrl+C`` when finished.
