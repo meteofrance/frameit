@@ -31,8 +31,8 @@ authors:
     given-names: Maxence
     affiliation: Université de La Réunion
     orcid: https://orcid.org/0009-0006-5921-4101
-version: 2.0.0rc1
-date-released: 2026-11-06
+version: 2.0.0rc2
+date-released: 2026-11-09
 license: Apache-2.0
 repository-code: https://github.com/meteofrance/frameit
 url: https://meteofrance.github.io/frameit/

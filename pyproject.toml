@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "frameit"
-version = "2.0.0rc1"
+version = "2.0.0rc2"
 requires-python = ">=3.13,<3.14"
 description = "Focused Regional Analysis of Modeled Events with Integrated Tracking"
 dependencies = [
