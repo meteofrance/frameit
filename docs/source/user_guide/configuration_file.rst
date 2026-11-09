@@ -32,8 +32,10 @@ All explicitly disable polar sampling and refuse product overwrites.
 The wind starters declare ``reference_frame: earth``: U is positive toward
 geographic east and V toward geographic north. These are **eastward/northward
 components**, also called **Earth-relative components**. This declaration specifies
-component directions, not storm-motion subtraction. Check it against your source
-metadata; see :ref:`wind-component-directions`.
+component directions, not storm-motion subtraction; see
+:ref:`wind-component-directions`. These are starter presets, not directions
+detected from your files. Confirm or adapt them using
+:ref:`source metadata or producer documentation <wind-metadata>`.
 
 .. list-table:: Named starters and equivalent compositions
    :header-rows: 1
@@ -418,7 +420,9 @@ declares grid-aligned model-level winds and eastward/northward surface winds:
 
 ``input.wind_pairs`` is a list of explicit pairs scoped by native ``group``.
 It defaults to ``[]``; no declared basis or rotation is selected by that empty list.
-Choose ``reference_frame: earth`` or ``grid`` based on the actual source.
+Choose ``reference_frame: earth`` or ``grid`` using the
+:ref:`source evidence <wind-metadata>`. This declaration is required even when
+source metadata identifies the directions.
 Grid-aligned pairs require one declared rotation method:
 
 * ``mesonh_projection``: use the angle
@@ -431,8 +435,9 @@ Grid-aligned pairs require one declared rotation method:
   The angle measures counterclockwise rotation from geographic east to grid x;
   its units must be declared and convertible to radians.
 
-There is no ``auto`` frame or method. Validate the declaration against available
-GRIB component flags and CF wind metadata (including standard names). A conflict,
+There is no ``auto`` frame or method. FrameIt checks your declaration against
+available GRIB component flags and CF wind metadata (including standard names);
+it does not select the basis from that metadata. A conflict,
 inconsistent pair, missing angle, unsupported projection or unusable geometry
 must fail with the affected pair identified. Do not silently change reference
 frame or fall back from one rotation method to another. Earth-relative pairs

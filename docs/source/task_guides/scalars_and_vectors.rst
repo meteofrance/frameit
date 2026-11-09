@@ -14,6 +14,10 @@ quantity, sample location or vector basis.
 Declare atmospheric wind pairs
 ------------------------------
 
+Check :ref:`source metadata or producer documentation <wind-metadata>`, declare
+each selected pair, then run ``frameit validate``. FrameIt cross-checks your
+declaration against available metadata; it does not choose the basis for you.
+
 Declare **eastward/northward components** with ``reference_frame: earth``:
 U is positive eastward and V northward, also called **Earth-relative components**.
 Declare **grid-aligned components**, following the model's x/y axes, with
