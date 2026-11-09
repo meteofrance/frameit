@@ -23,13 +23,33 @@ Choose the reference and time policy
 ``tracking.source`` identifies the source supplying continuous centres. Top-level
 ``model`` must match it. Each source has its own ``model``, ``input`` and
 ``variables``; do not put a shared variable selection at the top level.
-For moving centres, the corresponding composition is:
+Both pairings support ``fixed_box`` (default), ``prescribed_track``,
+``pressure_wind`` and ``pressure_centroid``. Use a model selector when choosing
+tracking; named starters such as ``arome-nemo`` reject composition flags.
+For a supplied trajectory:
 
 .. code-block:: bash
 
    frameit init arome --coupling nemo --tracking prescribed_track
 
-Supply an appropriate track and use ``input.time_alignment: common`` for exact
+Supply an appropriate track. To calculate centres from atmospheric fields instead,
+use one of these commands in a fresh run directory:
+
+.. code-block:: bash
+
+   frameit init arome --coupling nemo --tracking pressure_centroid
+   # Or for Meso-NH+CROCO:
+   frameit init mesonh --coupling croco --tracking pressure_centroid
+
+Use ``--tracking pressure_wind`` instead for :doc:`../tracker/pressure_wind_tracker`.
+The atmospheric source supplies the tracker fields and wind declarations; ocean
+fields and sampling remain independent. Confirm the declared source wind basis
+against producer metadata. For :doc:`../tracker/pressure_centroid`, retain the
+full 500-km reference-ring coverage and vertical brackets around 2,000 m
+(geopotential height for AROME, altitude ASL for Meso-NH), plus at least two exact
+common times. The extraction box does not limit the tracker input coverage.
+
+Use ``input.time_alignment: common`` for exact
 common labels (default), or ``strict`` to require equal source times and full
 track coverage. Neither interpolates time. The explicit AROME/NEMO-only
 ``preceding_hour`` policy has additional temporal metadata requirements; see
