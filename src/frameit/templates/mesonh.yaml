@@ -9,6 +9,7 @@ input:
   format: netcdf
   # Exclude the exact 000 timeseries filename via input.exclude when needed.
   # Verify the source wind basis of UM10/VM10, pressure and velocity units.
+  # earth: u positive eastward, v positive northward; no storm motion subtracted.
   wind_pairs:
     - {group: fields_2d, u: UM10, v: VM10, reference_frame: earth}
 tracking:

@@ -132,7 +132,8 @@ records/levels/cycles; names and library tables are not independent validation.
      - MSLP is not surface pressure; do not substitute one for the other.
    * - Near-surface winds: GRIB ``10u``/``10v`` at 10 m
      - m s-1; observed ``uvRelativeToGrid=0``.
-     - Preserve/check Earth-relative basis, sampling and pairing, not short names alone.
+     - Preserve/check eastward/northward component directions, sampling and pairing,
+       not short names alone.
    * - Pressure-level ``u``, ``v``, ``t``, ``r``, ``z``
      - m s-1, K, %, m2 s-2; example 850/700/500 hPa, instantaneous.
      - Pressure labels use their actual coordinate units; RH is not specific

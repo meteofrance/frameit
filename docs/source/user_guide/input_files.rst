@@ -113,8 +113,10 @@ Wind metadata to check
 Inspect each pair's sampling coordinates, units and vector basis, not only its
 names. Meso-NH native ``UT``/``VT`` occupy different horizontal faces and ``WT``
 occupies vertical interfaces. DIAG ``UT_ZM``/``VT_ZM`` are zonal/meridional
-diagnostics; ``UM10``/``VM10`` are Earth-relative 10-m surface winds. Do not apply
-one file-wide grid-relative assumption to all of them.
+diagnostics; ``UM10``/``VM10`` are eastward/northward 10-m surface wind components
+(Earth-relative). Do not apply one file-wide grid-aligned assumption to all of
+them. These labels describe component directions, not storm-motion subtraction;
+see :ref:`wind-component-directions`.
 
 The declarations are in :doc:`configuration_file`; diagrams of collocation,
 rotation and level selection are in

@@ -20,21 +20,37 @@ Polar sampling interpolates selected fields at new points, described by distance
 and angle around the continuous geographical centre. Moving either selection
 changes where data are sampled, not the wind's physical meaning.
 
+.. _wind-component-directions:
+
 Which directions do U and V describe?
 -------------------------------------
 
-In an Earth-relative pair, U points east and V north. A grid-relative pair follows
-the model's axes, which may not align with east/north. Rotation changes those
-component directions. Preparing staggered winds can also require moving U/V
+A vector basis specifies the directions along which components are measured:
+
+* **Eastward/northward components** (also called **Earth-relative components**):
+  U is positive toward geographic east and V toward geographic north at each
+  point. Wind-pair declarations use ``reference_frame: earth``.
+* **Grid-aligned components** (also called **grid-relative components**): U and V
+  follow the model's local x/y axes, which may not align with east/north.
+  Wind-pair declarations use ``reference_frame: grid``.
+
+Rotating grid-aligned components into eastward/northward components represents
+the same physical wind using different component directions; it does not
+subtract any velocity. Preparing staggered winds can also require moving U/V
 samples to a common location; see :ref:`wind-grid-contract` for examples.
 
 Is event motion subtracted?
 ---------------------------
 
-Not from exported winds or currents. A window following an event moving east at
-5 m/s does not automatically subtract 5 m/s from U. That is a separate downstream
-scientific choice. Some trackers use motion-relative winds internally; their
-method records specify this without changing exported field products.
+Not from exported winds or currents. Here **Earth-relative velocity** means
+velocity relative to the ground, not to the moving event. A 10 m/s eastward wind
+remains 10 m/s in an exported window following a storm moving east at 5 m/s.
+Subtracting storm motion would instead give a 5 m/s eastward **storm-relative**
+wind. That is a separate downstream scientific choice, not a component rotation
+or a consequence of following the storm. Radial/tangential output components
+also retain the ground-relative velocity. Some trackers use motion-relative
+winds internally; their method records specify this without changing exported
+field products.
 
 Use :doc:`../task_guides/scalars_and_vectors` for representation choices and
 :doc:`../task_guides/polar_sampling` for target spacing and coverage. The

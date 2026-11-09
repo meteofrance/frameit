@@ -29,6 +29,12 @@ Each command below writes ``frameit.yaml``. Adapt the inspected inputs and the
 illustrative centres and widths to your data.
 All explicitly disable polar sampling and refuse product overwrites.
 
+The wind starters declare ``reference_frame: earth``: U is positive toward
+geographic east and V toward geographic north. These are **eastward/northward
+components**, also called **Earth-relative components**. This declaration specifies
+component directions, not storm-motion subtraction. Check it against your source
+metadata; see :ref:`wind-component-directions`.
+
 .. list-table:: Named starters and equivalent compositions
    :header-rows: 1
    :class: config-table
@@ -36,9 +42,11 @@ All explicitly disable polar sampling and refuse product overwrites.
    * - Named command
      - Equivalent command and selected quantities
    * - ``frameit init arome-pressure-wind``
-     - ``frameit init arome``: GRIB u10/v10/prmsl with declared Earth winds
+     - ``frameit init arome``: GRIB u10/v10/prmsl with declared eastward/northward
+       wind components
    * - ``frameit init mesonh-pressure-wind``
-     - ``frameit init mesonh``: NetCDF UM10/VM10/MSLP with declared Earth winds
+     - ``frameit init mesonh``: NetCDF UM10/VM10/MSLP with declared eastward/northward
+       wind components
    * - ``frameit init arome-fixed-scalar``
      - ``frameit init arome --tracking fixed_box``: instructional scalar, 4 km full widths
    * - ``frameit init nemo-native``
@@ -372,7 +380,7 @@ Missing geographic/wind units follow documented AROME/MesoNH adapter contracts
 and are recorded. Unsupported or incompatible declarations fail. Geographic
 coordinates are normalized before tracking as well as polar projection.
 Use ``input.wind_pairs`` for each selected horizontal pair, including mixed
-model-level grid winds and Earth-relative surface winds.
+grid-aligned model-level components and eastward/northward surface components.
 Pass-through scalar fields preserve their source units; computationally prepared
 winds and derived products carry normalized units.
 
@@ -380,8 +388,13 @@ Explicit wind pairs and output representation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 See :ref:`wind-grid-contract` for diagrams, defaults and scientific meaning.
-This Meso-NH declaration distinguishes model-level grid winds from
-Earth-relative surface winds:
+``reference_frame: earth`` declares eastward/northward components (Earth-relative):
+U positive toward geographic east and V toward geographic north.
+``reference_frame: grid`` declares grid-aligned components along the model's x/y
+axes. Rotation changes component directions, not the velocity relative to the
+ground; neither rotation nor a moving sampling window subtracts storm motion.
+See :ref:`wind-component-directions` for the distinction. This Meso-NH example
+declares grid-aligned model-level winds and eastward/northward surface winds:
 
 .. code-block:: yaml
 
@@ -406,7 +419,7 @@ Earth-relative surface winds:
 ``input.wind_pairs`` is a list of explicit pairs scoped by native ``group``.
 It defaults to ``[]``; no declared basis or rotation is selected by that empty list.
 Choose ``reference_frame: earth`` or ``grid`` based on the actual source.
-Grid-relative pairs require one declared rotation method:
+Grid-aligned pairs require one declared rotation method:
 
 * ``mesonh_projection``: use the angle
   ``BETA - RPK * wrap(longitude - LON0)`` in degrees, with the longitude

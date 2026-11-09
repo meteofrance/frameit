@@ -19,9 +19,9 @@ using `xESMF <https://xesmf.readthedocs.io/>`_. The extraction centre cell is
 used when no continuous centre is supplied.
 
 See :ref:`wind-grid-contract` for the illustrated distinction between native
-output and mass/Earth analysis winds, explicit input declarations, W choices,
-level mappings. Cartesian representation choices do not change polar sampling
-or tracking.
+output and mass-point, eastward/northward analysis components, explicit input
+declarations, W choices and level mappings. Cartesian representation choices
+do not change polar sampling or tracking.
 
 General strategy
 ~~~~~~~~~~~~~~~~
@@ -362,8 +362,9 @@ surface winds use the separate 10-m aliases. At zero radius, the radial
 direction is undefined: ``vrad``, ``vtan`` and ``radial_bearing`` are NaN,
 while scalar values and horizontal speed remain available.
 
-Polar horizontal winds use collocated Earth-relative components on ``rr`` /
-``theta``. Their preparation and the independent vertical W interface/mass
+Polar horizontal winds use collocated eastward/northward components
+(Earth-relative: U positive eastward, V positive northward) on ``rr`` / ``theta``.
+Their preparation and the independent vertical W interface/mass
 choice are explained once in :ref:`wind-grid-contract`.
 
 All trackers supplying continuous longitude/latitude centres define the polar
@@ -379,8 +380,11 @@ products. Velocity units are normalized to metres per second.
 
 Wind reference frame
 ~~~~~~~~~~~~~~~~~~~~
-Polar positions are storm-centred, but velocities remain **earth-relative**;
-no storm translation is subtracted. For pair-specific frame validation and
+Polar positions are storm-centred, but velocities remain **Earth-relative**:
+they describe air motion relative to the ground, not the moving storm.
+Neither sampling on a moving grid nor expressing the wind in radial/tangential
+directions subtracts storm translation. See :ref:`wind-component-directions`
+for an example. For pair-specific frame validation and
 declared rotation methods, see :doc:`/user_guide/configuration_file`; source
 references are in :doc:`/user_guide/input_files`. A declaration must agree with
 available GRIB component flags and CF metadata; no silent frame/method fallback

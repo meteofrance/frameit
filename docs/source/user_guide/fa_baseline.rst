@@ -47,7 +47,8 @@ Current operation matrix
        full-level coefficients. See :doc:`fa_atmosphere`.
    * - Collocated physical wind pairs
      - Existing explicitly selected wind preparation and magnitude/polar products.
-     - Declared matching Earth/grid basis, physical-velocity scaling and
+     - Declared matching :ref:`component directions <wind-component-directions>`
+       (eastward/northward or grid-aligned), physical-velocity scaling and
        companions. Unresolved staggering/map scaling and additional producer
        vector conventions remain blocked; cube support is not vector validation.
    * - Coupled atmospheric GRIB/NetCDF plus FA, or native FA/FA

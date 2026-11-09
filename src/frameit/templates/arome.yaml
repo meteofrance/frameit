@@ -8,6 +8,7 @@ input:
   pattern: "*.grib"
   format: grib
   # Verify the source wind basis, pressure units (Pa/hPa) and velocity units.
+  # earth: u positive eastward, v positive northward; no storm motion subtracted.
   wind_pairs:
     - {group: fields_2d, u: u10, v: v10, reference_frame: earth}
 tracking:
