@@ -33,6 +33,8 @@ Inspect a deliberately selected stream before choosing quantities and methods:
    frameit inspect ./data --model mesonh --format netcdf --pattern '*.nc'
 
 Review native names, units, time support/cycles, levels and grid coordinates.
+For GRIB/NetCDF, each input's ``variable_metadata`` also exposes recorded wind
+flags and CF names with :ref:`metadata-only interpretations <wind-metadata>`.
 Inspection reads metadata/coordinates, not scientific field payloads, and does
 not prove decoded scaling or scientific suitability. ``validate --schema-only``
 checks configuration without opening inputs; ``validate`` and ``run --dry-run``
@@ -145,15 +147,49 @@ already contains eastward/northward components.
 
 Declare the directions for each pair explicitly. FrameIt checks the declaration
 against available wind flags and CF metadata; it does not select the basis
-automatically. Contradictory metadata causes failure. Without identifying
+automatically. Contradictory metadata causes validation or processing to fail.
+Without identifying
 metadata, FrameIt cannot independently confirm the declared directions; resolve
 any uncertainty with the producer before processing.
 
-``frameit inspect`` inventories fields, units, levels and times, but does not
-display the raw wind flags or CF standard names. Inspect these attributes with
-an ordinary reader for the source format. After declaring the pairs, run
-``frameit validate`` to check them against available input metadata;
-``--schema-only`` checks the YAML without opening inputs.
+``frameit inspect`` includes a ``variable_metadata`` list for every GRIB/NetCDF
+input, in addition to the existing names/units mapping under ``variables``.
+Each record identifies the field by ``name`` and, for GRIB, its inventory
+``group`` so repeated names on different level types remain separate.
+``attributes`` contains the recorded units, CF ``standard_name``, component
+flags and ``wind_reference_frame`` when present. Missing attributes are omitted,
+not filled with assumptions. Relevant dataset-wide evidence is retained
+separately as ``dataset_attributes``.
+
+For example, this excerpt describes a GRIB field whose header declares
+grid-aligned wind components:
+
+.. code-block:: yaml
+
+   variable_metadata:
+     - name: u
+       group: isobaricInhPa
+       attributes:
+         units: m s**-1
+         GRIB_uvRelativeToGrid: 1
+       wind_basis: grid-aligned components
+
+``wind_basis`` explains the available wind-reference metadata:
+
+* ``eastward/northward components`` or ``grid-aligned components`` when the
+  identifying attributes agree;
+* ``unknown`` when no recorded attribute identifies the convention;
+* ``conflicting metadata`` when attributes disagree;
+* ``invalid metadata`` with ``wind_metadata_error`` when an attribute is unusable.
+
+These labels describe wind conventions, not proof that a field is a wind:
+GRIB grid flags can also occur on scalar messages. Inspection does not select
+wind pairs, rotate components or change the configuration. Inconsistent units
+or wind flags across GRIB records of the same field/group still fail header
+inspection rather than being silently merged.
+
+After declaring the pairs, run ``frameit validate`` to check them against
+available input metadata; ``--schema-only`` checks the YAML without opening inputs.
 
 Meso-NH native ``UT``/``VT`` occupy different horizontal faces and ``WT``
 occupies vertical interfaces. DIAG ``UT_ZM``/``VT_ZM`` are zonal/meridional

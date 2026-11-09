@@ -406,7 +406,7 @@ def _cmd_inspect(args):
         "tracking": {"method": "fixed_box", "fixed_box": {
             "center": {"latitude": 0., "longitude": 0.}}},
     })
-    _print_yaml(preflight(conf, check_output=False))
+    _print_yaml(preflight(conf, check_output=False, include_variable_metadata=True))
     return 0
 
 

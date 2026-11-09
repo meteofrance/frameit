@@ -104,6 +104,34 @@ def _metadata_frames(attrs, context):
     return frames
 
 
+def inspect_wind_metadata(attrs: dict, dataset_attrs: dict) -> dict:
+    """Describe recorded wind conventions, not a declaration or field identity."""
+    keys = ("units", "standard_name", "GRIB_uvRelativeToGrid", "uvRelativeToGrid",
+            "wind_reference_frame")
+    result = {"attributes": {key: attrs[key] for key in keys if key in attrs}}
+    shared = {key: dataset_attrs[key] for key in keys[1:] if key in dataset_attrs}
+    if shared:
+        result["dataset_attributes"] = shared
+    for source in (result["attributes"], shared):
+        for key, value in source.items():
+            if isinstance(value, (np.ndarray, np.generic)):
+                source[key] = value.tolist()
+    try:
+        frames = set(_metadata_frames(attrs, "Variable")
+                     + _metadata_frames(dataset_attrs, "Dataset"))
+    except (ValueError, TypeError) as error:
+        result.update(wind_basis="invalid metadata", wind_metadata_error=str(error))
+        return result
+    if len(frames) > 1:
+        result["wind_basis"] = "conflicting metadata"
+    elif frames:
+        result["wind_basis"] = {"earth": "eastward/northward components",
+                                "grid": "grid-aligned components"}[frames.pop()]
+    else:
+        result["wind_basis"] = "unknown"
+    return result
+
+
 def validate_pair_frame(ds: xr.Dataset, pair: dict) -> str:
     """Header-only source-frame check, also safe on previously prepared fields.
 
