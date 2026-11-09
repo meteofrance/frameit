@@ -10,10 +10,92 @@ import xarray as xr
 import yaml
 
 from frameit.core.coupled import prepare_sources
+from frameit.core.configuration import write_template
 from frameit.core.execution import execute_simulation
 from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.testing.numerical.test_nemo_netcdf import component_scene, nemo_scene
+from frameit.testing.numerical.test_pressure_centroid import vortex
+
+
+def generated_tracker_document(directory, method):
+    """Adapt only paths, output/resources and box size, keeping generated declarations."""
+    path = write_template("arome", directory / "frameit.yaml", coupling="nemo", tracking=method)
+    raw = yaml.safe_load(path.read_text())
+    ocean = nemo_scene().isel(time_counter=slice(0, 2))
+    ocean.to_netcdf(directory / "ocean.nc", engine="h5netcdf")
+    lon, lat, pressure, u, v = vortex()
+    fraction = (np.log(pressure) - np.log(900.)) / (np.log(700.) - np.log(900.))
+    lower = 2000. - 1000. * fraction
+    horizontal = ("valid_time", "latitude", "longitude")
+    vertical = ("valid_time", "isobaricInhPa", "latitude", "longitude")
+    winds = {"units": "m s-1", "GRIB_uvRelativeToGrid": 0}
+    atmosphere = xr.Dataset({
+        "prmsl": (horizontal, np.stack([pressure * 100 + 20000] * 2), {"units": "Pa"}),
+        "u10": (horizontal, np.stack([u] * 2), winds),
+        "v10": (horizontal, np.stack([v] * 2), winds),
+        "u": (vertical, np.broadcast_to(u, (2, 2, *u.shape)), winds),
+        "v": (vertical, np.broadcast_to(v, (2, 2, *v.shape)), winds),
+        "z": (vertical, np.stack([np.stack([lower, lower + 1000]) * 9.80665] * 2),
+              {"units": "m2 s-2"}),
+    }, coords={"valid_time": ocean.time_counter.values,
+               "latitude": ("latitude", lat[:, 0], {"units": "degrees_north"}),
+               "longitude": ("longitude", lon[0], {"units": "degrees_east"}),
+               "isobaricInhPa": ("isobaricInhPa", [900., 700.], {"units": "hPa"})})
+    atmosphere.to_netcdf(directory / "atmosphere.nc", engine="h5netcdf")
+    for name, source in raw["input"]["sources"].items():
+        source["input"].update(directory=str(directory), pattern=f"{name}.nc")
+    raw["domain"]["width_km"] = {"x": 2., "y": 2.}
+    raw["execution"] = {"native_threads": 1, "dask_workers": 1}
+    raw["output"].update(directory=str(directory / "out"), synchronous_export=True, max_workers=1)
+    return raw
+
+
+@pytest.mark.parametrize("method", ["pressure_wind", "pressure_centroid"])
+def test_generated_arome_nemo_tracker_runs(tmp_path, method):
+    raw = generated_tracker_document(tmp_path, method)
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert result.ok, result
+    track = next(p["path"] for p in result.products if p["role"] == "track")
+    ocean = next(p["path"] for p in result.products if p["role"] == "cart" and p["source"] == "ocean")
+    subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1]) as track:
+    np.testing.assert_allclose(track.lon, 60., atol=.01)
+    np.testing.assert_allclose(track.lat, -20., atol=.01)
+    assert track.sizes['time'] == 2
+    assert not np.array_equal(track.atmosphere_cx, track.ocean_cx)
+with xr.open_dataset(sys.argv[2]) as out, xr.open_dataset(sys.argv[3]) as source:
+    for t in (0, 1):
+        expected = source.votemper.isel(time_counter=t, deptht=[0],
+            y=out.y[t].values.astype(int), x=out.x[t].values.astype(int))
+        np.testing.assert_array_equal(out.votemper[t], expected)
+    assert out.votemper.attrs['cell_methods'] == source.votemper.attrs['cell_methods']
+    assert out.deptht.attrs['positive'] == 'down'
+    assert not any(name in out for name in ('u10', 'v10', 'wind_speed'))
+assert 'frameit' not in sys.modules
+""", track, ocean, str(tmp_path / "ocean.nc")], check=True)
+
+
+@pytest.mark.parametrize("problem,message", [
+    ("missing_height", "z"), ("wind_basis", "Conflicting"), ("one_common_time", "at least two"),
+])
+def test_generated_arome_nemo_centroid_rejects_invalid_inputs(tmp_path, problem, message):
+    raw = generated_tracker_document(tmp_path, "pressure_centroid")
+    name = "ocean" if problem == "one_common_time" else "atmosphere"
+    path = tmp_path / f"{name}.nc"
+    with xr.open_dataset(path, engine="h5netcdf") as source:
+        source = source.load()
+    if problem == "missing_height":
+        source = source.drop_vars("z")
+    elif problem == "wind_basis":
+        source.u.attrs["GRIB_uvRelativeToGrid"] = 1
+    else:
+        source = source.isel(time_counter=[0])
+    source.to_netcdf(path, engine="h5netcdf", mode="w")
+    with pytest.raises(ValueError, match=message):
+        prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert not (tmp_path / "out").exists()
 
 
 def coupled_document(directory, *, moving=False, exact=True, scalar_polar=False):

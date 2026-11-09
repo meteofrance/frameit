@@ -20,6 +20,7 @@ from frameit.io.loader import (
 )
 from frameit.processing.requests import normalize_requests, selected_native_indices
 from frameit.processing.wind_reference import (
+    inspect_wind_metadata,
     pair_definition,
     rotation_angle,
     validate_pair_frame,
@@ -349,7 +350,8 @@ def polar_sampling_plan(conf, time_count):
             "estimated_time_count": time_count}
 
 
-def preflight(conf, *, input_files=None, check_output=True, execution_options=None, resources=None):
+def preflight(conf, *, input_files=None, check_output=True, execution_options=None, resources=None,
+              include_variable_metadata=False):
     """Validate metadata/geometry, optionally retaining lazy inputs in a run's owner."""
     if conf.input_sources:
         if input_files is not None:
@@ -513,6 +515,14 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 for name in ("time", "valid_time") if name in ds.coords}
             inventory.append({"path": str(path), "variables": variables, "levels": levels,
                                 "times": sorted(set(times)), "calendars": sorted(calendars)})
+            if include_variable_metadata:
+                inventory[-1]["variable_metadata"] = [
+                    {"name": name,
+                     **({"group": ds.attrs["_frameit_vertical_group"]}
+                        if "_frameit_vertical_group" in ds.attrs else {}),
+                     **inspect_wind_metadata(da.attrs, ds.attrs)}
+                    for ds in datasets for name, da in ds.data_vars.items()
+                ]
             references = sorted({str(value) for ds in datasets if "forecast_reference_time" in ds
                                  for value in np.atleast_1d(ds.forecast_reference_time.values)})
             if references:

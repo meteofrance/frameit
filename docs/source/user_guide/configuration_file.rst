@@ -29,6 +29,14 @@ Each command below writes ``frameit.yaml``. Adapt the inspected inputs and the
 illustrative centres and widths to your data.
 All explicitly disable polar sampling and refuse product overwrites.
 
+The wind starters declare ``reference_frame: earth``: U is positive toward
+geographic east and V toward geographic north. These are **eastward/northward
+components**, also called **Earth-relative components**. This declaration specifies
+component directions, not storm-motion subtraction; see
+:ref:`wind-component-directions`. These are starter presets, not directions
+detected from your files. Confirm or adapt them using
+:ref:`source metadata or producer documentation <wind-metadata>`.
+
 .. list-table:: Named starters and equivalent compositions
    :header-rows: 1
    :class: config-table
@@ -36,9 +44,11 @@ All explicitly disable polar sampling and refuse product overwrites.
    * - Named command
      - Equivalent command and selected quantities
    * - ``frameit init arome-pressure-wind``
-     - ``frameit init arome``: GRIB u10/v10/prmsl with declared Earth winds
+     - ``frameit init arome``: GRIB u10/v10/prmsl with declared eastward/northward
+       wind components
    * - ``frameit init mesonh-pressure-wind``
-     - ``frameit init mesonh``: NetCDF UM10/VM10/MSLP with declared Earth winds
+     - ``frameit init mesonh``: NetCDF UM10/VM10/MSLP with declared eastward/northward
+       wind components
    * - ``frameit init arome-fixed-scalar``
      - ``frameit init arome --tracking fixed_box``: instructional scalar, 4 km full widths
    * - ``frameit init nemo-native``
@@ -53,8 +63,18 @@ All explicitly disable polar sampling and refuse product overwrites.
 A named selector rejects **any** tracking/coupling flag. To compose, use a model
 selector. Single models admit ``fixed_box/prescribed_track``; AROME/Meso-NH also
 admit ``pressure_wind/pressure_centroid``. Coupling admits only AROME+NEMO and
-Meso-NH+CROCO: fixed-box by default, prescribed-track for either, pressure-wind
-additionally for Meso-NH+CROCO. Reverse/other starter combinations are rejected.
+Meso-NH+CROCO: both admit all four trackers, with ``fixed_box`` by default.
+Reverse/other starter combinations are rejected. For example:
+
+.. code-block:: bash
+
+   frameit init arome --coupling nemo --tracking pressure_centroid
+
+Coupled wind declarations belong to ``input.sources.atmosphere.input.wind_pairs``;
+they do not describe ocean currents. Verify source fields, units and component
+directions before running; see :doc:`../tracker/pressure_centroid` for the
+centroid's required inputs and coverage, and :doc:`../task_guides/coupled_inputs`
+for source/time policies.
 
 For example, ``frameit init mesonh --tracking fixed_box`` selects only MSLP;
 ``frameit init nemo --tracking prescribed_track`` selects the same native ocean
@@ -62,6 +82,8 @@ scalar with an explicit track file. Prescribed matching stays exact; replacing
 instructional data for real use also requires a suitable real track.
 ``frameit init mesonh --coupling croco --tracking pressure_wind`` adds only the
 atmospheric tracker's declared UM10/VM10/MSLP, not ocean current processing.
+The other pressure-based coupled starters retain their scalar export selections;
+tracker inputs are loaded independently of fields selected for export.
 ``init`` does not furnish guessed UTrack checkpoints or experimental multi-field
 seeds: those methods remain runnable through explicit reviewed YAML.
 
@@ -372,7 +394,7 @@ Missing geographic/wind units follow documented AROME/MesoNH adapter contracts
 and are recorded. Unsupported or incompatible declarations fail. Geographic
 coordinates are normalized before tracking as well as polar projection.
 Use ``input.wind_pairs`` for each selected horizontal pair, including mixed
-model-level grid winds and Earth-relative surface winds.
+grid-aligned model-level components and eastward/northward surface components.
 Pass-through scalar fields preserve their source units; computationally prepared
 winds and derived products carry normalized units.
 
@@ -380,8 +402,13 @@ Explicit wind pairs and output representation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 See :ref:`wind-grid-contract` for diagrams, defaults and scientific meaning.
-This Meso-NH declaration distinguishes model-level grid winds from
-Earth-relative surface winds:
+``reference_frame: earth`` declares eastward/northward components (Earth-relative):
+U positive toward geographic east and V toward geographic north.
+``reference_frame: grid`` declares grid-aligned components along the model's x/y
+axes. Rotation changes component directions, not the velocity relative to the
+ground; neither rotation nor a moving sampling window subtracts storm motion.
+See :ref:`wind-component-directions` for the distinction. This Meso-NH example
+declares grid-aligned model-level winds and eastward/northward surface winds:
 
 .. code-block:: yaml
 
@@ -405,8 +432,10 @@ Earth-relative surface winds:
 
 ``input.wind_pairs`` is a list of explicit pairs scoped by native ``group``.
 It defaults to ``[]``; no declared basis or rotation is selected by that empty list.
-Choose ``reference_frame: earth`` or ``grid`` based on the actual source.
-Grid-relative pairs require one declared rotation method:
+Choose ``reference_frame: earth`` or ``grid`` using the
+:ref:`source evidence <wind-metadata>`. This declaration is required even when
+source metadata identifies the directions.
+Grid-aligned pairs require one declared rotation method:
 
 * ``mesonh_projection``: use the angle
   ``BETA - RPK * wrap(longitude - LON0)`` in degrees, with the longitude
@@ -418,8 +447,9 @@ Grid-relative pairs require one declared rotation method:
   The angle measures counterclockwise rotation from geographic east to grid x;
   its units must be declared and convertible to radians.
 
-There is no ``auto`` frame or method. Validate the declaration against available
-GRIB component flags and CF wind metadata (including standard names). A conflict,
+There is no ``auto`` frame or method. FrameIt checks your declaration against
+available GRIB component flags and CF wind metadata (including standard names);
+it does not select the basis from that metadata. A conflict,
 inconsistent pair, missing angle, unsupported projection or unusable geometry
 must fail with the affected pair identified. Do not silently change reference
 frame or fall back from one rotation method to another. Earth-relative pairs

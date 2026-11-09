@@ -6,7 +6,7 @@ Run and retain the evidence
 
 FrameIt samples geodesically defined storm-centred target points, rather than
 performing a stereographic map projection. Bilinear interpolation samples scalar
-values and earth-relative east/north winds; rotation uses the terminal-forward
+values and eastward/northward wind components; rotation uses the terminal-forward
 geodesic bearing at each target. Tangential wind is positive clockwise.
 
 .. code-block:: bash
@@ -123,8 +123,9 @@ this is not a new stable diagnostic. Location/basis choices and examples are in
 :ref:`wind-grid-contract`; declarations are in
 :doc:`/user_guide/configuration_file`.
 
-**Inputs and conventions.** Each pair declares its group, U/V names and Earth or
-grid basis; a grid pair declares exactly one rotation method. Components
+**Inputs and conventions.** Each pair declares its group, U/V names and
+eastward/northward or grid-aligned component directions; a grid-aligned pair
+declares exactly one rotation method. Components
 normalize to m s-1 per input file before concatenation. Collocation uses labelled,
 finite, strictly monotone native coordinates and actual mass targets, before
 cropping/subsetting removes neighbours. Linear interpolation between coordinates

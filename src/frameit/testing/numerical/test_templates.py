@@ -65,6 +65,9 @@ COMMANDS = [
     ("arome --coupling nemo --tracking prescribed_track", "arome-nemo", "prescribed_track"),
     ("mesonh --coupling croco --tracking prescribed_track", "mesonh-croco", "prescribed_track"),
     ("mesonh --coupling croco --tracking pressure_wind", "mesonh-croco", "pressure_wind"),
+    ("arome --coupling nemo --tracking pressure_wind", "arome-nemo", "pressure_wind"),
+    ("arome --coupling nemo --tracking pressure_centroid", "arome-nemo", "pressure_centroid"),
+    ("mesonh --coupling croco --tracking pressure_centroid", "mesonh-croco", "pressure_centroid"),
 ]
 
 
@@ -110,6 +113,19 @@ def test_every_advertised_command_is_minimal_and_commented(tmp_path, monkeypatch
         atmosphere = raw["input"]["sources"]["atmosphere"]
         ocean = raw["input"]["sources"]["ocean"]
         expected.add("input.sources.atmosphere.variables.fields_2d.names")
+        if method in {"pressure_wind", "pressure_centroid"}:
+            expected.add("input.sources.atmosphere.input.wind_pairs")
+            u, v = ("u10", "v10") if model == "arome" else ("UM10", "VM10")
+            pairs = [{"group": "fields_2d", "u": u, "v": v, "reference_frame": "earth"}]
+            if method == "pressure_centroid":
+                pairs.append({"group": "isobaricInhPa" if model == "arome" else "level",
+                              "u": "u" if model == "arome" else "UT_ZM",
+                              "v": "v" if model == "arome" else "VT_ZM", "reference_frame": "earth"})
+                assert "500-km" in text and "bracket" in text.lower() and "ASL" in text
+                assert "two exact common times" in text
+            assert atmosphere["input"]["wind_pairs"] == pairs
+            assert "wind_pairs" not in ocean["input"]
+            assert "No polar/shared target, winds" not in text
         if model == "arome":
             expected |= {f"input.sources.ocean.{p}" for p in N}
             assert atmosphere["variables"] == {"fields_2d": {"names": ["prmsl"]}}
@@ -123,10 +139,7 @@ def test_every_advertised_command_is_minimal_and_commented(tmp_path, monkeypatch
             fields = ["SST", "SSS"]
             if method == "pressure_wind":
                 fields += ["UM10", "VM10", "MSLP"]
-                expected |= {"input.sources.atmosphere.input.wind_pairs",
-                             "output.cartesian.horizontal_vectors"}
-                assert atmosphere["input"]["wind_pairs"] == [
-                    {"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
+                expected.add("output.cartesian.horizontal_vectors")
             assert atmosphere["variables"]["fields_2d"]["names"] == fields
         assert atmosphere["model"] == model
         assert atmosphere["input"]["directory"] == f"./data/{model}"
@@ -189,8 +202,9 @@ def test_named_and_composed_are_the_same_request(tmp_path, named, composed):
     ("arome", {"coupling": "croco"}), ("mesonh", {"coupling": "nemo"}),
     ("nemo", {"coupling": "arome"}), ("croco", {"coupling": "mesonh"}),
     ("nemo", {"tracking": "pressure_wind"}), ("croco", {"tracking": "pressure_centroid"}),
-    ("arome", {"coupling": "nemo", "tracking": "pressure_wind"}),
-    ("mesonh", {"coupling": "croco", "tracking": "pressure_centroid"}),
+    ("arome-nemo", {"tracking": "pressure_centroid"}),
+    ("arome", {"coupling": "nemo", "tracking": "multifield_vortex"}),
+    ("mesonh", {"coupling": "croco", "tracking": "utrack"}),
     ("arome", {"tracking": "multifield_vortex"}), ("mesonh", {"tracking": "utrack"}),
     ("arome", {"tracking": "wind_pressure"}), ("unknown", {}), ("../arome", {}),
 ])
@@ -234,10 +248,18 @@ def test_no_full_starter_but_complete_inspection(tmp_path, capsys):
     assert resolved["output"]["backend"] == "netcdf4"
 
 
-def test_generation_does_not_import_optional_stacks(tmp_path):
+@pytest.mark.parametrize("name,coupling,tracking", [
+    ("arome-fixed-scalar", None, None),
+    ("arome", "nemo", "pressure_wind"),
+    ("arome", "nemo", "pressure_centroid"),
+    ("mesonh", "croco", "pressure_centroid"),
+])
+def test_generation_does_not_import_optional_stacks(tmp_path, name, coupling, tracking):
     subprocess.run([sys.executable, "-c", """
 import sys
 from frameit.core.configuration import write_template
-write_template('arome-fixed-scalar', sys.argv[1])
+write_template(sys.argv[2], sys.argv[1],
+               coupling=None if sys.argv[3] == 'None' else sys.argv[3],
+               tracking=None if sys.argv[4] == 'None' else sys.argv[4])
 assert not {'cfgrib', 'epygram', 'xesmf', 'esmpy', 'torch', 'zarr'} & sys.modules.keys()
-""", str(tmp_path / "frameit.yaml")], check=True)
+""", str(tmp_path / "frameit.yaml"), name, str(coupling), str(tracking)], check=True)

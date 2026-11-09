@@ -14,9 +14,19 @@ quantity, sample location or vector basis.
 Declare atmospheric wind pairs
 ------------------------------
 
-For native Meso-NH ``UT/VT`` and Earth-relative ``UM10/VM10``, declare each pair
-separately. This fragment assumes the inspected projection metadata establishes
-the native grid rotation:
+Check :ref:`source metadata or producer documentation <wind-metadata>`, declare
+each selected pair, then run ``frameit validate``. FrameIt cross-checks your
+declaration against available metadata; it does not choose the basis for you.
+
+Declare **eastward/northward components** with ``reference_frame: earth``:
+U is positive eastward and V northward, also called **Earth-relative components**.
+Declare **grid-aligned components**, following the model's x/y axes, with
+``reference_frame: grid``. These labels specify component directions, not
+storm-motion subtraction; see :ref:`wind-component-directions`.
+
+For Meso-NH, native ``UT/VT`` are grid-aligned and ``UM10/VM10`` are
+eastward/northward. Declare each pair separately. This fragment assumes the
+inspected projection metadata establishes the native grid rotation:
 
 .. code-block:: yaml
 
@@ -38,10 +48,11 @@ the native grid rotation:
      polar:
        vertical_velocity: mass
 
-``earth_centered`` collocates atmospheric U/V and rotates grid-relative pairs to
-east/north. ``native`` retains their source staggering and declared basis, with
-normalized velocity units. W location is an independent choice. Tracking and
-polar processing use a separate analysis representation, so changing Cartesian
+``earth_centered`` collocates atmospheric U/V and rotates grid-aligned pairs to
+eastward/northward components. ``native`` retains their source staggering and
+declared basis, with normalized velocity units. W location is an independent
+choice. Tracking and polar processing use a separate analysis representation,
+so changing Cartesian
 representation does not change their results. See :ref:`wind-grid-contract`
 for existing C-grid/W diagrams, level mapping and method limitations.
 
@@ -51,7 +62,8 @@ for existing C-grid/W diagrams, level mapping and method limitations.
    :alt: Three separate operations: choose native or polar sample locations, rotate a vector basis to east and north, and subtract frame motion only in an explicitly separate downstream calculation.
 
    Schematic. Sample locations, vector basis and reference-frame motion are
-   different choices. Storm-centred polar positions retain Earth-relative winds.
+   different choices. Storm-centred polar positions do not subtract storm motion
+   from the winds.
 
 Check the result
 ----------------

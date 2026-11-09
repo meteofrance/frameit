@@ -25,8 +25,12 @@ Before running, check these YAML settings:
 * ``output.directory``: a fresh run directory. Keep ``overwrite: false`` unless
   replacement is intended.
 
-For winds or currents, also check the declared component basis and requested
-output representation.
+For winds or currents, also check whether the declared components are
+eastward/northward or grid-aligned, and choose the output representation.
+For atmospheric winds, check :ref:`source metadata or producer documentation
+<wind-metadata>`, declare each pair, then run ``frameit validate region.yaml``.
+See :doc:`../concepts/sampling_and_frames` for component directions and why a
+moving window does not subtract storm motion.
 
 Useful commands
 ---------------

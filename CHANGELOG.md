@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0rc2 — 2026-11-09 (unpublished release candidate)
+
+- Compose coupled AROME/NEMO and Meso-NH/CROCO starters with atmospheric trackers.
+- Expose wind metadata in input inspection and clarify wind component directions,
+  reference frames and declaration workflows in the documentation.
+- Link the README to the published documentation.
+
+This candidate does not constitute scientific sign-off. Hosted CI, scientific
+scope review and the final release decision remain separate gates. Scientific
+methods, configuration defaults and output contracts are unchanged by the version
+bump.
+
 ## 2.0.0rc1 — 2026-11-06 (unpublished local candidate)
 
 This candidate is prepared for local engineering checks, not a published release

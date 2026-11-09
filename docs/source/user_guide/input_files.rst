@@ -33,6 +33,8 @@ Inspect a deliberately selected stream before choosing quantities and methods:
    frameit inspect ./data --model mesonh --format netcdf --pattern '*.nc'
 
 Review native names, units, time support/cycles, levels and grid coordinates.
+For GRIB/NetCDF, each input's ``variable_metadata`` also exposes recorded wind
+flags and CF names with :ref:`metadata-only interpretations <wind-metadata>`.
 Inspection reads metadata/coordinates, not scientific field payloads, and does
 not prove decoded scaling or scientific suitability. ``validate --schema-only``
 checks configuration without opening inputs; ``validate`` and ``run --dry-run``
@@ -107,20 +109,97 @@ remain distinct from valid/sample time. No timestamp shifting, nearest matching,
 resampling or value filling is performed. This assembly option does not make
 interval means scientifically equivalent to instantaneous fields.
 
+.. _wind-metadata:
+
 Wind metadata to check
 ----------------------
 
 Inspect each pair's sampling coordinates, units and vector basis, not only its
-names. Meso-NH native ``UT``/``VT`` occupy different horizontal faces and ``WT``
+names. Determine the component directions from source metadata first:
+
+.. list-table:: Source evidence for wind-pair declarations
+   :header-rows: 1
+   :widths: 45 30 25
+   :class: config-table
+
+   * - Source metadata
+     - Component directions
+     - Declaration in ``input.wind_pairs``
+   * - GRIB ``uvRelativeToGrid=0`` (read as ``GRIB_uvRelativeToGrid``)
+     - U positive toward geographic east, V toward geographic north.
+     - ``reference_frame: earth``
+   * - GRIB ``uvRelativeToGrid=1``
+     - U/V along the model's x/y axes.
+     - ``reference_frame: grid`` and an explicit rotation method.
+   * - CF ``standard_name`` pair ``eastward_wind`` / ``northward_wind``
+     - Eastward/northward components.
+     - ``reference_frame: earth``
+   * - CF ``standard_name`` pair ``x_wind`` / ``y_wind`` or
+       ``grid_eastward_wind`` / ``grid_northward_wind``
+     - Grid-aligned components.
+     - ``reference_frame: grid`` and an explicit rotation method.
+
+If this metadata is absent or inconclusive, use the producer's documentation
+for the release and fields in your files. Do not guess from the model name,
+variable names or grid shape. Projection parameters describe grid orientation
+and can support a rotation calculation; they do not establish whether a field
+already contains eastward/northward components.
+
+Declare the directions for each pair explicitly. FrameIt checks the declaration
+against available wind flags and CF metadata; it does not select the basis
+automatically. Contradictory metadata causes validation or processing to fail.
+Without identifying
+metadata, FrameIt cannot independently confirm the declared directions; resolve
+any uncertainty with the producer before processing.
+
+``frameit inspect`` includes a ``variable_metadata`` list for every GRIB/NetCDF
+input, in addition to the existing names/units mapping under ``variables``.
+Each record identifies the field by ``name`` and, for GRIB, its inventory
+``group`` so repeated names on different level types remain separate.
+``attributes`` contains the recorded units, CF ``standard_name``, component
+flags and ``wind_reference_frame`` when present. Missing attributes are omitted,
+not filled with assumptions. Relevant dataset-wide evidence is retained
+separately as ``dataset_attributes``.
+
+For example, this excerpt describes a GRIB field whose header declares
+grid-aligned wind components:
+
+.. code-block:: yaml
+
+   variable_metadata:
+     - name: u
+       group: isobaricInhPa
+       attributes:
+         units: m s**-1
+         GRIB_uvRelativeToGrid: 1
+       wind_basis: grid-aligned components
+
+``wind_basis`` explains the available wind-reference metadata:
+
+* ``eastward/northward components`` or ``grid-aligned components`` when the
+  identifying attributes agree;
+* ``unknown`` when no recorded attribute identifies the convention;
+* ``conflicting metadata`` when attributes disagree;
+* ``invalid metadata`` with ``wind_metadata_error`` when an attribute is unusable.
+
+These labels describe wind conventions, not proof that a field is a wind:
+GRIB grid flags can also occur on scalar messages. Inspection does not select
+wind pairs, rotate components or change the configuration. Inconsistent units
+or wind flags across GRIB records of the same field/group still fail header
+inspection rather than being silently merged.
+
+After declaring the pairs, run ``frameit validate`` to check them against
+available input metadata; ``--schema-only`` checks the YAML without opening inputs.
+
+Meso-NH native ``UT``/``VT`` occupy different horizontal faces and ``WT``
 occupies vertical interfaces. DIAG ``UT_ZM``/``VT_ZM`` are zonal/meridional
-diagnostics; ``UM10``/``VM10`` are Earth-relative 10-m surface winds. Do not apply
-one file-wide grid-relative assumption to all of them.
+diagnostics; ``UM10``/``VM10`` are eastward/northward 10-m surface wind components
+(Earth-relative). Do not apply one file-wide grid-aligned assumption to all of
+them. These labels describe component directions, not storm-motion subtraction;
+see :ref:`wind-component-directions`.
 
 The declarations are in :doc:`configuration_file`; diagrams of collocation,
-rotation and level selection are in
-:ref:`wind-grid-contract`. Declared input must agree
-with available GRIB flags and CF metadata. Missing information is not permission
-to silently choose another frame, rotation method or physical quantity.
+rotation and level selection are in :ref:`wind-grid-contract`.
 
 Authoritative preparation references
 ------------------------------------

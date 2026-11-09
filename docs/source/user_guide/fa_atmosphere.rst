@@ -118,14 +118,17 @@ Wind location, basis and selected operations
 
 Cube wind pairs require matching explicit ``vector_basis: earth|grid``,
 ``component_scaling: physical_velocity`` and centre sampling, consistent with
-``input.wind_pairs``. Unresolved staggering or map-scaled components fail.
+``input.wind_pairs``. Here ``earth`` means eastward/northward components and
+``grid`` means grid-aligned components along the model's x/y axes; see
+:ref:`wind-component-directions`. Unresolved staggering or map-scaled components
+fail.
 The existing unit/frame validation and explicitly selected rotation methods apply;
 there is no automatic frame/quantity substitution.
 
 Declared companions and required horizontal neighbours are loaded before sparse
 selection/cropping. Selected rotation uses the complete horizontal grid; native
-Cartesian and Earth-relative analysis branches remain independent, and repeated
-preparation is idempotent. Location/collocation, vector-basis rotation and
+Cartesian and eastward/northward analysis branches remain independent.
+Repeated preparation is idempotent. Location/collocation, vector-basis rotation and
 reference-frame motion are separate concepts; see :ref:`wind-grid-contract` and
 :ref:`wind-preparation-method` for the existing equations and method limits.
 

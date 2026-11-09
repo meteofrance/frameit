@@ -31,13 +31,14 @@ extraction boxes are unaffected.
 The fixed geographical centre is the first file's MSLP minimum,
 (-16.342215°, 62.154875°). Both extractions request full 500×500 km widths, which
 give 167×167 native points at the resolved 3000 m spacing. The fixed run samples
-``UM10`` on 43 radii at 6 km spacing and 180 azimuths. It interpolates wind
-components using the declared Earth-relative basis. Polar coordinates
+``UM10`` on 43 radii at 6 km spacing and 180 azimuths. It interpolates the declared
+eastward/northward wind components. Polar coordinates
 describe sampling locations: ``UM10`` remains eastward wind, not radial wind.
 The moving run uses the pressure-wind method with default 100/50 km search/refine
 half-widths. Its centres move from native ``(cy,cx)=(380,732)`` to ``(380,731)``.
 The files describe ``UM10/VM10`` as zonal/meridian 10-m winds in m/s, declared here
-as Earth-relative. These two fixes illustrate extraction, not track validation.
+as eastward/northward components. These two fixes illustrate extraction, not track
+validation.
 
 Regenerate from the checkout
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~

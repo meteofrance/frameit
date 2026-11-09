@@ -337,10 +337,13 @@ Wind locations, reference frames and output choices
    qualification limits are in :ref:`wind-preparation-method`.
 
 **Location is not direction.** On a Meso-NH C grid, U and V are sampled on
-different horizontal faces; scalars occupy mass points. Grid-relative components
-follow the model axes; Earth-relative components point east and north.
+different horizontal faces; scalars occupy mass points. **Grid-aligned components**
+(grid-relative) follow the model's x/y axes. **Eastward/northward components**
+(Earth-relative) have U positive toward geographic east and V toward geographic
+north.
 Collocation changes sampling locations; rotation changes the vector basis.
-Neither operation subtracts storm motion.
+Neither operation subtracts storm motion: exported velocities remain relative
+to the ground, not the moving storm. See :ref:`wind-component-directions`.
 
 .. figure:: ../_static/wind_horizontal_c_grid.svg
    :target: ../_static/wind_horizontal_c_grid.svg

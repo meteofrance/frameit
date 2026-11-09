@@ -26,9 +26,11 @@ Inputs and supported grids
 The AROME preset requests MSLP, 10-m winds, and U, V and geopotential at all
 available isobaric levels. At least two strictly increasing valid times are
 required. The grid must be stationary, uniformly spaced latitude/longitude;
-descending axes and longitude wrapping are supported. Winds must be
-earth-relative and are normalized to metres per second. Pressure inputs normalize
-to Pa while exported ``environment_hpa`` remains hPa.
+descending axes and longitude wrapping are supported. Winds must have
+eastward/northward components (Earth-relative: U positive eastward, V positive
+northward), with no storm velocity subtracted from the supplied winds; see
+:ref:`wind-component-directions`. They are normalized to metres per second.
+Pressure inputs normalize to Pa while exported ``environment_hpa`` remains hPa.
 
 U and V are interpolated linearly in geopotential height to 2,000 m;
 pressure is interpolated logarithmically. Geopotential is divided by
@@ -80,7 +82,7 @@ pairs before height interpolation. Horizontal native coordinates normalize to
 metres; missing coordinate units use the documented MNH metre input contract
 and the affected coordinate names are recorded in track metadata.
 Declare each selected model-level and surface pair with ``input.wind_pairs``.
-The basis must agree with source metadata. Grid-relative pairs require an
+The basis must agree with source metadata. Grid-aligned pairs require an
 explicit rotation method; see :ref:`wind-grid-contract` and
 :ref:`wind-preparation-method` for equations and geometry checks. The tracker
 records source frames and rotation. User fields use the same preparation contract.
