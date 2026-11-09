@@ -23,12 +23,12 @@ frameit --help
 ```
 
 The environment uses Python 3.13 and installs FrameIt in editable mode. Keep the
-checkout: edits to it affect what runs. See [installation](docs/source/getting_started/installation.rst)
-and [dependency troubleshooting](docs/source/user_guide/fa_environment.rst).
+checkout: edits to it affect what runs. See [installation](https://meteofrance.github.io/frameit/getting_started/installation.html)
+and [dependency troubleshooting](https://meteofrance.github.io/frameit/user_guide/fa_environment.html).
 
 ## Quick start
 
-New to FrameIt? Follow [Your first run](docs/source/getting_started/first_run.rst).
+New to FrameIt? Follow [Your first run](https://meteofrance.github.io/frameit/getting_started/first_run.html).
 
 1. Inspect your inputs and create a starter:
 
@@ -54,17 +54,17 @@ frameit run
 ```
 
 Validation and dry-run check metadata and coordinates; values are read during
-execution. See [Quick start](docs/source/getting_started/quick_start.rst) for CLI tips.
+execution. See [Quick start](https://meteofrance.github.io/frameit/getting_started/quick_start.html) for CLI tips.
 
 4. Review `run-status.yaml` under `output.directory`, then open the listed NetCDF
    products with xarray or another ordinary reader. `resolved-config.yaml` records
    effective settings; `run-provenance.yaml` records input, geometry, unit and
    execution facts. A failed run can leave earlier complete products; use the
-   status inventory. See [output files](docs/source/user_guide/output_files.rst).
+   status inventory. See [output files](https://meteofrance.github.io/frameit/user_guide/output_files.html).
 
 Set `output.backend: zarr` for `.zarr` stores instead of `.nc` files. See
-[storage settings](docs/source/user_guide/output_files.rst#sharded-zarr-v3) and the
-[configuration reference](docs/source/user_guide/configuration_file.rst).
+[storage settings](https://meteofrance.github.io/frameit/user_guide/output_files.html#sharded-zarr-v3) and the
+[configuration reference](https://meteofrance.github.io/frameit/user_guide/configuration_file.html).
 
 ## Supported tasks and limits
 
@@ -75,12 +75,12 @@ Set `output.backend: zarr` for `.zarr` stores instead of `.nc` files. See
 - **Coupled inputs:** sources share centres but keep their own grids, masks,
   quantities and products. `input.time_alignment: common` selects exact common
   times and records exclusions; `strict` fails on unequal times. See
-  [coupled sources](docs/source/user_guide/fa_inputs.rst).
+  [coupled sources](https://meteofrance.github.io/frameit/user_guide/fa_inputs.html).
 - **Native FA:** EPyGrAM reads selected instantaneous AROME/SURFEX gridpoint
   records and explicitly associated native cubes. Declare units, sampling and
   projected Earth model from producer evidence. Unresolved scaling fails by
   default. Spectral decoding and packed SURFEX reconstruction are unsupported.
-  See [FA limits](docs/source/user_guide/fa_baseline.rst).
+  See [FA limits](https://meteofrance.github.io/frameit/user_guide/fa_baseline.html).
 - **Optional polar sampling:** continuous production fields default to bilinear
   point sampling, without an area-budget conservation guarantee. Categorical
   data require an explicit appropriate method such as `nearest_s2d`. Shared
@@ -90,7 +90,7 @@ Set `output.backend: zarr` for `.zarr` stores instead of `.nc` files. See
 - **Ocean inputs:** regional NEMO supports native scalars and separate components;
   CROCO also supports selected rho/Earth current analysis. Fixed/prescribed
   centres, source depths, time intervals and field-specific missingness are
-  preserved. Check [ocean conventions and limits](docs/source/user_guide/ocean_netcdf.rst).
+  preserved. Check [ocean conventions and limits](https://meteofrance.github.io/frameit/user_guide/ocean_netcdf.html).
 
 Diagnostics run only when selected. Check scientific definitions, units, sampling
 and reference frames before comparing products.
@@ -105,9 +105,9 @@ FRAMEIT_CI_DATA_ROOT=/path/to/ci_dataset frameit run-all-tests --output ./runs/a
 
 Use fresh output directories. Qualification writes numerical JSON reports and
 NetCDF examples with analytical errors, profiles, harmonics and coverage checks.
-See [qualification](docs/source/polar_projection/scientific_qualification.rst) for
+See [qualification](https://meteofrance.github.io/frameit/polar_projection/scientific_qualification.html) for
 methods and tolerances. `run-all-tests` also runs the
-[AROME/MNH matrix](docs/source/user_guide/matrix_testing.rst), which requires its
+[AROME/MNH matrix](https://meteofrance.github.io/frameit/user_guide/matrix_testing.html), which requires its
 frozen input fixture, supplied separately through `FRAMEIT_CI_DATA_ROOT` (use
 an absolute directory). These checks do not validate every real-data regime.
 
@@ -116,7 +116,7 @@ an absolute directory). These checks do not validate every real-data regime.
 Use one task on one node per configuration. Use the same `environment.yaml` and
 `frameit_env` as the reference installation; no separate HPC recipe is needed.
 Portable launchers and an independent output checker are in `example/slurm/`.
-See [HPC and Slurm](docs/source/getting_started/hpc.rst)
+See [HPC and Slurm](https://meteofrance.github.io/frameit/getting_started/hpc.html)
 for environment setup, resource limits, isolated attempts, cancellation behavior,
 and the results to collect. Site account/partition/module names must be supplied
 from the current HPC documentation.
@@ -124,10 +124,10 @@ from the current HPC documentation.
 ## Documentation
 
 [Read the documentation](https://meteofrance.github.io/frameit/).
-For your own data: [fields and levels](docs/source/task_guides/field_selection.rst),
-[moving regions](docs/source/task_guides/moving_region.rst),
-[coupled inputs](docs/source/task_guides/coupled_inputs.rst), and
-[storage/resources](docs/source/task_guides/storage_and_resources.rst).
+For your own data: [fields and levels](https://meteofrance.github.io/frameit/task_guides/field_selection.html),
+[moving regions](https://meteofrance.github.io/frameit/task_guides/moving_region.html),
+[coupled inputs](https://meteofrance.github.io/frameit/task_guides/coupled_inputs.html), and
+[storage/resources](https://meteofrance.github.io/frameit/task_guides/storage_and_resources.html).
 
 ## Citation
 
