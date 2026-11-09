@@ -907,9 +907,7 @@ def write_template(name, path, *, tracking=None, coupling=None, force=False):
             if (name, coupling) not in {("arome", "nemo"), ("mesonh", "croco")}:
                 raise ValueError("Starter coupling supports only arome+nemo or mesonh+croco")
             tracking = tracking or "fixed_box"
-            allowed = {"fixed_box", "prescribed_track"}
-            if name == "mesonh":
-                allowed.add("pressure_wind")
+            allowed = {"fixed_box", "prescribed_track", "pressure_wind", "pressure_centroid"}
             resource = f"{name}-{coupling}"
         else:
             atmospheric = name in {"arome", "mesonh"}
@@ -940,17 +938,26 @@ def write_template(name, path, *, tracking=None, coupling=None, force=False):
     if method == "pressure_centroid":
         pair = ("{group: isobaricInhPa, u: u, v: v, reference_frame: earth}" if name == "arome"
                 else "{group: level, u: UT_ZM, v: VT_ZM, reference_frame: earth}")
-        text = text.replace("tracking:\n", f"    - {pair}\n"
-                            "# Verify wind declarations and source ASL/pressure/native brackets.\n"
-                            "# Keep full 500-km reference-ring support; Meso-NH must bracket 2000 m ASL.\n"
-                            "tracking:\n", 1)
-    if coupling and method == "pressure_wind":
-        text = text.replace("        netcdf:\n",
-                            "        # Atmospheric tracker winds, independent of ocean sampling.\n"
-                            "        # Verify the actual source wind basis and velocity/pressure units.\n"
-                            "        wind_pairs:\n"
-                            "          - {group: fields_2d, u: UM10, v: VM10, reference_frame: earth}\n"
-                            "        netcdf:\n", 1)
+        if not coupling:
+            text = text.replace("tracking:\n", f"    - {pair}\ntracking:\n", 1)
+        guidance = ("# Verify wind declarations and source ASL/pressure/native brackets.\n"
+                    "# Keep full 500-km reference-ring support; Meso-NH must bracket 2000 m ASL.\n")
+        if coupling:
+            guidance += "# Requires at least two exact common times across sources.\n"
+        text = text.replace("tracking:\n", guidance + "tracking:\n", 1)
+    if coupling and method in {"pressure_wind", "pressure_centroid"}:
+        u, v = ("u10", "v10") if name == "arome" else ("UM10", "VM10")
+        declarations = ("        # Atmospheric tracker winds, independent of ocean sampling.\n"
+                        "        # Verify the actual source wind basis and velocity/pressure units.\n"
+                        "        # earth: u positive eastward, v positive northward.\n"
+                        "        wind_pairs:\n"
+                        f"          - {{group: fields_2d, u: {u}, v: {v}, reference_frame: earth}}\n")
+        if method == "pressure_centroid":
+            declarations += f"          - {pair}\n"
+        # Both coupled resources put the atmosphere first; leave ocean inputs untouched.
+        text = text.replace("        format: netcdf\n", "        format: netcdf\n" + declarations, 1)
+        text = text.replace("target, winds, currents", "target, currents")
+    if coupling and name == "mesonh" and method == "pressure_wind":
         text = text.replace("          names: [SST, SSS]", "          names: [SST, SSS, UM10, VM10, MSLP]")
         text += "  cartesian:\n    horizontal_vectors: earth_centered\n"
     path = Path(path)

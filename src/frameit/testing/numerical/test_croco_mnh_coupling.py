@@ -11,10 +11,86 @@ import xarray as xr
 import yaml
 
 from frameit.core.execution import execute_simulation
+from frameit.core.configuration import write_template
+from frameit.core.coupled import prepare_sources
 from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.testing.numerical.test_croco_vectors import vector_scene
 from frameit.testing.numerical.test_mnh_surfex_support import surfex_scene
+from frameit.testing.numerical.test_pressure_centroid_mnh import native_vortex
+
+
+def generated_centroid_document(directory):
+    """Supply analytic tracker fields without changing the generated SEA/ocean selections."""
+    path = write_template("mesonh", directory / "frameit.yaml", coupling="croco",
+                          tracking="pressure_centroid")
+    raw = yaml.safe_load(path.read_text())
+    ocean = vector_scene()
+    ocean.to_netcdf(directory / "ocean.nc", engine="h5netcdf")
+    atmosphere, _ = native_vortex()
+    atmosphere = atmosphere.assign_coords(time=ocean.time.values)
+    for axis in ("ni", "nj"):
+        atmosphere[axis].attrs["c_grid_dynamic_range"] = f"1:{atmosphere.sizes[axis]}"
+    for name, value, comment in (("SST", 300., "SST (K)"),
+                                  ("SSS", 35., "Sea Surface Salinity (psu)"),
+                                  ("FRAC_SEA", 1., "(fraction)")):
+        atmosphere[name] = xr.full_like(atmosphere.MSLP, value).assign_attrs(comment=comment)
+        atmosphere[name].attrs.pop("units", None)
+    atmosphere.to_netcdf(directory / "atmosphere.nc", engine="h5netcdf")
+    for name, source in raw["input"]["sources"].items():
+        source["input"].update(directory=str(directory), pattern=f"{name}.nc")
+    raw["domain"]["width_km"] = {"x": 2., "y": 2.}
+    raw["execution"] = {"native_threads": 1, "dask_workers": 1}
+    raw["output"].update(directory=str(directory / "out"), synchronous_export=True, max_workers=1)
+    return raw
+
+
+def test_generated_mesonh_croco_centroid_runs(tmp_path):
+    raw = generated_centroid_document(tmp_path)
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert result.ok, result
+    track = next(p["path"] for p in result.products if p["role"] == "track")
+    ocean = next(p["path"] for p in result.products if p["role"] == "cart" and p["source"] == "ocean")
+    subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1]) as track:
+    np.testing.assert_allclose(track.lon, 60., atol=.01)
+    np.testing.assert_allclose(track.lat, -20., atol=.01)
+    assert track.sizes['time'] == 2
+    assert not np.array_equal(track.atmosphere_cx, track.ocean_cx)
+with xr.open_dataset(sys.argv[2]) as out, xr.open_dataset(sys.argv[3]) as source:
+    for t in (0, 1):
+        expected = source.isel(time=t, s_rho=[0],
+            eta_rho=out.eta_rho[t].values.astype(int), xi_rho=out.xi_rho[t].values.astype(int))
+        for name in ('temp', 'salt'):
+            np.testing.assert_array_equal(out[name][t], expected[name])
+    np.testing.assert_array_equal(out.s_rho_source_native_index, [0])
+    assert out.temp.attrs['units'] == source.temp.attrs['units']
+    assert not any(name in out for name in ('u', 'v', 'wind_speed'))
+assert 'frameit' not in sys.modules
+""", track, ocean, str(tmp_path / "ocean.nc")], check=True)
+
+
+@pytest.mark.parametrize("problem,message", [
+    ("missing_height", "ALT|LTPZH"), ("wind_basis", "Conflicting"),
+    ("one_common_time", "at least two"),
+])
+def test_generated_mesonh_croco_centroid_rejects_invalid_inputs(tmp_path, problem, message):
+    raw = generated_centroid_document(tmp_path)
+    name = "ocean" if problem == "one_common_time" else "atmosphere"
+    path = tmp_path / f"{name}.nc"
+    with xr.open_dataset(path, engine="h5netcdf") as source:
+        source = source.load()
+    if problem == "missing_height":
+        source = source.drop_vars("ALT")
+    elif problem == "wind_basis":
+        source.UT_ZM.attrs["wind_reference_frame"] = "grid"
+    else:
+        source = source.isel(time=[0])
+    source.to_netcdf(path, engine="h5netcdf", mode="w")
+    with pytest.raises(ValueError, match=message):
+        prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert not (tmp_path / "out").exists()
 
 
 def coupled_document(directory, *, moving=False, polar=False, currents=False):

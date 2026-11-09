@@ -63,8 +63,18 @@ detected from your files. Confirm or adapt them using
 A named selector rejects **any** tracking/coupling flag. To compose, use a model
 selector. Single models admit ``fixed_box/prescribed_track``; AROME/Meso-NH also
 admit ``pressure_wind/pressure_centroid``. Coupling admits only AROME+NEMO and
-Meso-NH+CROCO: fixed-box by default, prescribed-track for either, pressure-wind
-additionally for Meso-NH+CROCO. Reverse/other starter combinations are rejected.
+Meso-NH+CROCO: both admit all four trackers, with ``fixed_box`` by default.
+Reverse/other starter combinations are rejected. For example:
+
+.. code-block:: bash
+
+   frameit init arome --coupling nemo --tracking pressure_centroid
+
+Coupled wind declarations belong to ``input.sources.atmosphere.input.wind_pairs``;
+they do not describe ocean currents. Verify source fields, units and component
+directions before running; see :doc:`../tracker/pressure_centroid` for the
+centroid's required inputs and coverage, and :doc:`../task_guides/coupled_inputs`
+for source/time policies.
 
 For example, ``frameit init mesonh --tracking fixed_box`` selects only MSLP;
 ``frameit init nemo --tracking prescribed_track`` selects the same native ocean
@@ -72,6 +82,8 @@ scalar with an explicit track file. Prescribed matching stays exact; replacing
 instructional data for real use also requires a suitable real track.
 ``frameit init mesonh --coupling croco --tracking pressure_wind`` adds only the
 atmospheric tracker's declared UM10/VM10/MSLP, not ocean current processing.
+The other pressure-based coupled starters retain their scalar export selections;
+tracker inputs are loaded independently of fields selected for export.
 ``init`` does not furnish guessed UTrack checkpoints or experimental multi-field
 seeds: those methods remain runnable through explicit reviewed YAML.
 

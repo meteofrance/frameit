@@ -155,7 +155,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pin = sub.add_parser(
         "init", help="Create a minimal commented schema-v2.1 starter", allow_abbrev=False,
         epilog="Named workflows reject composition flags. Coupling: arome+nemo or mesonh+croco; "
-               "fixed_box by default, prescribed_track for both, pressure_wind for mesonh+croco only.")
+               "both support fixed_box (default), prescribed_track, pressure_wind and pressure_centroid.")
     pin.add_argument("name", choices=("arome", "mesonh", "nemo", "croco", *TEMPLATES))
     pin.add_argument("--output", type=Path, default=Path("frameit.yaml"))
     pin.add_argument(
