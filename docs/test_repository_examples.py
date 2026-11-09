@@ -24,6 +24,24 @@ ROOT = Path(__file__).resolve().parents[1]
 SLURM_EXAMPLES = ROOT / 'example/slurm'
 
 
+def test_documentation_ci_targets_develop_and_main():
+    workflow = yaml.load((ROOT / '.github/workflows/docs.yml').read_text(),
+                         Loader=yaml.BaseLoader)
+    for event in ('push', 'pull_request'):
+        assert set(workflow['on'][event]['branches']) == {'develop', 'main'}, event
+
+
+def test_documentation_deployment_is_main_push_only():
+    workflow = yaml.load((ROOT / '.github/workflows/docs.yml').read_text(),
+                         Loader=yaml.BaseLoader)
+    guard = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+    assert workflow['jobs']['deploy']['if'] == guard
+    uploads = [step for step in workflow['jobs']['build']['steps']
+               if step.get('uses', '').startswith('actions/upload-pages-artifact@')]
+    assert len(uploads) == 1
+    assert uploads[0]['if'] == guard
+
+
 def test_factory_and_preset():
     from frameit.tracking.PressureCentroid_Tracker import PressureCentroidTracker
     from frameit.tracking.tracker_core import build_tracker_from_config

@@ -3,7 +3,7 @@
 These repository-only notes describe CI operations, not user requirements.
 
 `Documentation / build` runs strict Sphinx and publication/link checks on
-`dev_md`/`main` pushes and pull requests targeting those branches. It uploads
+`develop`/`main` pushes and pull requests targeting those branches. It uploads
 only the public HTML artifact. Pages upload/deployment is restricted to a push
 on `main`; candidate branches and pull requests have no Pages write permission.
 
@@ -20,6 +20,31 @@ It installs Matplotlib only for downstream illustration tests; plotting is not
 a core runtime dependency. The isolated FA job creates its temporary-output
 parent before invoking pytest.
 
-Keep build/core checks required in repository branch-protection settings;
-a skipped check is not a pass. Run local equivalents in `frameit_env` before
-committing. Hosted results require an authorized push and an actual completed job.
+## Branch rules and releases
+
+Use `feature/* -> develop -> release PR -> main -> tag vX.Y.Z`. Feature PRs
+target `develop`; release PRs merge `develop` into `main` with a merge commit.
+Keep both long-lived branches after a release. The separate `ci-fixtures-v1`
+branch holds data only and is not part of this merge flow.
+
+Configure GitHub rules for both `develop` and `main` to require PRs, block
+force-pushes/deletion, and require these GitHub Actions check names:
+
+- `build` (Documentation)
+- `core-batch (3.13)` (Batch runtime)
+- `fa-coupling`
+- `fa-spectral-candidate`
+- `fa-epygram-cubes`
+
+Require branches to be up to date before merging. Zero required approvals is
+acceptable for solo maintenance; the maintainer still reviews the diff and
+completed CI results. Do not require `deploy`: it intentionally skips PRs and
+development pushes. A skipped required check is not a pass.
+
+Changing rules requires repository administration permission. Workflow files and
+these notes do not enforce branch protection: inspect the live GitHub rules after
+an administrative change. Do not weaken protection to merge or delete a branch.
+
+Run local equivalents in `frameit_env` before committing. Hosted results require
+an authorized push and an actual completed job. A release/tag is a separate
+maintainer decision, not an automatic consequence of a successful feature PR.

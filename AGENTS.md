@@ -55,6 +55,45 @@ Do not invent module names, supported models, CLI flags, configuration keys, Pyt
 
 Preserve unrelated work. Do not rewrite history, reset changes, upgrade the whole environment, or restructure the repository merely to complete a focused task. Routine reversible implementation choices do not need repeated approval; unresolved scientific choices and changes to agreed scope do.
 
+### Branch and release workflow
+
+Use `feature/* -> develop -> release PR -> main -> tag vX.Y.Z`.
+`develop` integrates the next release; `main` is the release line. Do not recreate
+the retired `dev` or `dev_md` branches. Keep the data-only `ci-fixtures-v1`
+branch separate from code development.
+
+- Before editing, inspect the working tree and refresh remote refs. Fast-forward
+  local `develop` to `origin/develop`, then create a temporary local
+  `feature/<short-task-name>` branch from it. Use this for code, fixes, tests,
+  documentation and maintenance; do not develop directly on `develop` or `main`.
+  Preserve unrelated changes; use a separate worktree when needed rather than
+  moving, stashing or overwriting someone else's work.
+- Keep the feature branch focused, run the relevant checks, review the diff and
+  commit only task-related files. Publishing the branch, opening or merging its
+  PR, changing protection rules and creating releases/tags require explicit
+  maintainer authorization. Ordinary feature PRs MUST target `develop`, not `main`.
+- Both long-lived branches MUST require PRs and passing documentation/runtime CI
+  through GitHub branch rules. Check the actual rules and hosted results; these
+  instructions alone do not enforce protection. See `docs/development/ci.md` for
+  the required check names. Do not bypass protection or count a skipped required
+  check as a pass.
+- Solo maintenance does not require another person's approval: zero required PR
+  approvals is acceptable, but self-review and passing CI remain mandatory.
+  This does not replace independent scientific verification or human scientific
+  approval where required elsewhere in these instructions.
+- Prepare the version and changelog on `develop` through a feature PR. When the
+  maintainer requests a release, open a release PR from `develop` to `main` and
+  merge it with a merge commit, preserving the shared history. Only after its
+  required checks pass may the authorized release tag be created on the released
+  `main` commit: `vMAJOR.MINOR.PATCH`, with an explicit prerelease suffix when
+  requested. Do not delete `develop` after a release PR or add a `nightly` branch.
+- An urgent hotfix may branch from `main` only when explicitly requested. Use a
+  focused PR into `main` and bring the fix back into `develop` before the next
+  release; never leave the development line without a released fix.
+- After an authorized feature merge, fast-forward local `develop`, verify the
+  feature commits are incorporated, delete only the merged temporary branch,
+  and return to `develop`. Never delete an unmerged branch or another task's work.
+
 ## 4. Feature admission and architecture
 
 Before adding a feature, answer: **Which demonstrated user task does this simplify, and why does it belong in FrameIt rather than a downstream script or existing tool?**
