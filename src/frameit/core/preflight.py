@@ -24,6 +24,7 @@ from frameit.processing.wind_reference import (
     pair_definition,
     rotation_angle,
     validate_pair_frame,
+    wind_frame_override,
     wind_pairs,
 )
 from frameit.utils.units import convert_units, unit_key
@@ -299,7 +300,11 @@ def inspect_wind_pairs(datasets, conf, pairs, path):
         candidates = [ds for ds in datasets if any(
             n in ds and _belongs_to_group(ds, n, group) for n in (pair["u"], pair["v"]))]
         for ds in candidates:
-            frame = validate_pair_frame(ds, pair)
+            frame = validate_pair_frame(ds, pair, conf)
+            details = {}
+            override = wind_frame_override(ds, pair, conf)
+            if override:
+                details["wind_reference_frame_override"] = override
             if frame == "grid":
                 geometry = ds.copy(deep=False)
                 for other in datasets:
@@ -307,6 +312,9 @@ def inspect_wind_pairs(datasets, conf, pairs, path):
                         if name not in geometry and name in other:
                             geometry = geometry.assign_coords({name: other[name]})
                 angle = rotation_angle(geometry, conf, pair)
+                details["rotation_parameters"] = {
+                    key: value for key, value in angle.attrs.items() if key.startswith("rotation_")
+                }
                 # Native MNH winds are checked on their eventual mass grid.
                 dims = set(ds[pair["u"]].dims)
                 if conf.atm_model == "MNH":
@@ -315,7 +323,7 @@ def inspect_wind_pairs(datasets, conf, pairs, path):
                     raise ValueError(f"{path}: wind rotation must use the collocated wind grid")
             records.append({"file": str(path), **deepcopy(pair),
                             "rotation_method": (pair["rotation"]["method"]
-                                                if frame == "grid" else "none")})
+                                                if frame == "grid" else "none"), **details})
     return records
 
 

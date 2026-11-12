@@ -355,7 +355,10 @@ def test_inconsistent_sequence_units_and_frames_are_not_silently_combined():
     changed = source.assign(PABST=(source.PABST / 100).assign_attrs(units="hPa"))
     with pytest.raises(ValueError, match="inconsistent.*units"):
         inspect_mnh_sequence([("first.nc", source), ("second.nc", changed)])
-    contradictory = source.assign(UT_ZM=source.UT_ZM.assign_attrs(wind_reference_frame="grid"))
+    contradictory = source.assign(
+        UT_ZM=source.UT_ZM.assign_attrs(wind_reference_frame="grid"),
+        BETA=0., RPK=0., LON0=54.2,
+    )
     with pytest.raises(ValueError, match="incompatible reference frames"):
         prepare_mnh_inputs(contradictory, wind_settings())
 

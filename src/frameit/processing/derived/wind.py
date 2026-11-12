@@ -16,6 +16,7 @@ from frameit.processing.wind_reference import (
     pair_definition,
     rotation_angle,
     validate_pair_frame,
+    wind_frame_override,
     wind_pairs,
 )
 from frameit.utils.units import convert_units
@@ -87,8 +88,9 @@ def align_wind_pair(u: xr.DataArray, v: xr.DataArray) -> tuple[xr.DataArray, xr.
 def normalize_native_wind_units(ds: xr.Dataset, conf: Any, group: str) -> xr.Dataset:
     """Normalize source units only, preserving native locations and vector basis.
 
-    For native export: no rotation, collocation, component renaming, or frame
-    relabelling. Wind values change only by the declared velocity unit scale.
+    No rotation, collocation or component renaming. Wind values change only by
+    the declared velocity unit scale. The explicit MNH missing-header override
+    corrects basis labels while retaining the original metadata.
     """
     out = ds.copy(deep=False)
     pairs = wind_pairs(conf, group)
@@ -97,13 +99,28 @@ def normalize_native_wind_units(ds: xr.Dataset, conf: Any, group: str) -> xr.Dat
         if not any(name in ds for name in names):
             continue
         pair = pair_definition(conf, group, names)
-        validate_pair_frame(ds, pair)
+        validate_pair_frame(ds, pair, conf)
+        override = wind_frame_override(ds, pair, conf)
         for name in names:
             if name in ds:
                 out[name] = normalize_velocity_units(ds[name], conf)
                 if not is_prepared(ds[name]):
                     out[name].attrs["wind_reference_frame"] = pair["reference_frame"]
                     out[name].attrs["wind_reference_frame_source"] = "explicit_input_declaration"
+                    if override:
+                        attrs = out[name].attrs
+                        for key in ("standard_name", "GRIB_uvRelativeToGrid", "uvRelativeToGrid"):
+                            if key in attrs:
+                                attrs.setdefault("source_" + key, attrs[key])
+                        attrs.update(
+                            standard_name="eastward_wind" if name == names[0] else "northward_wind",
+                            source_wind_reference_frame="earth",
+                            source_wind_reference_frame_metadata="grid",
+                            wind_reference_frame_override=override,
+                        )
+                        for key in ("GRIB_uvRelativeToGrid", "uvRelativeToGrid"):
+                            if key in attrs:
+                                attrs[key] = 0
     return out
 
 
@@ -122,7 +139,8 @@ def normalize_winds(ds: xr.Dataset, conf: Any, group: str) -> xr.Dataset:
         if not any(name in ds for name in names):
             continue
         pair = pair_definition(conf, group, names)
-        frame = validate_pair_frame(ds, pair)
+        frame = validate_pair_frame(ds, pair, conf)
+        override = wind_frame_override(ds, pair, conf)
         present = [name for name in names if name in ds]
         if len(present) == 1:
             name = present[0]
@@ -158,7 +176,10 @@ def normalize_winds(ds: xr.Dataset, conf: Any, group: str) -> xr.Dataset:
                          source_wind_reference_frame=pair["reference_frame"],
                          wind_reference_frame_source=pair.get("declaration", "wind_pairs"),
                          standard_name=standard, frameit_wind_prepared="earth",
-                         wind_rotation_method=method, wind_pair=",".join(names))
+                          wind_rotation_method=method, wind_pair=",".join(names))
+            if override:
+                attrs.update(wind_reference_frame_override=override,
+                             source_wind_reference_frame_metadata="grid")
             for key in ("GRIB_uvRelativeToGrid", "uvRelativeToGrid"):
                 if key in attrs:
                     attrs[key] = 0

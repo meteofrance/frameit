@@ -250,8 +250,10 @@ def validate_wind_pairs(pairs):
                 raise ValueError(f"{path}.rotation is required for grid-relative winds")
             continue
         if (not isinstance(rotation, dict) or "method" not in rotation
-                or set(rotation) - {"method", "coordinate"}):
-            raise ValueError(f"{path}.rotation requires method and optional coordinate")
+                or set(rotation) - {"method", "coordinate", "BETA", "RPK", "LON0"}):
+            raise ValueError(
+                f"{path}.rotation requires method; optional coordinate or BETA/RPK/LON0"
+            )
         method = rotation["method"]
         if not isinstance(method, str) or method not in {
             "coordinate", "geolocation", "mesonh_projection"
@@ -265,6 +267,17 @@ def validate_wind_pairs(pairs):
             raise ValueError(f"{path}.rotation.coordinate must be a nonempty string")
         if method == "coordinate" and "coordinate" not in rotation:
             raise ValueError(f"{path}.rotation.coordinate is required for method coordinate")
+        for name in ("BETA", "RPK", "LON0"):
+            if name not in rotation:
+                continue
+            if method != "mesonh_projection":
+                raise ValueError(f"{path}.rotation.{name} requires method mesonh_projection")
+            value = rotation[name]
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value)):
+                raise ValueError(f"{path}.rotation.{name} must be a finite number")
+            if name == "RPK" and abs(value) > 1:
+                raise ValueError(f"{path}.rotation.RPK must be in [-1, 1]")
 
 
 def validate_output_selections(horizontal, cartesian_vertical, polar_vertical):

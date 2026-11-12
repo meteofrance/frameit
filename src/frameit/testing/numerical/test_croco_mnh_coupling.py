@@ -85,6 +85,7 @@ def test_generated_mesonh_croco_centroid_rejects_invalid_inputs(tmp_path, proble
         source = source.drop_vars("ALT")
     elif problem == "wind_basis":
         source.UT_ZM.attrs["wind_reference_frame"] = "grid"
+        source = source.assign(BETA=0., RPK=0., LON0=54.2)
     else:
         source = source.isel(time=[0])
     source.to_netcdf(path, engine="h5netcdf", mode="w")

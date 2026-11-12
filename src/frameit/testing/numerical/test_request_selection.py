@@ -170,6 +170,41 @@ def test_explicit_grid_rotation_roundtrip(method):
     assert to_runtime(raw)["wind_pairs"] == raw["input"]["wind_pairs"]
 
 
+def test_mesonh_projection_yaml_parameters_roundtrip():
+    raw = schema()
+    raw["input"]["wind_pairs"] = [{
+        "group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
+        "rotation": {"method": "mesonh_projection", "BETA": 0, "RPK": 0, "LON0": 54.2},
+    }]
+    assert to_runtime(raw)["wind_pairs"] == raw["input"]["wind_pairs"]
+
+
+@pytest.mark.parametrize("parameter,value", [
+    ("BETA", True), ("BETA", "0"), ("BETA", float("inf")),
+    ("RPK", None), ("RPK", [0]), ("RPK", 1.1), ("RPK", -1.1),
+    ("LON0", float("nan")),
+])
+def test_invalid_mesonh_projection_yaml_parameters(parameter, value):
+    raw = schema()
+    raw["input"]["wind_pairs"] = [{
+        "group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
+        "rotation": {"method": "mesonh_projection", parameter: value},
+    }]
+    with pytest.raises(ValueError, match=parameter):
+        resolve_schema(raw)
+
+
+@pytest.mark.parametrize("method", ["coordinate", "geolocation"])
+def test_projection_parameters_require_projection_method(method):
+    raw = schema()
+    raw["input"]["wind_pairs"] = [{
+        "group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
+        "rotation": {"method": method, "coordinate": "angle", "BETA": 0},
+    }]
+    with pytest.raises(ValueError, match="BETA"):
+        resolve_schema(raw)
+
+
 @pytest.mark.parametrize("section,key,value", [
     ("cartesian", "horizontal_vectors", "auto"), ("cartesian", "horizontal_vectors", []),
     ("cartesian", "vertical_velocity", "native"), ("polar", "vertical_velocity", False),

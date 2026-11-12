@@ -205,7 +205,7 @@ def mnh_wind_frames(ds, fields, conf=None):
     for group, names in (("level", (fields.u, fields.v)), ("surface", ("UM10", "VM10"))):
         pair = pair_definition(conf, group, names)
         try:
-            frame = validate_pair_frame(ds, pair)
+            frame = validate_pair_frame(ds, pair, conf)
         except ValueError as exc:
             raise ValueError(
                 f"Wind components {names} have incompatible reference frames: {exc}"

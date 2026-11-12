@@ -23,6 +23,7 @@ in testing/numerical/test_wind_reference.py; real-data qualification remains ope
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import numpy as np
@@ -132,7 +133,29 @@ def inspect_wind_metadata(attrs: dict, dataset_attrs: dict) -> dict:
     return result
 
 
-def validate_pair_frame(ds: xr.Dataset, pair: dict) -> str:
+def wind_frame_override(ds: xr.Dataset, pair: dict, conf: Any) -> str | None:
+    """Explain the explicit MNH exception; never infer an Earth-relative basis."""
+    if (getattr(conf, "atm_model", None) != "MNH" or pair["reference_frame"] != "earth"
+            or pair.get("declaration")
+            or any(is_prepared(ds[n]) for n in (pair["u"], pair["v"]) if n in ds)):
+        return None
+    frames = _metadata_frames(ds.attrs, "Dataset")
+    for name in (pair["u"], pair["v"]):
+        if name in ds:
+            frames += _metadata_frames(ds[name].attrs, name)
+    if set(frames) != {"grid"}:
+        return None
+    parameters, _ = _mesonh_parameters(ds, pair.get("rotation") or {})
+    missing = [name for name in ("BETA", "RPK", "LON0") if name not in parameters]
+    if not missing:
+        return None
+    return (f"Wind pair {pair['u']}/{pair['v']}: metadata says grid-aligned, but projection "
+            f"parameters are missing: {', '.join(missing)}. Trusting explicit "
+            "input.wind_pairs reference_frame: earth; no grid-to-Earth rotation is applied. "
+            "The user is responsible for confirming eastward/northward component directions.")
+
+
+def validate_pair_frame(ds: xr.Dataset, pair: dict, conf: Any = None) -> str:
     """Header-only source-frame check, also safe on previously prepared fields.
 
     Preparation is identified per component, never from a dataset-wide marker
@@ -147,6 +170,7 @@ def validate_pair_frame(ds: xr.Dataset, pair: dict) -> str:
         raise ValueError(
             f"Wind pair {pair['u']}/{pair['v']} requires both components; missing {missing}"
         )
+    override = wind_frame_override(ds, pair, conf)
     for name, expected in ((pair["u"], {"eastward_wind", "x_wind", "grid_eastward_wind"}),
                            (pair["v"], {"northward_wind", "y_wind", "grid_northward_wind"})):
         if name not in ds:
@@ -158,7 +182,7 @@ def validate_pair_frame(ds: xr.Dataset, pair: dict) -> str:
         if not done:
             frames += _metadata_frames(ds.attrs, "Dataset")
         target = "earth" if done else source
-        if any(frame != target for frame in frames):
+        if any(frame != target for frame in frames) and not override:
             raise ValueError(f"Conflicting wind reference metadata on {name}: "
                              f"declared {target}, metadata {frames}")
         if done and attrs.get("source_wind_reference_frame") != source:
@@ -190,6 +214,8 @@ def validate_pair_frame(ds: xr.Dataset, pair: dict) -> str:
             raise ValueError(f"{name}: standard_name identifies the wrong wind component")
     if any(prepared) and not all(prepared):
         raise ValueError("Wind pair contains only one prepared component")
+    if override:
+        warnings.warn(override, UserWarning, stacklevel=2)
     return "earth" if all(prepared) else source
 
 
@@ -259,27 +285,47 @@ def geolocation_rotation(ds: xr.Dataset, conf: Any) -> xr.DataArray:
                         attrs={"units": "rad", "rotation_geodesic": "WGS84"})
 
 
-def mesonh_projection_rotation(ds: xr.Dataset, conf: Any) -> xr.DataArray:
-    """EPyGrAM/MNH conformal physical-vector convention; no map scaling."""
-    def parameter(name, angle=False):
-        if name in ds:
+def _mesonh_parameters(ds: xr.Dataset, rotation: dict) -> tuple[dict, dict]:
+    """Resolve declared scalars before source variables, then dataset attributes."""
+    parameters, sources = {}, {}
+    for name in ("BETA", "RPK", "LON0"):
+        if name in rotation:
+            value = xr.DataArray(rotation[name])
+            sources[name] = "configuration"
+        elif name in ds:
             value = ds[name]
+            sources[name] = "variable"
         elif name in ds.attrs:
             value = xr.DataArray(ds.attrs[name])
+            sources[name] = "dataset_attribute"
         else:
-            raise ValueError(f"mesonh_projection rotation requires {name} metadata")
-        if angle:
+            continue
+        if (value.size != 1 or value.dtype.kind not in "fiu"
+                or not np.isfinite(value).all()):
+            raise ValueError(f"mesonh_projection {name} must be a finite scalar")
+        if name in {"BETA", "LON0"}:
             # Official MNH BETA/LON0 metadata contract uses degrees.
             value = convert_units(value, "angle", target="degrees", assumed="degrees")
-        if value.size != 1 or not np.isfinite(value).all():
-            raise ValueError(f"mesonh_projection {name} must be a finite scalar")
-        return float(value.item())
+        parameters[name] = float(value.item())
+    if "RPK" in parameters and abs(parameters["RPK"]) > 1:
+        raise ValueError("mesonh_projection RPK must be in [-1, 1]")
+    return parameters, sources
 
+
+def mesonh_projection_rotation(ds: xr.Dataset, conf: Any, rotation=None) -> xr.DataArray:
+    """EPyGrAM/MNH conformal physical-vector convention; no map scaling."""
     if ("CARTESIAN" in ds and bool(ds.CARTESIAN.item())) or ds.attrs.get("CARTESIAN", False):
         raise ValueError("mesonh_projection does not support CARTESIAN geometry")
-    beta, rpk, lon0 = parameter("BETA", True), parameter("RPK"), parameter("LON0", True)
-    if abs(rpk) > 1:
-        raise ValueError("mesonh_projection RPK must be in [-1, 1]")
+    parameters, sources = _mesonh_parameters(ds, rotation or {})
+    missing = [name for name in ("BETA", "RPK", "LON0") if name not in parameters]
+    if missing:
+        raise ValueError(
+            "mesonh_projection rotation is missing required projection metadata: "
+            f"{', '.join(missing)}. "
+            "Set the known values in the YAML under input.wind_pairs[].rotation "
+            "(BETA/LON0 in degrees, RPK dimensionless); no defaults are assumed."
+        )
+    beta, rpk, lon0 = (parameters[name] for name in ("BETA", "RPK", "LON0"))
     name = getattr(conf, "name_longitude", "longitude")
     if name not in ds:
         raise ValueError("mesonh_projection rotation requires longitude")
@@ -289,6 +335,7 @@ def mesonh_projection_rotation(ds: xr.Dataset, conf: Any) -> xr.DataArray:
     angle = np.deg2rad(beta - rpk * ((lon - lon0 + 180) % 360 - 180))
     angle.attrs = dict(units="rad", rotation_formula="BETA-RPK*wrap(longitude-LON0)",
                        rotation_BETA_degrees=beta, rotation_RPK=rpk, rotation_LON0_degrees=lon0)
+    angle.attrs.update({f"rotation_{name}_source": source for name, source in sources.items()})
     return angle
 
 
@@ -304,7 +351,10 @@ def rotation_angle(ds: xr.Dataset, conf: Any, pair: dict) -> xr.DataArray:
     elif method == "geolocation":
         angle = geolocation_rotation(ds, conf)
     elif method == "mesonh_projection":
-        angle = mesonh_projection_rotation(ds, conf)
+        try:
+            angle = mesonh_projection_rotation(ds, conf, rotation)
+        except ValueError as error:
+            raise ValueError(f"Wind pair {pair['u']}/{pair['v']}: {error}") from error
     else:
         raise ValueError(f"Grid wind requires explicit rotation method, got {method!r}")
     if not np.isfinite(angle).all():

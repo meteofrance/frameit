@@ -11,7 +11,7 @@ def get_frameit_version() -> str:
     try:
         return version("frameit")
     except PackageNotFoundError:
-        return "2.0.0rc2"
+        return "2.0.0rc2+hotfix1"
 
 
 __version__ = get_frameit_version()

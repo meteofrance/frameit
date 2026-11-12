@@ -48,6 +48,13 @@ inspected projection metadata establishes the native grid rotation:
      polar:
        vertical_velocity: mass
 
+If the input lacks ``BETA``, ``RPK`` or ``LON0``, supply known values under
+``rotation``. An explicit ``reference_frame: earth`` may instead accept
+responsibility for Earth-relative directions, with a warning under the narrow
+Meso-NH missing-projection exception. This does not rotate grid winds or prove
+that the directions coincide. See :ref:`missing-mesonh-wind-projection` for both
+YAML examples and the conditions that still fail.
+
 ``earth_centered`` collocates atmospheric U/V and rotates grid-aligned pairs to
 eastward/northward components. ``native`` retains their source staggering and
 declared basis, with normalized velocity units. W location is an independent

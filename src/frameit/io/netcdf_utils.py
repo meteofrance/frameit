@@ -414,6 +414,7 @@ def concat_nc2ds_by_vert_coord(
     if vortex_fields is not None:
         requested_vars_all.update(vortex_fields.variables)
 
+    wind_geometry = set()
     if wind_conf is not None and not ocean:
         from frameit.processing.derived.wind import wind_names
         from frameit.processing.wind_reference import wind_pairs
@@ -429,8 +430,9 @@ def concat_nc2ds_by_vert_coord(
                 rotation = pair.get("rotation") or {}
                 if rotation.get("method") == "coordinate":
                     requested_vars_all.add(rotation["coordinate"])
-                if rotation.get("method") == "mesonh_projection":
-                    requested_vars_all.update(("BETA", "RPK", "LON0", "CARTESIAN"))
+                if (rotation.get("method") == "mesonh_projection"
+                        or wind_conf.atm_model == "MNH"):
+                    wind_geometry.update(("BETA", "RPK", "LON0", "CARTESIAN"))
 
     if wind_conf is not None and wind_conf.atm_model == "CROCO":
         from frameit.io.croco_utils import current_pairs, polar_fields
@@ -445,12 +447,13 @@ def concat_nc2ds_by_vert_coord(
     # Automatically add geographic variables
     requested_vars_all.discard("wind_speed")
     auto_geo = []
-    if keep_geovars:
+    if keep_geovars or wind_geometry:
         present = set()
         for path in files:
             header = resources.open_netcdf(path, engine=engine, chunks=chunks)
             present.update(header.variables)
-        auto_geo = [name for name in geovar_candidates if name in present]
+        requested_vars_all.update(wind_geometry & present)
+        auto_geo = [name for name in geovar_candidates if name in present] if keep_geovars else []
         if auto_geo:
             logger.info("Auto-adding geographic variables: %s", ", ".join(auto_geo))
         requested_vars_all.update(auto_geo)

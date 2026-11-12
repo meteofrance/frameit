@@ -25,9 +25,9 @@ class ReleaseTests(unittest.TestCase):
 
         project = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']
         citation = yaml.safe_load((ROOT / 'CITATION.cff').read_text())
-        self.assertEqual(project['version'], '2.0.0rc2')
+        self.assertEqual(project['version'], '2.0.0rc2+hotfix1')
         self.assertEqual(citation['version'], project['version'])
-        self.assertEqual(citation['date-released'], date(2026, 11, 9))
+        self.assertEqual(citation['date-released'], date(2026, 11, 12))
         self.assertEqual(project['requires-python'], '>=3.13,<3.14')
         with patch('frameit._version.version', side_effect=PackageNotFoundError('frameit')):
             self.assertEqual(get_frameit_version(), project['version'])

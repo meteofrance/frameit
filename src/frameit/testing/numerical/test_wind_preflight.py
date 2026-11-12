@@ -62,7 +62,7 @@ def test_conflicting_flags_cf_and_frames_fail(metadata):
     conf = settings()
     _, pairs = wind_dependencies(conf, {"level": {"variables": ["UT"]}})
     source = xr.Dataset({"UT": xr.DataArray([0.], dims="level", attrs=metadata),
-                         "VT": ("level", [0.])})
+                         "VT": ("level", [0.]), "BETA": 0., "RPK": 0., "LON0": 54.2})
     with pytest.raises(ValueError, match="Conflicting|wrong wind component"):
         inspect_wind_pairs([source], conf, pairs, "fixture.nc")
 
@@ -92,6 +92,82 @@ def test_preflight_rotation_reads_geometry_without_reading_winds():
     pairs[0]["rotation"] = {"method": "mesonh_projection"}
     with pytest.raises(ValueError, match="BETA"):
         inspect_wind_pairs([source], conf, pairs, "fixture.nc")
+
+
+@pytest.mark.parametrize("frame", ["grid", "earth"])
+def test_missing_mnh_projection_headers_preflight_never_reads_winds(frame):
+    @delayed
+    def forbidden():
+        raise AssertionError("Preflight evaluated a velocity field")
+
+    rotation = {"method": "mesonh_projection", "BETA": 0, "RPK": 0, "LON0": 54.2}
+    conf = settings(frame, rotation if frame == "grid" else None)
+    source = xr.Dataset(coords={
+        "level": [1000.],
+        "longitude": ("level", [54.2], {"units": "degrees_east"}),
+    })
+    for name, standard in (("UT", "x_wind"), ("VT", "y_wind")):
+        source[name] = ("level", da.from_delayed(forbidden(), (1,), float),
+                        {"standard_name": standard})
+    _, pairs = wind_dependencies(conf, {"level": {"variables": ["UT"]}})
+    if frame == "earth":
+        with pytest.warns(UserWarning, match="grid.*missing"):
+            records = inspect_wind_pairs([source], conf, pairs, "fixture.nc")
+        assert "missing" in records[0]["wind_reference_frame_override"]
+    else:
+        records = inspect_wind_pairs([source], conf, pairs, "fixture.nc")
+        assert records[0]["rotation_method"] == "mesonh_projection"
+        assert records[0]["rotation_parameters"]["rotation_LON0_degrees"] == 54.2
+
+
+@pytest.mark.parametrize("frame", ["grid", "earth"])
+@pytest.mark.parametrize("representation", ["native", "earth_centered"])
+def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, representation):
+    from frameit.core.execution import ExecutionOptions, execute_simulation
+
+    source, _ = native_vortex(n=9)
+    source = source.drop_vars([n for n in ("BETA", "RPK", "LON0") if n in source])
+    for name in ("BETA", "RPK", "LON0"):
+        source.attrs.pop(name, None)
+    for name, standard in (("UT_ZM", "x_wind"), ("VT_ZM", "y_wind")):
+        source[name].attrs.update(standard_name=standard, wind_reference_frame="grid")
+    source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
+    pair = {"group": "level", "u": "UT_ZM", "v": "VT_ZM", "reference_frame": frame}
+    if frame == "grid":
+        pair["rotation"] = {"method": "mesonh_projection", "BETA": 0, "RPK": 0, "LON0": 54.2}
+    conf = SimulationConfig.from_mapping_with_model_preset({
+        "schema_version": "2.1", "model": "mesonh",
+        "input": {"directory": str(tmp_path), "pattern": "native.nc", "wind_pairs": [pair]},
+        "tracking": {"method": "fixed_box", "fixed_box": {
+            "center": {"latitude": -20., "longitude": 60.}}},
+        "domain": {"width_km": {"x": 2000, "y": 2000}},
+        "variables": {"level": {"names": ["UT_ZM", "VT_ZM"], "levels": "stored"}},
+        "polar": {"enabled": False},
+        "output": {"directory": str(tmp_path / "output"), "cartesian": {
+            "horizontal_vectors": representation}},
+    })
+    result = execute_simulation(conf, ExecutionOptions(synchronous_export=True))
+    assert result.ok
+    path = next(p["path"] for p in result.products if p["role"] == "cart")
+    with xr.open_dataset(path, engine="h5netcdf") as reopened:
+        for name in ("UT_ZM", "VT_ZM"):
+            np.testing.assert_allclose(
+                reopened[name].sel(x_box=slice(-4, 4), y_box=slice(-4, 4)), source[name]
+            )
+            assert reopened[name].sel(x_box=-6).isnull().all()
+            if frame == "earth":
+                assert "missing" in reopened[name].attrs["wind_reference_frame_override"]
+                assert reopened[name].attrs["source_standard_name"] == source[name].attrs["standard_name"]
+            elif representation == "earth_centered":
+                assert reopened[name].attrs["rotation_LON0_degrees"] == 54.2
+    if frame == "earth":
+        from pathlib import Path
+
+        import yaml
+
+        assert "metadata says grid-aligned" in Path(result.log_path).read_text()
+        provenance = yaml.safe_load((tmp_path / "output" / "run-provenance.yaml").read_text())
+        assert "wind_reference_frame_override" in str(provenance)
 
 
 def test_physical_level_provenance_preserves_original_indices():
