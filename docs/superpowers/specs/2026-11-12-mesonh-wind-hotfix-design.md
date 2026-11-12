@@ -15,16 +15,21 @@ declarations, not a new rotation method or automatic fallback.
 - Missing effective parameters fail with the affected wind pair, all missing
   names, and instructions to supply known values under the YAML `rotation`.
   No value is inferred or silently defaulted, including zero.
-- For explicit Meso-NH pairs only, `reference_frame: earth` can override coherent
+- For explicit Meso-NH NetCDF pairs only, `reference_frame: earth` can override coherent
   grid-basis metadata when at least one effective projection parameter is absent.
   Warn that no grid-to-Earth rotation occurs and record the warning and original
   metadata in provenance/output attributes. Do not modify input datasets.
 - Conflicts remain fatal with complete projection parameters, invalid or mutually
   contradictory metadata, wrong components, non-Meso-NH sources, implicit legacy
-  declarations, or inconsistent prepared fields. Prepared outputs are idempotent.
+  declarations, GRIB inputs, or inconsistent prepared fields. Prepared outputs
+  are idempotent; changed explicit projection parameters conflict with the record.
 - Native outputs retain native sample locations. Under the explicit bypass their
   declared Earth basis must not be contradicted by unqualified grid-basis flags;
   original source attributes remain inspectable.
+- Retain needed projection headers as checked coordinates through shard assembly
+  and native tracker selection, without validating unused wind geometry during
+  scalar extraction. Qualify superseded global basis flags while preserving
+  other raw pairs' basis metadata.
 
 ## Approaches
 

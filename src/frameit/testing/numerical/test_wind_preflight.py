@@ -170,6 +170,121 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
         assert "wind_reference_frame_override" in str(provenance)
 
 
+@pytest.mark.parametrize("method", ["pressure_centroid", "multifield_vortex"])
+def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(tmp_path, method):
+    from frameit.io.loader import DatasetResources
+    from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
+
+    source, _ = native_vortex(n=9)
+    source = source.assign(RPK=0., LON0=54.2)
+    for name, standard in (("UT_ZM", "x_wind"), ("VT_ZM", "y_wind")):
+        source[name].attrs["standard_name"] = standard
+    path = tmp_path / "native.nc"
+    source.to_netcdf(path, engine="h5netcdf")
+    tracking = {"method": method}
+    if method == "multifield_vortex":
+        tracking[method] = {"seed": {"latitude": -20., "longitude": 60.,
+                                     "motion_u_m_s": 0., "motion_v_m_s": 0.},
+                            "mnh_gravity_m_s2": 9.80665}
+    conf = SimulationConfig.from_mapping_with_model_preset({
+        "schema_version": "2.1", "model": "mesonh", "tracking": tracking,
+        "input": {"files": [str(path)], "wind_pairs": [
+            {"group": "level", "u": "UT_ZM", "v": "VT_ZM", "reference_frame": "grid",
+             "rotation": {"method": "mesonh_projection", "BETA": 90}},
+            {"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"},
+        ]}, "variables": {"fields_2d": {"names": ["MSLP"]}},
+        "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "out")},
+    })
+    with DatasetResources() as resources:
+        _, trackers = concat_nc2ds_by_vert_coord(
+            [path], conf.requests_user(), conf.requests_tracker(), method,
+            wind_conf=conf, resources=resources,
+        )
+        prepared = trackers[method]["native"]
+        if method == "pressure_centroid":
+            prepared = prepare_mnh_inputs(prepared, conf)
+        np.testing.assert_allclose(prepared.u, -source.VT_ZM, atol=1e-12)
+        np.testing.assert_allclose(prepared.v, source.UT_ZM, atol=1e-12)
+
+
+def projection_shards(tmp_path, *, frame="earth", repeated=True, source_frame="earth"):
+    source, _ = native_vortex(n=9)
+    source = source.assign(BETA=0., RPK=0., LON0=54.2)
+    for name, standard in (("UT_ZM", "eastward_wind"), ("VT_ZM", "northward_wind")):
+        source[name].attrs["standard_name"] = (
+            standard if source_frame == "earth" else "x_wind" if name == "UT_ZM" else "y_wind"
+        )
+    paths = []
+    for index, name in enumerate(("UT_ZM", "VT_ZM")):
+        names = [name] + (["BETA", "RPK", "LON0"] if repeated or index == 0 else [])
+        path = tmp_path / f"part{index}.nc"
+        source[names].to_netcdf(path, engine="h5netcdf")
+        paths.append(path)
+    pair = {"group": "level", "u": "UT_ZM", "v": "VT_ZM", "reference_frame": frame}
+    if frame == "grid":
+        pair["rotation"] = {"method": "mesonh_projection", "BETA": 0}
+    conf = SimulationConfig.from_mapping_with_model_preset({
+        "schema_version": "2.1", "model": "mesonh",
+        "input": {"files": list(map(str, paths)), "wind_pairs": [pair],
+                  "netcdf": {"file_layout": "variables"}},
+        "tracking": {"method": "fixed_box", "fixed_box": {
+            "center": {"latitude": -20., "longitude": 60.}}},
+        "variables": {"level": {"names": ["UT_ZM", "VT_ZM"], "levels": "stored"}},
+        "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "out")},
+    })
+    return source, paths, conf
+
+
+@pytest.mark.parametrize("frame", ["earth", "grid"])
+def test_projection_headers_are_checked_metadata_in_variable_shards(tmp_path, frame):
+    from frameit.io.loader import DatasetResources
+    from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
+
+    source, paths, conf = projection_shards(tmp_path, frame=frame, source_frame=frame)
+    preflight(conf)
+    with DatasetResources() as resources:
+        groups, _ = concat_nc2ds_by_vert_coord(
+            paths, conf.requests_user(), {}, wind_conf=conf,
+            file_layout="variables", resources=resources,
+        )
+        np.testing.assert_allclose(groups["level"].UT_ZM, source.UT_ZM)
+
+
+def test_variable_shard_preflight_keeps_complete_projection_conflicts_fatal(tmp_path):
+    _, _, conf = projection_shards(tmp_path, repeated=False, source_frame="grid")
+    with pytest.raises(ValueError, match="Conflicting"):
+        preflight(conf)
+
+
+def test_scalar_shards_do_not_validate_unused_wind_projection(tmp_path):
+    from frameit.io.loader import DatasetResources
+    from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
+
+    source, _ = native_vortex(n=9)
+    paths = []
+    for index, name in enumerate(("MSLP", "ALT")):
+        path = tmp_path / f"scalar{index}.nc"
+        source[[name]].assign_coords(time=source.time).assign(BETA=float(index)).to_netcdf(
+            path, engine="h5netcdf"
+        )
+        paths.append(path)
+    conf = SimulationConfig.from_mapping_with_model_preset({
+        "schema_version": "2.1", "model": "mesonh",
+        "input": {"files": list(map(str, paths)), "netcdf": {"file_layout": "variables"}},
+        "tracking": {"method": "fixed_box", "fixed_box": {
+            "center": {"latitude": -20., "longitude": 60.}}},
+        "variables": {"fields_2d": {"names": ["MSLP"]}},
+        "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "out")},
+    })
+    preflight(conf)
+    with DatasetResources() as resources:
+        groups, _ = concat_nc2ds_by_vert_coord(
+            paths, conf.requests_user(), {}, wind_conf=conf,
+            file_layout="variables", resources=resources,
+        )
+        np.testing.assert_allclose(groups["surface"].MSLP, source.MSLP)
+
+
 def test_physical_level_provenance_preserves_original_indices():
     source = xr.Dataset(coords={
         "level": ("level", [-100., 500., 1500., 3000.], {"c_grid_dynamic_range": "2:4"}),

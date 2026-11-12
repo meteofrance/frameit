@@ -6,11 +6,15 @@
   `rotation.method: mesonh_projection`. YAML values override source variables,
   then dataset attributes; missing effective values produce an actionable error.
   The rotation formula, units and default behavior are unchanged.
+  Preserve projection headers through native trackers and check shared headers as
+  metadata when assembling variable shards. Reject changed YAML parameters when
+  reusing already prepared winds.
 - Permit explicit Meso-NH `reference_frame: earth` declarations to override
   coherent grid-basis metadata only when projection parameters are missing.
   Warn that no rotation occurs and preserve the decision and original metadata
   in provenance and wind attributes. Complete-parameter conflicts, invalid or
-  contradictory metadata, wrong components and other models still fail.
+  contradictory metadata, wrong components, GRIB inputs and other models still fail.
+  Source-qualify superseded global basis flags without relabelling other raw pairs.
 - Keep absent projection fields out of the NetCDF loader's required variable
   list, allowing declared parameters to reach numerical preparation.
 - Document both remedies in troubleshooting and the wind configuration guides.

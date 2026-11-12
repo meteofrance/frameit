@@ -14,6 +14,7 @@ from frameit.processing.wind_reference import (
     declared_pair,
     is_prepared,
     pair_definition,
+    qualify_overridden_wind_metadata,
     rotation_angle,
     validate_pair_frame,
     wind_frame_override,
@@ -121,7 +122,7 @@ def normalize_native_wind_units(ds: xr.Dataset, conf: Any, group: str) -> xr.Dat
                         for key in ("GRIB_uvRelativeToGrid", "uvRelativeToGrid"):
                             if key in attrs:
                                 attrs[key] = 0
-    return out
+    return qualify_overridden_wind_metadata(out, conf)
 
 
 def normalize_winds(ds: xr.Dataset, conf: Any, group: str) -> xr.Dataset:
@@ -194,7 +195,7 @@ def normalize_winds(ds: xr.Dataset, conf: Any, group: str) -> xr.Dataset:
                     if key.startswith("rotation_"):
                         attrs[key] = item
             out[name] = value.assign_attrs(attrs)
-    return out
+    return qualify_overridden_wind_metadata(out, conf)
 
 
 def polar_wind_components(

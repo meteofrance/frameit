@@ -155,6 +155,8 @@ provenance and prepared field attributes. Cartesian Meso-NH geometry is excluded
 The :ref:`explicit Earth-basis exception <missing-mesonh-wind-projection>` for
 missing Meso-NH projection parameters records a user assumption, not a calculated
 rotation or scientific validation of that assumption.
+The exception is restricted to NetCDF inputs. Supplied projection parameters
+must match the recorded rotation when prepared fields are reused.
 ``geolocation`` estimates signed native-axis directions from local
 WGS84 neighbour bearings, including descending axes. It rejects degenerate,
 reflected or nonorthogonal geometry (absolute cosine of axis separation > 0.02)

@@ -453,7 +453,7 @@ Grid-aligned pairs require one declared rotation method:
 There is no ``auto`` frame or method. FrameIt checks your declaration against
 available GRIB component flags and CF wind metadata (including standard names);
 it does not select the basis from that metadata. A conflict normally fails.
-The exception is an explicit Meso-NH ``reference_frame: earth`` pair with coherent
+The exception is an explicit Meso-NH NetCDF ``reference_frame: earth`` pair with coherent
 grid-basis metadata and at least one missing effective BETA/RPK/LON0 parameter:
 FrameIt trusts the user's declaration, warns, records the override and applies
 no rotation. Complete projection parameters, contradictory/invalid metadata and
@@ -461,6 +461,9 @@ wrong components still fail. See :ref:`missing-mesonh-wind-projection` for the
 scientific responsibility and YAML examples. Missing angles, unsupported
 projections and unusable geometry still fail for grid-declared pairs; no method
 fallback occurs. Earth-relative pairs need no grid-to-Earth rotation.
+Previously prepared winds retain their recorded rotation. Changing a supplied
+BETA/RPK/LON0 value conflicts with that record: reread the original inputs rather
+than silently reusing or rotating prepared components again.
 See :ref:`wind-preparation-method` for equations, axis checks and limitations.
 
 Output, logging, and precedence

@@ -20,6 +20,7 @@ from frameit.io.loader import (
 )
 from frameit.processing.requests import normalize_requests, selected_native_indices
 from frameit.processing.wind_reference import (
+    MESONH_PROJECTION_METADATA,
     inspect_wind_metadata,
     pair_definition,
     rotation_angle,
@@ -38,13 +39,16 @@ def open_metadata(files, conf, resources, *, chunks=None):
         opened = [normalize_netcdf_time(resources.open_netcdf(
             path, engine=conf.netcdf_engine, chunks=chunks), conf) for path in files]
         requested = set()
+        selected_pairs = []
         for request in (conf.requests_user(), conf.requests_tracker().get(conf.tracking_method, {})):
-            expanded, _ = wind_dependencies(conf, request)
+            expanded, pairs = wind_dependencies(conf, request)
+            selected_pairs.extend(pairs)
             requested.update(name for spec in expanded.values() for name in spec.get("variables", [])
                              if name != "wind_speed")
         requested.update(name for name in (conf.name_latitude, conf.name_longitude)
                          if any(name in ds for ds in opened))
-        merged = _merge_variable_shards(opened, requested)
+        metadata = MESONH_PROJECTION_METADATA if conf.atm_model == "MNH" and selected_pairs else ()
+        merged = _merge_variable_shards(opened, requested, metadata=metadata)
         merged.attrs = dict(merged.attrs, _frameit_variable_providers={
             name: str(path) for path, ds in zip(files, opened) for name in ds.data_vars
             if name in requested})

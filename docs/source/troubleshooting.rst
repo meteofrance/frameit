@@ -69,7 +69,7 @@ eastward/northward, declare that decision explicitly instead:
          v: VT
          reference_frame: earth
 
-For explicit Meso-NH pairs only, when at least one projection parameter is
+For explicit Meso-NH NetCDF pairs only, when at least one projection parameter is
 missing, coherent grid-aligned metadata produces a warning rather than a failure.
 **No grid-to-Earth rotation is applied.** Missing projection metadata does not
 prove that grid and Earth directions coincide; you are responsible for this
@@ -82,7 +82,10 @@ and standard names are retained with ``source_`` prefixes;
 basis from the user's Earth-basis declaration. Conflicts still fail when all
 three effective parameters are available, metadata are invalid or contradictory,
 or components are misidentified. Other models and implicit declarations do not
-get this exception. Run ``frameit validate`` again after editing the YAML.
+get this exception; GRIB input remains strict even with ``model: mesonh``.
+Superseded dataset-wide basis flags move to ``source_`` attributes; other raw
+pairs retain their own basis metadata. Run ``frameit validate`` again after
+editing the YAML.
 See :doc:`user_guide/configuration_file` for the rotation methods.
 
 No common times or a shortened track

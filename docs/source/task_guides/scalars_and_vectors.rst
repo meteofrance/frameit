@@ -51,7 +51,7 @@ inspected projection metadata establishes the native grid rotation:
 If the input lacks ``BETA``, ``RPK`` or ``LON0``, supply known values under
 ``rotation``. An explicit ``reference_frame: earth`` may instead accept
 responsibility for Earth-relative directions, with a warning under the narrow
-Meso-NH missing-projection exception. This does not rotate grid winds or prove
+Meso-NH NetCDF missing-projection exception. This does not rotate grid winds or prove
 that the directions coincide. See :ref:`missing-mesonh-wind-projection` for both
 YAML examples and the conditions that still fail.
 

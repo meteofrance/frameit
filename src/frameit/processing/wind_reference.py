@@ -31,6 +31,8 @@ import xarray as xr
 
 from frameit.utils.units import convert_units
 
+MESONH_PROJECTION_METADATA = ("BETA", "RPK", "LON0", "CARTESIAN")
+
 
 def wind_pairs(conf: Any, group: str) -> list[dict]:
     """Return explicit definitions for one group, without inspecting other groups."""
@@ -135,7 +137,9 @@ def inspect_wind_metadata(attrs: dict, dataset_attrs: dict) -> dict:
 
 def wind_frame_override(ds: xr.Dataset, pair: dict, conf: Any) -> str | None:
     """Explain the explicit MNH exception; never infer an Earth-relative basis."""
-    if (getattr(conf, "atm_model", None) != "MNH" or pair["reference_frame"] != "earth"
+    if (getattr(conf, "atm_model", None) != "MNH"
+            or getattr(conf, "file_type", "netcdf") != "netcdf"
+            or pair["reference_frame"] != "earth"
             or pair.get("declaration")
             or any(is_prepared(ds[n]) for n in (pair["u"], pair["v"]) if n in ds)):
         return None
@@ -207,6 +211,15 @@ def validate_pair_frame(ds: xr.Dataset, pair: dict, conf: Any = None) -> str:
                     raise ValueError(
                         f"Prepared {name}: rotation coordinate conflicts with declaration"
                     )
+                if method == "mesonh_projection":
+                    parameters, _ = _mesonh_parameters(xr.Dataset(), rotation)
+                    for parameter, key in (("BETA", "rotation_BETA_degrees"),
+                                           ("RPK", "rotation_RPK"),
+                                           ("LON0", "rotation_LON0_degrees")):
+                        if parameter in parameters and attrs.get(key) != parameters[parameter]:
+                            raise ValueError(
+                                f"Prepared {name}: {parameter} conflicts with recorded rotation"
+                            )
         if attrs.get("standard_name") in {
             "eastward_wind", "northward_wind", "x_wind", "y_wind",
             "grid_eastward_wind", "grid_northward_wind",
@@ -225,6 +238,35 @@ def is_prepared(da: xr.DataArray) -> bool:
         da.attrs.get("wind_reference_frame") == "earth"
         and da.attrs.get("source_wind_reference_frame") in {"earth", "grid"}
     )
+
+
+def qualify_overridden_wind_metadata(ds: xr.Dataset, conf: Any) -> xr.Dataset:
+    """Move superseded global basis evidence without changing other raw pairs."""
+    if not any(da.attrs.get("wind_reference_frame_override") for da in ds.data_vars.values()):
+        return ds
+    frames = _metadata_frames(ds.attrs, "Dataset")
+    if not frames:
+        return ds
+    out = ds.copy(deep=False)
+    keys = [key for key in ("wind_reference_frame", "GRIB_uvRelativeToGrid", "uvRelativeToGrid")
+            if key in ds.attrs]
+    if _metadata_frames({"standard_name": ds.attrs.get("standard_name")}, "Dataset"):
+        keys.append("standard_name")
+    for pair in getattr(conf, "wind_pairs", []):
+        for name in (pair["u"], pair["v"]):
+            if name not in ds or is_prepared(ds[name]):
+                continue
+            if any(frame not in frames for frame in _metadata_frames(ds[name].attrs, name)):
+                raise ValueError(f"Conflicting wind reference metadata on {name}: dataset {frames}")
+            attrs = dict(ds[name].attrs)
+            for key in keys:
+                if key != "standard_name":
+                    attrs.setdefault(key, ds.attrs[key])
+            attrs.setdefault("wind_reference_frame", frames[0])
+            out[name].attrs = attrs
+    for key in keys:
+        out.attrs.setdefault("source_" + key, out.attrs.pop(key))
+    return out
 
 
 def geolocation_rotation(ds: xr.Dataset, conf: Any) -> xr.DataArray:

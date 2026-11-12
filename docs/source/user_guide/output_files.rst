@@ -400,6 +400,10 @@ Earth-relative without rotation; original flags and standard names remain under
 ``source_`` attributes, including for native output. The override is also in
 ``run-provenance.yaml``. These records identify a user assumption, not evidence
 that the original grid and Earth directions coincide.
+Superseded dataset-wide basis flags are source-qualified; other raw pairs retain
+their own basis metadata. Available projection headers travel as checked
+coordinates through variable-shard assembly and native tracker preparation.
+Repeated headers must agree across shards; they are not duplicate physical fields.
 
 Requested ``wind_speed`` uses collocated mass-point horizontal components,
 :math:`\sqrt{u_m^2+v_m^2}`, even beside native Cartesian U/V. Taking ``hypot`` of
