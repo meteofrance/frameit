@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.0.0rc2-hotfix1 — 2026-11-12
+
+- Accept known `BETA`, `RPK` and `LON0` values under a wind pair's
+  `rotation.method: mesonh_projection`. YAML values override source variables,
+  then dataset attributes; missing effective values produce an actionable error.
+  The rotation formula, units and default behavior are unchanged.
+  Preserve projection headers through native trackers and check shared headers as
+  metadata when assembling variable shards. Reject changed YAML parameters when
+  reusing already prepared winds.
+- Permit explicit Meso-NH `reference_frame: earth` declarations to override
+  coherent grid-basis metadata only when projection parameters are missing.
+  Warn that no rotation occurs and preserve the decision and original metadata
+  in provenance and wind attributes. Complete-parameter conflicts, invalid or
+  contradictory metadata, wrong components, GRIB inputs and other models still fail.
+  Source-qualify superseded global basis flags without relabelling other raw pairs.
+- Keep absent projection fields out of the NetCDF loader's required variable
+  list, allowing declared parameters to reach numerical preparation.
+- Document both remedies in troubleshooting and the wind configuration guides.
+  The Python package version is `2.0.0rc2+hotfix1` (PEP 440); the release tag is
+  `v2.0.0rc2-hotfix1`. Schema `2.1` and existing output names/locations remain.
+
+This is a prerelease, not scientific sign-off. The Earth-basis exception records
+a researcher's assumption; missing projection metadata does not establish that
+grid and Earth directions coincide. Existing real-data qualification limits apply.
+
 ## 2.0.0rc2 — 2026-11-09 (unpublished release candidate)
 
 - Compose coupled AROME/NEMO and Meso-NH/CROCO starters with atmospheric trackers.

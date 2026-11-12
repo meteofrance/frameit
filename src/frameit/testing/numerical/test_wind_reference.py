@@ -19,6 +19,7 @@ from frameit.processing.derived.wind import (
 from frameit.processing.wind_reference import (
     declared_pair,
     geolocation_rotation,
+    inspect_wind_metadata,
     pair_definition,
     validate_pair_frame,
 )
@@ -204,6 +205,138 @@ def test_mesonh_projection_sign_from_independent_projected_axis(rpk, beta):
     np.testing.assert_allclose(out.u, 8, atol=1e-12)
     np.testing.assert_allclose(out.v, 0, atol=2e-7)
     assert out.u.attrs["rotation_RPK"] == rpk
+
+
+def test_missing_projection_error_lists_parameters_and_yaml_remedy():
+    with pytest.raises(ValueError) as caught:
+        normalize_winds(field(), settings(definition(method="mesonh_projection")), "level")
+    message = str(caught.value)
+    for text in ("u/v", "BETA", "RPK", "LON0", "input.wind_pairs", "rotation", "YAML"):
+        assert text in message
+
+
+@pytest.mark.parametrize("source", ["variables", "attributes"])
+def test_projection_yaml_overrides_source_parameters_including_zero(source):
+    ds = field().assign_coords(longitude=("x", [54.2, 55.2], {"units": "degrees_east"}))
+    parameters = {"BETA": 25., "RPK": .5, "LON0": 54.2}
+    ds = ds.assign(parameters) if source == "variables" else ds.assign_attrs(parameters)
+    original = ds.copy(deep=True)
+    pair = definition(method="mesonh_projection", BETA=0, RPK=0)
+    out = normalize_winds(ds, settings(pair), "level")
+    np.testing.assert_allclose(out.u, [10, 0])
+    np.testing.assert_allclose(out.v, [0, 10])
+    assert out.u.attrs["rotation_BETA_degrees"] == 0
+    assert out.u.attrs["rotation_RPK"] == 0
+    assert out.u.attrs["rotation_LON0_degrees"] == 54.2
+    xr.testing.assert_identical(ds, original)
+
+
+def test_projection_yaml_parameters_rotate_when_all_source_parameters_are_missing():
+    ds = field().assign_coords(longitude=("x", [54.2, 55.2], {"units": "degrees_east"}))
+    conf = settings(definition(method="mesonh_projection", BETA=90, RPK=0, LON0=54.2))
+    out = normalize_winds(ds, conf, "level")
+    np.testing.assert_allclose(out.u, [0, -10], atol=1e-14)
+    np.testing.assert_allclose(out.v, [10, 0], atol=1e-14)
+
+
+@pytest.mark.parametrize("missing", ["BETA", "RPK", "LON0", "all"])
+@pytest.mark.parametrize("native", [False, True])
+def test_explicit_mnh_earth_override_warns_preserves_evidence_and_is_idempotent(missing, native):
+    ds = field().assign_attrs(wind_reference_frame="grid")
+    ds = ds.assign({k: v for k, v in {"BETA": 0., "RPK": 0., "LON0": 54.2}.items()
+                    if k != missing and missing != "all"})
+    original = ds.copy(deep=True)
+    conf = settings(definition(frame="earth"))
+    operation = normalize_native_wind_units if native else normalize_winds
+    with pytest.warns(UserWarning, match="u/v.*grid.*missing.*reference_frame: earth"):
+        out = operation(ds, conf, "level")
+    np.testing.assert_allclose(out.u, [10, 0])
+    np.testing.assert_allclose(out.v, [0, 10])
+    for name, standard in (("u", "eastward_wind"), ("v", "northward_wind")):
+        assert out[name].attrs["standard_name"] == standard
+        assert out[name].attrs["wind_reference_frame"] == "earth"
+        assert out[name].attrs["GRIB_uvRelativeToGrid"] == 0
+        assert out[name].attrs["source_GRIB_uvRelativeToGrid"] == 1
+        assert out[name].attrs["source_standard_name"] == ds[name].attrs["standard_name"]
+        assert "missing" in out[name].attrs["wind_reference_frame_override"]
+    xr.testing.assert_identical(operation(out, conf, "level"), out)
+    xr.testing.assert_identical(ds, original)
+
+
+@pytest.mark.parametrize("condition", [
+    "complete", "complete_attributes", "complete_yaml", "arome", "grib", "legacy",
+    "mixed_metadata", "invalid_flag", "wrong_component",
+])
+def test_mnh_earth_override_does_not_weaken_other_conflicts(condition):
+    ds = field()
+    conf = settings(definition(frame="earth"))
+    parameters = {"BETA": 0., "RPK": 0., "LON0": 54.2}
+    if condition == "complete":
+        ds = ds.assign(parameters)
+    elif condition == "complete_attributes":
+        ds.attrs.update(parameters)
+    elif condition == "complete_yaml":
+        conf.wind_pairs[0]["rotation"] = {"method": "mesonh_projection", **parameters}
+    elif condition == "arome":
+        conf.atm_model = "AROME"
+    elif condition == "grib":
+        conf.file_type = "grib"
+    elif condition == "legacy":
+        conf.wind_pairs = []
+        conf.wind_reference_frame = "earth"
+    elif condition == "mixed_metadata":
+        ds.v.attrs = {"standard_name": "northward_wind", "units": "km/h"}
+    elif condition == "invalid_flag":
+        ds.u.attrs["GRIB_uvRelativeToGrid"] = 2
+    elif condition == "wrong_component":
+        ds.u.attrs["standard_name"] = "y_wind"
+    with pytest.raises(ValueError, match="Conflicting|invalid|wrong wind component"):
+        normalize_winds(ds, conf, "level")
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_override_qualifies_global_basis_without_relabelling_other_pairs(native):
+    ds = field().assign(ug=("x", [3., 3.]), vg=("x", [4., 4.]))
+    ds.attrs.update(wind_reference_frame="grid", GRIB_uvRelativeToGrid=1)
+    for name in ("ug", "vg"):
+        ds[name].attrs["units"] = "m s-1"
+    original = ds.copy(deep=True)
+    other = {**definition("ug", "vg"), "group": "surface"}
+    conf = settings(definition(frame="earth"), other)
+    operation = normalize_native_wind_units if native else normalize_winds
+    with pytest.warns(UserWarning, match="grid.*missing"):
+        out = operation(ds, conf, "level")
+    for name in ("u", "v"):
+        assert inspect_wind_metadata(out[name].attrs, out.attrs)["wind_basis"] == (
+            "eastward/northward components"
+        )
+    for name in ("ug", "vg"):
+        assert inspect_wind_metadata(out[name].attrs, out.attrs)["wind_basis"] == (
+            "grid-aligned components"
+        )
+    assert out.attrs["source_wind_reference_frame"] == "grid"
+    assert out.attrs["source_GRIB_uvRelativeToGrid"] == 1
+    reopened = xr.open_dataset(out.to_netcdf(engine="h5netcdf"), engine="h5netcdf")
+    try:
+        assert "wind_reference_frame" not in reopened.attrs
+        assert "GRIB_uvRelativeToGrid" not in reopened.attrs
+        np.testing.assert_allclose(reopened.u, [10, 0])
+    finally:
+        reopened.close()
+    xr.testing.assert_identical(ds, original)
+
+
+@pytest.mark.parametrize("parameter,value", [("BETA", 90), ("RPK", .5), ("LON0", 55.)])
+@pytest.mark.parametrize("singleton", [False, True])
+def test_prepared_projection_rejects_changed_yaml_parameters(parameter, value, singleton):
+    ds = field().assign_coords(longitude=("x", [54.2, 55.2], {"units": "degrees_east"}))
+    conf = settings(definition(method="mesonh_projection", BETA=0, RPK=0, LON0=54.2))
+    prepared = normalize_winds(ds, conf, "level")
+    if singleton:
+        prepared = prepared[["u"]]
+    conf.wind_pairs[0]["rotation"][parameter] = value
+    with pytest.raises(ValueError, match=parameter):
+        normalize_winds(prepared, conf, "level")
 
 
 def test_pair_alignment_rejects_labels_auxiliary_coordinates_and_unresolved_locations():

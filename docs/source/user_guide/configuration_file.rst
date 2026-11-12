@@ -439,8 +439,11 @@ Grid-aligned pairs require one declared rotation method:
 
 * ``mesonh_projection``: use the angle
   ``BETA - RPK * wrap(longitude - LON0)`` in degrees, with the longitude
-  difference wrapped to [-180, 180). This requires finite projection metadata
-  and excludes Meso-NH Cartesian geometry;
+  difference wrapped to [-180, 180). Optional ``rotation.BETA``, ``rotation.RPK``
+  and ``rotation.LON0`` supply known finite scalars. BETA/LON0 are degrees and
+  RPK is dimensionless in [-1, 1]. Each explicit YAML value overrides the source
+  variable, then the dataset attribute; omitted values must exist in the source.
+  Zero is a value, not a default. This excludes Meso-NH Cartesian geometry;
 * ``geolocation``: derive the grid basis from the geographic grid geometry;
 * ``coordinate``: use a named angle, for example
   ``rotation: {method: coordinate, coordinate: grid_rotation}``.
@@ -449,11 +452,18 @@ Grid-aligned pairs require one declared rotation method:
 
 There is no ``auto`` frame or method. FrameIt checks your declaration against
 available GRIB component flags and CF wind metadata (including standard names);
-it does not select the basis from that metadata. A conflict,
-inconsistent pair, missing angle, unsupported projection or unusable geometry
-must fail with the affected pair identified. Do not silently change reference
-frame or fall back from one rotation method to another. Earth-relative pairs
-need no grid-to-Earth rotation.
+it does not select the basis from that metadata. A conflict normally fails.
+The exception is an explicit Meso-NH NetCDF ``reference_frame: earth`` pair with coherent
+grid-basis metadata and at least one missing effective BETA/RPK/LON0 parameter:
+FrameIt trusts the user's declaration, warns, records the override and applies
+no rotation. Complete projection parameters, contradictory/invalid metadata and
+wrong components still fail. See :ref:`missing-mesonh-wind-projection` for the
+scientific responsibility and YAML examples. Missing angles, unsupported
+projections and unusable geometry still fail for grid-declared pairs; no method
+fallback occurs. Earth-relative pairs need no grid-to-Earth rotation.
+Previously prepared winds retain their recorded rotation. Changing a supplied
+BETA/RPK/LON0 value conflicts with that record: reread the original inputs rather
+than silently reusing or rotating prepared components again.
 See :ref:`wind-preparation-method` for equations, axis checks and limitations.
 
 Output, logging, and precedence

@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: >-
-  Unpublished local release candidate. If you use FrameIt, cite the version you
-  actually used. The DOI below identifies the project, not a published candidate.
+  Prerelease candidate. If you use FrameIt, cite the version you actually used.
+  The DOI below identifies the project, not a candidate-specific publication.
 title: "FrameIt: Focused Regional Analysis of Modeled Events with Integrated Tracking"
 abstract: >-
   FrameIt extracts fixed or moving regional datasets from selected AROME,
@@ -31,8 +31,8 @@ authors:
     given-names: Maxence
     affiliation: Université de La Réunion
     orcid: https://orcid.org/0009-0006-5921-4101
-version: 2.0.0rc2
-date-released: 2026-11-09
+version: 2.0.0rc2+hotfix1
+date-released: 2026-11-12
 license: Apache-2.0
 repository-code: https://github.com/meteofrance/frameit
 url: https://meteofrance.github.io/frameit/

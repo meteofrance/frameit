@@ -25,6 +25,10 @@ input:
       rotation:                   # Required for grid; omit for Earth-relative inputs.
         method: coordinate        # coordinate | geolocation | mesonh_projection.
         coordinate: angle         # Required only for method: coordinate.
+        # With mesonh_projection, omit coordinate; optional BETA/RPK/LON0
+        # override source variables, then dataset attributes (no inferred defaults).
+        # BETA/LON0: degrees; RPK: dimensionless in [-1, 1]. See troubleshooting
+        # for missing metadata and the explicit MNH Earth-basis warning exception.
   netcdf:
     engine: h5netcdf              # h5netcdf | netcdf4 | scipy; selects input reader.
     chunks: {}                    # Native dimension -> positive extent or -1 (whole axis).

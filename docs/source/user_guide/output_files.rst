@@ -393,6 +393,18 @@ representation: changing the Cartesian output switch does not change the track
 or polar result. NetCDF inputs normalize units per file before concatenation;
 tracker and user-field preparation share the declared frame/rotation contract.
 
+For the :ref:`Meso-NH missing-projection exception <missing-mesonh-wind-projection>`,
+wind attributes record ``wind_reference_frame_override`` and
+``source_wind_reference_frame_metadata: grid``. The effective declared basis is
+Earth-relative without rotation; original flags and standard names remain under
+``source_`` attributes, including for native output. The override is also in
+``run-provenance.yaml``. These records identify a user assumption, not evidence
+that the original grid and Earth directions coincide.
+Superseded dataset-wide basis flags are source-qualified; other raw pairs retain
+their own basis metadata. Available projection headers travel as checked
+coordinates through variable-shard assembly and native tracker preparation.
+Repeated headers must agree across shards; they are not duplicate physical fields.
+
 Requested ``wind_speed`` uses collocated mass-point horizontal components,
 :math:`\sqrt{u_m^2+v_m^2}`, even beside native Cartesian U/V. Taking ``hypot`` of
 U and V face arrays combines different locations and is not a point wind speed.

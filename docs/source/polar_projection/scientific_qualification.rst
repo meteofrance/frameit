@@ -148,8 +148,16 @@ subtraction is applied. ``coordinate`` converts the named angle to radians.
 ``mesonh_projection`` uses
 :math:`a=\mathrm{BETA}-\mathrm{RPK}\,\mathrm{wrap}(\lambda-\mathrm{LON0})`
 in degrees, wrapping to [-180, 180), then converts to radians. BETA/LON0 are
-degree-valued Meso-NH metadata; RPK must be in [-1, 1]. Cartesian Meso-NH geometry
-is excluded. ``geolocation`` estimates signed native-axis directions from local
+degree-valued Meso-NH parameters; RPK must be in [-1, 1]. Explicit per-pair YAML
+parameters take precedence over source variables, then dataset attributes, with
+no inferred values. Effective values and their sources are recorded in wind
+provenance and prepared field attributes. Cartesian Meso-NH geometry is excluded.
+The :ref:`explicit Earth-basis exception <missing-mesonh-wind-projection>` for
+missing Meso-NH projection parameters records a user assumption, not a calculated
+rotation or scientific validation of that assumption.
+The exception is restricted to NetCDF inputs. Supplied projection parameters
+must match the recorded rotation when prepared fields are reused.
+``geolocation`` estimates signed native-axis directions from local
 WGS84 neighbour bearings, including descending axes. It rejects degenerate,
 reflected or nonorthogonal geometry (absolute cosine of axis separation > 0.02)
 and sharp neighbour-direction changes (cosine < 0.99). These are implementation

@@ -22,6 +22,7 @@ from frameit.processing.requests import (
     normalize_requests,
     selected_native_indices,
 )
+from frameit.processing.wind_reference import MESONH_PROJECTION_METADATA
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ def normalize_netcdf_time(ds: xr.Dataset, conf) -> xr.Dataset:
     return result
 
 
-def _merge_variable_shards(datasets, variables):
+def _merge_variable_shards(datasets, variables, *, metadata=()):
     """Merge selected disjoint fields only after exact coordinate/auxiliary checks."""
     from frameit.processing.polar.metadata import coordinate_dependency_names
 
@@ -112,7 +113,7 @@ def _merge_variable_shards(datasets, variables):
     for ds in datasets:
         if geography - set(ds.variables):
             raise ValueError("NetCDF variable shards require the same geography coordinates")
-    datasets = [ds.set_coords(sorted(geography)) for ds in datasets]
+    datasets = [ds.set_coords(sorted(geography | (set(metadata) & set(ds)))) for ds in datasets]
     logical = ChainMap(*({name: ds[name] for name in ds.variables} for ds in datasets))
     dependencies = coordinate_dependency_names(
         logical, requested, coordinates={name for ds in datasets for name in ds.coords})
@@ -211,7 +212,9 @@ def concat_nc2ds(
     if file_layout == "variables":
         opened = [normalize_netcdf_time(resources.open_netcdf(
             path, engine=engine, chunks={} if chunks is None else chunks), conf) for path in files]
-        return _merge_variable_shards(opened, variables)
+        metadata = (set(MESONH_PROJECTION_METADATA) & set(variables)
+                    if conf.atm_model == "MNH" else ())
+        return _merge_variable_shards(opened, variables, metadata=metadata)
 
     from frameit.processing.polar.metadata import coordinate_dependency_names
 
@@ -414,6 +417,7 @@ def concat_nc2ds_by_vert_coord(
     if vortex_fields is not None:
         requested_vars_all.update(vortex_fields.variables)
 
+    wind_geometry = set()
     if wind_conf is not None and not ocean:
         from frameit.processing.derived.wind import wind_names
         from frameit.processing.wind_reference import wind_pairs
@@ -429,8 +433,9 @@ def concat_nc2ds_by_vert_coord(
                 rotation = pair.get("rotation") or {}
                 if rotation.get("method") == "coordinate":
                     requested_vars_all.add(rotation["coordinate"])
-                if rotation.get("method") == "mesonh_projection":
-                    requested_vars_all.update(("BETA", "RPK", "LON0", "CARTESIAN"))
+                if (rotation.get("method") == "mesonh_projection"
+                        or wind_conf.atm_model == "MNH"):
+                    wind_geometry.update(MESONH_PROJECTION_METADATA)
 
     if wind_conf is not None and wind_conf.atm_model == "CROCO":
         from frameit.io.croco_utils import current_pairs, polar_fields
@@ -445,12 +450,13 @@ def concat_nc2ds_by_vert_coord(
     # Automatically add geographic variables
     requested_vars_all.discard("wind_speed")
     auto_geo = []
-    if keep_geovars:
+    if keep_geovars or wind_geometry:
         present = set()
         for path in files:
             header = resources.open_netcdf(path, engine=engine, chunks=chunks)
             present.update(header.variables)
-        auto_geo = [name for name in geovar_candidates if name in present]
+        requested_vars_all.update(wind_geometry & present)
+        auto_geo = [name for name in geovar_candidates if name in present] if keep_geovars else []
         if auto_geo:
             logger.info("Auto-adding geographic variables: %s", ", ".join(auto_geo))
         requested_vars_all.update(auto_geo)
@@ -468,6 +474,7 @@ def concat_nc2ds_by_vert_coord(
         file_layout=file_layout,
         time_conf=wind_conf,
     )
+    ds = ds.set_coords(sorted(wind_geometry & set(ds)))
     # The opener normalizes source clocks before selection and deduplication.
     if "time" in ds.dims:
         concat_dimension = "time"
