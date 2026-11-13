@@ -30,6 +30,9 @@ Check the installation
    python -m pip check
    frameit --help
 
+Run ``frameit info`` to show the imported FrameIt file and environment details.
+Check this path when more than one checkout or installation is available.
+
 Continue with :doc:`first_run` for a small processing example.
 
 If you manage your own Python environment or need native-library troubleshooting,

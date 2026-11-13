@@ -6,18 +6,15 @@
 from __future__ import annotations
 
 import os
+import site
 import sys
 from pathlib import Path
 
 
 def _sanitize_sys_path_user_site() -> None:
-    """
-    Ensure FrameIt CLI does not import packages from the user site-packages (e.g. ~/.local),
-    which can shadow the conda environment and break version consistency.
-    """
-    # Fast path: if PYTHONNOUSERSITE is set, user site is usually not injected.
-    # Still sanitize defensively because PYTHONPATH or .pth files may add ~/.local manually.
-    user_base = Path(os.path.expanduser("~/.local")).resolve()
+    """Exclude user site-packages without removing unrelated checkouts or environments."""
+    # PYTHONPATH and .pth files can add user packages even with PYTHONNOUSERSITE.
+    user_site = Path(site.getusersitepackages()).resolve()
 
     new_path: list[str] = []
     for p in sys.path:
@@ -27,8 +24,7 @@ def _sanitize_sys_path_user_site() -> None:
             new_path.append(p)
             continue
 
-        # Drop typical user installs, including ~/.local and user site-packages.
-        if user_base in rp.parents or rp == user_base:
+        if user_site in rp.parents or rp == user_site:
             continue
 
         new_path.append(p)
@@ -279,14 +275,15 @@ def _cmd_validate(cfg_path: Path, *, schema_only=False) -> int:
 
 
 def _cmd_info(short: bool) -> int:
-    from frameit import __version__
+    import frameit
 
-    frameit_ver = _package_version("frameit") or __version__
+    frameit_ver = _package_version("frameit") or frameit.__version__
     if short:
         print(f"FrameIt {frameit_ver}")
         return 0
 
     print(f"FrameIt: {frameit_ver}")
+    print(f"FrameIt location: {frameit.__file__}")
     print(f"Python: {platform.python_version()} ({sys.executable})")
     print(f"Platform: {platform.system()} {platform.release()} ({platform.machine()})")
 

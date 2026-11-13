@@ -28,9 +28,9 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 
 | Task | State | Owner | Needs | Claimed files / next action |
 |---|---|---|---|---|
-| 00 | done | lead | — | Reviewed internal records; commit identified in git history. |
-| 01 | ready | unassigned | 00 | `cli.py`, `test_hpc_execution.py`; reproduce and narrow user-site filtering. |
-| 02 | blocked | lead | 01 | `configuration.py`, `settings_class.py`, `execution.py`, `loader.py`, `test_configuration_v3.py`; define strict syntax and runtime handoffs. |
+| 00 | done | lead | — | Reviewed internal records: `dec4db1`. |
+| 01 | done | task-01 worker + independent reviewer | 00 | Narrowed filtering; reviewed fix ready for focused commit. |
+| 02 | ready | lead | 01 | `configuration.py`, `settings_class.py`, `execution.py`, `loader.py`, `test_configuration_v3.py`; define strict syntax and runtime handoffs. |
 | 03 | blocked | lead | 02 | `loader.py`, `preflight.py`, `coupled.py`, inventory tests; freeze records and grid identities. |
 | 04 | blocked | unassigned | 03 | `requests.py`, `preflight.py`, optional `units.py`, request/grid tests; bind fields and levels. |
 | 05 | blocked | lead | 04 | Native execution test and orchestration first; separate adapter claims after native slice review. |
@@ -108,8 +108,17 @@ Available packages (metadata/spec check, not full scientific qualification):
 `falfilfa4py 1.2.1`, `ctypesForFortran 1.3.0`, `ectrans4py 1.6.0`,
 `sphinx 9.2.0`.
 
-`FRAMEIT_CI_DATA_ROOT` is unset. No fixture was downloaded and no alternate
-archive was selected. Real-producer qualification remains evidence-dependent.
+`FRAMEIT_CI_DATA_ROOT` was unset for the baseline and Task 01 tests. No fixture
+was downloaded. After those tests, the lead found the approved data-only commit
+already in local Git and extracted exactly
+`24b63e5683133ddbb349c7c492fa4b517ccbc42a` into the ignored
+`build/yaml-v3-ci-fixture-01`. Its `SHA256SUMS` matches runtime CI's manifest hash
+`ac631ffed5a99cdc69e4a726f98bfd8b2299b8d9a02d8e15a683ad81a24d4d45`;
+`sha256sum --check --strict SHA256SUMS` passed for all nine payloads.
+Future source checks needing the fixture must explicitly set
+`FRAMEIT_CI_DATA_ROOT="$PWD/build/yaml-v3-ci-fixture-01"`. This does not turn the
+earlier missing-input failures into passes. Real-producer qualification remains
+evidence-dependent.
 
 ## Pre-flight decisions and interface scan
 
@@ -215,4 +224,100 @@ No acceptance has been received.
   PASS. No runtime changes or rerun needed.
 - Task 00 done: baseline failures are recorded, not hidden. `cmp` confirms the
   unmodified plan copy and `git diff --check` passed before staging.
-- Next: assign Task 01, then independently review and commit its tested fix.
+- Task 00 commit: `dec4db1`.
+- Task 01 assigned at `dec4db1` to a bounded worker. Shared fixtures were
+  preserved. The lead added the proposed canonical installation pointer.
+- Task 01 independent review: spec PASS, quality Approve; no open findings.
+  Reviewer inspected actual diff, caller/export interfaces, tests and completed
+  full-suite log. No numerical or schema changes.
+- Next: commit Task 01, then assign Task 02.
+
+## Task 01 evidence
+
+Root cause: CLI removed all paths below `~/.local`, including the selected
+worktree. The parent retained its cached package, but spawned workers selected
+the competing editable installation. The sole sanitizer call remains at CLI
+import. It now removes only `site.getusersitepackages()` and descendants,
+including an explicit `PYTHONUSERBASE`, while retaining sibling paths and order.
+Ordinary `frameit info` reports `frameit.__file__`; `info --short` is unchanged.
+
+TDD commands (all in `frameit_env`, selected source via `PYTHONPATH="$PWD/src"`):
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_hpc_execution.py -k 'test_cli_keeps_checkout_under_local_in_parent_and_spawn or test_cli_info_reports_selected_installation' --tb=short
+```
+
+- RED before production edits: 5 failed, 23 deselected; four exact worker-path
+  mismatches and one absent diagnostic line. Parent paths were correct.
+- GREEN: 5 passed, 23 deselected.
+- Final `.pth` editable cases were mutation-checked against the old exclusion:
+  four expected failures, then the production fix restored.
+
+Required acceptance command:
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_hpc_execution.py src/frameit/testing/numerical/test_documentation_example.py src/frameit/testing/numerical/test_inspect_metadata.py
+```
+
+Final result: **54 passed, 6 existing warnings**, exit 0, 22.25 seconds.
+This includes real sync/spawn export and independent reopening. The lead's
+fresh import probe also confirmed that cached and fresh lookup origins retain
+this checkout after CLI import.
+
+Supplemental full suite, before the local fixture was materialized:
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q --tb=short
+```
+
+Result: **1280 passed, 18 failed, 4 subtests passed**, exit 1, 365.02 seconds.
+All failed nodes required absent frozen files; their absence was confirmed.
+No baseline full-suite delta is claimed. Exact failures (relative to
+`src/frameit/testing/numerical/`):
+
+```text
+test_configuration_integration.py::test_frozen_matrix_yaml_and_mapping_requests_match[AROME]
+test_configuration_integration.py::test_frozen_matrix_yaml_and_mapping_requests_match[MNH]
+test_grib_lifecycle.py::test_direct_grib_loading_and_native_shutdown_in_fresh_interpreter
+test_grib_lifecycle.py::test_matrix_fixture_planning_and_native_shutdown_in_fresh_interpreter
+test_grid_representations.py::test_real_mnh_native_faces_match_source_file
+test_output_layout.py::test_grib_cache_is_local_distinct_and_reused
+test_polar_heat_flux_ci.py::test_real_heat_records_preserve_signed_values_and_energy_units[sshf-146]
+test_polar_heat_flux_ci.py::test_real_heat_records_preserve_signed_values_and_energy_units[slhf-147]
+test_polar_heat_flux_ci.py::test_heat_flux_ci_energy_coverage_bounds_and_ordinary_reader
+test_polar_heat_flux_ci.py::test_missing_heat_record_retains_completed_quantity_and_failed_child
+test_polar_rainfall_ci.py::test_real_record_retains_mass_units_and_cumulative_time
+test_polar_rainfall_ci.py::test_ci_pilot_independent_mass_coverage_time_and_plain_netcdf
+test_polar_rainfall_ci.py::test_missing_required_rainfall_leaves_a_failed_report
+test_polar_thermodynamics_ci.py::test_real_snapshot_preserves_levels_time_zero_and_relative_humidity_above_100
+test_polar_thermodynamics_ci.py::test_ci_thermodynamic_representations_weighting_and_netcdf
+test_polar_thermodynamics_ci.py::test_missing_positive_lead_tke_fails_instead_of_dropping_times
+test_polar_wind_comparison.py::test_full_analytical_and_native_comparison_exports_with_plain_readers
+test_pressure_centroid_mnh.py::test_bundled_mnh_header_identifies_pressure_as_missing
+```
+
+Full-suite warnings: one existing NumPy binary-size warning and 3096 existing
+xarray/netCDF4 shape deprecations. No warnings/failures were suppressed.
+These fixture checks must run with the approved local data during integrated
+verification; they are not marked passed here.
+
+Docs: the additive diagnostic is documented in
+`docs/source/getting_started/installation.rst`. Commands:
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/yaml-v3-01
+PYTHONPATH="$PWD/src" conda run -n frameit_env python docs/check_publication.py build/docs-preview/yaml-v3-01
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m unittest discover -s docs -p test_check_publication.py
+```
+
+All exit 0: no strict Sphinx warnings, publication boundary passed, 13 unittests
+passed. The full pytest run also covered the documentation pytest files.
+The installation page was inspected in the live GUI at 880 px and in an actual
+320-CSS-pixel iframe viewport. New prose, links, focus, code-block scrolling and
+page bounds were inspected; no page overflow. The native menu opened and closed
+with Enter (`shift` classes appeared/disappeared). The canonical page was
+restored in the retained preview tab. This is agent review, not human acceptance.
+Server/tab/restart details are kept only in the ignored session handover.
+
+Scientific impact: none. Configuration/output compatibility: unchanged.
+No packages were reinstalled; no source datasets or unrelated work were changed.

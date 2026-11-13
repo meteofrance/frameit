@@ -808,7 +808,7 @@ assertion, or mark a failed check as passed. The final full suite remains requir
 | Done | Task | Needs | Deliverable |
 |---|---|---|---|
 | [x] | 00 | — | New branch, baseline, state record, ownership map |
-| [ ] | 01 | 00 | Correct parent/worker installation identity |
+| [x] | 01 | 00 | Correct parent/worker installation identity |
 | [ ] | 02 | 01 | Strict v3 schema and shared execution interfaces |
 | [ ] | 03 | 02 | Source inventory and selected physical records |
 | [ ] | 04 | 03 | Field identity and shared level binding |
@@ -899,13 +899,13 @@ docs only if the fix changes user guidance.
 **Interface:** `_sanitize_sys_path_user_site()` keeps project import paths; spawned
 export workers and diagnostic reports identify the same selected installation.
 
-- [ ] Add `test_cli_keeps_checkout_under_local_in_parent_and_spawn`: use a temporary
+- [x] Add `test_cli_keeps_checkout_under_local_in_parent_and_spawn`: use a temporary
   home with a checkout under `.local` and a competing import location. Assert the
   exact parent/worker `frameit.__file__` paths, not just equal numerical outputs.
   Also prove that actual unwanted user-site entries are still filtered.
-- [ ] Fix only the overbroad filtering. Exercise ordinary installed/editable imports
+- [x] Fix only the overbroad filtering. Exercise ordinary installed/editable imports
   and both synchronous and spawned export paths. Do not reinstall to hide the defect.
-- [ ] Run the test command, obtain independent review, and commit the fix before
+- [x] Run the test command, obtain independent review, and commit the fix before
   relying on subprocess results from later tasks.
 
 ```bash

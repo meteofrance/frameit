@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import stat
@@ -205,6 +206,98 @@ def cli_environment():
         "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1",
         "PYTHONNOUSERSITE": "1",
     }
+
+
+@pytest.mark.parametrize("layout", ["editable", "installed"])
+@pytest.mark.parametrize("custom_user_base", [False, True], ids=["default-site", "custom-site"])
+def test_cli_keeps_checkout_under_local_in_parent_and_spawn(tmp_path, layout, custom_user_base):
+    home = tmp_path / "home"
+    selected = home / ".local" / "share" / "checkout" / "src"
+    if layout == "installed":
+        selected = home / ".local" / "share" / "environment" / "lib" / (
+            f"python{sys.version_info.major}.{sys.version_info.minor}"
+        ) / "site-packages"
+    competitor = tmp_path / "competing-install"
+    source = Path(__file__).parents[2]
+    for root in (selected, competitor):
+        package = root / "frameit"
+        package.mkdir(parents=True)
+        for name in ("__init__.py", "_version.py", "cli.py"):
+            (package / name).write_bytes((source / name).read_bytes())
+
+    import_directory = selected
+    if layout == "editable":
+        import_directory = tmp_path / "environment" / "site-packages"
+        import_directory.mkdir(parents=True)
+        (import_directory / "frameit.pth").write_text(f"{selected}\n")
+
+    script = tmp_path / "probe.py"
+    script.write_text("""
+import importlib.util
+import json
+import multiprocessing
+import site
+import sys
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+
+if __name__ == "__main__":
+    user_site = Path(site.getusersitepackages())
+    nested = user_site / "injected"
+    nested.mkdir(parents=True)
+    (nested / "frameit_unwanted_user_site.py").write_text("unwanted = True\\n")
+    sibling = user_site.with_name("site-packages-other")
+    sibling.mkdir()
+    inherited_path = sys.path[:]
+    sys.path[:] = []
+    site.addsitedir(sys.argv[1])
+    sys.path.extend([sys.argv[2], str(user_site), str(nested), str(sibling), *inherited_path])
+    assert importlib.util.find_spec("frameit_unwanted_user_site") is not None
+    import frameit
+    from frameit import cli
+    with ProcessPoolExecutor(max_workers=1,
+                             mp_context=multiprocessing.get_context("spawn")) as pool:
+        worker = pool.submit(cli._probe_module, "frameit").result(timeout=15)
+    print(json.dumps({
+        "parent": frameit.__file__, "worker": worker["path"], "sys_path": sys.path,
+        "user_site": str(user_site), "nested": str(nested), "sibling": str(sibling),
+        "unwanted_importable": importlib.util.find_spec("frameit_unwanted_user_site") is not None,
+    }))
+""")
+    env = {**cli_environment(), "HOME": str(home)}
+    env.pop("PYTHONUSERBASE", None)
+    if custom_user_base:
+        env["PYTHONUSERBASE"] = str(tmp_path / "custom-user-base")
+    run = subprocess.run(
+        [sys.executable, str(script), str(import_directory), str(competitor)],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+    result = json.loads(run.stdout)
+    expected = str(selected / "frameit" / "__init__.py")
+    assert result["parent"] == expected
+    assert result["worker"] == expected
+    assert str(selected) in result["sys_path"]
+    assert result["user_site"] not in result["sys_path"]
+    assert result["nested"] not in result["sys_path"]
+    assert result["sibling"] in result["sys_path"]
+    assert not result["unwanted_importable"]
+
+
+def test_cli_info_reports_selected_installation():
+    import frameit
+
+    for short in (False, True):
+        run = subprocess.run(
+            [sys.executable, "-m", "frameit", "info", *(["--short"] if short else [])],
+            env=cli_environment(), capture_output=True, text=True, timeout=30,
+        )
+        assert run.returncode == 0, run.stdout + run.stderr
+        if short:
+            assert run.stdout == f"FrameIt {frameit.__version__}\n"
+        else:
+            assert f"FrameIt location: {frameit.__file__}" in run.stdout.splitlines()
+            assert "Overall: OK" in run.stdout.splitlines()
 
 
 @pytest.fixture(scope="module")
