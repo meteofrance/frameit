@@ -10,7 +10,7 @@ from pathlib import Path
 from frameit.core.settings_class import SimulationConfig
 from frameit.utils.logging import frameit_logging_scope
 
-DEFAULT_INSTITUTION = "LACy, Université de La Réunion, CNRS, Météo-France"
+DEFAULT_INSTITUTION = ""
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class ExecutionOptions:
     benchmark: bool = False
     engine: str = "netcdf4"
     fmt: str = "NETCDF4"
-    overwrite: bool = True
+    overwrite: bool = False
     compress_coords: bool = False
     unlimited_time: bool = True
     max_workers: int | None = None
@@ -36,9 +36,33 @@ class ExecutionOptions:
     require_complete_tracking: bool = False
     zarr_chunk_size: dict[str, int] = field(default_factory=dict)
     zarr_shard_size: dict[str, int] = field(default_factory=dict)
+    cpus: int | None = None
 
     @classmethod
     def from_config(cls, config, **overrides):
+        if config.schema_version == 3:
+            document = config.yaml_config
+            output, resources = document["output"], document["resources"]
+            writer, products = output["writer"], document["products"]
+            values = {
+                "export_netcdf": bool(products),
+                "export_cart": "model_grid" in products, "export_polar": "polar" in products,
+                "compress_level": writer["compression"]["level"],
+                "compress_coords": writer["compression"]["coordinates"],
+                "institution": document["metadata"].get("institution", ""),
+                "engine": "zarr" if output["format"] == "zarr" else writer["engine"],
+                "overwrite": output["overwrite"], "unlimited_time": writer.get("unlimited_time", True),
+                "max_workers": resources.get("export_workers"), "log_level": config.log_level,
+                "synchronous_export": resources["synchronous_export"],
+                "dask_scheduler": resources["scheduler"], "dask_workers": resources.get("compute_workers"),
+                "native_threads": resources["native_threads"], "cpus": resources.get("cpus"),
+                "require_complete_tracking": document["region"].get("tracker", {}).get(
+                    "on_incomplete", "error") == "error",
+                "zarr_chunk_size": writer.get("chunks", {}) if output["format"] == "zarr" else {},
+                "zarr_shard_size": writer.get("shards", {}),
+            }
+            values.update({key: value for key, value in overrides.items() if value is not None})
+            return cls(**values)
         output = config.yaml_config.get("output", {})
         execution = config.yaml_config.get("execution", {})
         values = {
@@ -49,7 +73,7 @@ class ExecutionOptions:
             "compress_coords": output.get("compression", {}).get("coordinates", False),
             "institution": output.get("institution", DEFAULT_INSTITUTION),
             "engine": output.get("backend", "netcdf4"), "fmt": output.get("netcdf_format", "NETCDF4"),
-            "overwrite": output.get("overwrite", True),
+            "overwrite": output.get("overwrite", False),
             "unlimited_time": output.get("unlimited_time", True),
             "max_workers": output.get("max_workers"), "log_level": config.log_level,
             "synchronous_export": output.get("synchronous_export", False),
@@ -67,11 +91,13 @@ class ExecutionOptions:
         from frameit.io.zarr_export import validate_zarr_sizes
 
         validate_zarr_sizes(self.zarr_chunk_size, self.zarr_shard_size)
+        object.__setattr__(self, "zarr_chunk_size", self.zarr_chunk_size.copy())
+        object.__setattr__(self, "zarr_shard_size", self.zarr_shard_size.copy())
         if self.engine not in {"netcdf4", "h5netcdf", "zarr"}:
             raise ValueError("output.backend must be netcdf4, h5netcdf or zarr")
         if not 0 <= int(self.compress_level) <= 9:
             raise ValueError("compress_level must be in [0, 9]")
-        for name in ("max_workers", "dask_workers", "native_threads"):
+        for name in ("max_workers", "dask_workers", "native_threads", "cpus"):
             value = getattr(self, name)
             if (value is not None or name == "native_threads") and (
                 type(value) is not int or value < 1
@@ -179,6 +205,11 @@ def execute_simulation(
         runtime_provenance,
     )
 
+    if config.schema_version == 3 and (
+        not config.source_requests
+        or any(request.get("binding") is None for request in config.source_requests.values())
+    ):
+        raise ValueError("Cannot execute unbound sources; bind source requests to metadata first")
     requested = options or ExecutionOptions.from_config(config)
     if requested.export_netcdf and requested.engine == "zarr":
         from frameit.io.zarr_export import check_zarr_dependencies
@@ -251,7 +282,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
                 if config.simulation_parameter.get("common_polar_target") is not None:
                     status["common_polar_target"] = config.simulation_parameter[
                         "common_polar_target"]
-            if config.schema_version == "2.1":
+            if config.schema_version == 3:
                 from frameit.utils.atomic import write_yaml_atomic
 
                 resolved_path = config.output_dir / "resolved-config.yaml"

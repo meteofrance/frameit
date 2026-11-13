@@ -1,7 +1,7 @@
-"""Strict v2.1 public configuration and lightweight inspection tools.
+"""Strict v3 requests and their metadata-free runtime handoff.
 
-The nested public schema resolves to SimulationConfig's internal numerical
-interface. Public documents are not internal dataclass/preset dictionaries.
+Public source names and categories are not numerical loader groups. Binding
+them to actual fields, grids and records belongs to metadata preflight.
 """
 
 from __future__ import annotations
@@ -11,79 +11,49 @@ import difflib
 import math
 import os
 import re
+from decimal import Decimal
 from pathlib import Path
 
 import yaml
 
 DEFAULTS = {
-    "schema_version": "2.1",
-    "model": "arome",
+    "schema_version": 3,
     "run": {"name": "analysis", "description": ""},
-    "input": {
-        "directory": "./data", "pattern": None, "files": None, "exclude": [],
-        "format": None, "grid_spacing_m": None, "duplicate_time_policy": "first",
-        "wind_pairs": [],
-        "netcdf": {"engine": "h5netcdf", "chunks": {}, "file_layout": "time_series", "surfex_fields": []},
-        "fa": {"profile": None, "subdomain": "CI", "earth_radius_m": None,
-               "field_metadata": {}, "expected_source": {},
-               "backend": "epygram", "python_executable": None, "native_cubes": {},
-               "max_points": 20_000_000, "timeout_seconds": 120.},
-        "sources": {}, "time_alignment": "common",
-    },
-    "tracking": {
-        "source": None,
-        "method": "pressure_wind",
-        "pressure_wind": {"search_half_width_km": 100., "refine_half_width_km": 50.,
-                          "initial_guess": None},
-        "fixed_box": {"center": {"latitude": None, "longitude": None}},
-        "prescribed_track": {"file": None, "time_name": "time",
-                             "latitude_name": "latitude", "longitude_name": "longitude"},
-        "utrack": {"weights_file": None, "use_gpu": False, "batch_size": 16},
-        "pressure_centroid": {
-            "convergence": {"max_iterations": 15, "tolerance_m": 250.},
-            "motion": {"max_iterations": 50, "solver": "aitken", "relaxation": .25,
-                       "tolerance_m": 250.},
-            "sampling": {"r80_max_distance_km": 250., "radial_step_km": 2.5,
-                         "azimuth_step_deg": 5.},
-        },
-        "multifield_vortex": {
-            "profile": "all_no_thick", "on_track_loss": "stop",
-            "seed": {"latitude": None, "longitude": None, "time": None,
-                     "motion_u_m_s": None, "motion_v_m_s": None},
-            "mnh_gravity_m_s2": None,
-            "numerics": {"analysis_step_km": 25., "refinement_km": 2.5,
-                         "max_iterations": 20, "minimum_support": .8,
-                         "minimum_samples": 16},
-            "quality": {"minimum_parameters": 2, "pressure_rise_pa": 50.,
-                        "vt850_min_m_s": 1.5, "max_separation_km": 425.,
-                        "max_speed_m_s": 30.866666666666667,
-                        "speed_check_interval_hours": 6.},
-        },
-    },
-    "domain": {"width_km": None, "edge_policy": "pad_nan"},
-    "variables": {},
-    "polar": {
-        "enabled": False, "shared_target": False, "variables": "extracted", "radial_step_m": None,
-        "azimuth_step_deg": None, "azimuth_count": None, "interpolation_method": "bilinear",
-        "missing_data_policy": "strict", "min_valid_weight_fraction": .5,
-        "weight_zero_tolerance": 1e-14, "source_halo_points": 1, "ellipsoid": "WGS84",
-        "max_points": 2_000_000, "plan_cache": {"entries": 8, "max_bytes": 128 * 1024**2},
-        "chunks": {}, "profile": False,
-    },
-    "output": {
-        "cartesian": {"horizontal_vectors": "earth_centered", "vertical_velocity": "interfaces"},
-        "polar": {"vertical_velocity": "mass"},
-        "directory": "./output", "export": {"enabled": True, "cartesian": True, "polar": True},
-        "compression": {"level": 1, "coordinates": False}, "backend": "netcdf4",
-        "netcdf_format": "NETCDF4", "unlimited_time": True, "overwrite": True, "max_workers": None,
-        "synchronous_export": False,
-        "zarr_chunk_size": {}, "zarr_shard_size": {},
-        "institution": "LACy, Université de La Réunion, CNRS, Météo-France",
-    },
-    "execution": {"dask_scheduler": "threads", "dask_workers": None, "native_threads": 1,
-                  "require_complete_tracking": False},
+    "sources": {},
+    "region": {},
+    "products": {"model_grid": True},
+    "output": {"directory": "./output", "format": "netcdf", "overwrite": False, "writer": {}},
+    "resources": {"scheduler": "threads", "native_threads": 1, "synchronous_export": False},
     "logging": {"level": "INFO"},
-    "metadata": {"ocean_model": "", "wave_model": "", "extra": {}},
+    "metadata": {"extra": {}},
+}
+
+# Direct numerical constructors still use the admitted FA adapter contract.
+FA_DEFAULTS = {
+    "profile": None, "subdomain": "CI", "earth_radius_m": None,
+    "field_metadata": {}, "expected_source": {}, "backend": "epygram",
+    "python_executable": None, "native_cubes": {},
+    "max_points": 20_000_000, "timeout_seconds": 120.,
+}
+
+TRACKER_DEFAULTS = {
+    "pressure_wind": {"search_width_km": 200., "refine_width_km": 100.},
+    "pressure_centroid": {
+        "convergence": {"max_iterations": 15, "tolerance_m": 250.},
+        "motion": {"max_iterations": 50, "solver": "aitken", "relaxation": .25,
+                   "tolerance_m": 250.},
+        "sampling": {"r80_max_distance_km": 250., "radial_step_km": 2.5,
+                     "azimuth_step_deg": 5.},
+    },
+    "utrack": {"use_gpu": False, "batch_size": 16},
+    "multifield_vortex": {
+        "profile": "all_no_thick",
+        "numerics": {"analysis_step_km": 25., "refinement_km": 2.5,
+                     "max_iterations": 20, "minimum_support": .8, "minimum_samples": 16},
+        "quality": {"minimum_parameters": 2, "pressure_rise_pa": 50., "vt850_min_m_s": 1.5,
+                    "max_separation_km": 425., "max_speed_m_s": 30.866666666666667,
+                    "speed_check_interval_hours": 6.},
+    },
 }
 
 
@@ -106,8 +76,7 @@ class UniqueLoader(yaml.SafeLoader):
 def read_yaml(path):
     path = Path(path)
     try:
-        text = path.read_text(encoding="utf-8")
-        data = yaml.load(text, Loader=UniqueLoader)
+        data = yaml.load(path.read_text(encoding="utf-8"), Loader=UniqueLoader)
     except yaml.YAMLError as exc:
         raise ValueError(f"Invalid YAML in {path}: {exc}") from exc
     if not isinstance(data, dict):
@@ -116,6 +85,7 @@ def read_yaml(path):
 
 
 def _merge_checked(raw, defaults, prefix=""):
+    """Merge fixed-key controls; dynamic mappings are checked by their owner."""
     if not isinstance(raw, dict):
         raise ValueError(f"{prefix or 'configuration'} must be a mapping")
     result = copy.deepcopy(defaults)
@@ -129,8 +99,7 @@ def _merge_checked(raw, defaults, prefix=""):
             suggestion = difflib.get_close_matches(key, defaults, n=1)
             errors.append(f"Unknown key {location}" +
                           (f"; did you mean {suggestion[0]}?" if suggestion else ""))
-            continue
-        if isinstance(defaults[key], dict) and defaults[key]:
+        elif isinstance(defaults[key], dict) and defaults[key]:
             try:
                 result[key] = _merge_checked(value, defaults[key], location)
             except ValueError as exc:
@@ -142,28 +111,114 @@ def _merge_checked(raw, defaults, prefix=""):
     return result
 
 
+def _keys(raw, allowed, path, *, required=()):
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path} must be a mapping")
+    for key in raw:
+        if not isinstance(key, str) or key not in allowed:
+            raise ValueError(f"Unknown key {path}.{key}")
+    missing = set(required) - raw.keys()
+    if missing:
+        raise ValueError(f"{path} requires {', '.join(sorted(missing))}")
+    return copy.deepcopy(raw)
+
+
+def _reject_nulls(value, path=""):
+    if path == "metadata.extra":
+        if not isinstance(value, dict):
+            raise ValueError("metadata.extra must be a mapping")
+        return
+    if value is None:
+        raise ValueError(f"{path or 'configuration'} cannot be null; omit the key for its default")
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{path or 'configuration'} keys must be strings")
+            _reject_nulls(child, f"{path}.{key}" if path else key)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _reject_nulls(child, f"{path}[{index}]")
+
+
+def _text(value, path):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{path} must be a nonempty string")
+
+
+def _choice(value, choices, path):
+    if not isinstance(value, str) or value not in choices:
+        raise ValueError(f"{path} must be one of {', '.join(sorted(choices))}")
+
+
+def _boolean(value, path):
+    if type(value) is not bool:
+        raise ValueError(f"{path} must be a YAML boolean")
+
+
+def _finite(value, path):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{path} must be a finite number")
+
+
+def _positive(value, path, *, integer=False, allow_zero=False):
+    _finite(value, path)
+    if (integer and not isinstance(value, int)) or value < 0 or (value == 0 and not allow_zero):
+        raise ValueError(f"{path} must be {'nonnegative' if allow_zero else 'positive'}" +
+                         (" integer" if integer else ""))
+
+
+def _names(value, path, *, empty=False):
+    if not isinstance(value, list) or (not empty and not value):
+        raise ValueError(f"{path} must be a {'nonempty ' if not empty else ''}list of names")
+    for name in value:
+        _text(name, path)
+    if len(set(value)) != len(value):
+        raise ValueError(f"{path} contains duplicate names")
+    return value
+
+
+def _sizes(value, path, *, whole_axis=False):
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must be a dimension-size mapping")
+    for name, count in value.items():
+        _text(name, path)
+        if not (whole_axis and type(count) is int and count == -1):
+            _positive(count, f"{path}.{name}", integer=True)
+
+
+def _path(value, base, path, *, interpreter=False):
+    _text(value, path)
+    # Resolving a virtualenv's python symlink would select the base interpreter.
+    return os.path.abspath(base / value) if interpreter else str((base / value).resolve())
+
+
+def _paths(value, base, path, *, empty=False):
+    if isinstance(value, str):
+        return _path(value, base, path)
+    if not isinstance(value, list) or (not value and not empty):
+        raise ValueError(f"{path} must be a path/glob or a {'nonempty ' if not empty else ''}list")
+    return [_path(item, base, path) for item in value]
+
+
+def _center(value, path):
+    result = _keys(value, {"latitude", "longitude"}, path, required={"latitude", "longitude"})
+    for name, limit in (("latitude", 90), ("longitude", 180)):
+        _finite(result[name], f"{path}.{name}")
+        if abs(result[name]) > limit:
+            raise ValueError(f"{path}.{name} must be in [-{limit}, {limit}] degrees")
+    return result
+
+
 def validate_wind_pressure_initial_guess(value):
-    """Validate an optional geographic first-time pressure search."""
+    """Validate the direct numerical tracker's optional first-time search."""
     if value is None:
         return None
     path = "tracking.pressure_wind.initial_guess"
     guess = _merge_checked(value, {"latitude": None, "longitude": None,
-                                   "search_radius_km": None}, path)
-    for name, limit in (("latitude", 90), ("longitude", 180)):
-        coordinate = guess[name]
-        if (isinstance(coordinate, bool) or not isinstance(coordinate, (int, float))
-                or not math.isfinite(coordinate) or abs(coordinate) > limit):
-            raise ValueError(f"{path}.{name} must be finite and in [-{limit}, {limit}]")
+                                  "search_radius_km": None}, path)
+    _center({key: guess[key] for key in ("latitude", "longitude")}, path)
     _positive(guess["search_radius_km"], f"{path}.search_radius_km")
     return guess
-
-
-def _positive(value, path, *, integer=False, allow_zero=False):
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise ValueError(f"{path} must be a finite {'integer' if integer else 'number'}")
-    if (integer and not isinstance(value, int)) or value < 0 or (value == 0 and not allow_zero):
-        raise ValueError(f"{path} must be {'nonnegative' if allow_zero else 'positive'}" +
-                         (" integer" if integer else ""))
 
 
 def _runtime_group(group):
@@ -172,56 +227,8 @@ def _runtime_group(group):
     return "surface" if group == "fields_2d" else group
 
 
-def _requests(raw, path="variables", *, polar=False):
-    if polar and raw == "extracted":
-        return "extracted"
-    if not isinstance(raw, dict):
-        raise ValueError(f"{path} must be a mapping" + (" or 'extracted'" if polar else ""))
-    result = {}
-    for group, spec in raw.items():
-        if not isinstance(group, str) or not group.strip():
-            raise ValueError(f"{path} requires nonempty group names")
-        native_group = _runtime_group(group)
-        spec = _merge_checked(spec, {"names": [], **({} if polar else {"levels": "stored"})},
-                              f"{path}.{group}")
-        names = spec["names"]
-        if not isinstance(names, list) or not names or any(
-            not isinstance(n, str) or not n.strip() for n in names
-        ):
-            raise ValueError(f"{path}.{group}.names must be a nonempty list of variable names")
-        result[native_group] = {"variables": names}
-        if polar:
-            continue
-        levels = spec["levels"]
-        if isinstance(levels, str) and levels in {"stored", "physical"}:
-            domain = "physical" if levels == "physical" else "stored"
-            result[native_group].update(level_selection=domain, level_domain=domain)
-        elif isinstance(levels, dict) and len(levels) == 1 and set(levels) <= {"indices", "values"}:
-            strategy, values = next(iter(levels.items()))
-            if not isinstance(values, list) or not values:
-                raise ValueError(f"{path}.{group}.levels.{strategy} must be a nonempty list")
-            for value in values:
-                if strategy == "indices":
-                    _positive(
-                        value, f"{path}.{group}.levels.indices", integer=True, allow_zero=True
-                    )
-                else:
-                    _finite_level(value, group)
-            result[native_group].update(level_selection=strategy, **{f"level_{strategy}": values})
-        else:
-            raise ValueError(
-                f"{path}.{group}.levels requires indices or values, or stored/physical"
-            )
-    return result
-
-
-def _finite_level(value, group):
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise ValueError(f"variables.{group}.levels.values must contain finite numbers")
-
-
 def validate_wind_pairs(pairs):
-    """Validate explicit source-component declarations without discovering winds."""
+    """Validate the existing, already-bound numerical component declarations."""
     if not isinstance(pairs, list):
         raise ValueError("input.wind_pairs must be a list")
     seen = set()
@@ -233,10 +240,8 @@ def validate_wind_pairs(pairs):
         ):
             raise ValueError(f"{path} requires group, u, v, reference_frame; optional rotation")
         for key in required:
-            if not isinstance(pair[key], str) or not pair[key].strip():
-                raise ValueError(f"{path}.{key} must be a nonempty string")
-        if pair["reference_frame"] not in {"earth", "grid"}:
-            raise ValueError(f"{path}.reference_frame must be earth or grid")
+            _text(pair[key], f"{path}.{key}")
+        _choice(pair["reference_frame"], {"earth", "grid"}, f"{path}.reference_frame")
         if pair["u"] == pair["v"]:
             raise ValueError(f"{path} u and v must be distinct components")
         for name in (pair["u"], pair["v"]):
@@ -249,35 +254,27 @@ def validate_wind_pairs(pairs):
             if pair["reference_frame"] == "grid":
                 raise ValueError(f"{path}.rotation is required for grid-relative winds")
             continue
-        if (not isinstance(rotation, dict) or "method" not in rotation
-                or set(rotation) - {"method", "coordinate", "BETA", "RPK", "LON0"}):
-            raise ValueError(
-                f"{path}.rotation requires method; optional coordinate or BETA/RPK/LON0"
-            )
-        method = rotation["method"]
-        if not isinstance(method, str) or method not in {
-            "coordinate", "geolocation", "mesonh_projection"
-        }:
-            raise ValueError(
-                f"{path}.rotation.method must be coordinate/geolocation/mesonh_projection"
-            )
-        if "coordinate" in rotation and (
-            not isinstance(rotation["coordinate"], str) or not rotation["coordinate"].strip()
-        ):
-            raise ValueError(f"{path}.rotation.coordinate must be a nonempty string")
-        if method == "coordinate" and "coordinate" not in rotation:
-            raise ValueError(f"{path}.rotation.coordinate is required for method coordinate")
-        for name in ("BETA", "RPK", "LON0"):
-            if name not in rotation:
-                continue
+        _rotation(rotation, f"{path}.rotation", strict=False)
+
+
+def _rotation(rotation, path, *, strict=True):
+    checked = _keys(rotation, {"method", "coordinate", "BETA", "RPK", "LON0"},
+                    path, required={"method"})
+    method = checked["method"]
+    _choice(method, {"coordinate", "geolocation", "mesonh_projection"}, f"{path}.method")
+    if method == "coordinate" and "coordinate" not in checked:
+        raise ValueError(f"{path}.coordinate is required for method coordinate")
+    if "coordinate" in checked:
+        _text(checked["coordinate"], f"{path}.coordinate")
+        if strict and method != "coordinate":
+            raise ValueError(f"{path}.coordinate requires method coordinate")
+    for name in ("BETA", "RPK", "LON0"):
+        if name in checked:
             if method != "mesonh_projection":
-                raise ValueError(f"{path}.rotation.{name} requires method mesonh_projection")
-            value = rotation[name]
-            if (isinstance(value, bool) or not isinstance(value, (int, float))
-                    or not math.isfinite(value)):
-                raise ValueError(f"{path}.rotation.{name} must be a finite number")
-            if name == "RPK" and abs(value) > 1:
-                raise ValueError(f"{path}.rotation.RPK must be in [-1, 1]")
+                raise ValueError(f"{path}.{name} requires method mesonh_projection")
+            _finite(checked[name], f"{path}.{name}")
+            if name == "RPK" and abs(checked[name]) > 1:
+                raise ValueError(f"{path}.RPK must be in [-1, 1]")
 
 
 def validate_output_selections(horizontal, cartesian_vertical, polar_vertical):
@@ -286,24 +283,20 @@ def validate_output_selections(horizontal, cartesian_vertical, polar_vertical):
         ("output.cartesian.vertical_velocity", cartesian_vertical, {"interfaces", "mass"}),
         ("output.polar.vertical_velocity", polar_vertical, {"interfaces", "mass"}),
     ):
-        if not isinstance(value, str) or value not in choices:
-            raise ValueError(f"{path} must be one of {sorted(choices)}")
+        _choice(value, choices, path)
 
 
 def validate_fa_options(options, selected=False):
-    """No field identity, unit or temporal meaning is guessed from a record name."""
+    """Keep the admitted numerical FA contract; never infer meaning from names."""
     if options["backend"] != "epygram":
         raise ValueError("input.fa.backend must be epygram")
-    executable = options["python_executable"]
-    if executable is not None and (not isinstance(executable, str) or not executable.strip()):
-        raise ValueError("input.fa.python_executable must be a nonempty interpreter path")
-    if ((options["profile"] is not None and not isinstance(options["profile"], str))
-            or options["profile"] not in {None, "arome_history", "surfex_history"}):
-        raise ValueError("input.fa.profile must be arome_history or surfex_history")
+    if options["python_executable"] is not None:
+        _text(options["python_executable"], "input.fa.python_executable")
+    if options["profile"] is not None:
+        _choice(options["profile"], {"arome_history", "surfex_history"}, "input.fa.profile")
     if selected and options["profile"] is None:
         raise ValueError("input.format fa requires input.fa.profile")
-    if not isinstance(options["subdomain"], str) or options["subdomain"] not in {"CI", "C"}:
-        raise ValueError("input.fa.subdomain must be CI or C (extension zones are excluded)")
+    _choice(options["subdomain"], {"CI", "C"}, "input.fa.subdomain")
     if options["earth_radius_m"] is not None:
         _positive(options["earth_radius_m"], "input.fa.earth_radius_m")
     _positive(options["max_points"], "input.fa.max_points", integer=True)
@@ -319,7 +312,7 @@ def validate_fa_options(options, selected=False):
     if not isinstance(options["field_metadata"], dict):
         raise ValueError("input.fa.field_metadata must be a mapping")
     for name, definition in options["field_metadata"].items():
-        if (not isinstance(name, str) or not name.isascii() or not 1 <= len(name) <= 16):
+        if not isinstance(name, str) or not name.isascii() or not 1 <= len(name) <= 16:
             raise ValueError("FA identifiers must contain 1–16 ASCII characters")
         if not isinstance(definition, dict) or set(definition) - {
             "units", "kind", "temporal_kind", "allow_unscaled", "long_name", "standard_name"
@@ -327,14 +320,11 @@ def validate_fa_options(options, selected=False):
             raise ValueError(f"input.fa.field_metadata.{name}: invalid metadata keys")
         if not isinstance(definition.get("units"), str) or not definition["units"].strip():
             raise ValueError(f"{name}: explicit source units are required")
-        if (not isinstance(definition.get("kind"), str)
-                or definition["kind"] not in {"continuous", "categorical"}):
-            raise ValueError(f"{name}: kind must be continuous or categorical")
+        _choice(definition.get("kind"), {"continuous", "categorical"}, f"{name}.kind")
         if definition.get("temporal_kind") != "instantaneous":
             raise ValueError(f"{name}: only explicit instantaneous FA fields are supported; "
                              "no accumulation interval is inferred from the file header")
-        if type(definition.get("allow_unscaled", False)) is not bool:
-            raise ValueError(f"{name}: allow_unscaled must be a boolean")
+        _boolean(definition.get("allow_unscaled", False), f"{name}.allow_unscaled")
         for key in ("long_name", "standard_name"):
             if key in definition and not isinstance(definition[key], str):
                 raise ValueError(f"{name}: {key} must be a string")
@@ -356,16 +346,12 @@ def validate_fa_options(options, selected=False):
         if (not isinstance(cube, dict) or not required <= cube.keys()
                 or cube.keys() - (required | {"vector_basis", "component_scaling"})):
             raise ValueError(f"native_cubes.{name}: requires records, vertical_position, sampling")
-        if (not isinstance(cube["vertical_position"], str)
-                or cube["vertical_position"] not in {"mass", "interface"}):
-            raise ValueError(f"native_cubes.{name}.vertical_position must be mass or interface")
+        _choice(cube["vertical_position"], {"mass", "interface"},
+                f"native_cubes.{name}.vertical_position")
         if cube["sampling"] != "center":
             raise ValueError(f"native_cubes.{name}: only collocated center sampling is admitted")
-        if (cube.get("vector_basis") is not None and (
-            not isinstance(cube["vector_basis"], str)
-            or cube["vector_basis"] not in {"earth", "grid"}
-        )):
-            raise ValueError(f"native_cubes.{name}.vector_basis must be earth or grid")
+        if cube.get("vector_basis") is not None:
+            _choice(cube["vector_basis"], {"earth", "grid"}, f"native_cubes.{name}.vector_basis")
         if cube.get("component_scaling") not in (None, "physical_velocity"):
             raise ValueError(f"native_cubes.{name}: map-scaled/unknown component scaling is gated")
         records = cube["records"]
@@ -379,401 +365,726 @@ def validate_fa_options(options, selected=False):
             records_seen.add(record)
 
 
-def source_document(parent, name):
-    """Resolve one source using ordinary schema/presets, without nesting runs.
+def _timestamp(value, path):
+    """Check ISO syntax only: the source calendar decides which dates exist."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{path} must be a quoted ISO timestamp")
+    match = re.fullmatch(
+        r"(\d{4,})-(\d{2})-(\d{2})"
+        r"(?:T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})?)?", value,
+    )
+    if not match:
+        raise ValueError(f"{path} must be a quoted ISO timestamp")
+    year, month, day, hour, minute, second, fraction, zone = match.groups()
+    numbers = tuple(int(item or 0) for item in (year, month, day, hour, minute, second))
+    if not (1 <= numbers[1] <= 12 and 1 <= numbers[2] <= 31
+            and numbers[3] < 24 and numbers[4] < 60 and numbers[5] < 60):
+        raise ValueError(f"{path} must be an ISO timestamp with valid month/day/time ranges")
+    if zone and zone != "Z" and (int(zone[1:3]) > 23 or int(zone[4:]) > 59):
+        raise ValueError(f"{path} has an invalid ISO timezone offset")
+    return (*numbers, Decimal(f"0.{fraction or '0'}")), zone
 
-    Secondary sources receive a coordinate-only loader request. Its internal
-    fixed-box placeholder is never executed: the coupled runner supplies the
-    geographical track from tracking.source explicitly.
-    """
-    source = parent["input"]["sources"][name]
-    document = {key: copy.deepcopy(value) for key, value in parent.items()
-                if key not in {"model", "input", "variables", "polar"}}
-    document.update(model=source["model"], input=copy.deepcopy(source["input"]),
-                    variables=copy.deepcopy(source["variables"]),
-                    polar=copy.deepcopy(source["polar"]))
-    if name != parent["tracking"]["source"]:
-        document["tracking"] = {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": 0., "longitude": 0.}}}
+
+def _time(raw, path):
+    time = _keys(raw, {"cycle", "start", "end", "values", "stride"}, path)
+    if "values" in time and time.keys() & {"start", "end", "stride"}:
+        raise ValueError(f"{path}.values is exclusive with start, end and stride")
+    for key in ("start", "end", "cycle"):
+        if key in time:
+            _timestamp(time[key], f"{path}.{key}")
+    if "start" in time and "end" in time:
+        start, start_zone = _timestamp(time["start"], f"{path}.start")
+        end, end_zone = _timestamp(time["end"], f"{path}.end")
+        if start_zone == end_zone and start > end:
+            raise ValueError(f"{path}.start must not follow end")
+    if "values" in time:
+        _names(time["values"], f"{path}.values")
+        for value in time["values"]:
+            _timestamp(value, f"{path}.values")
+    if "stride" in time:
+        _positive(time["stride"], f"{path}.stride", integer=True)
+    return time
+
+
+def _levels(raw, path):
+    levels = _keys(raw, {"indices", "values", "domain", "units"}, path)
+    strategies = levels.keys() & {"indices", "values", "domain"}
+    if len(strategies) > 1:
+        raise ValueError(f"{path} requires exactly one of indices, values or domain")
+    if "units" in levels:
+        _text(levels["units"], f"{path}.units")
+    if "domain" in levels:
+        _choice(levels["domain"], {"physical"}, f"{path}.domain")
+    for key in ("indices", "values"):
+        if key not in levels:
+            continue
+        value = levels[key]
+        if isinstance(value, list):
+            if not value:
+                raise ValueError(f"{path}.{key} must be a nonempty list")
+            for item in value:
+                if key == "indices":
+                    _positive(item, f"{path}.indices", integer=True, allow_zero=True)
+                else:
+                    _finite(item, f"{path}.values")
+            if len(set(value)) != len(value):
+                raise ValueError(f"{path}.{key} contains duplicate levels")
+        else:
+            bounds = {"start", "end", "step"} if key == "indices" else {"min", "max"}
+            required = bounds - {"step"}
+            interval = _keys(value, bounds, f"{path}.{key}", required=required)
+            for bound, item in interval.items():
+                if key == "indices":
+                    _positive(item, f"{path}.{key}.{bound}", integer=True,
+                              allow_zero=bound != "step")
+                else:
+                    _finite(item, f"{path}.{key}.{bound}")
+            low, high = ("start", "end") if key == "indices" else ("min", "max")
+            if interval[low] > interval[high]:
+                raise ValueError(f"{path}.{key}.{low} must not exceed {high}")
+    return levels
+
+
+def _source(raw, name, base):
+    path = f"sources.{name}"
+    source = _keys(raw, {
+        "model", "format", "profile", "files", "exclude", "time", "variables",
+        "field_metadata", "interpretation", "native_cubes", "fa", "reader",
+        "wind_pairs", "transforms", "derived",
+    }, path, required={"files"})
+    if "model" in source:
+        _choice(source["model"], {"arome", "mesonh", "nemo", "croco"}, f"{path}.model")
+    if "format" in source:
+        _choice(source["format"], {"netcdf", "grib", "fa"}, f"{path}.format")
+    model, fmt = source.get("model"), source.get("format")
+    fa_declared = (fmt == "fa" or bool(source.keys() & {"profile", "native_cubes", "fa"})
+                   or (isinstance(source.get("reader"), dict) and bool(
+                       source["reader"].keys() & {"python_executable", "timeout_seconds", "max_points"})))
+    if model in {"nemo", "croco"} and fmt not in {None, "netcdf"}:
+        raise ValueError(f"{path}.format: {model} supports only NetCDF")
+    source["files"] = _paths(source["files"], base, f"{path}.files")
+    exclude = source.get("exclude", [])
+    if not isinstance(exclude, list):
+        raise ValueError(f"{path}.exclude must be a list of paths/globs")
+    source["exclude"] = _paths(exclude, base, f"{path}.exclude", empty=True)
+    if "time" in source:
+        source["time"] = _time(source["time"], f"{path}.time")
+    variables = _keys(source.get("variables", {}), {"2d", "3d", "levels"}, f"{path}.variables")
+    names = []
+    for category in ("2d", "3d"):
+        if category in variables:
+            names.extend(_names(variables[category], f"{path}.variables.{category}"))
+    if len(set(names)) != len(names):
+        raise ValueError(f"{path}.variables contains duplicate field requests")
+    if "levels" in variables:
+        variables["levels"] = _levels(variables["levels"], f"{path}.variables.levels")
+    source["variables"] = variables
+    metadata = source.setdefault("field_metadata", {})
+    if not isinstance(metadata, dict):
+        raise ValueError(f"{path}.field_metadata must be a mapping")
+    for field, declaration in metadata.items():
+        _text(field, f"{path}.field_metadata")
+        checked = _keys(declaration, {
+            "units", "kind", "temporal_kind", "allow_unscaled", "long_name", "standard_name",
+        }, f"{path}.field_metadata.{field}")
+        for key in ("units", "long_name", "standard_name"):
+            if key in checked:
+                _text(checked[key], f"{path}.field_metadata.{field}.{key}")
+        if "kind" in checked:
+            _choice(checked["kind"], {"continuous", "categorical"},
+                    f"{path}.field_metadata.{field}.kind")
+        if "temporal_kind" in checked:
+            _choice(checked["temporal_kind"], {"instantaneous", "mean", "accumulated"},
+                    f"{path}.field_metadata.{field}.temporal_kind")
+        if "allow_unscaled" in checked:
+            if not fa_declared:
+                raise ValueError(f"{path}.field_metadata.{field}.allow_unscaled is FA-only")
+            _boolean(checked["allow_unscaled"], f"{path}.field_metadata.{field}.allow_unscaled")
+    if "interpretation" in source:
+        _choice(source["interpretation"], {"mesonh_surfex_sea"}, f"{path}.interpretation")
+        if model not in {None, "mesonh"} or fmt not in {None, "netcdf"}:
+            raise ValueError(f"{path}.interpretation requires Meso-NH NetCDF")
+    reader = _keys(source.get("reader", {}), {
+        "engine", "chunks", "python_executable", "timeout_seconds", "max_points",
+    }, f"{path}.reader")
+    if "engine" in reader:
+        if fmt not in {None, "netcdf"} or fa_declared:
+            raise ValueError(f"{path}.reader.engine is NetCDF-only")
+        _choice(reader["engine"], {"h5netcdf", "netcdf4", "scipy"}, f"{path}.reader.engine")
+    if "chunks" in reader:
+        if fa_declared:
+            raise ValueError(f"{path}.reader.chunks is not supported by the FA decoder")
+        _sizes(reader["chunks"], f"{path}.reader.chunks", whole_axis=True)
+    for key in ("python_executable", "timeout_seconds", "max_points"):
+        if key not in reader:
+            continue
+        if fmt not in {None, "fa"}:
+            raise ValueError(f"{path}.reader.{key} is FA-only")
+        if key == "python_executable":
+            reader[key] = _path(reader[key], base, f"{path}.reader.{key}", interpreter=True)
+        else:
+            _positive(reader[key], f"{path}.reader.{key}", integer=key == "max_points")
+    source["reader"] = reader
+    if fa_declared and fmt in {None, "fa"}:
+        if model not in {None, "arome"}:
+            raise ValueError(f"{path}.model: current FA profiles require model: arome")
+        _keys(source.get("fa", {}), {"subdomain", "earth_radius_m", "expected_source"}, f"{path}.fa")
+        options = _fa_runtime_options(source)
+        try:
+            validate_fa_options(options, selected=True)
+        except ValueError as exc:
+            message = str(exc)
+            for key in options:
+                section = ("reader." if key in {"python_executable", "timeout_seconds", "max_points"}
+                           else "fa." if key in {"subdomain", "earth_radius_m", "expected_source"}
+                           else "")
+                message = message.replace(f"input.fa.{key}", f"{path}.{section}{key}")
+            message = message.replace("input.format fa", f"{path}.format: fa")
+            raise ValueError(f"{path}: {message}") from exc
+        if variables.get("levels", {}).get("domain") == "physical":
+            raise ValueError(f"{path}.variables.levels: FA physical-domain selection is gated")
+        for field in variables.get("3d", []):
+            if field not in options["native_cubes"]:
+                raise ValueError(f"{path}.variables.3d.{field} requires an explicit FA native cube")
+        if set(variables.get("2d", [])) & options["native_cubes"].keys():
+            raise ValueError(f"{path}.variables: select FA native cubes under 3d")
+        source["fa"] = {key: options[key] for key in ("subdomain", "expected_source")}
+        if options["earth_radius_m"] is not None:
+            source["fa"]["earth_radius_m"] = options["earth_radius_m"]
+        for key in ("timeout_seconds", "max_points"):
+            reader.setdefault(key, options[key])
+    elif source.keys() & {"profile", "native_cubes", "fa"}:
+        key = sorted(source.keys() & {"profile", "native_cubes", "fa"})[0]
+        raise ValueError(f"{path}.{key} is FA-only; declare format: fa")
+    pairs = source.setdefault("wind_pairs", [])
+    if not isinstance(pairs, list):
+        raise ValueError(f"{path}.wind_pairs must be a list")
+    seen = set()
+    for index, pair in enumerate(pairs):
+        loc = f"{path}.wind_pairs[{index}]"
+        _keys(pair, {"u", "v", "basis", "rotation"}, loc, required={"u", "v", "basis"})
+        for component in ("u", "v"):
+            _text(pair[component], f"{loc}.{component}")
+            if pair[component] in seen:
+                raise ValueError(f"{loc}: duplicate wind component {pair[component]}")
+            seen.add(pair[component])
+        _choice(pair["basis"], {"earth", "grid"}, f"{loc}.basis")
+        if "rotation" in pair:
+            if pair["basis"] != "grid":
+                raise ValueError(f"{loc}.rotation requires basis: grid")
+            _rotation(pair["rotation"], f"{loc}.rotation")
+    transforms = source.setdefault("transforms", [])
+    if not isinstance(transforms, list):
+        raise ValueError(f"{path}.transforms must be a list")
+    for index, transform in enumerate(transforms):
+        loc = f"{path}.transforms[{index}]"
+        _keys(transform, {"fields", "sampling", "basis", "units"}, loc, required={"fields"})
+        _names(transform["fields"], f"{loc}.fields")
+        if not transform.keys() & {"sampling", "basis", "units"}:
+            raise ValueError(f"{loc} needs sampling, basis or units")
+        for key, choices in (("sampling", {"native", "mass"}), ("basis", {"native", "earth"})):
+            if key in transform:
+                _choice(transform[key], choices, f"{loc}.{key}")
+        if "units" in transform:
+            _text(transform["units"], f"{loc}.units")
+    derived = source.setdefault("derived", {})
+    if not isinstance(derived, dict):
+        raise ValueError(f"{path}.derived must be a mapping")
+    for field, definition in derived.items():
+        loc = f"{path}.derived.{field}"
+        _text(field, f"{path}.derived")
+        if field in names:
+            raise ValueError(f"{loc} collides with an exported source field")
+        _keys(definition, {"method", "inputs"}, loc, required={"method", "inputs"})
+        _choice(definition["method"], {"wind_speed"}, f"{loc}.method")
+        inputs = _keys(definition["inputs"], {"u", "v"}, f"{loc}.inputs", required={"u", "v"})
+        for key, value in inputs.items():
+            _text(value, f"{loc}.inputs.{key}")
+        if inputs["u"] == inputs["v"]:
+            raise ValueError(f"{loc}.inputs needs distinct u and v")
+    return source
+
+
+def _fa_runtime_options(source):
+    options = copy.deepcopy(FA_DEFAULTS)
+    options.update(copy.deepcopy(source.get("fa", {})))
+    for key in ("profile", "native_cubes", "field_metadata"):
+        if key in source:
+            options[key] = copy.deepcopy(source[key])
+    options.update({key: value for key, value in source.get("reader", {}).items()
+                    if key in {"python_executable", "timeout_seconds", "max_points"}})
+    return options
+
+
+def _region(raw, base):
+    path = "region"
+    region = _keys(raw, {
+        "center", "track", "tracker", "width_km", "sources_coupling_time_association",
+    }, path)
+    providers = region.keys() & {"center", "track", "tracker"}
+    if len(providers) > 1:
+        raise ValueError("region.center, region.track and region.tracker are mutually exclusive")
+    if "width_km" in region:
+        if not providers:
+            raise ValueError("region.width_km requires a center, track or tracker")
+        size = _keys(region["width_km"], {"x", "y"}, "region.width_km", required={"x", "y"})
+        for key, value in size.items():
+            _positive(value, f"region.width_km.{key}")
+    if "center" in region:
+        region["center"] = _center(region["center"], "region.center")
+    if "track" in region:
+        track = _keys(region["track"], {"file"}, "region.track", required={"file"})
+        track["file"] = _path(track["file"], base, "region.track.file")
+        region["track"] = track
+    if region:
+        region.setdefault("sources_coupling_time_association", "exact")
+        _choice(region["sources_coupling_time_association"],
+                {"exact", "common", "preceding_hour"}, "region.sources_coupling_time_association")
+    if "tracker" not in region:
+        return region
+    tracker = region["tracker"]
+    if not isinstance(tracker, dict) or "method" not in tracker:
+        raise ValueError("region.tracker.method is required")
+    method = tracker["method"]
+    _choice(method, set(TRACKER_DEFAULTS), "region.tracker.method")
+    optional = {
+        "pressure_wind": {"initial_guess"},
+        "pressure_centroid": set(),
+        "utrack": {"weights_file"},
+        "multifield_vortex": {"seed", "mnh_gravity_m_s2"},
+    }
+    _keys(tracker, {"method", "on_incomplete"} | TRACKER_DEFAULTS[method].keys() | optional[method],
+          "region.tracker")
+    defaults = {"method": method, "on_incomplete": "error", **TRACKER_DEFAULTS[method],
+                **{key: None for key in optional[method]}}
+    tracker = _merge_checked(tracker, defaults, "region.tracker")
+    tracker = {key: value for key, value in tracker.items() if value is not None}
+    _choice(tracker["on_incomplete"], {"error", "keep_prefix"}, "region.tracker.on_incomplete")
+    if tracker["on_incomplete"] == "keep_prefix" and method != "multifield_vortex":
+        raise ValueError(f"region.tracker.on_incomplete: {method} does not support keep_prefix")
+    if method == "pressure_wind":
+        for key in ("search_width_km", "refine_width_km"):
+            _positive(tracker[key], f"region.tracker.{key}")
+        if "initial_guess" in tracker:
+            guess = _keys(tracker["initial_guess"], {"latitude", "longitude", "search_radius_km"},
+                          "region.tracker.initial_guess",
+                          required={"latitude", "longitude", "search_radius_km"})
+            _center({key: guess[key] for key in ("latitude", "longitude")},
+                    "region.tracker.initial_guess")
+            _positive(guess["search_radius_km"], "region.tracker.initial_guess.search_radius_km")
+    elif method == "pressure_centroid":
+        for section in ("convergence", "motion", "sampling"):
+            for key, value in tracker[section].items():
+                if key != "solver":
+                    _positive(value, f"region.tracker.{section}.{key}",
+                              integer=key == "max_iterations")
+        _choice(tracker["motion"]["solver"], {"aitken", "fixed"}, "region.tracker.motion.solver")
+        if tracker["motion"]["relaxation"] > 1:
+            raise ValueError("region.tracker.motion.relaxation must not exceed 1")
+        if tracker["sampling"]["azimuth_step_deg"] >= 180:
+            raise ValueError("region.tracker.sampling.azimuth_step_deg must be below 180")
+    elif method == "utrack":
+        tracker["weights_file"] = _path(tracker.get("weights_file"), base,
+                                       "region.tracker.weights_file")
+        _boolean(tracker["use_gpu"], "region.tracker.use_gpu")
+        _positive(tracker["batch_size"], "region.tracker.batch_size", integer=True)
     else:
-        document["tracking"]["source"] = None
-    return document
+        _choice(tracker["profile"], {"all_no_thick"}, "region.tracker.profile")
+        seed = _keys(tracker.get("seed"), {
+            "latitude", "longitude", "time", "motion_u_m_s", "motion_v_m_s",
+        }, "region.tracker.seed", required={"latitude", "longitude", "motion_u_m_s", "motion_v_m_s"})
+        _center({key: seed[key] for key in ("latitude", "longitude")}, "region.tracker.seed")
+        if not 0 < abs(seed["latitude"]) < 90:
+            raise ValueError("region.tracker.seed.latitude must be non-equatorial and nonpolar")
+        for key in ("motion_u_m_s", "motion_v_m_s"):
+            _finite(seed[key], f"region.tracker.seed.{key}")
+        if "time" in seed:
+            _timestamp(seed["time"], "region.tracker.seed.time")
+        if "mnh_gravity_m_s2" in tracker:
+            _positive(tracker["mnh_gravity_m_s2"], "region.tracker.mnh_gravity_m_s2")
+        from frameit.tracking.multifield_vortex import VortexOptions
+
+        try:
+            VortexOptions(**tracker["numerics"], **tracker["quality"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"region.tracker: {exc}") from exc
+    region["tracker"] = tracker
+    return region
 
 
-def _resolve_sources(raw, conf, base):
-    sources = conf["input"]["sources"]
-    if not isinstance(sources, dict):
-        raise ValueError("input.sources must be a mapping of named sources")
-    if not sources:
-        if conf["tracking"]["source"] is not None:
-            raise ValueError("tracking.source requires input.sources")
-        return
-    if set(raw.get("input", {})) - {"sources", "time_alignment"}:
-        raise ValueError("With input.sources, input settings belong inside each source.input")
-    if conf["variables"] or conf["polar"]["variables"] != "extracted":
-        raise ValueError("Coupled variables and polar variable selection belong to each source")
-    if not isinstance(conf["tracking"]["source"], str) or conf["tracking"]["source"] not in sources:
-        raise ValueError("tracking.source must name one of input.sources")
-    for name, spec in list(sources.items()):
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name):
-            raise ValueError("Source IDs must start with a letter and contain letters/digits/_/-")
-        checked = _merge_checked(spec, {"model": conf["model"], "input": {}, "variables": {},
-                                        "polar": {}}, f"input.sources.{name}")
-        if not isinstance(checked["input"], dict):
-            raise ValueError(f"input.sources.{name}.input must be a mapping")
-        misplaced = set(checked["input"]) & {"sources", "time_alignment"}
-        if misplaced:
-            raise ValueError(f"input.sources.{name}.input: {sorted(misplaced)} belong to the parent")
-        checked["polar"] = _merge_checked(checked["polar"], conf["polar"],
-                                           f"input.sources.{name}.polar")
-        if checked["polar"]["shared_target"] != conf["polar"]["shared_target"]:
-            raise ValueError("polar.shared_target is a coupled-run setting; "
-                             "source declarations must agree with the top-level value")
-        sources[name] = checked
-    for name in sources:
-        child, _, _ = resolve_schema(source_document(conf, name), base_dir=base)
-        sources[name] = {key: child[key] for key in ("model", "input", "variables", "polar")}
-        sources[name]["input"] = {key: value for key, value in child["input"].items()
-                                  if key not in {"sources", "time_alignment"}}
-    if sources[conf["tracking"]["source"]]["model"] != conf["model"]:
-        raise ValueError("model must match input.sources[tracking.source].model")
+def _mask_options(options, path, *, defaults=False):
+    if defaults:
+        options.setdefault("missing_data_policy", "strict")
+    if "interpolation" in options:
+        _choice(options["interpolation"], {"bilinear", "nearest"}, f"{path}.interpolation")
+    policy = options.get("missing_data_policy", "strict")
+    _choice(policy, {"strict", "renormalize"}, f"{path}.missing_data_policy")
+    if policy == "renormalize":
+        if "min_valid_weight_fraction" not in options:
+            raise ValueError(f"{path}.min_valid_weight_fraction is required for renormalize")
+        if options.get("interpolation") == "nearest":
+            raise ValueError(f"{path}: nearest interpolation cannot renormalize a partial stencil")
+    elif "min_valid_weight_fraction" in options:
+        raise ValueError(f"{path}.min_valid_weight_fraction requires renormalize")
+    if "min_valid_weight_fraction" in options:
+        value = options["min_valid_weight_fraction"]
+        _positive(value, f"{path}.min_valid_weight_fraction")
+        if value > 1:
+            raise ValueError(f"{path}.min_valid_weight_fraction must not exceed 1")
+
+
+def _products(raw, sources, region):
+    products = _keys(raw, {"model_grid", "polar", "track"}, "products")
+    if not products:
+        raise ValueError("products must request at least one product; omit it for model_grid")
+    for product, spec in list(products.items()):
+        path = f"products.{product}"
+        if product in {"model_grid", "track"} and spec is True:
+            spec = {}
+        if product == "track":
+            _keys(spec, set(), path)
+            if not region.keys() & {"center", "track", "tracker"}:
+                raise ValueError("products.track requires a region center, track or tracker")
+            continue
+        allowed = {"fields", "processing"}
+        if product == "polar":
+            allowed |= {"radius_km", "radial_step_km", "azimuth_count", "shared_grid",
+                        "missing_data_policy", "min_valid_weight_fraction", "field_options"}
+        spec = _keys(spec, allowed, path, required={"radius_km"} if product == "polar" else ())
+        if "fields" in spec:
+            fields = spec["fields"]
+            if not isinstance(fields, dict) or not fields:
+                raise ValueError(f"{path}.fields must be a nonempty source-name mapping")
+            for name, names in fields.items():
+                if name not in sources:
+                    raise ValueError(f"{path}.fields.{name}: unknown source")
+                _names(names, f"{path}.fields.{name}")
+                available = _declared_fields(sources[name])
+                if not set(names) <= set(available):
+                    raise ValueError(f"{path}.fields.{name}: unknown field/result; declare it in sources")
+        processing = spec.get("processing", {})
+        processing_keys = {"chunks"}
+        if product == "polar":
+            processing_keys |= {"max_target_points", "plan_cache", "source_halo_points",
+                                "weight_zero_tolerance", "profile"}
+        _keys(processing, processing_keys, f"{path}.processing")
+        if "chunks" in processing:
+            _sizes(processing["chunks"], f"{path}.processing.chunks", whole_axis=True)
+        if product == "polar":
+            if not region.keys() & {"center", "track", "tracker"}:
+                raise ValueError(f"{path} requires a region center, track or tracker")
+            _positive(spec["radius_km"], f"{path}.radius_km")
+            if "radial_step_km" in spec:
+                _positive(spec["radial_step_km"], f"{path}.radial_step_km")
+            if "azimuth_count" in spec:
+                _positive(spec["azimuth_count"], f"{path}.azimuth_count", integer=True)
+                if spec["azimuth_count"] < 3:
+                    raise ValueError(f"{path}.azimuth_count must be at least 3")
+            spec.setdefault("shared_grid", False)
+            _boolean(spec["shared_grid"], f"{path}.shared_grid")
+            _mask_options(spec, path, defaults=True)
+            for key in ("max_target_points", "source_halo_points"):
+                if key in processing:
+                    _positive(processing[key], f"{path}.processing.{key}", integer=True)
+            if "weight_zero_tolerance" in processing:
+                value = processing["weight_zero_tolerance"]
+                _positive(value, f"{path}.processing.weight_zero_tolerance", allow_zero=True)
+                if value >= 1e-6:
+                    raise ValueError(f"{path}.processing.weight_zero_tolerance must be below 1e-6")
+            if "profile" in processing:
+                _boolean(processing["profile"], f"{path}.processing.profile")
+            if "plan_cache" in processing:
+                cache = _keys(processing["plan_cache"], {"entries", "max_bytes"},
+                              f"{path}.processing.plan_cache")
+                for key, value in cache.items():
+                    _positive(value, f"{path}.processing.plan_cache.{key}",
+                              integer=True, allow_zero=True)
+            options = spec.get("field_options", {})
+            if not isinstance(options, dict):
+                raise ValueError(f"{path}.field_options must be a source-name mapping")
+            for name, fields in options.items():
+                if name not in sources or not isinstance(fields, dict):
+                    raise ValueError(f"{path}.field_options.{name}: unknown source or invalid mapping")
+                exports = _product_fields(spec, sources, name)
+                needed = set(exports) | set(_derived_inputs(sources[name], exports))
+                for field, values in fields.items():
+                    loc = f"{path}.field_options.{name}.{field}"
+                    if field not in needed:
+                        raise ValueError(f"{loc}: field is unused by this product")
+                    _keys(values, {"interpolation", "missing_data_policy",
+                                   "min_valid_weight_fraction", "sampling"}, loc)
+                    effective = {key: spec[key] for key in
+                                 ("missing_data_policy", "min_valid_weight_fraction") if key in spec}
+                    if values.get("missing_data_policy") == "strict":
+                        effective.pop("min_valid_weight_fraction", None)
+                    effective.update(values)
+                    _mask_options(effective, loc)
+                    if "sampling" in values:
+                        _choice(values["sampling"], {"native", "mass"}, f"{loc}.sampling")
+                    if field in sources[name]["derived"] and values.keys() & {
+                        "interpolation", "sampling", "missing_data_policy", "min_valid_weight_fraction",
+                    }:
+                        raise ValueError(f"{loc}: set polar preparation on the derived result's inputs")
+        products[product] = (True if product == "model_grid" and not spec else spec)
+    return products
+
+
+def _declared_fields(source):
+    return [*source["variables"].get("2d", []), *source["variables"].get("3d", []),
+            *source["derived"]]
+
+
+def _product_fields(spec, sources, name):
+    return (spec["fields"].get(name, []) if isinstance(spec, dict) and "fields" in spec
+            else _declared_fields(sources[name]))
+
+
+def _derived_inputs(source, exports, visiting=()):
+    inputs = []
+    for field in exports:
+        if field not in source["derived"]:
+            continue
+        if field in visiting:
+            raise ValueError(f"sources: derived inputs contain a cycle at {field}")
+        dependencies = list(source["derived"][field]["inputs"].values())
+        inputs.extend(dependencies)
+        inputs.extend(_derived_inputs(source, dependencies, (*visiting, field)))
+    return list(dict.fromkeys(inputs))
+
+
+def _output(raw, base):
+    output = _merge_checked(raw, DEFAULTS["output"], "output")
+    output["directory"] = _path(output["directory"], base, "output.directory")
+    _choice(output["format"], {"netcdf", "zarr"}, "output.format")
+    _boolean(output["overwrite"], "output.overwrite")
+    writer = _keys(output["writer"], {
+        "engine", "unlimited_time", "compression", "chunks", "shards",
+    }, "output.writer")
+    if output["format"] == "zarr":
+        for key in ("engine", "unlimited_time"):
+            if key in writer:
+                raise ValueError(f"output.writer.{key} is NetCDF-only, even with products.track")
+    else:
+        if "shards" in writer:
+            raise ValueError("output.writer.shards is Zarr-only")
+        writer.setdefault("engine", "netcdf4")
+        writer.setdefault("unlimited_time", True)
+        _choice(writer["engine"], {"netcdf4", "h5netcdf"}, "output.writer.engine")
+        _boolean(writer["unlimited_time"], "output.writer.unlimited_time")
+    compression = _merge_checked(writer.get("compression", {}),
+                                 {"level": 1, "coordinates": False}, "output.writer.compression")
+    _positive(compression["level"], "output.writer.compression.level", integer=True, allow_zero=True)
+    if compression["level"] > 9:
+        raise ValueError("output.writer.compression.level must be in [0, 9]")
+    _boolean(compression["coordinates"], "output.writer.compression.coordinates")
+    writer["compression"] = compression
+    for key in ("chunks", "shards"):
+        if key in writer:
+            _sizes(writer[key], f"output.writer.{key}")
+    if output["format"] == "zarr":
+        from frameit.io.zarr_export import validate_zarr_sizes
+
+        validate_zarr_sizes(writer.get("chunks", {}), writer.get("shards", {}))
+    output["writer"] = writer
+    return output
 
 
 def resolve_schema(raw, *, base_dir=None):
-    if not isinstance(raw, dict) or type(raw.get("schema_version")) is not str or raw["schema_version"] != "2.1":
-        raise ValueError(
-            'Expected schema_version: "2.1" (a quoted YAML string).'
-        )
-    conf = _merge_checked(raw, DEFAULTS)
-    enum_paths = (
-        "model", "tracking.method", "input.format", "input.duplicate_time_policy",
-        "input.time_alignment",
-        "input.netcdf.engine", "input.netcdf.file_layout", "domain.edge_policy",
-        "polar.interpolation_method", "polar.missing_data_policy", "polar.ellipsoid",
-        "output.backend", "output.netcdf_format", "logging.level",
-        "tracking.pressure_centroid.motion.solver",
-        "tracking.multifield_vortex.profile", "tracking.multifield_vortex.on_track_loss",
-    )
-    for path in enum_paths:
-        value = conf
-        for part in path.split("."):
-            value = value[part]
-        if not isinstance(value, str) and not (
-            path == "input.format" and value is None
-        ):
-            raise ValueError(f"{path} must be a string")
-    if "model" not in raw or conf["model"] not in {"arome", "mesonh", "nemo", "croco"}:
-        raise ValueError("model must be 'arome', 'mesonh', 'nemo' or 'croco'")
+    """Return ``(document, source_requests, polar_fields)`` without opening inputs."""
+    if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int or raw["schema_version"] != 3:
+        raise ValueError("Expected schema_version: 3 (a YAML integer, not a boolean or string)")
+    _reject_nulls(raw)
+    _keys(raw, set(DEFAULTS), "configuration", required={"sources"})
     base = Path(base_dir or Path.cwd()).resolve()
-    inp, trk, pol, out = (conf[n] for n in ("input", "tracking", "polar", "output"))
-    if conf["model"] in {"nemo", "croco"}:
-        if trk["method"] not in {"fixed_box", "prescribed_track"}:
-            raise ValueError(f"{conf['model'].upper()} reference sources require fixed_box or prescribed_track")
-        if inp["format"] not in {None, "netcdf"}:
-            raise ValueError(f"{conf['model'].upper()} supports only native NetCDF inputs")
-    if not inp["sources"] and bool(inp["pattern"]) == bool(inp["files"]):
-        raise ValueError("input requires exactly one of pattern or files")
-    for key in ("directory",):
-        if not isinstance(inp[key], str) or not inp[key]:
-            raise ValueError(f"input.{key} must be a nonempty path")
-    if inp["pattern"] is not None and (not isinstance(inp["pattern"], str) or
-                                      Path(inp["pattern"]).is_absolute()):
-        raise ValueError("input.pattern must be a relative glob or filename")
-    for key in ("exclude", "files"):
-        value = inp[key]
-        if key == "files" and value is None:
+    conf = copy.deepcopy(DEFAULTS)
+    conf["run"] = _merge_checked(raw.get("run", {}), DEFAULTS["run"], "run")
+    _text(conf["run"]["name"], "run.name")
+    if "/" in conf["run"]["name"] or "\\" in conf["run"]["name"] or conf["run"]["name"] in {".", ".."}:
+        raise ValueError("run.name must be an identifier without path separators")
+    if not isinstance(conf["run"]["description"], str):
+        raise ValueError("run.description must be a string")
+    sources = raw["sources"]
+    if not isinstance(sources, dict) or not sources:
+        raise ValueError("sources must be a nonempty mapping of source names")
+    for name, spec in sources.items():
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name):
+            raise ValueError("sources names must start with a letter and contain letters/digits/_/-")
+        conf["sources"][name] = _source(spec, name, base)
+    conf["region"] = _region(raw.get("region", {}), base)
+    conf["products"] = _products(raw.get("products", DEFAULTS["products"]),
+                                conf["sources"], conf["region"])
+    conf["output"] = _output(raw.get("output", {}), base)
+    resources = _keys(raw.get("resources", {}), {
+        "cpus", "scheduler", "compute_workers", "export_workers", "native_threads", "synchronous_export",
+    }, "resources")
+    resources = {**DEFAULTS["resources"], **resources}
+    _choice(resources["scheduler"], {"threads", "synchronous"}, "resources.scheduler")
+    _boolean(resources["synchronous_export"], "resources.synchronous_export")
+    for key in ("cpus", "compute_workers", "export_workers", "native_threads"):
+        if key in resources:
+            _positive(resources[key], f"resources.{key}", integer=True)
+    conf["resources"] = resources
+    conf["logging"] = _merge_checked(raw.get("logging", {}), DEFAULTS["logging"], "logging")
+    _choice(conf["logging"]["level"], {"DEBUG", "INFO", "WARNING", "ERROR"}, "logging.level")
+    conf["metadata"] = _keys(raw.get("metadata", {}), {"institution", "extra"}, "metadata")
+    conf["metadata"].setdefault("extra", {})
+    if "institution" in conf["metadata"] and not isinstance(conf["metadata"]["institution"], str):
+        raise ValueError("metadata.institution must be a string")
+    requests, polar = {}, {}
+    for name, source in conf["sources"].items():
+        exports = {product: _product_fields(spec, conf["sources"], name)
+                   for product, spec in conf["products"].items() if product != "track"}
+        exports = {product: list(fields) for product, fields in exports.items() if fields}
+        needed = list(dict.fromkeys(field for fields in exports.values() for field in fields))
+        internal = _derived_inputs(source, needed)
+        # Cycles are invalid declarations even when a product filters the result out.
+        _derived_inputs(source, list(source["derived"]))
+        requests[name] = {
+            "fields": {key: copy.deepcopy(source["variables"].get(key, [])) for key in ("2d", "3d")},
+            "levels": copy.deepcopy(source["variables"].get("levels", {})),
+            "derived": copy.deepcopy(source["derived"]),
+            "exports": exports, "internal_inputs": internal,
+            "transforms": copy.deepcopy(source["transforms"]),
+            "polar_options": copy.deepcopy(conf["products"].get("polar", {}).get(
+                "field_options", {}).get(name, {})),
+            "binding": None,
+        }
+        if "polar" in exports:
+            polar[name] = list(exports["polar"])
+    return conf, requests, polar
+
+
+def source_document(parent, name):
+    """Return an independent v3 request for one source, without invented geometry."""
+    document = _source_document(parent, name)
+    if document.get("products") == {}:
+        raise ValueError(f"Source {name!r} is not requested by any product")
+    return document
+
+
+def _source_document(parent, name):
+    if name not in parent["sources"]:
+        raise ValueError(f"Unknown source {name!r}")
+    document = copy.deepcopy(parent)
+    document["sources"] = {name: document["sources"][name]}
+    for product, spec in list(document.get("products", {}).items()):
+        if not isinstance(spec, dict):
             continue
-        if (not isinstance(value, list) or (key == "files" and not value)
-                or any(not isinstance(v, str) or not v.strip() for v in value)):
-            raise ValueError(f"input.{key} must be a list of paths/patterns")
-    if inp["format"] not in {None, "grib", "netcdf", "fa"}:
-        raise ValueError("input.format must be grib, netcdf or fa")
-    if inp["time_alignment"] not in {"common", "strict", "preceding_hour"}:
-        raise ValueError("input.time_alignment must be common, strict or preceding_hour")
-    if inp["time_alignment"] == "preceding_hour" and not inp["sources"]:
-        raise ValueError("input.time_alignment: preceding_hour requires named NetCDF sources")
-    validate_fa_options(inp["fa"], inp["format"] == "fa")
-    if inp["format"] == "fa" and conf["model"] != "arome":
-        raise ValueError("Current FA profiles require model: arome; declare the actual "
-                         "AROME producer explicitly for each FA source")
-    if inp["format"] == "fa" and trk["method"] not in {"fixed_box", "prescribed_track"}:
-        raise ValueError("FA tracking requires fixed_box/prescribed_track, or a separate "
-                         "GRIB/NetCDF tracking source")
-    if inp["duplicate_time_policy"] not in {"first", "last"}:
-        raise ValueError("input.duplicate_time_policy must be first or last")
-    validate_wind_pairs(inp["wind_pairs"])
-    for pair in inp["wind_pairs"]:
-        _runtime_group(pair["group"])
-    horizontal = out["cartesian"]["horizontal_vectors"]
-    if not isinstance(horizontal, str) or horizontal not in {"native", "earth_centered"}:
-        raise ValueError("output.cartesian.horizontal_vectors must be native or earth_centered")
-    validate_output_selections("native" if horizontal == "native" else "mass_earth",
-                               out["cartesian"]["vertical_velocity"],
-                               out["polar"]["vertical_velocity"])
-    if inp["grid_spacing_m"] is not None:
-        _positive(inp["grid_spacing_m"], "input.grid_spacing_m")
-    methods = {"pressure_wind", "pressure_centroid", "multifield_vortex", "fixed_box",
-               "prescribed_track", "utrack"}
-    if trk["method"] not in methods:
-        raise ValueError(f"tracking.method must be one of {sorted(methods)}")
-    for key, value in trk["pressure_wind"].items():
-        if key == "initial_guess":
-            trk["pressure_wind"][key] = validate_wind_pressure_initial_guess(value)
-        else:
-            _positive(value, f"tracking.pressure_wind.{key}")
-    if trk["method"] == "fixed_box":
-        center = trk["fixed_box"]["center"]
-        for name, limit in (("latitude", 90), ("longitude", 180)):
-            value = center[name]
-            if (isinstance(value, bool) or not isinstance(value, (int, float))
-                    or not math.isfinite(value) or abs(value) > limit):
-                raise ValueError(
-                    f"tracking.fixed_box.center.{name} must be in [-{limit}, {limit}] degrees"
-                )
-    if trk["method"] == "prescribed_track" and not trk["prescribed_track"]["file"]:
-        raise ValueError("tracking.prescribed_track.file is required")
-    if trk["method"] == "utrack" and not trk["utrack"]["weights_file"]:
-        raise ValueError("tracking.utrack.weights_file is required")
-    if trk["method"] == "multifield_vortex":
-        mf = trk["multifield_vortex"]
-        if mf["profile"] != "all_no_thick" or mf["on_track_loss"] not in {"stop", "error"}:
-            raise ValueError(
-                "multifield_vortex requires profile all_no_thick and on_track_loss stop/error")
-        for name in ("latitude", "longitude", "motion_u_m_s", "motion_v_m_s"):
-            value = mf["seed"][name]
-            if (isinstance(value, bool) or not isinstance(value, (int, float))
-                    or not math.isfinite(value)):
-                raise ValueError(
-                    f"tracking.multifield_vortex.seed.{name} must be explicitly supplied")
-        if not 0 < abs(mf["seed"]["latitude"]) < 90 or abs(mf["seed"]["longitude"]) > 180:
-            raise ValueError("multifield_vortex seed needs a non-equatorial/nonpolar latitude "
-                             "and longitude in [-180,180]")
-        if mf["seed"]["time"] is not None and not isinstance(mf["seed"]["time"], str):
-            raise ValueError("multifield_vortex.seed.time must be an ISO timestamp string or null")
-        if mf["mnh_gravity_m_s2"] is not None:
-            _positive(mf["mnh_gravity_m_s2"], "tracking.multifield_vortex.mnh_gravity_m_s2")
-        if conf["model"] == "mesonh" and mf["mnh_gravity_m_s2"] is None:
-            raise ValueError("multifield_vortex with MNH requires an explicit mnh_gravity_m_s2 "
-                             "for the model's geometric-to-geopotential height convention")
-        from frameit.tracking.multifield_vortex import VortexOptions
+        if "fields" in spec:
+            if name not in spec["fields"]:
+                del document["products"][product]
+                continue
+            spec["fields"] = {name: spec["fields"][name]}
+        if "field_options" in spec:
+            spec["field_options"] = {name: spec["field_options"][name]} if name in spec["field_options"] else {}
+    return document
 
-        VortexOptions(**mf["numerics"], **mf["quality"])
-    _positive(trk["utrack"]["batch_size"], "tracking.utrack.batch_size", integer=True)
-    pc = trk["pressure_centroid"]
-    for section in ("convergence", "motion", "sampling"):
-        for name, value in pc[section].items():
-            if name != "solver":
-                _positive(value, f"tracking.pressure_centroid.{section}.{name}",
-                          integer=name == "max_iterations")
-    if pc["motion"]["solver"] not in {"aitken", "fixed"} or pc["motion"]["relaxation"] > 1:
-        raise ValueError("Invalid tracking.pressure_centroid.motion solver or relaxation")
-    if pc["sampling"]["azimuth_step_deg"] >= 180:
-        raise ValueError("tracking.pressure_centroid.sampling.azimuth_step_deg must be below 180")
-    size = conf["domain"]["width_km"]
-    if size is not None:
-        if not isinstance(size, dict) or set(size) != {"x", "y"}:
-            raise ValueError("domain.width_km requires x and y full widths")
-        for name, value in size.items():
-            _positive(value, f"domain.width_km.{name}")
-    if conf["domain"]["edge_policy"] != "pad_nan":
-        raise ValueError("domain.edge_policy currently supports pad_nan only")
-    if pol["enabled"] and size is None:
-        raise ValueError("polar.enabled requires domain.width_km")
-    if pol["azimuth_count"] is not None and pol["azimuth_step_deg"] is not None:
-        raise ValueError("polar.azimuth_count and polar.azimuth_step_deg are mutually exclusive")
-    for name in ("radial_step_m", "azimuth_step_deg", "azimuth_count", "max_points"):
-        if pol[name] is not None:
-            _positive(pol[name], f"polar.{name}", integer=name in {"azimuth_count", "max_points"})
-    if pol["azimuth_count"] is not None and pol["azimuth_count"] < 3:
-        raise ValueError("polar.azimuth_count must be at least 3")
-    if pol["azimuth_step_deg"] is not None and pol["azimuth_step_deg"] > 120:
-        raise ValueError("polar.azimuth_step_deg must be at most 120")
-    if pol["interpolation_method"] not in {"bilinear", "nearest_s2d"}:
-        raise ValueError("polar.interpolation_method must be bilinear or nearest_s2d")
-    if pol["missing_data_policy"] not in {"strict", "renormalize"}:
-        raise ValueError("polar.missing_data_policy must be strict or renormalize")
-    for key in ("min_valid_weight_fraction", "weight_zero_tolerance"):
-        _positive(pol[key], f"polar.{key}", allow_zero=True)
-        if pol[key] > 1:
-            raise ValueError(f"polar.{key} must not exceed 1")
-    if pol["weight_zero_tolerance"] >= 1e-6:
-        raise ValueError("polar.weight_zero_tolerance must be less than 1e-6")
-    _positive(pol["source_halo_points"], "polar.source_halo_points", integer=True)
-    for name, value in pol["plan_cache"].items():
-        _positive(value, f"polar.plan_cache.{name}", integer=True, allow_zero=True)
-    for path, chunks in (
-        ("input.netcdf.chunks", inp["netcdf"]["chunks"]), ("polar.chunks", pol["chunks"])
-    ):
-        if not isinstance(chunks, dict):
-            raise ValueError(f"{path} must be a mapping")
-        for name, value in chunks.items():
-            if not isinstance(name, str) or not name.strip():
-                raise ValueError(f"{path} requires nonempty dimension names")
-            if value != -1:
-                _positive(value, f"{path}.{name}", integer=True)
-    for path, value in (("polar.enabled", pol["enabled"]),
-                        ("polar.shared_target", pol["shared_target"]),
-                        ("polar.profile", pol["profile"]),
-                        ("tracking.utrack.use_gpu", trk["utrack"]["use_gpu"]),
-                        ("output.unlimited_time", out["unlimited_time"]),
-                        ("output.overwrite", out["overwrite"]),
-                        ("output.synchronous_export", out["synchronous_export"]),
-                        ("execution.require_complete_tracking",
-                         conf["execution"]["require_complete_tracking"]),
-                        ("output.compression.coordinates", out["compression"]["coordinates"]),
-                        *((f"output.export.{k}", v) for k, v in out["export"].items())):
-        if not isinstance(value, bool):
-            raise ValueError(f"{path} must be a YAML boolean")
-    _positive(
-        out["compression"]["level"], "output.compression.level", integer=True, allow_zero=True
-    )
-    if out["compression"]["level"] > 9:
-        raise ValueError("output.compression.level must be in [0, 9]")
-    if out["max_workers"] is not None:
-        _positive(out["max_workers"], "output.max_workers", integer=True)
-    execution = conf["execution"]
-    if execution["dask_scheduler"] not in {"threads", "synchronous"}:
-        raise ValueError("execution.dask_scheduler must be threads or synchronous")
-    if execution["dask_workers"] is not None:
-        _positive(execution["dask_workers"], "execution.dask_workers", integer=True)
-    _positive(execution["native_threads"], "execution.native_threads", integer=True)
-    if out["backend"] not in {"netcdf4", "h5netcdf", "zarr"}:
-        raise ValueError("output.backend must be netcdf4, h5netcdf or zarr")
-    if out["netcdf_format"] != "NETCDF4":
-        raise ValueError("output.netcdf_format supports only NETCDF4")
-    from frameit.io.zarr_export import validate_zarr_sizes
 
-    validate_zarr_sizes(out["zarr_chunk_size"], out["zarr_shard_size"])
-    if inp["netcdf"]["engine"] not in {"h5netcdf", "netcdf4", "scipy"}:
-        raise ValueError("Unsupported input.netcdf.engine")
-    if inp["netcdf"]["file_layout"] not in {"time_series", "variables"}:
-        raise ValueError("input.netcdf.file_layout must be time_series or variables")
-    from frameit.io.surfex_utils import validate_surfex_fields
+def _source_runtime(parent, name):
+    """Project a v3 SimulationConfig into source-local constructor arguments.
 
-    validate_surfex_fields(inp["netcdf"]["surfex_fields"], conf["model"], inp["format"],
-                           inp["netcdf"]["file_layout"])
-    if conf["logging"]["level"] not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
-        raise ValueError("logging.level must be DEBUG, INFO, WARNING, or ERROR")
-    if not isinstance(conf["metadata"]["extra"], dict):
-        raise ValueError("metadata.extra must be a mapping")
-    for path, value in (
-        ("run.description", conf["run"]["description"]),
-        ("output.institution", out["institution"]),
-        ("metadata.ocean_model", conf["metadata"]["ocean_model"]),
-        ("metadata.wave_model", conf["metadata"]["wave_model"]),
-        *((f"tracking.prescribed_track.{key}", trk["prescribed_track"][key])
-          for key in ("time_name", "latitude_name", "longitude_name")),
-    ):
-        if not isinstance(value, str):
-            raise ValueError(f"{path} must be a string")
-    for section, key in (("prescribed_track", "file"), ("utrack", "weights_file")):
-        if trk[section][key] is not None and not isinstance(trk[section][key], str):
-            raise ValueError(f"tracking.{section}.{key} must be a path string")
-    for section, key in (("run", "name"), ("output", "directory")):
-        if not isinstance(conf[section][key], str) or not conf[section][key]:
-            raise ValueError(f"{section}.{key} must be a nonempty string")
-    name = conf["run"]["name"]
-    if "/" in name or "\\" in name or name in {".", ".."}:
-        raise ValueError("run.name must be an analysis identifier without path separators")
-    user = _requests(conf["variables"])
-    if inp["format"] == "fa":
-        cubes = inp["fa"]["native_cubes"]
-        if not cubes and set(user) - {"surface"}:
-            raise ValueError("FA 2-D records must be selected in variables.fields_2d")
-        levels = conf["variables"].get("fields_2d", {}).get("levels", "stored")
-        if levels != "stored":
-            raise ValueError("FA layer/patch selection uses explicit native record names; "
-                             "variables.fields_2d.levels cannot select a vertical axis")
-        for group, spec in user.items():
-            if group not in {"surface", "level", "level_w"}:
-                raise ValueError("FA native groups are fields_2d, level and level_w")
-            if spec.get("level_domain") == "physical":
-                raise ValueError("FA physical-coordinate selection is gated; select stored indices")
-            for variable in spec["variables"]:
-                if variable == "wind_speed":
-                    continue
-                cube = cubes.get(variable)
-                expected = ("surface" if cube is None else
-                            "level" if cube["vertical_position"] == "mass" else "level_w")
-                if expected != group:
-                    public = "fields_2d" if expected == "surface" else expected
-                    raise ValueError(f"FA variable {variable}: select in variables.{public}")
-    polar = _requests(pol["variables"], "polar.variables", polar=True)
-    if polar == "extracted":
-        polar = {g: {"variables": list(s["variables"])} for g, s in user.items()}
-    for group, spec in polar.items():
-        if group not in user or not set(spec["variables"]) <= set(user[group]["variables"]):
-            raise ValueError(f"polar.variables.{group} must be a subset of extracted variables")
-    if pol["enabled"] and not polar and not inp["sources"]:
-        raise ValueError("polar.enabled requires selected polar variables")
-    for section, key in (("input", "directory"), ("output", "directory")):
-        conf[section][key] = str((base / conf[section][key]).resolve())
-    if inp["fa"]["python_executable"] is not None:
-        # Resolving a venv's python symlink would silently select the base
-        # interpreter and lose that environment's optional native dependencies.
-        inp["fa"]["python_executable"] = os.path.abspath(base / inp["fa"]["python_executable"])
-    if inp["files"]:
-        inp["files"] = [str((base / p).resolve()) for p in inp["files"]]
-    for section, key in (("prescribed_track", "file"), ("utrack", "weights_file")):
-        if trk[section][key]:
-            trk[section][key] = str((base / trk[section][key]).resolve())
-    _resolve_sources(raw, conf, base)
-    if inp["sources"]:
-        conf["input"] = {key: inp[key] for key in ("sources", "time_alignment")}
-    return conf, user, polar
+    Dependency-only children may have no products internally. Only the parent
+    owns a track export; this view is not a standalone public YAML document.
+    """
+    document = _source_document(parent.yaml_config, name)
+    document["products"].pop("track", None)
+    origins = {path: parent.schema_sources.get(path, "automatic")
+               for path in setting_sources({}, document)}
+    requests = {name: copy.deepcopy(parent.source_requests[name])}
+    return _runtime_from_resolved(document, requests, origins,
+                                  base_dir=parent.simulation_output_dir)
+
+
+def _request_plan(conf, requests):
+    products = []
+    suffix = "nc" if conf["output"]["format"] == "netcdf" else "zarr"
+    for product in conf["products"]:
+        if product == "track":
+            products.append({
+                "source": None, "product": "track",
+                "path": f"products/{conf['run']['name']}.track.nc",
+                "fields": ["latitude", "longitude"], "stored_names": None,
+                "dimensions": None, "units": None, "representation": "trajectory",
+                "time_association": conf["region"].get("sources_coupling_time_association"),
+            })
+            continue
+        for name, req in requests.items():
+            if product not in req["exports"]:
+                continue
+            products.append({
+                "source": name, "product": product,
+                "path": f"products/{conf['run']['name']}.{name}.{product}.{suffix}",
+                "fields": list(req["exports"][product]), "stored_names": None,
+                "dimensions": None, "units": None, "representation": product,
+                "time_association": conf["region"].get("sources_coupling_time_association"),
+            })
+    return {
+        "sources": {name: {
+            "declaration": copy.deepcopy(source), "physical_type": None,
+            "model": source.get("model"), "profile": source.get("profile"),
+            "files": None, "metadata_origins": {}, "records": None, "native_grids": None,
+            "requests": copy.deepcopy(requests[name]),
+        } for name, source in conf["sources"].items()},
+        "products": products, "warnings": [],
+        "deferred_checks": [
+            "Bind source models, formats, physical types, files, fields, times and native grids from metadata.",
+            "Check method applicability, units, level availability, dependencies, geometry and resources.",
+        ],
+    }
 
 
 def to_runtime(raw, *, base_dir=None):
-    c, user, polar = resolve_schema(raw, base_dir=base_dir)
-    inp = {**DEFAULTS["input"], **c["input"]}
-    trk, pol = c["tracking"], c["polar"]
-    pc = trk["pressure_centroid"]
-    size = c["domain"]["width_km"] or {"x": 0, "y": 0}
-    origins = setting_sources(raw, c)
-    for name, source in inp["sources"].items():
-        for path, origin in setting_sources(raw.get("polar", {}), source["polar"]).items():
-            key = f"input.sources.{name}.polar.{path}"
-            if origins[key] == "default":
-                origins[key] = origin
-    return {
-        "schema_version": "2.1", "yaml_config": c, "schema_sources": origins,
-        "simulation_name": c["run"]["name"],
-        "comment": c["run"]["description"],
-        "atm_model": {"arome": "AROME", "mesonh": "MNH", "nemo": "NEMO", "croco": "CROCO"}[c["model"]],
-        "ocean_model": c["metadata"]["ocean_model"], "wave_model": c["metadata"]["wave_model"],
-        "resolution": inp["grid_spacing_m"] or 0, "infer_grid_geometry": True,
+    """Return SimulationConfig arguments; source requests remain unbound."""
+    conf, requests, _ = resolve_schema(raw, base_dir=base_dir)
+    return _runtime_from_resolved(conf, requests, setting_sources(raw, conf), base_dir=base_dir)
+
+
+def _runtime_from_resolved(conf, requests, origins, *, base_dir=None):
+    name = next(iter(conf["sources"])) if len(conf["sources"]) == 1 else None
+    source = conf["sources"][name] if name else {}
+    region, products = conf["region"], conf["products"]
+    tracker = region.get("tracker", {})
+    method = tracker.get("method")
+    method = "wind_pressure" if method == "pressure_wind" else method
+    if "center" in region:
+        method = "fixed_box"
+    elif "track" in region:
+        method = "prescribed_track"
+    polar = products.get("polar", {})
+    processing = polar.get("processing", {})
+    cache = processing.get("plan_cache", {})
+    size = region.get("width_km", {})
+    pc = tracker if method == "pressure_centroid" else TRACKER_DEFAULTS["pressure_centroid"]
+    runtime = {
+        "schema_version": 3, "yaml_config": conf, "schema_sources": origins,
+        "sources": copy.deepcopy(conf["sources"]), "source_name": name,
+        "source_requests": copy.deepcopy(requests),
+        "simulation_parameter": {"request_plan": _request_plan(conf, requests)},
+        "simulation_name": conf["run"]["name"], "comment": conf["run"]["description"],
+        "atm_model": {"arome": "AROME", "mesonh": "MNH", "nemo": "NEMO", "croco": "CROCO"}.get(
+            source.get("model")),
+        "ocean_model": "", "wave_model": "", "resolution": 0, "infer_grid_geometry": True,
         "file_name_prefix": "", "file_name": "", "file_name_suffix": "",
-        "file_type": "coupled" if inp["sources"] else inp["format"] or "",
-        "input_pattern": inp["pattern"],
-        "input_sources": inp["sources"], "time_alignment": inp["time_alignment"],
-        "tracking_source": trk["source"], "fa_options": inp["fa"],
-        "input_files": inp["files"], "input_exclude": inp["exclude"],
-        "simulation_output_dir": inp["directory"], "frameit_output_dir": c["output"]["directory"],
-        "duplicate_time_policy": inp["duplicate_time_policy"],
-        "netcdf_engine": inp["netcdf"]["engine"],
-        "netcdf_chunks": inp["netcdf"]["chunks"],
-        "netcdf_file_layout": inp["netcdf"]["file_layout"],
-        "netcdf_surfex_fields": inp["netcdf"]["surfex_fields"],
-        "wind_reference_frame": None,
-        "wind_pairs": [{**pair, "group": _runtime_group(pair["group"])}
-                       for pair in inp["wind_pairs"]],
-        "cartesian_horizontal_winds": {"native": "native", "earth_centered": "mass_earth"}[
-            c["output"]["cartesian"]["horizontal_vectors"]],
-        "cartesian_vertical_velocity": c["output"]["cartesian"]["vertical_velocity"],
-        "polar_vertical_velocity": c["output"]["polar"]["vertical_velocity"],
-        "tracking_method": "wind_pressure" if trk["method"] == "pressure_wind" else trk["method"], "fix_subdomain_center": [
-            trk["fixed_box"]["center"]["latitude"], trk["fixed_box"]["center"]["longitude"]]
-            if trk["method"] == "fixed_box" else None,
-        "wind_pressure_search_half_width_km": trk["pressure_wind"]["search_half_width_km"],
-        "wind_pressure_refine_half_width_km": trk["pressure_wind"]["refine_half_width_km"],
-        "wind_pressure_initial_guess": trk["pressure_wind"]["initial_guess"],
-        "prescribed_track_file": trk["prescribed_track"]["file"] or "",
-        "prescribed_track_time_name": trk["prescribed_track"]["time_name"],
-        "prescribed_track_lat_name": trk["prescribed_track"]["latitude_name"],
-        "prescribed_track_lon_name": trk["prescribed_track"]["longitude_name"],
-        "utrack_weights_file": trk["utrack"]["weights_file"],
-        "utrack_use_gpu": trk["utrack"]["use_gpu"],
-        "utrack_batch_size": trk["utrack"]["batch_size"],
+        "file_type": source.get("format", ""), "input_sources": {}, "tracking_source": None,
+        "simulation_output_dir": str(Path(base_dir or Path.cwd()).resolve()),
+        "frameit_output_dir": conf["output"]["directory"], "input_files": None,
+        "input_exclude": source.get("exclude", []),
+        "time_alignment": region.get("sources_coupling_time_association", "exact"),
+        "fa_options": _fa_runtime_options(source) if source.get("format") == "fa" else {},
+        "netcdf_engine": source.get("reader", {}).get("engine", "h5netcdf"),
+        "netcdf_chunks": source.get("reader", {}).get("chunks", {}),
+        "wind_pairs": [], "wind_reference_frame": None,
+        "cartesian_horizontal_winds": "native", "cartesian_vertical_velocity": "interfaces",
+        "polar_vertical_velocity": "interfaces", "tracking_method": method,
+        "fix_subdomain_center": [region["center"][key] for key in ("latitude", "longitude")]
+        if "center" in region else None,
+        "wind_pressure_search_half_width_km": tracker.get("search_width_km", 200.) / 2,
+        "wind_pressure_refine_half_width_km": tracker.get("refine_width_km", 100.) / 2,
+        "wind_pressure_initial_guess": tracker.get("initial_guess"),
+        "prescribed_track_file": region.get("track", {}).get("file", ""),
+        "utrack_weights_file": tracker.get("weights_file"),
+        "utrack_use_gpu": tracker.get("use_gpu", False),
+        "utrack_batch_size": tracker.get("batch_size", 16),
         "pressure_centroid_max_iterations": pc["convergence"]["max_iterations"],
         "pressure_centroid_tolerance_m": pc["convergence"]["tolerance_m"],
         "pressure_centroid_max_motion_iterations": pc["motion"]["max_iterations"],
@@ -783,111 +1094,137 @@ def to_runtime(raw, *, base_dir=None):
         "pressure_centroid_r80_max_km": pc["sampling"]["r80_max_distance_km"],
         "pressure_centroid_dr_km": pc["sampling"]["radial_step_km"],
         "pressure_centroid_dtheta": pc["sampling"]["azimuth_step_deg"],
-        "multifield_vortex": trk["multifield_vortex"],
-        "requested_variables_user": user, "polar_variables": polar,
-        "x_boxsize_km": size["x"], "y_boxsize_km": size["y"], "compute_polar_proj": pol["enabled"],
-        "polar_shared_target": pol["shared_target"],
-        "radial_resolution": pol["radial_step_m"] or 0,
-        "azimuthal_resolution": pol["azimuth_step_deg"],
-        "polar_n_theta": pol["azimuth_count"], "polar_max_points": pol["max_points"],
-        "polar_missing_data_policy": pol["missing_data_policy"],
-        "polar_min_valid_weight_fraction": pol["min_valid_weight_fraction"],
-        "polar_weight_zero_tolerance": pol["weight_zero_tolerance"],
-        "polar_source_halo_points": pol["source_halo_points"], "polar_ellipsoid": pol["ellipsoid"],
-        "polar_regrid_cache_size": pol["plan_cache"]["entries"],
-        "polar_regrid_cache_max_bytes": pol["plan_cache"]["max_bytes"],
-        "polar_output_chunks": pol["chunks"], "polar_profile": pol["profile"],
-        "polar_interpolation_method": pol["interpolation_method"],
-        "log_level": c["logging"]["level"],
-        "DEBUG": c["logging"]["level"] == "DEBUG",
+        "multifield_vortex": ({**tracker, "seed": {"time": None, **tracker["seed"]},
+                              "mnh_gravity_m_s2": tracker.get("mnh_gravity_m_s2"),
+                              "on_track_loss":
+                              "stop" if tracker["on_incomplete"] == "keep_prefix" else "error"}
+                             if method == "multifield_vortex" else {}),
+        "requested_variables_user": {}, "polar_variables": {},
+        "x_boxsize_km": size.get("x", 0), "y_boxsize_km": size.get("y", 0),
+        "compute_polar_proj": "polar" in products, "polar_shared_target": polar.get("shared_grid", False),
+        "radial_resolution": polar.get("radial_step_km", 0) * 1000,
+        "azimuthal_resolution": None, "polar_n_theta": polar.get("azimuth_count"),
+        "polar_max_points": processing.get("max_target_points", 2_000_000),
+        "polar_missing_data_policy": polar.get("missing_data_policy", "strict"),
+        "polar_min_valid_weight_fraction": polar.get("min_valid_weight_fraction", .5),
+        "polar_weight_zero_tolerance": processing.get("weight_zero_tolerance", 1e-14),
+        "polar_source_halo_points": processing.get("source_halo_points", 1),
+        "polar_regrid_cache_size": cache.get("entries", 8),
+        "polar_regrid_cache_max_bytes": cache.get("max_bytes", 128 * 1024**2),
+        "polar_output_chunks": processing.get("chunks", {}), "polar_profile": processing.get("profile", False),
+        "log_level": conf["logging"]["level"], "DEBUG": conf["logging"]["level"] == "DEBUG",
     }
+    # Copy fields separately; one deepcopy of runtime would preserve YAML aliases.
+    return {key: copy.deepcopy(value) for key, value in runtime.items()}
 
 
 def setting_sources(raw, resolved, prefix=""):
-    sources = {}
+    origins = {}
     for key, value in resolved.items():
         path = f"{prefix}.{key}" if prefix else key
         if isinstance(value, dict) and value:
             child = raw.get(key, {})
-            sources.update(setting_sources(child if isinstance(child, dict) else {}, value, path))
+            origins.update(setting_sources(child if isinstance(child, dict) else {}, value, path))
         else:
-            sources[path] = "yaml" if key in raw else "default"
-    return sources
+            origins[path] = "yaml" if key in raw else "default"
+    return origins
+
+
+def resolve_operational_overrides(raw, *, base_dir=None, launch_dir=None, overrides=None):
+    """Return ``(effective_document, dotted_origins)`` for CLI > YAML > defaults.
+
+    ``overrides`` accepts output_directory, cpus, overwrite and log_level.
+    Absence means no override; explicit null is not an omitted flag.
+    """
+    conf, _, _ = resolve_schema(raw, base_dir=base_dir)
+    origins = setting_sources(raw, conf)
+    overrides = _keys(overrides if overrides is not None else {}, {
+        "output_directory", "cpus", "overwrite", "log_level",
+    }, "overrides")
+    _reject_nulls(overrides, "overrides")
+    for key, section, setting in (
+        ("output_directory", "output", "directory"), ("cpus", "resources", "cpus"),
+        ("overwrite", "output", "overwrite"), ("log_level", "logging", "level"),
+    ):
+        if key not in overrides:
+            continue
+        value = overrides[key]
+        if key == "output_directory":
+            if isinstance(value, os.PathLike):
+                value = os.fspath(value)
+            value = _path(value, Path(launch_dir or Path.cwd()).resolve(), f"overrides.{key}")
+        conf[section][setting] = value
+        origins[f"{section}.{setting}"] = "cli"
+    # Reuse the same value checks for YAML and CLI controls.
+    return resolve_schema(conf, base_dir=base_dir)[0], origins
 
 
 def resolved_configuration(conf, options=None):
-    """Reloadable public schema with inferred defaults and effective overrides."""
+    """Return valid effective v3 controls, without inserting pending metadata."""
     result = copy.deepcopy(conf.yaml_config)
-    if conf.input_sources:
-        result["input"] = {key: result["input"][key] for key in ("sources", "time_alignment")}
+    if options is None:
+        return result
+    writer, resources = result["output"]["writer"], result["resources"]
+    result["output"]["overwrite"] = options.overwrite
+    result["output"]["format"] = "zarr" if options.engine == "zarr" else "netcdf"
+    writer["compression"] = {"level": options.compress_level, "coordinates": options.compress_coords}
+    if options.engine == "zarr":
+        writer.pop("engine", None)
+        writer.pop("unlimited_time", None)
+        if options.zarr_chunk_size:
+            writer["chunks"] = dict(options.zarr_chunk_size)
+        if options.zarr_shard_size:
+            writer["shards"] = dict(options.zarr_shard_size)
     else:
-        result["input"]["grid_spacing_m"] = conf.resolution or None
-        result["input"]["format"] = conf.file_type or result["input"]["format"]
-    if conf.compute_polar_proj and not conf.input_sources:
-        result["polar"]["radial_step_m"] = conf.radial_resolution or None
-    if options is not None:
-        out = result["output"]
-        out["export"] = {"enabled": options.export_netcdf, "cartesian": options.export_cart,
-                         "polar": options.export_polar}
-        out["compression"] = {"level": options.compress_level,
-                              "coordinates": options.compress_coords}
-        for key in ("overwrite", "unlimited_time", "max_workers", "institution",
-                     "synchronous_export", "zarr_chunk_size", "zarr_shard_size"):
-            out[key] = getattr(options, key)
-        out["backend"] = options.engine
-        out["netcdf_format"] = options.fmt
-        result["execution"] = {
-            key: getattr(options, key) for key in DEFAULTS["execution"]
-        }
-        result["logging"]["level"] = options.log_level or conf.log_level or "INFO"
+        writer.pop("shards", None)
+        writer["engine"], writer["unlimited_time"] = options.engine, options.unlimited_time
+    for attr, key in (("cpus", "cpus"), ("dask_workers", "compute_workers"), ("max_workers", "export_workers")):
+        if getattr(options, attr) is not None:
+            resources[key] = getattr(options, attr)
+    resources.update(scheduler=options.dask_scheduler, native_threads=options.native_threads,
+                     synchronous_export=options.synchronous_export)
+    if options.institution or "institution" in result["metadata"]:
+        result["metadata"]["institution"] = options.institution
+    result["logging"]["level"] = options.log_level or conf.log_level or "INFO"
     return result
 
 
 def resolved_sources(conf, options=None):
-    sources = dict(conf.schema_sources)
-    if not conf.input_sources:
-        sources["input.grid_spacing_m"] = conf.grid_geometry.get("effective_source", "unresolved")
-        sources["input.format"] = (
-            "inferred_from_content" if conf.yaml_config["input"]["format"] is None else "yaml"
-        )
-    if not conf.input_sources and conf.yaml_config["polar"]["radial_step_m"] is None:
-        sources["polar.radial_step_m"] = "resolved_grid_spacing"
+    origins = dict(conf.schema_sources)
     if options is not None:
-        from frameit.core.execution import ExecutionOptions
+        effective = resolved_configuration(conf, options)
+        baseline = setting_sources(conf.yaml_config, effective)
 
-        baseline = ExecutionOptions.from_config(conf)
-        for attribute, path in (
-            ("export_netcdf", "output.export.enabled"), ("export_cart", "output.export.cartesian"),
-            ("export_polar", "output.export.polar"), ("compress_level", "output.compression.level"),
-            ("compress_coords", "output.compression.coordinates"),
-            ("institution", "output.institution"),
-            ("log_level", "logging.level"), ("engine", "output.backend"), ("fmt", "output.netcdf_format"),
-            ("overwrite", "output.overwrite"), ("unlimited_time", "output.unlimited_time"),
-            ("max_workers", "output.max_workers"),
-            ("synchronous_export", "output.synchronous_export"),
-            ("zarr_chunk_size", "output.zarr_chunk_size"),
-            ("zarr_shard_size", "output.zarr_shard_size"),
-            *((key, f"execution.{key}") for key in DEFAULTS["execution"]),
-        ):
-            if getattr(options, attribute) != getattr(baseline, attribute):
-                sources[path] = "execution_override"
-    return sources
+        def mark(before, after, prefix=""):
+            for key, value in after.items():
+                path = f"{prefix}.{key}" if prefix else key
+                if isinstance(value, dict):
+                    mark(before.get(key, {}), value, path)
+                elif key not in before or before[key] != value:
+                    origins[path] = "cli"
+
+        mark(conf.yaml_config, effective)
+        for path in baseline:
+            origins.setdefault(path, "default")
+    return origins
 
 
 def load_runtime(path):
-    """Load strict YAML and add line locations to dotted-key diagnostics."""
+    """Load strict YAML and add authored line locations to dotted-key errors."""
     path = Path(path)
     raw = read_yaml(path)
     try:
         return to_runtime(raw, base_dir=path.resolve().parent)
     except ValueError as exc:
         locations = {}
+
         def visit(node, prefix=""):
             if isinstance(node, yaml.MappingNode):
                 for key, value in node.value:
                     name = f"{prefix}.{key.value}" if prefix else key.value
                     locations[name] = key.start_mark.line + 1
                     visit(value, name)
+
         visit(yaml.compose(path.read_text(encoding="utf-8")))
         message = str(exc)
         matches = [(name, line) for name, line in locations.items() if name in message]

@@ -118,6 +118,8 @@ def resolve_input_files(files, *, strict=False):
 def discover_input_files(config):
     """Ordinary run discovery, shared with native matrix planning."""
     inventory = getattr(config, "input_files", None)
+    if getattr(config, "schema_version", None) == 3 and inventory is None:
+        raise ValueError("Cannot use a legacy file pattern for v3 sources; bind a source inventory first")
     files = ([Path(p) for p in inventory] if inventory is not None else
              sorted(p for p in config.data_dir.glob(config.build_pattern()) if p.is_file()))
     if inventory is not None:
@@ -171,7 +173,7 @@ def load_config_with_model_presets(
     Parameters
     ----------
     run_yaml_path : Path
-        Path to the user run YAML file.  Must contain at least ``atm_model``.
+        Path to the public v3 run YAML file.
     strict_locked : bool, optional
         Reserved for future enforcement of preset-locked keys. Default False.
 
@@ -211,6 +213,12 @@ def _apply_model_presets(mapping, *, strict_locked=False):
     run = copy.deepcopy(dict(mapping))
 
     model = run.get("atm_model")
+    if run.get("schema_version") == 3:
+        # Named sources bind independently in preflight. There is no reference
+        # model or implicit tracker for an unresolved or multi-source request.
+        run["requested_variables_tracker"] = {}
+        if not model:
+            return run
     if not model:
         raise ValueError("atm_model is missing from the run YAML")
     tracking_method = run.get("tracking_method", "wind_pressure")
@@ -227,7 +235,7 @@ def _apply_model_presets(mapping, *, strict_locked=False):
     if run.get("file_type") == "fa":
         # Native FA geometry differs from the AROME GRIB sampling contract.
         coords.update(name_time_dim="time", name_lat_dim="y", name_lon_dim="x")
-    tracker_yaml_raw = _load_yaml(tracker_p)
+    tracker_yaml_raw = _load_yaml(tracker_p) if run.get("schema_version") != 3 else {}
 
     # Wrap the tracker content under a dedicated key for the dataclass.
     # tracker_yaml_raw typically contains 'requested_variables_by_method'.

@@ -29,9 +29,9 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | Task | State | Owner | Needs | Claimed files / next action |
 |---|---|---|---|---|
 | 00 | done | lead | — | Reviewed internal records: `dec4db1`. |
-| 01 | done | task-01 worker + independent reviewer | 00 | Narrowed filtering; reviewed fix ready for focused commit. |
-| 02 | ready | lead | 01 | `configuration.py`, `settings_class.py`, `execution.py`, `loader.py`, `test_configuration_v3.py`; define strict syntax and runtime handoffs. |
-| 03 | blocked | lead | 02 | `loader.py`, `preflight.py`, `coupled.py`, inventory tests; freeze records and grid identities. |
+| 01 | done | task-01 worker + independent reviewer | 00 | Reviewed fix committed as `645d7e6`. |
+| 02 | done | task-02 worker + independent reviewer | 01 | All findings closed; verified schema and frozen handoffs. |
+| 03 | ready | lead | 02 | `loader.py`, `preflight.py`, `coupled.py`, inventory tests; use the frozen handoffs below after Task 02 commit. |
 | 04 | blocked | unassigned | 03 | `requests.py`, `preflight.py`, optional `units.py`, request/grid tests; bind fields and levels. |
 | 05 | blocked | lead | 04 | Native execution test and orchestration first; separate adapter claims after native slice review. |
 | 06 | blocked | lead | 05 | `coupled.py`, time/track/tracker/extraction files; regions and centre associations. |
@@ -230,7 +230,161 @@ No acceptance has been received.
 - Task 01 independent review: spec PASS, quality Approve; no open findings.
   Reviewer inspected actual diff, caller/export interfaces, tests and completed
   full-suite log. No numerical or schema changes.
-- Next: commit Task 01, then assign Task 02.
+- Task 01 commit: `645d7e6`.
+- Task 02 assigned at `645d7e6`. Its worker owns the four named runtime files
+  and new metadata-free schema tests. Lead retains public documentation and state.
+  Shared fixture helpers are unchanged unless an explicit caller-wide claim is
+  agreed. No metadata/payload implementation belongs in this schema milestone.
+- Lead's Task 02 documentation claim:
+  `docs/source/user_guide/configuration_file.rst`. It now teaches v3 directly;
+  its final syntax/defaults will be checked against the worker's implementation
+  before build/review. Existing useful URL and `starter-catalogue` anchor remain.
+  The full producer/template/cross-page conversion retains its Tasks 15–16 scope.
+- Task 02 milestone checks: new `test_configuration_v3.py` is metadata-free.
+  The five Task 01 identity/diagnostic nodes remain delivered regression checks.
+  Source-dependent public v2 tests await their owning conversion tasks, as the
+  plan explicitly requires at lines 800–806; no such tests may be weakened,
+  suppressed or marked passed merely because the new schema rejects their input.
+- Task 02 documentation build: strict HTML and publication boundary passed in
+  iteration `yaml-v3-02`. Publication unittests exposed the old all-keys download
+  and its schema-specific assertions (`test_all_keys_reference_covers_the_current_schema`).
+  Ruling: bring forward only `configuration-reference.yaml`,
+  `reference/all_keys.rst` and that test's v3 assertions from Task 16 into Task 02.
+  They describe this schema and must agree before the required publication check
+  can pass; no CLI, template or execution-producer conversion is brought forward.
+  The lead owns these three additional files.
+- Additional docs command:
+  `PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q docs/test_documentation_plots.py docs/test_release.py docs/test_repository_examples.py::test_slurm_launcher_isolates_retries_and_propagates_failure`
+  returned 4 passed, 1 failed, 2 subtests passed, 15 existing warnings.
+  The Slurm test actually invokes the CLI with its v2 helper; that exact node is
+  future-dependent on Tasks 16/18, not an applicable schema-milestone pass.
+  Plot/release checks passed. No assertion was disabled or changed for this failure.
+- Task 02 first independent review requested fixes before interface freeze:
+  dependency-only atmospheric child handoff; omitted vortex numerical option
+  keys; mutable runtime/options aliases into effective controls. The original
+  worker owns all three fixes with RED/GREEN evidence and scoped re-review.
+  Canonical documentation additions had no contract findings.
+  Review checkpoint tree is `2e0e6e76685963107fe8a43d756a81a69f5b9c59`
+  (index tree only, not a commit); no task code was committed before review.
+- Task 02 canonical docs after reference repair:
+  ```bash
+  PYTHONPATH="$PWD/src" conda run -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/yaml-v3-03
+  PYTHONPATH="$PWD/src" conda run -n frameit_env python docs/check_publication.py build/docs-preview/yaml-v3-03
+  PYTHONPATH="$PWD/src" conda run -n frameit_env python -m unittest discover -s docs -p test_check_publication.py
+  PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q docs/test_documentation_plots.py docs/test_release.py
+  ```
+  All exit 0: strict build without warnings; publication passed; 13 unittests;
+  4 plot/release tests and 2 subtests, with the same 15 backend warnings.
+  The publication regression resolves the actual annotated YAML and checks the
+  literal model-grid/polar field lists, rather than accepting a stale shape.
+  The minimal inline YAML was separately resolved without opening any source.
+- The canonical configuration and all-keys pages, including rendered reference
+  YAML, were inspected live at 880 px and in actual 320-CSS-pixel frame viewports.
+  Headings, prose, table wrapping, code scrolling, links and focus were inspected.
+  No page overflow or broken images; long YAML lines scroll within their block.
+  The reference download returned HTTP 200 and contains integer version 3.
+  Enter opened/closed the narrow menu. No new scientific figures or SVGs changed.
+  Preview details remain in the ignored handover, not committed machine state.
+
+## Task 02 reviewed interface freeze
+
+Independent reviewer verified all three closures: spec PASS, quality APPROVE;
+no new fix breakage or remaining pre-binding interface gap. No scientific
+approval, full-suite result or native v3 execution is inferred from that review.
+
+Final lead check:
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_configuration_v3.py
+PYTHONPATH="$PWD/src" conda run -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/yaml-v3-04
+PYTHONPATH="$PWD/src" conda run -n frameit_env python docs/check_publication.py build/docs-preview/yaml-v3-04
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m unittest discover -s docs -p test_check_publication.py
+```
+
+Results: 326 passed (3.81 seconds, no warnings), strict build without warnings,
+publication passed, 13 publication unittests passed. Both affected HTML files
+were compared byte-for-byte with the desktop/narrow-reviewed iteration 03 and
+matched. The retained live preview now shows iteration 04.
+The worker also reran 168 applicable numerical/runtime checks; exact supplemental
+commands and results are preserved in `task-02-checks.md`.
+
+### Shapes and callers
+
+- `resolve_schema(raw, *, base_dir=None)` retains its three-item return:
+  `(resolved_v3_controls, source_requests, polar_fields)`. Public schema accepts
+  only integer 3. Unknown metadata is omitted from valid controls, not guessed.
+- Each `source_requests[name]` contains
+  `fields: {"2d": [...], "3d": [...]}`, `levels`, `derived`,
+  `exports: {product: [field/result names]}`, `internal_inputs`, `transforms`,
+  `polar_options`, and `binding: None`. This is NOT the existing numerical
+  group mapping consumed by `normalize_requests`. Task 04 binds it.
+- `polar_fields` maps only participating source names to selected field names.
+- `to_runtime(raw, *, base_dir=None)` still returns `SimulationConfig` arguments.
+  New fields are `sources`, `source_name`, and `source_requests`.
+  `input_sources={}` avoids the old compulsory coupled path. User/tracker
+  numerical group requests remain empty until binding. Unknown/multiple-source
+  model is `None`; absent region has no tracking method or invented centre.
+- `simulation_parameter["request_plan"]` holds:
+  ```text
+  sources[name]:
+    declaration, physical_type, model, profile, files, metadata_origins,
+    records, native_grids, requests
+  products[]:
+    source, product, path, fields, stored_names, dimensions, units,
+    representation, time_association
+  warnings[]
+  deferred_checks[]
+  ```
+  `physical_type`, resolved `files`, `records`, `native_grids` and binding slots
+  remain `None` until the owning metadata task fills them. Product descriptors
+  are planned, run-relative publications, not completed outputs.
+- `source_document(parent_mapping, name)` retains public valid-source-document
+  behavior. It cannot express an unexported dependency as standalone public YAML.
+- New shared private handoff `_source_runtime(parent_config, name) -> dict`
+  projects an independent pre-binding child with the same numerical argument
+  builder as `to_runtime`. Task 03's `coupled.prepare_sources` MUST use this
+  route instead of forcing every child through public YAML/preset loading.
+  It retains region/dependency context, preserves parent path bases and origins,
+  narrows source field products, and removes parent-owned track publication.
+  Dependency-only children have `products={}`, no exports/descriptors, and all
+  `ExecutionOptions` export switches false. This INTERNAL child view is not
+  reloadable public YAML: persist/report the parent request, not the child.
+  Public empty-product rejection is unchanged.
+- `_runtime_from_resolved` and `_source_document` are private shared builders,
+  used only by the public resolver/projection entry points and `_source_runtime`.
+  All mutable runtime fields are copied independently of effective controls,
+  declarations and plan snapshots. Options likewise own their chunk/shard maps.
+- `resolve_operational_overrides(raw, *, base_dir=None, launch_dir=None,
+  overrides=None) -> (effective_controls, dotted_origins)` accepts only
+  `output_directory`, `cpus`, `overwrite`, `log_level`. Omit unset CLI keys;
+  explicit null is invalid, while False must be retained. CLI > YAML > default.
+  CLI paths use launch directory; YAML/auxiliary paths use the YAML directory.
+- Origins are copied from the parent to source projections, restricted to
+  applicable leaves. Do not recompute origins from resolved controls (that
+  would relabel defaults as YAML). Projection-only empty blocks are `automatic`.
+  Metadata/automatic resource origins are added when observed in Tasks 03/11/13.
+- `ExecutionOptions.from_config` reads v3 products, writer and resources.
+  New optional `cpus` carries the request; budget enforcement remains Task 11.
+  Overwrite defaults false; institutional attribution has no institutional default.
+- Existing direct numerical `SimulationConfig` APIs and numerical validators
+  remain available. `FA_DEFAULTS` replaces the removed public v2 default path.
+  Public version-sensitive branches in settings/execution recognize integer 3.
+  Runtime-only omitted vortex keys are supplied without inserting null controls.
+- Existing callers: loaders and YAML/mapping classmethods still use
+  `load_runtime`/`to_runtime`; preset application skips unknown/multiple reference
+  models and does not inject unbound tracker inputs. Preflight/execution/coupled
+  still use resolved-config/origin helpers. CLI/templates/producers convert in
+  Tasks 15–16. Their future-dependent suites are NOT marked passed.
+- Until inventory and binding exist, v3 execution/discovery fails actionably
+  before creating output artifacts or falling back to a legacy filename pattern.
+  Tasks 03–05 must replace those pending handoffs with selected actual records.
+
+Scientific impact: no new method or numerical change. Public YAML compatibility
+changes to v3 only, as approved; no migration/compatibility layer was added.
+Shared `dataset`/`document` fixture APIs remain intact; their public producer
+conversion stays caller-wide in Task 16. Task 02 is not a runnable v3 pipeline.
+- Next: commit the reviewed Task 02 result, then assign Task 03 using the frozen
+  runtime/record-plan handoffs below. No further interface freeze is pending.
 
 ## Task 01 evidence
 

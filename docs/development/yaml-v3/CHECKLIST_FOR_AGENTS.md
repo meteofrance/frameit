@@ -809,7 +809,7 @@ assertion, or mark a failed check as passed. The final full suite remains requir
 |---|---|---|---|
 | [x] | 00 | — | New branch, baseline, state record, ownership map |
 | [x] | 01 | 00 | Correct parent/worker installation identity |
-| [ ] | 02 | 01 | Strict v3 schema and shared execution interfaces |
+| [x] | 02 | 01 | Strict v3 schema and shared execution interfaces |
 | [ ] | 03 | 02 | Source inventory and selected physical records |
 | [ ] | 04 | 03 | Field identity and shared level binding |
 | [ ] | 05 | 04 | Native NetCDF slice, then selected-record adapter reads |
@@ -921,19 +921,19 @@ create `src/frameit/testing/numerical/test_configuration_v3.py`.
 **Interfaces:** resolver/runtime signatures and plan entries above. Keep direct
 `SimulationConfig` numerical construction usable; replace the public YAML schema.
 
-- [ ] Add schema tests for every approved block, unknown keys, duplicate YAML keys,
+- [x] Add schema tests for every approved block, unknown keys, duplicate YAML keys,
   `schema_version: 3` versus `true`, omission versus null, exclusive selectors,
   invalid cross-format options, defaults, and CLI/YAML/default origins.
   Keep `test_configuration_v3.py` metadata-free at this milestone; test the override
   resolver directly. Public CLI checks belong to Task 15.
-- [ ] Implement strict v3 resolution. Keep source declarations intact until metadata
+- [x] Implement strict v3 resolution. Keep source declarations intact until metadata
   can bind them. Separate source identity from the old mandatory coupled branch.
-- [ ] Record mapping shapes and callers in `STATE.md`. Update version-sensitive
+- [x] Record mapping shapes and callers in `STATE.md`. Update version-sensitive
   branches in settings and execution, not only the parser's version guard.
-- [ ] Update shared config fixtures and their importers together. Do not delete
+- [x] Update shared config fixtures and their importers together. Do not delete
   `test_configuration_v2_1.py` while other suites import its `dataset`/`document`
   helpers. Retain meaningful rejection tests; no public v2 compatibility is required.
-- [ ] Review the interface handoff before downstream work starts.
+- [x] Review the interface handoff before downstream work starts.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_configuration_v3.py

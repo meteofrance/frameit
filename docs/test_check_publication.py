@@ -35,7 +35,7 @@ class PublicationBoundaryTests(unittest.TestCase):
 
     def test_all_keys_reference_covers_the_current_schema(self):
         import yaml
-        from frameit.core.configuration import DEFAULTS
+        from frameit.core.configuration import DEFAULTS, resolve_schema
 
         path = Path(__file__).parent / 'source/_static/configuration-reference.yaml'
         reference = yaml.safe_load(path.read_text())
@@ -51,10 +51,17 @@ class PublicationBoundaryTests(unittest.TestCase):
 
         self.assertEqual(set(reference), set(DEFAULTS))
         self.assertFalse(paths(DEFAULTS) - paths(reference))
-        self.assertIn('fields_2d', reference['variables'])
-        self.assertIn('sample', reference['input']['sources'])
-        self.assertIn('sample_field', reference['input']['fa']['field_metadata'])
-        self.assertIn('sample_cube', reference['input']['fa']['native_cubes'])
+        self.assertEqual(reference['schema_version'], 3)
+        self.assertIn('sample', reference['sources'])
+        source = reference['sources']['sample']
+        self.assertIn('2d', source['variables'])
+        self.assertIn('3d', source['variables'])
+        self.assertIn('sample_field', source['field_metadata'])
+        self.assertIn('sample_cube', source['native_cubes'])
+        _, requests, polar = resolve_schema(reference, base_dir=path.parent)
+        self.assertEqual(requests['sample']['exports']['model_grid'],
+                         ['sample_field', 'sample_cube'])
+        self.assertEqual(polar['sample'], ['sample_field', 'sample_cube'])
 
     def test_local_links_resolve_relative_encoded_downloads_and_fragments(self):
         from check_publication import check_local_links

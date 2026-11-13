@@ -49,7 +49,7 @@ class SimulationConfig:
     file_type: str  # grib/netcdf/fa, or internal coupled dispatch
 
     # Models and metadata
-    atm_model: ModelName
+    atm_model: ModelName | None
     ocean_model: str
     wave_model: str
     resolution: int
@@ -77,7 +77,7 @@ class SimulationConfig:
     # Tracking
     # ---------
     # Tracker selection
-    tracking_method: TrackingMethod = "method"
+    tracking_method: TrackingMethod | None = "method"
     # Variables dedicated to tracking
     requested_variables_tracker: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Variable name aliases for trackers
@@ -161,6 +161,10 @@ class SimulationConfig:
     netcdf_file_layout: str = "time_series"
     netcdf_surfex_fields: list[str] = field(default_factory=list)
     input_sources: dict[str, Any] = field(default_factory=dict)
+    # Public v3 declarations are not the old coupled dispatch or bound loader groups.
+    sources: dict[str, Any] = field(default_factory=dict)
+    source_name: str | None = None
+    source_requests: dict[str, Any] = field(default_factory=dict)
     time_alignment: str = "common"
     tracking_source: str | None = None
     fa_options: dict[str, Any] = field(default_factory=dict)
@@ -299,15 +303,17 @@ class SimulationConfig:
         if type(self.polar_shared_target) is not bool:
             raise ValueError("polar_shared_target must be a boolean")
         if self.file_type == "fa":
-            if self.atm_model != "AROME":
+            if self.atm_model != "AROME" and not (
+                self.schema_version == 3 and self.atm_model is None
+            ):
                 raise ValueError("Current FA profiles require atm_model='AROME'")
             from frameit.core.configuration import (
-                DEFAULTS,
+                FA_DEFAULTS,
                 _merge_checked,
                 validate_fa_options,
             )
 
-            self.fa_options = _merge_checked(self.fa_options, DEFAULTS["input"]["fa"], "input.fa")
+            self.fa_options = _merge_checked(self.fa_options, FA_DEFAULTS, "input.fa")
             validate_fa_options(self.fa_options, selected=True)
             for name, value in (("name_time_dim", "time"), ("name_lat_dim", "y"),
                                 ("name_lon_dim", "x"), ("name_latitude", "latitude"),
@@ -354,9 +360,12 @@ class SimulationConfig:
             or self.wind_reference_frame not in {"earth", "grid"}
         ):
             raise ValueError("wind_reference_frame must be 'earth', 'grid', or None")
-        if self.atm_model not in ("AROME", "MNH", "NEMO", "CROCO"):
+        if self.atm_model not in ("AROME", "MNH", "NEMO", "CROCO") and not (
+            self.schema_version == 3 and self.atm_model is None
+        ):
             raise ValueError("atm_model must be 'AROME', 'MNH', 'NEMO' or 'CROCO'")
-        if self.atm_model in {"NEMO", "CROCO"} and self.tracking_method not in {"fixed_box", "prescribed_track"}:
+        if (self.schema_version != 3 and self.atm_model in {"NEMO", "CROCO"}
+                and self.tracking_method not in {"fixed_box", "prescribed_track"}):
             raise ValueError(f"{self.atm_model} reference sources require fixed_box or prescribed_track")
 
         if not self.simulation_output_dir:
@@ -364,7 +373,9 @@ class SimulationConfig:
         if not self.frameit_output_dir:
             raise ValueError("frameit_output_dir must not be empty")
 
-        if not isinstance(self.tracking_method, str):
+        if not isinstance(self.tracking_method, str) and not (
+            self.schema_version == 3 and self.tracking_method is None
+        ):
             raise TypeError("tracking_method should be a string")
         import math
 
@@ -498,7 +509,7 @@ class SimulationConfig:
             True only when ``atm_model == "MNH"`` and the file name matches
             the "000" timeseries entry of the current file pattern.
         """
-        if self.schema_version == "2.1" or self.atm_model != "MNH":
+        if self.schema_version == 3 or self.atm_model != "MNH":
             return False
 
         try:
@@ -546,6 +557,10 @@ class SimulationConfig:
             for req in self.requested_variables_user.values():
                 s.update(req.get("variables", []))
             return sorted(s)
+        if self.schema_version == 3:
+            return sorted({name for source in self.sources.values()
+                           for name in (*source["variables"].get("2d", []),
+                                        *source["variables"].get("3d", []), *source["derived"])})
         return list(self.variables)
 
     def expected_variables_tracker(self) -> list[str]:
@@ -563,7 +578,7 @@ class SimulationConfig:
             for req in self.requested_variables_tracker.values():
                 s.update(req.get("variables", []))
             return sorted(s)
-        return list(self.variables)
+        return [] if self.schema_version == 3 else list(self.variables)
 
     def expected_polar_variables(self) -> list[str]:
         """
