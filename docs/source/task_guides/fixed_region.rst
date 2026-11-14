@@ -20,14 +20,32 @@ Start in a new directory:
    mkdir frameit-fixed-region
    cd frameit-fixed-region
    python -m frameit.testing.documentation_example --output data/first-run.nc
-   frameit init arome --tracking fixed_box
 
-This is equivalent to ``frameit init arome-fixed-scalar``. Its geographical choices are:
+Save this complete request as ``frameit.yaml``:
 
-.. literalinclude:: ../../../src/frameit/templates/arome-fixed-scalar.yaml
-   :language: yaml
-   :start-at: tracking:
-   :end-at: width_km: {x: 4, y: 4}
+.. code-block:: yaml
+
+   schema_version: 3
+   run:
+     name: fixed-region
+   sources:
+     atmosphere:
+       model: arome
+       files: ./data/first-run.nc
+       variables:
+         2d: [instructional_scalar]
+   region:
+     center: {latitude: -20, longitude: 60}
+     width_km: {x: 4, y: 4}
+   output:
+     directory: ./output
+   resources:
+     synchronous_export: true
+     scheduler: synchronous
+
+Omitted ``products`` requests model-grid output only. The centre does not request
+a trajectory file or diagnostics. Omitting ``region`` instead keeps the full
+domain without a centre.
 
 .. figure:: ../_static/figures/fixed-moving-regions.svg
    :width: 480px
@@ -36,22 +54,23 @@ This is equivalent to ``frameit init arome-fixed-scalar``. Its geographical choi
 
    Schematic, not to scale. The crop snaps to native indices. Requested full
    widths are rounded to native point counts; realised extents can differ.
-   The requested geographical centre remains available as the polar origin.
+   The requested continuous centre remains distinct from the selected native point.
 
 Adapt it to real inputs
 ------------------------
 
-For this instructional run, leave the generated values unchanged. For real work,
+For this instructional run, leave the example values unchanged. For real work,
 edit ``frameit.yaml`` only after inspecting the intended stream:
 
-* Replace ``input.directory/pattern/format`` and ``variables.fields_2d.names``
+* Replace ``sources.atmosphere.files`` and ``sources.atmosphere.variables.2d``
   together. ``instructional_scalar`` is not a producer field. Declare each needed
   vertical selection explicitly; stored indices are not physical depths.
-* Set ``tracking.fixed_box.center`` in degrees north/east. Use a location relevant
+* Set ``region.center`` in degrees north/east. Use a location relevant
   to the question, not a supplied illustrative centre.
-* Set both ``domain.width_km`` components as positive **full widths in km**.
-  Rounding to native grid points changes the realised extent. Near an edge the
-  supported ``pad_nan`` policy retains centred geometry and missing outside samples.
+* Set both ``region.width_km`` components as positive **full widths in km**.
+   Rounding to native grid points changes the realised extent. Near an edge the
+   crop keeps its shape with missing outside samples. A centre outside a required
+   source footprint fails rather than snapping to an edge point.
 * Keep a fresh ``output.directory`` and ``overwrite: false``. Leave polar sampling
   off unless selected for a separate purpose. Adding winds or currents requires
   their own sampling/basis declarations, not just extra field names.
@@ -63,20 +82,35 @@ See :doc:`../user_guide/configuration_file` for the full schema/defaults,
 Check, run and interpret
 -------------------------
 
-.. code-block:: bash
+Execute the YAML through the Python API:
 
-   frameit validate --schema-only
-   frameit validate
-   frameit run --dry-run
-   frameit run
-   grep -E '^(state|tracking_complete):' output/run-status.yaml
-   python -c 'import xarray as xr; d=xr.open_dataset("output/products/arome-fixed-scalar.cart.surface.nc", engine="netcdf4"); print(d.sizes); print(d.instructional_scalar.isel(time=0).values); d.close()'
+.. code-block:: python
 
-Schema checks open no data; metadata checks can read coordinates but not field
-payloads. Execution reads the selected values. For this input expect a complete
-two-time track and a ``time=2, y_box=5, x_box=5`` scalar product, with the same
-5×5 values shown in the first run. The central zero stays valid and the missing
-sample stays NaN. No polar file, wind diagnostic or unselected field is produced.
+   from frameit.core.execution import execute_simulation
+   from frameit.core.settings_class import SimulationConfig
+
+   config = SimulationConfig.from_yaml_with_model_preset("frameit.yaml")
+   result = execute_simulation(config)
+   print(result.products)
+
+Metadata checks may read coordinates, but scientific values are read during
+execution. Reopen the listed scalar product without importing FrameIt:
+
+.. code-block:: python
+
+   import numpy as np
+   import xarray as xr
+
+   with xr.open_dataset("output/products/fixed-region.atmosphere.model_grid.nc") as out:
+       with xr.open_dataset("data/first-run.nc") as source:
+           expected = source.instructional_scalar.isel(
+               latitude=slice(6, 11), longitude=slice(6, 11))
+           np.testing.assert_array_equal(out.instructional_scalar.values, expected.values)
+       print(out.sizes, out.instructional_scalar.attrs)
+
+The two samples retain their native 5×5 scalar values. The central zero stays
+valid and the missing sample stays NaN. No track, polar file, wind diagnostic or
+unselected field is requested.
 
 Use the actual status inventory for other run names or backends. Reopen products
 with your normal reader, check coordinates/units and distinguish missing support

@@ -247,8 +247,8 @@ def execute_simulation(
             prepared_sources = bind_sources(config)
         except ValueError as exc:
             raise ValueError(f"Cannot bind source requests to metadata: {exc}") from exc
-        if config.yaml_config["region"] or set(config.yaml_config["products"]) - {"model_grid"}:
-            raise ValueError("Region and non-native product execution require their method binding")
+        if set(config.yaml_config["products"]) - {"model_grid", "track"}:
+            raise ValueError("Non-native product execution requires its method binding")
         sources = prepared_sources[2].values()
         selected = {Path(path).resolve() for source in sources for path in source["files"]}
         if input_files is not None and {Path(path).resolve() for path in input_files} != selected:
@@ -258,6 +258,8 @@ def execute_simulation(
             inputs.extend(Path(path) for entry in source["file_inventory"]
                           for path in (entry["path"], *entry["aliases"]))
             inputs.extend(Path(path) for path in source["excluded_files"])
+        if "track" in config.yaml_config["region"]:
+            inputs.append(Path(config.yaml_config["region"]["track"]["file"]))
         input_locations = _input_path_locations(inputs)
         targets = [config.output_dir / item["path"] for item in
                    config.simulation_parameter["request_plan"]["products"]]

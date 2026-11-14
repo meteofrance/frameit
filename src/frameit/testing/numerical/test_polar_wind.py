@@ -142,7 +142,8 @@ def test_supplied_centres_survive_tracker_and_postprocessing(tmp_path, model, me
                                     "latitude": (("nj", "ni"), lat)})
     if method == "prescribed_track":
         path = tmp_path / "supplied-track.nc"
-        xr.Dataset({"latitude": ("time", expected_lat), "longitude": ("time", expected_lon)},
+        xr.Dataset({"latitude": ("time", expected_lat, {"units": "degrees_north"}),
+                    "longitude": ("time", expected_lon, {"units": "degrees_east"})},
                    coords={"time": times}).to_netcdf(path)
         tracker = PrescribedTrack({}, path, atm_model=model)
     else:

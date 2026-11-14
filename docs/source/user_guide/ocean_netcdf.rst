@@ -20,9 +20,9 @@ not needed for native scalar extraction.
 Use ``frameit init nemo`` for a fixed-box starting configuration and
 ``frameit inspect ./data --model nemo --format netcdf --pattern '*.nc'`` for
 metadata inspection. Set actual paths, fields and geographical centres before
-running. Fixed and prescribed centres are supported; atmospheric tracking
-methods on an ocean reference source fail. A secondary ocean source uses its
-own geographical lookup with the continuous centres from the reference source.
+running. Fixed and prescribed centres need no reference source. Calculated
+tracking requires an atmospheric source. The ocean uses its own geographical
+lookup with the supplied continuous centres.
 
 Complementary T-grid scalar files require ``input.netcdf.file_layout: variables``;
 see :doc:`input_files`. Do not merge shifted U/V geography into a T-grid source
@@ -46,9 +46,10 @@ When both ``time_counter`` and ``time_centered`` are present, they and their
 bounds must agree. The sample clock becomes canonical ``time`` while original
 interval bounds and per-field ``cell_methods`` remain visible. An hourly bound
 is not the same fact as an internal averaging annotation such as
-``time: mean (interval: 240 s)``. Exact coupled time matching remains the default:
-half-hour interval centres have no exact match to whole-hour atmosphere snapshots.
-No shifting, nearest matching, filling, interpolation or mean-to-instantaneous
+``time: mean (interval: 240 s)``. Exact centre association is the default:
+a sample labelled 05:30 needs a centre at 05:30; an atmospheric track containing
+only whole hours does not supply it. Independent extraction needs no common
+clock. No shifting, nearest matching, filling, interpolation or mean-to-instantaneous
 equivalence is implied.
 
 Decoded fill values establish **field-specific missingness**, not an ocean mask,
@@ -100,21 +101,23 @@ claimed.
 Coupled extraction and optional scalar targets
 ----------------------------------------------
 
-``example/config_file/nemo_arome.yaml`` demonstrates separate T/U/V/W sources
-with one fixed geographical centre. Its files and centres must be adapted to
-the selected data. It explicitly selects ``input.time_alignment: preceding_hour``
-as its pairing default, not a claim of mean/snapshot temporal equivalence.
-A prescribed track uses
-the same continuous centres at every source, with independent native index lookup.
-``common`` records exact-time exclusions; ``strict`` also requires equal source
-times and track coverage. A centre outside any selected source fails rather
-than substituting an edge point or silently dropping that time.
+Use :doc:`../task_guides/coupled_inputs` for a complete named-source request.
+One fixed geographical centre covers each source's own selected samples, without
+requiring equal clocks. A supplied trajectory instead needs a centre at every
+required source time under the default ``exact`` association.
+Each source performs its own native index lookup. A centre outside a required
+footprint fails rather than substituting an edge point or dropping that time.
+
+``region.sources_coupling_time_association: common`` explicitly reports time
+exclusions for the operation needing association. Select ``preceding_hour``
+only for the following admitted comparison convention, not to claim that an
+ocean mean is an atmospheric snapshot.
 
 Preceding-hour association (no interpolation)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The additive ``preceding_hour`` policy requires named NetCDF sources with an
-AROME tracking/reference source and at least one NEMO secondary source. Selected
+The ``preceding_hour`` method requires selected AROME and NEMO NetCDF sources.
+The atmospheric clock supplies the interval-end association times. Selected
 AROME fields must explicitly declare instantaneous sampling (``GRIB_stepType:
 instant`` or ``cell_methods: 'time: point'``); selected NEMO fields must declare
 ``time: mean`` and provide decoded one-hour bounds. Contradictory declarations,
@@ -122,9 +125,10 @@ invalid bounds and multiple distinct native samples for one requested interval
 fail rather than selecting an arbitrary candidate. All participants must have
 unique physical records. Repeated timestamps within a file or
 overlapping providers of a selected physical field across files fail, even if
-``duplicate_time_policy`` would normally keep one. Complementary variable shards
-may repeat matching clock/bounds metadata. Additional AROME participants
-still match reference timestamps exactly. The global default is ``common``.
+another provider has matching values. Complementary variable shards may repeat
+matching clock/bounds metadata. Preserve this method's admitted calendar and
+selected-cycle rules. It does not apply to CROCO; the default association is
+``exact``, not ``preceding_hour``.
 
 At reference time T, the policy selects the unique native NEMO sample whose
 averaging interval is exactly **[T-1 hour, T]**, using the preceding interval
@@ -143,17 +147,15 @@ exclusions are recorded separately. No remaining pairings is an actionable error
 Malformed required metadata is an error, not an excuse to omit a pairing. This
 policy never fills missing individual grid cells or substitutes another quantity.
 
-Product ``time`` is the reference/coupling timestamp, also the end label of the
-NEMO mean. Ocean ``source_time(time)`` preserves the original native sampling
-labels and their calendar/bounds; ``time_centered`` and original bound arrays are
-retained where supplied. ``source_time`` is reserved and must not already exist
-in the ocean input. Both ``time`` and ``source_time`` reference the unchanged
-averaging bounds, and fields retain ``cell_methods: time: mean``. Downstream
-scripts needing native centre labels must use ``source_time`` rather than
-assuming product ``time`` is a native centre. Ordinary NetCDF/Zarr readers can
-interpret these coordinates without FrameIt. This explicit mode changes the
-time-label contract; it does not change the values or enable temporal
-interpolation, extrapolation, averaging of means or nearest-time fallback.
+The native sampling label and the interval-end centre/coupling time remain
+separate facts. Original calendars/bounds and ``cell_methods: time: mean`` retain
+their meaning; ``time_centered`` and original bound arrays remain visible where
+supplied. ``source_time`` is reserved for the original sampling clock and must
+not already exist in the ocean input. Inspect the stored clocks and association
+records rather than assuming a coupling label is a native interval centre.
+Ordinary readers do not need FrameIt to interpret the basic data model.
+Association does not enable temporal interpolation, extrapolation, averaging of
+means or nearest-time fallback.
 
 Optional spatial scalar targets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

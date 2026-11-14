@@ -13,6 +13,7 @@ from frameit.core.preflight import bind_source, inventory_source
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.loader import DatasetResources
 from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
+from frameit.processing.requests import bind_requests
 from frameit.testing.numerical.test_croco_netcdf import croco_scene
 from frameit.testing.numerical.test_croco_vectors import vector_scene
 from frameit.testing.numerical.test_nemo_netcdf import nemo_scene
@@ -74,6 +75,104 @@ def _payload_reads(monkeypatch, scenes, names):
 
         monkeypatch.setattr(wrapper, "_getitem", tracked)
     return reads
+
+
+@pytest.mark.parametrize("engine", ["h5netcdf", "netcdf4"])
+def test_internal_vertical_stencils_preserve_native_indices_and_product_reads(
+        tmp_path, monkeypatch, engine):
+    dims = ("time", "isobaricInhPa", "y", "x")
+    values = np.arange(72., dtype=float).reshape(3, 4, 2, 3)
+    scene = xr.Dataset({name: (dims, values + offset, {
+        "units": "m2 s-2" if name == "z" else "m s-1"})
+        for name, offset in (("u", 0), ("v", 100), ("z", 200))}, coords={
+        "time": np.array(["2026-01-01T00", "2026-01-01T01", "2026-01-01T02"],
+                         dtype="datetime64[ns]"),
+        "isobaricInhPa": ("isobaricInhPa", [850., 700., 500., 300.],
+                          {"axis": "Z", "units": "hPa"}),
+        "latitude": ("y", [-20., -19.], {"units": "degrees_north"}),
+        "longitude": ("x", [60., 61., 62.], {"units": "degrees_east"}),
+    })
+    paths, _, source = _binding(
+        tmp_path, [scene], "arome", {"3d": ["z"], "levels": {"indices": [2]}},
+        time={"stride": 2}, engine=engine)
+    binding = bind_requests(source, source["requests"], required_inputs={
+        name: {"values": [850, 700] if name == "z" else [850, 700, 500], "units": "hPa"}
+        for name in ("u", "v", "z")})
+    assert binding["status"] == "bound"
+    reads = _payload_reads(monkeypatch, [scene], {"u", "v", "z"})
+    with DatasetResources() as resources:
+        users, internal = _load(paths, binding, source, engine=engine, resources=resources)
+        assert not reads
+        out = next(iter(internal["internal"].values()))
+        np.testing.assert_array_equal(out.isobaricInhPa, [850., 700., 500.])
+        np.testing.assert_array_equal(out.isobaricInhPa_source_native_index, [0, 1, 2])
+        assert out.isobaricInhPa.attrs == scene.isobaricInhPa.attrs
+        out.load(scheduler="synchronous")
+        for name in ("u", "v"):
+            np.testing.assert_array_equal(
+                out[name], scene[name].isel(time=[0, 2], isobaricInhPa=[0, 1, 2]))
+        np.testing.assert_array_equal(out.z.sel(isobaricInhPa=[850, 700]),
+                                      scene.z.isel(time=[0, 2], isobaricInhPa=[0, 1]))
+        assert np.isnan(out.z.sel(isobaricInhPa=500)).all()
+        assert {name for name, _ in reads} == {"u", "v", "z"}
+        for name, positions in reads:
+            assert set(positions["time"]) <= {0, 2}
+            assert set(positions["isobaricInhPa"]) <= ({0, 1} if name == "z" else {0, 1, 2})
+        reads.clear()
+        product = next(iter(users.values()))
+        np.testing.assert_array_equal(product.isobaricInhPa, [500.])
+        np.testing.assert_array_equal(product.z, scene.z.isel(time=[0, 2], isobaricInhPa=[2]))
+        assert reads and all(name == "z" and positions["isobaricInhPa"] == [2]
+                             for name, positions in reads)
+
+
+@pytest.mark.parametrize("problem", [
+    "clock", "cycle", "member", "horizontal", "vertical_attributes",
+    "overlapping_index", "reused_index",
+])
+def test_internal_vertical_alignment_rejects_incompatible_coordinates(problem):
+    from frameit.tracking.tracker_core import merge_internal_stencils
+
+    def dataset(name, labels, indices):
+        return xr.Dataset({name: (("time", "isobaricInhPa", "y", "x"),
+                                  np.zeros((1, len(labels), 2, 2)))}, coords={
+            "time": [np.datetime64("2026-01-01", "ns")],
+            "forecast_reference_time": np.datetime64("2025-12-31", "ns"),
+            "isobaricInhPa": ("isobaricInhPa", labels, {"units": "hPa"}),
+            "isobaricInhPa_source_native_index": ("isobaricInhPa", indices, {"units": "1"}),
+            "y": [0, 1], "x": [0, 1],
+        })
+
+    left = dataset("u", [850., 700.], [0, 1])
+    right = dataset("z", [700., 500.], [1, 2])
+    if problem == "clock":
+        right = right.assign_coords(time=[np.datetime64("2026-01-01T01", "ns")])
+    elif problem == "cycle":
+        right = right.assign_coords(forecast_reference_time=np.datetime64("2025-12-30", "ns"))
+    elif problem == "member":
+        right = right.expand_dims(number=[0])
+    elif problem == "horizontal":
+        right = right.assign_coords(x=[1, 2])
+    elif problem == "vertical_attributes":
+        right.isobaricInhPa.attrs["units"] = "Pa"
+    else:
+        right.isobaricInhPa_source_native_index.values[-1 if problem == "reused_index" else 0] = 0
+    with pytest.raises(ValueError, match="internal|Internal"):
+        merge_internal_stencils([left, right], {"isobaricInhPa"})
+
+
+def test_internal_native_index_preserves_existing_coordinate_attributes(tmp_path):
+    paths, _, source = _binding(
+        tmp_path, [nemo_scene()], "nemo", {"3d": ["votemper"], "levels": {"indices": [0]}})
+    binding = bind_requests(source, source["requests"],
+                             required_inputs={"votemper": {"indices": [0, 1]}})
+    with DatasetResources() as resources:
+        users, internal = _load(paths, binding, source, resources=resources)
+        exported = next(iter(users.values())).deptht_source_native_index
+        selected = next(iter(internal["internal"].values())).deptht_source_native_index
+        assert selected.attrs == exported.attrs
+        assert selected.attrs["long_name"] == "zero-based native source deptht index"
+        np.testing.assert_array_equal(selected, [0, 1])
 
 
 @pytest.mark.parametrize("engine", ["h5netcdf", "netcdf4"])

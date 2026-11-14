@@ -620,7 +620,8 @@ def _extract_box_for_dataset(
     # 4) Optional reorientation of y_box so that latitude increases with y_box
     #    (south at bottom, north at top in the centred box)
     # ------------------------------------------------------------------
-    if (lat_name in ds_out.coords) and ("y_box" in ds_out.coords[lat_name].dims):
+    if (getattr(conf, "schema_version", None) != 3 and lat_name in ds_out.coords
+            and "y_box" in ds_out.coords[lat_name].dims):
         try:
             # Take a representative latitudinal slice: time 0, x_box at box centre
             x_center = ds_out.sizes["x_box"] // 2
@@ -934,6 +935,10 @@ def extract_data(
             ds = ds.sel(time=track_box["time"].values)
         logger.debug("Extracting cyclone-centred box for ds_user[%s]", key)
         extractor = _extract_native_box if native_winds else _extract_box_for_dataset
+        if getattr(conf, "schema_version", None) == 3:
+            mass, axes = horizontal_axes(conf)
+            if not any(dim in axes and dim not in mass for dim in ds.dims):
+                extractor = _extract_box_for_dataset
         extracted[key] = extractor(
             ds=ds,
             x_idx=x_idx,

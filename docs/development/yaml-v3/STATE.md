@@ -33,9 +33,9 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 02 | done | task-02 worker + independent reviewer | 01 | Reviewed schema and frozen handoffs: `8034a6d`. |
 | 03 | done | task-03 worker + independent reviewer | 02 | `9ad6f19`; all nine findings closed, record/grid handoff frozen below. |
 | 04 | done | task-04 worker + independent reviewer | 03 | `37aaf5f`; both Important findings closed, field/level handoff frozen below. |
-| 05 | done | lead + three adapter workers + independent task reviewer | 04 | Native/read gate approved after both Important closures;788 distinct targeted passes and final required5. Local commit follows this record. |
-| 06 | ready | lead | 05 | `coupled.py`, time/track/tracker/extraction files; regions and centre associations. Start only after the Task05 local commit. |
-| 07 | ready | unassigned | 05 | SEA/FA files and tests; explicit source declarations. Start only after the Task05 local commit. |
+| 05 | done | lead + three adapter workers + independent task reviewer | 04 | `73c4147`; native/read gate approved,788 distinct targeted passes and final required5. |
+| 06 | done | Task06 worker + lead + independent reviewer | 05 | Four Important findings independently closed; reviewed handoff below,64 new nodes pass. |
+| 07 | ready | unassigned | 05 | SEA/FA declarations; shared integration claims start after the Task06 local commit. |
 | 08 | blocked | unassigned | 07 | Requests, wind, extraction and derived files; explicit transformations. |
 | 09 | blocked | lead | 06, 08 | Polar modules and runner/preflight integration; requested products only. |
 | 10 | blocked | lead | 09 | Writers, output paths and execution; shared descriptors and stable coordinates. |
@@ -1455,6 +1455,329 @@ Docs: canonical input/output guides cover native behavior, costs, limitations,
 source preservation and format selection. No installation/dependency change,
 new scientific method or additional public configuration key belongs to Task05.
 The local commit is the next operation; nothing will be pushed.
+
+Task05 commit: `73c4147ba2bcb45672b56d8808a7ba2dbc86a934`. The working tree was
+clean immediately after the local commit; nothing was pushed.
+
+## Task 06 work in progress
+
+Starting commit: `73c4147ba2bcb45672b56d8808a7ba2dbc86a934`, after Task05 review/
+freeze/local commit. Existing linked worktree isolation was verified; no new
+worktree, environment or package setup is needed.
+
+One worker owns Task06's brief files and the necessary bounded preflight/runner/
+execution/basic-writer/method-binding integration. Exact claims, interfaces,
+test policy and limits are in the ignored `task-06-handoff.md`. Shared fixture
+helpers, configuration/settings, adapters and public docs remain unclaimed by
+that worker unless a necessary caller-wide extension is recorded first.
+Lead owns canonical moving-region/prescribed-track/time/coupled/pressure-wind
+guidance, STATE/checklist, integration review and the eventual local commit.
+No second implementation worker overlaps these claims.
+
+The exact pre-implementation mixed-suite inventory contains78 passing and80
+failed/error nodes across the seven required files, extracted read-only from the
+completed Task05 fix1 full XML. Each future-dependency classification must be
+verified against retained failure evidence. Plan lines803–806 permit recording
+applicable numerical nodes while the public producers remain Tasks15–16/19;
+no failed check is a pass and no delivered numerical behavior may regress.
+
+Task06 must preserve the reviewed Task05 selection and source-path protections.
+Resolve genuine tracker dependencies/centre associations; never clear an unrelated
+pending method or invent executable binding. Scientific defaults and C5 trajectory
+rules are already approved in the plan, not an invitation to add new methods.
+Task05 Minors retain their later owners. No Task06 test or implementation result
+has yet been reported.
+
+The bounded implementer is active; the lead is updating public guidance in
+parallel. Prescribed NetCDF trajectories must also enter source/destination
+protection before ownership. A necessary trajectory-alias normalization change
+would require a recorded narrow configuration-file claim first. No other worker
+owns overlapping production files.
+
+Lead documentation draft covers moving/fixed/coupled task pages, prescribed/
+fixed/pressure-wind method pages, the time-support concept and the directly
+affected FA/ocean centre-association sections. It uses C5's centre provider,
+full-width, exact/common/preceding-hour and strict trajectory rules; unconverted
+starter generation is not presented as a verified v3 regional workflow.
+The fixed instructional example now uses complete v3 YAML and a direct Python
+API call; its runtime and ordinary-reader assertions still require reconciliation
+with the worker's final code before any runnable-example claim or commit.
+
+All10 edited YAML blocks resolved metadata-free (context-completed where clearly
+labelled fragments); defaults assert exact association and pressure-wind200/100km.
+No source discovery/availability, numerical execution or scientific approval is
+inferred. The first ad-hoc extractor incorrectly included a tip's following prose;
+its indentation handling was corrected without changing a YAML example.
+Strict iteration26 failed one fixed-box list-indent warning. That indentation is
+corrected; iteration27 strict/publication/13unittests/plot-release checks are
+running. Live desktop/320 inspection is still required after a successful build.
+The retained preview remains25 until that success. No worker report is pending
+to be read; await its automatic completion rather than polling.
+
+Iteration27 strict build/publication/13 unittests and4 plot/release tests plus2
+subtests passed (15 existing backend warnings). All9 changed pages were inspected
+live at desktop880px and actual320px, including the fixed API/ordinary-reader
+section. No page overflow or missing images; code blocks retain their own
+horizontal scrolling. Canonical fixed27 is retained for feedback. No artwork or
+site style changed, and no human acceptance is inferred.
+Before final Task06 documentation closure, execute the fixed example against the
+reported final code and reconcile exact stored clocks/association metadata and
+method limitations. Preserve the old moving-page `check-and-run` anchor when
+finalizing its renamed result section. Whole-page producer/template conversion
+outside the directly changed C5 text remains Task16; these checks are not full
+documentation acceptance.
+
+### Task06 bounded blocker decisions
+
+The implementer returned NEEDS_CONTEXT, not a completed task. Its latest focused
+snapshot is50 passed/2 failed; the unfiltered full snapshot is1566 passed/477
+failed/2 errors and predates two later inventory fixes. All470 Task05 failed/error
+IDs remain. The latest deduplicated observations retain7 additional unresolved
+IDs: trajectory-alias safety, AROME multifield assembly and5 unitless fixtures.
+These are not exempted as producer failures, and no independent Task06 review has
+started. Full evidence and all node names remain in this plan's ignored report.
+
+Ruling: preserve the authored `region.track.file` alias using configuration's
+existing `_path(..., preserve_symlink=True)` option. This narrowly extends the
+original worker claim; the existing pre-ownership input-location collector must
+protect declarations, required intermediate symlinks and physical targets.
+Reason: trajectories are read-only scientific inputs under C5. Cost if wrong:
+a replaced store could still destroy a required alias despite retaining its data.
+
+Ruling: extend that worker's claim to selected NetCDF/GRIB internal assembly and
+their two reader tests. Align only already selected internal vertical stencils
+with checked coordinate/native-index consistency and exact nonvertical alignment.
+Public product assembly stays exact; records and scientific payload reads must
+not widen. Structural missing entries cannot become data, zeroes or exports.
+Reason: the existing AROME multifield method requires u/v850/700/500hPa but
+z850/700hPa. Cost if wrong: alignment could hide incompatible source evidence;
+actual backend instrumentation and incompatible-coordinate negatives are required.
+The provisional method gate may be removed only after those checks pass.
+
+Ruling: add explicit degrees_north/degrees_east only to the synthetic trajectory
+writes in the requested FA-mapping and polar-wind tests. Keep their numerical
+assertions and all missing-unit rejection tests unchanged; shared fixture APIs
+remain unclaimed. Reason: C5 intentionally rejects unitless trajectories. Cost if
+wrong: the fixture could misrepresent its known synthetic geographic values.
+
+The original implementer resumes these bounded corrections and fresh focused,
+covering, required and full diagnostics. The lead retains public docs/state,
+runtime-example verification and review-before-commit ownership. These technical
+rulings neither change scientific methods/defaults nor supply scientific approval.
+
+The lead executed the fixed-region page's exact YAML and Python blocks in a fresh
+instructional directory using `frameit_env` Python3.13.18. The run wrote one
+model-grid product; a separate ordinary-reader process imported no FrameIt,
+verified exact2×5×5 values, units, the physical zero and missing values, and
+confirmed native `time` and equal exact-association `center_time`. Source bytes
+were unchanged. This precedes the worker's remaining corrections, so the same
+check must be repeated against the final reviewed code before commit.
+The old moving-page `check-and-run` anchor is restored. Canonical time guidance
+now names the separate stored coordinates explicitly; these small docs changes
+need a fresh strict build/publication/live inspection before commit.
+
+Documentation iteration29's strict build, publication check and13 publication
+unittests passed with the worktree's explicit `PYTHONPATH`. The separately
+corrected pytest command passed4 plot/release tests plus2 subtests (15 existing
+backend warnings). Attempt28 omitted that path for unittests and imported the
+main checkout's older schema, proven by read-only import-path controls; its
+failure is retained. Attempt29 initially used unittest discovery for pytest-only
+plot tests (0 tests/exit5); it was corrected without source changes and is not
+counted as a successful test run. No environment or package change was made.
+The time-coordinate/basis prose and restored moving-page anchor were inspected
+live at880px/actual320px. No overflow or missing images; the6 other affected
+pages exactly match previously reviewed iteration27 HTML. Canonical fixed29
+remains live for feedback. Agent inspection is not human acceptance.
+
+User direction: use `atmosphere`, not illustrative aliases such as `weather`, in
+public atmospheric source examples. The lead applied this to all5 matching
+public pages, including the fixed-run output path. This is documentation naming,
+not a schema restriction or a change to physical-type discovery. Internal
+renamed-source acceptance tests remain necessary under C5. The extra input-files
+and field-selection pages join Task06's documentation verification/review scope.
+Fresh example, schema, strict/publication and live preview checks follow.
+The matching coupled example and output-file example also use `ocean` instead
+of the analogous illustrative `water` name.
+The downloadable all-keys reference uses `atmosphere` too, including its product
+field maps; its documentation test checks the same name. Field placeholders
+remain unchanged. No parser, runtime default or scientific behavior changed.
+
+Fresh naming checks: no `weather` remains in published sources;5 complete YAML
+examples resolve without metadata reads. The verbatim fixed example writes the
+atmosphere-qualified product; its separate ordinary reader again checks exact
+2×5×5 values, zero, NaN, units and unchanged input bytes. Strict iterations30/31,
+publication checks,13 documentation unittests and4 plot/release tests plus2
+subtests passed (15 existing backend warnings). The current coupled
+atmosphere/ocean mapping also resolves.
+All renamed pages and the all-keys/output additions were inspected live at880px
+and actual320px;4 unchanged iteration31 pages exactly equal reviewed30 HTML.
+No overflow or missing images; the reference code can scroll to its right edge.
+Canonical fixed31 remains available. These naming changes join Task06's
+independent review/local commit; they do not change its unresolved code status.
+
+### Task06 ready for independent review
+
+The original implementer returned DONE_WITH_CONCERNS after all3 bounded fixes.
+Fresh full diagnostic:1594 passed,468 failed,2 errors,4 passing subtests,
+4368 warnings in319.94s. Its470 failed/error node IDs exactly equal Task05's
+baseline: zero new and zero removed. All57 new Task06 nodes and all5 corrected
+unit fixtures pass; all9 earlier new failures pass in this full run.
+Covering873passed/46failed/1error; focused158passed; exact required7files
+79passed/80failed. Each required failure retains individual schema/input evidence;
+these are not passing suites or scientific clearance.
+
+Lead rechecked raw XML counts/set equality and every required failure's
+baseline/current message. The final-code verbatim fixed example again passes
+in a separate ordinary reader with unchanged source bytes. A fresh lead158-node
+focused run passed in28.22s with310 warnings, including6 fixture time/bounds
+encoding warnings and1 concat-default FutureWarning. No warnings were suppressed.
+Code Ruff18files59baseline/59current, no new diagnostics;
+full-repository clean lint is not claimed. Existing native-size/deprecation
+warnings remain, without environment repair or suppression.
+
+Provisional internal handoff: `merge_internal_stencils` aligns only already
+selected internal vertical coordinates, preserves their native-index mapping,
+checks overlaps/attributes/calendars, and keeps other coordinates exact.
+Structural NaNs never enter products. Both selected readers use it only for
+dependencies; native export assembly stays exact. Actual NetCDF and ecCodes
+requests prove no widened scientific reads. `_region` retains authored trajectory
+aliases for the existing pre-ownership protection. These are not independently
+frozen yet. Shared selectors keep their original iterable behavior; mapping-valued
+required_inputs supports method-specific internal selectors.
+
+No new correctness/scope concern remains in the implementer's final report;
+baseline failures, later-task limits and independent review remain open.
+Full code/test/docs/evidence review follows before any local Task06 commit.
+All implementation workers are idle; the original Task06 implementer retains
+any subsequent fix ownership. Task07 is only prepared, not dispatched.
+
+Independent Task06 review is active on the complete34-file precommit snapshot
+`fd69529085a8f87ccda6dbe5b39cf7dcc46f8dee`, including the new tests, portable
+evidence and lead-owned documentation/naming changes. A temporary index built
+this review tree; the real index remains empty and HEAD remains73c4147.
+Both spec and quality verdicts are required. Original implementer is idle and
+retains fix ownership. No code changes, Task07 dispatch, freeze or commit precedes
+review closure.
+
+### Task06 independent review: four blocking findings
+
+Spec compliance: issues found. Task quality: needs fixes. Four Important findings
+were demonstrated by small reviewer probes and checked against the implicated
+paths by the lead:
+
+1. `_region_grid` derives native x/y from latitude's stored dimension order;
+   transposed geography can silently select the wrong unequal-width rectangle.
+2. Geometry inspection normalizes explicit radians, but containment/lookup uses
+   raw coordinate numbers against degree-valued centres.
+3. The new preceding-hour path omits the established NetCDF-only format guard,
+   incidentally admitting an unqualified GRIB atmosphere.
+4. Regional inventory construction scans file×selected-time×records, giving
+   cubic work for ordinary one-time-per-file inputs.
+
+The original implementer owns fix round1/5, preserving source semantics,
+native output, selected reads and the existing scientific admission boundaries.
+RED/GREEN and covering/full evidence must precede the original reviewer's scoped
+closure. No Task06 freeze/commit or Task07 dispatch occurs first.
+Minor M1 (new fixture time/bounds encoding and concat-default warnings) is
+deferred explicitly to Task19/final warning triage; no global suppression or
+environment repair is authorized. Review artifacts and machine-local probes
+remain in the ignored plan workspace; no scientific sign-off is implied.
+
+The original implementer returned fix1 ready for closure. Only coupled.py and
+test_v3_regions.py change in production/tests beyond the reviewed tree. New
+tests reproduce and cover all4 findings;7 new nodes pass. Fresh full1601passed/
+468failed/2errors/4subtests/4405warnings in302.18s retains the exact470-node
+failed/error set against both earlier references, with all old node states
+preserved. Covering880pass/48fail/1error, required79pass/80fail, focused52pass.
+Lead raw-XML assertions independently corroborate all counts/set comparisons
+and each required failure's baseline/current schema evidence.
+
+Original reviewer resumed on the652-line scoped package fromfd695290 to
+temporary-index treea098755b6286f1027cd54859ddca9140a7328093. The real index
+is empty. No fix is independently closed yet and no additional code change
+precedes that verdict.
+
+Final-code verbatim fixed example04 and strict documentation iteration32,
+publication,13unit and4plot/release tests plus2subtests pass. All13 affected
+HTML pages equal desktop/actual320-reviewed31 bytes; canonical fixed32 is live.
+No artwork/style changed and no human acceptance is inferred. Code Ruff18files
+59→59 plus lead documentation test5→5 gives19files64→64/no new diagnostics;
+full-project clean lint is not claimed. M1 remains assigned to Task19/final
+warning triage. No new scientific assumption/default or format admission is
+approved by these bug fixes.
+
+## Task 06 reviewed regional handoff
+
+Independent spec and quality gates are approved after fix round1/5: I1–I4
+addressed, no new Critical/Important/Minor breakage. M1 remains explicitly
+deferred to Task19/final warning triage. No scientific/human approval is inferred.
+
+### Frozen interfaces and semantics
+
+- Bind actual prepared children once, then execute them. Selected readers keep
+  the complete executable binding and owning source plan; never pass a bare
+  record list or merge exported and internal stencils.
+- `resolve_tracker_support(conf, source)` resolves actual selected method inputs,
+  units, native/pressure support and wind basis before ordinary binding.
+  `tracker_support` records method, input selectors, selected-time count and
+  pending value checks. It cannot clear unrelated operation gates.
+- `bind_requests(required_inputs=...)` retains iterable/shared-selector behavior;
+  mapping-valued method inputs carry individual internal vertical selectors.
+  Existing closed-pool/provider/time/cycle checks remain binding authority.
+- `make_tracking_dataset(..., selected_times=...)` uses the explicit operation
+  clock without outer-time gap filling. Omitted keyword retains direct-call behavior.
+- `merge_internal_stencils(datasets, vertical_dims)` aligns already selected
+  internal vertical coordinates only. Overlapping labels/attributes/calendars/
+  native indices must agree; nonvertical coordinates stay exact. Structural NaNs
+  are not observations and cannot enter separately assembled native products.
+- Region omission preserves independent full domains. Centres map separately to
+  each required native grid. Adapter/axis evidence, not geographical storage
+  order, establishes directions. A metadata-only internal geometry view normalizes
+  explicit units; native product geography keeps its stored numbers/units.
+- Region `associations` pair `source_time` and `coupling_time`. Grid facts retain
+  geometry, requested/realised positions/extents, indices, coverage and pending/
+  checked centres. Crops keep native `time` and separate `center_time(time)`.
+- Exact covers every selected source sample without requiring equal clocks.
+  Common/permitted incomplete-prefix exclusions affect centre-dependent work,
+  not unrelated full-domain exports. Preceding-hour remains AROME/NEMO
+  **NetCDF-only**, with established interval, sampling and cycle rules.
+- Native crops preserve orientation, values, zeroes and missingness. Partial
+  coverage pads missing; outside-footprint centres fail. Records group once by
+  path for inventories/temporal metadata; local sorting remains. Operation counts
+  were measured, not archive wall-time speedups.
+- Requested tracks are chronological `time/latitude/longitude` NetCDF with explicit
+  time/calendar and geographic metadata, also beside Zarr fields. Input discovery
+  requires unambiguous shared trajectory dimensions, explicit compatible units,
+  unique times and finite positions. Missing units intentionally fail. Authored
+  paths, required aliases and physical targets are protected before ownership.
+
+### Verification and later owners
+
+Fresh lead precommit command:
+`FRAMEIT_CI_DATA_ROOT="$PWD/build/yaml-v3-ci-fixture-01" PYTHONPATH="$PWD/src" conda run --no-capture-output -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_v3_regions.py --tb=short`
+passed52 in22.38s with342 disclosed warnings. Final full:1601passed/468failed/
+2errors; all2071 nodes preserve previous statuses, with64 new Task06 passes
+and the exact unchanged470 failed/error IDs. Required79pass/80fail and covering
+880pass/48fail/1error remain failed suites, with individual evidence rather than
+blanket exemptions. Exact broader commands are in task-06-checks.md. Ruff19
+changed Python files64baseline/64current/zeroNew; no whole-repo clean claim.
+
+The final-code fixed page runs verbatim; a separate ordinary reader checks exact
+2×5×5 values, zero, NaN, units, clocks and unchanged input bytes. Strict Sphinx32/
+publication/13unittests/4plot-release tests plus2subtests passed. All13 affected
+HTML pages equal desktop/actual320-reviewed31 bytes; the live32 preview remains
+available. Agent inspection is not human acceptance. Public examples/reference
+use atmosphere/ocean as requested; this is not a schema name restriction.
+
+Remaining reviewer boundaries have explicit owners, not claimed successes:
+old producer workflows Tasks15–16/19; empty-input fixed/supplied track-only and
+complete polar/coordinate/writer qualification Tasks09–10; human review Task21.
+Task07 may resolve source interpretation through real binding but must not clear
+unresolved transforms/derived/polar/tracker work. Preserve source-local FA
+native_descriptor and the selected leaf locator contract. Unsupported UTrack/
+wind preparation stays unadvertised. No new equation, threshold, default,
+approximation or stable-method promotion was introduced; broader scientific
+validity remains unresolved.
 
 ## Task 01 evidence
 

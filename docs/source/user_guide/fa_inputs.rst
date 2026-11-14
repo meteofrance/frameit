@@ -89,39 +89,32 @@ Its configured ``valid_time`` dimension is normalized to internal ``time``
 without changing timestamps. Conflicting ``time``/``valid_time`` names fail
 instead of guessing whether one is a forecast reference clock.
 
-Time choice: common or strict
------------------------------
+.. _time-choice-common-or-strict:
 
-``input.time_alignment: common`` is the coupled default: use the **exact
-intersection of valid timestamps** from all sources. A prescribed track further
-restricts processing to its exact matching times.
+Source times and centre coverage
+--------------------------------
 
-Every source losing timestamps produces a warning with source ID, count and a
-timestamp preview. The complete ``time_alignment`` report is saved in
-``run-provenance.yaml`` and ``run-status.yaml``:
+Each source keeps its own selected clock. Independent extraction does not
+require an intersection or an atmospheric reference source.
+``region.sources_coupling_time_association`` governs operations needing centres:
+the default ``exact`` requires a centre at each selected source sample, while
+``common`` explicitly reports excluded records. Extra supplied track times do
+not create source samples; missing required centres fail by default.
 
-* selected timestamps and available/selected counts per source;
-* all skipped timestamps and wholly skipped files;
-* times present in other sources but missing from this source.
-
-``strict`` requires identical source timestamp sets and prescribed-track coverage
-of them; otherwise the run fails. Extra track points outside the simulation
-period do not create model times. Empty intersections, missing/invalid dates,
-unsupported calendars, ambiguous forecast cycles and inconsistent SURFEX
-state/header clocks fail actionably. Coupling requires Gregorian datetime
-coordinates within 1678--2261, one cycle per selected source, and matching
-reference cycles wherever multiple sources supply them.
-
-No nearest-time match, temporal interpolation, fill, automatic deaccumulation or
-implicit interval conversion is performed. Duplicate first/last policy applies
-within a stream, not across companion sources. A permitted intersection completes
-the selected plan; structural tracking loss retains its separate incomplete status.
+The AROME/NEMO-only ``preceding_hour`` method retains its narrow instantaneous/
+hourly-mean, interval and selected-cycle requirements. No policy interpolates
+missing positions, fills fields, deaccumulates energy or silently changes interval
+meaning. Invalid or ambiguous native clocks still fail.
+See :doc:`../concepts/time_support` for the canonical association contract.
+Explicit association exclusions and structural tracker incompleteness are
+different facts; inspect both in provenance/status.
 
 Grids, centres and products
 ---------------------------
 
-The atmospheric source supplies geographical centres. Each secondary source maps
-them onto its own static regional grid using the documented geometric lookup.
+Fixed positions, a supplied trajectory or a calculated atmospheric track provide
+geographical centres. Each required source maps them onto its own static regional
+grid using the documented geometric lookup.
 Atmospheric ``cx``/``cy`` indices are never reused on another grid. A centre
 outside a required secondary footprint fails: no edge-point substitution or
 spatial time skipping. Boxes partly outside a grid keep existing NaN padding.

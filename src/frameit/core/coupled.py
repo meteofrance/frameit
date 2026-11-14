@@ -17,6 +17,19 @@ from frameit.io.loader import DatasetResources, discover_input_files
 log = logging.getLogger(__name__)
 
 
+def _association_report(value):
+    """Portable time/geometry facts without changing the executable source clocks."""
+    import cftime
+
+    if isinstance(value, dict):
+        return {key: _association_report(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_association_report(item) for item in value]
+    if isinstance(value, (np.datetime64, cftime.datetime)):
+        return str(value)
+    return value
+
+
 def _shared_polar_target(conf, children, plans, requested, time_count):
     """Resolve one explicitly selected target; native grids and masks stay separate."""
     from frameit.processing.polar.sampling import check_point_budget, sampling_axes
@@ -205,10 +218,20 @@ def align_source_times(inventories, policy="common", track_times=None):
     """No nearest-time matching, interpolation, filling or silent truncation."""
     sets = {name: {time for entry in entries for time in entry["times"]}
             for name, entries in inventories.items()}
-    if policy not in {"common", "strict"}:
-        raise ValueError("time alignment must be common or strict")
+    if policy not in {"exact", "common", "strict"}:
+        raise ValueError("time alignment must be exact, common or strict")
     union = set.union(*sets.values())
     common = set.intersection(*sets.values())
+    if policy == "exact":
+        if track_times is not None and union - track_times:
+            raise ValueError("Missing centres at selected source times: "
+                             f"{sorted(union - track_times)}")
+        return {"policy": policy, "selected_times": sorted(union), "sources": {
+            name: {"available_count": len(values), "selected_count": len(values),
+                   "skipped_times": [], "missing_times": [], "skipped_files": [],
+                   "associations": [{"source_time": time, "coupling_time": time,
+                                     "offset_seconds": 0.} for time in sorted(values)]}
+            for name, values in sets.items()}}
     if policy == "strict" and any(values != union for values in sets.values()):
         details = {name: sorted(union - values) for name, values in sets.items()}
         raise ValueError(f"Strict source time alignment failed; missing timestamps: {details}")
@@ -227,12 +250,198 @@ def align_source_times(inventories, policy="common", track_times=None):
             "skipped_times": skipped, "missing_times": sorted(union - values),
             "skipped_files": [Path(entry["path"]).name for entry in inventories[name]
                               if not set(entry["times"]) & common],
+            "associations": [{"source_time": time, "coupling_time": time,
+                              "offset_seconds": 0.} for time in sorted(common)],
         }
         if skipped:
             log.warning("Source %s: exact-common-time alignment skips %d timestamp(s): %s%s; "
                         "full list recorded in time_alignment provenance", name, len(skipped),
-                        ", ".join(skipped[:10]), " ..." if len(skipped) > 10 else "")
+                        ", ".join(map(str, skipped[:10])), " ..." if len(skipped) > 10 else "")
     return report
+
+
+def _region_grid(conf, source, grid_id):
+    """Use each inventoried native grid, never the atmosphere's indices for another source."""
+    from frameit.core.grid_geometry import resolve_geometry
+    from frameit.processing.dims_utils import horizontal_axes
+    from frameit.utils.units import normalize_geography
+
+    grid = source["native_grids"][grid_id]
+    geometry = xr.Dataset(coords={
+        name: xr.Variable(item["dimensions"], item["values"], attrs=item["attributes"])
+        for name, item in grid["coordinates"].items()})
+    temporal = {}
+    for record in source["records"]:
+        if record["grid_id"] == grid_id:
+            for dim, position in record["locator"].get("coordinate_indexers", {}).items():
+                if dim in geometry.dims:
+                    temporal.setdefault(dim, set()).add(position)
+    geometry = geometry.isel({dim: sorted(indices) for dim, indices in temporal.items()})
+    settings = copy(conf)
+    for kind, conventional in (
+            ("latitude", {"latitude", "nav_lat", "lat_rho", "lat_u", "lat_v"}),
+            ("longitude", {"longitude", "nav_lon", "lon_rho", "lon_u", "lon_v"})):
+        candidates = [name for name in geometry.coords if
+                      geometry[name].attrs.get("standard_name") == kind or name in conventional]
+        if len(candidates) != 1:
+            raise ValueError(f"Regional {kind} is missing or ambiguous on native grid {grid_id}")
+        setattr(settings, f"name_{kind}", candidates[0])
+    lat, lon = geometry[settings.name_latitude], geometry[settings.name_longitude]
+    spatial = (set(lat.dims) | set(lon.dims)) - {"time", settings.name_time_dim}
+    axes = horizontal_axes(settings)[1]
+    if settings.atm_model == "AROME":
+        axes.update(y="y", x="x")  # Selected AROME adapters also use named y/x axes.
+    for axis, attribute in (("y", "name_lat_dim"), ("x", "name_lon_dim")):
+        candidates = [dim for dim in spatial if axes.get(dim) == axis or (
+            dim in geometry.coords and geometry[dim].attrs.get("axis") == axis.upper())]
+        if len(spatial) != 2 or len(candidates) != 1:
+            raise ValueError("Regional extraction requires unambiguous native horizontal axes")
+        setattr(settings, attribute, candidates[0])
+    if settings.name_lat_dim == settings.name_lon_dim:
+        raise ValueError("Regional extraction requires distinct native horizontal axes")
+    geometry = normalize_geography(geometry, settings)
+    settings.grid_geometry = {}
+    resolve_geometry(settings, [geometry])
+    return geometry, settings
+
+
+def _region_facts(track, geometry, settings):
+    """Requested/realised native geometry, using the same box rounding as extraction."""
+    from frameit.processing.extraction import center2box
+
+    facts = {
+        "requested_latitude": track.lat.values.tolist(),
+        "requested_longitude": track.lon.values.tolist(),
+        "native_x_indices": track.cx.values.tolist(), "native_y_indices": track.cy.values.tolist(),
+        "orientation": "native source x/y; no basis rotation"}
+    if settings.x_boxsize_km and settings.y_boxsize_km:
+        box = center2box(track, settings.x_boxsize_km, settings.y_boxsize_km,
+                         settings.resolution, geometry.sizes[settings.name_lon_dim],
+                         geometry.sizes[settings.name_lat_dim], inplace=False)
+        facts.update(
+            requested_width_km={"x": settings.x_boxsize_km, "y": settings.y_boxsize_km},
+            realised_span_km={axis: 2 * box.attrs[f"box_half_width_{axis}_points"]
+                             * settings.resolution / 1000 for axis in ("x", "y")},
+            coverage_fraction=((box.ix_max_domain - box.ix_min_domain + 1)
+                               * (box.iy_max_domain - box.iy_min_domain + 1)
+                               / (box.attrs["box_nx_points"]
+                                  * box.attrs["box_ny_points"])).values.tolist())
+    return facts
+
+
+def _prepare_v3_regions(conf, children, plans):
+    """Metadata-only coverage/geometry; calculated positions remain value-dependent."""
+    region = conf.yaml_config["region"]
+    if not region:
+        return
+    if conf.time_alignment == "preceding_hour" and any(
+            source["format"] != "netcdf" for source in plans.values()):
+        raise ValueError("preceding_hour requires named NetCDF sources")
+    unresolved = [source["tracker_support_pending"] for source in plans.values()
+                  if source.get("tracker_support_pending")]
+    if unresolved:
+        # Inspection retains unfinished candidates; the execution binder still fails closed.
+        conf.tracking_source = None
+        for source in plans.values():
+            source["region"] = {"centre_provider": "tracker", "grids": {},
+                                "pending": unresolved}
+        return
+    inventories, records_by_path = {}, {}
+    for name, source in plans.items():
+        grouped = {}
+        for record in source["records"]:
+            grouped.setdefault(record["locator"]["path"], []).append(record)
+        records_by_path[name] = grouped
+        order = {time: index for index, time in enumerate(source["selected_times"])}
+        inventories[name] = [{
+            "path": entry["path"], "times": sorted(
+                {record["time"] for record in grouped.get(entry["path"], [])} & order.keys(),
+                key=order.__getitem__)}
+            for entry in source["file_inventory"]]
+    provider = None
+    if "track" in region:
+        from frameit.io.track_file import load_track_coordinates
+
+        provider = load_track_coordinates(region["track"]["file"]).rename(
+            latitude="lat", longitude="lon")
+    atmosphere = next((name for name, plan in plans.items()
+                       if plan["physical_type"] == "atmosphere"), None)
+    conf.tracking_source = atmosphere if "tracker" in region else None
+    track_times = (set(provider.time.values) if provider is not None else
+                   set(plans[atmosphere]["selected_times"]) if "tracker" in region else None)
+    if conf.time_alignment == "preceding_hour":
+        from frameit.core.time_association import align_preceding_hour
+
+        temporal, cycles = {}, []
+        for name, source in plans.items():
+            entries = []
+            known_cycles = {r["cycle"] for r in source["records"] if r["cycle"] is not None}
+            if known_cycles:
+                cycles.append(known_cycles)
+            for entry in source["file_inventory"]:
+                records = records_by_path[name].get(entry["path"], [])
+                if not records:
+                    continue
+                fields = {r["name"]: r["temporal_metadata"] for r in records
+                          if source["fields"][r["field_id"]]["time_varying"]}
+                cells = {(r["time"], *r["time_bounds"]) for r in records
+                         if r["time_bounds"] is not None}
+                entries.append({"path": entry["path"],
+                    "times": sorted(_stamps([r["time"] for r in records], name)),
+                    "temporal_fields": fields,
+                    "source_time_conflict": any(r["name"] == "source_time" for r in records),
+                    "time_cells": [{"source_time": str(np.datetime64(sample, "ns")),
+                                    "start": str(np.datetime64(lo, "ns")),
+                                    "end": str(np.datetime64(hi, "ns"))}
+                                   for sample, lo, hi in sorted(cells)]})
+            temporal[name] = entries
+        if cycles and any(cycle != cycles[0] for cycle in cycles):
+            raise ValueError("preceding_hour: selected forecast cycles disagree")
+        track_stamps = None if track_times is None else _stamps(list(track_times), "track")
+        alignment = align_preceding_hour(
+            temporal, atmosphere, {name: child.atm_model for name, child in children.items()},
+            track_stamps)
+        alignment["selected_times"] = np.asarray(
+            alignment["selected_times"], dtype="datetime64[ns]")
+        alignment["selected_times"] = list(alignment["selected_times"])
+        for report in alignment["sources"].values():
+            for record in report["associations"]:
+                for key in ("source_time", "coupling_time"):
+                    record[key] = np.datetime64(record[key], "ns")
+    else:
+        alignment = align_source_times(inventories, conf.time_alignment, track_times)
+    conf.add_parameter("time_alignment", _association_report(alignment))
+    conf.add_parameter("region_alignment", alignment)
+    if "center" in region:
+        times = alignment["selected_times"]
+        provider = xr.Dataset({
+            "lat": ("time", [region["center"]["latitude"]] * len(times)),
+            "lon": ("time", [region["center"]["longitude"]] * len(times)),
+        }, coords={"time": times})
+        calendars = {r["calendar"] for source in plans.values() for r in source["records"]}
+        if provider.time.dtype.kind == "O":
+            if len(calendars) != 1:
+                raise ValueError("Fixed trajectory export requires an unambiguous source calendar")
+            provider.time.encoding["calendar"] = next(iter(calendars))
+    conf.add_parameter("region_centres", provider)
+    for name, source in plans.items():
+        source["region"] = {"centre_provider": next(iter(
+            region.keys() & {"center", "track", "tracker"}), None),
+            "associations": alignment["sources"][name]["associations"], "grids": {}}
+        # A dependency-only source is not an extraction footprint requirement.
+        fields = {field for names in children[name].source_requests[name]["exports"].values()
+                  for field in names}
+        fields.update(source.get("tracker_support", {}).get("inputs", {}))
+        grids = {r["grid_id"] for r in source["records"] if r["name"] in fields}
+        for grid_id in grids:
+            geometry, settings = _region_grid(children[name], source, grid_id)
+            facts = {"geometry": settings.grid_geometry,
+                     "centres": "pending_calculation" if provider is None else "checked"}
+            if provider is not None:
+                times = [r["coupling_time"] for r in source["region"]["associations"]]
+                mapped = _mapped_track(provider.sel(time=times), geometry, settings)
+                facts.update(_region_facts(mapped, geometry, settings))
+            source["region"]["grids"][grid_id] = facts
 
 
 def prepare_sources(conf, *, check_output=True, execution_options=None, resources=None):
@@ -389,6 +598,15 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
         raise ValueError("\n".join(errors))
     if conf.yaml_config["region"].get("tracker") and "atmosphere" not in types:
         raise ValueError("region.tracker requires an atmospheric source in the selected inventory")
+    if conf.yaml_config["region"].get("tracker"):
+        from frameit.tracking.tracker_core import resolve_tracker_support
+
+        name = types["atmosphere"]
+        try:
+            plans[name]["tracker_support"] = resolve_tracker_support(children[name], plans[name])
+        except ValueError as exc:
+            plans[name]["tracker_support_pending"] = str(exc)
+    _prepare_v3_regions(conf, children, plans)
     if check_output:
         destination = conf.output_dir
         while not destination.exists():
@@ -451,7 +669,7 @@ def bind_sources(conf):
 
 
 def run_native_sources(runner, *, benchmark=False):
-    """Full-domain source extraction has no centre or cross-source time association."""
+    """Native samples, with optional explicit regional centre associations."""
     from frameit.core.runner import FrameitRunner, RunResult
 
     report, children, plans = runner.prepared_sources
@@ -459,26 +677,138 @@ def run_native_sources(runner, *, benchmark=False):
     runner.timer.start()
     runner.ensure_dirs()
     runner.field_products = {}
+    centres = runner.conf.simulation_parameter.get("region_centres")
     files = []
+    consumers = {}
     with runner.timer.section("loading_data"):
         for name, child in children.items():
             consumer = FrameitRunner(child)
             runner.resources.add(consumer)
             consumer.ds_user, consumer.ds_tracker, source_files = consumer.load_dataset()
+            consumers[name] = consumer
             files.extend(source_files)
             if benchmark:
                 for dataset in consumer.ds_user.values():
                     dataset.load()
+    if runner.conf.yaml_config["region"].get("tracker"):
+        from frameit.core.grid_geometry import resolve_geometry
+        from frameit.processing.derived.wind import normalize_winds
+
+        name = runner.conf.tracking_source
+        consumer = consumers[name]
+        internal = consumer.ds_tracker["internal"]
+        geometry, settings = _region_grid(consumer.conf, plans[name], next(iter(internal)))
+        for attr in ("name_lat_dim", "name_lon_dim", "name_latitude", "name_longitude"):
+            setattr(consumer.conf, attr, getattr(settings, attr))
+        consumer.conf.resolution = settings.resolution
+        resolve_geometry(consumer.conf, [geometry])
+        prepared = ({grid: normalize_winds(ds, consumer.conf,
+                         "isobaricInhPa" if "isobaricInhPa" in ds.dims else "surface")
+                     for grid, ds in internal.items()}
+                    if consumer.conf.tracking_method == "wind_pressure"
+                    or consumer.conf.atm_model == "AROME" else internal)
+        with runner.timer.section("tracking"):
+            from frameit.tracking.tracker_core import make_tracking_dataset
+
+            operation_times = [
+                r["source_time"] for r in plans[name]["region"]["associations"]]
+            selected = make_tracking_dataset(
+                {consumer.conf.tracking_method: prepared}, consumer.conf.tracking_method,
+                selected_times=operation_times)
+            centres = consumer.run_tracking({consumer.conf.tracking_method: {"selected": selected}})
+    if centres is not None:
+        selected = runner.conf.simulation_parameter["region_alignment"]["selected_times"]
+        accepted = set(centres.time.values)
+        if not bool(centres.attrs.get("tracking_complete", True)):
+            selected = [time for time in selected if time in accepted]
+            for source in plans.values():
+                source["region"]["incomplete_excluded_times"] = [
+                    str(r["source_time"]) for r in source["region"]["associations"]
+                    if r["coupling_time"] not in accepted]
+                source["region"]["associations"] = [
+                    r for r in source["region"]["associations"] if r["coupling_time"] in accepted]
+        runner.track = centres.sel(time=selected)
+    with runner.timer.section("extraction"):
+        for name, consumer in consumers.items():
+            child = consumer.conf
             if "model_grid" in child.source_requests[name]["exports"]:
                 fields = child.source_requests[name]["exports"]["model_grid"]
                 datasets = [ds.reset_coords([field for field in fields if field in ds.coords])
                             for ds in consumer.ds_user.values()]
+                if runner.conf.yaml_config["region"]:
+                    datasets = [
+                        _regional_dataset(ds, grid_id, child, plans[name], centres)
+                        for grid_id, ds in consumer.ds_user.items()]
                 dataset = xr.merge(datasets, join="exact",
                                    compat="identical", combine_attrs="override")
                 runner.field_products[(name, "model_grid")] = dataset.assign_attrs(
                     source_id=name, source_model=plans[name]["model"],
                     source_format=plans[name]["format"])
+    if runner.conf.yaml_config["region"]:
+        runner.conf.add_parameter("source_provenance", {
+            name: {"model": source["model"], "format": source["format"], "fa_inputs": [],
+                   "region": _association_report(source["region"]),
+                   "tracker_support": source.get("tracker_support"),
+                   "selected_times": [str(time) for time in source["selected_times"]]}
+            for name, source in plans.items()})
+        runner.conf.grid_geometry = {
+            name: source["region"]["grids"] for name, source in plans.items()}
     return RunResult(ok=True, n_files=len(files), output_dir=runner.output_dir, files=files)
+
+
+def _regional_dataset(dataset, grid_id, conf, source, centres):
+    from frameit.processing.extraction import extract_data
+
+    if not (conf.x_boxsize_km and conf.y_boxsize_km):
+        return dataset
+    geometry, settings = _region_grid(conf, source, grid_id)
+    associations = source["region"]["associations"]
+    native = [record["source_time"] for record in associations]
+    target = [record["coupling_time"] for record in associations]
+    track = centres.sel(time=target).assign_coords(time=native)
+    track = _mapped_track(track, geometry, settings)
+    source["region"]["grids"][grid_id].update(
+        _region_facts(track, geometry, settings), centres="checked")
+    dataset = dataset.sel(time=native)
+    sample_clock = dataset.time
+    if conf.x_boxsize_km and conf.y_boxsize_km:
+        field_attrs = {name: dict(value.attrs) for name, value in dataset.data_vars.items()}
+        time_encoding = {name: {key: value.encoding[key] for key in ("units", "calendar", "dtype")
+                               if key in value.encoding}
+                         for name, value in dataset.coords.items() if value.dtype.kind == "M"}
+        track, cropped = extract_data(
+            settings, {grid_id: dataset}, geometry, track, native_winds=True)
+        dataset = cropped[grid_id]
+        for name, attrs in field_attrs.items():
+            dataset[name].attrs = attrs
+        for name, encoding in time_encoding.items():
+            dataset[name].encoding = encoding
+        nx, ny = geometry.sizes[settings.name_lon_dim], geometry.sizes[settings.name_lat_dim]
+        covered_x = track.ix_max_domain - track.ix_min_domain + 1
+        covered_y = track.iy_max_domain - track.iy_min_domain + 1
+        dataset = dataset.assign_coords(region_coverage_fraction=(
+            covered_x * covered_y / (track.attrs["box_nx_points"] * track.attrs["box_ny_points"])))
+        dataset.attrs.update(
+            region_requested_width_x_km=conf.x_boxsize_km,
+            region_requested_width_y_km=conf.y_boxsize_km,
+            region_realised_span_x_km=2 * track.attrs["box_half_width_x_points"]
+                * settings.resolution / 1000,
+            region_realised_span_y_km=2 * track.attrs["box_half_width_y_points"]
+                * settings.resolution / 1000,
+            region_native_shape=f"{ny},{nx}")
+    lat, lon = xr.broadcast(geometry[settings.name_latitude], geometry[settings.name_longitude])
+    indexers = {settings.name_lat_dim: xr.DataArray(track.cy.values, dims="time"),
+                settings.name_lon_dim: xr.DataArray(track.cx.values, dims="time")}
+    selected_lat, selected_lon = lat.isel(indexers), lon.isel(indexers)
+    dataset = dataset.assign_coords(
+        center_latitude=("time", track.lat.values, {"units": "degrees_north"}),
+        center_longitude=("time", track.lon.values, {"units": "degrees_east"}),
+        center_time=("time", target, {"long_name": "time of the associated geographical centre"}),
+        grid_selected_latitude=("time", selected_lat.values, {"units": "degrees_north"}),
+        grid_selected_longitude=("time", selected_lon.values, {"units": "degrees_east"}))
+    dataset.attrs.update(region_orientation="native source x/y; no basis rotation",
+                         time_association=conf.time_alignment)
+    return dataset.assign_coords(time=sample_clock)
 
 
 def _mapped_track(track, source, conf):

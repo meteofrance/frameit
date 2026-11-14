@@ -81,3 +81,17 @@ def test_coupled_lookup_reuses_index_after_containment_check(monkeypatch):
     np.testing.assert_array_equal(result.cx, [0, 1])
     with pytest.raises(ValueError, match="outside"):
         _mapped_track(track([[.2, 10.1], [20., 10.8]]), source, conf)
+
+
+def test_tracking_merge_uses_exact_selected_source_times_without_outer_time_fill():
+    from frameit.tracking.tracker_core import make_tracking_dataset
+
+    left = xr.Dataset({"p": ("time", [1., 3.])}, coords={"time": [0, 2]})
+    right = xr.Dataset({"u": ("time", [10., 20., 30.])}, coords={"time": [0, 1, 2]})
+    merged = make_tracking_dataset({"selected": {"p": left, "u": right}}, "selected",
+                                   selected_times=[0, 2])
+    np.testing.assert_array_equal(merged.time, [0, 2])
+    np.testing.assert_array_equal(merged.u, [10., 30.])
+    with pytest.raises(ValueError, match="selected.*time"):
+        make_tracking_dataset({"selected": {"p": left, "u": right}}, "selected",
+                              selected_times=[0, 1, 2])

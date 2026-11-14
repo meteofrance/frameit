@@ -758,11 +758,14 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
             if name in declared:
                 raise ValueError(f"{context}: duplicate field request by identity: {name}")
             declared[name] = category
+    method_selectors = required_inputs if isinstance(required_inputs, dict) else {}
+    method_inputs = required_inputs if isinstance(required_inputs, dict) else {
+        name: {} for name in required_inputs}
     needed = list(dict.fromkeys(
         [name for names in request["exports"].values() for name in names
          if name not in request["derived"]]
         + [name for name in request["internal_inputs"] if name not in request["derived"]]
-        + list(required_inputs)))
+        + list(method_inputs)))
     resolved, pending = {}, list(needed)
     clocks = {(r["time"], r["cycle"]) for r in source["records"]}
     while pending:
@@ -819,7 +822,8 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
     ancillary_names = {name for _, field, _ in resolved.values()
                        for name in field.get("dependencies", {})}
     # Ancillary read support is separate even when that array is also exported.
-    dependencies = [name for name in resolved if name in ancillary_names or not any(
+    dependencies = [name for name in resolved
+                    if name in ancillary_names or name in method_inputs or not any(
         name in names for names in request["exports"].values())]
     products["_dependencies"] = dependencies
     for product, names in products.items():
@@ -887,8 +891,10 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
         if key not in vertical_cache:
             sample = (f" at {record['locator']['path']}, time {record['time']}, "
                       f"cycle {record['cycle']}" if record["locator"]["format"] == "fa" else "")
+            selector = (method_selectors[name] if product == "_dependencies"
+                        and name in method_selectors else request["levels"])
             vertical_cache[key] = _bind_vertical(
-                axis, request["levels"], f"{context}.{product}.{name}{sample}",
+                axis, selector, f"{context}.{product}.{name}{sample}",
                 binding["warnings"]) if axis and not ancillary else None
         vertical = vertical_cache[key]
         positions = vertical["positions"] if vertical else None
@@ -1029,7 +1035,9 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
     if not needed:
         binding["deferred_checks"].append("No fields are requested; finish source/method requests "
                                            "before execution.")
-    if source["dependency_resolution"] == "pending_method_binding":
+    tracker_resolved = (source.get("pending_operations") == ["tracker"]
+                        and source.get("tracker_support", {}).get("inputs") == method_inputs)
+    if source["dependency_resolution"] == "pending_method_binding" and not tracker_resolved:
         binding["deferred_checks"].append(
             "Operation-specific derived/tracker/transform/polar/source-interpretation support "
             "remains pending method binding; field inventory alone does not resolve it.")

@@ -634,7 +634,7 @@ def _region(raw, base):
         region["center"] = _center(region["center"], "region.center")
     if "track" in region:
         track = _keys(region["track"], {"file"}, "region.track", required={"file"})
-        track["file"] = _path(track["file"], base, "region.track.file")
+        track["file"] = _path(track["file"], base, "region.track.file", preserve_symlink=True)
         region["track"] = track
     if region:
         region.setdefault("sources_coupling_time_association", "exact")

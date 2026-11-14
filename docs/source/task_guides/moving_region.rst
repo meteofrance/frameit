@@ -2,33 +2,54 @@ Follow a moving region
 ======================
 
 Choose how the geographical centre is supplied before choosing fields. A
-prescribed trajectory works for all four model selectors. Automatic atmospheric
-tracking requires the chosen method's physical inputs.
+supplied trajectory and a calculated atmospheric track are different requests.
+The same geographical request applies independently to each source's native grid.
 
 Use a supplied track
 --------------------
 
-.. code-block:: bash
-
-   frameit init arome --tracking prescribed_track
-
-Adapt the generated input selection, domain and output directory. Supply a
-NetCDF trajectory with decoded time, latitude and longitude series:
+This complete YAML uses illustrative input paths and a field name. Replace them
+from the selected source metadata. The NetCDF trajectory must contain identifiable
+one-dimensional time, latitude and longitude coordinates with consistent units.
 
 .. code-block:: yaml
 
-   tracking:
-     method: prescribed_track
-     prescribed_track:
+   schema_version: 3
+   run:
+     name: moving
+   sources:
+     atmosphere:
+       model: arome
+       files: ./data/atmosphere.nc
+       variables:
+         2d: [prmsl]
+   region:
+     track:
        file: ./prescribed_track.nc
-       time_name: time
-       latitude_name: latitude
-       longitude_name: longitude
+     width_km: {x: 400, y: 400}
+   products:
+     model_grid: true
+     track: true
+   output:
+     directory: ./results/moving
 
-Times must match the model exactly. Only the matching intersection is processed;
-an empty intersection fails. There is no nearest-time match or trajectory
-interpolation. See :doc:`../tracker/prescribed_track` for the lookup contract and
-:doc:`../concepts/time_support` for coupled time policies.
+``region.track.file`` is the only trajectory setting; coordinate names come from
+the file's evidence. Duplicate times, conflicting identification, incompatible
+dimensions, missing units and nonfinite positions fail.
+See :doc:`../tracker/prescribed_track` for the file contract.
+
+The default ``region.sources_coupling_time_association: exact`` requires a centre
+at every selected source time. Source timelines may differ if the trajectory
+covers each one. Extra trajectory times are allowed; missing required centres
+fail rather than shortening extraction or interpolating positions.
+Use :doc:`../concepts/time_support` before choosing ``common`` or the narrow
+AROME/NEMO ``preceding_hour`` association.
+
+``region.width_km`` gives full widths along the source's native x/y directions.
+A rotated grid can produce a rotated crop. The requested continuous centre and
+the selected native point are distinct; fields are not recentered by interpolation.
+Partial crops are padded with missing values. A centre outside a required source
+footprint fails rather than moving to the edge.
 
 .. figure:: ../_static/figures/fixed-moving-regions.svg
    :target: ../_static/figures/fixed-moving-regions.svg
@@ -41,34 +62,44 @@ interpolation. See :doc:`../tracker/prescribed_track` for the lookup contract an
 Use an atmospheric tracker
 --------------------------
 
-Generate the matching starter, then inspect and adapt its required fields:
+Replace the ``track`` block with a tracker, not a second centre provider.
+This fragment selects pressure-wind tracking:
 
-.. code-block:: bash
+.. code-block:: yaml
 
-   frameit init arome-pressure-wind
-   # Or, in a separate run directory:
-   frameit init mesonh --tracking pressure_centroid
+   region:
+     tracker:
+       method: pressure_wind
+       search_width_km: 200
+       refine_width_km: 100
+     width_km: {x: 400, y: 400}
 
-The pressure-wind starter declares near-surface wind inputs and their basis.
-Its pressure field is **mean sea-level pressure**, not surface pressure. The
+Calculated tracking uses the atmospheric source, whatever its name. There is no
+tracker-source selector. Required tracker fields are internal dependencies;
+they do not become exports unless requested separately.
+They obey the source's time selection, without reading excluded samples.
+
+The pressure field is **mean sea-level pressure**, not surface pressure. The
 :doc:`pressure-wind specification <../tracker/pressure_wind_tracker>` describes
-search half-widths and the optional initial geographic search.
+the full search widths and optional initial geographic search.
 The :doc:`pressure-centroid method <../tracker/pressure_centroid>` additionally
 needs its documented three-dimensional fields, height convention and sampling.
 Do not select a tracker merely because a similarly named field exists.
+An atmospheric track does not automatically supply centres at unequal ocean
+times; exact association still requires coverage.
 
-Check and run
--------------
+.. _check-and-run:
 
-.. code-block:: bash
+Check the result
+----------------
 
-   frameit validate --schema-only
-   frameit validate
-   frameit run --dry-run
-   frameit run
+``products.track: true`` requests the reusable NetCDF trajectory; a centre
+provider alone does not request a track file. Read its geographical coordinates,
+not another grid's ``cx/cy`` indices.
 
-Inspect track positions, times and ``tracking_complete`` in ``run-status.yaml``.
-Set ``execution.require_complete_tracking: true`` when a shortened track must
-fail before export. One position cannot establish motion: its motion diagnostics
-are missing, not zero. Check source coverage at every centre before comparing
-the :doc:`separate coupled products <coupled_inputs>`.
+Inspect centre positions, sample times, associations, coverage and
+``tracking_complete`` in status/provenance. ``region.tracker.on_incomplete``
+defaults to ``error``. Explicit ``keep_prefix`` is accepted only for a method
+supporting it and leaves incomplete status; it is not ordinary time selection.
+One position cannot establish motion: motion diagnostics are missing, not zero.
+See :doc:`coupled_inputs` before comparing separate source products.

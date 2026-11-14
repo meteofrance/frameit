@@ -368,7 +368,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
         return supported
 
     def groups(descriptors, *, export_support=False):
-        by_grid = {}
+        by_grid, vertical_dims = {}, set()
         for name, descriptor in descriptors.items():
             samples, validation = {}, []
             for record in descriptor["records"]:
@@ -379,6 +379,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     dataset = prepared
                 vertical = record["vertical"]
                 if vertical is not None:
+                    vertical_dims.add(vertical["dimension"])
                     for coordinate, metadata in vertical["coordinates"].items():
                         attrs = dict(metadata["attributes"])
                         if (coordinate in prepared
@@ -391,6 +392,12 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                             dim: [position] for dim, position in
                             record["locator"]["coordinate_indexers"].items() if dim in value.dims})
                         dataset = dataset.assign_coords({coordinate: value})
+                    if (not export_support
+                            and f"{vertical['dimension']}_source_native_index" not in dataset):
+                        dataset = dataset.assign_coords({
+                            f"{vertical['dimension']}_source_native_index": (
+                                vertical["dimension"], vertical["source_native_indices"],
+                                {"units": "1"})})
                 # Chunk the selected backend view, not a full-file Dask array.
                 # Otherwise a retained time chunk can read excluded scientific samples.
                 dataset = dataset.chunk({dim: size for dim, size in (chunks or {}).items()
@@ -430,8 +437,11 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     coords=support_coords or "minimal",
                     compat="equals", join="exact", combine_attrs="override"))
                 by_grid.setdefault(grid_id, []).append(combined)
-        return {grid_id: xr.merge(datasets, join="exact", compat="identical",
-                                 combine_attrs="override")
+        from frameit.tracking.tracker_core import merge_internal_stencils
+
+        return {grid_id: (xr.merge(datasets, join="exact", compat="identical",
+                                  combine_attrs="override") if export_support else
+                         merge_internal_stencils(datasets, vertical_dims))
                 for grid_id, datasets in by_grid.items()}
 
     return (

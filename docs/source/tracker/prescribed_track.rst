@@ -6,7 +6,7 @@ For setup and run checks, use :doc:`../task_guides/moving_region`.
 Purpose
 -------
 
-``tracking.method: prescribed_track`` uses positions from an external NetCDF
+``region.track.file`` uses positions from an external NetCDF
 trajectory. It keeps the supplied geographical centres and selects native grid
 indices ``(cy, cx)`` for extraction.
 
@@ -14,9 +14,10 @@ Core assumptions
 ----------------
 
 - Use a trajectory appropriate to the input simulation and its time convention.
-- Timestamps must match **exactly**; only the intersection is processed. An empty
-  intersection fails.
-- The track file provides, at minimum, time, latitude and longitude time series.
+- The default association requires a centre at every selected source timestamp.
+  Missing required centres fail; extra trajectory times do not create samples.
+- The file provides an unambiguous one-dimensional trajectory with decoded time,
+  latitude and longitude. Duplicate times and nonfinite positions fail.
 
 Input and output
 ----------------
@@ -24,35 +25,38 @@ Input and output
 Input dataset
 ~~~~~~~~~~~~~
 
-The model dataset must include:
-
-- a time coordinate named ``time``,
-- latitude and longitude coordinates accessible through configuration keys (default names: ``latitude``, ``longitude``).
+Each source supplies its own decoded sample times and native geography through
+its adapter. Source timelines need not be identical. A supplied centre is mapped
+independently to each required grid; native indices are not shared between grids.
 
 Prescribed track file
 ~~~~~~~~~~~~~~~~~~~~~
 
-The external NetCDF file must contain:
-
-- a coordinate for time (default name: ``time``),
-- a latitude variable (default name: ``latitude``),
-- a longitude variable (default name: ``longitude``).
+Coordinates are discovered from unambiguous CF metadata or conventional
+``time``, ``latitude``/``lat`` and ``longitude``/``lon`` names with consistent
+units and dimensions. All three must identify the same one-dimensional
+trajectory; equal lengths alone are insufficient.
+Missing units, contradictory identification and incompatible dimensions fail.
+Time must be CF-decodable. Export order is chronological.
 
 
 Configuration keys
 ------------------
 
-Set the track path and its coordinate names:
+Set only the file path. This is a fragment of a complete source request:
 
 .. code-block:: yaml
 
-   tracking:
-     method: prescribed_track
-     prescribed_track:
+   region:
+     track:
        file: ./prescribed_track.nc
-       time_name: time
-       latitude_name: latitude
-       longitude_name: longitude
+
+``region.sources_coupling_time_association`` defaults to ``exact``.
+Every selected source sample must have a centre, even when source timelines
+differ. Explicit ``common`` reports the records excluded by that association.
+The admitted ``preceding_hour`` method has additional sampling and interval
+requirements; see :doc:`../concepts/time_support`.
+No policy silently interpolates missing positions.
 
 
 Reuse a FrameIt track
@@ -60,22 +64,23 @@ Reuse a FrameIt track
 
 .. tip::
 
-   A generated ``*.track.nc`` can supply the prescribed positions for another run,
+   A requested ``<run.name>.track.nc`` can supply positions for another run,
    including extraction from another compatible source. Use its geographical
    coordinates, not its native grid indices:
 
    .. code-block:: yaml
 
-      tracking:
-        method: prescribed_track
-        prescribed_track:
+      region:
+        track:
           file: ../previous-run/products/case.track.nc
-          time_name: time
-          latitude_name: lat
-          longitude_name: lon
 
    Check the earlier run's status and track quality first. The new run selects
    native points on its own source grid; it does not reuse the old ``cx/cy``.
+
+Request ``products.track: true`` to export a trajectory. Its coordinates are
+``time(time)``, ``latitude(time)`` and ``longitude(time)``, with CF time
+units/calendar and geographical units ``degrees_north``/``degrees_east``.
+A centre provider alone does not request this file.
 
 Known limitations
 ------------------
@@ -87,7 +92,7 @@ Known limitations
   lookup fails if no finite candidate exists.
 - **No detection or correction**: the supplied trajectory is trusted; FrameIt
   does not decide whether it follows the intended physical disturbance.
-- **Exact times only**: missing timestamps are not interpolated. A shortened
-  source track supplies only its accepted times; inspect the resulting coverage.
+- **Coverage**: required timestamps are not silently omitted. Check explicit
+  association exclusions and any permitted incomplete tracker result separately.
 - **Native crop**: extraction snaps to native indices and rounded point counts.
   The continuous supplied positions remain the polar origins.

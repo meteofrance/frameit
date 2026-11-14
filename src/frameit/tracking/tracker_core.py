@@ -183,6 +183,8 @@ class TcTracker(ABC):
 def make_tracking_dataset(
     ds_tree: Mapping[str, Mapping[str, xr.Dataset]],
     method: str,
+    *,
+    selected_times=None,
 ) -> xr.Dataset:
     """
     Merge all vertical-group datasets for a given tracking method into one.
@@ -218,6 +220,12 @@ def make_tracking_dataset(
                 f"For method {method!r}, vertical group {vert_group!r} "
                 f"should be an xarray.Dataset, got {type(ds)}"
             )
+        if selected_times is not None:
+            if "time" not in ds.coords or any(
+                    time not in ds.time.values for time in selected_times):
+                raise ValueError(
+                    f"Tracker {method!r}: missing selected source times in {vert_group}")
+            ds = ds.sel(time=selected_times)
         datasets.append(ds)
 
     if not datasets:
@@ -271,6 +279,51 @@ def make_tracking_dataset(
 
     ds_flat = xr.merge(datasets, compat="no_conflicts", join="outer")
     return ds_flat
+
+
+def merge_internal_stencils(datasets, vertical_dims):
+    """Align selected internal levels only; structural holes are never source samples."""
+    import numpy as np
+
+    vertical_dims = set(vertical_dims)
+    targets = {}
+    for dataset in datasets:
+        for dim in vertical_dims & dataset.coords.keys():
+            labels = dataset[dim]
+            if labels.dims != (dim,) or len(np.unique(labels)) != labels.size:
+                raise ValueError(f"Internal stencil requires unique labelled vertical axis {dim}")
+            values = targets.setdefault(dim, [])
+            values.extend(value for value in labels.values.tolist() if value not in values)
+    for index, left in enumerate(datasets):
+        for right in datasets[index + 1:]:
+            nonvertical = set(left.dims) - vertical_dims
+            if nonvertical != set(right.dims) - vertical_dims or any(
+                    left.sizes[dim] != right.sizes[dim] for dim in nonvertical):
+                raise ValueError("Internal stencils have incompatible nonvertical dimensions")
+            fixed_left, fixed_right = [
+                {name for name, coord in ds.coords.items()
+                 if not set(coord.dims) & vertical_dims} for ds in (left, right)]
+            if fixed_left != fixed_right:
+                raise ValueError("Internal stencils have incompatible nonvertical coordinates")
+            for name in left.coords.keys() & right.coords.keys():
+                a, b = left[name], right[name]
+                try:
+                    if a.encoding.get("calendar") != b.encoding.get("calendar"):
+                        raise ValueError("incompatible coordinate calendars")
+                    a, b = xr.align(a, b, join="inner", exclude=nonvertical)
+                    xr.testing.assert_identical(a.variable, b.variable)
+                except (AssertionError, ValueError) as exc:
+                    raise ValueError(f"Internal stencil coordinate {name!r} conflicts") from exc
+    aligned = [dataset.reindex({dim: values for dim, values in targets.items()
+                               if dim in dataset.dims}) for dataset in datasets]
+    result = xr.merge(aligned, join="exact", compat="no_conflicts", combine_attrs="override")
+    for name, coordinate in result.coords.items():
+        if name == "source_native_index" or name.endswith("_source_native_index"):
+            values = np.asarray(coordinate)
+            if (values.ndim == 1 and set(coordinate.dims) & vertical_dims
+                    and (not np.isfinite(values).all() or len(np.unique(values)) != values.size)):
+                raise ValueError(f"Internal stencil native-index mapping {name!r} conflicts")
+    return result
 
 
 # --------------------------------------------------------------------
@@ -331,9 +384,129 @@ def build_tracker_from_config(conf: SimulationConfig) -> TcTracker:
         If ``conf.tracking_method`` is not in :data:`TRACKER_REGISTRY`.
     """
     method = conf.tracking_method
+    if getattr(conf, "schema_version", None) == 3:
+        source = conf.simulation_parameter["request_plan"]["sources"][conf.source_name]
+        if source.get("tracker_support", {}).get("method") != method:
+            raise ValueError(f"{method}: tracker support is not resolved against selected metadata")
     try:
         tracker_cls = TRACKER_REGISTRY[method]
     except KeyError:
         raise ValueError(f"Unknown tracking method: {method!r}") from None
 
     return tracker_cls.from_config(conf)
+
+
+def resolve_tracker_support(conf, source):
+    """Resolve existing method inputs from the closed selected metadata pool."""
+    from frameit.processing.wind_reference import _metadata_frames, validate_pair_frame
+    from frameit.utils.units import unit_metadata
+
+    method = conf.tracking_method
+    if method in {"pressure_centroid", "multifield_vortex"} and source["model"] == "mesonh":
+        from frameit.io.loader import DatasetResources
+
+        from .pressure_centroid_inputs import (
+            inspect_mnh_sequence,
+            mnh_wind_frames,
+            selected_mnh_metadata,
+        )
+
+        if source["format"] != "netcdf":
+            raise ValueError(f"{method}: native Meso-NH NetCDF metadata is required")
+        conf.wind_pairs = [
+            {**{key: value for key, value in pair.items() if key != "basis"},
+             "reference_frame": pair["basis"],
+             "group": "surface" if pair["u"] == "UM10" else "level"}
+            for pair in conf.sources[conf.source_name]["wind_pairs"]]
+        with DatasetResources() as resources:
+            sequence = selected_mnh_metadata(source, conf, resources)
+            if method == "multifield_vortex":
+                from .multifield_inputs import inspect_inputs, selected_mnh_source
+
+                sequence = [(path, selected_mnh_source(ds, conf)) for path, ds in sequence]
+                for path, ds in sequence:
+                    inspect_inputs([ds], conf, path)
+            fields = inspect_mnh_sequence(sequence)
+            for _, ds in sequence:
+                mnh_wind_frames(ds, fields, conf)
+            coordinates = set.intersection(*(set(ds.coords) for _, ds in sequence))
+            inputs = {name: {} for name in fields.variables if name not in coordinates}
+        if method == "pressure_centroid" and len(source["selected_times"]) < 2:
+            raise ValueError("pressure_centroid requires at least two selected source times")
+        conf.add_parameter(f"{method}_inputs", {
+            "pressure": fields.pressure, "winds": [fields.u, fields.v],
+            "height": list(fields.height)})
+        return {"method": method, "inputs": inputs,
+                "selected_time_count": len(source["selected_times"]),
+                "value_checks": (
+                    "pending execution: physical brackets, masks, geometry and convergence")}
+    if (method not in {"wind_pressure", "pressure_centroid", "multifield_vortex"}
+            or source["format"] == "fa"):
+        raise ValueError(f"{method}: selected tracker method support is not yet executable")
+    names = (("MSLP", "UM10", "VM10") if source["model"] == "mesonh" else
+             ("prmsl", "u10", "v10"))
+    if method != "wind_pressure":
+        names = (*names, "u", "v", "z")
+    headers, inputs, axes = {}, {}, {}
+    for name in names:
+        identities = {record["field_id"] for record in source["record_inventory"]
+                      if record["name"] == name}
+        if len(identities) != 1:
+            raise ValueError(
+                f"{method}: required input {name} missing or ambiguous in selected metadata")
+        field = source["fields"][next(iter(identities))]
+        headers[name] = xr.DataArray(0., attrs=field["attributes"], name=name)
+        quantity = "pressure" if name == names[0] else "geopotential" if name == "z" else "velocity"
+        unit_metadata(headers[name], quantity)
+        from frameit.processing.requests import _field_axis
+
+        pool = source["record_inventory"]
+        by_name = {n: [(i, r) for i, r in enumerate(pool) if r["name"] == n] for n in names}
+        axis = _field_axis(source, field, by_name[name][0][1], by_name)
+        selector = {}
+        if name in {"u", "v", "z"}:
+            if axis is None or axis["dimension"] != "isobaricInhPa":
+                raise ValueError(f"{method}: {name} requires the admitted AROME isobaricInhPa axis")
+            axes[name] = axis["descriptor"]
+            unit_metadata(xr.DataArray(0., attrs=axes[name]["attributes"]), "pressure")
+            if method == "multifield_vortex":
+                selector = {"values": [850, 700] if name == "z" else [850, 700, 500],
+                            "units": "hPa"}
+        elif axis is not None:
+            raise ValueError(f"{method}: {name} must be a 2d horizontal input")
+        inputs[name] = selector
+    conf.wind_pairs = []
+    for group, components in (("surface", names[1:3]), *(
+            [("isobaricInhPa", ("u", "v"))] if method != "wind_pressure" else [])):
+        declarations = [pair for pair in conf.sources[conf.source_name]["wind_pairs"]
+                        if (pair["u"], pair["v"]) == components]
+        if declarations:
+            pair = dict(declarations[0], group=group, reference_frame=declarations[0]["basis"])
+            pair.pop("basis")
+        else:
+            evidence = [set(_metadata_frames(headers[name].attrs, name)) for name in components]
+            if len(evidence[0]) != 1 or evidence[0] != evidence[1]:
+                raise ValueError(f"{method}: wind basis is missing or conflicting; "
+                                 "declare sources.*.wind_pairs")
+            pair = dict(group=group, u=components[0], v=components[1],
+                        reference_frame=next(iter(evidence[0])))
+        validate_pair_frame(xr.Dataset(headers), pair, conf)
+        if pair["reference_frame"] != "earth":
+            raise ValueError(f"{method}: grid winds require explicit supported preparation")
+        conf.wind_pairs.append(pair)
+    if method == "pressure_centroid":
+        if len(source["selected_times"]) < 2:
+            raise ValueError("pressure_centroid requires at least two selected source times")
+        from frameit.utils.units import convert_units
+
+        levels = [convert_units(xr.DataArray(axis["values"], attrs=axis["attributes"]),
+                                "pressure", target="hPa").values for axis in axes.values()]
+        if any(len(values) < 2 for values in levels) or any(
+                not (levels[0] == values).all() for values in levels[1:]):
+            raise ValueError("pressure_centroid requires matching pressure support on u/v/z")
+    conf.tracking_var_aliases = {
+        **dict(zip(("mslp", "u10m", "v10m"), names[:3], strict=True)),
+        **({"u": "u", "v": "v", "geopot": "z"} if method != "wind_pressure" else {})}
+    return {"method": method, "inputs": inputs,
+            "selected_time_count": len(source["selected_times"]),
+            "value_checks": "pending execution; no scientific payload read during binding"}

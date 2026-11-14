@@ -621,3 +621,39 @@ def test_member_metadata_is_not_replaced_by_the_first_members_count(tmp_path, mo
         np.testing.assert_array_equal(dataset.GRIB_numberOfForecastsInEnsemble, [2, 3])
         assert "GRIB_numberOfForecastsInEnsemble" not in dataset.number.attrs
         assert not reads and not active
+
+
+def test_internal_vertical_stencils_decode_no_unselected_messages_or_product_union(
+        tmp_path, monkeypatch):
+    path, source, _ = bound_source(tmp_path, [
+        {"hour": hour, "level": level, "param": param}
+        for hour in (0, 1, 2) for level in (850, 700, 500, 300) for param in (131, 132, 129)
+    ], variables={"3d": ["z"], "levels": {"values": [500]}},
+        time={"values": ["2026-01-01T00:00:00", "2026-01-01T02:00:00"]})
+    binding = bind_requests(source, source["requests"], required_inputs={
+        name: {"values": [850, 700] if name == "z" else [850, 700, 500], "units": "hPa"}
+        for name in ("u", "v", "z")})
+    assert binding["status"] == "bound"
+    reads, active, _ = observe_decoder(monkeypatch)
+    with DatasetResources() as resources:
+        users, internal = concat_grib2ds_by_vert_coord(
+            [path], {}, {}, selected_records=binding, source_plan=source, resources=resources)
+        assert not reads and not active
+        out = next(iter(internal["internal"].values()))
+        np.testing.assert_array_equal(out.isobaricInhPa, [850., 700., 500.])
+        np.testing.assert_array_equal(out.isobaricInhPa_source_native_index, [0, 1, 2])
+        assert out.isobaricInhPa.attrs["units"] == "hPa"
+        out.load(scheduler="synchronous")
+        assert np.isnan(out.z.sel(isobaricInhPa=500)).all()
+        np.testing.assert_array_equal(out.z.sel(isobaricInhPa=700).isel(time=0),
+                                      [[0., 701., np.nan], [9999., 704., 705.]])
+        assert set(reads) == {(param, 0, hour, level, None)
+                              for param in (131, 132, 129) for hour in (0, 2)
+                              for level in ((850, 700) if param == 129 else (850, 700, 500))}
+        assert len(reads) == 16 and not active
+        reads.clear()
+        product = next(iter(users.values()))
+        np.testing.assert_array_equal(product.isobaricInhPa, [500.])
+        product.load(scheduler="synchronous")
+        assert set(reads) == {(129, 0, hour, 500, None) for hour in (0, 2)}
+        assert len(reads) == 2 and not active

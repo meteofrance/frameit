@@ -15,7 +15,7 @@ pressure levels. Replace the illustrative paths and names with those in your dat
    run:
      name: pressure-levels
    sources:
-     weather:
+     atmosphere:
        model: arome
        files: ./data/arome/*.grib
        variables:

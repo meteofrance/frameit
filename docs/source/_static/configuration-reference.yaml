@@ -6,7 +6,7 @@ run:
   name: analysis
   description: ""
 sources:
-  sample:                         # Source names do not determine physical type.
+  atmosphere:
     model: arome                  # arome | mesonh | nemo | croco; omit only for reliable detection.
     format: fa                    # netcdf | grib | fa; must agree with input evidence.
     files: [./data/input.fa]       # Path, glob, or list of paths/globs, relative to this YAML.
@@ -106,7 +106,7 @@ region:
   width_km: {x: 400.0, y: 400.0} # Full widths along native grid directions.
 products:
   model_grid:
-    fields: {sample: [sample_field, sample_cube]} # Optional exact subsets by source.
+    fields: {atmosphere: [sample_field, sample_cube]} # Optional exact subsets by source.
     processing:
       chunks: {}                 # Computation chunks, not input or storage chunks.
   polar:
@@ -114,11 +114,11 @@ products:
     radial_step_km: 5.0          # Example, not default; cannot be finer than supported native spacing.
     azimuth_count: 180           # Omit for automatic outer-ring spacing.
     shared_grid: false           # Common target is opt-in; masks/vertical axes remain distinct.
-    fields: {sample: [sample_field, sample_cube]}
+    fields: {atmosphere: [sample_field, sample_cube]}
     missing_data_policy: strict  # strict | renormalize.
     # renormalize also requires an explicit min_valid_weight_fraction.
     field_options:
-      sample:
+      atmosphere:
         sample_field:
           interpolation: bilinear # bilinear | nearest; kind needs source evidence.
           missing_data_policy: strict

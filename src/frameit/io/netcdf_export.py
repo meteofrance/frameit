@@ -653,10 +653,19 @@ def export_outputs(
         results = {}
         for item in conf.simulation_parameter["request_plan"]["products"]:
             source, product = item["source"], item["product"]
-            dataset = runner.field_products[(source, product)]
+            dataset = (runner.track.rename(lat="latitude", lon="longitude")
+                       if product == "track" else runner.field_products[(source, product)])
+            if product == "track":
+                dataset = dataset.copy(deep=False)
+                for name, units in (("latitude", "degrees_north"), ("longitude", "degrees_east")):
+                    dataset[name].attrs = dict(dataset[name].attrs, standard_name=name, units=units)
+                dataset.time.encoding = dict(dataset.time.encoding,
+                    units="seconds since 1970-01-01", calendar=dataset.time.encoding.get(
+                        "calendar", "proleptic_gregorian"))
             path = _write_dataset(
                 dataset, root / item["path"], metadata=meta, product_type=product,
-                engine=engine, fmt=fmt, overwrite=overwrite, compress_level=compress_level,
+                engine="netcdf4" if product == "track" else engine,
+                fmt=fmt, overwrite=overwrite, compress_level=compress_level,
                 compress_coords=compress_coords, unlimited_time=unlimited_time,
                 zarr_chunk_size=zarr_chunk_size, zarr_shard_size=zarr_shard_size,
             )

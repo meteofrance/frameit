@@ -1040,17 +1040,17 @@ tracker input helpers, and `src/frameit/processing/extraction.py`.
 `build_tracker_from_config`, and `make_tracking_dataset` use selected source times.
 Record source sample time separately from its centre association.
 
-- [ ] Test full domains without centres; fixed crops on rotated/shifted grids;
+- [x] Test full domains without centres; fixed crops on rotated/shifted grids;
   partial padding; outside-footprint failure; and requested/realised geometry.
-- [ ] Test atmospheric-source discovery, renamed sources, explicit dependencies,
+- [x] Test atmospheric-source discovery, renamed sources, explicit dependencies,
   sparse tracker payload reads, and unchanged native exports. Assert pressure-wind
   defaults are full widths 200/100 km and preserve the former half-width geometry.
-- [ ] Test NetCDF trajectory discovery and exact centre coverage with unequal source
+- [x] Test NetCDF trajectory discovery and exact centre coverage with unequal source
   timelines. Reject duplicate times, ambiguous/missing units, conflicting coordinate
   evidence, and missing centres. Extra track times remain valid.
-- [ ] Test exact/common/preceding-hour associations, cycles, bounds, exclusions,
+- [x] Test exact/common/preceding-hour associations, cycles, bounds, exclusions,
   incomplete error/keep-prefix states, and no changes to unrelated native extraction.
-- [ ] Review scientific and time semantics.
+- [x] Review scientific and time semantics.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_geographic_lookup.py src/frameit/testing/numerical/test_wind_pressure_seed.py src/frameit/testing/numerical/test_pressure_centroid.py src/frameit/testing/numerical/test_pressure_centroid_mnh.py src/frameit/testing/numerical/test_multifield_vortex.py src/frameit/testing/numerical/test_nemo_arome_coupling.py src/frameit/testing/numerical/test_croco_mnh_coupling.py

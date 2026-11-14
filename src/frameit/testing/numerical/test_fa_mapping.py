@@ -197,7 +197,9 @@ def test_fixed_and_prescribed_tracking_keep_requested_centres(tmp_path):
     fixed = FixedBoxTracker({}, [float(track.lat[0]), float(track.lon[0])])._track_method(source)
     assert int(fixed.cx[0]) == 1
     path = tmp_path / "prescribed.nc"
-    track.rename(lat="latitude", lon="longitude").to_netcdf(path)
+    track.assign(lat=track.lat.assign_attrs(units="degrees_north"),
+                 lon=track.lon.assign_attrs(units="degrees_east")).rename(
+                     lat="latitude", lon="longitude").to_netcdf(path)
     prescribed = PrescribedTrack({}, path)._track_method(source)
     np.testing.assert_array_equal(fixed.cx, prescribed.cx)
     np.testing.assert_allclose(fixed.grid_snap_dx_m, prescribed.grid_snap_dx_m)

@@ -192,6 +192,38 @@ def inspect_mnh_sequence(records):
     return reference[0]
 
 
+def selected_mnh_metadata(source, conf, resources):
+    """Assemble headers only from closed-pool samples, without decoding scientific fields."""
+    from frameit.io.netcdf_utils import normalize_netcdf_time
+
+    names = {"PABST", "PRES", "UT_ZM", "VT_ZM", "UT", "VT", "ALT",
+             "MSLP", "UM10", "VM10"}
+    for field in source["fields"].values():
+        if field["name"] in names:
+            names.update(field.get("dependencies", {}))
+    records = [r for r in source["record_inventory"] if r["name"] in names]
+    sequence = []
+    for stamp in source["selected_times"]:
+        selected = [r for r in records if r["time"] == stamp]
+        parts, seen = [], set()
+        for path in dict.fromkeys(r["locator"]["path"] for r in selected):
+            local = [r for r in selected if r["locator"]["path"] == path]
+            variables = {r["name"] for r in local}
+            if seen & variables:
+                raise ValueError(f"Tracker has competing selected providers at {stamp}: "
+                                 f"{sorted(seen & variables)}")
+            seen.update(variables)
+            original = resources.open_netcdf(path, engine=conf.netcdf_engine, chunks=None)
+            indexers = local[0]["locator"]["coordinate_indexers"]
+            if any(r["locator"]["coordinate_indexers"] != indexers for r in local):
+                raise ValueError("Tracker inputs have conflicting native sample axes")
+            part = original[list(variables)].isel({dim: [i] for dim, i in indexers.items()})
+            parts.append(normalize_netcdf_time(part, conf))
+        sequence.append((str(stamp), xr.merge(parts, join="exact", compat="identical",
+                                            combine_attrs="no_conflicts")))
+    return sequence
+
+
 def mnh_wind_frames(ds, fields, conf=None):
     """Validate declared native/surface bases, never infer them from field names.
 

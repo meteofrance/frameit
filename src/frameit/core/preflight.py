@@ -811,6 +811,13 @@ def inventory_source(conf, name, *, resources=None):
                   overlapping_patterns=overlaps, fields=fields, native_grids=grids,
                   records=selected, record_inventory=record_inventory, selected_times=times,
                   dependency_resolution=dependency_resolution, provider_conflicts=conflicts)
+    result["pending_operations"] = [
+        operation for operation, pending in (
+            ("interpretation", source.get("interpretation")),
+            ("transforms", source["transforms"]), ("derived", request["internal_inputs"]),
+            ("polar", "polar" in request["exports"]),
+            ("tracker", tracker and physical == "atmosphere"))
+        if pending]
     result["metadata_origins"] = {
         "model": {"origin": "yaml" if ("model" in source or fmt == "fa"
                                      and profile == "arome_history") else "input",
@@ -834,6 +841,12 @@ def bind_source(conf, name, *, representations=None, required_inputs=()):
     request["binding"] = None
     source["requests"]["binding"] = None
     source["field_binding"] = None
+    if conf.yaml_config["region"].get("tracker") and source["physical_type"] == "atmosphere":
+        from frameit.tracking.tracker_core import resolve_tracker_support
+
+        source.pop("tracker_support", None)
+        source["tracker_support"] = resolve_tracker_support(conf, source)
+        required_inputs = source["tracker_support"]["inputs"]
     binding = bind_requests({**source, "name": name}, request,
                             representations=representations, required_inputs=required_inputs)
     source["field_binding"] = binding

@@ -2,58 +2,64 @@ Process coupled sources
 =======================
 
 Use named sources when inputs have different grids, quantities or layouts.
-They share geographical centres, not an assumed common physical representation.
-Inspect each stream independently, then generate one matching starter:
+They share a geographical request, not an assumed common physical representation.
+Inspect each stream independently. This complete example uses illustrative paths
+for atmospheric pressure and native NEMO potential temperature:
 
-.. code-block:: bash
+.. code-block:: yaml
 
-   frameit init arome-nemo
-   # Or, in a separate run directory:
-   frameit init mesonh-croco
+   schema_version: 3
+   run:
+     name: coupled
+   sources:
+     atmosphere:
+       model: arome
+       files: ./data/atmosphere.nc
+       variables:
+         2d: [prmsl]
+     ocean:
+       model: nemo
+       files: ./data/ocean.nc
+       variables:
+         3d: [votemper]
+         levels: {indices: [0]}
+   region:
+     center: {latitude: -20, longitude: 60}
+     width_km: {x: 20, y: 20}
+   output:
+     directory: ./results/coupled
 
-AROME+NEMO selects independent pressure and native potential-temperature samples.
-Meso-NH+CROCO selects explicitly interpreted SEA SST/SSS and native temp/salt.
-The latter requires supported Meso-NH SEA metadata and ``FRAC_SEA`` support, plus
-CROCO history/Vtransform=2 metadata. Neither starter selects currents or polar
-sampling. Adapt paths, source fields, native levels, centre and full box widths.
+Replace paths, field names, native levels and geometry from the selected inputs.
+Source names do not establish model or physical type. Only one source of each
+physical type is allowed. Native grids, units, masks and sampling remain distinct.
 
-Choose the reference and time policy
-------------------------------------
+.. _choose-the-reference-and-time-policy:
 
-``tracking.source`` identifies the source supplying continuous centres. Top-level
-``model`` must match it. Each source has its own ``model``, ``input`` and
-``variables``; do not put a shared variable selection at the top level.
-Both pairings support ``fixed_box`` (default), ``prescribed_track``,
-``pressure_wind`` and ``pressure_centroid``. Use a model selector when choosing
-tracking; named starters such as ``arome-nemo`` reject composition flags.
-For a supplied trajectory:
+Choose centres and time association
+-----------------------------------
 
-.. code-block:: bash
+A fixed ``region.center`` needs no reference source. A supplied
+``region.track.file`` must cover every required source time by default.
+Calculated tracking uses the atmospheric source, whatever its name; there is no
+tracker-source selector. See :doc:`moving_region` for the three mutually
+exclusive centre providers.
 
-   frameit init arome --coupling nemo --tracking prescribed_track
+Tracker inputs are internal dependencies, not extra exports. Confirm their units,
+sampling and wind basis from producer evidence. For
+:doc:`../tracker/pressure_centroid`, retain the full 500-km reference-ring coverage,
+vertical brackets around 2,000 m (geopotential height for AROME, altitude ASL for
+Meso-NH), and at least two selected atmospheric samples.
+The extraction box does not limit tracker input coverage.
 
-Supply an appropriate track. To calculate centres from atmospheric fields instead,
-use one of these commands in a fresh run directory:
+``region.sources_coupling_time_association: exact`` is the default. Each selected
+source sample needs a centre, but source timelines may differ. A fixed centre
+covers each source's own samples; a calculated atmospheric track may not cover
+different ocean times. Missing required centres fail.
 
-.. code-block:: bash
-
-   frameit init arome --coupling nemo --tracking pressure_centroid
-   # Or for Meso-NH+CROCO:
-   frameit init mesonh --coupling croco --tracking pressure_centroid
-
-Use ``--tracking pressure_wind`` instead for :doc:`../tracker/pressure_wind_tracker`.
-The atmospheric source supplies the tracker fields and wind declarations; ocean
-fields and sampling remain independent. Confirm the declared source wind basis
-against producer metadata. For :doc:`../tracker/pressure_centroid`, retain the
-full 500-km reference-ring coverage and vertical brackets around 2,000 m
-(geopotential height for AROME, altitude ASL for Meso-NH), plus at least two exact
-common times. The extraction box does not limit the tracker input coverage.
-
-Use ``input.time_alignment: common`` for exact
-common labels (default), or ``strict`` to require equal source times and full
-track coverage. Neither interpolates time. The explicit AROME/NEMO-only
-``preceding_hour`` policy has additional temporal metadata requirements; see
-:doc:`../concepts/time_support` before selecting it.
+Explicit ``common`` reports the records excluded for the operation needing
+association. It does not widen source selection or alter unrelated full-domain
+extraction. The AROME/NEMO-only ``preceding_hour`` method has additional
+instantaneous/mean and interval requirements; see :doc:`../concepts/time_support`.
 
 .. figure:: ../_static/figures/independent-sources.svg
    :target: ../_static/figures/independent-sources.svg
@@ -66,14 +72,15 @@ track coverage. Neither interpolates time. The explicit AROME/NEMO-only
 Keep source meaning visible
 ---------------------------
 
-NEMO T/U/V/W contexts can require separate sources even when dimensions have the
-same names. CROCO sigma indices are not physical depths. Native currents/stresses
+Keep NEMO T/U/V/W contexts distinct even when dimensions have the same names.
+Use separate runs when a requested combination has no admitted shared output
+contract. CROCO sigma indices are not physical depths. Native currents/stresses
 are not atmospheric winds; NEMO analysed components are unsupported. CROCO
 rho/Earth currents require the documented static masks, angles and brackets.
 See :doc:`../user_guide/ocean_netcdf` for these contracts, and
 :doc:`../user_guide/fa_inputs` for explicit native FA declarations.
 
-Enable ``polar.shared_target: true`` only when common point coordinates are
+Enable ``products.polar.shared_grid: true`` only when common point coordinates are
 needed. Participating sources must agree on target geometry; the default shared
 radial step is the coarsest participating spacing. Scalar/vector eligibility,
 masks and interpolation support stay source-specific. The detailed target
@@ -81,13 +88,6 @@ contract remains in :doc:`../user_guide/fa_surface`.
 
 Check and run
 -------------
-
-.. code-block:: bash
-
-   frameit validate --schema-only
-   frameit validate
-   frameit run --dry-run
-   frameit run
 
 Check time exclusions and source-specific native indices in status/provenance.
 A centre outside a required source footprint fails. Read source-qualified

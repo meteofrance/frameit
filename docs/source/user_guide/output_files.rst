@@ -70,7 +70,7 @@ Coupled and native FA products
 ------------------------------
 
 Each source has its own model-grid dataset, for example
-``SIMU.water.model_grid.nc``. Independent extraction does not intersect clocks or
+``SIMU.ocean.model_grid.nc``. Independent extraction does not intersect clocks or
 regrid sources onto a common mesh. A requested operation needing shared centres
 must resolve its time association explicitly. See :doc:`fa_inputs` for coupled
 and FA-specific method limits.

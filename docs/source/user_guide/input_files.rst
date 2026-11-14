@@ -19,7 +19,7 @@ your source metadata before replacing them:
    run:
      name: selected-times
    sources:
-     weather:
+     atmosphere:
        model: mesonh
        files: ./data/*.nc
        exclude: ["*unwanted-stream*"]
@@ -32,8 +32,7 @@ your source metadata before replacing them:
    output:
      directory: ./results/selected-times
 
-The source name ``weather`` does not determine its model or physical type.
-Explicit model/format declarations must agree with reliable input evidence.
+Model and format declarations must agree with reliable input evidence.
 Missing declarations require unambiguous detection; file names and selected
 quantities alone are not enough. Admitted profiles distinguish atmosphere,
 ocean and separately supplied surface streams. One source of each type is allowed.

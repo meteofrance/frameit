@@ -6,7 +6,7 @@ For setup and run checks, use :doc:`../task_guides/moving_region`.
 Overview
 --------
 
-The pressure-wind tracker (``tracking.method: pressure_wind``) estimates the cyclone center at each time step using a sequential two-stage procedure combining:
+The pressure-wind tracker (``region.tracker.method: pressure_wind``) estimates the cyclone center at each selected time using a sequential two-stage procedure combining:
 
 1. a *pressure-based first guess* from mean sea-level pressure (MSLP),
 2. a *wind-based refinement* using the 10 m wind speed magnitude.
@@ -21,6 +21,13 @@ This tracker requires the following variables to be available in the dataset:
 - Mean sea-level pressure (MSLP),
 - 10 m zonal wind component,
 - 10 m meridional wind component.
+
+These are internal method inputs from the atmospheric source, independent of
+its name. They obey source time selection and need not be exported. Native
+exports retain their declared field values, units and sampling.
+The selected-input path requires Earth-relative winds with unambiguous metadata
+or an explicit wind-pair declaration. Grid-relative pairs fail without supported
+explicit preparation; changing a label is not vector rotation.
 
 Algorithm
 ---------
@@ -79,13 +86,15 @@ For each time step ``t = 1..nt-1``:
 
 3. Store the refined indices as ``(cy_t, cx_t)`` and proceed to the next time step.
 
-Window sizes and conversion from physical half-widths
---------------------------------------------------------
+.. _window-sizes-and-conversion-from-physical-half-widths:
 
-The tracker uses two configurable square half-widths (in kilometres):
+Window sizes and native point counts
+------------------------------------
 
-- ``tracking.pressure_wind.search_half_width_km = 100``: MSLP search,
-- ``tracking.pressure_wind.refine_half_width_km = 50``: wind refinement.
+The tracker uses two configurable square **full widths** in kilometres:
+
+- ``region.tracker.search_width_km = 200``: MSLP search,
+- ``region.tracker.refine_width_km = 100``: wind refinement.
 
 These windows are converted into grid-point half-widths using resolved native
 grid geometry. Grid spacing is inferred before tracker construction.
@@ -94,10 +103,12 @@ Given the resolved grid spacing ``grid_spacing_m`` in metres,
 the tracker computes:
 
 - ``grid_spacing_km = grid_spacing_m / 1000``,
-- ``half_search = ceil(search_half_width_km / grid_spacing_km)``,
-- ``half_refine = ceil(refine_half_width_km / grid_spacing_km)``,
+- ``half_search = ceil(search_width_km / (2 * grid_spacing_km))``,
+- ``half_refine = ceil(refine_width_km / (2 * grid_spacing_km))``,
 
-and enforces a minimum value of 1 grid point for both.
+and enforces a minimum of 1 grid point for both. At the defaults the numerical
+half-widths are 100 and 50 km. These are native-index squares, not circular
+geodesic searches.
 
 Configuration and usage
 -----------------------
@@ -106,18 +117,18 @@ To activate this tracker in the YAML configuration, set:
 
 .. code-block:: yaml
 
-   tracking:
-     method: pressure_wind
-     pressure_wind:
-       search_half_width_km: 100
-       refine_half_width_km: 50
+   region:
+     tracker:
+       method: pressure_wind
+       search_width_km: 200
+       refine_width_km: 100
 
 
 Illustration
 ------------
 
 Pressure-wind tracking on the two BATSIRAI times, with
-``domain.width_km: {x: 500, y: 500}`` (full widths in kilometres).
+``region.width_km: {x: 500, y: 500}`` (full widths in kilometres).
 The outline shows the final native crop. The two centres are only one native
 grid point apart; no artificial displacement or second centre marker is added.
 
@@ -138,16 +149,15 @@ Restrict the first MSLP search to a user-selected position and radius:
 
 .. code-block:: yaml
 
-   tracking:
-     source: atmosphere  # For coupled atmosphere/SURFEX inputs
-     method: pressure_wind
-     pressure_wind:
+   region:
+     tracker:
+       method: pressure_wind
        initial_guess:
          latitude: -5.8
          longitude: 50.0
          search_radius_km: 100
-       search_half_width_km: 100
-       refine_half_width_km: 50
+       search_width_km: 200
+       refine_width_km: 100
 
 Adapt these coordinates to the intended disturbance. The seed applies to the
 first selected input timestamp; it does not filter input times.
@@ -159,7 +169,7 @@ No valid candidate causes an error, never a global-search fallback at initializa
 Wind refinement may move the centre outside this circle. Later times use the
 search and fallback policy described above.
 
-Omit ``initial_guess`` (or set it to ``null``) to retain the global initial MSLP
+Omit ``initial_guess`` to retain the global initial MSLP
 search. The effective configuration and seeded track attributes record the
 position, radius and search convention. Check the first centre against the
 intended disturbance.

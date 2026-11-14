@@ -129,8 +129,8 @@ def _selected_grib(files, binding, source, resources):
                 record["name"]: (("y", "x"), data, attrs)}))
         return originals[key][record["name"]]
 
-    def groups(descriptors):
-        by_grid = {}
+    def groups(descriptors, *, internal=False):
+        by_grid, vertical_dims = {}, set()
         for name, descriptor in descriptors.items():
             records_by_grid = {}
             for record in descriptor["records"]:
@@ -200,6 +200,7 @@ def _selected_grib(files, binding, source, resources):
                     metadata["dimensions"], metadata["values"], metadata["attributes"])
                     for coordinate, metadata in grid["coordinates"].items()}
                 if vertical is not None:
+                    vertical_dims.add(vertical["dimension"])
                     dims.append(vertical["dimension"])
                     coords.update({coordinate: xr.Variable(
                         metadata["dimensions"], metadata["values"], metadata["attributes"])
@@ -259,13 +260,17 @@ def _selected_grib(files, binding, source, resources):
                 dataset.time.encoding["calendar"] = records[0]["calendar"]
                 dataset.forecast_reference_time.encoding["calendar"] = records[0]["calendar"]
                 by_grid.setdefault(grid_id, []).append(dataset)
-        return {grid_id: xr.merge(datasets, join="exact", compat="identical",
-                                 combine_attrs="override")
+        from frameit.tracking.tracker_core import merge_internal_stencils
+
+        return {grid_id: (merge_internal_stencils(datasets, vertical_dims) if internal else
+                         xr.merge(datasets, join="exact", compat="identical",
+                                  combine_attrs="override"))
                 for grid_id, datasets in by_grid.items()}
 
     return (
         groups(binding["products"].get("model_grid", {})),
-        {"internal": groups(binding["dependencies"])} if binding["dependencies"] else {},
+        {"internal": groups(binding["dependencies"], internal=True)}
+        if binding["dependencies"] else {},
     )
 
 
