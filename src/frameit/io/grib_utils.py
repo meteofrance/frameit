@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from contextlib import contextmanager
 from pathlib import Path
@@ -255,7 +256,11 @@ def _selected_grib(files, binding, source, resources):
                         raise ValueError(f"{name}: inconsistent selected GRIB time intervals")
                     coords["time_bounds"] = (("time", "nv"), [bounds[stamp] for stamp in times])
                     coords["time"][2]["bounds"] = "time_bounds"
-                attrs = next(iter(samples.values())).attrs
+                attrs = dict(next(iter(samples.values())).attrs)
+                if metadata := descriptor.get("field_metadata"):
+                    attrs.update(metadata["attributes"])
+                    attrs["frameit_metadata_origins"] = json.dumps(
+                        metadata["origins"], sort_keys=True)
                 dataset = xr.Dataset({name: (dims, data, attrs)}, coords=coords)
                 dataset.time.encoding["calendar"] = records[0]["calendar"]
                 dataset.forecast_reference_time.encoding["calendar"] = records[0]["calendar"]

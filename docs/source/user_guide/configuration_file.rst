@@ -160,7 +160,11 @@ Source meaning and reader settings
 ``field_metadata.<field>`` fills gaps in scientific metadata. Keys include
 ``units``, ``kind: continuous | categorical`` and ``temporal_kind``. These describe
 stored values; they do not convert them. Contradictions with reliable metadata
-fail. Method-specific eligibility still applies.
+fail. Metadata records distinguish observed facts from user declarations.
+Different known units cannot be replaced by a new label; any numerical conversion
+needs an explicit transform. Unit symbols retain their case; unknown spellings
+do not establish equivalence. A declaration alone does not select a field.
+Method-specific eligibility still applies.
 
 ``interpretation: mesonh_surfex_sea`` explicitly selects the admitted SEA rules
 for eligible fields and their support data. Omission keeps ordinary native

@@ -1064,13 +1064,13 @@ lead-owned configuration/preflight integrations.
 **Interfaces:** source `field_metadata`, `interpretation`, `profile`, `native_cubes`,
 `fa`, and `reader` produce observed/declaration origins without requesting transforms.
 
-- [ ] Test SEA opt-in versus ordinary access, selected support only, fractional
+- [x] Test SEA opt-in versus ordinary access, selected support only, fractional
   masks, valid zeroes, known sentinels, and unrelated legitimate `999` values.
-- [ ] Test FA cube record associations, vertical meaning, scientific metadata,
+- [x] Test FA cube record associations, vertical meaning, scientific metadata,
   sampling/basis/scaling, and technical-reader scope. Contradictions must fail.
-- [ ] Adapt declaration placement while retaining FA isolation, geometry, producer
+- [x] Adapt declaration placement while retaining FA isolation, geometry, producer
   checks, and existing unsupported/spectral gates. Do not infer cube meaning from names.
-- [ ] Review source limits, provenance, and updated source guides.
+- [x] Review source limits, provenance, and updated source guides.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_mnh_surfex_support.py src/frameit/testing/numerical/test_fa_contracts.py src/frameit/testing/numerical/test_fa_cubes.py src/frameit/testing/numerical/test_fa_pipeline.py src/frameit/testing/numerical/test_fa_spectral.py

@@ -34,9 +34,9 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 03 | done | task-03 worker + independent reviewer | 02 | `9ad6f19`; all nine findings closed, record/grid handoff frozen below. |
 | 04 | done | task-04 worker + independent reviewer | 03 | `37aaf5f`; both Important findings closed, field/level handoff frozen below. |
 | 05 | done | lead + three adapter workers + independent task reviewer | 04 | `73c4147`; native/read gate approved,788 distinct targeted passes and final required5. |
-| 06 | done | Task06 worker + lead + independent reviewer | 05 | Four Important findings independently closed; reviewed handoff below,64 new nodes pass. |
-| 07 | ready | unassigned | 05 | SEA/FA declarations; shared integration claims start after the Task06 local commit. |
-| 08 | blocked | unassigned | 07 | Requests, wind, extraction and derived files; explicit transformations. |
+| 06 | done | Task06 worker + lead + independent reviewer | 05 | `edaf602`; four Important findings closed,64 new nodes pass; reviewed handoff below. |
+| 07 | done | Task07 worker + lead + independent reviewer | 05 | Three Important findings closed;54 new nodes pass; reviewed handoff below. |
+| 08 | ready | unassigned | 07 | Requests/wind/extraction/derived claims start after the Task07 local commit. |
 | 09 | blocked | lead | 06, 08 | Polar modules and runner/preflight integration; requested products only. |
 | 10 | blocked | lead | 09 | Writers, output paths and execution; shared descriptors and stable coordinates. |
 | 11 | blocked | lead | 10 | Runtime/resources and chunk integrations; measured bounded layouts. |
@@ -1778,6 +1778,255 @@ native_descriptor and the selected leaf locator contract. Unsupported UTrack/
 wind preparation stays unadvertised. No new equation, threshold, default,
 approximation or stable-method promotion was introduced; broader scientific
 validity remains unresolved.
+
+## Task 07 work in progress
+
+Base: `edaf6028a581f9031e88047da4239d583e55ca6e`; working tree was clean after
+the reviewed Task06 local commit. No push. One fresh Task07 worker owns the
+brief's SEA/FA modules and narrowly necessary selected-reader/configuration/
+preflight/request integration. Exact bounded claims, safeguards and acceptance
+commands are in the plan workspace's task-07-handoff.md. No shared fixture
+helper change or second overlapping implementation worker is authorized.
+
+The lead owns public source-interpretation/FA guidance, STATE/checklist and
+staging/commits. Existing mathematical/producer/scaling/spectral boundaries
+remain; genuine scientific ambiguity fails or is escalated, not guessed.
+Metadata declarations do not request numeric transformations. Task06's actual
+bindings, source clocks, native geometry/units and protected inputs remain frozen.
+Public examples use atmosphere/ocean/surface naming as directed by the user.
+
+The prior five-file inventory contains89 nodes/41pass/48fail, not a Task07 run
+or scientific validation. Each later-producer classification requires actual
+individual evidence. Compare new full diagnostics with Task06's final2071-node
+snapshot:1601pass/468fail/2errors,470 failed/error IDs. No Task07 implementation
+or verification result is claimed at this starting point.
+
+Task07's sole implementer is active on those bounded claims. One concrete
+integration safeguard was sent: when admitting public projected FA regional
+execution, retain the source's established native-CRS lookup/zone/geometry
+evidence through reconstructed regional metadata; never fall back silently to
+degree-space lookup. This is preservation, not broader projection admission.
+
+Lead documentation draft covers8 directly affected pages: FA input setup,
+descriptors, native cubes, environment, geometry and compatibility; SEA
+interpretation in the ocean guide; and the canonical declaration explanation.
+It teaches source-local profile/native_cubes/field_metadata/fa/reader, explicit
+SEA opt-in without a repeated selector, native component copying and operation
+separation. Complete illustrative requests use atmosphere/surface names.
+No template/CLI producer conversion or new scientific catalogue is claimed.
+Schema/build/GUI checks and reconciliation with the worker's eventual report
+remain pending; draft prose is not execution or scientific qualification.
+
+Lead schema-only checks pass for3 complete FA/cube/SEA requests and1 explicitly
+contextual interpreter fragment; FA point/timeout defaults match current code.
+No data availability, payload execution or scientific validation follows.
+Strict33 failed3 list-table indentation defects, corrected in34. Strict34/
+publication/13unit/4plot-release tests plus2subtests passed; desktop/actual320
+inspection exposed unreadably narrow three-column support text. The same
+limits now use full-width definition entries, retaining the existing section
+anchor and scientific restrictions without theme/artwork/CSS changes.
+
+Draft35 strict/publication/13unit/4plot-release+2subtests pass (15 existing
+backend warnings). All8 changed pages were inspected at880px/actual320px;
+5 unchanged35 pages equal reviewed34 HTML. No overflow or missing images;
+support entries are readable and YAML scrolls to its right edge. Canonical
+FA-inputs35 remains live. Runtime examples, provenance/eligibility reconciliation
+and independent review still await the original worker's report; no Task07
+execution result or scientific approval is claimed.
+
+The original Task07 implementer returned NEEDS_CONTEXT:118 focused passes,
+required41pass/48fail, full1627pass/469fail/2errors. All470 prior failed/error
+statuses remain; one old passing assertion now fails because it requires blanket
+interpretation rejection even when the pressure-wind fixture selects no eligible
+SEA quantity. The lead traced the fixture and actual resolver/binder and reproduced
+that one failed assertion.
+
+Ruling: authorize only that test's interpretation branch with meaningful positive
+binding/empty-SEA/exact-selection/tracker-input/no-FRAC_SEA/no-output checks.
+C4 applies SEA rules to selected eligible fields, not every unrelated input.
+Risk if wrong: false no-work clearance; independent review must assess the ruling
+and replacement assertions. Keep transform/derived/polar rejection cases and
+shared fixture unchanged. No production change, scientific admission or weakened
+eligible-field check is authorized. Original worker resumes with fresh covering,
+required, full-node and Ruff evidence; no Task07 review or commit yet.
+
+Lead reconciled the source guides with actual selected-route provenance and
+original native FA index semantics. Three complete YAML requests execute unchanged
+against generated compact inputs: coupled GRIB/FA2products, FA native cube1product,
+SEA1product. Separate ordinary-reader processes without FrameIt check literal
+values, units, masks, zeroes/NaNs, native indices/records/clocks, hybrid coefficients
+and source decoder/interpretation provenance. All6 source files remain unchanged.
+No runtime overrides, scientific substitutions or shared-fixture edits were used.
+Six native FACADI warnings stay visible; this is not real-producer qualification.
+
+Strict iteration36/publication/13documentation unittests/4plot-release tests plus
+2subtests pass with15 disclosed backend warnings. Both reconciled pages were
+inspected live at880/actual320;6 other pages exactly match reviewed35 HTML.
+The same loopback preview remains available; machine-local ownership stays in
+the ignored handover. No human acceptance, scientific validity, or Task07
+independent review is inferred. Original worker alone refreshes code evidence.
+
+Task07 resumed delivery is ready for independent review. The17-line positive
+interpretation branch tests actual binding in child/parent/plan, empty SEA work,
+exact scalar exports and tracker inputs/internal records, and no output ownership.
+The other three rejection branches and shared helper are unchanged. All10
+production files are unchanged during this bounded resume.
+
+Fresh lead four-branch check:4passed/37warnings in0.72s. Lead raw-XML assertions
+corroborate focused181pass; covering812pass/38fail; required41pass/48fail;
+full1628pass/468fail/2errors. All2071 Task06 statuses and exact470 failed/error
+IDs are preserved, with27 new Task07 passes. Each of48 required failures retains
+individual baseline/current producer evidence. These remain failed suites,
+not exemptions or scientific sign-off. Ruff15changed/new Python files26baseline/
+26current/zeroNew; no whole-repo claim.
+The original worker is idle. Independent review of the complete code/test/docs
+delivery, including the lead's bounded assertion ruling, precedes any Task07
+freeze/commit or Task08 dispatch.
+
+Independent Task07 review is active on complete25-file precommit snapshot
+`61352b1bd07f99afd778f513eb05cb045e269011`, including new tests, portable
+evidence, public guides and the bounded assertion ruling. Both spec and quality
+verdicts are required. A temporary index produced the review tree; the real index
+is empty and HEAD remains edaf602. No additional code change, Task07 freeze/
+commit or Task08 dispatch precedes review closure.
+
+### Task07 independent review: three blocking metadata findings
+
+Spec: issues found. Quality: needs fixes. Reviewer compact probes demonstrated:
+an admitted CF clock `t` can bypass temporal-statistic conflict detection;
+case folding accepts different MW/mW units while rejecting known SEA aliases;
+and raw unit spelling changes field identity before equivalent successive SEA
+snapshots can be interpreted. The lead checked the implicated resolver/caller,
+clock admission, raw identity and existing snapshot-equivalence regression.
+All three enter original-implementer fix round1/5 with focused v3 RED/GREEN,
+covering/required/full-node and Ruff evidence.
+
+The bounded no-SEA-work assertion ruling was independently accepted. Warning
+Minor4 stays assigned to Task19/final native-warning qualification, with no
+package repair or suppression authorized. Public guides retain the intended
+conflict/alias behavior; do not weaken them to hide the failures. Each actual
+snapshot's metadata/origin must remain inspectable, and generic duplicate-name/
+provider/grid/support/statistical safety must not be broadened by the fix.
+No Task07 freeze/commit or Task08 implementation before independent closure.
+
+Original implementer returned fix round1 ready for scoped review: four production
+files plus the owned interpretation test, with27 new regression nodes. Actual
+temporal names/dimensions drive statistic checks; unit comparisons use explicit
+same-value aliases; SEA-only identity hashing admits equivalent units while
+retaining actual per-record metadata/origins. Global units.py, FA production,
+shared producers and previously reviewed tests stay unchanged.
+
+Fresh lead27-case check passes with196 warnings in4.19s. Lead raw-XML assertions
+corroborate focused208pass; covering839pass/38fail; required41pass/48fail;
+full1655pass/468fail/2errors. All2071 Task06 and2098 reviewed Task07 IDs/statuses
+are preserved;54 cumulative additions and27 fix nodes pass. Failed/error IDs
+remain exactly470; each48 required failure retains evidence against both
+references. Independent finding closure is pending.
+
+Source provenance now retains per-record observed metadata/resolved units/origins
+under interpretation.metadata_records; combined variable attributes represent
+the first selected record. The lead added that distinction and unit-case guidance
+to canonical pages. A final-code rerun of all3 documented examples plus strict37
+and documentation checks is active, not yet a reported pass. Minor4 keeps its
+later warning/native-qualification owner.
+
+Scoped re-review of findings1–3 and new fix breakage is active on temporary-index
+tree `f0706110e312cf4ef82b929d6c6da0b7a27589cc` against reviewed61352b1.
+Real index remains empty. Final-code3example rerun passes unchanged, including
+all21 SEA metadata records and6 unchanged source hashes. Strict37/publication/
+13unit/4plot-release+2subtests pass with15backend warnings;6FACADI native
+warnings remain visible. Both changed paragraphs were inspected live at880/
+actual320;6 other pages equal reviewed36HTML. The canonical preview is retained.
+No additional code change, Task07 freeze/commit or Task08 implementation
+precedes the original reviewer's closure verdict.
+
+## Task07 reviewed interpretation handoff
+
+Independent spec and quality gates are approved after fix round1/5: all three
+Important findings addressed, no new findings. The no-SEA-work assertion ruling
+is independently accepted. Minor4 remains explicitly assigned to Task19/final
+native-warning qualification. No human scientific or usability approval.
+
+### Frozen metadata and selected-reader contracts
+
+- Existing source-local schema and `_fa_runtime_options` remain the public
+  declaration/reader projection. No new configuration key, format, dependency,
+  method/default or stable-diagnostic promotion was introduced.
+- `resolve_field_metadata(attributes, declaration, context, *, temporal_names=...)`
+  fills genuine stored-value metadata gaps and records input/declaration origins.
+  Actual admitted time coordinates/dimensions establish temporal statistics;
+  qualifiers do not become extra statistics. Known quantity, temporal, categorical
+  and unit contradictions fail without numerical conversion.
+- Unit identity admits explicit same-value spellings only, including existing
+  narrow SEA aliases. Unknown symbols retain case; MW/mW and different scales
+  cannot become equal by normalization. Global unit conversion is unchanged.
+- `source_field_metadata(source, field, *, record=None)` uses the actual record's
+  observed metadata when available. Bound descriptors carry representative
+  `field_metadata: {attributes, origins}`. Selected records may carry their own
+  resolved field_metadata; do not replace these with another snapshot's labels.
+- NetCDF records retain `temporal_names`. Eligible opted-in SEA records retain
+  raw `observed_attributes`. Only their evidenced equivalent units normalize for
+  field-identity hashing; all other identity/grid/provider/support/statistical
+  conflicts and the generic distinct-name policy remain.
+- Selected source interpretation records method, fields and pending value checks.
+  For SEA, `metadata_records` additionally retain each field/time/cycle/provider's
+  basename, clock, observed attributes, resolved units and origins. Source
+  provenance exposes these under `sources.<id>.interpretation.metadata_records`;
+  combined attributes represent the first selected record, not all observations.
+- SEA interpretation remains explicit and limited to selected eligible fields
+  and matching FRAC_SEA support within the closed time/cycle/provider inventory.
+  Preflight reads no mask values. Execution validates finite physical support
+  within[0,1], masks only known999/unsupported values, preserves zero/fraction,
+  and applies no extra fraction weighting or inferred timing/sign/basis.
+  Opt-out stays native; no eligible selection requires no SEA support.
+- Selected NetCDF/GRIB outputs receive resolved metadata without replacing
+  original header/evidence checks. Main/support SEA fields use their own selected
+  record metadata; exported/ancillary/internal fraction roles agree.
+- FA binding uses the reviewed selected leaf's actual metadata construction,
+  not fake executable clearance. Grouped FA reads receive the complete binding
+  and owning plan, retain separate native/internal stencils and native
+  indices/record IDs/full hybrid coefficients. Source-local raw descriptors,
+  producer/profile/geometry/encoding/isolation/resource/mask/scaling gates stay.
+  Projected regional metadata retains native CRS/axes/zone lookup facts.
+- FA descriptors distinguish explicit source origins and representative scope;
+  source provenance/decoder logs retain actual per-file/sample observations.
+  Native copying of one component requests no companion/basis/rotation.
+  Missing hybrid evidence stays pending; decoder scaling/masks require execution.
+- Actual prepared children remain bound once. Interpretation resolves only its
+  own proven work. Tracker inputs still require actual method evidence; transforms,
+  derived and polar gates cannot be cleared merely by available fields.
+
+### Verification, compatibility and later owners
+
+Fresh lead precommit:
+`FRAMEIT_CI_DATA_ROOT="$PWD/build/yaml-v3-ci-fixture-01" PYTHONPATH="$PWD/src" conda run --no-capture-output -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_v3_interpretation.py --tb=short`
+passed53 in31.42s with286 disclosed warnings. Separate lead27-case fix check,
+raw-XML assertions and independent reviewer evidence confirm all54 added Task07
+nodes pass. Final full1655pass/468fail/2errors/2125distinctnodes preserves every
+Task06/reviewed-Task07 node/status and exact470 failed/error IDs. Required41pass/
+48fail and covering839pass/38fail remain failed suites with individual evidence;
+no original assertion hidden behind an old producer is claimed as passed.
+Ruff15deliveryfiles26baseline/26current/noNew;5fixfiles20/20/noNew.
+
+All3 documented requests run unchanged against final code with compact generated
+inputs. Separate ordinary readers check literal values, clocks, zero/NaN/masks,
+units/origins, native FA axes/coefficients/CRS, decoder facts and21 SEA metadata
+records. All6 source files remain unchanged. Strict37/publication/13unittests/
+4plot-release tests plus2subtests passed. All8 pages have retained desktop/
+actual320 inspection; unchanged pages were compared byte-for-byte. No artwork/
+theme/CSS change. Preview remains live; agent inspection is not human acceptance.
+
+Scientific impact is the existing explicit stored-value interpretation and
+contradiction policy, not new equations or numerical conversions. Metadata/
+provenance additions are additive; existing checked native values/units/masks/
+indices and source-name parsing remain. Examples use atmosphere/ocean/surface.
+
+Unverified gates retain named owners: old required producers/assertions Tasks16/
+19; transform/derived Task08; polar Task09; full coordinate/multigrid writer Task10;
+resource measurements Task11; broad native/real-producer and warning qualification
+Task19; human scientific/usability Task21. FACADI/binary-size/backend/fixture
+warnings remain visible. These limits are not waived by successful generated
+fixtures, the metadata review or the baseline-status comparison.
 
 ## Task 01 evidence
 

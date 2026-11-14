@@ -15,88 +15,91 @@ or constitute independent human scientific approval.
 Current operation matrix
 -------------------------
 
-.. list-table:: Native FA support
-   :header-rows: 1
-   :widths: 25 36 39
+Header/index and selected encoding inspection
+   Read-only metadata includes names/lengths, clocks, source/directory facts and
+   selected encoding flags or native errors. An LFI index alone does not identify
+   a supported FA producer, quantity or release. Declare FA explicitly; suffixes
+   are not evidence.
 
-   * - Family or operation
-     - Current support
-     - Requirements and limits
-   * - Header/index and selected encoding inspection
-     - Read-only metadata, names/lengths, clocks, source/directory facts and
-       selected encoding flags or native errors.
-     - An LFI index alone does not identify a supported FA producer, quantity or
-       release. FA must be declared explicitly; suffixes are not evidence.
-   * - Regional instantaneous atmospheric gridpoint records
-     - Selected 2-D decode, labelled datasets, native extraction/export and
-       explicitly requested eligible polar sampling.
-     - ``profile: arome_history``, qualified modern regular-lon/lat or spherical
-       tangent-Lambert geometry, explicit source units/kind/instantaneous meaning.
-       Selected native errors and unknown scaling remain failures.
-   * - Dense AROME-produced SURFEX histories
-     - Selected horizontal real ``X1`` records, including categorical codes and
-       individually named layer/patch records.
-     - Evidenced AROME-47 / SURFEX-8.1 source tags, complete consistent FBUF,
-       ``SFX.PACK=0``, storage-sized DIM1 and DIM2=-1, matching CI/state clock.
-       ``PACK=0`` is a layout fact, not FA codec packing 0 or verified scaling.
-   * - Explicit native atmospheric cubes
-     - Selected gridpoint records on original full/interface labels, sparse
-       selection and native/source/vertical-qualified NetCDF products.
-     - Exact declared record associations and centre sampling; checked native
-       A/B/PREFER and library vertical grid. No inferred pressure/height or
-       full-level coefficients. See :doc:`fa_atmosphere`.
-   * - Collocated physical wind pairs
-     - Existing explicitly selected wind preparation and magnitude/polar products.
-     - Declared matching :ref:`component directions <wind-component-directions>`
-       (eastward/northward or grid-aligned), physical-velocity scaling and
-       companions. Unresolved staggering/map scaling and additional producer
-       vector conventions remain blocked; cube support is not vector validation.
-   * - Coupled atmospheric GRIB/NetCDF plus FA, or native FA/FA
-     - One geographical track, independent source grids/products, exact-common
-       default or strict times, optional shared bilinear targets.
-     - Each source must satisfy its own adapter contract. No common native
-       indices, nearest-time substitution or automatic quantity equivalence.
-       See :doc:`fa_surface`.
-   * - Small typed structural metadata
-     - Evidenced ASCII/integer/0-or-1 logical/real/date structure and directory facts.
-     - Observed release/type/length checks; structural readability is not
-       permission to decode physical arrays. See :doc:`fa_contracts`.
-   * - Spectral records, including observed 103/18 encodings
-     - Encoding/header facts only; physical decoding, raw coefficient export,
-       transformed datasets, extraction and polar products are blocked.
-     - Qualified coefficient/scaling/header-to-transform contracts and trusted
-       native-grid references are missing. A library-only Fourier evaluation
-       does not supply them. See :doc:`fa_spectral`.
-   * - Packed SURFEX, support-map reconstruction, X2 or physical N1/L1/C1 arrays
-     - Not supported for physical execution; available directory facts can be inspected.
-     - Need release-matched type/order/support-map/missing-value definitions and
-       independent decoded/scatter-gather references. C1 here is a native character
-       type code, not a physical scalar capability.
-   * - Soil/snow/layer/patch/tile axes or averages
-     - Original dense 2-D record names can be selected; assembled scientific axes
-       and weighting are not inferred.
-     - Need original indices, bounds, fractions, masks and trusted layer/tile data.
-   * - Accumulated/averaged/extreme FA fields, rates and static/PREP products
-     - Only explicitly instantaneous FA physical records are admitted.
-     - Need field-specific support/bounds/resets/signs/units and independent
-       multi-time or static references. A header interval marker is insufficient.
-   * - Other projections, global/reduced grids, other producers or plain LFI
-     - Not supported by this adapter.
-     - Need versioned native header/active-array mappings, actual Earth models,
-       sampling/zone conventions and independent geographic/value references.
+Regional instantaneous atmospheric gridpoint records
+   Selected 2-D decode, labelled datasets and native model-grid extraction/export
+   require ``profile: arome_history``, qualified modern regular-lon/lat or spherical
+   tangent-Lambert geometry, and explicit source units/kind/instantaneous meaning.
+   Selected native errors and unknown scaling remain failures.
+
+Dense AROME-produced SURFEX histories
+   Selected horizontal real ``X1`` records include categorical codes and
+   individually named layer/patch records. They require evidenced AROME-47 /
+   SURFEX-8.1 tags, complete consistent FBUF, ``SFX.PACK=0``, storage-sized DIM1
+   and DIM2=-1, and matching CI/state clocks. ``PACK=0`` is a layout fact, not FA
+   codec packing 0 or verified scaling.
+
+Explicit native atmospheric cubes
+   Selected gridpoint records retain original full/interface labels and sparse
+   native axes. Exact record associations and centre sampling are declared;
+   native A/B/PREFER and the library vertical grid are checked. Pressure/height
+   and full-level coefficients are not inferred. See :doc:`fa_atmosphere`.
+
+Collocated physical wind pairs
+   Native declarations preserve component sampling/basis. A transform, magnitude
+   or polar operation needs its own executable method binding. Paired operations
+   require matching :ref:`component directions <wind-component-directions>`
+   (eastward/northward or grid-aligned), physical-velocity scaling and companions.
+   Unresolved staggering/map scaling and additional producer vector conventions
+   remain blocked; cube support is not vector validation.
+
+Coupled atmospheric GRIB/NetCDF plus FA, or native FA/FA
+   Sources retain independent grids/products and selected clocks. Centre-dependent
+   operations use exact coverage by default or explicit common association.
+   Each source must satisfy its own adapter contract. There are no common native
+   indices, nearest-time substitution or automatic quantity equivalence.
+   See :doc:`fa_surface`.
+
+Small typed structural metadata
+   Evidenced ASCII/integer/0-or-1 logical/real/date structures and directory facts
+   require observed release/type/length checks. Structural readability is not
+   permission to decode physical arrays. See :doc:`fa_contracts`.
+
+Spectral records, including observed 103/18 encodings
+   Only encoding/header facts are available. Physical decoding, raw coefficient
+   export, transformed datasets, extraction and polar products are blocked.
+   Qualified coefficient/scaling/header-to-transform contracts and trusted
+   native-grid references are missing. A library-only Fourier evaluation does
+   not supply them. See :doc:`fa_spectral`.
+
+Packed SURFEX, support-map reconstruction, X2 or physical N1/L1/C1 arrays
+   Physical execution is unsupported; available directory facts can be inspected.
+   It needs release-matched type/order/support-map/missing-value definitions and
+   independent decoded/scatter-gather references. C1 here is a native character
+   type code, not a physical scalar capability.
+
+Soil/snow/layer/patch/tile axes or averages
+   Original dense 2-D record names can be selected; assembled scientific axes and
+   weighting are not inferred. They need original indices, bounds, fractions,
+   masks and trusted layer/tile data.
+
+Accumulated/averaged/extreme FA fields, rates and static/PREP products
+   Only explicitly instantaneous FA physical records are admitted. Other temporal
+   meanings need field-specific support/bounds/resets/signs/units and independent
+   multi-time or static references. A header interval marker is insufficient.
+
+Other projections, global/reduced grids, other producers or plain LFI
+   These are unsupported. They need versioned native header/active-array mappings,
+   actual Earth models, sampling/zone conventions and independent geographic/
+   value references.
 
 Regular lon/lat FA supports the complete ``CI`` grid only. Spherical tangent
 Lambert supports selected ``CI`` or ``C`` zones with an explicit Earth radius;
 rotated, stretched, academic, secant/ellipsoidal, dateline-crossing and polar
 variants are not admitted. See :doc:`fa_geometry` for exact numerical choices.
 
-FA-only tracking supports ``fixed_box`` or ``prescribed_track``. For atmospheric
+FA-only regions use ``region.center`` or ``region.track.file``. For atmospheric
 trackers, use a qualified GRIB/NetCDF tracking source in a coupled run. Native
 cubes do not themselves establish verified MSLP or pressure-level tracker inputs.
 Diagnostics remain selected operations, not automatic consequences of available
-fields. Continuous production polar sampling defaults to bilinear point samples,
-without an area-budget conservation guarantee; categorical fields require an
-explicit appropriate method such as ``nearest_s2d``.
+fields. Native copying alone does not establish a transform, derived or polar
+method's eligibility. Unresolved requested operations fail; metadata readability
+does not authorize them.
 
 Interpret failures without guessing physics
 -------------------------------------------

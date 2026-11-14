@@ -331,33 +331,40 @@ of unlike source quantities or validity of every real configuration.
 Embedded SURFEX sea fields in Meso-NH
 ----------------------------------------
 
-The ``model: mesonh`` NetCDF time-series reader also handles embedded SURFEX
-snapshots. To interpret SEA-field missing values, support and unit comments:
+Meso-NH NetCDF inputs can contain embedded SURFEX snapshots. These remain part
+of the atmospheric source, even when only sea fields are selected.
+This complete illustrative request opts into the existing SEA-field missing-value,
+support and unit-comment rules:
 
 .. code-block:: yaml
 
-   model: mesonh
-   input:
-     format: netcdf
-     netcdf:
-       surfex_fields: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA]
-   variables:
-     fields_2d:
-       names: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA, FRAC_SEA]
+   schema_version: 3
+   run:
+     name: sea-fields
+   sources:
+     atmosphere:
+       model: mesonh
+       format: netcdf
+       files: ./data/mnh*.nc
+       interpretation: mesonh_surfex_sea
+       variables:
+         2d: [SST, SSS, H_SEA, LE_SEA, FMU_SEA, FMV_SEA]
+   output:
+     directory: ./results/sea-fields
 
-This fragment supplements the ordinary paths, tracking, domain and output
-configuration; ``FRAC_SEA`` is retained as an ancillary even when not explicitly
-selected for export. The finite supported list is the six named fields above plus
-``FRAC_SEA`` itself. Only requested, explicitly listed fields are interpreted;
-unlisted quantities retain their original values and metadata. Variable-shard,
-other-model and non-NetCDF interpretations fail rather than guessing a source.
+Replace paths and selected fields from producer evidence. ``FRAC_SEA`` is
+required support even when not selected for export. The finite eligible list is
+the six named fields above plus ``FRAC_SEA`` itself. Only selected eligible
+quantities and their support are interpreted; unrelated fields retain their
+native values and metadata. Other-model and non-NetCDF interpretations fail.
+Missing selected support is an error, not permission to search another stream.
 
 For this supported family, exact ``999`` is invalid in these SURFEX fields and
 unit comments supply missing unit labels.
 The selected fields replace this sentinel with missing values, preserving existing
 NaNs and legitimate zeroes. This is **not** a dataset-wide Meso-NH sentinel rule:
-an unrelated ``PRES=999 hPa`` remains valid. Unselected raw access is still
-available by leaving ``surfex_fields`` empty (the default).
+an unrelated ``PRES=999 hPa`` remains valid. Omit ``interpretation`` for ordinary
+native access, without these sentinel/support rules.
 
 ``FRAC_SEA`` must have native ``nj/ni`` support and declared physical
 ``c_grid_dynamic_range`` on both axes. Its physical interior must be finite and
@@ -365,13 +372,16 @@ within [0,1]; invalid/missing required support fails. Known outer-halo ``999``
 values become missing. Selected SEA quantities are supported where the fraction
 is strictly positive. Fractional coastal coverage stays fractional and separate
 from Boolean support; values are neither multiplied nor divided by that fraction.
-Changing 2-D states are prepared per snapshot before time-series concatenation.
-Validation reads the 2-D support field; it does not decode thermal/flux cubes.
+Source time selection applies to interpreted quantities and required support.
+Metadata preflight leaves support-value checks pending. Execution checks the
+selected two-dimensional support; it does not need unselected thermal/flux cubes.
 
-Explicit ``units`` take precedence. If absent, the terminal parenthesized unit in
-the comment supplies the label, with ``(fraction)`` represented as ``1``. Missing
-or ambiguous required comments fail. Actual contradictions with explicit units
-fail; known equivalent spellings such as ``kelvin/K`` and ``W m-2/W/m2`` do not.
+Native ``units`` take precedence. If absent, the terminal parenthesized unit in
+the comment supplies the label, with ``(fraction)`` represented as ``1``.
+Source ``field_metadata.<field>.units`` can fill a genuine gap when both are
+absent; it cannot replace either known fact. Missing or ambiguous required units
+fail. Contradictions fail; known equivalent spellings such as ``kelvin/K`` and
+``W m-2/W/m2`` do not.
 Original comments are preserved, and ``surfex_units_source`` identifies the
 metadata origin. This labels the supplied values; it performs no unit conversion.
 Across successive interpreted snapshots, quantity, support and statistical
@@ -381,13 +391,17 @@ Neither preflight nor direct loading silently converts those snapshots.
 No CF standard names, flux signs, stress basis, instantaneous/averaged sampling or
 new ``cell_methods`` are inferred from field names or diagnostic flags.
 
-Run provenance includes ``surfex_provenance`` (inside each named source for a
-coupled run) with source basename, field, units origin, invalid sentinel and support
-rule. Resolved configurations retain the opt-in list. Ordinary-reader output
-attributes identify the interpreted fields and the absence of additional value
-weighting or inferred flux timing/sign/basis. Optional scalar polar sampling uses
-the same missing support; its interpolated fractional coverage is not a binary
-wet mask or a conservative area average.
+Run provenance records the method, interpreted fields and support checks under
+``sources.<id>.interpretation``, and metadata origins under
+``sources.<id>.field_metadata``. Resolved configurations retain the explicit
+source interpretation. Ordinary-reader field attributes record the sentinel,
+support rule and absence of additional value weighting or inferred flux timing/
+sign/basis. This interpretation does not request or qualify polar sampling.
+For successive snapshots, ``interpretation.metadata_records`` retains each
+field's source basename, time/cycle, observed attributes, resolved units and
+metadata origins. Combined variable attributes represent the first selected
+record; consult these per-record facts for equivalent spellings or unit origins
+that differ between snapshots. Values are not rescaled.
 
 Producer evidence was checked in the official `Meso-NH 5.7.2 archive
 <https://doi.org/10.5281/zenodo.15698760>`_: ``src/MNH/modd_parameters.f90`` defines

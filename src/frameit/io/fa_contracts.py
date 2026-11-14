@@ -134,7 +134,8 @@ def native_descriptor(name, length, encoding, directory, geometry, metadata, clo
     }
 
 
-def resolve_descriptor(descriptor, declaration):
+def resolve_descriptor(descriptor, declaration, *,
+                       declaration_origin="explicit_input.fa.field_metadata"):
     """Native facts > matched conventions > user completion; never relabel facts.
 
     Currently no release-qualified physical convention fills missing semantics.
@@ -144,7 +145,8 @@ def resolve_descriptor(descriptor, declaration):
     validate_descriptor(descriptor)
     result = deepcopy(descriptor)
     if declaration is None:
-        raise ValueError(f"declare input.fa.field_metadata.{result['native_id']} "
+        raise ValueError(f"declare {declaration_origin.removeprefix('explicit_')}"
+                         f".{result['native_id']} "
                          "(units, kind, temporal_kind); native identity is not inferred")
     if result["eligibility"]["decode"] == "blocked":
         raise ValueError(f"{result['native_id']}: " + "; ".join(result["eligibility"]["reasons"]))
@@ -161,13 +163,14 @@ def resolve_descriptor(descriptor, declaration):
         raise ValueError("Explicit continuous/categorical kind is required")
     if result["units"]["value"] is None:
         result["units"] = {"value": declaration["units"],
-                           "origin": "explicit_input.fa.field_metadata"}
+                            "origin": declaration_origin}
     if result["temporal_support"]["kind"] is None:
         result["temporal_support"].update(kind="instantaneous",
-                                        origin="explicit_input.fa.field_metadata")
+                                         origin=declaration_origin)
     result["declaration"] = deepcopy(declaration)
+    result["declaration_origin"] = declaration_origin
     result["scaling"]["allow_unscaled"] = declaration.get("allow_unscaled", False)
-    result["semantic_evidence"].append({"origin": "explicit_input.fa.field_metadata",
+    result["semantic_evidence"].append({"origin": declaration_origin,
                                        "independent_validation": False})
     # These are conditional capabilities, not proof that downstream geometry,
     # categorical sampling or native scaling requirements have passed.

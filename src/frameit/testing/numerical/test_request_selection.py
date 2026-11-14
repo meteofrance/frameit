@@ -1081,8 +1081,12 @@ def test_v3_fa_record_evidence_from_inventory(tmp_path, monkeypatch, case):
         assert not (tmp_path / "not-written").exists()
         return
     binding = bind_inventory(conf)
-    assert binding["status"] == "pending_method_binding" and request["binding"] is None
-    assert any("scaling" in check for check in binding["deferred_checks"])
+    if raw:
+        assert binding["status"] == "bound" and request["binding"] is not None
+        assert binding["interpretation"]["pending_value_checks"]
+    else:
+        assert binding["status"] == "pending_method_binding" and request["binding"] is None
+        assert any("hybrid/scaling" in check for check in binding["deferred_checks"])
     selected = binding["products"]["model_grid"]["S001T" if raw else "temperature"]["records"]
     assert len(selected) == (1 if time else 2)
     for index, record in enumerate(selected):

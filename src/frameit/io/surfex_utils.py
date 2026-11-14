@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 
 from frameit.processing.requests import selected_native_indices
-from frameit.utils.units import unit_key
 
 SURFEX_FIELDS = {"SST", "SSS", "H_SEA", "LE_SEA", "FMU_SEA", "FMV_SEA", "FRAC_SEA"}
 
@@ -22,10 +21,20 @@ def validate_surfex_fields(fields, model, file_type, layout):
 
 
 def _unit_identity(value):
-    key = unit_key(value)
-    return {"kelvin": "k", "wm-2": "w/m2", "wm^-2": "w/m2", "wm**-2": "w/m2",
-            "kg/ms2": "pa", "kgm-1s-2": "pa", "kgm**-1s**-2": "pa", "n/m2": "pa",
-            "nm-2": "pa", "fraction": "1"}.get(key, key)
+    """Only evidenced spelling aliases; unknown SI symbols retain their case."""
+    value = str(value or "").strip()
+    return {
+        "kelvin": "K", "Kelvin": "K",
+        "W m-2": "W/m2", "W m^-2": "W/m2", "W m**-2": "W/m2",
+        "Wm-2": "W/m2", "Wm^-2": "W/m2", "Wm**-2": "W/m2",
+        "Pa": "pa", "hPa": "hpa", "N/m2": "pa", "Nm-2": "pa",
+        "N m-2": "pa", "N m^-2": "pa", "N m**-2": "pa",
+        "kg/ms2": "pa", "kgm-1s-2": "pa", "kgm**-1s**-2": "pa",
+        "kg m-1 s-2": "pa", "kg m**-1 s**-2": "pa", "fraction": "1",
+        "m s-1": "ms-1", "m s^-1": "ms^-1", "m s**-1": "ms**-1",
+        "km h-1": "kmh-1", "cm s-1": "cms-1", "cm s**-1": "cms**-1",
+        "m2 s-2": "m2s-2", "m**2 s**-2": "m**2s**-2", "m^2 s^-2": "m^2s^-2",
+    }.get(value, value)
 
 
 def _units(attrs, field):
@@ -64,6 +73,36 @@ def validate_surfex_metadata(datasets, fields):
                 part[name].attrs = dict(part[name].attrs, units=_unit_identity(part[name].attrs.get("units")))
         metadata.append(part)
     validate_native_metadata(metadata, model="SURFEX")
+
+
+def surfex_metadata(source, field):
+    """Check interpreted surface shape/physical bounds using inventory metadata only."""
+    import xarray as xr
+
+    if source["model"] != "mesonh" or source["format"] != "netcdf":
+        raise ValueError("SURFEX SEA interpretation requires Meso-NH NetCDF")
+    dims = set(field["dimensions"]) - {
+        record["clock"] for record in source["record_inventory"]}
+    if dims != {"nj", "ni"}:
+        raise ValueError(f"SURFEX {field['name']} requires native surface nj/ni dimensions")
+    for grid_id in field.get("grid_ids", [field["grid_id"]]):
+        grid = source["native_grids"][grid_id]
+        ds = xr.Dataset(coords={
+            name: xr.Variable(item["dimensions"], item["values"], attrs=item["attributes"])
+            for name, item in grid["coordinates"].items() if name in {"nj", "ni"}})
+        for axis in ("nj", "ni"):
+            if axis not in ds or "c_grid_dynamic_range" not in ds[axis].attrs:
+                raise ValueError(f"SURFEX physical support requires {axis}.c_grid_dynamic_range")
+            selected_native_indices(ds, {"level_domain": "physical", "all_levels": True}, axis)
+    attrs = dict(field["attributes"])
+    declared_units = source.get("declaration", {}).get(
+        "field_metadata", {}).get(field["name"], {}).get("units")
+    completed = not str(attrs.get("units", "")).strip() and not re.search(
+        r"\([^()]*\)\s*$", str(attrs.get("comment", ""))) and declared_units
+    if completed:
+        attrs["units"] = declared_units
+    units, origin = _units(attrs, field["name"])
+    return dict(attrs, units=units, surfex_units_source="declaration" if completed else origin)
 
 
 def prepare_surfex(ds, conf):

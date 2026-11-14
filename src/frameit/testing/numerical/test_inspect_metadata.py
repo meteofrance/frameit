@@ -480,8 +480,8 @@ def test_v3_source_inventory(tmp_path, monkeypatch, case):
     if case == "embedded_surfex":
         interpreted = v3_config(tmp_path, files, names=("SST",),
                                 interpretation="mesonh_surfex_sea")
-        interpreted_source = preflight(interpreted, check_output=False)["sources"]["weather"]
-        assert interpreted_source["dependency_resolution"] == "pending_method_binding"
+        with pytest.raises(ValueError, match="FRAC_SEA.*unavailable"):
+            preflight(interpreted, check_output=False)
     if case == "unselected_competition":
         assert source["files"] == [str(second)]
         assert source["selected_times"] == [np.datetime64("2026-01-01T04", "ns")]

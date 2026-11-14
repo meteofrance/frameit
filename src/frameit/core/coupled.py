@@ -269,7 +269,7 @@ def _region_grid(conf, source, grid_id):
     grid = source["native_grids"][grid_id]
     geometry = xr.Dataset(coords={
         name: xr.Variable(item["dimensions"], item["values"], attrs=item["attributes"])
-        for name, item in grid["coordinates"].items()})
+        for name, item in grid["coordinates"].items()}, attrs=deepcopy(grid.get("fa_geometry", {})))
     temporal = {}
     for record in source["records"]:
         if record["grid_id"] == grid_id:
@@ -744,13 +744,16 @@ def run_native_sources(runner, *, benchmark=False):
                 runner.field_products[(name, "model_grid")] = dataset.assign_attrs(
                     source_id=name, source_model=plans[name]["model"],
                     source_format=plans[name]["format"])
+    runner.conf.add_parameter("source_provenance", {
+        name: {"model": source["model"], "format": source["format"],
+               "fa_inputs": children[name].simulation_parameter.get("fa_inputs", []),
+               "field_metadata": source["metadata_origins"].get("field_metadata", {}),
+               "interpretation": source.get("interpretation"),
+               "region": _association_report(source.get("region")),
+               "tracker_support": source.get("tracker_support"),
+               "selected_times": [str(time) for time in source["selected_times"]]}
+        for name, source in plans.items()})
     if runner.conf.yaml_config["region"]:
-        runner.conf.add_parameter("source_provenance", {
-            name: {"model": source["model"], "format": source["format"], "fa_inputs": [],
-                   "region": _association_report(source["region"]),
-                   "tracker_support": source.get("tracker_support"),
-                   "selected_times": [str(time) for time in source["selected_times"]]}
-            for name, source in plans.items()})
         runner.conf.grid_geometry = {
             name: source["region"]["grids"] for name, source in plans.items()}
     return RunResult(ok=True, n_files=len(files), output_dir=runner.output_dir, files=files)

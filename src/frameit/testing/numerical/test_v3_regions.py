@@ -815,6 +815,23 @@ def test_tracker_binding_does_not_clear_unrelated_pending_operations(tmp_path, p
     conf = configuration(tmp_path, {"weather": source},
                          region={"tracker": {"method": "pressure_wind"},
                                  "width_km": {"x": 2, "y": 2}}, products=products)
+    if pending == "interpretation":
+        _, children, plans = bind_sources(conf)
+        binding = children["weather"].source_requests["weather"]["binding"]
+        assert binding["status"] == "bound"
+        assert conf.source_requests["weather"]["binding"]["status"] == "bound"
+        assert plans["weather"]["requests"]["binding"]["status"] == "bound"
+        assert binding["interpretation"] == {
+            "method": "mesonh_surfex_sea", "fields": [], "pending_value_checks": []}
+        assert conf.source_requests["weather"]["exports"] == {"model_grid": ["scalar"]}
+        assert set(binding["products"]["model_grid"]) == {"scalar"}
+        assert plans["weather"]["tracker_support"]["inputs"] == {
+            "MSLP": {}, "UM10": {}, "VM10": {}}
+        assert set(binding["dependencies"]) == {"MSLP", "UM10", "VM10"}
+        assert {record["name"] for record in binding["records"]} == {
+            "scalar", "MSLP", "UM10", "VM10"}
+        assert not conf.output_dir.exists()
+        return
     with pytest.raises(ValueError, match="pending|bind|support|method"):
         bind_sources(conf)
     assert not conf.output_dir.exists()

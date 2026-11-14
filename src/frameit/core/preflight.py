@@ -149,8 +149,9 @@ def _decoded_clock(ds, path):
     for position in np.ndindex(values.shape):
         samples.append({"time": values[position], "calendar": calendar,
                         "cycle": reference[position] if reference is not None else None,
-                        "time_bounds": tuple(bounds[position]) if bounds is not None else None,
-                        "clock": name, "indexers": dict(zip(clock.dims, position, strict=True))})
+                         "time_bounds": tuple(bounds[position]) if bounds is not None else None,
+                         "clock": name, "temporal_names": sorted(set(candidates) | set(clock.dims)),
+                         "indexers": dict(zip(clock.dims, position, strict=True))})
     return samples, set(candidates + references + bound_names)
 
 
@@ -315,8 +316,21 @@ def _netcdf_inventory(path, source, resources):
                     if k != "values" or not set(c["dimensions"]) & temporal_dims}
                 for n, c in grid["coordinates"].items()}}
             identity_grid = _metadata_id("grid_", topology)
+        identity_attributes = field["attributes"]
+        interpreted = False
+        if source.get("interpretation") == "mesonh_surfex_sea":
+            from frameit.io.surfex_utils import SURFEX_FIELDS, _unit_identity, _units
+
+            interpreted = name in SURFEX_FIELDS
+            if interpreted:
+                try:
+                    units, _ = _units(field["attributes"], name)
+                except ValueError:
+                    pass  # Selected metadata validation reports invalid/missing evidence.
+                else:
+                    identity_attributes = dict(identity_attributes, units=_unit_identity(units))
         field_id = _metadata_id("field_", {
-            "name": name, "grid_id": identity_grid, "attributes": field["attributes"],
+            "name": name, "grid_id": identity_grid, "attributes": identity_attributes,
             "dimensions": [d for d in var.dims if d not in temporal_dims]})
         fields[field_id] = field
         explicit = str(var.attrs.get(
@@ -336,10 +350,16 @@ def _netcdf_inventory(path, source, resources):
             dep: attr for dep, attr in dependencies.items() if dep in grid["coordinates"]}
         field["dependencies"] = {
             dep: attr for dep, attr in dependencies.items() if dep not in grid["coordinates"]}
+        if source.get("interpretation") == "mesonh_surfex_sea":
+            from frameit.io.surfex_utils import SURFEX_FIELDS
+
+            if name in SURFEX_FIELDS - {"FRAC_SEA"}:
+                field["dependencies"]["FRAC_SEA"] = "sea_support"
         for sample in samples:
             indexers = {dim: index for dim, index in sample["indexers"].items() if dim in var.dims}
             records.append({
                 **{k: v for k, v in sample.items() if k != "indexers"},
+                **({"observed_attributes": deepcopy(var.attrs)} if interpreted else {}),
                 "field_id": field_id, "name": name, "grid_id": grid_id, "level": None,
                 "temporal_metadata": {k: var.attrs[k] for k in (
                     "cell_methods", "online_operation", "interval_operation", "interval_write")
@@ -523,6 +543,7 @@ def _fa_source_inventory(path, source, conf):
             continue
         cube_grid = {**grid, "native_vertical_header": {key: info["geometry"].get(key) for key in (
             "KNIVER", "PREFER", "PAHYBR", "PBHYBR")},
+                      "fa_hybrid_contract": deepcopy(info.get("hybrid_contract")),
                      "vertical_position": cube["vertical_position"], "sampling": cube["sampling"]}
         cube_grid_id = _metadata_id("grid_", cube_grid)
         grids[cube_grid_id] = cube_grid
@@ -683,6 +704,8 @@ def inventory_source(conf, name, *, resources=None):
         raise ValueError(f"sources.{name}: selected files have conflicting "
                          f"model/format/physical profiles: {profiles}")
     fmt, model, physical, profile = next(iter(profiles))
+    if source.get("interpretation") and (fmt != "netcdf" or model != "mesonh"):
+        raise ValueError(f"sources.{name}.interpretation requires Meso-NH NetCDF")
     request = conf.source_requests[name]
     needed = {field for exports in request["exports"].values() for field in exports
               if field not in request["derived"]}
@@ -826,6 +849,22 @@ def inventory_source(conf, name, *, resources=None):
                           "evidence": {"model": model, "format": fmt, "profile": profile}},
         "format": {"origin": "yaml" if "format" in source else "input", "evidence": "file header"},
     }
+    if fmt != "fa":
+        from frameit.processing.requests import sea_interpretation, source_field_metadata
+
+        origins = {}
+        for record in selected:
+            if record["name"] not in required:
+                continue
+            field = fields[record["field_id"]]
+            metadata = source_field_metadata(result, field, record=record)
+            if metadata is not None:
+                origins.setdefault(field["name"], metadata["origins"])
+                if "observed_attributes" in record:
+                    record["field_metadata"] = metadata
+        result["metadata_origins"]["field_metadata"] = origins
+        if source.get("interpretation"):
+            result["interpretation"] = sea_interpretation(selected)
     conf.file_type = fmt
     conf.atm_model = {"mesonh": "MNH", "arome": "AROME", "nemo": "NEMO", "croco": "CROCO"}[model]
     conf.input_files = selected_paths
@@ -850,6 +889,12 @@ def bind_source(conf, name, *, representations=None, required_inputs=()):
     binding = bind_requests({**source, "name": name}, request,
                             representations=representations, required_inputs=required_inputs)
     source["field_binding"] = binding
+    source["metadata_origins"]["field_metadata"] = {
+        field: descriptor["field_metadata"]["origins"]
+        for descriptors in (*binding["products"].values(), binding["dependencies"])
+        for field, descriptor in descriptors.items() if "field_metadata" in descriptor}
+    if "interpretation" in binding:
+        source["interpretation"] = deepcopy(binding["interpretation"])
     for warning in binding["warnings"]:
         logging.getLogger(__name__).warning(warning)
     plan = conf.simulation_parameter["request_plan"]

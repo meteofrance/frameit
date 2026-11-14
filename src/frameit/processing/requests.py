@@ -8,6 +8,7 @@ import logging
 import re
 from collections.abc import Sequence
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -735,6 +736,110 @@ def _field_axis(source, field, record, records_by_name):
     return _vertical_axis(field, grid)
 
 
+def resolve_field_metadata(attributes, declaration, context, *, temporal_names=("time",)):
+    """Complete stored-value metadata, never convert values or replace known facts."""
+    import re
+
+    from frameit.io.surfex_utils import _unit_identity as stored_unit_identity
+    from frameit.utils.units import UNITS
+
+    attrs = deepcopy(attributes)
+    origins = {key: "input" for key in (
+        "units", "kind", "temporal_kind", "long_name", "standard_name")
+        if attrs.get(key) is not None and str(attrs[key]).strip()}
+    kinds = {"instant": "instantaneous", "instantaneous": "instantaneous",
+             "point": "instantaneous", "once": "instantaneous",
+             "avg": "mean", "average": "mean", "mean": "mean",
+             "accum": "accumulated", "accumulate": "accumulated", "sum": "accumulated"}
+    temporal = [attrs.get("temporal_kind")]
+    temporal.extend(kinds.get(str(attrs[key]).lower(), str(attrs[key]).lower())
+                    for key in ("GRIB_stepType", "online_operation") if attrs.get(key))
+    methods = re.sub(r"\([^)]*\)", "", str(attrs.get("cell_methods", "")))
+    for axes, method in re.findall(r"((?:[^\s:()]+\s*:\s*)+)(\w+)", methods):
+        if set(axis.strip() for axis in axes.split(":") if axis.strip()) & set(temporal_names):
+            temporal.append(kinds.get(method, method))
+    facts = {value for value in temporal if value is not None}
+    if len(facts) > 1:
+        raise ValueError(f"{context}: contradictory source temporal metadata {sorted(facts)}")
+    if facts:
+        attrs["temporal_kind"] = next(iter(facts))
+        origins["temporal_kind"] = "input"
+    if attrs.keys() & {"flag_values", "flag_masks", "flag_meanings"}:
+        if attrs.get("kind") not in {None, "categorical"}:
+            raise ValueError(f"{context}: kind contradicts source categorical flags")
+        attrs["kind"], origins["kind"] = "categorical", "input"
+    for key, value in declaration.items():
+        if key == "allow_unscaled":
+            continue
+        fact = attrs.get(key)
+        equal = fact == value
+        if key == "units" and fact:
+            left, right = stored_unit_identity(fact), stored_unit_identity(value)
+            equal = left == right or any(
+                left in factors and right in factors and factors[left] == factors[right]
+                for _, factors in UNITS.values())
+        if key in origins and not equal:
+            raise ValueError(f"{context}: declared {key} {value!r} contradicts input "
+                             f"{fact!r}; no relabelling or implicit conversion")
+        if key not in origins:
+            attrs[key], origins[key] = value, "declaration"
+    return {"attributes": attrs, "origins": origins}
+
+
+def source_field_metadata(source, field, *, record=None):
+    """Resolve only this selected field's declaration and admitted SEA metadata."""
+    declaration = source.get("declaration", {})
+    name, attrs = field["name"], field["attributes"]
+    if record is not None:
+        attrs = record.get("observed_attributes", attrs)
+    metadata = declaration.get("field_metadata", {}).get(name, {})
+    interpreted = False
+    if declaration.get("interpretation") == "mesonh_surfex_sea":
+        from frameit.io.surfex_utils import SURFEX_FIELDS, surfex_metadata
+
+        if name in SURFEX_FIELDS:
+            attrs = surfex_metadata(source, {**field, "attributes": attrs})
+            interpreted = True
+    if not metadata and not interpreted:
+        return None
+    temporal_names = {"time"}
+    records = [record] if record is not None else source["record_inventory"]
+    for sample in records:
+        if sample["name"] == name:
+            temporal_names.update(sample.get("temporal_names", [
+                sample["clock"], *sample["locator"].get("coordinate_indexers", {})]))
+    result = resolve_field_metadata(
+        attrs, metadata, f"source.field_metadata.{name}", temporal_names=temporal_names)
+    if interpreted:
+        result["origins"]["units"] = attrs["surfex_units_source"]
+    return result
+
+
+def sea_interpretation(records):
+    """Retain selected snapshot evidence separately from representative field metadata."""
+    evidence = {}
+    for record in records:
+        metadata = record.get("field_metadata", {})
+        if "surfex_units_source" not in metadata.get("attributes", {}):
+            continue
+        key = record["name"], record["time"], record["cycle"], record["locator"]["path"]
+        evidence[key] = {
+            "field": record["name"], "source_id": Path(record["locator"]["path"]).name,
+            "time": str(record["time"]), "cycle": (
+                str(record["cycle"]) if record["cycle"] is not None else None),
+            "clock": record["clock"],
+            "observed_attributes": {
+                name: value.tolist() if isinstance(value, (np.ndarray, np.generic)) else value
+                for name, value in record["observed_attributes"].items()},
+            "units": metadata["attributes"]["units"], "origins": dict(metadata["origins"])}
+    fields = sorted({entry["field"] for entry in evidence.values()})
+    return {
+        "method": "mesonh_surfex_sea", "fields": fields,
+        "pending_value_checks": ["selected FRAC_SEA physical support finite within [0,1]"]
+        if fields else [],
+        **({"metadata_records": list(evidence.values())} if evidence else {})}
+
+
 def bind_requests(source, request, *, representations=None, required_inputs=()):
     """Bind v3 declarations using only a closed, metadata-only record inventory.
 
@@ -1035,13 +1140,58 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
     if not needed:
         binding["deferred_checks"].append("No fields are requested; finish source/method requests "
                                            "before execution.")
-    tracker_resolved = (source.get("pending_operations") == ["tracker"]
-                        and source.get("tracker_support", {}).get("inputs") == method_inputs)
-    if source["dependency_resolution"] == "pending_method_binding" and not tracker_resolved:
+    declaration = source.get("declaration", {})
+    interpreted = declaration.get("interpretation") == "mesonh_surfex_sea"
+    sea_records = []
+    for descriptors in (*binding["products"].values(), binding["dependencies"]):
+        for descriptor in descriptors.values():
+            field = source["fields"][descriptor["field_id"]]
+            for record in descriptor["records"]:
+                metadata = source_field_metadata(source, field, record=record)
+                if metadata is not None:
+                    descriptor.setdefault("field_metadata", metadata)
+                    if interpreted and "surfex_units_source" in metadata["attributes"]:
+                        record["field_metadata"] = metadata
+                        sea_records.append(record)
+    if interpreted:
+        binding["interpretation"] = sea_interpretation(sea_records)
+    fa_resolved = False
+    if source.get("format") == "fa" and declaration:
+        from frameit.core.configuration import _fa_runtime_options
+        from frameit.io.fa_utils import fa_selected_array
+
+        options = _fa_runtime_options(declaration)
+        for descriptors in (*binding["products"].values(), binding["dependencies"]):
+            for name, descriptor in descriptors.items():
+                for record in descriptor["records"]:
+                    # Construction checks the original record, declarations and geometry;
+                    # native scaling/masks are checked only when this lazy payload executes.
+                    fa_selected_array(record, source, options=options)
+                    descriptor["field_metadata"] = {
+                        "attributes": deepcopy(options["field_metadata"][name]),
+                        "origins": {key: "declaration"
+                                    for key in options["field_metadata"][name]}}
+                    if record.get("vertical") is not None:
+                        grid = source["native_grids"][record["grid_id"]]
+                        if not grid.get("fa_hybrid_contract"):
+                            binding["deferred_checks"].append(
+                                f"{context}.{name}: native hybrid/scaling interpretation "
+                                "requires the evidenced EPyGrAM hybrid contract.")
+        binding["interpretation"] = {
+            "method": "explicit_fa", "profile": options["profile"],
+            "pending_value_checks": ["native decoder scaling and returned masks"]}
+        fa_resolved = True
+    pending_operations = [operation for operation in source.get("pending_operations", [])
+                          if operation != "interpretation" or not interpreted]
+    tracker_resolved = (pending_operations == ["tracker"]
+                         and source.get("tracker_support", {}).get("inputs") == method_inputs)
+    interpretation_resolved = interpreted and not pending_operations
+    if (source["dependency_resolution"] == "pending_method_binding"
+            and not tracker_resolved and not interpretation_resolved):
         binding["deferred_checks"].append(
             "Operation-specific derived/tracker/transform/polar/source-interpretation support "
             "remains pending method binding; field inventory alone does not resolve it.")
-    if any(record["locator"]["format"] == "fa"
+    if not fa_resolved and any(record["locator"]["format"] == "fa"
            for _, _, candidates in resolved.values() for _, record in candidates):
         binding["deferred_checks"].append("FA source interpretation and decode-time scaling "
                                            "eligibility remain required.")

@@ -263,7 +263,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
     if set(binding["products"]) - {"model_grid"}:
         raise ValueError("Selected NetCDF polar processing is not bound to an executable method")
     admitted = {Path(path).resolve() for path in files}
-    model = source["model"].upper()
+    model = {"mesonh": "MNH"}.get(source["model"], source["model"].upper())
     native_conf = SimpleNamespace(
         atm_model=model, cartesian_horizontal_winds="native",
         cartesian_vertical_velocity="interfaces", compute_polar_proj=False,
@@ -343,8 +343,40 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
             })
         return dataset
 
-    def prepare(dataset, name, record):
+    def prepare(dataset, name, record, descriptor):
         supported = formula_support(dataset, record)
+        metadata = record.get("field_metadata", descriptor.get("field_metadata"))
+        if metadata:
+            import json
+
+            supported[name].attrs = {
+                **metadata["attributes"],
+                "frameit_metadata_origins": json.dumps(metadata["origins"], sort_keys=True)}
+        sea_fields = binding.get("interpretation", {}).get("fields", [])
+        if name in sea_fields:
+            from frameit.io.surfex_utils import prepare_surfex
+
+            if name != "FRAC_SEA":
+                support = binding["dependencies"].get("FRAC_SEA", {})
+                records = [other for other in support.get("records", [])
+                           if other["time"] == record["time"] and other["cycle"] == record["cycle"]]
+                if len(records) != 1:
+                    raise ValueError("SURFEX selected SEA field requires one selected FRAC_SEA")
+                fraction = sample("FRAC_SEA", records[0]).FRAC_SEA
+                meaning = records[0].get(
+                    "field_metadata", binding["dependencies"]["FRAC_SEA"]["field_metadata"])
+                fraction.attrs = {
+                    **meaning["attributes"],
+                    "frameit_metadata_origins": json.dumps(meaning["origins"], sort_keys=True)}
+                supported = supported.assign_coords(FRAC_SEA=fraction)
+            native_conf.netcdf_surfex_fields = [name]
+            native_conf.requested_variables_user = {"native": {"variables": [name]}}
+            supported = prepare_surfex(supported, native_conf)
+            for field_name in {name, "FRAC_SEA"}:
+                selected_metadata = metadata if field_name == name else meaning
+                supported[field_name].attrs["surfex_units_source"] = selected_metadata[
+                    "origins"]["units"]
+            source["interpretation"]["value_checks"] = "selected FRAC_SEA physical support checked"
         native_conf.requested_variables_user = {"native": {"variables": [name]}}
         if model == "NEMO":
             from frameit.io.nemo_utils import prepare_nemo
@@ -373,9 +405,12 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
             samples, validation = {}, []
             for record in descriptor["records"]:
                 dataset = sample(name, record)
-                prepared = prepare(dataset, name, record)
+                prepared = prepare(dataset, name, record, descriptor)
                 validation.append(prepared)
                 if export_support:
+                    dataset = prepared.reset_coords(
+                        [field for field in descriptors if field in prepared.coords])
+                elif name in binding.get("interpretation", {}).get("fields", []):
                     dataset = prepared
                 vertical = record["vertical"]
                 if vertical is not None:

@@ -149,6 +149,7 @@ class FaArray:
             "earth_radius_m": self.options["earth_radius_m"],
             "expected_source": self.options["expected_source"],
             "field_declaration": self.descriptor["declaration"],
+            "field_declaration_origin": self.descriptor["declaration_origin"],
             "cube_association": self.descriptor["sampling"].get("native_cube"),
             "zone": self.zone, "key": encoded,
             "allow_unscaled": self.descriptor["declaration"].get("allow_unscaled", False),
@@ -170,11 +171,7 @@ class FaArray:
 
 
 def fa_selected_array(record, source_plan, *, options, diagnostics_path=None):
-    """Read one exact locator on the explicitly declared numerical FA path.
-
-    This leaf does not grant a pending public binding execution clearance.
-    Task07 must resolve source interpretation before runner dispatch uses it.
-    """
+    """Construct a lazy exact-locator read, retaining execution-time codec checks."""
     from frameit.processing.requests import _fa_gridpoint
 
     locator = record["locator"]
@@ -204,6 +201,10 @@ def fa_selected_array(record, source_plan, *, options, diagnostics_path=None):
     field = source_plan["fields"][record["field_id"]]
     cube = field.get("native_cube")
     declaration = options["field_metadata"].get(record["name"])
+    original_declaration = source_plan.get("declaration", {}).get(
+        "field_metadata", {}).get(record["name"])
+    if original_declaration is not None and declaration != original_declaration:
+        raise ValueError(f"{context}: FA field requires its original source field_metadata")
     if cube:
         if cube != options["native_cubes"].get(record["name"]):
             raise ValueError(f"{context}: native cube requires its original explicit declaration")
@@ -236,7 +237,8 @@ def fa_selected_array(record, source_plan, *, options, diagnostics_path=None):
         for key, value in descriptor["sampling"].get("native_vertical_header", {}).items():
             if key in grid["fa_header"] and not np.array_equal(value, grid["fa_header"][key]):
                 raise ValueError(f"{context}: FA cube part {name} contradicts its owning header")
-        descriptors[name] = resolve_descriptor(descriptor, declaration)
+        descriptors[name] = resolve_descriptor(
+            descriptor, declaration, declaration_origin="explicit_source.field_metadata")
     vertical = record.get("vertical")
     coords = dict(geometry.coords)
     dims = ("time", "y", "x")
@@ -250,7 +252,8 @@ def fa_selected_array(record, source_plan, *, options, diagnostics_path=None):
             {"field_descriptors": descriptors,
              "hybrid_contract": {"interface_indices": list(range(count + 1))}},
             {"native_cubes": {record["name"]: {**cube, "records": ordered}}},
-            [record["name"]])[record["name"]]
+            [record["name"]],
+            declaration_origin="explicit source.native_cubes")[record["name"]]
         group = layout["group"]
         labels = [descriptors[name]["sampling"]["epygram"]["levels"][0] for name in names]
         native_indices = [int(label) - 1 for label in labels]
@@ -298,15 +301,101 @@ def fa_selected_array(record, source_plan, *, options, diagnostics_path=None):
     descriptor = descriptors[names[0]]
     attrs = {**declaration, "source_variable_name": record["name"], "grid_mapping": "crs",
              "source_units": declaration["units"],
-             "field_definition_source": "explicit_input.fa.field_metadata",
+             "field_definition_source": "explicit_source.field_metadata",
              "cell_methods": "time: point",
+             "fa_field_descriptor_scope": (
+                 "representative input record; per-file descriptors "
+                 "and decode observations in run provenance"),
              "fa_field_descriptor": json.dumps(descriptor, sort_keys=True),
              "fa_native_record_descriptors": json.dumps(descriptors, sort_keys=True)}
     if descriptor["native"]["directory"]:
         attrs.update(surfex_support_mask=descriptor["native"]["directory"]["MASK"],
                      surfex_native_type=descriptor["native"]["type"])
     return xr.DataArray(values[None, ...], name=record["name"], dims=dims,
-                        coords=coords, attrs=attrs)
+                         coords=coords, attrs=attrs)
+
+
+def _selected_fa(files, binding, source, conf, resources):
+    """Assemble only bound product/internal stencils through the selected leaf."""
+    if binding.get("status") != "bound" or source is None:
+        raise ValueError("FA selected_records requires bound interpretation "
+                         "and owning source metadata")
+    if set(binding["products"]) - {"model_grid"}:
+        raise ValueError("Selected FA polar processing is not bound to an executable method")
+    admitted = {Path(path).resolve() for path in files}
+    log_directory = conf.output_dir / "logs"
+    decoder_log = (log_directory / f"fa-decoder-{uuid4().hex}.jsonl"
+                   if log_directory.is_dir() else None)
+    provenance = []
+
+    def groups(descriptors, *, internal=False):
+        by_grid, vertical_dims = {}, set()
+        for name, descriptor in descriptors.items():
+            samples = {}
+            for record in descriptor["records"]:
+                if Path(record["locator"]["path"]).resolve() not in admitted:
+                    raise ValueError(f"{name}: selected locator is outside the admitted FA files")
+                array = fa_selected_array(
+                    record, source, options=conf.fa_options,
+                    diagnostics_path=str(decoder_log) if decoder_log is not None else None)
+                grid = source["native_grids"][record["grid_id"]]
+                dataset = array.to_dataset()
+                cube = source["fields"][record["field_id"]].get("native_cube")
+                if cube:
+                    group = record["vertical"]["dimension"]
+                    vertical_dims.add(group)
+                    dataset = add_cube_coordinates(dataset, {
+                        "hybrid_contract": grid["fa_hybrid_contract"],
+                        "native_cubes": {name: {
+                            **cube, "group": group,
+                            "levels": array[group].values.tolist(),
+                            "source_native_indices": record["vertical"]["source_native_indices"],
+                            "records": record["locator"]["records"]}}})
+                    dataset[name].attrs.update(
+                        ancillary_variables=" ".join(
+                            (*HYBRID_AUXILIARIES, f"{name}_native_record")),
+                        fa_vertical_position=cube["vertical_position"],
+                        fa_sampling_origin="explicit source.native_cubes",
+                        fa_physical_coordinates="not computed")
+                    if cube.get("vector_basis"):
+                        dataset[name].attrs.update(wind_reference_frame=cube["vector_basis"],
+                                                  fa_component_scaling=cube.get("component_scaling"))
+                dataset.attrs = dict(grid["fa_geometry"], source_format="fa",
+                                     fa_profile=conf.fa_options["profile"])
+                dataset.time.encoding["calendar"] = record["calendar"]
+                resources.add(dataset)
+                samples.setdefault(record["grid_id"], []).append(dataset)
+                provenance.append({
+                    "source_id": Path(record["locator"]["path"]).name,
+                    "identity_strategy": "size_mtime_freshness",
+                    "identity": record["locator"]["identity"],
+                    "valid_time": str(record["time"]), "reference_time": str(record["cycle"]),
+                    "profile": conf.fa_options["profile"],
+                    "subdomain": conf.fa_options["subdomain"],
+                    "earth_radius_m": conf.fa_options["earth_radius_m"],
+                    "expected_source": conf.fa_options["expected_source"],
+                    "grid_lookup": grid["fa_geometry"]["fa_grid_lookup"],
+                    "field_descriptors": json.loads(array.attrs["fa_native_record_descriptors"]),
+                    "decoder_log": str(decoder_log.relative_to(conf.output_dir))
+                    if decoder_log is not None else None,
+                    "decode_check_policy": "required on payload evaluation; see decoder_log"})
+            for grid_id, sequence in samples.items():
+                combined = (sequence[0] if len(sequence) == 1 else xr.concat(
+                    sequence, dim="time", data_vars="all", coords="minimal",
+                    compat="equals", join="exact", combine_attrs="override"))
+                by_grid.setdefault(grid_id, []).append(combined)
+        from frameit.tracking.tracker_core import merge_internal_stencils
+
+        return {grid_id: (merge_internal_stencils(datasets, vertical_dims) if internal else
+                         xr.merge(datasets, join="exact", compat="identical",
+                                  combine_attrs="override"))
+                for grid_id, datasets in by_grid.items()}
+
+    user = groups(binding["products"].get("model_grid", {}))
+    tracker = {"internal": groups(binding["dependencies"], internal=True)} \
+        if binding["dependencies"] else {}
+    conf.add_parameter("fa_inputs", provenance)
+    return user, tracker
 
 
 @managed_loading
@@ -317,8 +406,10 @@ def concat_fa2ds_by_vert_coord(
     selected_records=None, source_plan=None,
 ):
     """Gridpoint instantaneous records only; spectral transforms are not implicit."""
-    if selected_records is not None or getattr(wind_conf, "schema_version", None) == 3:
-        raise ValueError("FA source interpretation and decode-time scaling remain unresolved; "
+    if selected_records is not None:
+        return _selected_fa(files, selected_records, source_plan, wind_conf, resources)
+    if getattr(wind_conf, "schema_version", None) == 3:
+        raise ValueError("FA source interpretation requires selected bound requests; "
                          "pending metadata does not authorize payload reading")
     requests = normalize_requests(user_requested_variables_yaml)
     if not wind_conf.fa_options["native_cubes"] and (set(requests) - {"surface"} or any(

@@ -5,7 +5,7 @@ FrameIt assembles **explicitly associated, instantaneous gridpoint H2D records**
 into labelled native atmospheric cubes. The records remain on their original
 full/interface indices, without diagnosing pressure or height.
 
-Native cubes require ``input.format: fa`` and ``profile: arome_history``, with
+Native cubes require source ``format: fa`` and ``profile: arome_history``, with
 qualified modern regular-lon/lat or spherical tangent-Lambert geometry.
 Individually selected dense SURFEX records use ``surfex_history`` and its separate
 source/layout checks. See :doc:`fa_inputs`, :doc:`fa_geometry` and :doc:`fa_baseline`.
@@ -32,26 +32,56 @@ lazy NaN shape placeholders, never physical zeroes or decoded data. A selected
 spectral record or native -91/-93/-94 error fails before physical decoding; it
 cannot be accepted as harmless metadata or replaced by another field.
 
-The annotated example below is an association template, **not** a release-qualified
+The complete request below is an association example, **not** a release-qualified
 field catalogue. A literal ID such as ``S001TEMPERATURE`` can be spectral in a real
 stream. Inspect actual encodings and confirm units, sampling, coefficients and
 wind basis before selecting records.
 
-.. literalinclude:: ../../../example/config_file/arome_fa_native_cubes.yaml
-   :language: yaml
+The spherical radius is illustrative; use the producer's actual Earth model.
+This request keeps selected native records without tracking or transforms:
 
-``input.fa.native_cubes`` maps each logical variable to:
+.. code-block:: yaml
+
+   schema_version: 3
+   run:
+     name: native-temperature
+   sources:
+     atmosphere:
+       model: arome
+       format: fa
+       profile: arome_history
+       files: ./data/atmosphere/*.fa
+       variables:
+         3d: [temperature]
+         levels: {indices: [2, 0]}
+       native_cubes:
+         temperature:
+           records: [S001TEMPERATURE, S002TEMPERATURE, S003TEMPERATURE]
+           vertical_position: mass
+           sampling: center
+       field_metadata:
+         temperature:
+           units: K
+           kind: continuous
+           temporal_kind: instantaneous
+       fa:
+         earth_radius_m: 6371229
+   output:
+     directory: ./results/native-temperature
+
+Source ``native_cubes`` maps each logical variable to:
 
 * a nonempty exact ``records`` list, without wildcards or ambiguous/repeated ownership;
 * ``vertical_position: mass|interface`` and ``sampling: center``;
-* explicit ``field_metadata`` units/kind/instantaneous meaning for the logical variable;
-* for winds, declared vector basis and physical-velocity scaling as described below.
+* source ``field_metadata`` units/kind/instantaneous meaning for the logical variable;
+* for paired wind operations, the basis and physical-velocity scaling described below.
 
 The library's selected fixed-surface type must be native hybrid type 119, with
 one finite integral label per record within the declared full/interface bounds.
 Declared labels must be unique and increasing; they are not silently sorted.
 Variables in one vertical group must have the same sampling labels. Only requested
-logical variables and declared wind companions are inspected. Every record in a
+logical variables and actual operation dependencies need preparation. A pair
+declaration alone does not request an extra exported component. Every record in a
 selected cube's declared list gets metadata/encoding validation, while lazy data
 reads are limited to requested levels/times. Keep unsupported/unwanted records
 out of that declaration instead of expecting sparse selection to hide them.
@@ -59,19 +89,23 @@ out of that declaration instead of expecting sparse selection to hide them.
 Native labels and sparse selection
 ----------------------------------
 
-``variables.level`` selects mass/full-level data and ``variables.level_w`` selects
-interface data. The admitted convention uses one-based labels 1..N and 1..N+1,
+List logical cubes under source ``variables.3d``. One ``variables.levels`` selector
+applies independently to their native mass/full or interface axes.
+The admitted convention uses one-based labels 1..N and 1..N+1,
 respectively. ``<axis>_source_native_index`` preserves the corresponding zero-based
-native index. ``levels.indices`` addresses positions in the declared axis;
+native index. ``levels.indices`` addresses original zero-based native indices,
+not positions within a sparse record-association list;
 ``levels.values`` matches actual native labels exactly, not pressure/height.
 
 For declared labels [1,2,3], indices [0,2] retain labels [1,3] and native indices
 [0,2]. Sparse/reordered selections keep original identities. A name beginning
 S000 is not repaired into index zero when library metadata says otherwise.
+If the declared records contain only native labels [1,3], indices [0,2] still
+select those labels; index 1 is unavailable, not the second declared record.
 Original record IDs remain ``<variable>_native_record`` string coordinates.
 Wrong fixed-surface type, unavailable labels, out-of-range positions, incompatible
 axes or changed hybrid definitions across files fail before physical output.
-Individually named 2-D ``variables.fields_2d`` requests remain supported separately.
+Individually named 2-D records use ``variables.2d``.
 
 Hybrid coefficients and reference pressure
 ------------------------------------------
@@ -101,8 +135,8 @@ Ordinary NetCDF products retain:
 * ``fa_hybrid_a_normalized`` (1), ``fa_hybrid_a`` (Pa), ``fa_hybrid_b`` (1);
 * ``fa_reference_pressure`` (Pa), native data labels/indices and original record IDs.
 
-The complete coefficient axis survives sparse selection and optional polar
-sampling as non-horizontal metadata; it does not re-expand data onto unselected
+The complete coefficient axis survives native sparse selection as non-horizontal
+metadata; it does not re-expand data onto unselected
 levels. Native indices remain dimensionless, without hPa/metre labels or incomplete
 CF pressure ``formula_terms``. Mass/interface **field association** is an explicit
 user declaration; the library's header-wide ``mass`` default is not independent
@@ -111,34 +145,33 @@ per-field evidence. Descriptors retain that distinction and its origin.
 Native extraction performs no ln(ps)/ps conversion, MSLP substitution, pressure,
 geopotential/geometric-height diagnosis, hydrostatic integration, nonhydrostatic-
 departure assumption, vertical averaging or extrapolation. These are different
-quantities/operations, and ``levels: physical`` remains blocked for FA.
+quantities/operations, and ``levels: {domain: physical}`` remains blocked for FA.
 
 Wind location, basis and selected operations
 --------------------------------------------
 
 Cube wind pairs require matching explicit ``vector_basis: earth|grid``,
 ``component_scaling: physical_velocity`` and centre sampling, consistent with
-``input.wind_pairs``. Here ``earth`` means eastward/northward components and
+source ``wind_pairs`` when a paired operation needs them. Here ``earth`` means eastward/northward components and
 ``grid`` means grid-aligned components along the model's x/y axes; see
 :ref:`wind-component-directions`. Unresolved staggering or map-scaled components
 fail.
-The existing unit/frame validation and explicitly selected rotation methods apply;
-there is no automatic frame/quantity substitution.
-
-Declared companions and required horizontal neighbours are loaded before sparse
-selection/cropping. Selected rotation uses the complete horizontal grid; native
-Cartesian and eastward/northward analysis branches remain independent.
-Repeated preparation is idempotent. Location/collocation, vector-basis rotation and
-reference-frame motion are separate concepts; see :ref:`wind-grid-contract` and
-:ref:`wind-preparation-method` for the existing equations and method limits.
+These declarations describe stored components; they do not request collocation,
+rotation or unit conversion. Native copying of one component does not request
+its unselected companion. A transform or calculation needs an explicit request,
+its required support and an executable method binding. Unresolved preparation
+fails rather than changing a native export.
+Location/collocation, vector-basis rotation and reference-frame motion are
+separate concepts; see :ref:`wind-grid-contract` and
+:ref:`wind-preparation-method` for equations and method limits.
 
 ``geolocation`` is a finite-neighbour WGS84 direction approximation, not an exact
 producer-specific conformal correction. Independently specified spherical Lambert
 vectors in both hemispheres check signs/components. The ``5e-4 m/s`` bound applies
 to the specified 1-km-spacing, 8-km-wide, 5-m/s fixture and its direction-discretization/
-ellipsoid effects, not arbitrary production accuracy. ``wind_speed`` is computed
-only when requested; available U/V do not enable an unrequested magnitude product.
-Continuous production polar sampling defaults to bilinear without conservation.
+ellipsoid effects, not arbitrary production accuracy. Available U/V do not enable
+an unrequested wind-speed or polar product. Native cube assembly does not
+establish support for every transform or polar combination.
 
 FA-driven atmospheric trackers remain unsupported. Cubes alone do not provide
 verified MSLP, pressure-level diagnostics or tracker input conventions. Use
@@ -152,7 +185,7 @@ header words, checked hybrid convention and resolved declarations. Decode logs
 record actual selected records, masks, scaling and worker/library versions.
 Representative NetCDF descriptors describe input records, not a combined
 multi-time or post-crop result; see :doc:`fa_contracts` and :doc:`output_files`.
-Source/vertical-qualified products retain ordinary-reader schemas and per-product
+Source-qualified products retain labelled native axes and per-product
 atomic/final-status handling. A failed required decode/export is not a completed run.
 
 Independent generated gridpoint fixtures cover coefficients/columns, zeroes and

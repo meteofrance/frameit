@@ -12,7 +12,7 @@ Installation and native isolation
 ----------------------------------------
 
 FA reads run in isolated processes using the active Python by default. Set
-``input.fa.python_executable`` to select another runtime containing FrameIt and
+``sources.<id>.reader.python_executable`` to select another runtime containing FrameIt and
 the FA stack. See :doc:`fa_environment` for installation and troubleshooting.
 NetCDF/GRIB processing does not require the FA package.
 
@@ -52,42 +52,63 @@ Continue with the topic relevant to your request:
 * :doc:`Spectral support and limitations <fa_spectral>`: why coefficients cannot
   be decoded or exported as gridpoint values without a qualified native contract.
 
-Use ``input.format: fa`` for FA-only extraction or named sources for coupling.
+Set ``format: fa`` inside each FA source, including a single-source request.
 Do not put atmospheric and SURFEX companion files into an undifferentiated FA
 inventory: they are complementary streams, not duplicate observations.
 
 Named-source configuration
 --------------------------
 
-Adapt the paths, geometry, centres and scientific declarations to the simulation:
+This complete request copies mean sea-level pressure and one declared SURFEX
+quantity on their native grids. Paths and field meanings are illustrative.
+The spherical radius below is an example, not an Earth-model default; replace
+it only from producer evidence:
 
-.. literalinclude:: ../../../example/config_file/coupled_fa.yaml
-   :language: yaml
-   :start-at: schema_version:
+.. code-block:: yaml
 
-With ``input.sources``:
+   schema_version: 3
+   run:
+     name: coupled-surface
+   sources:
+     atmosphere:
+       model: arome
+       format: grib
+       files: ./data/atmosphere/*.grib
+       variables:
+         2d: [prmsl]
+     surface:
+       model: arome
+       format: fa
+       profile: surfex_history
+       files: ./data/historic.surfex*.fa
+       variables:
+         2d: [SFX.T2M]
+       field_metadata:
+         SFX.T2M:
+           units: K
+           kind: continuous
+           temporal_kind: instantaneous
+       fa:
+         subdomain: CI
+         earth_radius_m: 6371229
+   output:
+     directory: ./results/coupled-surface
 
-* Each source owns its ``model``, ``input``, ``variables`` and optional ``polar``
-  settings. Discovery/exclusion/NetCDF/wind conventions are the same as ordinary
-  inputs. Relative paths use the parent YAML's directory.
-* Top-level ``model`` must match ``tracking.source``'s model. Current FA profiles
-  require ``model: arome``; this does not make a different producer's FA compatible.
-* ``tracking.source`` chooses the existing tracker and atmospheric requirements.
-  It must name a configured source. FA itself currently supports ``fixed_box`` or
-  ``prescribed_track`` tracking; use GRIB/NetCDF for other atmospheric methods.
-* Put variables inside each source; top-level ``variables`` must be empty and
-  top-level ``polar.variables`` must remain ``extracted``. Each source may override
-  its own polar selection/options.
-* Global domain, export, logging and execution settings are shared. Native grids,
-  coordinates, masks and units are not merged or silently regridded.
+Each source owns its files, selections, declarations and technical ``reader``
+settings. Paths use the YAML directory. ``profile`` and ``native_cubes`` belong
+beside ``model``/``format``; ``fa`` contains only FA-specific source options.
+Both admitted profiles use ``model: arome``; that does not admit another producer.
+The profile and native evidence distinguish atmosphere from surface.
 
-For an atmospheric NetCDF source, use its actual model conventions, an explicit
-inventory/pattern, ``format: netcdf`` and ordinary ``input.netcdf`` settings inside
-that source. AROME NetCDF must already follow the adapter's time/coordinate
-conventions; a matching file format does not establish schema compatibility.
-Its configured ``valid_time`` dimension is normalized to internal ``time``
-without changing timestamps. Conflicting ``time``/``valid_time`` names fail
-instead of guessing whether one is a forecast reference clock.
+Omitted ``region`` and ``products`` copy full native model-grid fields without
+tracking or polar processing. To crop, add one top-level ``region.center`` or
+``region.track.file``. Calculated tracking uses the atmospheric source, independent
+of its name; FA-driven atmospheric tracking is unsupported. See
+:doc:`../task_guides/coupled_inputs` for centre and time requirements.
+
+NetCDF sources use their actual model/coordinate conventions and source-local
+``reader`` settings. A matching container does not establish schema compatibility.
+Decoded sample clocks retain their labels; conflicting time identities fail.
 
 .. _time-choice-common-or-strict:
 
@@ -119,38 +140,24 @@ Atmospheric ``cx``/``cy`` indices are never reused on another grid. A centre
 outside a required secondary footprint fails: no edge-point substitution or
 spatial time skipping. Boxes partly outside a grid keep existing NaN padding.
 
-Coupled products use source-qualified groups:
+Native products are source-qualified:
 
 .. code-block:: text
 
-   products/coupled-surface.track.nc
-   products/coupled-surface.cart.atmosphere.heightAboveGround.nc
-   products/coupled-surface.cart.surfex.surface.nc
+   products/coupled-surface.atmosphere.model_grid.nc
+   products/coupled-surface.surface.model_grid.nc
 
-The cyclone example additionally separates ``atmosphere.surface`` and
-``atmosphere.isobaricInhPa`` products. It declares each selected wind pair, preserves
-native Cartesian winds and explicitly selects scalar polar fields. Geopotential
-``z`` is not geometric height; selecting it does not diagnose height or pressure.
+No trajectory is requested by this example. Select ``products.track`` explicitly
+when using a centre provider and needing its reusable NetCDF trajectory.
+Native indices belong to each source's own grid; do not reuse another source's
+``cx/cy``. Inspect the product inventory, coordinates and per-source provenance.
+FA fields retain their declared meaning, source indices, masks and native facts.
 
-Original track indices belong to ``tracking.source``. Additional ``<source>_cx``,
-``<source>_cy``, bounds and validity variables describe each source grid. Products
-record ``source_id``, ``source_model``, ``source_format`` and ``source_group``. FA
-variables retain native names, declarations, source indices, masks, packing and
-producer metadata.
-
-Polar sampling stays optional. ``polar.shared_target: true`` opts into one target
-for participating sources: common exact times, continuous centres, radius/azimuth
-and ellipsoid, with exact output-coordinate verification. Explicit radial steps
-must agree and be no finer than the coarsest source; otherwise this mode resolves
-the coarsest participating native spacing and records that choice. With the
-default ``false``, per-source sampling remains independently configurable.
-Categorical FA fields selected for polar sampling require ``nearest_s2d``;
-different methods are not silently assigned to individual fields. Point sampling
-is not conservation or area averaging. Continuous production sampling defaults
-to bilinear; conservative/patch/vector-transport experiments are not selected
-automatically. Fields retain their independent missing/physical-support masks;
-support labels, native undefined values, extension zones and real zeroes are
-distinct facts. No missing support is filled with zero.
+Source declarations do not rotate winds, diagnose pressure/height, calculate
+speed or request polar sampling. Those are separate selected operations and
+require their own executable method support. An unresolved request fails rather
+than being enabled by field availability. Keep physical support, native undefined
+values, extension zones and real zeroes distinct; missing support is never zero.
 
 FA definitions, domain and limits
 ----------------------------------------
@@ -159,7 +166,7 @@ Profiles are ``arome_history`` and ``surfex_history``. The latter reads
 AROME-produced SURFEX ``SFX.PACK=0`` histories with horizontal ``X1`` entries
 matching the full storage grid. Layer/patch/tile record names and mask labels are
 retained, not averaged or assembled into an invented vertical coordinate. Use
-the logical ``fields_2d`` group for individually selected 2-D records; this does
+``variables.2d`` for individually selected 2-D records; this does
 not label every quantity as a physical ground-surface variable.
 
 SURFEX execution requires the evidenced source tags
@@ -169,7 +176,7 @@ Unmatched releases remain inspectable but require independent structural/type
 evidence before execution. This is distinct from the optional ``expected_source``
 assertions and does not establish field units or physical support from tables.
 
-``input.fa.expected_source`` accepts exact assertions for ``PROGRAM``, ``VERSION``,
+Source ``fa.expected_source`` accepts exact assertions for ``PROGRAM``, ``VERSION``,
 ``BUG``, ``MASDEV`` and ``BUGFIX``; it defaults to an empty mapping. Missing or
 unequal native values fail even during metadata inventory. Assertions do not
 override source facts or supply a missing producer identity. Semantic precedence
@@ -178,7 +185,7 @@ unresolved meaning. A declaration cannot overwrite known units/time semantics.
 There is no name-based unit/quantity inference or release-qualified physical
 catalogue that fills missing declarations automatically.
 
-For atmospheric ``profile: arome_history``, ``input.fa.native_cubes`` explicitly
+For atmospheric ``profile: arome_history``, source ``native_cubes`` explicitly
 associates exact gridpoint records with mass/full or interface labels and centre
 sampling. Original record IDs and native indices survive sparse selection.
 Normalized A, pressure-valued A, dimensionless B and source reference pressure
@@ -186,7 +193,7 @@ remain separate metadata. No pressure, height or full-level mean is inferred;
 see :doc:`Native atmospheric levels and cubes <fa_atmosphere>` for these contracts
 and collocated physical-vector requirements.
 
-Each selected native record requires ``field_metadata``:
+Each selected physical record or logical cube needs source ``field_metadata``:
 
 * ``units``: actual decoded source units, not a requested conversion;
 * ``kind``: ``continuous`` or ``categorical``;
@@ -223,8 +230,8 @@ origin translation and explicit Earth-model origin.
 Dateline-crossing/polar FA grids and unsupported projections fail explicitly.
 Existing spacing/anisotropy checks still apply.
 
-``input.fa.max_points`` defaults to 20,000,000 stored points and
-``timeout_seconds`` to 120 per transaction. Raise budgets explicitly after
+Source ``reader.max_points`` defaults to 20,000,000 stored points and
+``reader.timeout_seconds`` to 120 per transaction. Raise budgets explicitly after
 inspection. Decoding can require a full horizontal record even for a tiny crop,
 plus coordinate/temporary arrays. Laziness avoids unselected records/times but
 does not provide NetCDF-style subrecord I/O.

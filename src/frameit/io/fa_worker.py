@@ -222,7 +222,10 @@ def handle(request, destination):
             if descriptor["eligibility"]["decode"] == "blocked":
                 raise ValueError(f"{name}: " + "; ".join(descriptor["eligibility"]["reasons"]))
             if request.get("field_declaration") is not None:
-                descriptor = resolve_descriptor(descriptor, request["field_declaration"])
+                descriptor = resolve_descriptor(
+                    descriptor, request["field_declaration"],
+                    declaration_origin=request.get(
+                        "field_declaration_origin", "explicit_input.fa.field_metadata"))
             if request.get("cube_association") is not None:
                 descriptor["sampling"]["native_cube"] = request["cube_association"]
                 descriptor["sampling"]["vertical_interpretation"] = CUBE_VERTICAL_INTERPRETATION

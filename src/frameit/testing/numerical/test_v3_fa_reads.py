@@ -1,4 +1,4 @@
-"""Task05 leaf locator reads, not Task07 public FA execution clearance."""
+"""Selected FA leaf reads retain record-local admission and decode-time checks."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def surface_case(tmp_path_factory):
                      field_metadata={"SFX.WG1P1": {**DECLARATION, "units": "m3 m-3"}})
     source = inventory_source(conf, "weather")
     binding = bind_source(conf, "weather")
-    assert binding["status"] == "pending_method_binding"
+    assert binding["status"] == "bound"
     return conf, source, binding, paths
 
 
@@ -61,7 +61,7 @@ def cube_case(tmp_path_factory):
                      field_metadata={"temperature": DECLARATION})
     source = inventory_source(conf, "weather")
     binding = bind_source(conf, "weather")
-    assert binding["status"] == "pending_method_binding"
+    assert binding["status"] == "bound"
     return conf, source, binding, paths
 
 
@@ -138,7 +138,7 @@ def test_cube_leaf_keeps_selected_order_and_separate_internal_support(cube_case,
     support_request = copy.deepcopy(conf.source_requests["weather"])
     support_request["levels"] = {"indices": [2, 1, 0]}
     support_binding = bind_requests(source, support_request)
-    assert support_binding["status"] == "pending_method_binding"
+    assert support_binding["status"] == "bound"
     support = support_binding["products"]["model_grid"]["temperature"]["records"][1]
     calls = payload_requests(monkeypatch)
     output = fa_utils.fa_selected_array(selected, source, options=conf.fa_options)
@@ -175,9 +175,15 @@ def test_cube_leaf_keeps_selected_order_and_separate_internal_support(cube_case,
 
 
 def test_public_pending_fa_binding_still_rejected_without_helper_calls(
-    surface_case, monkeypatch,
+    surface_case, monkeypatch, tmp_path,
 ):
-    conf, source, binding, paths = surface_case
+    original, _, _, paths = surface_case
+    conf = v3_config(tmp_path, paths, names=("SFX.WG1P1",), profile="surfex_history",
+                     field_metadata=original.fa_options["field_metadata"],
+                     transforms=[{"fields": ["SFX.WG1P1"], "units": "1"}])
+    source = inventory_source(conf, "weather")
+    binding = bind_source(conf, "weather")
+    assert binding["status"] == "pending_method_binding"
     assert conf.source_requests["weather"]["binding"] is None
     assert source["requests"]["binding"] is None
     calls = payload_requests(monkeypatch)
@@ -189,7 +195,7 @@ def test_public_pending_fa_binding_still_rejected_without_helper_calls(
         existing.set_close(lambda: closed.append("existing"))
         resources.add(existing)
         with pytest.raises(ValueError, match=(
-            "FA.*interpretation.*scaling.*pending metadata.*payload reading"
+            "FA selected_records requires bound interpretation"
         )):
             fa_utils.concat_fa2ds_by_vert_coord(
                 paths, {}, {}, wind_conf=conf, resources=resources,
@@ -240,7 +246,7 @@ def test_selected_leaf_rejects_contradictory_decoded_record_and_removes_transfer
 @pytest.mark.parametrize("damage", [
     "missing_descriptor", "blocked", "unknown_shape", "wrong_shape", "native_id",
     "clock", "vertical_header", "zone", "identity", "outside_pool", "declaration",
-    "profile", "destination", "raw_vertical",
+    "profile", "destination", "raw_vertical", "changed_declaration",
 ])
 def test_leaf_preserves_record_local_admission_before_any_payload(
     surface_case, monkeypatch, damage,
@@ -272,6 +278,8 @@ def test_leaf_preserves_record_local_admission_before_any_payload(
         source["record_inventory"].remove(raw)
     elif damage == "declaration":
         options["field_metadata"] = {}
+    elif damage == "changed_declaration":
+        options["field_metadata"]["SFX.WG1P1"]["units"] = "K"
     elif damage == "profile":
         options["profile"] = "arome_history"
     elif damage == "destination":
@@ -339,9 +347,9 @@ def test_public_execution_keeps_fa_pending_before_payload_or_output(
 
     original, _, _, paths = surface_case
     conf = v3_config(tmp_path, paths, names=("SFX.WG1P1",), profile="surfex_history",
-                     field_metadata=original.fa_options["field_metadata"])
+                     field_metadata={})
     calls = payload_requests(monkeypatch)
-    with pytest.raises(ValueError, match="cannot execute.*FA source interpretation.*scaling"):
+    with pytest.raises(ValueError, match="declare.*field_metadata"):
         execute_simulation(conf)
     assert calls and all(call["operation"] == "inspect" for call in calls)
     assert not conf.output_dir.exists()

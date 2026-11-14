@@ -45,11 +45,11 @@ Repeating a native fact does not replace its native evidence origin.
 
 No release-qualified physical catalogue currently fills missing units, sampling
 or intervals. Every selected physical record or logical cube therefore needs
-``input.fa.field_metadata`` with source ``units``, ``kind`` and
+``sources.<id>.field_metadata`` with source ``units``, ``kind`` and
 ``temporal_kind: instantaneous``. Declarations are user evidence, not independent
 scientific validation. There is no filename/record-name inference of quantity or units.
 
-Optional ``input.fa.expected_source`` defaults to ``{}`` and accepts exact native
+Optional source ``fa.expected_source`` defaults to ``{}`` and accepts exact native
 assertions for ``PROGRAM``, ``VERSION``, ``BUG``, ``MASDEV`` and ``BUGFIX``. Missing
 or unequal values fail even in metadata inventory. Each named source resolves
 independently; assertions are retained in resolved YAML, preflight and provenance.
@@ -76,7 +76,7 @@ directories or unmatched releases fail before selected typed reads.
 Required inventory/source/directory/clock reads do not decode horizontal physical
 arrays. Optional selected typed reads are bounded to 4096 words; required
 structural columns/header reads are bounded to 100000 words, and the inventory
-to 100000 records. These internal limits do not relax ``input.fa.max_points``.
+to 100000 records. These internal limits do not relax source ``reader.max_points``.
 No arbitrary typed physical arrays, character-array products, packed support maps
 or plain-LFI adapter follow from structural readability.
 
@@ -201,7 +201,7 @@ variable, ordinary Python readers can inspect it without FrameIt:
    import json
    import xarray as xr
 
-   with xr.open_dataset("products/SIMU.cart.surfex.surface.nc", engine="netcdf4") as ds:
+   with xr.open_dataset("products/SIMU.surface.model_grid.nc", engine="netcdf4") as ds:
        descriptor = json.loads(ds["SFX.T2M"].attrs["fa_field_descriptor"])
        print(descriptor["units"], descriptor["scaling"], descriptor["sampling"])
        print(ds["SFX.T2M"].attrs["fa_field_descriptor_scope"])

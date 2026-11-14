@@ -27,7 +27,7 @@ def record_selection(options, names):
     return records, owners
 
 
-def cube_layouts(info, options, names):
+def cube_layouts(info, options, names, *, declaration_origin="explicit input.fa.native_cubes"):
     """Check EPyGrAM field levels against native header bounds and declarations."""
     layouts, axes = {}, {}
     nlevels = len(info.get("hybrid_contract", {}).get("interface_indices", [])) - 1
@@ -49,7 +49,7 @@ def cube_layouts(info, options, names):
             levels.append(int(labels[0]))
             info["field_descriptors"][record]["sampling"]["native_cube"] = {
                 "variable": name, "vertical_position": declaration["vertical_position"],
-                "origin": "explicit input.fa.native_cubes", "independent_validation": False,
+                "origin": declaration_origin, "independent_validation": False,
                 "sampling": declaration["sampling"],
                 "vector_basis": declaration.get("vector_basis"),
                 "component_scaling": declaration.get("component_scaling"),

@@ -16,7 +16,7 @@ Supported grids and Earth model
   The spectral extension is excluded. ``CIE`` storage bounds are retained as
   metadata, not offered as an output-zone selection.
 
-Projected FA requires explicit positive ``input.fa.earth_radius_m`` based on
+Projected FA requires explicit positive source ``fa.earth_radius_m`` based on
 producer evidence. The library geoid must match this radius; it is never fitted
 to encoded corners. An angular regular grid can leave the Earth model unresolved
 and does not thereby acquire the library's default geoid.
@@ -95,10 +95,10 @@ Axis regularity, boundary roundoff and ties use the greater of ``1e-5 m`` and
 first **storage index**, including descending axes. These are numerical roundoff
 bounds, not physical footprint extensions, CRS fitting or relaxed header checks.
 
-A required coupled source rejects centres outside its native point-axis envelope
-apart from numerical roundoff: no edge substitution or spatial time skip.
-Single-source edge-nearest selection retains its recorded offset. A box extending
-beyond a source keeps NaN padding. CI/C offsets stay attached to original indices.
+A centre outside a required source's native point-axis envelope fails, apart
+from numerical roundoff: no edge substitution or spatial time skip.
+A box extending beyond a source keeps NaN padding. CI/C offsets stay attached
+to original indices.
 Existing core scalar-spacing guards still reject more than 10% X/Y spacing
 difference or 20% within-axis variation, even with a nominal spacing override;
 separate X/Y lookup distances do not add anisotropic extraction support.
@@ -106,24 +106,23 @@ separate X/Y lookup distances do not add anisotropic extraction support.
 Track and provenance interpretation
 -----------------------------------
 
-Preflight/input records carry ``horizontal_header_signature`` and ``grid_lookup``;
-``grid_geometry.index_lookup`` and track summary ``tracking_grid_lookup``,
-``tracking_snap_convention`` and ``tracking_grid_ties`` identify the convention.
+Preflight/input records carry the source geometry and lookup convention.
+``grid_geometry.index_lookup`` identifies the native point-selection method.
 ``geometry_contract`` and ``fa_geometry_origin`` / ``fa_earth_model_origin``
 retain library zones/CRS, origin translation and declared versus unresolved facts.
 
-Projected FA tracks record:
+Cropped field products distinguish requested ``center_latitude``/
+``center_longitude`` from ``grid_selected_latitude``/``grid_selected_longitude``.
+Per-source region provenance records native indices, realised extents and coverage.
+These locations and indices belong to that source's grid; they cannot be reused
+on a shifted surface or atmospheric grid.
 
-* ``grid_selected_latitude`` / ``grid_selected_longitude``: actual selected source point;
-* ``grid_snap_dx_m`` / ``grid_snap_dy_m``: selected minus requested source-CRS X/Y;
-* ``grid_snap_distance_m``: Euclidean norm of projected offsets, **not ground distance**.
-
-Coupled tracks prefix these variables with the source ID, for example
-``surfex_grid_snap_dx_m``. Source-prefixed indices/offsets remain independent;
-base ``cx``/``cy`` belong to the tracking source. One source's observations are
-cleared before locating another source. Exported local box axes are not thereby
-reinterpretable as original source-projection axes. Read each product's actual
-coordinates and units; see :doc:`output_files`.
+A requested trajectory exports geographical ``latitude``/``longitude`` against
+time, not a universal grid-index system. Do not assume that it contains every
+source's indices or snapping offsets. A source-CRS Euclidean snapping distance
+is not ground/geodesic distance. Exported local box axes are not original
+source-projection axes. Read each product's actual coordinates and units;
+see :doc:`output_files`.
 
 Method, verification scope and limitations
 ------------------------------------------

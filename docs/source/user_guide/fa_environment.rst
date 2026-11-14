@@ -55,20 +55,20 @@ read-only source handling, point budgets and unsupported operations.
 Optional interpreter override
 ------------------------------
 
-Use ``input.fa.python_executable`` only when deliberately selecting another
+Use source ``reader.python_executable`` only when deliberately selecting another
 coherent runtime containing FrameIt and the complete maintained FA stack. For
-example, within a single-source configuration:
+example, this fragment supplements the complete FA request in :doc:`fa_inputs`:
 
 .. code-block:: yaml
 
-   input:
-     fa:
-       python_executable: ../fa-runtime/bin/python
+   sources:
+     surface:
+       reader:
+         python_executable: ../fa-runtime/bin/python
 
 The path is relative to the YAML file and is made absolute without dereferencing
-virtual-environment Python symlinks. In a coupled configuration, put it under
-the affected ``input.sources.<id>.input.fa``. Each source may choose its own
-runtime. Resolved YAML preserves the selection. A missing interpreter or worker
+virtual-environment Python symlinks. Each FA source may choose its own runtime.
+Resolved YAML preserves the selection. A missing interpreter or worker
 failure is reported; there is no automatic retry in another environment.
 For raw FA CLI inspection, ``--fa-python /path/to/runtime/bin/python`` selects
 the interpreter for that invocation.
@@ -82,7 +82,7 @@ Troubleshoot failures
   as well. The selected runtime must contain FrameIt and the FA extra.
 * **Timeout or point-budget failure:** inspect the source dimensions and selected
   fields first. Even a small crop can require decoding a complete native record.
-  Change ``input.fa.timeout_seconds`` or ``max_points`` deliberately; a point
+  Change source ``reader.timeout_seconds`` or ``reader.max_points`` deliberately; a point
   budget is not an operating-system memory quota.
 * **FMULTM/FMULTE warning:** this native unknown-parameter warning can coexist
   with encoded factors. Check ``scaling.status`` in decoder provenance: observed
