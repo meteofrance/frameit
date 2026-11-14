@@ -810,7 +810,7 @@ assertion, or mark a failed check as passed. The final full suite remains requir
 | [x] | 00 | — | New branch, baseline, state record, ownership map |
 | [x] | 01 | 00 | Correct parent/worker installation identity |
 | [x] | 02 | 01 | Strict v3 schema and shared execution interfaces |
-| [ ] | 03 | 02 | Source inventory and selected physical records |
+| [x] | 03 | 02 | Source inventory and selected physical records |
 | [ ] | 04 | 03 | Field identity and shared level binding |
 | [ ] | 05 | 04 | Native NetCDF slice, then selected-record adapter reads |
 | [ ] | 06 | 05 | Regions, trajectories, tracking, time associations |
@@ -951,18 +951,18 @@ records may reach Task 05. Metadata inspection may read needed coordinates.
 `test_inspect_metadata.py`, parameterized over the cases below. Call metadata APIs
 directly; the CLI inspection suite closes in Task 15.
 
-- [ ] Test aliases/hard links, overlapping patterns, copies with competing records,
+- [x] Test aliases/hard links, overlapping patterns, copies with competing records,
   field-split files, unreadable files, proven-irrelevant files, and shuffled filenames.
   Assert chronological decoded order and no provider-priority escape hatch.
-- [ ] Test physical-type classification independently of source names and field
+- [x] Test physical-type classification independently of source names and field
   selection. Reject two atmosphere sources; accept atmosphere/ocean/surface as admitted.
-- [ ] Test inclusive windows, exact values, stride after window, empty selection,
+- [x] Test inclusive windows, exact values, stride after window, empty selection,
   nonstandard calendars, required cycle selection, and distinct forecast intervals.
   Use a multi-time file containing selected and excluded scientific samples.
-- [ ] Build the selected-record inventory with stable grid identity before filtering
+- [x] Build the selected-record inventory with stable grid identity before filtering
   fields. Instrument metadata inspection to prove no scientific payload processing.
   A dependency outside selected files/times fails instead of extending the inventory.
-- [ ] Review and freeze the record contract for adapter workers.
+- [x] Review and freeze the record contract for adapter workers.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_inspect_metadata.py::test_v3_source_inventory src/frameit/testing/numerical/test_inspect_metadata.py::test_v3_time_record_selection

@@ -3,111 +3,114 @@ Input files
 
 FrameIt accepts NetCDF and GRIB files, plus selected native AROME/SURFEX FA
 histories through an optional isolated reader. See :doc:`fa_inputs` for the exact
-FA scope, declarations and coupled-source configuration. Other GRIB model
-conventions have not been generally qualified. Ordinary inventories include:
+FA scope and declarations. A supported container alone does not establish
+compatible model, field or grid conventions.
 
-- A single NetCDF file containing all time steps.
-- A list of files (NetCDF or GRIB), each representing a single time step.
-- Complementary NetCDF variable files, explicitly selected as described below.
+Files belong to named sources. Each source can use a path, glob, or list of
+paths and globs under ``files``. Exclusions belong under that source's
+``exclude``. All YAML paths are relative to the YAML directory.
 
-Within each source, variables must share a time-dimension convention, usually
-``time`` for Meso-NH and ``valid_time`` for AROME. NetCDF latitude/longitude must
-be coordinates associated with the scientific fields. Matching the container
-format alone does not establish compatible model/variable/grid conventions.
-
-Selection uses ``input.pattern`` (a standard glob or exact filename) or
-``input.files`` (an ordered explicit inventory), with optional ``input.exclude``
-globs. Relative paths are resolved from the YAML file. GRIB/NetCDF content-based
-format detection rejects mixed inputs; ``input.format`` may explicitly specify
-``grib`` or ``netcdf``. FA requires explicit ``format: fa`` and its profile/declarations.
-Mixed formats require separate named sources, not a mixed ordinary inventory.
-See :doc:`configuration_file` for YAML settings, units and native-grid inference.
-For a task route, use :doc:`../task_guides/field_selection` or
-:doc:`../task_guides/coupled_inputs`.
-
-Inspect a deliberately selected stream before choosing quantities and methods:
-
-.. code-block:: bash
-
-   frameit inspect ./data --model arome --format grib --pattern '*.grib'
-   frameit inspect ./data --model mesonh --format netcdf --pattern '*.nc'
-
-Review native names, units, time support/cycles, levels and grid coordinates.
-For GRIB/NetCDF, each input's ``variable_metadata`` also exposes recorded wind
-flags and CF names with :ref:`metadata-only interpretations <wind-metadata>`.
-Inspection reads metadata/coordinates, not scientific field payloads, and does
-not prove decoded scaling or scientific suitability. ``validate --schema-only``
-checks configuration without opening inputs; ``validate`` and ``run --dry-run``
-perform metadata preflight for the configured selections. See
-:doc:`../getting_started/first_run` for a worked example.
-
-Sources are read-only. FrameIt keeps GRIB indexes in the designated output
-``cache/``, not beside input files. In coupled runs, streams keep their own grids,
-masks and products; exact-common/strict time selection is described in
-:doc:`fa_inputs`. Available fields do not automatically enable diagnostics,
-unit/interval conversions or missing-data filling.
-
-NetCDF reading performance
---------------------------
-
-The NetCDF loader reuses open inputs during a run and closes them afterward.
-The cache does not persist across runs.
-
-Choose the input reader and chunks with:
+This complete request uses an illustrative field, path and time window. Inspect
+your source metadata before replacing them:
 
 .. code-block:: yaml
 
-   input:
-     netcdf:
-       engine: h5netcdf  # Default; netcdf4 is the alternative.
-       chunks: {}        # Respect each variable's native storage chunks.
+   schema_version: 3
+   run:
+     name: selected-times
+   sources:
+     weather:
+       model: mesonh
+       files: ./data/*.nc
+       exclude: ["*unwanted-stream*"]
+       time:
+         start: "2026-01-01T00:00:00"
+         end: "2026-01-02T00:00:00"
+         stride: 2
+       variables:
+         2d: [MSLP]
+   output:
+     directory: ./results/selected-times
 
-Compare readers with your actual selection, measuring runtime and peak memory.
-This setting selects the input reader independently of ``output.backend``;
-FrameIt does not substitute another reader automatically.
+The source name ``weather`` does not determine its model or physical type.
+Explicit model/format declarations must agree with reliable input evidence.
+Missing declarations require unambiguous detection; file names and selected
+quantities alone are not enough. Admitted profiles distinguish atmosphere,
+ocean and separately supplied surface streams. One source of each type is allowed.
 
-Keep ``chunks: {}`` as the starting point. Oversized chunks (especially ``-1``
-for whole axes) can force reading much more than a small spatial/vertical
-selection needs; very small chunks increase scheduling and repeated storage
-chunk reads. Chunk overrides use the source's dimension names. Measure wall
-time, memory and output agreement before adopting a different layout.
+Review native field names, units, levels, timestamps, cycles and coordinates.
+Metadata inspection may read needed coordinates, but not scientific field
+payloads. It does not prove decode-time scaling or scientific suitability.
+See :doc:`configuration_file` and :doc:`../task_guides/field_selection`.
 
-The runtime ``Input loading`` section includes metadata, coordinates and lazy
-graph preparation, not necessarily physical-field reads. With lazy execution,
-those reads may be charged to tracking or export. Compare the entire run as well
-as individual sections, using the same thread budget and filesystem-cache state.
+File inventory and ambiguity
+-----------------------------
 
-Complementary NetCDF variables
-------------------------------
+Supported time-split and field-split layouts are discovered without a layout
+switch. A retained file can contain several times. Admitted native grids remain
+distinct, including staggered fields within one source.
 
-For one physical field per file, declare the layout within that source:
+Records are ordered by decoded timestamps, not file names. Paths, symlinks and
+hard links to the same physical file are deduplicated. Overlapping glob patterns
+are reported. Separate copies remain separate providers; FrameIt does not hash
+whole archives to decide whether they are equivalent.
 
-.. code-block:: yaml
+Competing providers of a requested field, level, time and cycle fail.
+Use ``files``, ``exclude`` or ``time.cycle`` to make the request unambiguous.
+There is no first/last-provider setting. If excluding a whole file would remove
+needed records, make the input archive unambiguous upstream.
 
-   input:
-     format: netcdf
-     files: [pressure.nc, u10.nc, v10.nc]
-     netcdf:
-       file_layout: variables
-   variables:
-     fields_2d:
-       names: [prmsl, u10, v10]
+A matched file is skipped only when metadata proves that it supplies no requested
+field or required dependency. The reason is reported. An unreadable matched file
+fails; it is not treated as irrelevant. Calculation inputs must come from the
+selected inventory after exclusions, not another format or neighbouring stream.
 
-Adapt names and wind declarations to the source metadata. A wind companion may
-live in a different shard. Files must share identical decoded sample times,
-forecast cycle and horizontal coordinates; shared vertical definitions and
-auxiliaries must agree. Selected physical fields must have exactly one provider.
-Payloads remain selected and lazy; coordinate checks can read small axes and
-required geography, not physical cubes to prove duplicate equality. Time blocks
-mixed with variable shards are unsupported; separate unlike grids into sources.
+Source data are read-only. GRIB indexes belong in the run's ``cache/``, not
+beside inputs. Available fields do not automatically enable diagnostics, unit
+conversions, interval changes or missing-value filling.
 
-AROME NetCDF ``valid_time`` becomes canonical ``time``. A colliding scalar
-``time`` is retained as ``forecast_reference_time`` only when its source
-``standard_name`` explicitly identifies that clock; conflicting or unidentified
-clocks fail. Original forecast identity, time bounds and interval annotations
-remain distinct from valid/sample time. No timestamp shifting, nearest matching,
-resampling or value filling is performed. This assembly option does not make
-interval means scientifically equivalent to instantaneous fields.
+Times and cycles
+-----------------
+
+Source ``time`` is optional. Omission keeps all available records. ``start`` and
+``end`` select an inclusive window; bounds need not be stored labels.
+``stride: N`` keeps every Nth record after that window, starting at its first
+record. Alternatively, ``values`` requests exact timestamps; every value must
+exist. Quote timestamps in YAML. Empty selections fail.
+
+The source calendar is retained. If several forecast cycles exist, supply the
+exact reference time as ``time.cycle``. Do not treat equal valid timestamps as
+proof that cycles are equivalent.
+
+Forecast reference time, sample/valid time, interval bounds and sampling meaning
+remain distinct. Conflicting or unidentified clocks fail. Ordering or assembling
+files does not make interval means equivalent to instantaneous fields, shift
+timestamps or fill missing samples.
+
+Time selection restricts scientific field reads for extraction, tracking,
+derived inputs and polar processing. Metadata and coordinate reads may establish
+which records are selected. A method needing excluded temporal support fails;
+FrameIt does not calculate a denser track and thin only its exports.
+
+Independent source extraction retains each source's own times, cycles and masks.
+Associate times only for the operation needing centres or cross-source data.
+The region's association policy does not widen a source selection.
+See :doc:`../concepts/time_support`.
+
+Reader settings and cost
+------------------------
+
+Source ``reader.engine`` selects ``h5netcdf``, ``netcdf4`` or ``scipy`` for
+their supported NetCDF encodings. It is independent of ``output.writer.engine``.
+``reader.chunks`` uses input dimension names and element counts; ``-1`` means
+a whole axis. Start with automatic layouts and measure wall time, peak memory
+and output agreement before changing them.
+
+The loader owns open inputs until calculation/export finishes, then closes them.
+Lazy preparation is not the same as computing or writing data; compare whole-run
+timings as well as phase timings. Storage chunks and full-record native decoders
+can impose costs beyond the selected output size. A point guard is not a memory
+ceiling. See :doc:`../task_guides/storage_and_resources`.
 
 .. _wind-metadata:
 
@@ -117,27 +120,14 @@ Wind metadata to check
 Inspect each pair's sampling coordinates, units and vector basis, not only its
 names. Determine the component directions from source metadata first:
 
-.. list-table:: Source evidence for wind-pair declarations
-   :header-rows: 1
-   :widths: 45 30 25
-   :class: config-table
-
-   * - Source metadata
-     - Component directions
-     - Declaration in ``input.wind_pairs``
-   * - GRIB ``uvRelativeToGrid=0`` (read as ``GRIB_uvRelativeToGrid``)
-     - U positive toward geographic east, V toward geographic north.
-     - ``reference_frame: earth``
-   * - GRIB ``uvRelativeToGrid=1``
-     - U/V along the model's x/y axes.
-     - ``reference_frame: grid`` and an explicit rotation method.
-   * - CF ``standard_name`` pair ``eastward_wind`` / ``northward_wind``
-     - Eastward/northward components.
-     - ``reference_frame: earth``
-   * - CF ``standard_name`` pair ``x_wind`` / ``y_wind`` or
-       ``grid_eastward_wind`` / ``grid_northward_wind``
-     - Grid-aligned components.
-     - ``reference_frame: grid`` and an explicit rotation method.
+* **East/north components:** GRIB ``uvRelativeToGrid=0`` (read as
+  ``GRIB_uvRelativeToGrid``), or the CF ``standard_name`` pair
+  ``eastward_wind`` / ``northward_wind``. U points east and V points north.
+  A declaration uses ``basis: earth``.
+* **Grid-aligned components:** GRIB ``uvRelativeToGrid=1``, or the CF
+  ``standard_name`` pair ``x_wind`` / ``y_wind`` or
+  ``grid_eastward_wind`` / ``grid_northward_wind``. U/V follow the model's x/y
+  axes. A declaration uses ``basis: grid`` with a supported rotation.
 
 If this metadata is absent or inconclusive, use the producer's documentation
 for the release and fields in your files. Do not guess from the model name,
@@ -145,17 +135,18 @@ variable names or grid shape. Projection parameters describe grid orientation
 and can support a rotation calculation; they do not establish whether a field
 already contains eastward/northward components.
 
-Declare the directions for each pair explicitly. FrameIt checks the declaration
-against available wind flags and CF metadata; it does not select the basis
-automatically. Contradictory metadata causes validation or processing to fail.
-Without identifying
-metadata, FrameIt cannot independently confirm the declared directions; resolve
-any uncertainty with the producer before processing.
+Operations needing a pair use reliable metadata first. A source declaration can
+fill unresolved meaning using producer evidence; contradictions fail.
+Copying a native component alone does not require a pair or rotation.
+Without identifying metadata, resolve uncertainty with the producer before
+requesting an operation that needs component directions.
 
 ``frameit inspect`` includes a ``variable_metadata`` list for every GRIB/NetCDF
 input, in addition to the existing names/units mapping under ``variables``.
 Each record identifies the field by ``name`` and, for GRIB, its inventory
 ``group`` so repeated names on different level types remain separate.
+Group labels describe native metadata, not qualified selectors. Distinct fields
+sharing a requested name are unsupported; FrameIt reports the conflict.
 ``attributes`` contains the recorded units, CF ``standard_name``, component
 flags and ``wind_reference_frame`` when present. Missing attributes are omitted,
 not filled with assumptions. Relevant dataset-wide evidence is retained

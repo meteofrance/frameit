@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from copy import copy
+from copy import copy, deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -235,8 +235,11 @@ def align_source_times(inventories, policy="common", track_times=None):
     return report
 
 
-def prepare_sources(conf, *, check_output=True, execution_options=None):
+def prepare_sources(conf, *, check_output=True, execution_options=None, resources=None):
     """Discover times first; scientifically validate only the selected records."""
+    if getattr(conf, "schema_version", None) == 3:
+        return _prepare_v3_sources(conf, check_output=check_output,
+                                   execution_options=execution_options, resources=resources)
     from frameit.core.preflight import polar_sampling_plan, preflight
 
     preceding = conf.time_alignment == "preceding_hour"
@@ -356,6 +359,72 @@ def prepare_sources(conf, *, check_output=True, execution_options=None):
     if shared is not None:
         plan["common_polar_target"] = shared
     return plan, children, plans
+
+
+def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, resources=None):
+    """Independent metadata inventories; associations and payloads belong to later tasks."""
+    from frameit.core.configuration import _fa_runtime_options, _source_runtime, resolved_sources
+    from frameit.core.preflight import inventory_source
+    from frameit.io.loader import _apply_model_presets
+
+    children, plans, errors, types = {}, {}, [], {}
+    for name in conf.sources:
+        runtime = _source_runtime(conf, name)
+        if not runtime["file_type"] and "profile" in conf.sources[name]:
+            runtime["file_type"] = "fa"
+            runtime["fa_options"] = _fa_runtime_options(conf.sources[name])
+        child = SimulationConfig(**_apply_model_presets(runtime))
+        children[name] = child
+        try:
+            source = inventory_source(child, name, resources=resources)
+            physical = source["physical_type"]
+            if physical in types:
+                errors.append(f"Allow only one source per physical type {physical}: "
+                              f"{types[physical]}, {name}")
+            types[physical] = name
+            plans[name] = source
+        except (OSError, ValueError) as exc:
+            errors.append(str(exc))
+    if errors:
+        raise ValueError("\n".join(errors))
+    if conf.yaml_config["region"].get("tracker") and "atmosphere" not in types:
+        raise ValueError("region.tracker requires an atmospheric source in the selected inventory")
+    if check_output:
+        destination = conf.output_dir
+        while not destination.exists():
+            destination = destination.parent
+        if not destination.is_dir() or not os.access(destination, os.W_OK):
+            raise ValueError(f"Unwritable output destination: {conf.output_dir}")
+    request_plan = conf.simulation_parameter["request_plan"]
+    request_plan["sources"] = deepcopy(plans)
+    request_plan["deferred_checks"] = [
+        "Bind fields, levels, units and method dependencies against selected metadata.",
+        "Check time associations, geometry, resources and decode-time eligibility.",
+        "Read scientific payloads only through selected record locators.",
+    ]
+    conf.add_parameter("input_inventory", {
+        name: list(source["files"]) for name, source in plans.items()})
+    if conf.source_name:
+        child = children[conf.source_name]
+        conf.input_files = child.input_files
+        conf.file_type, conf.atm_model = child.file_type, child.atm_model
+        if child.file_type == "fa":
+            conf.fa_options = deepcopy(child.fa_options)
+            for key in ("name_time_dim", "name_lat_dim", "name_lon_dim",
+                        "name_latitude", "name_longitude"):
+                setattr(conf, key, getattr(child, key))
+    report = {
+        "configuration": resolved_configuration(conf, execution_options),
+        "setting_sources": resolved_sources(conf, execution_options),
+        "sources": request_plan["sources"],
+        "inputs": [{"source": name, **deepcopy(entry)}
+                   for name, source in plans.items() for entry in source["file_inventory"]],
+        "planned_products": [str(conf.output_dir / item["path"])
+                             for item in request_plan["products"]],
+        "warnings": request_plan["warnings"], "deferred_checks": request_plan["deferred_checks"],
+        "output_directory": str(conf.output_dir),
+    }
+    return report, children, plans
 
 
 def _select_times(tree, times):

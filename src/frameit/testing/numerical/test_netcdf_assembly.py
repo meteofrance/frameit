@@ -498,3 +498,226 @@ def test_runner_only_prepares_selected_cartesian_branch(tmp_path, representation
         if representation == 'native':
             np.testing.assert_array_equal(runner._native_cartesian_groups['level'].UT, source.UT)
             np.testing.assert_array_equal(runner._native_cartesian_groups['level_w'].WT, source.WT)
+
+
+@pytest.mark.parametrize("engine", ["h5netcdf", "netcdf4", "scipy"])
+def test_v3_inventory_retained_multitime_file_reads_only_coordinates_and_closes(
+    tmp_path, monkeypatch, engine,
+):
+    from frameit.core.preflight import preflight
+
+    from .test_inspect_metadata import guard_netcdf_payloads, v3_config, v3_scene
+
+    scene = v3_scene(names=("u", "unrequested"))
+    path = tmp_path / "multi.nc"
+    scene.to_netcdf(path, engine=engine)
+    opened, closed = track_netcdf_opens(monkeypatch)
+    reads = guard_netcdf_payloads(monkeypatch, {"u", "unrequested"})
+    conf = v3_config(tmp_path, [path], names=("u",), reader={"engine": engine},
+                     time={"values": ["2026-01-01T01:00:00", "2026-01-01T03:00:00"]})
+    source = preflight(conf, check_output=False)["sources"]["weather"]
+    assert [(r["name"], r["locator"]["indexers"]) for r in source["records"]] == [
+        ("u", {"time": 1}), ("u", {"time": 3}),
+    ]
+    assert len(opened) == 1 and closed == [0]
+    assert reads and {n for n, _ in reads} <= {"x", "y", "time", "latitude", "longitude"}
+
+
+@pytest.mark.parametrize("names", [("temperature",), ("other",), ("other", "temperature"),
+                                 ("temperature", "other")])
+def test_v3_native_grid_ids_precede_field_filtering(tmp_path, monkeypatch, names):
+    from frameit.core.preflight import preflight
+
+    from .test_inspect_metadata import guard_netcdf_payloads, v3_config, v3_scene
+
+    scene = v3_scene()
+    scene["other"] = (("time", "depth", "y", "x_u"), np.ones((4, 2, 2, 4)), {"units": "K"})
+    scene = scene.assign_coords(
+        x_u=[-.5, .5, 1.5, 2.5],
+        depth=("depth", [1., 3.], {"units": "m", "positive": "down", "axis": "Z"}))
+    path = tmp_path / "grids.nc"
+    scene.to_netcdf(path)
+    guard_netcdf_payloads(monkeypatch, {"temperature", "other"})
+    baseline = preflight(v3_config(tmp_path, [path], names=("temperature",)),
+                         check_output=False)["sources"]["weather"]
+    variables = {category: [name] for category, name in (
+        ("2d", "temperature"), ("3d", "other")) if name in names}
+    actual = preflight(v3_config(tmp_path, [path], names=names, variables=variables),
+                       check_output=False)["sources"]["weather"]
+    assert len(actual["native_grids"]) == 2
+    assert actual["native_grids"].keys() == baseline["native_grids"].keys()
+    mapping = {f["name"]: f["grid_id"] for f in actual["fields"].values()}
+    assert mapping["temperature"] != mapping["other"]
+    assert mapping == {f["name"]: f["grid_id"] for f in baseline["fields"].values()}
+    for record in actual["records"]:
+        assert record["grid_id"] == mapping[record["name"]]
+
+
+@pytest.mark.parametrize("moving", [False, True])
+def test_v3_grid_identity_separates_sample_clocks_from_moving_geography(
+    tmp_path, monkeypatch, moving,
+):
+    from frameit.core.preflight import preflight
+
+    from .test_inspect_metadata import guard_netcdf_payloads, v3_config, v3_scene
+
+    scene = v3_scene()
+    if moving:
+        lat = np.broadcast_to([[-20.], [-19.99]], (2, 3))
+        lon = np.broadcast_to([[60., 60.01, 60.02]], (2, 3))
+        scene = scene.assign_coords(
+            latitude=(("time", "y", "x"), lat[None, ...] + np.arange(4)[:, None, None] * .01,
+                      {"units": "degrees_north", "standard_name": "latitude"}),
+            longitude=(("time", "y", "x"), np.broadcast_to(lon, (4, 2, 3)),
+                       {"units": "degrees_east", "standard_name": "longitude"}))
+    values = scene.time.values
+    scene = scene.rename(time="sample").drop_vars("sample").assign_coords(
+        valid_time=("sample", values, {"standard_name": "time"}),
+        forecast_reference_time=np.datetime64("2025-12-31"))
+    paths = []
+    for i, positions in enumerate(([0], [1, 2, 3])):
+        path = tmp_path / f"part{i}.nc"
+        scene.isel(sample=positions).to_netcdf(path)
+        paths.append(path)
+    guard_netcdf_payloads(monkeypatch, {"temperature"})
+    source = preflight(v3_config(tmp_path, paths), check_output=False)["sources"]["weather"]
+    assert len(source["native_grids"]) == (2 if moving else 1)
+    assert len(source["fields"]) == 1
+    field = next(iter(source["fields"].values()))
+    assert set(field["grid_ids"]) == set(source["native_grids"])
+    assert len({r["field_id"] for r in source["records"]}) == 1
+    for grid in source["native_grids"].values():
+        assert not {"valid_time", "forecast_reference_time"} & grid["coordinates"].keys()
+
+
+@pytest.mark.parametrize("static", [True, False])
+def test_v3_moving_grid_keeps_coordinate_indexers_separate_from_payload(
+    tmp_path, monkeypatch, static,
+):
+    from frameit.core.preflight import preflight
+
+    from .test_inspect_metadata import guard_netcdf_payloads, v3_config, v3_scene
+
+    scene = v3_scene()
+    latitude = np.broadcast_to([[-20.], [-19.99]], (2, 3))
+    scene = scene.assign_coords(
+        latitude=(("time", "y", "x"), latitude[None] + np.arange(4)[:, None, None] * .01,
+                  {"standard_name": "latitude", "units": "degrees_north"}))
+    if static:
+        scene["temperature"] = scene.temperature.isel(time=0, drop=True)
+    times = scene.time.values
+    scene = scene.rename(time="sample").drop_vars("sample").assign_coords(
+        valid_time=("sample", times, {"standard_name": "time"}),
+        forecast_reference_time=np.datetime64("2025-12-31"))
+    path = tmp_path / "moving.nc"
+    scene.to_netcdf(path, engine="h5netcdf")
+    guard_netcdf_payloads(monkeypatch, {"temperature"})
+    source = preflight(v3_config(tmp_path, [path], time={"values": [
+        "2026-01-01T01:00:00", "2026-01-01T03:00:00",
+    ]}), check_output=False)["sources"]["weather"]
+    assert len(source["records"]) == 2
+    for record, position in zip(source["records"], (1, 3), strict=True):
+        assert record["time"] == np.datetime64(f"2026-01-01T0{position}:00:00")
+        assert record["clock"] == "valid_time"
+        assert record["locator"]["coordinate_indexers"] == {"sample": position}
+        assert record["locator"]["indexers"] == ({} if static else {"sample": position})
+        grid = source["native_grids"][record["grid_id"]]
+        geography = grid["coordinates"]["latitude"]
+        assert geography["dimensions"] == ["sample", "y", "x"]
+        np.testing.assert_array_equal(geography["values"][position], latitude + position * .01)
+        assert source["fields"][record["field_id"]]["time_varying"] is not static
+
+
+@pytest.mark.parametrize("change", ["identical", "labels", "bounds", "units"])
+def test_v3_cf_auxiliary_pressure_and_bounds_define_the_owning_grid(tmp_path, monkeypatch, change):
+    from frameit.core.preflight import preflight
+
+    from .test_inspect_metadata import guard_netcdf_payloads, v3_config, v3_scene
+
+    shape = (4, 2, 2, 3)
+    scene = v3_scene()
+    scene["temperature"] = (("time", "level", "y", "x"), np.ones(shape), {
+        "units": "K", "ancillary_variables": "quality"})
+    scene = scene.assign_coords(
+        level=[0, 1],
+        pressure=("level", [850., 700.], {
+            "standard_name": "air_pressure", "axis": "Z", "units": "hPa",
+            "bounds": "pressure_bounds"}),
+        quality=(("time", "level", "y", "x"), np.zeros(shape), {"flag_values": [0, 1]}))
+    scene["pressure_bounds"] = (("level", "nv"), [[900., 800.], [750., 650.]], {"units": "hPa"})
+    altered = scene.copy(deep=True)
+    if change == "labels":
+        altered.pressure.data = np.array([850., 600.])
+    elif change == "bounds":
+        altered.pressure_bounds.data = np.array([[910., 800.], [750., 640.]])
+    elif change == "units":
+        altered.pressure.attrs["units"] = "Pa"
+        altered.pressure_bounds.attrs["units"] = "Pa"
+        altered.pressure.data *= 100
+        altered.pressure_bounds.data *= 100
+    paths = [tmp_path / "base.nc", tmp_path / "altered.nc"]
+    for data, path in zip((scene, altered), paths, strict=True):
+        data.to_netcdf(path, engine="h5netcdf")
+    guard_netcdf_payloads(monkeypatch, {"temperature", "quality"})
+    ids = []
+    for data, path in zip((scene, altered), paths, strict=True):
+        source = preflight(v3_config(
+            tmp_path, [path], variables={"3d": ["temperature"]},
+            time={"values": ["2026-01-01T01:00:00", "2026-01-01T03:00:00"]}),
+            check_output=False)["sources"]["weather"]
+        record = next(r for r in source["records"] if r["name"] == "temperature")
+        grid = source["native_grids"][record["grid_id"]]
+        for name in ("pressure", "pressure_bounds"):
+            coordinate = grid["coordinates"][name]
+            assert coordinate["role"] == "coordinate_metadata"
+            assert coordinate["dimensions"] == list(data[name].dims)
+            np.testing.assert_array_equal(coordinate["values"], data[name].values)
+            providers = grid["coordinate_providers"][name]
+            assert len(providers) == 1
+            assert providers[0]["path"] == str(path) and providers[0]["variable"] == name
+            assert [s["coordinate_indexers"] for s in providers[0]["samples"]] == [
+                {"time": 1}, {"time": 3}]
+        assert grid["coordinates"]["pressure"]["attributes"]["units"] == data.pressure.units
+        assert "quality" not in grid["coordinates"]
+        assert not any(f["name"] == "pressure" and f["role"] == "array"
+                       for f in source["fields"].values())
+        ids.append(record["grid_id"])
+    assert (ids[0] == ids[1]) is (change == "identical")
+
+
+@pytest.mark.parametrize("geometry", ["rectilinear", "curvilinear"])
+def test_v3_geographic_bounds_keep_native_vertex_axes(tmp_path, monkeypatch, geometry):
+    from frameit.core.preflight import preflight
+
+    from .test_inspect_metadata import guard_netcdf_payloads, v3_config, v3_scene
+
+    scene = v3_scene(hours=(0, 1))
+    if geometry == "curvilinear":
+        scene = scene.assign_coords(
+            latitude=(("y", "x"), np.broadcast_to([[-20.], [-19.99]], (2, 3)),
+                      {"standard_name": "latitude", "units": "degrees_north"}),
+            longitude=(("y", "x"), np.broadcast_to([[60., 60.01, 60.02]], (2, 3)),
+                       {"standard_name": "longitude", "units": "degrees_east"}))
+    for name in ("latitude", "longitude"):
+        coordinate = scene[name]
+        if geometry == "curvilinear":
+            offsets = ([-.005, -.005, .005, .005] if name == "latitude"
+                       else [-.005, .005, .005, -.005])
+        else:
+            offsets = [-.005, .005]
+        bounds = name + "_bounds"
+        scene[bounds] = ((*coordinate.dims, "nv"), coordinate.values[..., None] + offsets,
+                         {"units": coordinate.attrs["units"]})
+        scene[name].attrs["bounds"] = bounds
+    path = tmp_path / "geographic-bounds.nc"
+    scene.to_netcdf(path, engine="h5netcdf")
+    guard_netcdf_payloads(monkeypatch, {"temperature"})
+    source = preflight(v3_config(tmp_path, [path], time={"values": ["2026-01-01T01:00:00"]}),
+                       check_output=False)["sources"]["weather"]
+    assert len(source["records"]) == 1
+    grid = source["native_grids"][source["records"][0]["grid_id"]]
+    for name in ("latitude_bounds", "longitude_bounds"):
+        assert grid["coordinates"][name]["dimensions"] == list(scene[name].dims)
+        np.testing.assert_array_equal(grid["coordinates"][name]["values"], scene[name].values)
+        provider, = grid["coordinate_providers"][name]
+        assert [sample["coordinate_indexers"] for sample in provider["samples"]] == [{"time": 1}]

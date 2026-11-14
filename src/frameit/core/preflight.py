@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import os
+import re
 from contextlib import nullcontext
 from copy import deepcopy
 from pathlib import Path
@@ -16,6 +19,7 @@ from frameit.io.loader import (
     DatasetResources,
     discover_input_files,
     input_path_excluded,
+    inventory_source_files,
     resolve_input_files,
 )
 from frameit.processing.requests import normalize_requests, selected_native_indices
@@ -28,7 +32,794 @@ from frameit.processing.wind_reference import (
     wind_frame_override,
     wind_pairs,
 )
-from frameit.utils.units import convert_units, unit_key
+from frameit.utils.units import UNITS, convert_units, unit_key
+
+
+def _metadata_id(prefix, value):
+    """Hash coordinate/identity metadata only, never scientific field contents."""
+    def encode(item):
+        if isinstance(item, np.ndarray):
+            return item.tolist()
+        if isinstance(item, np.generic):
+            return str(item) if item.dtype.kind in "mM" else item.item()
+        return str(item)
+
+    encoded = json.dumps(value, default=encode, sort_keys=True, separators=(",", ":"))
+    return prefix + hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _source_model(source, datasets, path, *, fmt):
+    evidence = []
+    models = set()
+    for ds in datasets:
+        for key in ("model", "model_id", "source", "title", "type",
+                    "producer", "program", "PROGRAM"):
+            value = str(ds.attrs.get(key, ""))
+            for model, pattern in (("mesonh", r"\bmeso[-_ ]?nh\b"), ("arome", r"\barome\b"),
+                                   ("nemo", r"\bnemo\b"), ("croco", r"\bcroco\b")):
+                if re.search(pattern, value, re.I):
+                    models.add(model)
+                    evidence.append({"attribute": key, "value": value, "model": model})
+        if "MNH_cleanly_closed" in ds.attrs:
+            models.add("mesonh")
+            evidence.append({"attribute": "MNH_cleanly_closed",
+                             "value": ds.attrs["MNH_cleanly_closed"], "model": "mesonh"})
+    declared = source.get("model")
+    if len(models) > 1 or declared and models and models != {declared}:
+        raise ValueError(f"{path}: source model declaration {declared!r} "
+                         f"conflicts with metadata {evidence}")
+    model = declared or next(iter(models), None)
+    if model is None:
+        raise ValueError(f"{path}: model has no unambiguous metadata evidence; "
+                         "declare sources.*.model")
+    if model in {"nemo", "croco", "mesonh"} and fmt != "netcdf":
+        raise ValueError(f"{path}: {model} requires its admitted NetCDF file profile")
+    if not evidence:
+        evidence.append({"declaration": model, "file_profile": fmt,
+                         "scope": "declared model; not automatic model detection"})
+    return model, evidence
+
+
+def _decoded_clock(ds, path):
+    """Keep native decoded types, clocks, cycles and interval endpoints separate."""
+    references = [name for name in ds.variables if (
+        name == "forecast_reference_time"
+        or ds[name].attrs.get("standard_name") == "forecast_reference_time")]
+    candidates = [name for name in ds.variables if name not in references and (
+        name in {"time", "valid_time", "time_counter", "time_centered", "scrum_time"}
+        or ds[name].attrs.get("standard_name") == "time" or ds[name].attrs.get("axis") == "T")]
+    if not candidates:
+        # A readable file can still be proven irrelevant after dependency discovery.
+        return [], set(references)
+    name = next((n for n in ("valid_time", "time_counter", "time") if n in candidates),
+                candidates[0])
+    clock = ds[name]
+    values = np.asarray(clock.values)
+    import cftime
+
+    if not (values.dtype.kind == "M" or values.dtype.kind == "O" and all(
+            isinstance(t, cftime.datetime) for t in values.flat)):
+        raise ValueError(f"{path}: {name} must contain decoded timestamps")
+    if values.size == 0 or values.dtype.kind == "M" and np.isnat(values).any():
+        raise ValueError(f"{path}: missing sample timestamps in {name}")
+    calendar = clock.encoding.get("calendar", clock.attrs.get("calendar", "standard"))
+    for other in candidates:
+        if ds[other].dims != clock.dims or not np.array_equal(ds[other].values, values):
+            raise ValueError(f"{path}: conflicting or unidentified sample/forecast clocks "
+                             f"{name}, {other}")
+        other_calendar = ds[other].encoding.get(
+            "calendar", ds[other].attrs.get("calendar", "standard"))
+        if other_calendar != calendar:
+            raise ValueError(f"{path}: conflicting calendars on {name} and {other}")
+    reference = None
+    for ref in references:
+        da = ds[ref]
+        if not set(da.dims) <= set(clock.dims):
+            raise ValueError(f"{path}: forecast reference clock {ref} does not index {name}")
+        broadcast = da.broadcast_like(clock).transpose(*clock.dims).values
+        if reference is not None and not np.array_equal(broadcast, reference):
+            raise ValueError(f"{path}: conflicting forecast reference clocks")
+        if np.asarray(broadcast).dtype.kind != "M" and not all(
+                isinstance(t, cftime.datetime) for t in np.asarray(broadcast).flat):
+            raise ValueError(f"{path}: forecast reference clock is not decoded")
+        if np.asarray(broadcast).dtype.kind == "M" and np.isnat(broadcast).any():
+            raise ValueError(f"{path}: missing forecast reference timestamp")
+        reference = broadcast
+    bound_names = list(dict.fromkeys(ds[n].attrs["bounds"] for n in candidates
+                                    if ds[n].attrs.get("bounds")))
+    bounds = None
+    for bound_name in bound_names:
+        if (bound_name not in ds or ds[bound_name].shape != (*clock.shape, 2)
+                or ds[bound_name].dims[:-1] != clock.dims
+                or ds[bound_name].dims[-1] in clock.dims):
+            raise ValueError(f"{path}: missing or invalid {name} bounds {bound_name}; "
+                             f"bounds dimensions must be {clock.dims} followed by "
+                             "a distinct endpoint axis of length 2")
+        current = np.asarray(ds[bound_name].values)
+        if current.dtype.kind != "M" and not all(
+                isinstance(t, cftime.datetime) for t in current.flat):
+            raise ValueError(f"{path}: {bound_name} must contain decoded interval bounds")
+        if current.dtype.kind == "M" and np.isnat(current).any():
+            raise ValueError(f"{path}: missing interval endpoints in {bound_name}")
+        if bounds is not None and not np.array_equal(bounds, current):
+            raise ValueError(f"{path}: conflicting sample clock bounds {bound_names}")
+        bounds = current
+    samples = []
+    for position in np.ndindex(values.shape):
+        samples.append({"time": values[position], "calendar": calendar,
+                        "cycle": reference[position] if reference is not None else None,
+                        "time_bounds": tuple(bounds[position]) if bounds is not None else None,
+                        "clock": name, "indexers": dict(zip(clock.dims, position, strict=True))})
+    return samples, set(candidates + references + bound_names)
+
+
+def _cf_coordinate_metadata(ds):
+    """Recognize declared coordinate labels/constants, not scientific formula inputs."""
+    metadata = {}
+    ancillary = {name for var in ds.variables.values()
+                 for name in str(var.attrs.get("ancillary_variables", "")).split()}
+    for name, coord in ds.coords.items():
+        if (coord.ndim != 1 or coord.attrs.get("axis") != "Z" or name in ancillary
+                or coord.attrs.keys() & {"flag_values", "flag_masks"}):
+            continue
+        standard, units = coord.attrs.get("standard_name"), unit_key(coord.attrs.get("units"))
+        if standard == "air_pressure" and units in UNITS["pressure"][1]:
+            metadata[name] = set()
+        elif (standard == "atmosphere_hybrid_sigma_pressure_coordinate"
+              and units in {"", "1"}):
+            metadata[name] = set()
+            tokens = str(coord.attrs.get("formula_terms", "")).split()
+            if len(tokens) % 2 or any(not term.endswith(":") for term in tokens[::2]):
+                raise ValueError(f"{name}: invalid CF formula_terms; use paired 'term: variable'")
+            for term, dependency in zip(tokens[::2], tokens[1::2], strict=True):
+                term = term.removesuffix(":")
+                if dependency not in ds or dependency in ancillary:
+                    continue
+                value = ds[dependency]
+                if value.attrs.keys() & {"flag_values", "flag_masks"}:
+                    continue
+                units = unit_key(value.attrs.get("units"))
+                if ((term in {"a", "b"} and value.dims == coord.dims and units in {"", "1"})
+                        or (term == "ap" and value.dims == coord.dims
+                            and units in UNITS["pressure"][1])
+                        or (term == "p0" and value.ndim == 0 and units in UNITS["pressure"][1])):
+                    metadata[name].add(dependency)
+    return metadata
+
+
+def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None):
+    spatial = tuple(dim for dim in variable.dims if dim not in temporal_dims)
+    # Auxiliary arrays can be scientific support, even when xarray calls them coordinates.
+    names = set(spatial)
+    coordinate_metadata = coordinate_metadata or {}
+    known = (set(coordinate_metadata)
+             | {n for values in coordinate_metadata.values() for n in values})
+    explicit = str(variable.attrs.get(
+        "coordinates", variable.encoding.get("coordinates", ""))).split()
+    names.update(n for n in known & set(explicit)
+                 if set(ds[n].dims) - temporal_dims <= set(spatial))
+    for owner in set(names) & coordinate_metadata.keys():
+        names.update(coordinate_metadata[owner])
+    for name, coord in ds.variables.items():
+        geographic = (coord.attrs.get("standard_name") in {"latitude", "longitude"}
+                      or name in {"latitude", "longitude", "nav_lat", "nav_lon",
+                                  "lat_rho", "lon_rho", "lat_u", "lon_u", "lat_v", "lon_v"})
+        if geographic and set(coord.dims) - temporal_dims <= set(spatial):
+            names.add(name)
+    mapping = variable.attrs.get("grid_mapping")
+    if mapping:
+        names.add(mapping)
+    names = sorted((names & set(ds.variables)) - temporal_dims)
+    scientific = {name for var in ds.variables.values()
+                  for name in str(var.attrs.get("ancillary_variables", "")).split()}
+    scientific.update(name for var in ds.variables.values()
+                      for name in str(var.attrs.get("cell_measures", "")).split()[1::2])
+    scientific.update(name for var in ds.variables.values()
+                      for name in str(var.attrs.get("formula_terms", "")).split()[1::2]
+                      if name not in names)
+    # Validate every bounds reference before materializing any grid coordinate.
+    for name in names:
+        coord = ds[name]
+        bounds = coord.attrs.get("bounds")
+        if not bounds:
+            continue
+        context = f"{name} bounds {bounds!r}"
+        if bounds not in ds:
+            raise ValueError(f"{context}: missing bounds variable")
+        target = ds[bounds]
+        if (target.ndim != coord.ndim + 1 or target.dims[:-1] != coord.dims
+                or target.dims[-1] in coord.dims):
+            raise ValueError(f"{context}: invalid dimensions {target.dims}; expected "
+                             f"{coord.dims} followed by a distinct endpoint/vertex axis")
+        if coord.attrs.get("axis") == "Z" and target.shape[-1] != 2:
+            raise ValueError(f"{context}: vertical bounds require two endpoints")
+        if (bounds in scientific
+                or target.attrs.keys() & {"flag_values", "flag_masks", "flag_meanings"}):
+            raise ValueError(f"{context}: conflicting scientific input/ancillary/flag role; "
+                             "provide coordinate bounds instead of reusing a scientific input")
+    coordinates = {}
+    for name in names:
+        coord = ds[name]
+        coordinates[name] = {"dimensions": list(coord.dims), "values": np.asarray(coord.values),
+                             "attributes": deepcopy(coord.attrs), "dtype": str(coord.dtype),
+                             "role": "coordinate_metadata"}
+        bounds = coord.attrs.get("bounds")
+        if bounds:
+            coordinates[bounds] = {
+                "dimensions": list(ds[bounds].dims), "values": np.asarray(ds[bounds].values),
+                "attributes": deepcopy(ds[bounds].attrs), "dtype": str(ds[bounds].dtype),
+                "role": "coordinate_metadata"}
+    grid = {"dimensions": {dim: ds.sizes[dim] for dim in spatial}, "coordinates": coordinates,
+            "grid_mapping": mapping}
+    return _metadata_id("grid_", grid), grid
+
+
+def _netcdf_inventory(path, source, resources):
+    ds = resources.open_netcdf(path, engine=source.get("reader", {}).get("engine", "h5netcdf"))
+    model, evidence = _source_model(source, [ds], path, fmt="netcdf")
+    if model == "nemo":
+        if "time_counter" not in ds or ds.time_counter.dims != ("time_counter",):
+            raise ValueError(f"{path}: NEMO requires its native time_counter sample clock")
+        if any(n not in ds or ds[n].dims != ("y", "x") for n in ("nav_lat", "nav_lon")):
+            raise ValueError(f"{path}: NEMO requires source-local (y, x) nav_lat/nav_lon geography")
+    if model == "croco" and ds.attrs.get("type") != "CROCO history file":
+        raise ValueError(f"{path}: CROCO requires the admitted CROCO history file profile")
+    samples, time_names = _decoded_clock(ds, path)
+    temporal_dims = {dim for sample in samples for dim in sample["indexers"]}
+    coordinate_metadata = _cf_coordinate_metadata(ds)
+    metadata = (set(time_names) | set(ds.dims) | set(coordinate_metadata)
+                | {n for values in coordinate_metadata.values() for n in values})
+    for name, value in ds.variables.items():
+        if value.attrs.get("standard_name") in {"latitude", "longitude"} or name in {
+                "latitude", "longitude", "nav_lat", "nav_lon", "lat_rho", "lon_rho",
+                "lat_u", "lon_u", "lat_v", "lon_v"}:
+            metadata.add(name)
+        if value.attrs.get("bounds"):
+            metadata.add(value.attrs["bounds"])
+        if value.attrs.get("grid_mapping"):
+            metadata.add(value.attrs["grid_mapping"])
+    fields, grids, records, cache = {}, {}, [], {}
+    for name in ds.variables:
+        if name in metadata:
+            continue
+        var = ds[name]
+        key = (tuple(d for d in var.dims if d not in temporal_dims),
+               str(var.attrs.get("coordinates", var.encoding.get("coordinates", ""))),
+               var.attrs.get("grid_mapping"))
+        if key not in cache:
+            cache[key] = _native_grid(ds, var, temporal_dims | time_names, coordinate_metadata)
+        grid_id, grid = cache[key]
+        # Provenance is outside the geometry hash and the clean cached grid.
+        if grid_id not in grids:
+            grids[grid_id] = {**grid, "coordinate_providers": {
+                coordinate: [{
+                    "format": "netcdf", "path": str(path), "variable": coordinate,
+                    "samples": [{**sample,
+                                 "indexers": {d: i for d, i in sample["indexers"].items()
+                                              if d in ds[coordinate].dims},
+                                 "coordinate_indexers": dict(sample["indexers"])}
+                                for sample in samples],
+                }] for coordinate in grid["coordinates"]}}
+        field = {"name": name, "dimensions": list(var.dims), "dtype": str(var.dtype),
+                 "attributes": deepcopy(var.attrs), "grid_id": grid_id,
+                 "coordinate_names": list(grid["coordinates"]),
+                 "role": "array",
+                 "xarray_coordinate": name in ds.coords,
+                 "time_varying": bool(set(var.dims) & temporal_dims)}
+        identity_grid = grid_id
+        if any(set(c["dimensions"]) & temporal_dims for c in grid["coordinates"].values()):
+            # Time-labelled moving coordinates change record geometry, not field identity.
+            topology = {**grid, "coordinates": {
+                n: {k: v for k, v in c.items()
+                    if k != "values" or not set(c["dimensions"]) & temporal_dims}
+                for n, c in grid["coordinates"].items()}}
+            identity_grid = _metadata_id("grid_", topology)
+        field_id = _metadata_id("field_", {
+            "name": name, "grid_id": identity_grid, "attributes": field["attributes"],
+            "dimensions": [d for d in var.dims if d not in temporal_dims]})
+        fields[field_id] = field
+        explicit = str(var.attrs.get(
+            "coordinates", var.encoding.get("coordinates", ""))).split()
+        dependencies = {dep: "coordinates" for dep in explicit
+                        if dep not in time_names and dep != name and dep not in ds.dims}
+        for owner in (var, *(ds[n] for n in grid["coordinates"] if n in ds)):
+            for attr in ("ancillary_variables", "formula_terms", "cell_measures"):
+                value = str(owner.attrs.get(attr, ""))
+                tokens = value.split()
+                if attr != "ancillary_variables":
+                    tokens = tokens[1::2]
+                for dep in tokens:
+                    if dep not in {"or", "orog:"}:
+                        dependencies[dep] = attr
+        field["coordinate_dependencies"] = {
+            dep: attr for dep, attr in dependencies.items() if dep in grid["coordinates"]}
+        field["dependencies"] = {
+            dep: attr for dep, attr in dependencies.items() if dep not in grid["coordinates"]}
+        for sample in samples:
+            indexers = {dim: index for dim, index in sample["indexers"].items() if dim in var.dims}
+            records.append({
+                **{k: v for k, v in sample.items() if k != "indexers"},
+                "field_id": field_id, "name": name, "grid_id": grid_id, "level": None,
+                "temporal_metadata": {k: var.attrs[k] for k in (
+                    "cell_methods", "online_operation", "interval_operation", "interval_write")
+                    if k in var.attrs},
+                "locator": {"format": "netcdf", "path": str(path), "variable": name,
+                            "indexers": indexers,
+                            "coordinate_indexers": dict(sample["indexers"])}})
+    return {"model": model,
+            "physical_type": "ocean" if model in {"nemo", "croco"} else "atmosphere",
+            "profile": None, "evidence": evidence, "fields": fields,
+            "native_grids": grids, "records": records}
+
+
+def _grib_source_inventory(path, source):
+    """Scan each message once; message offsets are the future payload read boundary."""
+    from datetime import datetime
+
+    import eccodes as ec
+
+    model, evidence = _source_model(source, [], path, fmt="grib")
+    fields, grids, records, horizontal = {}, {}, [], {}
+    aliases = {"10u": "u10", "10v": "v10", "msl": "prmsl"}
+    with path.open("rb") as stream:
+        index = 0
+        while (handle := ec.codes_grib_new_from_file(stream)) is not None:
+            try:
+                def get(key, default=None):
+                    return (ec.codes_get(handle, key)
+                            if ec.codes_is_defined(handle, key) else default)
+
+                shape = int(get("Nj", 0)), int(get("Ni", 0))
+                if min(shape) < 1 or np.prod(shape, dtype=object) != int(get("numberOfPoints", 0)):
+                    raise ValueError(f"{path}: GRIB grid is not an admitted rectangular Ni/Nj grid")
+                signature = get("md5GridSection")
+                if not signature:
+                    raise ValueError(f"{path}: GRIB has no identifiable grid section")
+                if signature not in horizontal:
+                    lat = np.asarray(ec.codes_get_array(handle, "latitudes"))
+                    lon = np.asarray(ec.codes_get_array(handle, "longitudes"))
+                    jfast = int(get("jPointsAreConsecutive", 0))
+                    lat = lat.reshape(shape[::-1]).T if jfast else lat.reshape(shape)
+                    lon = lon.reshape(shape[::-1]).T if jfast else lon.reshape(shape)
+                    horizontal[signature] = {
+                        "dimensions": {"y": shape[0], "x": shape[1]},
+                        "coordinates": {
+                            name: {"dimensions": ["y", "x"], "values": values,
+                                   "attributes": {"units": units}, "dtype": str(values.dtype)}
+                            for name, values, units in (("latitude", lat, "degrees_north"),
+                                                       ("longitude", lon, "degrees_east"))},
+                        "grid_mapping": None, "grib_grid_section": signature,
+                        "grid_type": get("gridType")}
+                group = get("typeOfLevel")
+                grid = {**horizontal[signature], "vertical_group": group}
+                grid_id = _metadata_id("grid_", grid)
+                grids[grid_id] = grid
+                short, name = str(get("shortName", "")), str(get("cfVarName", ""))
+                if name in {"unknown", "undef", ""} or short in {"u", "v"}:
+                    name = short
+                name = aliases.get(name, aliases.get(short, name))
+                if name in {"unknown", "undef", ""}:
+                    # Unknown parameters remain inspectable, without invented field aliases.
+                    name = None
+                attributes = {"units": get("units"), "GRIB_paramId": get("paramId"),
+                              "GRIB_typeOfLevel": group, "GRIB_stepType": get("stepType")}
+                if (value := get("uvRelativeToGrid")) is not None:
+                    attributes["GRIB_uvRelativeToGrid"] = value
+                native_axes = ({"number": int(get("number"))}
+                               if get("number") is not None else {})
+                ensemble = {key: get(key) for key in (
+                    "perturbationNumber", "typeOfEnsembleForecast", "numberOfForecastsInEnsemble")
+                    if get(key) is not None}
+                field = {"name": name, "dimensions": ["y", "x"], "dtype": "float64",
+                         "grid_id": grid_id, "attributes": attributes, "group": group,
+                         "coordinate_names": list(grid["coordinates"]), "time_varying": True,
+                         "dependencies": {}}
+                field_id = _metadata_id("field_", {"name": name, "grid_id": grid_id,
+                                                   "attributes": attributes})
+                fields[field_id] = field
+
+                cycle = np.datetime64(datetime(*(int(get(key, 0)) for key in (
+                    "year", "month", "day", "hour", "minute", "second"))), "ns")
+                unit = ec.codes_get_string(handle, "stepUnits")
+                seconds = {"s": 1, "m": 60, "h": 3600, "3h": 10800, "6h": 21600,
+                           "12h": 43200, "D": 86400}.get(unit)
+                if seconds is None:
+                    raise ValueError(f"{path}: unsupported GRIB forecast step unit {unit!r}")
+                endpoints = tuple(
+                    cycle + np.timedelta64(
+                        round(ec.codes_get_double(handle, key) * seconds * 1e6), "us")
+                    for key in ("startStep", "endStep"))
+                valid = endpoints[1]
+                temporal = {"GRIB_" + key: get(key) for key in (
+                    "stepType", "startStep", "endStep", "stepUnits", "typeOfStatisticalProcessing")
+                    if get(key) is not None}
+                bounds = endpoints if get("stepType") != "instant" else None
+                records.append({
+                    "field_id": field_id, "name": name, "grid_id": grid_id,
+                    "level": get("level"), "time": valid, "calendar": "proleptic_gregorian",
+                    "cycle": cycle, "time_bounds": bounds, "clock": "GRIB_reference_plus_endStep",
+                    "temporal_metadata": temporal, "native_axes": native_axes,
+                    "ensemble_metadata": ensemble,
+                    "locator": {"format": "grib", "path": str(path), "message_index": index,
+                                "offset": int(ec.codes_get_message_offset(handle)),
+                                "length": int(ec.codes_get_message_size(handle))}})
+            finally:
+                ec.codes_release(handle)
+            index += 1
+    if not records:
+        raise ValueError(f"{path}: no GRIB records")
+    for field_id, field in fields.items():
+        field["levels"] = sorted({r["level"] for r in records if r["field_id"] == field_id})
+    return {"model": model, "physical_type": "atmosphere", "profile": None,
+            "evidence": evidence, "fields": fields, "native_grids": grids, "records": records}
+
+
+def _fa_source_inventory(path, source, conf):
+    from frameit.core.configuration import _fa_runtime_options
+    from frameit.io.fa_backend import inspect_fa
+    from frameit.io.fa_contracts import layout_definition
+    from frameit.io.fa_geometry import fa_geometry
+
+    options = conf.fa_options or _fa_runtime_options(source)
+    conf.fa_options = deepcopy(options)
+    arguments = {key: options[key] for key in (
+        "profile", "expected_source", "backend", "python_executable", "earth_radius_m",
+        "timeout_seconds")}
+    arguments["geometry_options"] = {key: options[key] for key in (
+        "subdomain", "earth_radius_m", "max_points")}
+    header = inspect_fa(path, **arguments)
+    info = inspect_fa(path, fields=list(header["records"]), validate_selection=False, **arguments)
+    surface = bool(info["surfex_metadata"])
+    if surface and (not layout_definition(info["surfex_metadata"])
+                    or info["surfex_metadata"].get("PACK") != 0):
+        raise ValueError(f"{path}: only the admitted AROME-47 SURFEX-8.1 "
+                         "PACK=0 profile is supported")
+    profile = "surfex_history" if surface else "arome_history"
+    model = source.get("model")
+    if model not in {None, "arome"}:
+        raise ValueError(f"{path}: model conflicts with admitted FA profile {profile}")
+    if model is None and not source.get("profile") and not surface:
+        raise ValueError(f"{path}: model has no unambiguous FA producer evidence; "
+                         "declare model/profile")
+    geometry = fa_geometry(info["geometry"], options)
+    horizontal = geometry.latitude.broadcast_like(geometry.longitude).transpose("y", "x")
+    _, grid = _native_grid(
+        geometry, horizontal.assign_attrs(grid_mapping="crs"), set())
+    grid.update(fa_header=deepcopy(info["geometry"]),
+                fa_geometry=deepcopy(geometry.attrs))
+    for name in ("source_i", "source_j"):
+        grid["coordinates"][name] = {
+            "dimensions": list(geometry[name].dims), "values": geometry[name].values,
+            "attributes": deepcopy(geometry[name].attrs), "dtype": str(geometry[name].dtype)}
+    grid_id = _metadata_id("grid_", grid)
+    grids, fields, records = {grid_id: grid}, {}, []
+    for name, descriptor in info["field_descriptors"].items():
+        if descriptor["native"]["representation"] == "typed_metadata":
+            continue
+        dimensions = (["y", "x"] if descriptor["native"]["representation"] == "gridpoint"
+                      and descriptor["native"]["shape"] is not None else None)
+        field = {"name": name, "dimensions": dimensions,
+                 "dtype": descriptor["native"]["decoded_dtype"],
+                 "grid_id": grid_id, "attributes": {},
+                 "coordinate_names": list(grid["coordinates"]),
+                 "time_varying": False, "dependencies": {}, "native_descriptor": descriptor}
+        field_id = _metadata_id("field_", {"name": name, "grid_id": grid_id})
+        fields[field_id] = field
+        records.append({
+            "field_id": field_id, "name": name, "grid_id": grid_id, "level": None,
+            "time": np.datetime64(info["valid_time"]), "calendar": "proleptic_gregorian",
+            "cycle": np.datetime64(info["reference_time"]), "time_bounds": None,
+            "clock": "FA_validity", "temporal_metadata": {},
+            "locator": {"format": "fa", "path": str(path), "records": [name],
+                        "zone": list(geometry.attrs["fa_zone_indices"]),
+                        "identity": list(info["identity"])}})
+    # Cubes are explicit associations, not a vertical meaning inferred from record names.
+    for name, cube in source.get("native_cubes", {}).items():
+        missing = set(cube["records"]) - info["records"].keys()
+        if missing:
+            continue
+        cube_grid = {**grid, "native_vertical_header": {key: info["geometry"].get(key) for key in (
+            "KNIVER", "PREFER", "PAHYBR", "PBHYBR")},
+                     "vertical_position": cube["vertical_position"], "sampling": cube["sampling"]}
+        cube_grid_id = _metadata_id("grid_", cube_grid)
+        grids[cube_grid_id] = cube_grid
+        field_id = _metadata_id("field_", {"name": name, "grid_id": cube_grid_id})
+        fields[field_id] = {
+            "name": name, "dimensions": ["native_level", "y", "x"], "grid_id": cube_grid_id,
+            "attributes": {}, "coordinate_names": list(grid["coordinates"]), "dependencies": {},
+            "native_cube": deepcopy(cube), "time_varying": False,
+        }
+        records.append({**records[0], "field_id": field_id, "name": name,
+                        "grid_id": cube_grid_id,
+                        "locator": {"format": "fa", "path": str(path),
+                                    "records": list(cube["records"]),
+                                    "zone": list(geometry.attrs["fa_zone_indices"]),
+                                    "identity": list(info["identity"])}})
+    return {"model": "arome", "physical_type": "surface" if surface else "atmosphere",
+            "profile": profile, "evidence": [
+                {"profile": profile, "producer_metadata": deepcopy(info["surfex_metadata"]),
+                 "model_basis": "native producer metadata" if surface else "declared profile",
+                 "identifier": info["identifier"], "backend_versions": info["backend_versions"]}],
+            "fields": fields, "native_grids": grids, "records": records}
+
+
+def _selection_stamp(value, example):
+    from datetime import timedelta
+
+    from frameit.core.configuration import _timestamp
+
+    parts, zone = _timestamp(value, "sources.*.time")
+    year, month, day, hour, minute, second, fraction = parts
+    if isinstance(example, np.datetime64):
+        digits = format(fraction, "f")[2:].rstrip("0")
+        try:
+            if len(digits) > 9:
+                raise ValueError
+            seconds = np.datetime64(
+                f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:{second:02d}", "s")
+            if _timestamp(str(seconds), "sources.*.time")[0] != (*parts[:6], 0):
+                raise ValueError
+            if zone and zone != "Z":
+                minutes = (int(zone[1:3]) * 60 + int(zone[4:])) * (1 if zone[0] == "+" else -1)
+                seconds = np.datetime64(int(seconds.astype("int64")) - minutes * 60, "s")
+            normalized = str(seconds) + ("." + digits if digits else "")
+            stamp = np.datetime64(normalized)
+            stamp = stamp.astype(np.promote_types(stamp.dtype, example.dtype))
+            # NumPy casts may wrap silently; compare decoded parts before any selection.
+            if (_timestamp(str(stamp), "sources.*.time")[0]
+                    != _timestamp(normalized, "sources.*.time")[0]):
+                raise ValueError
+            return stamp
+        except (ValueError, OverflowError):
+            raise ValueError(f"Requested timestamp {value!r} is not representable at "
+                             "supported source-clock precision/range") from None
+    if fraction * 1_000_000 != int(fraction * 1_000_000):
+        raise ValueError("Requested timestamp precision is unavailable in this source calendar")
+    stamp = type(example)(year, month, day, hour, minute, second, int(fraction * 1_000_000))
+    if zone and zone != "Z":
+        offset = timedelta(hours=int(zone[1:3]), minutes=int(zone[4:]))
+        stamp -= offset if zone[0] == "+" else -offset
+    return stamp
+
+
+def _select_source_records(records, selection, context):
+    if not records:
+        raise ValueError(f"{context}: no selected decoded records; "
+                         "required fields need a sample clock")
+    calendars = {r["calendar"] for r in records}
+    if len(calendars) != 1:
+        raise ValueError(f"{context}: source has conflicting calendars {sorted(calendars)}")
+    cycles = {r["cycle"] for r in records if r["cycle"] is not None}
+    if "cycle" in selection:
+        if not cycles:
+            raise ValueError(f"{context}: time.cycle unavailable; "
+                             "inputs have no forecast reference clock")
+        cycle = _selection_stamp(selection["cycle"], next(iter(cycles)))
+        if not any(cycle == c for c in cycles):
+            raise ValueError(f"{context}: time.cycle {selection['cycle']} "
+                             "unavailable in selected files")
+        records = [r for r in records if r["cycle"] == cycle]
+    elif len(cycles) > 1:
+        raise ValueError(f"{context}: several forecast cycles; "
+                         "select an exact sources.*.time.cycle")
+    times = sorted({r["time"] for r in records})
+    if not times:
+        raise ValueError(f"{context}: no selected decoded records")
+    if "values" in selection:
+        wanted = [_selection_stamp(value, times[0]) for value in selection["values"]]
+        missing = [value for value in wanted if not any(value == t for t in times)]
+        if missing:
+            raise ValueError(f"{context}: time.values unavailable in selected files: "
+                             f"{sorted(missing)}")
+        selected = [t for t in times if any(t == value for value in wanted)]
+    else:
+        start = _selection_stamp(selection["start"], times[0]) if "start" in selection else times[0]
+        end = _selection_stamp(selection["end"], times[0]) if "end" in selection else times[-1]
+        selected = [t for t in times if start <= t <= end][::selection.get("stride", 1)]
+    if not selected:
+        raise ValueError(f"{context}: empty time selection; no selected records")
+    selected_times = set(selected)
+    return [r for r in records if r["time"] in selected_times], selected
+
+
+def inventory_source(conf, name, *, resources=None):
+    """Populate a v3 source's metadata handoff without binding or processing fields."""
+    source = conf.sources[name]
+    entries, excluded, overlaps = inventory_source_files(source)
+    fields, grids, records, facts, errors = {}, {}, [], [], []
+    with (DatasetResources() if resources is None else nullcontext(resources)) as owned:
+        for entry in entries:
+            path = Path(entry["path"])
+            try:
+                declared_format = source.get("format") or ("fa" if "profile" in source else None)
+                fmt = infer_format([path], declared_format)
+                reader = source.get("reader", {})
+                if fmt != "fa" and reader.keys() & {
+                        "python_executable", "timeout_seconds", "max_points"}:
+                    raise ValueError("sources.*.reader: "
+                                     "python_executable/timeout_seconds/max_points are FA-only")
+                if fmt != "netcdf" and reader.keys() & {"engine", "chunks"}:
+                    raise ValueError("sources.*.reader: engine/chunks are NetCDF-only")
+                if fmt != "fa" and source.keys() & {"profile", "fa", "native_cubes"}:
+                    raise ValueError("sources.*.profile/fa/native_cubes require FA inputs")
+                if fmt == "netcdf":
+                    info = _netcdf_inventory(path, source, owned)
+                elif fmt == "grib":
+                    info = _grib_source_inventory(path, source)
+                else:
+                    info = _fa_source_inventory(path, source, conf)
+                facts.append((fmt, info["model"], info["physical_type"],
+                              info["profile"], info["evidence"]))
+                for field_id, field in info["fields"].items():
+                    previous = fields.get(field_id, {})
+                    ids = set(previous.get("grid_ids", ())) | {field["grid_id"]}
+                    if "levels" in field:
+                        field["levels"] = sorted(
+                            set(previous.get("levels", ())) | set(field["levels"]))
+                    fields[field_id] = {**field, "grid_ids": sorted(ids),
+                                        "grid_id": next(iter(ids)) if len(ids) == 1 else None}
+                for grid_id, grid in info["native_grids"].items():
+                    if grid_id not in grids:
+                        grids[grid_id] = grid
+                    else:
+                        for coordinate, providers in grid.get("coordinate_providers", {}).items():
+                            known = grids[grid_id]["coordinate_providers"][coordinate]
+                            known.extend(
+                                provider for provider in providers if provider not in known)
+                records.extend(info["records"])
+                entry["fields"] = sorted({f["name"] for f in info["fields"].values()
+                                          if f["name"] is not None})
+                entry["unmapped_records"] = [r for r in info["records"] if r["name"] is None]
+            except (OSError, ValueError) as exc:
+                errors.append(f"sources.{name}: {path}: {exc}")
+    if errors:
+        raise ValueError("\n".join(errors))
+    profiles = {fact[:4] for fact in facts}
+    if len(profiles) != 1:
+        raise ValueError(f"sources.{name}: selected files have conflicting "
+                         f"model/format/physical profiles: {profiles}")
+    fmt, model, physical, profile = next(iter(profiles))
+    request = conf.source_requests[name]
+    needed = {field for exports in request["exports"].values() for field in exports
+              if field not in request["derived"]}
+    needed.update(set(request["internal_inputs"]) - request["derived"].keys())
+    required = set(needed)
+    dependency_resolution = "declared"
+    tracker = conf.yaml_config["region"].get("tracker")
+    if tracker and physical == "atmosphere":
+        from frameit.io.loader import DEFAULT_PRESETS_ROOT, _load_yaml
+
+        method = conf.tracking_method
+        preset = (DEFAULT_PRESETS_ROOT / {"mesonh": "MNH", "arome": "AROME"}[model]
+                  / "vars_trackers.yaml")
+        if method in {"wind_pressure", "utrack"} or model == "arome":
+            requirements = _load_yaml(preset)["requested_variables_by_method"][method]
+            needed.update(n for spec in requirements.values() for n in spec.get("variables", []))
+            required.update(needed)
+        else:
+            # Preserve candidates for method binding, without choosing scientific alternatives.
+            needed.update(field["name"] for field in fields.values())
+            dependency_resolution = "pending_method_binding"
+    if not needed:
+        # An unfinished inspect request inventories all fields, not an invented selection.
+        needed = {f["name"] for f in fields.values() if f["name"] is not None}
+    if (source.get("interpretation") or source["transforms"] or request["internal_inputs"]
+            or "polar" in request["exports"]
+            or tracker and physical == "atmosphere"):
+        dependency_resolution = "pending_method_binding"
+    by_name = {}
+    for field_id, field in fields.items():
+        by_name.setdefault(field["name"], []).append(field_id)
+    pending = list(required)
+    while pending:
+        field_name = pending.pop()
+        for field_id in by_name.get(field_name, []):
+            for dep in fields[field_id].get("dependencies", {}):
+                if dep not in required:
+                    required.add(dep)
+                    needed.add(dep)
+                    pending.append(dep)
+    missing = required - by_name.keys()
+    if missing:
+        raise ValueError(f"sources.{name}: required fields/dependencies "
+                         f"{sorted(missing)} unavailable in selected files")
+    relevant = [r for r in records if r["name"] in needed]
+    selected, times = _select_source_records(relevant, source.get("time", {}), f"sources.{name}")
+    errors, providers, conflicts = [], {}, []
+    for field_name in sorted(required & by_name.keys()):
+        identities = {r["field_id"] for r in selected if r["name"] == field_name}
+        if len(identities) > 1:
+            definitions = [
+                {"identity": identity, "dimensions": fields[identity]["dimensions"],
+                 "group": fields[identity].get("group"), "grids": fields[identity]["grid_ids"],
+                 "providers": sorted({r["locator"]["path"] for r in selected
+                                      if r["field_id"] == identity})}
+                for identity in sorted(identities)]
+            errors.append(f"sources.{name}: distinct fields share requested name {field_name!r}; "
+                          f"conflicting fields {definitions}; "
+                          "qualified selectors are unsupported")
+        available = {r["time"] for r in selected if r["name"] == field_name}
+        if field_name in required and set(times) - available:
+            errors.append(f"sources.{name}: {field_name} unavailable at selected times "
+                          f"{sorted(set(times) - available)}; "
+                          "dependencies cannot widen the inventory")
+    for record in selected:
+        key = (record["field_id"], record["time"], record["cycle"], record["level"],
+               tuple(sorted(record.get("native_axes", {}).items())))
+        if key in providers:
+            pending_status = None
+            if record["name"] not in required:
+                pending_status = ("pending_method_binding"
+                                  if dependency_resolution == "pending_method_binding"
+                                  else "pending_field_binding")
+            elif (fmt == "grib" and record["name"] in (
+                    set(request["fields"]["3d"])
+                    | set(request["internal_inputs"]) - set(request["fields"]["2d"]))
+                  and request["levels"].keys() & {"indices", "values", "domain"}):
+                pending_status = "pending_level_binding"
+            if pending_status:
+                # Binding must reject any required conflict; neither provider is chosen here.
+                conflicts.append({**{k: record[k] for k in (
+                    "field_id", "name", "time", "cycle", "level")},
+                    "native_axes": record.get("native_axes", {}),
+                    "locators": [providers[key], record["locator"]],
+                    "status": pending_status})
+            else:
+                errors.append(
+                    f"sources.{name}: competing physical-field providers for {record['name']} "
+                    f"at {record['time']}, cycle {record['cycle']}, level {record['level']}, "
+                    f"native axes {record.get('native_axes', {})}: "
+                    f"{providers[key]} and {record['locator']}. Use files, exclude or time.cycle; "
+                    "if whole-file exclusion loses needed records, "
+                    "make inputs unambiguous upstream.")
+        providers[key] = record["locator"]
+    if errors:
+        raise ValueError("\n".join(errors))
+    selected.sort(key=lambda r: (r["time"], r["name"], r["field_id"], str(r["level"])))
+    selected_times = set(times)
+    selected_cycles = {r["cycle"] for r in selected}
+    record_inventory = sorted(
+        (r for r in records if r["time"] in selected_times and r["cycle"] in selected_cycles),
+        key=lambda r: (r["time"], r["name"] or "", r["field_id"], str(r["level"])))
+    for grid in grids.values():
+        for providers in grid.get("coordinate_providers", {}).values():
+            for provider in providers:
+                provider["samples"] = [
+                    sample for sample in provider["samples"]
+                    if sample["time"] in selected_times and sample["cycle"] in selected_cycles]
+    selected_paths = list(dict.fromkeys(r["locator"]["path"] for r in selected))
+    relevant_paths = {r["locator"]["path"] for r in relevant}
+    candidate_paths = {r["locator"]["path"] for r in record_inventory}
+    for entry in entries:
+        entry["status"] = ("selected" if entry["path"] in selected_paths else
+                           "time_excluded" if entry["path"] in relevant_paths else
+                           "dependency_pending" if dependency_resolution == "pending_method_binding"
+                           and entry["path"] in candidate_paths else "irrelevant")
+        entry["reason"] = {
+            "selected": "supplies selected records",
+            "time_excluded": "no records in the source time/cycle selection",
+            "irrelevant": "metadata proves no requested field or required dependency",
+            "dependency_pending": "method dependency binding must decide relevance",
+        }[entry["status"]]
+    result = conf.simulation_parameter["request_plan"]["sources"][name]
+    result.update(model=model, physical_type=physical, format=fmt, profile=profile,
+                  files=selected_paths, file_inventory=entries, excluded_files=excluded,
+                  overlapping_patterns=overlaps, fields=fields, native_grids=grids,
+                  records=selected, record_inventory=record_inventory, selected_times=times,
+                  dependency_resolution=dependency_resolution, provider_conflicts=conflicts)
+    result["metadata_origins"] = {
+        "model": {"origin": "yaml" if ("model" in source or fmt == "fa"
+                                     and profile == "arome_history") else "input",
+                  "evidence": [item for fact in facts for item in fact[4]]},
+        "physical_type": {"origin": "input",
+                          "evidence": {"model": model, "format": fmt, "profile": profile}},
+        "format": {"origin": "yaml" if "format" in source else "input", "evidence": "file header"},
+    }
+    conf.file_type = fmt
+    conf.atm_model = {"mesonh": "MNH", "arome": "AROME", "nemo": "NEMO", "croco": "CROCO"}[model]
+    conf.input_files = selected_paths
+    conf.add_parameter("input_inventory", list(selected_paths))
+    return result
 
 
 def open_metadata(files, conf, resources, *, chunks=None):
@@ -204,6 +995,12 @@ def infer_format(files, declared=None):
     if declared == "fa":
         # Native FA is structurally verified by the isolated metadata reader;
         # no extension guess or attempt to send unknown bytes to NetCDF.
+        for path in files:
+            with Path(path).open("rb") as handle:
+                magic = handle.read(8)
+            if magic.startswith((b"GRIB", b"CDF")) or magic == b"\x89HDF\r\n\x1a\n":
+                detected = "grib" if magic.startswith(b"GRIB") else "netcdf"
+                raise ValueError(f"input.format=fa conflicts with detected {detected}: {path}")
         return "fa"
     formats = set()
     for path in files:
@@ -365,6 +1162,18 @@ def polar_sampling_plan(conf, time_count):
 def preflight(conf, *, input_files=None, check_output=True, execution_options=None, resources=None,
               include_variable_metadata=False):
     """Validate metadata/geometry, optionally retaining lazy inputs in a run's owner."""
+    if getattr(conf, "schema_version", None) == 3:
+        from frameit.core.coupled import prepare_sources
+
+        if input_files is not None:
+            if conf.source_name is None:
+                raise ValueError("v3 inventories are declared per sources.<name>.files")
+            # This internal caller must not replace or widen the authored inventory.
+            selected = conf.simulation_parameter["request_plan"]["sources"][conf.source_name]
+            if selected["records"] is None or list(map(str, input_files)) != selected["files"]:
+                raise ValueError("v3 input_files must be the bound selected source inventory")
+        return prepare_sources(conf, check_output=check_output, execution_options=execution_options,
+                               resources=resources)[0]
     if conf.input_sources:
         if input_files is not None:
             raise ValueError("Coupled inventories are specified per input.sources entry")

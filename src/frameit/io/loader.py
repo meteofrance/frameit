@@ -142,6 +142,54 @@ def input_path_excluded(path, config):
                for candidate in candidates for pattern in getattr(config, "input_exclude", []))
 
 
+def inventory_source_files(source):
+    """Expand only declared v3 paths; identity is device/inode, not file contents."""
+    import fnmatch
+    import glob
+
+    entries, identities, excluded, overlaps, errors = [], {}, [], [], []
+    patterns = [source["files"]] if isinstance(source["files"], str) else source["files"]
+    for pattern in patterns:
+        matches = (sorted(glob.glob(pattern, recursive=True))
+                   if glob.has_magic(pattern) else [pattern])
+        if not matches:
+            errors.append(f"{pattern}: no matching input file")
+        for match in matches:
+            path = Path(match).absolute()
+            if any(fnmatch.fnmatch(str(path), rule) for rule in source.get("exclude", [])):
+                if str(path) not in excluded:
+                    excluded.append(str(path))
+                continue
+            try:
+                if not path.is_file():
+                    raise FileNotFoundError("missing or not a regular file")
+                stat = path.stat()
+            except OSError as exc:
+                errors.append(f"{path}: {exc}")
+                continue
+            identity = stat.st_dev, stat.st_ino
+            if identity in identities:
+                entry = identities[identity]
+                if str(path) != entry["path"] and str(path) not in entry["aliases"]:
+                    entry["aliases"].append(str(path))
+                overlaps.append({"path": str(path), "provider": entry["path"],
+                                 "pattern": pattern, "previous_patterns": list(entry["patterns"])})
+                if pattern not in entry["patterns"]:
+                    entry["patterns"].append(pattern)
+            else:
+                entry = {"path": str(path), "aliases": [], "patterns": [pattern],
+                         "identity": {"strategy": "device_inode", "device": stat.st_dev,
+                                      "inode": stat.st_ino, "size_bytes": stat.st_size,
+                                      "mtime_ns": stat.st_mtime_ns}}
+                identities[identity] = entry
+                entries.append(entry)
+    if errors:
+        raise ValueError("\n".join(errors))
+    if not entries:
+        raise ValueError("No selected input files remain after sources.*.exclude")
+    return entries, excluded, overlaps
+
+
 def _load_yaml(p: Path) -> dict[str, Any]:
     with p.open("r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}

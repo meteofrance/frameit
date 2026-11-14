@@ -30,9 +30,9 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 |---|---|---|---|---|
 | 00 | done | lead | — | Reviewed internal records: `dec4db1`. |
 | 01 | done | task-01 worker + independent reviewer | 00 | Reviewed fix committed as `645d7e6`. |
-| 02 | done | task-02 worker + independent reviewer | 01 | All findings closed; verified schema and frozen handoffs. |
-| 03 | ready | lead | 02 | `loader.py`, `preflight.py`, `coupled.py`, inventory tests; use the frozen handoffs below after Task 02 commit. |
-| 04 | blocked | unassigned | 03 | `requests.py`, `preflight.py`, optional `units.py`, request/grid tests; bind fields and levels. |
+| 02 | done | task-02 worker + independent reviewer | 01 | Reviewed schema and frozen handoffs: `8034a6d`. |
+| 03 | done | task-03 worker + independent reviewer | 02 | All nine findings closed; selected-record/grid handoff frozen below. |
+| 04 | ready | unassigned | 03 | `requests.py`, `preflight.py`, optional `units.py`, request/grid tests; bind fields and levels. |
 | 05 | blocked | lead | 04 | Native execution test and orchestration first; separate adapter claims after native slice review. |
 | 06 | blocked | lead | 05 | `coupled.py`, time/track/tracker/extraction files; regions and centre associations. |
 | 07 | blocked | unassigned | 05 | SEA/FA files and tests; explicit source declarations. |
@@ -383,8 +383,302 @@ Scientific impact: no new method or numerical change. Public YAML compatibility
 changes to v3 only, as approved; no migration/compatibility layer was added.
 Shared `dataset`/`document` fixture APIs remain intact; their public producer
 conversion stays caller-wide in Task 16. Task 02 is not a runnable v3 pipeline.
-- Next: commit the reviewed Task 02 result, then assign Task 03 using the frozen
-  runtime/record-plan handoffs below. No further interface freeze is pending.
+
+## Task 03 implementation and review history
+
+Lead's `input_files.rst` update covers source-local paths, inventory ambiguity,
+time/cycle selection, independent clocks and reader costs. Wind declaration
+names now use the v3 source syntax; method references and scientific distinctions
+remain. The complete inline YAML resolves through `resolve_schema` without
+opening inputs; this does not establish input availability or runtime execution.
+
+Strict Sphinx iteration `yaml-v3-05` failed: a lead edit added one space to the
+third column's list-table bullets, producing five unexpected-unindent warnings
+and a two-level-list error. No preview/publication success is claimed for 05.
+The indentation was corrected; iteration 06 strict build/publication and 13
+unittests passed. Live 320px inspection then found the three-column wind table
+unreadably narrow despite no page overflow. The same four evidence cases were
+expressed as two full-width bullets (Earth/grid), without changing their meaning
+or site CSS. Iteration 07 passed:
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/yaml-v3-07
+PYTHONPATH="$PWD/src" conda run -n frameit_env python docs/check_publication.py build/docs-preview/yaml-v3-07
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m unittest discover -s docs -p test_check_publication.py
+```
+
+All exit 0; no strict warnings, publication passed, 13 unittests passed.
+The updated input page was inspected live at desktop880px and320px; the wind
+bullets are readable, code scrolls within its block, and there is no page
+overflow. Enter opened/closed the menu. Canonical page restored for feedback;
+machine-local preview details are kept in the ignored handover.
+These are documentation repairs, not scientific or runtime changes.
+
+Task 03 worker handoff reports 488 distinct targeted passes: 78 new inventory
+checks (including the 53 required nodes), 342 delivered v3/Task 01 checks, and
+68 numerical callers. Exact commands, record/grid/locator shapes, instrumentation
+and limitations are in `task-03-checks.md`. Independent review is active.
+The lead freshly ran the exact required command:
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_inspect_metadata.py::test_v3_source_inventory src/frameit/testing/numerical/test_inspect_metadata.py::test_v3_time_record_selection
+```
+
+Result: 53 passed, exit 0, 2.02 seconds, no warnings.
+
+The worker also ran whole-suite diagnostics with the approved local fixture.
+Latest snapshot: 468 failed, 1229 passed, 2 errors, 4 subtests passed, 4022
+warnings. It predates the final refinements and is NOT a current full-suite pass.
+The two setup errors are the old-config CLI fixture in
+`test_hpc_execution.py::test_concurrent_cli_attempts_spawn_and_sync_export_exactly`
+and its consumer
+`docs/test_repository_examples.py::test_independent_checker_accepts_reference_and_rejects_wrong_time_count`.
+The producer/conversion and processing integration gaps retain their named later
+tasks. Nothing was suppressed or rewritten to hide these failures.
+
+Load-bearing candidate-pool/provider-conflict and operation-dependency rules are
+not frozen until the reviewer approves them. Task 04 must enforce any conflicts
+that survive actual field/method/level binding before Task 05 can read payloads.
+
+Task 03 independent review requested six focused fixes: retained ancillary
+coordinate providers, complete regular-FA geometry, internal-input level-conflict
+deferral, moving-coordinate indexers, bounds dimension identity, and harmless
+extra timestamp precision. Original worker owns RED/GREEN fixes and a scoped
+re-review. Checkpoint tree `c7b93ab91f36a818c6237adc237cafa7dda57f0a` preserves
+reviewed files without a code commit. No handoff is frozen yet.
+
+Separate evidence gap: one reviewer helper-based GRIB probe exited 134 at
+shutdown, while its direct-constructor repeat exited 0. Exact reproducer has
+been retained in the ignored review workspace and forwarded to the worker.
+The commands differ in import order, test-module import, core-dump limit and
+printing, so they do not isolate a cause. The native diagnostic was
+`double free or corruption (!prev)`. No cause or regression attribution is
+invented; a bounded controlled check is requested after the six handoff fixes.
+
+Task 03 fix round 1 is implemented, not yet independently closed. Reported final
+checks: 98 Task03 (including 75 required/fix cases), 342 delivered regressions and
+68 numerical callers: 508 distinct passes. Ancillary scientific flags registered
+as coordinates are now included in payload-forbidden checks; no masking method
+was added. Revised locator/provider contracts are in `task-03-checks.md`.
+
+The worker reproduced native GRIB SIGABRT after preflight in three controlled
+direct/import/helper child variants. Native shutdown qualification remains
+blocked. A separate read-only diagnostic agent is investigating causal
+boundaries while the original reviewer checks the six fixes. No environment,
+library, finalizer or scientific workaround is authorized or presumed.
+
+After the metadata fixes, the lead ran the same strict build/publication/
+publication-unittest commands into `build/docs-preview/yaml-v3-08`, plus
+`PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q docs/test_documentation_plots.py docs/test_release.py`.
+Results: strict build/publication exit 0; 13 unittests; 4 plot/release tests and
+2 subtests passed, with 15 existing backend warnings. The input-page HTML matches
+the live desktop/narrow-reviewed iteration 07 byte-for-byte. Preview now shows
+08. These documentation checks do not qualify native GRIB shutdown.
+
+Task 03 fix round 1 review: all six original reproductions addressed, but two
+new CF-coordinate regressions block freeze. True auxiliary pressure coordinates/
+bounds were wrongly excluded; equivalent shared hybrid-coordinate metadata was
+wrongly treated as competing scientific providers. Original worker owns round 2
+with TDD and scoped re-review. Checkpoint tree:
+`cbfd01ee1883e43af9a2655a2df15363404a6358` (not a commit).
+
+Native diagnosis now isolates an installed-library conflict independently of
+FrameIt: importing ecCodes before pyproj aborts without generating GRIB or
+executing production code. Native ecCodes is actually 2.50.0 from a pip binary
+wheel, despite binding metadata 2.44.0; Conda also contains native ecCodes 2.46.0.
+The wheel globally loads eckit's bundled PROJ 9.8.1 before pyproj's Conda PROJ
+9.9.0. Loading that bundled PROJ globally reproduces SIGABRT; a local-loading
+control exits 0. Exact native destructor remains untraced. Both legacy/new
+metadata-reader controls exit 0 with four handles opened/released and owned
+coordinate arrays. No evidence justifies changing FrameIt handle releases.
+No dependencies, environment, imports or finalizers were changed.
+Earlier "ecCodes 2.44.0" version evidence describes distribution metadata only;
+it is not proof of the actual native decoder version. Native qualification
+remains blocked until the mixed stack is resolved and verified.
+
+Task 03 fix round 2 is implemented and under scoped independent review, not
+frozen or committed. The worker reports 520 distinct passes: 110 Task03, 342
+delivered regressions and 68 numerical callers. All 43 checkpoint test function
+ASTs and all 30 pre-Task03 test ASTs remain unchanged; Ruff has zero new
+diagnostics against its 22-diagnostic baseline. The portable commands, RED/GREEN
+evidence, current owning-grid coordinate/provider shape and limits are in
+`task-03-checks.md`. The lead confirmed that the index remains checkpoint tree
+`cbfd01ee1883e43af9a2655a2df15363404a6358`; fixes remain unstaged for review.
+
+Fresh lead acceptance on the round-2 tree:
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env env FRAMEIT_CI_DATA_ROOT="$PWD/build/yaml-v3-ci-fixture-01" python -m pytest -q src/frameit/testing/numerical/test_inspect_metadata.py src/frameit/testing/numerical/test_netcdf_assembly.py src/frameit/testing/numerical/test_grib_lifecycle.py -k v3 --tb=short
+PYTHONPATH="$PWD/src" conda run -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/yaml-v3-09
+PYTHONPATH="$PWD/src" conda run -n frameit_env python docs/check_publication.py build/docs-preview/yaml-v3-09
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m unittest discover -s docs -p test_check_publication.py
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q docs/test_documentation_plots.py docs/test_release.py
+cmp build/docs-preview/yaml-v3-08/user_guide/input_files.html build/docs-preview/yaml-v3-09/user_guide/input_files.html
+```
+
+Results: 110 passed, 69 deselected, 19 existing backend warnings, 20.41 seconds;
+strict build and publication exit 0; 13 publication unittests passed;
+4 plot/release tests and 2 subtests passed with 15 existing warnings; HTML
+comparison exit 0. No whole-suite or unchanged native-abort rerun is inferred.
+The live iteration09 input page was inspected at desktop880px and an actual
+320-CSS-pixel iframe viewport. No page overflow; YAML blocks and wind bullets
+remain readable. Enter opens/closes the narrow menu. The canonical page is
+restored and the owned preview is retained. This is agent inspection, not human
+acceptance.
+
+Ruling: keep native-stack repair/qualification separate from this metadata-only
+milestone. The zero-handle import reproducer establishes an external blocker;
+it does not justify changing FrameIt releases or accepting failed native paths.
+Continue safe binding/NetCDF work after the inventory review closes, while
+Task05's affected native lane and Task19's full qualification remain blocked
+until approved repair and fresh-process checks. Cost if wrong: independent native
+defects could remain, so no general native-lifecycle or full-run pass is claimed.
+
+Task 03 fix round 2 review independently closed findings7/8 and preserved the
+original six covered closures. A new Important finding9 blocks freeze:
+an admitted auxiliary pressure coordinate can name a flagged ancillary
+scientific array as its bounds. `_native_grid` then reads that array before
+checking shape/role, including excluded samples. The reviewer reproduced the
+actual backend request with only the second timestamp selected; this failing
+negative probe is not included in the 520 passing checks.
+The original worker owns round3: establish an actionable metadata failure
+before value access, retain legitimate coordinate metadata, add guarded negative
+tests and rerun affected checks. Reviewed index checkpoint is now
+`9bb7826dfad4ef1e9926f0d3e98b3160716f912a`, not a commit. No public handoff
+is frozen and no code commit has been made before review closure.
+
+Task 03 fix round 3 is implemented and under scoped independent review.
+The exact malformed-bounds case, separate dimensional/scientific-role controls
+and missing target were observed RED. The covering 30 cases are GREEN,
+including legitimate pressure/hybrid and geographic bounds. Reported distinct
+total is 533: 123 Task03, 342 delivered and 68 numerical callers; required53 and
+combined100 are subsets. All 45 checkpoint / 30 baseline test function ASTs
+are unchanged, zero new Ruff diagnostics against22, and diff check passes.
+The lead verified the RED/backend trace and GREEN logs, generated a fresh scoped
+review package, and confirmed the index remains `9bb7826…`. Final lead acceptance
+returned 123 passed, 69 deselected and 19 existing backend warnings in 20.86 seconds
+with the same source-selected Task03 command above.
+Final documentation commands:
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/yaml-v3-10
+PYTHONPATH="$PWD/src" conda run -n frameit_env python docs/check_publication.py build/docs-preview/yaml-v3-10
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m unittest discover -s docs -p test_check_publication.py
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q docs/test_documentation_plots.py docs/test_release.py
+cmp build/docs-preview/yaml-v3-09/user_guide/input_files.html build/docs-preview/yaml-v3-10/user_guide/input_files.html
+```
+
+All exit 0: strict build without warnings, publication passed, 13 unittests,
+4 tests and 2 subtests with 15 existing warnings, and byte-identical input HTML.
+The retained live preview now shows 10, identical to the desktop/320px-reviewed 09;
+desktop bounds and updated prose were rechecked. No whole-suite, native-lifecycle
+or human-acceptance success is inferred.
+- Task 02 commit: `8034a6d`. Portable evidence and final record correction were
+  independently approved. No further interface freeze is pending.
+- Task 03 assigned at `8034a6d`: worker claims the three named production files,
+  the three named inventory/assembly/GRIB test modules, and its internal evidence
+  appendix. Lead owns public `input_files.rst`, state and integration.
+- Next: Task 04 consumes the reviewed freeze below.
+
+## Task 03 reviewed interface freeze
+
+Independent scoped review closed finding9 and confirmed preservation of
+findings1–8: spec PASS, quality APPROVE, no new Critical/Important fix breakage
+and no new unrelated findings. The reviewer verified RED/backend and final
+GREEN evidence rather than replacing it with another suite run. All nine
+findings are closed; none is parked. The lead's final 123-case run and strict
+iteration10 documentation checks above passed on the reviewed code.
+The portable full mapping, exact commands and limitations are in
+`task-03-checks.md`; the following is the binding downstream handoff.
+
+### Entry points and callers
+
+- New `io.loader.inventory_source_files(source)` returns
+  `(file_inventory, excluded_files, overlapping_patterns)` from declared paths
+  only. Physical identity uses device/inode, not archive hashes. Aliases and
+  overlaps remain inspectable; separate copies remain separate providers.
+- New `core.preflight.inventory_source(conf, name, *, resources=None)` populates
+  and returns that source's existing `request_plan` entry. It updates the source
+  child's discovered model/format, input files and recorded inventory.
+- `prepare_sources(conf, *, check_output=True, execution_options=None,
+  resources=None)` retains `(report, children, source_plans)`. The new optional
+  resource owner is passed by v3 `preflight`; old numerical callers omit it.
+  Other callers are `coupled.run_coupled` and the AROME/FA, NEMO/AROME,
+  CROCO/MNH and inspect-metadata tests. Existing numerical behavior is retained.
+- V3 children use `_source_runtime(parent, name)`, not reloadable public YAML.
+  Independent source clocks/cycles remain independent; no track/common-time
+  alignment runs here. Dependency-only children retain their internal empty
+  products. Profile-only FA children receive canonical FA options/coordinates;
+  a single-source parent receives independent option copies.
+- `preflight` and `open_metadata` retain their signatures. The v3 preflight report
+  includes effective configuration/origins, sources, file decisions, planned
+  products, warnings and deferred checks. These are plans, not publications.
+
+### Records, grids and coordinate provenance
+
+- Each source adds `model`, `format`, `profile`, `physical_type`,
+  `metadata_origins`, chronological `files`, `file_inventory`, `excluded_files`,
+  `overlapping_patterns`, `fields`, `native_grids`, `records`, `record_inventory`,
+  `selected_times`, `dependency_resolution` and `provider_conflicts`.
+- Records retain `field_id`, `name`, actual `grid_id`, `level`, decoded `time`,
+  `calendar`, `cycle`, `time_bounds`, `clock`, `temporal_metadata` and `locator`.
+  NumPy/cftime objects remain decoded internally. GRIB also retains native
+  ensemble labels/metadata; a member label is neither a physical source type nor
+  a provider-selection permission.
+- NetCDF locators retain original payload-dimension `indexers` separately from
+  full-clock `coordinate_indexers`. Static payloads may have empty indexers
+  while moving geography still needs the selected clock positions.
+  GRIB locators retain message index, byte offset and length. FA retains native
+  record names, checked half-open zone and size/mtime freshness identity.
+- Grid IDs are `grid_` plus a full SHA-256 of grid/coordinate metadata before
+  field filtering. Provider paths/provenance and field order do not enter the
+  geometry hash. Static grids omit clocks; moving metadata retains its labels.
+  A field may list several `grid_ids`; every record identifies its actual grid.
+- NetCDF `fields` contains scientific array candidates (`role: array`),
+  including unproven auxiliary arrays in `.coords`. `dependencies` identifies
+  scientific array support; `coordinate_dependencies` identifies local metadata.
+  Needed coordinate metadata lives in `native_grids[grid_id].coordinates` with
+  dimensions, values, attributes, dtype and `role: coordinate_metadata`.
+- `native_grids[grid_id].coordinate_providers[name]` retains all contributing
+  NetCDF provider paths/variables and their selected-time/cycle sample context,
+  with both indexer maps. Only equal complete owning grids coalesce. Different
+  labels, bounds, coefficients, units or attributes remain distinct.
+  Resolve coordinates through the actual owning grid and matching provider/sample
+  context; an empty provider sample list establishes no availability.
+- Added CF recognition is narrow: admitted one-dimensional `axis=Z`
+  air-pressure coordinates/bounds and declared local hybrid-pressure constants.
+  It is not a general CF formula implementation or scientific eligibility claim.
+  Ancillary/flag/formula scientific inputs remain unread array candidates.
+  Declared bounds are validated for existence, ordered dimensions, endpoint
+  requirements and conflicting scientific/flag roles before value access.
+  Legitimate geographic vertex layouts remain supported.
+
+### Binding and execution gates
+
+- `record_inventory` is the closed candidate pool within selected source
+  times/cycles. `records` initially contains known requests/dependencies and
+  unresolved method candidates. Final scientific records may be narrowed/promoted
+  only from that pool, never discovered from another file or a wider clock.
+- Pending field/method/level conflicts retain every locator. They authorize
+  neither a provider choice nor payload reads. Task04 must recompute identity,
+  category, bound-time/native-axis availability and all provider conflicts after
+  promotion and actual binding; an initially empty conflict list is not clearance.
+  Reject every surviving conflict. Metadata coalescence never exempts scientific
+  duplicate providers. Shared GRIB geometry does not establish vertical ordering.
+- Regenerate chronological `files` from final bound locators and resolve file
+  relevance only after dependencies bind. Preserve both indexer mappings,
+  calendars, cycles, intervals and FA eligibility/scaling/sampling safeguards.
+- `requests.binding` remains `None` here. Existing execution guards still reject
+  unbound v3 processing before outputs. Actual adapters, scientific support,
+  units/levels, associations and output schemas remain their owning later tasks.
+  Metadata-only backend guards do not prove future selected-time payload slicing.
+- Native-stack repair/qualification remains explicitly blocked as described
+  above. It is not an established Task03 handle defect and has no code workaround.
+
+Scientific impact: metadata discovery/selection only; no new scientific method,
+field conversion, interpolation, masking or diagnostic. Compatibility: no
+additional public YAML or output-schema change in Task03; direct numerical APIs
+remain. No source dataset or shared environment was modified.
 
 ## Task 01 evidence
 
