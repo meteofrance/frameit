@@ -1014,10 +1014,18 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
     for product, names in exports.items():
         for name in names:
             if name in request["derived"]:
+                sampling = "mass" if source["model"] == "mesonh" else "native"
+                input_sampling = {}
+                if product == "polar":
+                    input_sampling = {
+                        field: request["polar_options"].get(field, {}).get("sampling", sampling)
+                        for field in request["derived"][name]["inputs"].values()}
+                    sampling = "mass" if "mass" in input_sampling.values() else "native"
                 active[product, name] = {
                     "method": request["derived"][name]["method"],
                     "inputs": request["derived"][name]["inputs"],
-                    "sampling": "mass" if source["model"] == "mesonh" else "native",
+                    "sampling": sampling,
+                    **({"input_sampling": input_sampling} if input_sampling else {}),
                     "basis": "earth", "units": "m s-1"}
             elif product == "model_grid":
                 transforms = [t for t in request["transforms"] if name in t["fields"]]
@@ -1028,10 +1036,11 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                         "method": "transform", "inputs": {"field": name},
                         "sampling": "native", "basis": "native",
                         **{k: v for k, v in transforms[0].items() if k != "fields"}}
-            elif request["polar_options"].get(name, {}).get("sampling") == "mass":
+            elif product == "polar":
                 active[product, name] = {
                     "method": "polar_input", "inputs": {"field": name},
-                    "sampling": "mass", "basis": "native"}
+                    "sampling": request["polar_options"].get(name, {}).get("sampling", "native"),
+                    "basis": "native"}
     native = deepcopy(request)
     native["exports"] = {p: [n for n in names if (p, n) not in active]
                          for p, names in exports.items()}
@@ -1039,12 +1048,13 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
     native["transforms"] = []
     native["internal_inputs"] = []
     remaining = [p for p in source.get("pending_operations", [])
-                 if p not in {"transforms", "derived"}]
+                 if p not in {"transforms", "derived", "polar"}]
     native_source = {**source, "pending_operations": remaining,
                      "dependency_resolution": "pending_method_binding" if remaining else "declared"}
     binding = (bind_requests(native_source, native, representations=representations,
                              required_inputs=required_inputs)
-               if native["exports"] or required_inputs or not active else
+               if (native["exports"] or required_inputs
+                   or not active and conf.yaml_config["products"]) else
                {"status": "bound", "products": {}, "dependencies": {}, "records": [],
                 "warnings": [], "deferred_checks": []})
     binding["operations"] = []
@@ -1185,6 +1195,10 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                     raise ValueError(
                         f"{name}: mass sampling is unsupported for this model/quantity")
                 for field_name, value in probes.items():
+                    if operation.get("input_sampling", {}).get(
+                            field_name, operation["sampling"]) != "mass":
+                        prepared[field_name] = value.reset_coords(drop=True)
+                        continue
                     vertical_w = "level_w" in value.dims
                     if vertical_w and field_name != getattr(
                             conf, "velocity_aliases", {}).get("w_velocity", "WT") and (
@@ -1320,12 +1334,15 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
             if product == "model_grid":
                 binding["operations"].append(planned)
     if "polar" in exports:
-        binding["deferred_checks"].append(
-            "Polar target planning/sampling remains pending method binding; "
-            "bound preparation levels are not polar execution clearance.")
+        from frameit.processing.polar.sampling import bind_polar_plan
+
+        bind_polar_plan(source, request, binding, conf)
     binding["warnings"] = list(dict.fromkeys(binding["warnings"]))
     binding["deferred_checks"] = list(dict.fromkeys(binding["deferred_checks"]))
-    binding["status"] = "pending_method_binding" if binding["deferred_checks"] else "bound"
+    binding["status"] = (
+        "pending_method_binding" if binding["deferred_checks"] else
+        "pending_polar_target" if binding.get("polar_plan", {}).get("status") == "prepared" else
+        "bound")
     return binding
 
 

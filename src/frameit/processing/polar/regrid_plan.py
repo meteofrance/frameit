@@ -10,6 +10,7 @@ import hashlib
 import json
 import sys
 from collections import OrderedDict
+from copy import copy
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -129,6 +130,7 @@ class RegridGeometry:
             "static_mask_policy": (
                 "exclude_entire_contributing_stencil" if mask is not None else "none"
             ),
+            "nearest_footprint": "ESMF_spherical_source_cells" if method == "nearest_s2d" else None,
         }
         provenance_json = json.dumps(provenance, sort_keys=True)
         digest = hashlib.sha256(provenance_json.encode())
@@ -166,6 +168,22 @@ class PolarRegridPlan:
             input_dims=("y_box", "x_box"), periodic=options["periodic"],
             extrap_method=options["extrap_method"],
         )
+        if options["method"] == "nearest_s2d":
+            import sparse
+
+            footprint = regridder_factory(
+                source, targets, "bilinear", locstream_out=True, unmapped_to_nan=False,
+                input_dims=("y_box", "x_box"), periodic=options["periodic"],
+                extrap_method=None)
+            inside = np.asarray(
+                footprint.weights.data.to_scipy_sparse().tocsr().sum(axis=1)).ravel() > 0
+            weights = backend.weights.data
+            keep = inside[weights.coords[0]]
+            # ESMF nearest otherwise extrapolates. Use the same spherical cell
+            # footprint as bilinear, not a different planar boundary convention.
+            backend.weights = xr.DataArray(sparse.COO(
+                weights.coords[:, keep], weights.data[keep], shape=weights.shape),
+                dims=backend.weights.dims)
         supported = SupportedRegridder(
             backend, zero_tolerance=options["zero_weight_tolerance"],
             source_mask=geometry.source_mask,
@@ -191,7 +209,25 @@ class PolarRegridPlan:
             total += weights.data.nbytes + weights.indices.nbytes + weights.indptr.nbytes
         return total
 
-    def apply(self, field, mask=None, *, policy="strict", minimum_support=.5, output_chunks=None):
+    def source_support(self, halo):
+        """Bound every actual nonzero stencil, then add the declared native-point halo."""
+        if isinstance(halo, bool) or not isinstance(halo, (int, np.integer)) or halo < 1:
+            raise ValueError("Polar source halo is insufficient; use at least one native point")
+        shape = self.geometry.source_lon.shape
+        indices = self.supported.weights.indices
+        if indices.size:
+            rows, columns = np.unravel_index(indices, shape)
+            bounds = [(max(0, int(values.min()) - halo),
+                       min(size, int(values.max()) + halo + 1))
+                      for values, size in zip((rows, columns), shape, strict=True)]
+        else:
+            bounds = [(0, min(2, size)) for size in shape]
+        return {"y_slice": list(bounds[0]), "x_slice": list(bounds[1]),
+                "original_shape": list(shape), "halo_points": int(halo),
+                "nonzero_source_points": int(np.unique(indices).size)}
+
+    def apply(self, field, mask=None, *, policy="strict", minimum_support=.5, output_chunks=None,
+              source_halo_points=None):
         shape = tuple(field.sizes.get(dim) for dim in ("y_box", "x_box"))
         if shape != self.geometry.source_lon.shape:
             raise ValueError("Field shape does not match the plan's source geometry")
@@ -200,7 +236,21 @@ class PolarRegridPlan:
         nr, ntheta = self.geometry.target_lon.shape
         rings = chunks.get("rr", min(32, nr))
         rings = nr if rings == -1 else min(rings, nr)
-        return self.supported.apply(
+        supported = self.supported
+        if source_halo_points is not None:
+            support = self.source_support(source_halo_points)
+            y, x = (slice(*support[axis]) for axis in ("y_slice", "x_slice"))
+            positions = np.arange(self.geometry.source_lon.size).reshape(
+                self.geometry.source_lon.shape)[y, x].ravel()
+            supported = copy(supported)
+            supported.operator = copy(supported.operator)
+            supported.operator.shape_in = (y.stop - y.start, x.stop - x.start)
+            supported.weights = supported.weights[:, positions]
+            supported.presence_weights = supported.presence_weights[:, positions]
+            field = field.isel(y_box=y, x_box=x)
+            if mask is not None:
+                mask = mask.isel(y_box=y, x_box=x)
+        return supported.apply(
             field, mask, policy=policy, minimum_support=minimum_support,
             output_chunks=(rings * ntheta,),
         )

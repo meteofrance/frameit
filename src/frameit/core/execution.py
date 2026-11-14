@@ -247,8 +247,12 @@ def execute_simulation(
             prepared_sources = bind_sources(config)
         except ValueError as exc:
             raise ValueError(f"Cannot bind source requests to metadata: {exc}") from exc
-        if set(config.yaml_config["products"]) - {"model_grid", "track"}:
+        if set(config.yaml_config["products"]) - {"model_grid", "polar", "track"}:
             raise ValueError("Non-native product execution requires its method binding")
+        from frameit.processing.polar.contracts import require_executable_products
+
+        for source in prepared_sources[2].values():
+            require_executable_products(source["requests"]["binding"], source)
         sources = prepared_sources[2].values()
         selected = {Path(path).resolve() for source in sources for path in source["files"]}
         if input_files is not None and {Path(path).resolve() for path in input_files} != selected:

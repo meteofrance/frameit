@@ -857,6 +857,24 @@ assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
             "scalar", "MSLP", "UM10", "VM10"}
         assert not conf.output_dir.exists()
         return
+    if pending == "polar":
+        _, children, plans = bind_sources(conf)
+        binding = children["weather"].source_requests["weather"]["binding"]
+        assert binding["status"] == "bound" and binding["polar_plan"]["target_points"] == 28
+        assert set(binding["dependencies"]) == {"scalar", "MSLP", "UM10", "VM10"}
+        assert plans["weather"]["tracker_support"]["inputs"] == {
+            "MSLP": {}, "UM10": {}, "VM10": {}}
+        result = execute_simulation(conf)
+        subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1]) as out:
+    np.testing.assert_allclose(out.scalar.isel(radius=0,azimuth=0), [0.,122.], atol=1e-9)
+    np.testing.assert_array_equal(out.scalar_interpolation_status.isel(radius=0), 0)
+    np.testing.assert_array_equal(out.time, out.center_time)
+    assert not {'MSLP','UM10','VM10','wind_speed','vrad','vtan'} & set(out.data_vars)
+assert 'frameit' not in sys.modules
+""", result.products[0]["path"]], check=True, capture_output=True, text=True)
+        return
     with pytest.raises(ValueError, match="pending|bind|support|method"):
         bind_sources(conf)
     assert not conf.output_dir.exists()

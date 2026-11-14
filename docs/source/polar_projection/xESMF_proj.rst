@@ -9,14 +9,16 @@ Polar projection using xESMF
 
 Purpose
 ~~~~~~~
-FrameIt can regrid selected model fields onto a storm-centred polar grid defined by radius and azimuth. This is useful to compute azimuthal means, radial profiles, tangential and radial components, and to compare structures consistently along a track.
+FrameIt samples selected model fields on a polar grid around a declared
+geographical centre. The outputs can be used for downstream radial/angular
+analysis; selecting a field does not request additional diagnostics.
 
-FrameIt prepares analysis winds while native collocation neighbours are
-available, then extracts analysis fields on a storm-centred Cartesian box
-(``x_box``, ``y_box``). It builds a geodesic polar target grid (``rr``, ``theta``)
-around the supplied continuous centre and interpolates the selected fields
-using `xESMF <https://xesmf.readthedocs.io/>`_. The extraction centre cell is
-used when no continuous centre is supplied.
+FrameIt resolves the required native support and any selected preparation before
+sparse selection removes neighbours. It builds a geodesic target (``radius``,
+``azimuth``) around the region's continuous centre and samples it with
+`xESMF <https://xesmf.readthedocs.io/>`_. Polar input support is independent of
+model-grid exports; no crop width or model-grid product is required.
+The source's snapped extraction cell does not replace the declared centre.
 
 See :ref:`wind-grid-contract` for the illustrated distinction between native
 output and mass-point, eastward/northward analysis components, explicit input
@@ -29,8 +31,8 @@ General strategy
 
    The target grid is parameterised by:
 
-   - **radius** ``rr`` (km), from 0 to half the smaller ``domain.width_km`` width
-   - **azimuth** ``theta`` (radians), with ``theta_deg`` in degrees, clockwise from North:
+   - **radius** ``radius`` (km), from 0 to ``products.polar.radius_km``
+   - **azimuth** ``azimuth`` (radians), with ``azimuth_degrees`` in degrees, clockwise from North:
      0° North, 90° East, 180° South, 270° West.
    - For each time step, the polar grid points are converted to geographic
      coordinates (lon, lat) using a forward geodesic mapping on the WGS84 ellipsoid.
@@ -39,56 +41,63 @@ General strategy
 2. **Interpolate fields onto the polar grid**
 
    - FrameIt uses xESMF in **LocStream output** mode, which treats the polar grid as a list of target points.
-   - Default interpolation is **bilinear**; ``nearest_s2d`` is an explicit alternative.
+   - Proven continuous fields default to **bilinear**; proven categorical fields
+     use nearest-neighbour. The public override is ``interpolation: nearest``;
+     its xESMF method name is ``nearest_s2d``.
 
 3. **Preserve time and vertical dimensions**
 
    - Horizontal sampling retains selected vertical levels. W-to-mass preparation,
      when selected, happens with native brackets available, before sparse subsetting.
-   - Polar requests inherit extraction-level selections; they do not select
-     additional vertical levels at this stage.
+   - The source's single level selector applies on each actual representation.
+     Native neighbours needed for a remap stay internal, not extra exported levels.
 
 Configuration
 ~~~~~~~~~~~~~
 Enable polar projection
 ^^^^^^^^^^^^^^^^^^^^^^^
-Set the following flag in the YAML configuration:
+Request a polar product, rather than enabling a separate computation flag.
+This fragment supplements a complete source request and region centre provider
+such as :doc:`../task_guides/polar_sampling`:
 
 .. code-block:: yaml
 
-  polar:
-    enabled: true
+   products:
+     polar:
+       radius_km: 2
 
 Define the polar grid geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-The polar grid is derived from the extracted storm-centred box size and the requested polar resolution:
+The product sets its physical radius and optional sampling. This fragment replaces
+the preceding ``products`` mapping, using the instructional guide's centre/input:
 
 .. code-block:: yaml
 
-  domain:
-    width_km: {x: 100, y: 100}  # Full widths in kilometres
-  polar:
-    enabled: true
-    radial_step_m: 5000       # Metres; omission means resolved native spacing
-    azimuth_step_deg: 2       # Optional maximum angular step in degrees
-    # azimuth_count: 180      # Alternative; omit azimuth_step_deg when using count
-    max_points: 2000000       # Geometry budget across all output times
+   products:
+     polar:
+       radius_km: 2
+       radial_step_km: 1.5
+       azimuth_count: 8
+       processing:
+         max_target_points: 2000000
 
 Notes:
 
-- The last radius includes ``rmax_km``. Its preceding interval can be shorter
-  than ``polar.radial_step_m`` converted to km; use actual coordinates for derivatives.
-- ``theta`` contains exactly ``N`` samples at :math:`2\pi j/N`, with
+- The last radius is exactly ``radius_km``. Its preceding interval can be shorter
+  than ``radial_step_km``; use actual coordinates for derivatives.
+- ``azimuth`` contains exactly ``N`` samples at :math:`2\pi j/N`, with
   :math:`j=0,\ldots,N-1`. There is no duplicate endpoint at :math:`2\pi`.
-- An explicit angular step selects ``N = ceil(360 / step_deg)``. For example,
-  7 degrees produces 52 uniformly spaced angles with an effective step of
-  approximately 6.923 degrees, including the seam interval.
-- ``polar.azimuth_count`` must be an integer of at least 3. Count and step are
-  mutually exclusive in YAML schema version 2.1.
-- Omitting both angular options, or setting both to null, selects
-  ``N = max(3, ceil(2*pi*rmax_km/dr_km))``. This targets radial spacing at the
-  outer ring. Setting 10 degrees selects 36 analytical angles.
-- ``polar.max_points`` is a positive integer, defaulting to 2,000,000. The
+- ``azimuth_count`` is the sole angular control and must be at least 3.
+  Omission resolves ``N = max(3, ceil(2*pi*radius_km/dr_km))``, targeting the
+  resolved radial spacing at the outer ring. For ``N=8`` the step is 45 degrees.
+- Omitted ``radial_step_km`` uses supported native spacing. Finer requested
+  spacing fails with its source evidence; denser points do not add resolution.
+  Spacing uses the larger of the two horizontal-axis median distances, then
+  the coarsest participating prepared grid/sample. The finer-spacing comparison
+  permits only relative roundoff of :math:`10^{-12}`.
+  ``shared_grid: true`` instead uses the coarsest participating native spacing
+  when the step is omitted. Masks, vertical axes and time associations stay distinct.
+- ``processing.max_target_points`` defaults to 2,000,000. The
   product of time count, radius count and angle count is checked before target
   coordinates are allocated. It bounds geometry points, not the memory of all
   variables and vertical levels. Increase it explicitly for a larger grid;
@@ -96,77 +105,81 @@ Notes:
 
 Storm tracking mode
 ^^^^^^^^^^^^^^^^^^^
-The behaviour differs depending on the tracking method:
+Polar output reuses the region's centre provider:
 
-- ``tracking.method: fixed_box``
-  - The storm centre is taken at the first time step and kept fixed, the same polar grid is reused for all times.
+- ``region.center`` supplies a fixed continuous geographical centre.
+- ``region.track`` supplies centres from a trajectory.
+- ``region.tracker`` computes centres from its required atmospheric inputs.
 
-- Any other tracking method ``pressure_wind, prescribed_track...``
-  - The storm centre can move in time, the polar grid is recomputed for each time step.
+Moving centres change the target coordinates at each associated time. A fixed
+centre alone does not prove that the source geometry or interpolation weights
+are invariant. Only ``products.track: true`` requests a reusable trajectory file.
 
 Selecting variables to project
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Polar projection is applied to ``polar.variables``, organized by the same native
-groups as extraction outputs. Explicit selections must be subsets of extracted variables.
-
-Example:
-
-.. code-block:: yaml
-
-  polar:
-    variables:
-      fields_2d:
-        names: [prmsl, u10, v10]
-      isobaricInhPa:
-        names: [u, v]
-
-Shortcut to project all extracted variables:
+Source ``variables`` and ``derived`` declare available requests. Optional product
+``fields`` narrows them by exact source name; unlisted fields/sources are excluded.
+Unknown references fail, and needed internal inputs need not be exported.
+This fragment replaces the region/products blocks of the complete instructional
+scalar request, asking for both products:
 
 .. code-block:: yaml
 
-  polar:
-    variables: extracted
+   region:
+     center: {latitude: -20, longitude: 60}
+     width_km: {x: 4, y: 4}
+   products:
+     model_grid: true
+     polar:
+       radius_km: 2
+       radial_step_km: 1.5
+       azimuth_count: 8
+       fields: {atmosphere: [instructional_scalar]}
 
-Important behaviour:
-
-- Vertical selection belongs only under ``variables``; polar selections inherit it.
-- Dataset preflight checks selected fields; per-file gaps remain visible in the inventory.
+Omitted ``products`` requests only model-grid output. An explicit empty mapping
+is invalid. A centre provider alone requests neither a track file nor polar output.
+Source-level shared selectors apply to both products' actual representations.
 
 Output structure
 ~~~~~~~~~~~~~~~~
-The polar-projected datasets are returned as a dictionary of xarray datasets, keyed by group. Each dataset typically contains:
+Public runs write one field dataset per requested source/product. A low-level
+``polar_project`` call returns internal grouped datasets; group keys are not the
+public filename contract. Polar products typically contain:
 
-- Dimensions: ``time``, ``rr``, ``theta`` (plus any vertical dimensions present in the source data).
+- Dimensions: ``time``, ``radius``, ``azimuth`` (plus each field's own vertical/member dimensions).
 - Coordinates:
 
-  - ``rr`` as the physical radius coordinate (km),
-  - ``theta`` as launch azimuth (radians, clockwise from North),
-  - ``theta_deg`` as the degree representation of the launch azimuth,
-  - ``radial_bearing(time, rr, theta)`` as the terminal-forward geodesic
+  - ``radius`` as the physical radius coordinate (km),
+  - ``azimuth`` as launch azimuth (radians, clockwise from North),
+  - ``azimuth_degrees`` as the degree representation of the launch azimuth,
+  - ``radial_bearing(time, radius, azimuth)`` as the terminal-forward geodesic
     bearing, in radians clockwise from local north,
-  - ``lon`` and ``lat`` of the polar grid points (time-dependent if the centre moves),
+  - geographic longitude/latitude of target points (time-dependent for moving centres),
   - optional diagnostics: ``x_km`` and ``y_km`` (Cartesian offsets in km).
-  - ``radial_spacing_km(rr)``: distance to the next radius, NaN at the last radius,
-  - ``max_azimuthal_spacing_m(time, rr)``: maximum geodesic distance between
+  - ``radial_spacing_km(radius)``: distance to the next radius, NaN at the last radius,
+  - ``max_azimuthal_spacing_m(time, radius)``: maximum geodesic distance between
     cyclic neighbouring samples. This is a point-to-point distance, not a
     circumference arc length or an estimate of the source's effective resolution.
 
 Metadata includes:
 
 - ``polar_proj_backend = "xesmf"``
-- ``polar_proj_method`` (for example ``"bilinear"``)
-- provenance of requested, source, and output groups.
+- Per-field ``polar_interpolation``, coverage policy and threshold for scalar/
+  component fields; JSON ``polar_component_options`` for derived speed.
+- Actual preparation, selected source/centre times and native support in provenance.
 - ``n_theta``, ``theta_closed=False``, ``theta_topology="uniform_periodic"``,
   requested/effective sampling settings and ``radial_spacing_uniform``.
 
+The retained low-level numerical APIs use ``rr``, ``theta`` and ``theta_deg``.
+Those internal names are not the public product dimensions or chunk keys.
+
 Alignment, native support and missing data
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The required time axis comes from the surface group, or the first source group
-when surface is absent. It must have unique, increasing labels. Every source
-group must contain exactly those times; differently ordered groups are selected
-by label. Missing, duplicate, extra group times and incompatible calendars raise
-an error. Track positions must cover the required times; unused extra track
-positions are counted in the projection report.
+Each source uses its selected native sample clock and the declared region-centre
+association. Different sources need not have identical timelines. Within a
+sampling job, component/support fields must agree on their actual sample context.
+Missing required centres or incompatible calendars fail under the selected policy,
+not through silent nearest-time matching. See :doc:`../concepts/time_support`.
 
 Source longitude/latitude are broadcast and transposed using named
 ``y_box``/``x_box`` dimensions. Regional quadrilateral cells must be finite,
@@ -175,27 +188,27 @@ without reordering fields. NaN-padded model-domain edges are trimmed to the vali
 rectangular footprint; missing coordinates inside that footprint are rejected,
 not filled. Source and target latitude must be geographic latitude.
 
-Cartesian output extent and polar input support are separate. The runner adds
-``polar.source_halo_points`` native points to the actual rounded extraction
-half-widths before polar interpolation. The default is one point. Cartesian
-products retain their configured extent. At a true model boundary, unavailable
-targets remain unmapped; the requested radius is not assumed to have complete
-source coverage. The report records the finite source footprint and mapped
-fraction at every time/radius. Increase the halo explicitly when the model's
-geometry requires more support.
+Model-grid output extent and polar input support are separate. Support is derived
+from the polar target and needed native interpolation neighbours, not the exported
+crop. The advanced ``products.polar.processing.source_halo_points`` adds native
+support; its default is one. Insufficient configured support fails instead of
+silently treating available neighbours as missing. At a true source boundary,
+outside targets remain unmapped. The requested radius does not promise complete
+source coverage; inspect the finite footprint and mapped fraction.
+
+This fragment goes inside an existing ``products.polar`` mapping:
 
 .. code-block:: yaml
 
-   polar:
-     missing_data_policy: strict
-     min_valid_weight_fraction: 0.5
+   missing_data_policy: renormalize
+   min_valid_weight_fraction: 0.75
+   processing:
      weight_zero_tolerance: 1.0e-14
      source_halo_points: 1
-     ellipsoid: WGS84
 
 ``strict`` is the default: every contributing source value must be finite.
 ``renormalize`` explicitly enables valid-weight interpolation, provided its
-support fraction reaches ``polar.min_valid_weight_fraction``. All-missing
+support fraction reaches ``min_valid_weight_fraction``. All-missing
 stencils and unmapped points remain NaN even if the threshold is zero. The
 threshold applies only to the renormalized policy.
 
@@ -212,9 +225,11 @@ Missing values are explicitly filled with zero only for the sparse multiply,
 then masked/normalized according to policy. This avoids ``0 * NaN`` poisoning
 an exact native-node sample. Coefficients at or below the declared absolute
 zero-weight tolerance are removed before both weighting and stencil-validity
-checks. Small row-sum roundoff is normalized. U/V requested together use the
-same joint finite-data mask and denominator; independently normalized component
-stencils are not used to form a vector.
+checks. Small row-sum roundoff is normalized. Public speed requests apply each
+component's declared method/coverage policy, then take magnitude. Both sampled
+components must be valid. Reported speed support is the minimum component support,
+not a joint-stencil fraction. The retained low-level vector API can instead
+apply a joint finite-data mask and denominator.
 
 Partial-stencil support within ``2 * n * eps64`` of a renormalization threshold
 is re-summed with Python's accurate ``math.fsum`` before the ordinary
@@ -226,9 +241,15 @@ contributor to be present. This removes borderline mask decisions caused by
 floating-point accumulation/chunk order, not a change to the scientific cutoff.
 
 These fractions describe **interpolation-weight support**, not area coverage or
-conservation. The current supported point methods are ``bilinear`` and explicit
-``nearest_s2d``; negative-weight/high-order methods need a different support
-definition. The default is bilinear; there is no nearest-neighbour fallback.
+conservation. The supported point methods are bilinear and nearest-neighbour
+(``nearest_s2d`` in the backend); negative-weight/high-order methods need a
+different support definition. Kind evidence selects the default method, not
+failure of another method. There is no nearest-neighbour fallback.
+Nearest-neighbour does not accept partial-stencil renormalization.
+Nearest weights are restricted to the ESMF spherical source-cell footprint,
+determined by an additional geometry-only bilinear weight build. This is not a
+planar longitude/latitude polygon test. Its cost does not imply a scalar payload
+read; retained-plan counts do not count every native weight constructor.
 The sparse linear-map interpretation follows Ullrich and Taylor (2015), Section
 2a, DOI ``10.1175/MWR-D-14-00343.1``.
 
@@ -238,8 +259,10 @@ Every sampled field has the following additional data variables. They are
 marked ``frameit_role="interpolation_quality"`` so analysis code can
 distinguish them from physical quantities:
 
-- ``geometry_mapped(time, rr, theta)``: geometric mapping indicator, shared by
-  fields using the same source footprint,
+- ``<field>_geometry_mapped(time, radius, azimuth)``: this field's geometric
+  mapping indicator,
+- ``geometry_mapped``: intersection of all selected field geometry indicators,
+  not a shared source mask or proof of valid contributors,
 - ``<field>_support_fraction``: valid-weight support, including the field's
   time and vertical dimensions,
 - ``<field>_interpolation_status`` and ``<field>_valid``: validity reason and
@@ -266,11 +289,11 @@ Status values are encoded with CF ``flag_values`` and ``flag_meanings``:
    * - 4
      - Undefined radial/tangential component at zero radius
 
-The zero-radius vector status is distinct from mapping coverage. Scalar speed
-may be valid there while radial/tangential components are undefined. The shared
-geometry flag remains available when more than one invalidity cause applies.
-Derived wind diagnostics inherit their joint vector support; internal speed-only
-dependencies and their quality arrays are removed from output.
+Status4 belongs to the retained numerical radial/tangential method; public U/V
+selection does not request it. Scalar speed can be valid at zero radius.
+Per-field geometry flags remain available when invalidity causes overlap.
+For public speed, validity requires both sampled components; internal component
+fields and their quality arrays are not exported unless requested separately.
 
 Units and valid vertical auxiliaries/bounds survive source selection and export.
 Horizontally varying scientific coordinates are sampled rather than copied from
@@ -279,6 +302,9 @@ obsolete encodings are removed from point values. Source CRS information is
 recorded as provenance. Target ellipsoid parameters and the distinction between
 ellipsoidal target geodesics and ESMF's spherical interpolation geometry are
 explicit in the output attributes.
+Integer continuous bilinear inputs use floating evaluation to retain fractions;
+native exports are unchanged. See :ref:`polar-numeric-types` for dtype provenance
+and floating-point limits.
 
 Azimuthal analysis
 ~~~~~~~~~~~~~~~~~~~~~
@@ -291,8 +317,9 @@ and invalidate rings containing missing or infinite field values:
 
    from frameit.processing.polar import azimuthal_mean, periodic_fourier_coefficients
 
-   radial_profile = azimuthal_mean(polar_dataset["vtan"])
-   coefficients = periodic_fourier_coefficients(polar_dataset["vtan"])
+   field = polar_dataset["instructional_scalar"]
+   radial_profile = azimuthal_mean(field, theta_dim="azimuth")
+   coefficients = periodic_fourier_coefficients(field, theta_dim="azimuth")
    wave_one = coefficients.sel(azimuthal_wavenumber=1)
 
 For an explicitly permitted valid-sector mean, request a lower coverage
@@ -302,7 +329,8 @@ threshold and retain its coverage/eligibility outputs:
 
    from frameit.processing.polar import coverage_aware_azimuthal_mean
 
-   partial = coverage_aware_azimuthal_mean(polar_dataset["vtan"], minimum_coverage=0.75)
+   partial = coverage_aware_azimuthal_mean(
+       field, theta_dim="azimuth", minimum_coverage=0.75)
    profile = partial["azimuthal_mean"]
    coverage = partial["ring_coverage"]
 
@@ -327,7 +355,7 @@ For :math:`A\cos[m(\theta-\theta_0)]`, a positive non-Nyquist coefficient is
 its peak direction is :math:`-\arg(c_m)/m` modulo :math:`2\pi/m`. DC and the
 even-grid Nyquist coefficient are not doubled; vanishing coefficients have no
 meaningful phase. Both positive and negative integer modes are returned.
-Dask fields require a single angular chunk (``field.chunk({"theta": -1})``)
+Dask fields require a single angular chunk (``field.chunk({"azimuth": -1})``)
 for Fourier analysis. Irregular directions supplied to ``PolarLonLatGrid``
 are labelled ``directional_samples`` and rejected by these ordinary ring
 diagnostics. Missing sectors are not zero-filled or silently partially averaged.
@@ -337,6 +365,8 @@ duplicate column before removing it. An inconsistent endpoint raises an
 error; do not blindly remove the last column from every file. A
 nonuniform angular grid remains directional sampling after endpoint removal
 and needs resampling before ordinary Fourier analysis.
+That low-level helper uses its retained ``theta`` naming; it is not needed to
+open a public endpoint-exclusive product.
 
 Derived wind components
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -350,7 +380,7 @@ additional quantities. The current public source ``derived`` catalogue admits
 
 The components are derived from the **local terminal-forward bearing**
 ``radial_bearing`` (denoted :math:`\alpha` below), not from the launch
-azimuth ``theta``. These angles generally differ on a curved Earth:
+azimuth :math:`\theta`. These angles generally differ on a curved Earth:
 
 .. math::
 
@@ -362,16 +392,17 @@ For this numerical method, at zero radius the radial
 direction is undefined: ``vrad``, ``vtan`` and ``radial_bearing`` are NaN,
 while scalar values and horizontal speed remain available.
 
-Polar horizontal winds use collocated eastward/northward components
-(Earth-relative: U positive eastward, V positive northward) on ``rr`` / ``theta``.
-Their preparation and the independent vertical W interface/mass
+The numerical vector method and public derived speed use collocated
+eastward/northward components (U positive eastward, V positive northward).
+A separately requested native component instead preserves its own basis/units.
+Preparation and the independent vertical W interface/mass
 choice are explained once in :ref:`wind-grid-contract`.
 
 All trackers supplying continuous longitude/latitude centres define the polar
 origin at those coordinates. Integer extraction indices do not snap the polar
-origin. Fixed-box mode freezes the initial origin. Output coordinates
-``center_lon``, ``center_lat`` and (for extracted boxes) ``center_grid_offset_m``
-record this geometry, and attributes describe the actual Earth model.
+origin. A declared fixed centre stays fixed. Public coordinates
+``center_longitude``, ``center_latitude`` and separate ``center_time`` record
+the associated geometry; attributes describe the actual Earth model.
 
 ``wind_speed`` is the magnitude of the interpolated, collocated components,
 not an interpolation of native scalar speed. Speed-only requests load the
@@ -380,8 +411,9 @@ products. Velocity units are normalized to metres per second.
 
 Wind reference frame
 ~~~~~~~~~~~~~~~~~~~~
-Polar positions are storm-centred, but velocities remain **Earth-relative**:
-they describe air motion relative to the ground, not the moving storm.
+Polar positions are centred on the requested location. Prepared eastward/
+northward winds remain **Earth-relative**; native component exports retain their
+recorded basis. Neither is made storm-relative by moving the target.
 Neither sampling on a moving grid nor expressing the wind in radial/tangential
 directions subtracts storm translation. See :ref:`wind-component-directions`
 for an example. For pair-specific frame validation and
@@ -421,9 +453,8 @@ Interpolation and physical interpretation
 
 Grid geometry constraints
 ^^^^^^^^^^^^^^^^^^^^^^^^^
-- The maximum usable radius is limited by the extracted box size:
-  ``rmax_km = 0.5 * min(domain.width_km.x, domain.width_km.y)``.
-  If your need larger radii, increase the extraction box size accordingly.
+- ``products.polar.radius_km`` sets the target extent independently of a model-grid
+  crop. Actual source coverage and interpolation support still limit valid values.
 - The polar grid is computed using WGS84 geodesics, which is robust at regional scales, but it remains a sampling of geographic coordinates, not a true conformal map projection.
 
 Performance
@@ -439,18 +470,20 @@ polar axes, method, periodic/extrapolation options, zero-weight tolerance,
 target Earth-model assumptions and backend versions. Shapes or group names
 alone never authorize reuse. Plans own read-only geometry snapshots and retain
 no field arrays, finite-data masks or valid-weight denominators. Every
-application recomputes support, including the joint U/V mask. An optional
+application recomputes field-specific support (or the low-level API's joint
+vector mask). An optional
 static binary source mask at the plan API excludes whole contributing
 stencils and is part of the geometry signature.
 
 .. code-block:: yaml
 
-   polar:
+   processing:
      plan_cache: {entries: 8, max_bytes: 134217728}
-     chunks: {rr: 32, theta: -1, time: 1}
+     chunks: {radius: 32, azimuth: -1, time: 1}
      profile: false
 
-The default cache holds at most eight plans and an estimated 128 MiB of
+This fragment belongs inside ``products.polar``. The default cache holds at most
+eight plans and an estimated 128 MiB of
 geometry/weight arrays. Oversized plans are applied without retention. Setting
 either limit to zero disables plan retention and provides an
 uncached baseline. Normalized source coordinates have a separate small cache
@@ -466,8 +499,8 @@ There is no automatic disk-weight persistence or shape-derived filename reuse.
 
 Dask field data remain lazy. Backend output blocks default to at most 32
 radial rings with the complete angular axis, avoiding tiny LocStream chunks
-inferred from the source's horizontal layout. ``polar.chunks`` can
-override ``rr``, ``theta`` and relevant leading dimensions such as ``time``,
+inferred from the source's horizontal layout. ``products.polar.processing.chunks`` can
+override ``radius``, ``azimuth`` and relevant leading dimensions such as ``time``,
 ``level`` or ``heightAboveGround``. Sizes are positive integers or -1 for a
 whole axis. Unknown output dimensions fail clearly. NumPy inputs stay eager.
 An explicit angular split still needs consolidation before ordinary Fourier
@@ -483,7 +516,7 @@ The projection report and ordinary execution result include
 normalization/fingerprinting time, weight-construction time, field-application
 time, and geometry signatures with row-sum/mapping diagnostics. Application
 time is NumPy computation or Dask graph construction; it does not silently
-include later lazy materialization. ``polar.profile: true`` additionally
+include later lazy materialization. ``products.polar.processing.profile: true`` additionally
 records unique Dask task count and the process-lifetime RSS high-water mark.
 Graph inspection does not compute physical fields. RSS includes previous
 imports/loading and is not an incremental interpolation-only memory measure.
@@ -535,7 +568,7 @@ Software dependencies
 
 Recommendations for robust usage
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-- Choose ``polar.radial_step_m`` (metres) comparable to, or slightly coarser than,
+- Choose ``products.polar.radial_step_km`` comparable to, or coarser than,
   the native horizontal resolution of your input fields.
 - Check ``max_azimuthal_spacing_m`` and the effective angular step against the
   scales and azimuthal modes you want to analyse. Fine target spacing does not
@@ -547,14 +580,18 @@ Recommendations for robust usage
 Troubleshooting
 ~~~~~~~~~~~~~~~
 - **No output produced**
-  - Check ``polar.enabled: true`` and that ``polar.variables`` selects extracted fields.
-  - Ensure the requested group exists in the extracted outputs.
+
+  - Check that ``products.polar`` requests the intended declared fields/sources.
+  - Inspect the product filter, centre coverage and run's actual publication status.
 
 - **Many NaNs on the polar grid**
-  - Adjust ``domain.width_km.x`` and ``.y`` to change the extraction extent and ``rmax_km``.
-  - Verify the storm centre remains inside the extracted box for moving-centre configurations.
+
+  - Inspect geometry mapping, contributing-data support and the field's status flags.
+  - Check the requested radius against the actual source coverage and required halo.
+    Enlarging only a model-grid export does not change polar support.
 
 - **ImportError for xESMF**
+
   - Confirm xESMF and its backend are installed in the active environment used to run FrameIt.
 
 

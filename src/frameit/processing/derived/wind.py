@@ -272,84 +272,96 @@ def add_speed_from_uv_dict(
     return out
 
 
-def execute_source_operations(user, internal, source, binding, conf):
-    """Execute only bound model-grid results, on separate native input views."""
+def prepare_source_operation(operation, internal, source, conf):
+    """Prepare this one actual sample, independently of every exported representation."""
     import json
     from copy import copy
 
-    from frameit.processing.requests import _operation_units, source_field_metadata
+    from frameit.processing.requests import source_field_metadata
     from frameit.processing.wind_collocation import collocate_mnh_component
+
+    geometry = xr.Dataset(coords={
+        n: xr.Variable(c["dimensions"], c["values"], c["attributes"])
+        for n, c in operation["geometry"]["coordinates"].items()},
+        attrs=operation["geometry"]["attributes"])
+    target_vertical = operation["vertical"]
+    if target_vertical is not None:
+        dim = target_vertical["dimension"]
+        geometry = geometry.isel({dim: target_vertical["positions"]})
+    arrays = {}
+    native_views = []
+    input_names = set(operation["inputs"].values())
+    for name in operation["input_binding"]["dependencies"]:
+        descriptor = operation["input_binding"]["dependencies"][name]
+        record = descriptor["records"][0]
+        native = internal[record["grid_id"]]
+        value = native[name]
+        native_view = native
+        if "time" in value.dims:
+            value = value.sel(time=[record["time"]])
+            native_view = native_view.sel(time=[record["time"]])
+        for dim, member in record.get("native_axes", {}).items():
+            value = value.sel({dim: [member]})
+        vertical = record["vertical"]
+        if vertical is not None:
+            dim = vertical["dimension"]
+            index = f"{dim}_source_native_index"
+            original = native[index].values.tolist()
+            value = value.isel({dim: [original.index(i) for i in
+                                     vertical["source_native_indices"]]})
+            native_view = native_view.isel({dim: [original.index(i) for i in
+                                                  vertical["source_native_indices"]]})
+        field = source["fields"][record["field_id"]]
+        metadata = record.get("field_metadata") or source_field_metadata(
+            source, field, record=record) or descriptor.get("field_metadata")
+        attrs = {**value.attrs, **(
+            field["attributes"] if metadata is None else metadata["attributes"])}
+        if metadata:
+            attrs["frameit_metadata_origins"] = json.dumps(metadata["origins"], sort_keys=True)
+        native_views.append(native_view)
+        value = value.reset_coords(drop=True).assign_attrs(attrs)
+        if (name in input_names and operation.get("input_sampling", {}).get(
+                name, operation["sampling"]) == "mass"
+                and operation["model"] == "mesonh"):
+            value = collocate_mnh_component(
+                value, geometry, conf, vertical="level_w" in value.dims)
+        arrays[name] = value
+    prepared = xr.Dataset({n: value for n, value in arrays.items() if n in input_names})
+    prepared = prepared.assign_coords({
+        n: c for n, c in geometry.coords.items() if set(c.dims) <= set(prepared.dims)})
+    prepared.attrs = dict(geometry.attrs)
+    if operation["preparation"] == "croco_midpoint_both_valid_then_rho_angle":
+        from frameit.io.croco_utils import prepare_croco_currents
+
+        settings = copy(conf)
+        settings.cartesian_horizontal_winds = "mass_earth"
+        settings.compute_polar_proj = False
+        settings.requested_variables_user = {"current": {
+            "variables": [operation["inputs"]["u"], operation["inputs"]["v"]]}}
+        prepared = prepare_croco_currents(prepared, settings)
+    if operation["pair"]:
+        settings = copy(conf)
+        settings.wind_pairs = [operation["pair"]]
+        if source["format"] == "grib":
+            settings.name_lat_dim, settings.name_lon_dim = "y", "x"
+        settings.velocity_aliases = {
+            "u_velocity": operation["inputs"]["u"], "v_velocity": operation["inputs"]["v"]}
+        prepared = normalize_winds(prepared, settings, "operation")
+    return prepared, arrays, native_views, geometry
+
+
+def execute_source_operations(user, internal, source, binding, conf):
+    """Execute only bound model-grid results, on separate native input views."""
+    import json
+
+    from frameit.processing.requests import _operation_units
 
     out = dict(user)
     results = {}
     rotation_coordinates = {}
     for operation in binding.get("operations", []):
-        geometry = xr.Dataset(coords={
-            n: xr.Variable(c["dimensions"], c["values"], c["attributes"])
-            for n, c in operation["geometry"]["coordinates"].items()},
-            attrs=operation["geometry"]["attributes"])
-        target_vertical = operation["vertical"]
-        if target_vertical is not None:
-            dim = target_vertical["dimension"]
-            geometry = geometry.isel({dim: target_vertical["positions"]})
-        arrays = {}
-        native_views = []
-        input_names = set(operation["inputs"].values())
-        for name in operation["input_binding"]["dependencies"]:
-            descriptor = operation["input_binding"]["dependencies"][name]
-            record = descriptor["records"][0]
-            native = internal[record["grid_id"]]
-            value = native[name]
-            native_view = native
-            if "time" in value.dims:
-                value = value.sel(time=[record["time"]])
-                native_view = native_view.sel(time=[record["time"]])
-            for dim, member in record.get("native_axes", {}).items():
-                value = value.sel({dim: [member]})
-            vertical = record["vertical"]
-            if vertical is not None:
-                dim = vertical["dimension"]
-                index = f"{dim}_source_native_index"
-                original = native[index].values.tolist()
-                value = value.isel({dim: [original.index(i) for i in
-                                         vertical["source_native_indices"]]})
-                native_view = native_view.isel({dim: [original.index(i) for i in
-                                                      vertical["source_native_indices"]]})
-            field = source["fields"][record["field_id"]]
-            metadata = record.get("field_metadata") or source_field_metadata(
-                source, field, record=record) or descriptor.get("field_metadata")
-            attrs = {**value.attrs, **(
-                field["attributes"] if metadata is None else metadata["attributes"])}
-            if metadata:
-                attrs["frameit_metadata_origins"] = json.dumps(metadata["origins"], sort_keys=True)
-            native_views.append(native_view)
-            value = value.reset_coords(drop=True).assign_attrs(attrs)
-            if (name in input_names and operation["sampling"] == "mass"
-                    and operation["model"] == "mesonh"):
-                value = collocate_mnh_component(
-                    value, geometry, conf, vertical="level_w" in value.dims)
-            arrays[name] = value
-        prepared = xr.Dataset({n: value for n, value in arrays.items() if n in input_names})
-        prepared = prepared.assign_coords({
-            n: c for n, c in geometry.coords.items() if set(c.dims) <= set(prepared.dims)})
-        prepared.attrs = dict(geometry.attrs)
-        if operation["preparation"] == "croco_midpoint_both_valid_then_rho_angle":
-            from frameit.io.croco_utils import prepare_croco_currents
-
-            settings = copy(conf)
-            settings.cartesian_horizontal_winds = "mass_earth"
-            settings.compute_polar_proj = False
-            settings.requested_variables_user = {"current": {
-                "variables": [operation["inputs"]["u"], operation["inputs"]["v"]]}}
-            prepared = prepare_croco_currents(prepared, settings)
-        if operation["pair"]:
-            settings = copy(conf)
-            settings.wind_pairs = [operation["pair"]]
-            if source["format"] == "grib":
-                settings.name_lat_dim, settings.name_lon_dim = "y", "x"
-            settings.velocity_aliases = {
-                "u_velocity": operation["inputs"]["u"], "v_velocity": operation["inputs"]["v"]}
-            prepared = normalize_winds(prepared, settings, "operation")
+        prepared, arrays, native_views, geometry = prepare_source_operation(
+            operation, internal, source, conf)
         if operation["method"] == "wind_speed":
             u, v = align_wind_pair(*(prepared[operation["inputs"][key]] for key in ("u", "v")))
             value = np.hypot(u, v).assign_attrs(

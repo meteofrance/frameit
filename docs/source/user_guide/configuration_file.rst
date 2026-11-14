@@ -274,6 +274,7 @@ exported.
 ``products.polar`` requires ``radius_km`` and a region centre provider, not a
 model-grid crop or model-grid export. Its input support is resolved separately.
 Changing only the crop must not change polar sampling.
+See :doc:`../task_guides/polar_sampling` for a complete instructional request.
 
 Optional ``radial_step_km`` defaults to native source spacing and cannot be finer.
 ``azimuth_count`` is the only angular control. Omission chooses a count from

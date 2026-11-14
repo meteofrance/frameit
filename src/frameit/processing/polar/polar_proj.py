@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from copy import copy
 from time import perf_counter
 from typing import Any
 
@@ -57,6 +59,233 @@ logger = logging.getLogger(__name__)
 _IGNORED_VERTICAL_KEYS = {
     "level_selection", "level_values", "level_indices", "levels", "all_levels", "level",
 }
+
+
+def require_polar_backend():
+    if xe is None:
+        raise ImportError(
+            "Polar products require xESMF/ESMF; install the optional polar dependencies "
+            "or omit products.polar"
+        ) from _XESMF_IMPORT_ERROR
+
+
+def verify_polar_target(dataset, plan, conf, source, centres):
+    """Verify published candidates against the shared axes and actual associated centres."""
+    associations = source["region"]["associations"]
+    times = [record["source_time"] for record in associations]
+    centre_times = [record["coupling_time"] for record in associations]
+    track = centres.sel(time=centre_times).assign_coords(time=times)
+    expected = PolarLonLatGrid(
+        r_km=np.array(plan["radius_km"]), theta_deg=np.array(plan["azimuth_degrees"]),
+        tracking_method=conf.tracking_method, time_dim="time",
+        lon_name="longitude", lat_name="latitude",
+        max_target_points=conf.polar_max_points).build(
+            xr.Dataset(coords={"time": times}), track=track, track_centres_authoritative=True)
+    expected = expected.assign_coords(
+        center_time=("time", centre_times),
+        azimuth=("theta_deg", np.deg2rad(expected.theta_deg.values)))
+    for actual, reference in (("time", "time"), ("center_time", "center_time"),
+                              ("latitude", "lat"), ("longitude", "lon"),
+                              ("radius", "rr"), ("azimuth_degrees", "theta_deg"),
+                              ("azimuth", "azimuth"),
+                              ("center_latitude", "center_lat"),
+                              ("center_longitude", "center_lon")):
+        if not np.array_equal(dataset[actual], expected[reference]):
+            raise ValueError(f"Shared polar target mismatch for {conf.source_name}: {actual}")
+
+
+def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache=None):
+    """Execute only declared v3 results on each source's associated native sample clock."""
+    from frameit.processing.derived.wind import prepare_source_operation
+    from frameit.processing.polar.contracts import require_executable_products
+
+    require_executable_products(binding, source)
+    require_polar_backend()
+    plan = binding["polar_plan"]
+    cache = plan_cache if plan_cache is not None else PolarRegridPlanCache(
+        conf.polar_regrid_cache_size, conf.polar_regrid_cache_max_bytes)
+    geometry_cache = SourceGeometryCache()
+    grid = PolarLonLatGrid(
+        r_km=np.array(plan["radius_km"]), theta_deg=np.array(plan["azimuth_degrees"]),
+        tracking_method=conf.tracking_method, time_dim="time",
+        lon_name="longitude", lat_name="latitude", max_target_points=conf.polar_max_points)
+    grid.sampling_metadata = {key: plan[key] for key in (
+        "angular_sampling_source", "effective_azimuthal_resolution_deg",
+        "n_theta", "last_radial_interval_km")}
+    associations = {record["source_time"]: record["coupling_time"]
+                    for record in source["region"]["associations"]}
+    results, targets, reports = {}, {}, []
+    for job in sorted(binding["operation_plans"], key=lambda job: str(job["context"])):
+        if job["product"] != "polar" or job["context"][0] not in associations:
+            continue
+        stamp = job["context"][0]
+        if stamp not in targets:
+            track = centres.sel(time=[associations[stamp]]).assign_coords(time=[stamp])
+            targets[stamp] = grid.build(
+                xr.Dataset(coords={"time": [stamp]}), track=track,
+                track_centres_authoritative=True)
+        target = targets[stamp]
+        prepared, _, native_views, _ = prepare_source_operation(job, internal, source, conf)
+        from frameit.processing.polar.metadata import preserve_coordinate_dependencies
+
+        for native in native_views:
+            prepared = preserve_coordinate_dependencies(native, prepared)
+        info = job["polar_geometry"]
+        rename = {dim: f"{axis}_box" for axis, dim in info["horizontal_dimensions"].items()
+                  if dim != f"{axis}_box"}
+        prepared = prepared.rename_dims(rename)
+        # Geographic variables must survive even when they also name native dimensions.
+        rename.update({name: kind for kind, name in info["coordinate_names"].items()})
+        prepared = prepared.rename_vars({
+            name: target for name, target in rename.items()
+            if name in prepared.variables and name != target})
+        settings = copy(conf)
+        settings.name_latitude, settings.name_longitude = "latitude", "longitude"
+        settings.polar_output_chunks = {
+            {"radius": "rr", "azimuth": "theta"}.get(dim, dim): size
+            for dim, size in conf.polar_output_chunks.items()}
+        pieces, signatures, footprints, numeric_types = {}, [], [], {}
+        for name in dict.fromkeys(job["inputs"].values()):
+            options = job["polar_options"][name]
+            settings.polar_missing_data_policy = options["missing_data_policy"]
+            settings.polar_min_valid_weight_fraction = options["min_valid_weight_fraction"]
+            value = prepared[name]
+            prepared_dtype = str(value.dtype)
+            promote = (options["kind"] == "continuous" and options["interpolation"] == "bilinear"
+                       and np.issubdtype(value.dtype, np.integer))
+            if promote:
+                # The shared operator casts its numerator back to the evaluation dtype.
+                value = value.astype(np.float64)
+            sample_source = prepared.assign({name: value}) if promote else prepared
+            numeric_types[name] = {
+                "prepared_dtype": prepared_dtype, "evaluation_dtype": str(value.dtype),
+                "conversion": "integer_to_float64_for_continuous_bilinear" if promote else "none"}
+            piece, weights, footprint = _sample_piece(
+                sample_source, [name], (), target.isel(time=0, drop=True),
+                settings, options["interpolation"], cache, geometry_cache)
+            pieces[name] = piece
+            signatures.append(weights.signature)
+            footprints.append(footprint)
+        if job["method"] == "wind_speed":
+            u, v = (job["inputs"][component] for component in ("u", "v"))
+            value = np.hypot(pieces[u][u], pieces[v][v]).assign_attrs(
+                units="m s-1", long_name="horizontal wind speed",
+                wind_reference_frame="earth", derivation="magnitude_of_sampled_components")
+            support = np.minimum(pieces[u][f"{u}_support_fraction"],
+                                 pieces[v][f"{v}_support_fraction"])
+            status = np.maximum(pieces[u][f"{u}_interpolation_status"],
+                                pieces[v][f"{v}_interpolation_status"])
+            mapped = pieces[u].geometry_mapped & pieces[v].geometry_mapped
+        else:
+            name = job["inputs"]["field"]
+            value = pieces[name][name]
+            support, status = (pieces[name][f"{name}_{suffix}"]
+                               for suffix in ("support_fraction", "interpolation_status"))
+            mapped = pieces[name].geometry_mapped
+        result = value.to_dataset(name=job["name"]).assign_coords(
+            next(iter(pieces.values())).coords)
+        result[f"{job['name']}_support_fraction"] = support
+        result[f"{job['name']}_interpolation_status"] = status
+        result[f"{job['name']}_geometry_mapped"] = mapped.assign_attrs(
+            units="1", frameit_role="interpolation_quality",
+            long_name="target mapped by this field's finite source geometry")
+        result = result.assign_coords({
+            name: target[name].variable for name in target.coords if name != "theta_deg"})
+        result = result.assign_coords(
+            latitude=target.lat, longitude=target.lon, theta_deg=target.theta_deg,
+            center_time=("time", [associations[stamp]]))
+        result.attrs.update(target.attrs)
+        result = finalize_polar_output(result)
+        attach_quality(result, job["name"], result[f"{job['name']}_support_fraction"],
+                       result[f"{job['name']}_interpolation_status"])
+        vertical = job["vertical"]
+        if vertical is not None:
+            result = result.assign_coords({
+                name: xr.Variable(item["dimensions"], item["values"], item["attributes"])
+                for name, item in vertical["coordinates"].items()})
+            result = result.assign_coords({f"{vertical['dimension']}_source_native_index": (
+                vertical["dimension"], vertical["source_native_indices"], {"units": "1"})})
+        result[job["name"]].attrs.update(
+            frameit_method=job["method"], frameit_preparation=job["preparation"],
+            frameit_sampling=job["sampling"], frameit_basis=job["basis"],
+            frameit_selection_grid=job["grid_id"],
+            frameit_shared_levels=json.dumps(
+                {key: vertical[key] for key in ("source_native_indices", "values", "units")}
+                if vertical else None, sort_keys=True),
+            polar_weight_zero_tolerance=conf.polar_weight_zero_tolerance,
+            polar_numeric_types=json.dumps(numeric_types, sort_keys=True))
+        options = job["polar_options"]
+        if job["method"] == "wind_speed":
+            result[job["name"]].attrs["polar_component_options"] = json.dumps(
+                options, sort_keys=True)
+            result[job["name"]].attrs["polar_support_definition"] = "minimum_component_support"
+        else:
+            effective = options[job["inputs"]["field"]]
+            result[job["name"]].attrs.update(
+                polar_interpolation=effective["interpolation"],
+                polar_missing_data_policy=effective["missing_data_policy"],
+                polar_min_valid_weight_fraction=effective["min_valid_weight_fraction"])
+        result = result.rename(
+            rr="radius", theta="azimuth", theta_deg="azimuth_degrees",
+            center_lat="center_latitude", center_lon="center_longitude")
+        rotation = job["rotation_coordinate"]
+        if rotation and rotation["name"] in result.coords:
+            coordinate = result[rotation["name"]]
+            if "time" not in coordinate.dims:
+                result = result.assign_coords({
+                    rotation["name"]: coordinate.expand_dims(time=result.time)})
+        result.azimuth_degrees.attrs["units"] = "degrees"
+        result.time.attrs = dict(prepared.time.attrs)
+        result.time.encoding = {
+            key: value for key, value in prepared.time.encoding.items()
+            if key in {"units", "calendar", "dtype"}}
+        result.attrs.update(source_id=source.get("name", conf.source_name),
+                            time_association=conf.time_alignment)
+        results.setdefault(job["name"], []).append(result)
+        reports.append({
+            "field": job["name"], "source_time": str(stamp),
+            "method": job["method"], "inputs": job["inputs"],
+            "cycle": str(job["context"][1]) if job["context"][1] is not None else None,
+            "native_axes": dict(job["context"][2]),
+            "result_units": job["result_units"],
+            "center_time": str(associations[stamp]), "grid_id": job["grid_id"],
+            "geometry": info["spacing"], "input_metadata": job["polar_input_metadata"],
+            "levels": {key: vertical[key] for key in (
+                "dimension", "source_native_indices", "values", "units", "units_origin")}
+            if vertical else None,
+            "options": job["polar_options"], "regrid_plan_signatures": signatures,
+            "numeric_types": numeric_types,
+            "source_finite_footprints": footprints,
+            "rotation_coordinate": job["rotation_coordinate"],
+            "preparation": job["preparation"],
+        })
+    datasets = []
+    for sequence in results.values():
+        datasets.append(sequence[0] if len(sequence) == 1 else xr.combine_by_coords(
+            sequence, coords="minimal", data_vars="all",
+            compat="equals", join="exact", combine_attrs="override"))
+    dataset = xr.merge(datasets, join="exact", compat="identical", combine_attrs="override")
+    mapped = [dataset[f"{name}_geometry_mapped"] for name in results]
+    dataset["geometry_mapped"] = xr.concat(mapped, dim="_field").all("_field").astype(
+        np.uint8).assign_attrs(
+            units="1", frameit_role="interpolation_quality",
+            long_name="target mapped by every selected field geometry")
+    unknown_chunks = set(conf.polar_output_chunks) - set(dataset.dims)
+    if unknown_chunks:
+        raise ValueError(f"Unknown polar processing chunks dimensions: {sorted(unknown_chunks)}")
+    if conf.polar_output_chunks:
+        dataset = dataset.chunk(conf.polar_output_chunks)
+    return dataset, {
+        "status": "executed", "sampling": {key: value for key, value in plan.items()
+                                         if key not in {"associations", "source_times"}},
+        "records": reports, "regrid_performance": cache.statistics(),
+        "source_geometry_cache": geometry_cache.statistics(),
+        "profile": {
+            "graph_tasks": dask_graph_tasks([dataset]),
+            "process_peak_rss_bytes": process_peak_rss_bytes(),
+            "rss_scope": "process lifetime high-water mark, not a polar memory ceiling",
+        } if conf.polar_profile else None,
+    }
 
 
 def _get_polar_requests_variables_only(conf):
@@ -157,6 +386,9 @@ def _sample_piece(source, names, pair, geometry, conf, method, plan_cache, sourc
         minimum_support=getattr(conf, "polar_min_valid_weight_fraction", .5),
         output_chunks=getattr(conf, "polar_output_chunks", {}),
     )
+    if getattr(conf, "schema_version", None) == 3:
+        application_options["source_halo_points"] = conf.polar_source_halo_points
+        footprint["stencil_support"] = plan.source_support(conf.polar_source_halo_points)
     leading, auxiliaries, mapping = source_auxiliaries(
         cropped, conf.name_longitude, conf.name_latitude, field_names=names
     )

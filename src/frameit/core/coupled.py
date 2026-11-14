@@ -260,24 +260,28 @@ def align_source_times(inventories, policy="common", track_times=None):
     return report
 
 
-def _region_grid(conf, source, grid_id):
+def _region_grid(conf, source, grid_id, *, record=None, prepared_grid=None):
     """Use each inventoried native grid, never the atmosphere's indices for another source."""
     from frameit.core.grid_geometry import resolve_geometry
     from frameit.processing.dims_utils import horizontal_axes
     from frameit.utils.units import normalize_geography
 
-    grid = (source["native_grids"][grid_id] if grid_id in source["native_grids"]
-            else source["representation_grids"][grid_id])
+    grid = prepared_grid if prepared_grid is not None else (
+        source["native_grids"][grid_id] if grid_id in source["native_grids"]
+        else source["representation_grids"][grid_id])
     geometry = xr.Dataset(coords={
         name: xr.Variable(item["dimensions"], item["values"], attrs=item["attributes"])
         for name, item in grid["coordinates"].items()}, attrs=deepcopy(grid.get("fa_geometry", {})))
     temporal = {}
-    for record in source["records"]:
-        if record["grid_id"] == grid_id:
-            for dim, position in record["locator"].get("coordinate_indexers", {}).items():
+    for sample in [record] if record is not None else source["records"]:
+        if sample["grid_id"] == grid_id or prepared_grid is not None:
+            for dim, position in sample["locator"].get("coordinate_indexers", {}).items():
                 if dim in geometry.dims:
                     temporal.setdefault(dim, set()).add(position)
-    geometry = geometry.isel({dim: sorted(indices) for dim, indices in temporal.items()})
+    geometry = (geometry.isel(
+        {dim: next(iter(indices)) for dim, indices in temporal.items()}, drop=True)
+        if record is not None else
+        geometry.isel({dim: sorted(indices) for dim, indices in temporal.items()}))
     settings = copy(conf)
     for kind, conventional in (
             ("latitude", {"latitude", "nav_lat", "lat_rho", "lat_u", "lat_v"}),
@@ -337,8 +341,12 @@ def _prepare_v3_regions(conf, children, plans):
     region = conf.yaml_config["region"]
     if not region:
         return
+    active = {name for name, child in children.items() if child.source_requests[name]["exports"]
+              or plans[name].get("tracker_support") or plans[name].get("tracker_support_pending")}
+    if not active:
+        active = set(plans)  # Unfinished metadata inspection still reports declared source clocks.
     if conf.time_alignment == "preceding_hour" and any(
-            source["format"] != "netcdf" for source in plans.values()):
+            source["format"] != "netcdf" for name, source in plans.items() if name in active):
         raise ValueError("preceding_hour requires named NetCDF sources")
     unresolved = [source["tracker_support_pending"] for source in plans.values()
                   if source.get("tracker_support_pending")]
@@ -361,6 +369,7 @@ def _prepare_v3_regions(conf, children, plans):
                 {record["time"] for record in grouped.get(entry["path"], [])} & order.keys(),
                 key=order.__getitem__)}
             for entry in source["file_inventory"]]
+    inventories = {name: entries for name, entries in inventories.items() if name in active}
     provider = None
     if "track" in region:
         from frameit.io.track_file import load_track_coordinates
@@ -377,6 +386,8 @@ def _prepare_v3_regions(conf, children, plans):
 
         temporal, cycles = {}, []
         for name, source in plans.items():
+            if name not in active:
+                continue
             entries = []
             known_cycles = {r["cycle"] for r in source["records"] if r["cycle"] is not None}
             if known_cycles:
@@ -421,7 +432,8 @@ def _prepare_v3_regions(conf, children, plans):
             "lat": ("time", [region["center"]["latitude"]] * len(times)),
             "lon": ("time", [region["center"]["longitude"]] * len(times)),
         }, coords={"time": times})
-        calendars = {r["calendar"] for source in plans.values() for r in source["records"]}
+        calendars = {r["calendar"] for name, source in plans.items() if name in active
+                     for r in source["records"]}
         if provider.time.dtype.kind == "O":
             if len(calendars) != 1:
                 raise ValueError("Fixed trajectory export requires an unambiguous source calendar")
@@ -430,7 +442,7 @@ def _prepare_v3_regions(conf, children, plans):
     for name, source in plans.items():
         source["region"] = {"centre_provider": next(iter(
             region.keys() & {"center", "track", "tracker"}), None),
-            "associations": alignment["sources"][name]["associations"], "grids": {}}
+            "associations": alignment["sources"].get(name, {}).get("associations", []), "grids": {}}
         # A dependency-only source is not an extraction footprint requirement.
         requests = children[name].source_requests[name]
         tracker_fields = set(source.get("tracker_support", {}).get("inputs", {}))
@@ -447,6 +459,33 @@ def _prepare_v3_regions(conf, children, plans):
             grids = {r["grid_id"] for r in source["records"] if r["name"] in fields}
         grids.update(r["grid_id"] for r in source["records"] if r["name"] in tracker_fields)
         for grid_id in grids:
+            if set(requests["exports"]) == {"polar"} and not tracker_fields:
+                binding = source.get("field_binding")
+                jobs = [job for job in (binding or {}).get("operation_plans", [])
+                        if job["product"] == "polar" and job["grid_id"] == grid_id]
+                samples = [(job["context"][0],
+                            next(iter(job["input_binding"]["dependencies"].values()))["records"][0],
+                            {**job["grid"], "fa_geometry": job["geometry"]["attributes"]})
+                           for job in jobs] if jobs else [
+                    (record["time"], record, None) for record in source["records"]
+                    if record["grid_id"] == grid_id]
+                facts_by_time = {}
+                for stamp, record, prepared_grid in samples:
+                    if stamp in facts_by_time:
+                        continue
+                    geometry, settings = _region_grid(
+                        children[name], source, grid_id,
+                        record=record, prepared_grid=prepared_grid)
+                    facts = {"geometry": settings.grid_geometry,
+                             "centres": "pending_calculation" if provider is None else "checked"}
+                    if provider is not None:
+                        times = [r["coupling_time"] for r in source["region"]["associations"]
+                                 if r["source_time"] == stamp]
+                        mapped = _mapped_track(provider.sel(time=times), geometry, settings)
+                        facts.update(_region_facts(mapped, geometry, settings))
+                    facts_by_time[stamp] = {"source_time": str(stamp), **facts}
+                source["region"]["grids"][grid_id] = {"records": list(facts_by_time.values())}
+                continue
             geometry, settings = _region_grid(children[name], source, grid_id)
             facts = {"geometry": settings.grid_geometry,
                      "centres": "pending_calculation" if provider is None else "checked"}
@@ -664,22 +703,93 @@ def _select_times(tree, times):
     return {key: _select_times(value, times) for key, value in tree.items()}
 
 
-def bind_sources(conf):
+def bind_sources(conf, *, check_output=True, execution_options=None, resources=None):
     """Prepare actual consumers once, then copy their bound snapshots to the parent."""
-    from frameit.core.preflight import bind_source
+    from frameit.core.preflight import _publish_source_binding, bind_source
 
-    report, children, plans = prepare_sources(conf)
-    for name, child in children.items():
-        binding = bind_source(child, name)
-        if binding["status"] != "bound":
-            raise ValueError(f"sources.{name}: cannot execute until requests bind to metadata "
-                             f"and methods: {binding['deferred_checks']}")
-    _prepare_v3_regions(conf, children, plans)
+    for request in conf.source_requests.values():
+        request["binding"] = None
+    for source in conf.simulation_parameter["request_plan"]["sources"].values():
+        if source.get("requests"):
+            source["requests"]["binding"] = None
+        source["field_binding"] = None
+    conf.simulation_parameter.pop("common_polar_target", None)
+    report, children, plans = prepare_sources(
+        conf, check_output=check_output, execution_options=execution_options, resources=resources)
+    bindings = {}
+    try:
+        for name, child in children.items():
+            binding = bindings[name] = bind_source(child, name)
+            prepared = (conf.polar_shared_target and binding["status"] == "pending_polar_target"
+                        and binding.get("polar_plan", {}).get("status") == "prepared"
+                        and not binding["deferred_checks"])
+            if binding["status"] != "bound" and not prepared:
+                raise ValueError(f"sources.{name}: cannot execute until requests bind to metadata "
+                                 f"and methods: {binding['deferred_checks']}")
+        participants = {name: child for name, child in children.items()
+                        if "polar" in bindings[name]["products"]}
+        if conf.polar_shared_target and participants:
+            from frameit.processing.polar.sampling import resolve_polar_sampling
+
+            spacing = max(max(bindings[name]["polar_plan"]["native_spacing_m"])
+                          for name in participants) / 1000
+            requested = conf.yaml_config["products"]["polar"].get("radial_step_km")
+            step = requested if requested is not None else spacing
+            if step < spacing * (1 - 1e-12):
+                raise ValueError(
+                    "Shared polar radial_step_km is finer than a participating native grid")
+            for name, child in participants.items():
+                resolve_polar_sampling(plans[name], bindings[name], child, radial_step_km=step)
+            for name, child in participants.items():
+                bindings[name]["status"] = "bound"
+                _publish_source_binding(child, name, bindings[name])
+            target = bindings[next(iter(participants))]["polar_plan"]
+            conf.add_parameter("common_polar_target", {
+                "participants": list(participants), "radial_step_km": step,
+                "radial_step_origin": (
+                    "requested" if requested is not None else "coarsest_native_grid"),
+                "radius_km": target["radius_km"], "azimuth_degrees": target["azimuth_degrees"],
+                "verification": "pending_exact_output_coordinates"})
+        _prepare_v3_regions(conf, children, plans)
+    except Exception:
+        for name, child in children.items():
+            binding = bindings.get(name) or plans[name].get("field_binding")
+            if binding is not None:
+                binding["status"] = "pending_method_binding"
+                if "polar_plan" in binding:
+                    binding["polar_plan"]["status"] = "pending"
+                for descriptor in binding["products"].get("polar", {}).values():
+                    descriptor["execution"] = "pending_polar_sampling"
+            child.source_requests[name]["binding"] = None
+            plans[name]["requests"]["binding"] = None
+            plans[name]["field_binding"] = None
+        conf.simulation_parameter.pop("common_polar_target", None)
+        raise
     for name, child in children.items():
         conf.source_requests[name] = deepcopy(child.source_requests[name])
         conf.simulation_parameter["request_plan"]["sources"][name] = deepcopy(plans[name])
     conf.add_parameter("input_inventory", {
         name: list(source["files"]) for name, source in plans.items()})
+    for product in conf.simulation_parameter["request_plan"]["products"]:
+        if product["product"] != "polar":
+            continue
+        binding = children[product["source"]].source_requests[product["source"]]["binding"]
+        product["stored_names"] = {name: name for name in product["fields"]}
+        product["dimensions"], product["units"] = {}, {}
+        for job in binding["operation_plans"]:
+            if job["product"] != "polar":
+                continue
+            horizontal = set(job["polar_geometry"]["horizontal_dimensions"].values())
+            native_axes = [dim for dim, _ in job["context"][2]]
+            dimensions = ["time", *native_axes, *[dim for dim in job["grid"]["dimensions"]
+                                                 if dim not in horizontal | set(native_axes)],
+                          "radius", "azimuth"]
+            previous = product["dimensions"].setdefault(job["name"], dimensions)
+            if previous != dimensions:
+                raise ValueError(f"polar.{job['name']}: incompatible selected sample dimensions")
+            product["units"][job["name"]] = job["result_units"]
+    report["sources"] = conf.simulation_parameter["request_plan"]["sources"]
+    report["common_polar_target"] = conf.simulation_parameter.get("common_polar_target")
     return report, children, plans
 
 
@@ -759,12 +869,35 @@ def run_native_sources(runner, *, benchmark=False):
                 runner.field_products[(name, "model_grid")] = dataset.assign_attrs(
                     source_id=name, source_model=plans[name]["model"],
                     source_format=plans[name]["format"])
+    with runner.timer.section("polar_projection"):
+        for name, consumer in consumers.items():
+            binding = consumer.conf.source_requests[name]["binding"]
+            if "polar" in binding["products"]:
+                from frameit.processing.polar.polar_proj import execute_source_polar
+
+                dataset, polar_report = execute_source_polar(
+                    consumer.ds_tracker.get("internal", {}), plans[name], binding,
+                    consumer.conf, centres)
+                runner.field_products[(name, "polar")] = dataset.assign_attrs(
+                    source_id=name, source_model=plans[name]["model"],
+                    source_format=plans[name]["format"])
+                plans[name]["polar"] = polar_report
+                shared = runner.conf.simulation_parameter.get("common_polar_target")
+                if shared is not None:
+                    from frameit.processing.polar.polar_proj import verify_polar_target
+
+                    verify_polar_target(
+                        dataset, binding["polar_plan"], consumer.conf, plans[name], centres)
+        shared = runner.conf.simulation_parameter.get("common_polar_target")
+        if shared is not None:
+            shared["verification"] = "exact_coordinates_at_associated_centres"
     runner.conf.add_parameter("source_provenance", {
         name: {"model": source["model"], "format": source["format"],
                "fa_inputs": children[name].simulation_parameter.get("fa_inputs", []),
                "field_metadata": source["metadata_origins"].get("field_metadata", {}),
                "interpretation": source.get("interpretation"),
-               "region": _association_report(source.get("region")),
+                "region": _association_report(source.get("region")),
+                "polar": source.get("polar"),
                 "tracker_support": source.get("tracker_support"),
                 "operations": [
                     {**{key: operation[key] for key in (

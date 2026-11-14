@@ -89,8 +89,9 @@ def _selected_grib(files, binding, source, resources):
 
     if binding.get("status") != "bound" or source is None:
         raise ValueError("GRIB selected_records requires bound requests and owning source metadata")
-    if set(binding["products"]) - {"model_grid"}:
-        raise ValueError("Selected GRIB polar processing is not bound to an executable method")
+    from frameit.processing.polar.contracts import require_executable_products
+
+    require_executable_products(binding, source)
     admitted = {Path(path).resolve() for path in files}
 
     def locator_key(locator):

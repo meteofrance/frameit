@@ -1,17 +1,15 @@
 Coupled atmosphere and surface sampling
 =======================================
 
-Named atmospheric and surface sources share a geographical track while retaining
-their own native grids, masks, field definitions and source/vertical-qualified
-products. The primary pair is atmospheric AROME GRIB plus EPyGrAM-decoded dense
+Named atmospheric and surface sources share a geographical centre provider while
+retaining their native grids, masks, field definitions and vertical coordinates.
+The primary pair is atmospheric AROME GRIB plus EPyGrAM-decoded dense
 AROME-47 / SURFEX-8.1 FA histories. Native atmospheric FA/SURFEX FA and compatible
 NetCDF sources use the same coupling contract, subject to each adapter's limits.
 See :doc:`fa_inputs`, :doc:`fa_baseline` and :doc:`fa_geometry`.
 
-For the workflow, start with :doc:`../task_guides/coupled_inputs`. Native FA
-examples are ``example/config_file/coupled_fa.yaml`` for base extraction,
-``coupled_cyclone_polar.yaml`` for selected scalar polar fields with a supplied
-track, or ``coupled_arome_fa_polar.yaml`` for separate native FA streams.
+For the workflow, start with :doc:`../task_guides/coupled_inputs` and the complete
+native source request in :doc:`fa_inputs`. Add a polar product only when needed.
 Adapt paths/centres and verify all source declarations. The example radius and
 SFX units/time are explicit declarations, not universal producer defaults;
 ``allow_unscaled`` remains false. Neither a unit label nor a plausible range
@@ -20,47 +18,61 @@ resolves the native missing-scaling guard.
 Independent native sources and exact times
 ------------------------------------------
 
-The tracking source supplies continuous centres. Each secondary source maps them
-onto its own footprint and selects its own native indices; equal shapes are not
-grid identity. A required source with a centre outside its footprint fails, with
-no edge substitution or spatial time skip. Boxes can retain NaN padding beyond
-the source. Requested centres, snapped source points and vector bases remain distinct.
+``region.center``, ``region.track`` or ``region.tracker`` supplies continuous
+centres. Each source maps them onto its own footprint; equal shapes are not grid
+identity. A centre outside a required source fails, with no edge substitution.
+Model-grid crops can retain NaN padding beyond the source. Continuous centres,
+snapped native points and vector bases remain distinct.
 
-``input.time_alignment: common`` selects exact common valid times by default,
-with warnings and complete per-source exclusions in provenance/final status.
-``strict`` requires identical source times and prescribed-track coverage.
-Conflicting cycles, ambiguous clocks or inconsistent SURFEX state/header validity
-fail rather than being repaired by a nearest-time match. There is no temporal
-interpolation, missing-to-zero fill or automatic interval conversion.
-See :doc:`fa_inputs` for complete time and calendar requirements.
+``region.sources_coupling_time_association`` defaults to ``exact``: selected native
+source clocks may differ, but each required sample needs a centre. Explicit
+``common`` records exclusions for the operation needing association. The narrow
+AROME/NEMO NetCDF ``preceding_hour`` method does not admit FA histories.
+Conflicting source cycles, ambiguous clocks or inconsistent SURFEX state/header
+validity fail rather than being repaired by nearest-time matching. There is no
+silent temporal interpolation, missing-to-zero fill or interval conversion.
+See :doc:`../concepts/time_support` and :doc:`fa_inputs`.
 
 Select a common polar target
 ----------------------------
 
-This fragment opts into one target; merge it into a complete coupled configuration:
+Start with the complete ``atmosphere``/``surface`` request in :doc:`fa_inputs`.
+That native-copy request does not need an interpolation kind for pressure.
+For this polar example, add the following inside ``sources.atmosphere`` to
+declare continuous interpolation where the input leaves kind unresolved.
+Verify the selected pressure quantity first; the declaration is not inferred
+from its name and cannot replace contradictory source metadata:
 
 .. code-block:: yaml
 
-   polar:
-     enabled: true
-     shared_target: true
-     radial_step_m: 4000
-     azimuth_count: 72
-     interpolation_method: bilinear
+   field_metadata:
+     prmsl:
+       kind: continuous
 
-``shared_target`` defaults to false, retaining independent per-source sampling.
-It is a coupled-run setting: source-level copies must agree with the top-level
-value. In a single-source run it has no additional effect. Only enabled sources
-with selected polar fields participate, and ``tracking.source`` must participate.
-With polar disabled, no target arrays or interpolation dependency are required.
+Then add this top-level polar product and supply a region centre provider as
+described in :doc:`../task_guides/coupled_inputs`. It requests only the two fields:
 
-The target uses the tracking source's continuous centres, common physical domain
-radius, angular convention and ellipsoid. Explicit radial steps must agree and
-cannot be finer than any participating native grid. When omitted, this selected
-mode resolves the **coarsest participating native spacing** and records that
-origin. Unspecified secondary angles inherit the reference target; explicitly
-conflicting axes or ellipsoids fail. Source interpolation methods, support
-thresholds, masks, units and vertical coordinates remain independent.
+.. code-block:: yaml
+
+   products:
+     polar:
+       radius_km: 4
+       shared_grid: true
+       azimuth_count: 72
+       fields:
+         atmosphere: [prmsl]
+         surface: [SFX.T2M]
+
+``shared_grid`` defaults to false, retaining source-specific target resolution.
+Only sources requested by the polar product participate. The centre provider
+does not have to export fields. With no polar product, target arrays and the
+interpolation dependency are not required.
+
+The target uses the region's continuous centres and the product's radius/angular
+controls. An explicit radial step cannot be finer than any participating native
+grid. Omission resolves the **coarsest participating native spacing** and records
+that evidence. Source methods, support thresholds, masks, units, vertical axes
+and time associations remain distinct; shared coordinates do not harmonize physics.
 
 Source metadata, units, wind frames and native geometry are checked **before**
 common sampling/allocation. The effective per-source, complete-time target budget
@@ -74,41 +86,38 @@ For a compact 1-km/3-km pair with two common times, a 4-km outer radius and
 budget does not. These are target-allocation counts, not a full-native decode
 budget, peak-memory estimate or a physical-resolution accuracy guarantee.
 
-A supplied moving track controls each secondary polar origin at **every** time,
-even with ``shared_target: false``. The secondary source's internal fixed-box
-context cannot freeze its first centre. Standalone fixed-box freezing remains
-its own behavior; coupled continuous centres are never replaced by snapped cells.
+A supplied moving track controls each source at every associated time, including
+independent grids. An internal crop context cannot freeze its first centre or
+replace continuous centres with snapped cells.
 
 Verify coordinates, keep separate products
 --------------------------------------------
 
-Every participating output group is checked against the continuous track and
-other groups using exact time/radius/azimuth/longitude/latitude values. A mismatch
-fails before scientific product export. Products carry a common
-``common_polar_target_id`` and ``common_polar_reference_source``. This signature
-describes ordered target coordinates and ellipsoid, not source-data identity,
-physical equivalence, conservation, equal masks or bitwise field identity.
+Target verification checks actual radius/azimuth/geographic coordinates against
+the associated continuous centre before publication. Sharing a horizontal target
+does not merge or relabel native source clocks. A target signature describes
+coordinates and Earth-model assumptions, not source-data identity, physical
+equivalence, conservation, equal masks or bitwise field identity.
 
-Effective axes/counts, source spacings, requested sampling, resolution origin,
-participants and verification status are recorded under ``common_polar_target``
-in preflight, resolved configuration, provenance and final status as appropriate.
-Source IDs ``atmosphere`` and ``surface`` produce, for example:
+Preview/provenance records identify resolved axes/counts, source spacing evidence,
+requested sampling, participants and target verification. Source IDs
+``atmosphere`` and ``surface`` with run name ``coupled-surface`` produce:
 
 .. code-block:: text
 
-   SIMU.polar.atmosphere.surface.nc
-   SIMU.polar.atmosphere.isobaricInhPa.nc
-   SIMU.polar.surface.surface.nc
+   coupled-surface.atmosphere.polar.nc
+   coupled-surface.surface.polar.nc
 
-An atmosphere with several vertical groups still produces several files.
-An existing ID such as ``surfex`` keeps that qualification in its filenames.
-Cartesian products retain native source grids. No variables are merged across
-incompatible grids, and no diagnostic is enabled just because its inputs exist.
+Each requested source/product has one dataset; read each field's own dimensions
+and coordinates. Unsupported combinations of native grids still fail.
+Model-grid products retain their separately requested native/transformed
+representations. Available inputs do not enable unrequested diagnostics.
 
 Continuous production polar sampling defaults to bilinear point interpolation,
 without an area-budget conservation guarantee or automatic experimental-method
-switch. Categorical X1 fields require explicit ``nearest_s2d``; default bilinear
-fails before their payload read. Source support labels, actual masks, IEEE NaNs,
+switch. Proven categorical fields select nearest-neighbour; the public override
+is ``interpolation: nearest``, not the backend name ``nearest_s2d``.
+Unresolved kind and inapplicable methods fail. Source support labels, masks, IEEE NaNs,
 extension zones and valid zeroes must not be equated or silently filled.
 See :doc:`output_files` for ordinary readers and per-product atomic publication.
 

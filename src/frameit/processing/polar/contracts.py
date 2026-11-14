@@ -9,11 +9,158 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import OrderedDict
-from copy import deepcopy
+from copy import copy, deepcopy
 from time import perf_counter
 
 import numpy as np
 import xarray as xr
+
+
+def require_executable_products(binding, source):
+    """Admit polar only with its complete, source-owned preparation and target plan."""
+    if not isinstance(binding, dict) or binding.get("status") != "bound" or source is None:
+        raise ValueError("Selected products require bound requests and owning source metadata")
+    products = binding.get("products", {})
+    if set(products) - {"model_grid", "polar"}:
+        raise ValueError("Unknown selected field product")
+    if "polar" not in products:
+        return
+    if (source.get("requests", {}).get("binding") or {}).get("status") != "bound":
+        raise ValueError("Polar products require the bound owning source snapshot")
+    plan = binding.get("polar_plan") or {}
+    if plan.get("status") != "bound":
+        raise ValueError("Polar product requires a bound executable polar plan")
+    from frameit.processing.polar.sampling import uniform_periodic_angles, validate_axes
+
+    try:
+        validate_axes(np.asarray(plan["radius_km"]), np.asarray(plan["azimuth_degrees"]))
+        if not uniform_periodic_angles(plan["azimuth_degrees"]):
+            raise ValueError("Polar azimuths must form a full open clockwise ring")
+        jobs = [job for job in binding["operation_plans"] if job["product"] == "polar"]
+        if not jobs or {job["name"] for job in jobs} != set(products["polar"]):
+            raise ValueError("Polar jobs do not match requested product descriptors")
+        spacing = np.asarray(plan["native_spacing_m"])
+        if (not spacing.size or not np.isfinite(spacing).all() or np.any(spacing <= 0)
+                or not np.isfinite(plan["radial_step_km"]) or plan["radial_step_km"] <= 0
+                or plan["radial_step_km"] * 1000 < spacing.max() * (1 - 1e-12)):
+            raise ValueError("Polar native-spacing evidence is missing")
+        for job in jobs:
+            if (job["input_binding"]["status"] != "bound"
+                    or set(job["polar_options"]) != set(job["inputs"].values())
+                    or not job["polar_geometry"]
+                    or products["polar"][job["name"]].get("execution") != "bound_polar_sampling"):
+                raise ValueError("Polar preparation or interpolation evidence is incomplete")
+            geometry = job["polar_geometry"]
+            lon, lat = np.asarray(geometry["longitude"]), np.asarray(geometry["latitude"])
+            if (lon.shape != lat.shape or lon.ndim != 2 or min(lon.shape) < 2
+                    or not np.isfinite(lon).all() or not np.isfinite(lat).all()):
+                raise ValueError("Polar prepared geometry is invalid")
+            _validate_cells(lon, lat)
+            for name, descriptor in job["input_binding"]["dependencies"].items():
+                if not descriptor["records"]:
+                    raise ValueError(f"Polar input {name} has no bound native support")
+                for record in descriptor["records"]:
+                    matches = []
+                    for native in source["record_inventory"]:
+                        if (record["field_id"] != native["field_id"]
+                                or record["time"] != native["time"]
+                                or record["cycle"] != native["cycle"]
+                                or record.get("native_axes") != native.get("native_axes")):
+                            continue
+                        locator = dict(native["locator"])
+                        if "records" in locator:
+                            if source["fields"][record["field_id"]].get("native_cube"):
+                                locator["records"] = [
+                                    locator["records"][i] for i in record["source_positions"]]
+                            elif (record["source_positions"] is not None
+                                  or record["vertical"] is not None):
+                                raise ValueError("A 2-D FA record has no selectable vertical axis")
+                        matches.append(record["locator"] == locator)
+                    if not any(matches):
+                        raise ValueError("Polar input is outside the owning selected inventory")
+            for options in job["polar_options"].values():
+                if options["interpolation"] not in {"bilinear", "nearest_s2d"}:
+                    raise ValueError("Polar interpolation method is not executable")
+                from frameit.processing.polar.coverage import validate_mask_options
+
+                validate_mask_options(options["missing_data_policy"],
+                                      options["min_valid_weight_fraction"], 0)
+    except (KeyError, TypeError, AttributeError, IndexError, ValueError) as exc:
+        raise ValueError(f"Polar plan evidence is missing or invalid: {exc}") from exc
+
+
+def polar_field_options(metadata, options, conf, context):
+    """Resolve methods from stored-value evidence, not field names or array dtype."""
+    attrs, origins = metadata["attributes"], metadata["origins"]
+    kind = attrs.get("kind")
+    if kind not in {"continuous", "categorical"}:
+        raise ValueError(
+            f"{context}: polar sampling needs proven kind; declare field_metadata.kind")
+    method = options.get("interpolation", "nearest" if kind == "categorical" else "bilinear")
+    if kind == "categorical" and method != "nearest":
+        raise ValueError(f"{context}: categorical fields require nearest interpolation")
+    policy = options.get("missing_data_policy", conf.polar_missing_data_policy)
+    minimum = options.get("min_valid_weight_fraction", conf.polar_min_valid_weight_fraction)
+    if method == "nearest" and policy != "strict":
+        raise ValueError(f"{context}: nearest interpolation cannot renormalize partial stencils")
+    from frameit.processing.polar.coverage import validate_mask_options
+
+    validate_mask_options(policy, minimum, conf.polar_weight_zero_tolerance)
+    return {
+        "kind": kind, "kind_origin": origins["kind"],
+        "interpolation": "nearest_s2d" if method == "nearest" else method,
+        "missing_data_policy": policy, "min_valid_weight_fraction": minimum,
+        "sampling": options.get("sampling", "native"),
+    }
+
+
+def polar_source_geometry(job, conf):
+    """Normalize this actual prepared sample grid, without reading scientific fields."""
+    from frameit.core.grid_geometry import inspect_grid
+    from frameit.processing.dims_utils import horizontal_axes
+
+    geometry = xr.Dataset(coords={
+        name: xr.Variable(item["dimensions"], item["values"], item["attributes"])
+        for name, item in job["grid"]["coordinates"].items()})
+    axes = horizontal_axes(conf)[1]
+    axes.update(y="y", x="x")
+    dims = job["grid"]["dimensions"]
+    settings = copy(conf)
+    names = {}
+    for kind, conventional in (
+            ("latitude", {"latitude", "nav_lat", "lat_rho", "lat_u", "lat_v",
+                          "latitude_u", "latitude_v"}),
+            ("longitude", {"longitude", "nav_lon", "lon_rho", "lon_u", "lon_v",
+                           "longitude_u", "longitude_v"})):
+        candidates = [name for name, value in geometry.coords.items()
+                      if (value.attrs.get("standard_name") == kind or name in conventional)
+                      and set(value.dims) <= set(dims) and value.ndim > 0]
+        if len(candidates) != 1:
+            raise ValueError(
+                f"{job['name']}: polar {kind} is missing or ambiguous on prepared grid")
+        names[kind] = candidates[0]
+        setattr(settings, f"name_{kind}", candidates[0])
+    spatial = set(geometry[names["latitude"]].dims) | set(geometry[names["longitude"]].dims)
+    horizontal = {}
+    for axis in ("y", "x"):
+        candidates = [dim for dim in spatial if axes.get(dim) == axis or (
+            dim in geometry.coords and geometry[dim].attrs.get("axis") == axis.upper())]
+        if len(spatial) != 2 or len(candidates) != 1:
+            raise ValueError(f"{job['name']}: polar sampling requires evidenced horizontal axes")
+        horizontal[axis] = candidates[0]
+        setattr(settings, "name_lat_dim" if axis == "y" else "name_lon_dim", candidates[0])
+    evidence = inspect_grid(geometry, settings)
+    normalized = xr.Dataset(coords={
+        kind: geographic_degrees(geometry[name]).rename(
+            {dim: f"{axis}_box" for axis, dim in horizontal.items()
+             if dim in geometry[name].dims})
+        for kind, name in names.items()})
+    _, grid, footprint = finite_source_footprint(normalized, "longitude", "latitude")
+    return {
+        "horizontal_dimensions": horizontal, "coordinate_names": names,
+        "longitude": np.asarray(grid.lon), "latitude": np.asarray(grid.lat),
+        "footprint": footprint, "spacing": evidence,
+    }
 
 
 def time_index(ds: xr.Dataset, context: str):

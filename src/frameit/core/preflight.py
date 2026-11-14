@@ -906,22 +906,31 @@ def bind_source(conf, name, *, representations=None, required_inputs=()):
     plan = conf.simulation_parameter["request_plan"]
     plan["warnings"] = list(dict.fromkeys([*plan["warnings"], *binding["warnings"]]))
     if binding["status"] == "bound":
-        source["records"] = binding["records"]
-        source["files"] = list(dict.fromkeys(r["locator"]["path"] for r in source["records"]))
-        source["provider_conflicts"] = []
-        for entry in source["file_inventory"]:
-            if entry["path"] in source["files"]:
-                entry.update(status="selected", reason="supplies bound fields or required support")
-            elif entry["status"] != "time_excluded":
-                entry.update(status="irrelevant",
-                             reason="metadata proves no bound field or required dependency")
-        request["binding"] = binding
-        source["requests"]["binding"] = binding
-        if conf.source_name == name:
-            conf.input_files = list(source["files"])
-        conf.add_parameter("input_inventory", {
-            n: list(s["files"]) for n, s in plan["sources"].items()})
+        _publish_source_binding(conf, name, binding)
     return binding
+
+
+def _publish_source_binding(conf, name, binding):
+    """Publish an already-finalized binding without rediscovery or a second bind."""
+    if binding["status"] != "bound":
+        raise ValueError("Cannot publish unfinished source binding")
+    plan = conf.simulation_parameter["request_plan"]
+    source = plan["sources"][name]
+    source["records"] = binding["records"]
+    source["files"] = list(dict.fromkeys(r["locator"]["path"] for r in source["records"]))
+    source["provider_conflicts"] = []
+    for entry in source["file_inventory"]:
+        if entry["path"] in source["files"]:
+            entry.update(status="selected", reason="supplies bound fields or required support")
+        elif entry["status"] != "time_excluded":
+            entry.update(status="irrelevant",
+                         reason="metadata proves no bound field or required dependency")
+    conf.source_requests[name]["binding"] = binding
+    source["requests"]["binding"] = binding
+    if conf.source_name == name:
+        conf.input_files = list(source["files"])
+    conf.add_parameter("input_inventory", {
+        n: list(s["files"]) for n, s in plan["sources"].items()})
 
 
 def open_metadata(files, conf, resources, *, chunks=None):
@@ -1270,7 +1279,7 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
               include_variable_metadata=False):
     """Validate metadata/geometry, optionally retaining lazy inputs in a run's owner."""
     if getattr(conf, "schema_version", None) == 3:
-        from frameit.core.coupled import prepare_sources
+        from frameit.core.coupled import bind_sources, prepare_sources
 
         if input_files is not None:
             if conf.source_name is None:
@@ -1279,8 +1288,9 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             selected = conf.simulation_parameter["request_plan"]["sources"][conf.source_name]
             if selected["records"] is None or list(map(str, input_files)) != selected["files"]:
                 raise ValueError("v3 input_files must be the bound selected source inventory")
-        return prepare_sources(conf, check_output=check_output, execution_options=execution_options,
-                               resources=resources)[0]
+        prepare = bind_sources if "polar" in conf.yaml_config["products"] else prepare_sources
+        return prepare(conf, check_output=check_output, execution_options=execution_options,
+                       resources=resources)[0]
     if conf.input_sources:
         if input_files is not None:
             raise ValueError("Coupled inventories are specified per input.sources entry")

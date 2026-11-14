@@ -457,31 +457,60 @@ the Meso-NH W staggering choices do not turn omega into geometric velocity.
 See :doc:`input_files` for authoritative model/GRIB definitions and
 :doc:`configuration_file` for explicit pair and rotation declarations.
 
-SIMU.polar.<group>.nc
-~~~~~~~~~~~~~~~~~~~~~
+.. _simu-polar-group-nc:
 
-These files contain selected polar point samples. Their interpolation support
-can extend beyond the exported Cartesian crop through the declared source halo.
+<run>.<source>.polar.nc
+~~~~~~~~~~~~~~~~~~~~~~~
 
-Typical structure:
+One dataset contains the requested source's polar point samples, for example
+``products/polar-scalar.atmosphere.polar.nc``. The product's radius and native
+support are independent of any model-grid crop; polar-only requests need no width.
+Different source grids, clocks, masks and vertical axes remain distinct.
 
-- Dimensions: ``time``, radial coordinate (``rr``), angular coordinate (``theta``),
-  plus optional vertical dimension depending on the group
-- Coordinates may include:
-  - Polar grid axes: ``rr`` (km) and ``theta`` (radians), with ``theta_deg`` in degrees
-  - Derived cartesian coordinates on the polar grid: ``x_km`` and ``y_km``
-  - Geolocation: ``lat(time, rr, theta)``, ``lon(time, rr, theta)``
-- Data variables depend on the requested fields (see :doc:`configuration_file`).
+- Dimensions include ``time``, ``radius`` and ``azimuth``, plus each field's own
+  retained vertical/member dimensions.
+- ``radius`` is in kilometres. ``azimuth`` is in radians clockwise from north;
+  ``azimuth_degrees`` gives the degree helper. Full rings omit the duplicate endpoint.
+- ``latitude(time, radius, azimuth)`` and ``longitude`` describe target positions.
+  ``center_latitude``, ``center_longitude`` and ``center_time`` record their
+  associated centre. ``time`` retains the native source sample clock.
+- ``radial_bearing`` is the local terminal-forward geodesic bearing, not a
+  requested radial/tangential diagnostic. Offset/spacing coordinates describe
+  target geometry, not a new source grid or area cell.
 
-``radial_bearing`` records the local geodesic direction used for vector
-components. Each sampled field has support/validity/status/ring-coverage arrays,
-marked ``frameit_role="interpolation_quality"``. They describe interpolation
-support, not additional physical fields or area fractions. Analytical ``theta``
-is endpoint-exclusive. See :doc:`../polar_projection/xESMF_proj` for their flag
-values, complete-ring eligibility and origin conventions.
+Each requested field has ``<field>_geometry_mapped``, support fraction,
+interpolation status, validity, ring coverage and full-ring eligibility arrays.
+Quality arrays have ``frameit_role="interpolation_quality"``; support is a
+weight fraction, not area coverage. Global ``geometry_mapped`` is the intersection
+of selected field geometries, not a common source mask. Inspect the per-field
+flags beside the actual values; zero is not missing.
 
-The polar files also include a set of attributes that document the angular convention (for example the
-zero-angle location and rotation direction) as produced by the polar projection module.
+Native component sampling does not request speed or radial/tangential winds.
+Requested speed is magnitude after component sampling. Its JSON
+``polar_component_options`` records actual input methods/policies; support is
+the minimum component support and validity requires both sampled components.
+Other sampled fields record their own interpolation, policy and threshold.
+See :doc:`../polar_projection/xESMF_proj` for flags, coverage equations,
+spacing rules, numerical-API naming and origin conventions.
+
+.. _polar-numeric-types:
+
+Polar numeric types
+''''''''''''''''''''
+
+A proven continuous field with integer prepared values is evaluated as float64
+for bilinear sampling. This preserves fractional results; it does not change
+native/model-grid exports. Floating inputs keep their prepared evaluation dtype.
+Nearest sampling retains label values rather than averaging them, although its
+stored output can use a floating dtype to represent missing data.
+
+The JSON field attribute ``polar_numeric_types`` and each input's provenance
+record give the prepared dtype, evaluation dtype and conversion. Prepared means
+after decoding and selected preparation, not necessarily the encoded storage
+type. A floating output dtype alone does not prove correct evaluation.
+Ordinary floating-point roundoff still applies. Float64 cannot exactly represent
+every integer beyond :math:`2^{53}`; no bitwise or large-integer exactness is
+promised.
 
 Metadata and attributes
 -----------------------

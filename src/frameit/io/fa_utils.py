@@ -320,8 +320,9 @@ def _selected_fa(files, binding, source, conf, resources):
     if binding.get("status") != "bound" or source is None:
         raise ValueError("FA selected_records requires bound interpretation "
                          "and owning source metadata")
-    if set(binding["products"]) - {"model_grid"}:
-        raise ValueError("Selected FA polar processing is not bound to an executable method")
+    from frameit.processing.polar.contracts import require_executable_products
+
+    require_executable_products(binding, source)
     admitted = {Path(path).resolve() for path in files}
     log_directory = conf.output_dir / "logs"
     decoder_log = (log_directory / f"fa-decoder-{uuid4().hex}.jsonl"

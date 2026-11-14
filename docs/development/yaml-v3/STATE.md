@@ -36,9 +36,9 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 05 | done | lead + three adapter workers + independent task reviewer | 04 | `73c4147`; native/read gate approved,788 distinct targeted passes and final required5. |
 | 06 | done | Task06 worker + lead + independent reviewer | 05 | `edaf602`; four Important findings closed,64 new nodes pass; reviewed handoff below. |
 | 07 | done | Task07 worker + lead + independent reviewer | 05 | `bc2a470`; three Important findings closed;54 new nodes pass; reviewed handoff below. |
-| 08 | done | Task08 worker + lead + independent reviewer | 07 | Review approved after two fix rounds; frozen handoff below. |
-| 09 | ready | unassigned | 06, 08 | Product-driven polar processing starts after Task08 local commit. |
-| 10 | blocked | lead | 09 | Writers, output paths and execution; shared descriptors and stable coordinates. |
+| 08 | done | Task08 worker + lead + independent reviewer | 07 | `db6258e`; review approved after two fix rounds; frozen handoff below. |
+| 09 | done | Task09 worker + lead + independent reviewer | 06, 08 | Approved after I1/I2 closure; frozen handoff below. Minor3 retained19. |
+| 10 | ready | unassigned | 09 | C7 datasets/coordinates/writers start after Task09 local commit. |
 | 11 | blocked | lead | 10 | Runtime/resources and chunk integrations; measured bounded layouts. |
 | 12 | blocked | lead | 10 | Run state, execution and writer callbacks; early request and publication facts. |
 | 13 | blocked | lead | 11, 12 | Preflight/configuration/coupled; common reports and independent errors. |
@@ -2273,6 +2273,248 @@ and full direct-numerical formatter qualification19, human scientific/usability2
 The inherited numerical formatter KeyError:'output' remains explicit; real
 metadata opening/copying is not full-wrapper success. No gate or warning is waived.
 No package repair, source archive write, push, merge or human approval occurred.
+
+## Task09 work in progress
+
+Base `db6258e74dd46df069e8e1434b78b2e1f709d587`, reviewed local Task08 commit.
+Tree was clean after commit; nothing pushed/merged. One fresh sole Task09 worker
+owns the brief's polar planning/sampling files plus bounded request/operation/
+preflight/coupled/runner integration. All earlier workers/reviewers are idle.
+Lead owns public docs/examples/figures, STATE/checklist and commits.
+
+Ruling: obsolete pre-implementation polar-pending assertions may change only with
+actual C6 target/preparation/support execution and meaningful result/quality/
+clock/selection/provenance checks; risk is false clearance. Preserve genuine
+scientific/budget/ambiguity failures and shared producer helpers. Independent
+review must assess each test adaptation. No new method/schema/dependency.
+
+Consume the reviewed Task06–08 contracts: source-native clocks/centre association,
+actual prepared-child binding, separate exports/internal stencils/product results,
+real representation levels and typed per-record metadata/angles. Polar speed
+must follow component sampling; do not reuse a model-grid speed scalar or infer
+radial/tangential requests from U/V. Native and nonpolar work stays optional.
+Task10 owns full writer/schema qualification, Task11 resources; existing native/
+formatter/old-producer/warning and human-review gates retain their named owners.
+
+The committed prior six-file inventory is175nodes/161pass/14fail, extracted
+from Task08's2188-node final diagnostic, not a Task09 run or exemption.
+Task09 packet/evidence details stay in the ignored plan workspace; no Task09
+implementation or verification result is claimed at dispatch.
+
+The fresh Task09 worker reported a bounded ownership need before implementation:
+execution and all3 selected-reader adapters unconditionally reject non-model-grid
+products even after binding. Lead traced those4 guards and authorizes only
+genuine executable-polar-plan admission, retaining missing/pending/unknown-product
+rejection and all complete-binding/owning-source/native-stencil safety. No reader
+rewrite or model-grid-only fabricated binding is authorized. Fresh required
+baseline:161pass/14fail/175nodes, not a Task09 success or exemption.
+
+The original Task09 worker resumed under that guard extension. Lead's5-page
+draft replaces old polar flags/crop-derived geometry with the approved product/
+radius/field-option/source-clock contract, retaining equations, references,
+figures and anchors. A complete polar-only scalar request plus7 explicitly
+contextual fragments resolve schema-only. No runtime admission is inferred.
+Strict44/publication/docs checks are active; final actual examples, live
+inspection, implementation evidence and independent review remain pending.
+
+Strict44 failed one nested-list indentation; corrected45 strict/publication/
+13unit/4plot-release+2subtests pass with15backend warnings. All5 changed pages
+were inspected live at desktop1020/actual320, including complete YAML/reader/
+support/performance blocks; code right edges remain reachable, no page overflow
+or missing images. Existing figures, alt text, links and anchors remain.
+Canonical45 preview stays available. The sole worker received these declared
+example choices for final method/quality/provenance reconciliation, not as
+proof of runtime admission. Actual examples/code evidence/independent review
+are still pending; no human or scientific approval is inferred.
+
+Task09's original worker returned DONE_WITH_CONCERNS and is idle. Lead read the
+complete report, portable checks and scope proof. Reported focused101pass;
+required161pass/14fail; covering1026pass/68fail; full1819pass/468fail/2errors,
+with every2188 prior status and exact470 failed/error ID retained. These are
+worker results pending fresh lead corroboration and independent review.
+
+Before review, public examples must use radius/azimuth/azimuth_degrees rather
+than retained low-level rr/theta names, and explain per-field geometry quality,
+speed component policies and nearest spherical-footprint cost. The directly
+affected output-guide polar subsection is corrected now with its old anchor
+retained; complete writer/schema qualification remains Task10 and full-page
+review Task20. Actual examples, final strict/live checks and independent review
+remain required. No Task09 commit or Task10 implementation yet.
+
+Fresh lead focused101case run passes with428warnings in37.71s. The actual
+unchanged instructional guide request fails, however: 1-D geographic coordinate
+names are also dimensions; executor renaming removes longitude/latitude before
+the sampler. Original implementer resumes a bounded preparation-boundary fix
+and additive real-reader/sampler/output regression. No generator, fixture or
+documented scientific choice is changed to avoid the failure. First independent
+review remains undispatched; complete example success is still required.
+
+Lead raw-XML assertions corroborate the original delivery counts and exact
+preserved prior statuses/failed IDs; all14 required failures retain their
+individual old-producer rejection. Six public pages now reconcile public axes/
+chunks, field-specific quality, speed policies, nearest-footprint cost and the
+direct output subsection (old anchor retained). A real GRIB probe confirms that
+the shared fragment needs explicit pressure-kind gap completion; its page now
+teaches that declaration, not name inference. Strict46/publication/13unit/
+4plot-release+2subtests pass with15warnings; six pages inspected live1020/320.
+The preview remains available. Original worker still owns the real rectilinear
+example failure; no final runtime acceptance or independent review is inferred.
+
+The rectilinear fix now has a complete worker handoff:103focused; required
+161pass/14fail; covering1028pass/68fail; full1821pass/468fail/2errors/2291nodes,
+reported unchanged prior statuses. Lead fresh two-case check passes2 with4
+warnings in3.16s. Unchanged guide/execution/ordinary reader, partial policy and
+both-products4/8km crop-independence checks pass with source preservation.
+
+The same complete example harness found a separate real native2-D FA guard
+failure: source_positions=None is treated as cube indices. The original worker
+resumes a bounded scalar/cube distinction with actual FA decode/sampler/output
+and invalid-support regressions, retaining all locator/owner/cycle/metadata
+safeguards. This is pre-first-review acceptance work, not independent closure.
+No review/Task09 commit/Task10 dispatch before all actual examples succeed.
+
+Scalar-FA delivery is complete and its original worker idle. Lead fresh five
+cases pass in13.58s without warnings. Raw-XML assertions corroborate108focused,
+required161pass/14fail, covering1033pass/68fail, full1826pass/468fail/2errors/
+2296nodes; every prior status and exact470 failed/error ID remains,108 added
+passes. Fresh Ruff15paths23base/23current/noNew and scope preservation checks pass.
+
+Complete lead harness05 now passes unchanged published scalar YAML/Python,
+strict/explicit0.75coverage/both-products4/8km crop independence, downstream
+helper fragments and shared GRIB/FA contexts. Ordinary readers check prescribed
+values/units/clocks/quality/provenance, retain source-specific index auxiliaries
+and preserve all6generated source hashes. Strict47/publication/13unit/
+4plot-release+2subtests pass with15warnings; six rendered pages equal inspected46.
+First independent task review is next; no freeze/commit/Task10 or human/scientific
+approval is inferred. All inherited red suites and later qualification owners remain.
+
+First independent Task09 review is active on the complete23-file precommit
+snapshot `df10cd7eb4aa34ec5209a5c7b2feb70ca589b19c` against db6258e.
+Both spec and quality verdicts are required, including all3 old-test adaptations,
+six public pages and actual sampling/representation semantics. The original
+implementer is idle; real index empty/HEAD unchanged. No Task09 freeze/commit or
+Task10 implementation before independent closure.
+
+Independent Task09 review requires fixes: two Important C6 defects. A provisional
+fine-grid target is budgeted before choosing the final shared coarsest target,
+rejecting the documented valid54point/60limit case. Integer continuous bilinear
+inputs lose fractional values in the reused numerator cast while output status
+says valid. Lead traced both connected paths; original implementer resumes
+bounded fix round1/5, preserving native exports/ownership/one-bind contracts.
+All3 old-test adaptations were independently judged legitimate.
+Minor inherited warning debt remains with Task19 qualification and final branch
+review, not suppressed or repaired through environment/producer changes.
+Original reviewer is idle; no Task09 freeze/commit or Task10 dispatch.
+
+Fix round1 implementation is ready for scoped re-review. Lead fresh13newcase
+check passes/80warnings/5.93s; final unchanged example harness06 passes with6
+source hashes. Raw-XML checks corroborate121focused; expanded covering1110pass/
+68fail; required161pass/14fail; full1839pass/468fail/2errors/2309nodes. All prior
+statuses/exact470failed-error IDs remain,121added passes versus Task08.
+Base/review-relative Ruff15paths23/23/noNew and scope preservation pass.
+The original implementer is idle; findings are not independently closed yet.
+
+Shared plans now retain non-executable prepared/target-pending evidence until
+final common axes pass budgets; same real bindings publish without rebinding.
+Continuous integer bilinear values use a local float64 view, with numeric dtype/
+conversion provenance and unchanged native exports. Canonical docs record that
+policy and ordinary floating/large-integer limits. Corrected strict49/publication/
+docs checks pass/15warnings after one heading-style failure; final live inspection
+and original-reviewer closure remain required before freeze/commit.
+
+Scoped fix1 review is active on complete10-file snapshot
+`c1ed1be81a0db7fa5213d3868faf182a220c0a89` against revieweddf10cd7.
+Both I1/I2 closure and new fix breakage are assessed, with both verdicts required.
+The two changed49 public pages were inspected live1020/actual320 with no page
+overflow/missing images; four other affected49 pages equal previously inspected47.
+Canonical49 stays available. Original worker idle/real index empty; no Task09
+commit or Task10 dispatch before independent closure.
+
+## Task09 reviewed polar handoff
+
+Spec/quality independently approved after fix round1/5; I1/I2 closed, no new
+fix finding. Inherited Minor3 warning debt retains Task19/final-branch ownership.
+Detailed commands/evidence: `task-09-checks.md`. No scientific/human approval.
+
+### Frozen interfaces
+
+- Actual children bind once; readers receive complete executable bindings and
+  owning source plans. Exports/internal stencils/model-grid operations/polar jobs
+  stay separate. The4extra adapter/execution changes are admission guards only.
+- `bind_polar_plan` validates actual preparation, geometry, kind/method/support
+  and spacing. Shared plans remain prepared, binding pending_polar_target and
+  descriptors pending_polar_sampling until final shared axes pass. No unfinished
+  method/target evidence authorizes payloads.
+- `resolve_polar_sampling` resolves final targets/budgets only. Coarsest actual
+  prepared spacing uses the larger axis median; finer explicit requests reject,
+  allowing1e-12relative roundoff. Open clockwise rings include exact outer radius,
+  reported shorter last interval and documented automatic angle counts.
+- Private `_publish_source_binding` extracts existing publication, not a second
+  bind. Shared bindings publish the same objects only after all final budgets
+  succeed. Failure/rebind revokes owning clearance and stale common-target facts.
+  A54point target fits60/fails53; unused fine axes/counts are not budgeted.
+- `require_executable_products` rejects unfinished/unowned/unknown/invalid product
+  evidence. Real scalar FA locators differ from selected cubes; complete owner/
+  locator/time/cycle/native-axis/support and decoder safeguards remain.
+- `binding.operations` remains model-grid-only. Polar operation_plans retain real
+  input bindings/preparation/geometry/options/original-level facts; polar_plan
+  records source/centre associations, spacing/support/axes/count/budget facts.
+  Native-only/track-only work stays independent of optional polar dependencies.
+- `prepare_source_operation` serves calculation-specific preparation.
+  `execute_source_polar` uses each source's native clock; `verify_polar_target`
+  checks actual coordinates/centres before shared publication. Unequal clocks
+  remain distinct; preceding_hour stays AROME/NEMO NetCDF-only.
+- Kind needs evidence/declaration; continuous defaults bilinear, categorical
+  nearest. Invalid/unused options fail. Strict or explicit-threshold coverage
+  preserves zero/NaN/unmapped distinctions. Nearest cannot renormalize/extrapolate;
+  an extra geometry-only bilinear build restricts its spherical source-cell
+  footprint. Support is independent of exported crop; unavailable targets count.
+- Speed takes hypot after component sampling; minimum component support and both
+  component validity are explicit. Native U/V adds no diagnostic. W preparation
+  is independent, preserving pressure/geometric meaning, own levels and units.
+- Rectilinear geographic dimension-coordinates, moving geography/angles, member
+  axes, hybrid dependencies and FA record labels retain actual meaning. Sharing
+  target coordinates does not equate source-specific auxiliaries or masks.
+- Continuous integer bilinear inputs use a local float64 view; native/model-grid
+  exports remain unchanged. Floating/nearest inputs keep prepared evaluation
+  dtype. JSON polar_numeric_types and per-record numeric_types record actual
+  prepared/evaluation types/conversion. Prepared is not encoded storage; ordinary
+  rounding/integers beyond2**53 remain limits. Shared numerical helper unchanged.
+- Public radius/km, azimuth/rad, azimuth_degrees/degrees and source time/center_time
+  are explicit. Per-field geometry/support/status/valid/ring quality is exported;
+  global geometry_mapped is the intersection, not a source mask. Provenance
+  retains actual methods/options/origins/levels/dtypes/footprints/regrid/cache facts.
+- Writers consume field_products[(source,"polar")] and common descriptors with
+  stored_names/dimensions/units. Existing numerical rr/theta APIs remain. Cache
+  bytes/target counts are not process-memory ceilings or archive benchmarks.
+  Task10 still owns full stable mixed-grid/coordinate/encoding compatibility.
+
+### Verification and retained owners
+
+Fresh precommit command in frameit_env3.13 with worktree PYTHONPATH, TMPDIR and
+approved fixture root: `python -m pytest -q src/frameit/testing/numerical/test_v3_polar.py --tb=short`
+passes121/510warnings in54.97s. Final full1839pass/468fail/2errors/2309nodes
+preserves all2188 Task08 statuses/exact470failed-error IDs,121added passes.
+Required161pass/14fail and covering1110pass/68fail remain red with individual
+old-producer evidence, not scientific assertion passes. Ruff15paths23base/
+23current/noNew is not clean lint. All3 old-test adaptations independently
+reviewed; shared producers and108pre-fix definitions preserved.
+
+Complete unchanged scalar/coverage/both4/8km-crop/downstream/sharedGRIB-FA
+examples pass with prescribed values/units/clocks/quality/provenance and6source
+hashes. Strict49/publication/13unit/4plot-release+2subtests pass/15warnings.
+Two updated pages inspected live1020/actual320; other4affected49pages equal
+inspected47HTML. Equations/figures/references/old output anchor retained; preview
+available. No archive run or human acceptance inferred.
+
+Scientific impact: correct declared point sampling/admission/magnitude order,
+not new diagnostics, quantity guesses, fallbacks or conservation promises.
+Compatibility: existing YAML/defaults/dependencies unchanged; actual polar
+products/additive quality/type provenance, native/model-grid values preserved.
+Remaining owners: full writer/schema10, resources11, old producers/assertions16/19,
+native/legacy/encoding/warnings19, human science/usability21. Minor3 and inherited
+direct-numerical formatter limitation remain. No source archive write, environment
+repair, push or merge occurred.
 
 ## Task 01 evidence
 

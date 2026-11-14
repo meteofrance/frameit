@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+from copy import copy
 
 import numpy as np
 
@@ -83,10 +84,13 @@ def sampling_axes(conf):
     count = getattr(conf, "polar_n_theta", None)
     step = getattr(conf, "azimuthal_resolution", None)
     validate_sampling_options(count, step, max_points)
-    sizes = [float(conf.x_boxsize_km), float(conf.y_boxsize_km)]
-    if any(not math.isfinite(value) or value <= 0 for value in sizes):
-        raise ValueError("x_boxsize_km and y_boxsize_km must be finite and positive")
-    radius = 0.5 * min(sizes)
+    if getattr(conf, "schema_version", None) == 3:
+        radius = float(conf.yaml_config["products"]["polar"]["radius_km"])
+    else:
+        sizes = [float(conf.x_boxsize_km), float(conf.y_boxsize_km)]
+        if any(not math.isfinite(value) or value <= 0 for value in sizes):
+            raise ValueError("x_boxsize_km and y_boxsize_km must be finite and positive")
+        radius = 0.5 * min(sizes)
     radial_m = getattr(conf, "radial_resolution", None)
     if radial_m is None or radial_m == 0:
         radial_m = getattr(conf, "resolution", None)
@@ -126,9 +130,98 @@ def sampling_axes(conf):
         "effective_azimuthal_resolution_deg": 360.0 / count,
         "n_theta": int(count),
         "polar_max_points": int(max_points),
+        "last_radial_interval_km": float(radii[-1] - radii[-2]) if len(radii) > 1 else 0.,
     }
     if step is not None:
         metadata["requested_azimuthal_resolution_deg"] = float(step)
     if getattr(conf, "polar_n_theta", None) is not None:
         metadata["requested_polar_n_theta"] = int(conf.polar_n_theta)
     return radii, angles, metadata
+
+
+def bind_polar_plan(source, request, binding, conf, *, radial_step_km=None):
+    """Resolve actual preparation, interpolation evidence and a crop-independent target."""
+    from frameit.processing.polar.contracts import polar_field_options, polar_source_geometry
+    from frameit.processing.polar.polar_proj import require_polar_backend
+    from frameit.processing.requests import resolve_field_metadata, source_field_metadata
+
+    if not source.get("region", {}).get("associations"):
+        binding["deferred_checks"].append(
+            "Polar centre/time associations and regional geometry require method planning.")
+        return
+    require_polar_backend()
+    jobs = [job for job in binding["operation_plans"] if job["product"] == "polar"]
+    spacing = []
+    for job in jobs:
+        job["polar_geometry"] = polar_source_geometry(job, conf)
+        evidence = job["polar_geometry"]["spacing"]
+        spacing.append(max(evidence[axis]["spacing_m"] for axis in ("x", "y")))
+        job["polar_options"] = {}
+        job["polar_input_metadata"] = {}
+        for name in set(job["inputs"].values()):
+            descriptor = job["input_binding"]["dependencies"][name]
+            record = descriptor["records"][0]
+            field = source["fields"][record["field_id"]]
+            metadata = record.get("field_metadata") or source_field_metadata(
+                source, field, record=record) or resolve_field_metadata(
+                    record.get("observed_attributes", field["attributes"]), {},
+                    f"polar.{name}", temporal_names=record.get("temporal_names", [record["clock"]]))
+            job["polar_options"][name] = polar_field_options(
+                metadata, {"sampling": job["sampling"], **request["polar_options"].get(name, {})},
+                conf, f"polar.{name}")
+            job["polar_input_metadata"][name] = {
+                "attributes": {key: metadata["attributes"][key] for key in (
+                    "units", "kind", "temporal_kind", "standard_name")
+                    if key in metadata["attributes"]},
+                "origins": metadata["origins"],
+            }
+    if conf.polar_source_halo_points < 1:
+        raise ValueError(
+            "Polar source halo is insufficient: at least one native neighbour is required")
+    dimensions = {"time", "radius", "azimuth"} | {
+        dim for job in binding["operation_plans"] if job["product"] == "polar"
+        for dim in job["grid"]["dimensions"]
+        if dim not in job["polar_geometry"]["horizontal_dimensions"].values()}
+    dimensions.update(dim for job in binding["operation_plans"] if job["product"] == "polar"
+                      for dim, _ in job["context"][2])
+    unknown = set(conf.polar_output_chunks) - dimensions
+    if unknown:
+        raise ValueError(f"Unknown polar processing chunks dimensions: {sorted(unknown)}")
+    binding["polar_plan"] = {"status": "prepared", "native_spacing_m": spacing}
+    if conf.polar_shared_target and radial_step_km is None:
+        return binding["polar_plan"]
+    return resolve_polar_sampling(source, binding, conf, radial_step_km=radial_step_km)
+
+
+def resolve_polar_sampling(source, binding, conf, *, radial_step_km=None):
+    """Resolve only the final target; never rebuild preparation/read bindings."""
+    spacing = binding["polar_plan"]["native_spacing_m"]
+    native = max(spacing)
+    requested = conf.yaml_config["products"]["polar"].get("radial_step_km")
+    step = radial_step_km if radial_step_km is not None else (
+        requested if requested is not None else native / 1000)
+    if step * 1000 < native * (1 - 1e-12):
+        raise ValueError(
+            f"products.polar.radial_step_km={step} is finer than supported native spacing "
+            f"{native / 1000} km; evidence: {spacing} metres")
+    settings = copy(conf)
+    settings.radial_resolution = step * 1000
+    radii, angles, metadata = sampling_axes(settings)
+    associations = source.get("region", {}).get("associations", [])
+    times = [record["source_time"] for record in associations] or source["selected_times"]
+    check_point_budget(len(times) * len(radii) * len(angles), conf.polar_max_points)
+    binding["polar_plan"] = {
+        "status": "bound", "radius_km": radii.tolist(), "azimuth_degrees": angles.tolist(),
+        "radial_step_km": step, "native_spacing_m": spacing,
+        "radial_step_origin": (
+            "shared_coarsest_native_grid" if radial_step_km is not None and requested is None else
+            "requested" if requested is not None else "coarsest_prepared_native_grid"),
+        "source_times": times, "associations": associations,
+        "centre_provider": source["region"]["centre_provider"],
+        "support": "actual_nonzero_native_interpolation_stencils_independent_of_export_crop",
+        "source_halo_points": conf.polar_source_halo_points,
+        "target_points": len(times) * len(radii) * len(angles), **metadata,
+    }
+    for descriptor in binding["products"]["polar"].values():
+        descriptor["execution"] = "bound_polar_sampling"
+    return binding["polar_plan"]

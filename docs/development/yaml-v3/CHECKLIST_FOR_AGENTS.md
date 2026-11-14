@@ -816,7 +816,7 @@ assertion, or mark a failed check as passed. The final full suite remains requir
 | [x] | 06 | 05 | Regions, trajectories, tracking, time associations |
 | [x] | 07 | 05 | Explicit SEA and FA source interpretation |
 | [x] | 08 | 07 | Explicit transforms and derived requests |
-| [ ] | 09 | 06, 08 | Product-driven polar processing |
+| [x] | 09 | 06, 08 | Product-driven polar processing |
 | [ ] | 10 | 09 | Complete coordinate and writer contract |
 | [ ] | 11 | 10 | CPU budget and chunk/storage settings |
 | [ ] | 12 | 10 | Early request records and accurate publication status |
@@ -1106,16 +1106,16 @@ preflight/coupled/runner integration.
 **Interfaces:** complete the shared product descriptors. Use source-specific time
 groups and centre associations; retain cache identity and target verification.
 
-- [ ] Test omitted/empty products, exact source/field filters, internal-only inputs,
+- [x] Test omitted/empty products, exact source/field filters, internal-only inputs,
   track-only, polar-only without width, and both products together. Assert no unused work.
-- [ ] Test crop-independent polar support, exact outer radius, clockwise full rings,
+- [x] Test crop-independent polar support, exact outer radius, clockwise full rings,
   automatic counts, native/coarsest shared spacing, and finer-spacing rejection.
-- [ ] Test evidence-based continuous/category methods, strict and explicit threshold
+- [x] Test evidence-based continuous/category methods, strict and explicit threshold
   coverage, zeroes, all-missing/unmapped points, unused overrides, and insufficient halos.
-- [ ] Prove speed is calculated after U/V sampling using a field where reversing
+- [x] Prove speed is calculated after U/V sampling using a field where reversing
   those operations gives different values. Test independent polar W preparation,
   mixed vertical grids, unequal source clocks/masks, and selected-time payload reads.
-- [ ] Test point budgets and optional dependencies with polar disabled/enabled.
+- [x] Test point budgets and optional dependencies with polar disabled/enabled.
   Review sampling, coverage, and representation rules.
 
 ```bash

@@ -80,11 +80,14 @@ rho/Earth currents require the documented static masks, angles and brackets.
 See :doc:`../user_guide/ocean_netcdf` for these contracts, and
 :doc:`../user_guide/fa_inputs` for explicit native FA declarations.
 
-Enable ``products.polar.shared_grid: true`` only when common point coordinates are
-needed. Participating sources must agree on target geometry; the default shared
-radial step is the coarsest participating spacing. Scalar/vector eligibility,
-masks and interpolation support stay source-specific. The detailed target
-contract remains in :doc:`../user_guide/fa_surface`.
+Request ``products.polar.shared_grid: true`` only when common point coordinates
+are needed. The product's exact field filter determines participating sources;
+its centre provider need not export fields. The default shared radial step uses
+the coarsest participating spacing. Native clocks, vertical axes, scalar/vector
+eligibility, masks and interpolation support remain source-specific.
+The radius and required support do not depend on the model-grid crop.
+Use :doc:`polar_sampling` for a complete single-source request and
+:doc:`../user_guide/fa_surface` for the shared-target contract.
 
 Check and run
 -------------

@@ -379,19 +379,34 @@ def test_polar_level_facts_do_not_clear_polar_execution_or_inherit_export_transf
     conf = configuration(tmp_path, {
         "variables": {"3d": ["WT"], "levels": {"indices": [2, 0]}},
         "transforms": [{"fields": ["WT"], "sampling": "mass"}],
+        "field_metadata": {"WT": {"kind": "continuous"}},
     }, region={"center": {"latitude": -20., "longitude": 60.}},
         products={"model_grid": True, "polar": {"radius_km": 1.}})
     _, children, plans = prepare_sources(conf)
     binding = bind_source(children["atmosphere"], "atmosphere")
-    assert binding["status"] == "pending_method_binding"
-    assert children["atmosphere"].source_requests["atmosphere"]["binding"] is None
+    assert binding["status"] == "bound"
+    assert children["atmosphere"].source_requests["atmosphere"]["binding"] is binding
     model = binding["products"]["model_grid"]["WT"]["records"][0]
     polar = binding["products"]["polar"]["WT"]["records"][0]
     assert model["vertical"]["values"] == [15., -5.]
     assert polar["vertical"]["values"] == [10., -10.]
     assert model["selection_grid_id"] != polar["selection_grid_id"]
     assert polar["selection_grid_id"] == polar["grid_id"]
-    assert plans["atmosphere"]["field_binding"]["status"] == "pending_method_binding"
+    assert plans["atmosphere"]["field_binding"]["status"] == "bound"
+    assert binding["polar_plan"]["support"].startswith("actual_nonzero_native")
+    result = execute_simulation(conf)
+    paths = {product["role"]: product["path"] for product in result.products}
+    subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1]) as native, xr.open_dataset(sys.argv[2]) as polar:
+    np.testing.assert_array_equal(native.level, [15.,-5.])
+    np.testing.assert_array_equal(polar.level_w, [10.,-10.])
+    np.testing.assert_allclose(polar.WT.isel(radius=0,azimuth=0), [[360.,144.]]*3)
+    assert polar.WT.attrs['units'] == 'km/h'
+    np.testing.assert_array_equal(polar.WT_interpolation_status, 0)
+    assert 'wind_speed' not in polar and 'vrad' not in polar
+assert 'frameit' not in sys.modules
+""", paths["model_grid"], paths["polar"]], check=True, capture_output=True, text=True)
 
 
 def test_polar_derived_shared_levels_are_bound_but_magnitude_is_not_calculated(tmp_path):
@@ -404,17 +419,29 @@ def test_polar_derived_shared_levels_are_bound_but_magnitude_is_not_calculated(t
         "derived": {"speed": {"method": "wind_speed", "inputs": {"u": "UT", "v": "VT"}}},
         "wind_pairs": [{"u": "UT", "v": "VT", "basis": "grid",
                         "rotation": {"method": "coordinate", "coordinate": "angle"}}],
+        "field_metadata": {name: {"kind": "continuous"} for name in ("UT", "VT")},
     }, region={"center": {"latitude": -20., "longitude": 60.}},
         products={"polar": {"radius_km": 1.}})
     _, children, _ = prepare_sources(conf)
     binding = bind_source(children["atmosphere"], "atmosphere")
-    assert binding["status"] == "pending_method_binding"
+    assert binding["status"] == "bound"
     descriptor = binding["products"]["polar"]["speed"]
     assert descriptor["method"] == "wind_speed"
-    assert descriptor["execution"] == "pending_polar_sampling"
+    assert descriptor["execution"] == "bound_polar_sampling"
     assert descriptor["records"][0]["vertical"]["values"] == [15., -5.]
     assert descriptor["magnitude_order"] == "after_sampling_components"
     assert not binding["operations"]
+    result = execute_simulation(conf)
+    subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1]) as out:
+    np.testing.assert_array_equal(out.level, [15.,-5.])
+    np.testing.assert_allclose(out.speed, 5., atol=1e-12)
+    assert out.speed.attrs['derivation'] == 'magnitude_of_sampled_components'
+    np.testing.assert_array_equal(out.speed_full_ring_valid, 1)
+    assert not {'UT','VT','vrad','vtan','wind_speed'} & set(out.data_vars)
+assert 'frameit' not in sys.modules
+""", result.products[0]["path"]], check=True, capture_output=True, text=True)
 
 
 def test_croco_explicit_transform_reuses_joint_masks_and_rho_rotation(tmp_path, monkeypatch):

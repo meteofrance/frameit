@@ -260,8 +260,9 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
     if binding.get("status") != "bound" or source is None:
         raise ValueError(
             "NetCDF selected_records requires bound requests and owning source metadata")
-    if set(binding["products"]) - {"model_grid"}:
-        raise ValueError("Selected NetCDF polar processing is not bound to an executable method")
+    from frameit.processing.polar.contracts import require_executable_products
+
+    require_executable_products(binding, source)
     admitted = {Path(path).resolve() for path in files}
     model = {"mesonh": "MNH"}.get(source["model"], source["model"].upper())
     native_conf = SimpleNamespace(
