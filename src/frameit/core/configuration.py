@@ -186,18 +186,18 @@ def _sizes(value, path, *, whole_axis=False):
             _positive(count, f"{path}.{name}", integer=True)
 
 
-def _path(value, base, path, *, interpreter=False):
+def _path(value, base, path, *, preserve_symlink=False):
     _text(value, path)
-    # Resolving a virtualenv's python symlink would select the base interpreter.
-    return os.path.abspath(base / value) if interpreter else str((base / value).resolve())
+    # Input aliases and virtualenv interpreter symlinks carry their own identity.
+    return str((base / value).absolute() if preserve_symlink else (base / value).resolve())
 
 
 def _paths(value, base, path, *, empty=False):
     if isinstance(value, str):
-        return _path(value, base, path)
+        return _path(value, base, path, preserve_symlink=True)
     if not isinstance(value, list) or (not value and not empty):
         raise ValueError(f"{path} must be a path/glob or a {'nonempty ' if not empty else ''}list")
-    return [_path(item, base, path) for item in value]
+    return [_path(item, base, path, preserve_symlink=True) for item in value]
 
 
 def _center(value, path):
@@ -521,7 +521,7 @@ def _source(raw, name, base):
         if fmt not in {None, "fa"}:
             raise ValueError(f"{path}.reader.{key} is FA-only")
         if key == "python_executable":
-            reader[key] = _path(reader[key], base, f"{path}.reader.{key}", interpreter=True)
+            reader[key] = _path(reader[key], base, f"{path}.reader.{key}", preserve_symlink=True)
         else:
             _positive(reader[key], f"{path}.reader.{key}", integer=key == "max_points")
     source["reader"] = reader

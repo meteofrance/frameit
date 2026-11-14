@@ -32,10 +32,10 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 01 | done | task-01 worker + independent reviewer | 00 | Reviewed fix committed as `645d7e6`. |
 | 02 | done | task-02 worker + independent reviewer | 01 | Reviewed schema and frozen handoffs: `8034a6d`. |
 | 03 | done | task-03 worker + independent reviewer | 02 | `9ad6f19`; all nine findings closed, record/grid handoff frozen below. |
-| 04 | done | task-04 worker + independent reviewer | 03 | Both Important findings independently closed; field/level handoff frozen below. |
-| 05 | ready | lead | 04 | Native execution test and orchestration first; separate adapter claims after native slice review. |
-| 06 | blocked | lead | 05 | `coupled.py`, time/track/tracker/extraction files; regions and centre associations. |
-| 07 | blocked | unassigned | 05 | SEA/FA files and tests; explicit source declarations. |
+| 04 | done | task-04 worker + independent reviewer | 03 | `37aaf5f`; both Important findings closed, field/level handoff frozen below. |
+| 05 | done | lead + three adapter workers + independent task reviewer | 04 | Native/read gate approved after both Important closures;788 distinct targeted passes and final required5. Local commit follows this record. |
+| 06 | ready | lead | 05 | `coupled.py`, time/track/tracker/extraction files; regions and centre associations. Start only after the Task05 local commit. |
+| 07 | ready | unassigned | 05 | SEA/FA files and tests; explicit source declarations. Start only after the Task05 local commit. |
 | 08 | blocked | unassigned | 07 | Requests, wind, extraction and derived files; explicit transformations. |
 | 09 | blocked | lead | 06, 08 | Polar modules and runner/preflight integration; requested products only. |
 | 10 | blocked | lead | 09 | Writers, output paths and execution; shared descriptors and stable coordinates. |
@@ -1031,6 +1031,430 @@ internal ancillary support roles and FA record metadata are specified above.
 Native-stack repair is complete for the reproduced blocker; general native,
 payload/transform/output and large-archive qualification remain their later gates.
 No source data or unrelated user work was modified.
+
+Task04 commit: `37aaf5f`. The working tree was clean immediately afterward;
+nothing was pushed.
+
+## Task 05 work in progress — native slice first
+
+Starting commit: `37aaf5f9b692cc60f9921a5191e0484fd12e6620`.
+The lead implements the first runnable slice inline under the approved task
+plan/TDD, with independent review before adapter delegation. No Task05 completion
+or general native qualification is claimed.
+
+Lead claims: `core/runner.py`, `core/coupled.py`, `core/execution.py`,
+`io/netcdf_utils.py`, `io/netcdf_export.py`, new
+`testing/numerical/test_v3_execution.py`, basic native-output guidance in
+`docs/source/user_guide/output_files.rst`, input-reader guidance only if affected,
+internal evidence and state/checklist. Shared fixtures, the frozen request/
+inventory APIs, configuration/settings and other adapters remain unchanged
+unless a necessary caller-wide claim is explicitly recorded.
+The existing `create_first_run_input` helper is reused without modification.
+
+Acceptance starts with complete YAML → `load_runtime` → `execute_simulation`
+→ ordinary-reader reopening of the native scalar. Tests must catch changed
+values/units/masks/coordinates/times, accidental track/diagnostic output, source
+mutation and clobbering. Then atmosphere/ocean unequal clocks must remain separate.
+Only after the native slice's review will selected-record adapter assignments
+be split into disjoint claims. Later region/transform/polar/full-schema work keeps
+its owning tasks; incomplete paths must fail explicitly, not fall back to legacy
+group selection, read excluded samples or invent centres.
+
+Task05 native-slice TDD: the two required end-to-end cases were observed RED at
+the unbound guard, then GREEN through execution and independent reader reopening.
+Two additional safety cases were RED before input-collision and external-inventory
+checks. Latest focused command:
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_v3_execution.py src/frameit/testing/numerical/test_output_layout.py::test_direct_export_uses_products_directory src/frameit/testing/numerical/test_configuration_v3.py --tb=short
+```
+
+Result: 333 passed, 12 warnings; six native cases, 326 schema cases and one
+existing direct-export caller. Actual h5netcdf/netCDF4 payload guards saw only
+selected sample1 with requested time chunks of2. Binary/shape warnings remain;
+the optionality test also exposes xarray's optional-entrypoint probe warning when
+ecCodes imports are unavailable. No optional-backend dependency is required for
+the checked native execution. The earlier 18-failure diagnostic found one new
+SimpleNamespace exporter regression, now corrected and green, and 17 unchanged
+public-v2 producer failures. Raw exact names/results remain in the review packet.
+
+Ruling: `selected_records` on the v3 loader route carries the complete executable
+binding mapping, not the original `binding.records` list, because product and
+internal same-name stencils must remain distinct. `source_plan` supplies the
+owning grid/provenance metadata. Existing numerical signatures/return nesting
+remain usable when these optional arguments are omitted. Native user groups use
+actual grid IDs; internal groups use `tracker["internal"][grid_id]`. The same
+prepared child consumers pass from binding to execution rather than rebuilding
+them. These are provisional internal APIs pending the native-slice review, not
+an adapter-delegation freeze. Cost if wrong: downstream adapter work must wait
+and may require this small handoff to change; no public selector/schema changes.
+
+Native-slice independent review requests two Important corrections: an occupied
+log path can alias and modify a source, and an admitted `valid_time(sample)` clock
+fails concatenation. Lead fixround1 owns the original code and the narrowly
+necessary `utils/logging.py` write boundary. New real-run tests were RED3, then
+GREEN3. Logging now exclusively creates a fresh file, suffixing occupied names;
+the shared time normalizer swaps a one-dimensional clock's actual axis and keeps
+its original sample-index auxiliary. No code or environment workaround was added.
+
+Fresh covering command adds `src/frameit/testing/numerical/test_logging.py` to
+the preceding native/schema/direct-export command: 339 passed,2 subtests passed,
+16 warnings. The original31-case numerical assembly/import selection also passes
+after the shared clock correction,33 deselected and71 existing warnings.
+Ruff comparison is23→23 with no new diagnostics; diff check passes.
+Original reviewer must verify both closures and new fix-diff breakage before any
+adapter delegation. Reviewed index checkpoint is
+`2801dba49d72daa9b48646f9d034e38498140bbc`; this is not a task commit.
+The deliberate optional-entrypoint warning is a recorded deferred Minor for
+whole-branch triage, not silently suppressed.
+
+Output-guide draft now describes native full-domain copying, source/product
+paths, independent clocks, reader checks and applicable v3 storage keys without
+enabling diagnostics. Iteration16 failed because of list-table indentation;
+that table was replaced by readable full-width bullets. Strict Sphinx,
+publication checks and13 publication unittests pass in17/18/19. The18 output page
+was inspected live at desktop880px and actual320px: no page overflow, code's
+right edge reachable and images loaded; Enter opens/closes the native menu.
+Iteration19 adds the fresh-log policy; its rendered delta remains to inspect.
+These documentation changes still need final Task05 review. No scientific or
+human acceptance is implied.
+
+The added iteration19 log paragraph is now inspected live at desktop880px and an
+actual320px iframe: it fits, without page overflow. The canonical output page19
+is restored in the retained tab; server/restart details remain in the ignored
+preview handover. Independent native-slice scoped review is active; no adapter
+assignment or closure has occurred.
+
+Native-slice scoped re-review independently closes both Important findings:
+spec PASS, quality APPROVED for this gate, no new fix-diff breakage. Minor warning
+accounting remains deferred. This permits adapter assignments, not Task05 closure.
+Reviewed native checkpoint is now staged tree
+`d9ca115c20c06e05241216566280c7708460430b`; HEAD remains37aaf5f.
+The loader/consumer mapping above is frozen for these bounded assignments.
+
+Adapter claims are disjoint: one NetCDF/MNH/NEMO/CROCO worker owns
+`io/netcdf_utils.py`, `nemo_utils.py`, `croco_utils.py` and new
+`test_v3_netcdf_reads.py`; GRIB owns `grib_utils.py` and new
+`test_v3_grib_reads.py`; FA owns `fa_utils.py`, `fa_backend.py` only if needed,
+and new `test_v3_fa_reads.py`. Each writes its own ignored report/logs and must
+preserve the reviewed baseline, existing fixtures and numerical paths. Lead
+retains runner/coupled/execution/writer, central tests, docs/state and all staging.
+
+Ruling: combine the two NetCDF model-family lanes under one owner because their
+selected-read and admission paths share `netcdf_utils.py`; GRIB and FA remain
+parallel disjoint work. Cost if wrong: that lane may take longer, but there is no
+overlapping implementation authority or duplicated scientific default.
+FA must prove the selected-locator mechanism on already-admitted explicit direct
+numerical paths while public method/scaling binding remains Task07-pending.
+No artificial bound map or full public FA pipeline pass is authorized. An exact
+shared-interface need must come back to the lead before a conflicting change.
+
+FA lane first report implements an internal `fa_selected_array(record,
+source_plan, *, options, diagnostics_path=None)` leaf and optional grouped-loader
+keywords, while keeping genuine public FA interpretation/scaling rejection.
+This is consistent with the assigned stage boundary; it does not establish
+public FA dispatch or method clearance. The worker reports42 new cases plus27
+unchanged numerical/resource checks passing,188 v3 binding/inventory checks
+passing with the approved fixture, clean scoped Ruff and unchanged staged tree.
+The broader regression diagnostic records57 unchanged public-v2 schema failures;
+all exact node names and logs are in its ignored report.
+
+The lead inspected its owned production diff and test surface, without replacing
+independent review. A bounded wording follow-up is active in the same worker:
+remove the internal task number from the new user-visible pending-FA error,
+preserving the failure and scientific/payload assertions. NetCDF/GRIB workers
+remain active in disjoint files. All lanes will enter combined independent
+Task05 review after integration; none is independently approved yet.
+
+FA wording follow-up returned: all42 new cases and both gate checks pass, scoped
+Ruff clean; the error no longer names an internal task. Public FA interpretation/
+scaling rejection remains intact. The final lane still awaits independent review.
+
+GRIB lane reports31 new selected-message cases and66 scoped covering passes,
+with exact real ecCodes read/handle instrumentation. Its one unchanged public-v2
+matrix-planning failure and explicit reader limits are named in its ignored
+report; they are not passed qualifications. The lead read its interface/evidence
+and added a direct public YAML/API native-U integration case. It was observed RED
+at the missing runner dispatch, then GREEN after native loader dispatch was
+connected through the shared selected-record arguments:
+
+```bash
+PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_v3_execution.py::test_native_grib_component_roundtrip --tb=short
+```
+
+Result:1 passed, no warnings. A fresh ordinary-reader process checks literal
+values, native field units, a singleton pressure axis and selected00:00/02:00
+times; no V companion/diagnostic is exported, input bytes remain unchanged and
+no index appears beside the source. No all-GRIB or scientific qualification is
+inferred. Input-reader guidance now explains selected-message decoding and
+whole-message memory cost; updated output prose avoids implying that native
+copying applies analysis basis exceptions. These newest doc deltas still need
+strict build/publication/live inspection. NetCDF worker remains active.
+
+### Task05 integrated verification and full-review gate
+
+All three adapter workers have returned and are idle. NetCDF reports51 new
+real-backend cases, GRIB31 and FA42. Lead integration adds full public native
+GRIB-U and CROCO formula-support/output cases and covers SciPy/NetCDF3 selection.
+The latter actual backend check reads only selected sample1, like h5netcdf and
+netcdf4. Existing fixture helpers remain unchanged.
+
+Two real integration defects were observed RED and corrected: the new runner
+version check broke an existing SimpleNamespace numerical caller, and explicit
+`zeta` output conflicted with its role as another field's formula coordinate.
+Optional-version dispatch and consistent explicit-output promotion now preserve
+those caller/value contracts. No scientific field conversion or guessed assembly.
+
+Final source checkpoint is staged tree
+`d47ff97972f72912b6ef744ed7cf236fcd8b264d`, not a task commit. The lead freshly ran
+the exact commands in `task-05-checks.md`:
+
+- required5 passed/10 warnings;
+- main integration467 passed,2 subtests/29 warnings;
+- delivered binding/inventory233 passed,137 deselected/19 warnings;
+- HPC/FA resources43 passed,14 deselected/4 warnings;
+- existing legacy assembly31 passed,33 deselected/71 warnings.
+
+JUnit comparison confirms774 distinct targeted nodes, no overlap/failures/errors/
+skips. All136 new Task05 cases are included. All13 changed Python files compare
+Ruff50baseline→50current, no new diagnostics. Diff check passes.
+Known external and deliberately induced warning debt remains visible.
+
+The full project command also completed in frameit_env with the approved
+read-only fixture and no selection filter:468 failed,1523 passed,2 errors,
+4 subtests,4049 warnings,296.79 seconds. All470 exact failure/error node IDs match
+each of three retained Task03 full-suite logs, with no new or removed failed node.
+The two setup errors remain the old public CLI fixture in
+`test_hpc_execution.py::test_concurrent_cli_attempts_spawn_and_sync_export_exactly`
+and `docs/test_repository_examples.py::test_independent_checker_accepts_reference_and_rejects_wrong_time_count`.
+428 XML failures/errors hit strict v3 admission;42 are CLI/template wrapper cases.
+All names, raw tracebacks and exact delta are retained in the ignored named
+reports referenced by `task-05-checks.md`. This is not full-suite green.
+
+Unsupported multi-varying-axis NetCDF assembly, GRIB stencil/layout restrictions,
+public FA interpretation/grouped dispatch and conflicting-grid writer publication
+remain explicit limits, not passed qualifications. No pending binding is treated
+as executable. Full method/coordinate/writer/report/CLI gates retain their
+assigned later tasks. The combined reviewer must judge this against Task05's
+own native/read-mechanism stage requirements, not infer scientific validation.
+
+Strict/publication/13 publication unittests pass21;20 also passed4 plot/release
+and2 subtests. Both affected pages were inspected live desktop880/actual320,
+including reader cost and declared layout/grid limits, without page overflow.
+The preview tab was re-resolved after the original tab became unavailable; the
+GUI remains connected and the new retained tab shows21. No human acceptance.
+Final figure-caption22 failed strict indentation; corrected23 is building and
+must be inspected before any commit. All final scientific/artwork content remains
+unchanged apart from clarifying that the regional schematic requests a track.
+
+Next: one fresh independent full Task05 review of code/tests/docs/evidence, close
+findings with covering checks and scoped re-review, freeze the complete handoff
+and commit locally. No Task05 approval, completion or commit is claimed.
+
+Full Task05 reviewer is now active on precommit tree
+`aa12b4ebca5f64232b018f2febd0393569213de1`, package
+`task-05-review.diff`. This includes all17 code/test/docs/evidence/state paths.
+All implementation workers and the earlier native-slice reviewer are idle.
+No fix or Task06 implementation starts before this independent verdict.
+
+Final caption23 strict build/publication/13 unittests passed after22 failed.
+Its rendered caption was inspected desktop880px and actual320px; no overflow,
+all images loaded and the regional/non-track distinction is readable.
+Input HTML23 exactly matches the already-inspected21. Canonical output23 is
+retained in the live GUI. These final record-only updates remain unstaged while
+the reviewed index checkpoint is preserved. No human acceptance is inferred.
+
+### Task05 full-review fix round1
+
+Full review returned spec issues / quality Needs fixes. The reviewer independently
+reproduced two Important defects not covered by the774 passing checks:
+
+1. Replacing an existing Zarr store can delete an inventoried source nested inside
+   it. Same-file protection does not establish directory non-containment.
+2. A cross-format execution-engine override can publish a Zarr directory under a
+   planned NetCDF filename, disagreeing with effective configuration and status.
+
+The lead owns focused corrections in `core/execution.py` and the central
+`test_v3_execution.py`. The reviewed index remains
+`aa12b4ebca5f64232b018f2febd0393569213de1`; the original full reviewer will check
+only these closures and new fix-diff breakage. No Task05 commit or Task06 work
+before closure.
+
+Ruling: reject cross-format API engine overrides before source binding or run
+ownership, with an error directing callers to `output.format`. Keep same-format
+NetCDF engine selection available. Replanning an already-resolved configuration
+would introduce unnecessary format/path mutation into this native milestone.
+Cost if wrong: callers wanting another format must resolve a configuration with
+that declared format instead of changing only `ExecutionOptions.engine`.
+
+Source preservation must include inventoried paths, deduplicated aliases and
+declared excluded paths, checking their parent-resolved directory entries as well
+as their resolved physical targets. A leaf symlink inside a replaced store is
+itself a source path even when its target is outside. Existing same-file/hard-link
+protection remains required. Tests use only disposable generated stores/inputs.
+Initial seven-case run was RED7: each completed instead of rejecting its unsafe
+request. The first containment correction preserved nested/excluded files but
+left leaf/deduplicated symlink cases RED2 (6 covering cases passed). Investigation
+traced those two failures to `_paths` resolving explicit source symlinks before
+inventory, erasing the very alias that directory replacement removes.
+Necessary scope extension: `core/configuration.py` now preserves source
+`files`/`exclude` aliases as absolute paths, leaving device/inode deduplication to
+the existing inventory. The private `_path` keyword is renamed from the
+interpreter-specific name to `preserve_symlink`; its FA helper caller keeps the
+same behavior. No public YAML key, new dependency or scientific decision changes.
+
+Additional bounded claim: `io/loader.py` resolves a NetCDF input's physical path
+only when calling xarray. A new `symlink/../source.nc` control was RED because
+lexical `abspath` collapsed its parent incorrectly; retaining that path then
+exposed xarray's own lexical normalization. Using `Path.absolute` for declarations
+and `Path.resolve` at the backend boundary preserves the original file meaning.
+The resource key and inventory retain the declared path. A separate directory-
+alias-inside-store control was RED and is protected by retaining the lexical
+absolute location as well as parent-resolved and fully resolved locations.
+These are source-identity corrections, not additional discovery or new formats.
+
+The original seven regressions are GREEN. The expanded native suite passed22
+before the directory-alias control; the final integrated run includes all23
+central cases, seven source-containment variants, both conflicting formats and
+two safe same-format/overwrite controls. Ordinary readers reopen the positive
+NetCDF/h5netcdf and Zarr products without importing FrameIt; filenames, status,
+effective format, scalar values/metadata and input bytes agree on both runs.
+Latest integrated result:478 passed/2 subtests/41 warnings. The same delivered
+selections pass233 binding/inventory,43 resource and31 numerical assembly cases.
+XML assertions establish785 distinct passing targeted nodes without overlap,
+failures/errors/skips. Required5 freshly pass with10 warnings (2.53s).
+
+Strict Sphinx iteration24, publication boundary,13 publication unittests and4
+plot/release tests plus2 subtests passed. The changed input/output paragraphs were
+inspected live at desktop880px and actual320px, with no page overflow or missing
+images. Canonical output24 and the owned preview remain available. No human
+acceptance is inferred. A new E501 in the first Ruff comparison was wrapped;
+the final15-file comparison is81baseline/81current with no new diagnostics.
+The larger baseline includes newly claimed configuration/loader files.
+Full-suite fix diagnostic completed:
+468 failed,1534 passed,2 errors,4 subtests and4061 warnings in302.30 seconds.
+All470 failure/error nodes match the preceding Task05 run and all three Task03
+diagnostics exactly; this is not a passing full suite.
+
+Original full reviewer is now checking findings1/2 and new fix-diff breakage
+against `task-05-full-review-fix-1.diff`. The reviewed index remainsaa12b4e;
+all fixes are unstaged. No implementation worker or test command is active.
+Only read-only Task06 preparation may proceed before closure/Task05 commit.
+
+Full-review fixround1 verdict: Important2 ADDRESSED, Important1 NOT ADDRESSED
+completely; spec issues / quality Needs fixes. An outside input alias can resolve
+through an intermediate link inside the replaced store to an outside physical
+file. Replacement leaves the declared input dangling, despite unchanged physical
+bytes. This is the same source-preservation finding, not a new scientific defect.
+The lead owns fixround2 with real leaf/directory/excluded chain regressions.
+The fix1 working-tree snapshot is tree
+`9c98132bd5dc965b6cc87d8dbe1ac23571cbcb7a`, produced with a separate temporary
+Git index; the real index remainsaa12b4e. Original format closure must be retained.
+No Task05 commit or Task06 implementation has occurred.
+
+Fixround2 observed RED3 for file/directory/excluded two-hop aliases, then GREEN26
+central cases. `_input_path_locations` now follows required symlink targets and
+parent-directory links with a visited-path set, preserving declared paths and
+physical targets without another filesystem resolver. Only execution and the
+central tests changed; Important2's early format guard is unchanged.
+Fresh combined verification:481+233+43+31=788 distinct targeted passing nodes,
+confirmed from XML without overlap/failures/errors/skips. All150 new Task05
+cases are included. Ruff15files81baseline/81current/noNew. Strict25/publication/
+13 unittests passed; both affected HTML files match desktop/320-reviewed24.
+Canonical25 is retained. The full diagnostic completed:468 failed,1537 passed,
+2 errors,4 subtests,4064 warnings in304.31 seconds. All470 failure/error node
+IDs exactly match fix1, the preceding Task05 run and all three Task03 runs.
+This is not full-suite green. The original reviewer must close the remaining
+containment finding before any commit.
+
+Deferred Minors from this full review:
+
+- Binding warnings precede the retained run logger; recorded coordinate
+  `unit_assumption` attributes remain intact. Task14 owns replay/deduplication of
+  actual prepared warnings after logging opens, without moving safety binding
+  after run ownership. Task19 must verify the retained-log assertion.
+- The later polar filename heading still says `SIMU.polar.<group>.nc`. Task10's
+  writer-contract documentation must use the source/product name and reconcile
+  its explanation. Task20 must include this page in the full documentation pass.
+
+The earlier intentional optional-entrypoint-warning Minor remains deferred to
+Task19/whole-branch triage. None of these is an approval or a silently fixed item.
+
+## Task 05 reviewed execution handoff
+
+Full integration review and both scoped rounds are complete. Important1 is
+ADDRESSED, Important2's closure is preserved, and no new fix-diff breakage or
+additional out-of-scope finding remains. Spec PASS and task quality APPROVED
+apply to this native/read-mechanism gate only. Three Minors remain explicitly
+deferred above. No scientific, human-usability, general-resource or later-pipeline
+approval is inferred.
+
+The reviewer saw the last full diagnostic as pending. The lead subsequently
+verified its completed output and exact470-node comparison above; the pending
+review wording is not a waiver or a passing-suite claim. Fresh precommit required
+command (the Task05 command in the checklist) passed5/10 warnings in2.57 seconds.
+Final tested source is unchanged from the approved fixround2.
+
+### Frozen consumers and selected reads
+
+- `coupled.bind_sources(conf)` returns `(report, children, plans)` with the actual
+  prepared children bound exactly once. Parent source/request snapshots are
+  deliberately copied. Execute those same children; never rebuild unbound ones.
+- `FrameitRunner(..., prepared_sources=None)` carries that handoff. Native source
+  execution uses each selected source's own clock and native grids, without a
+  reference source, centre, trajectory, implicit companion or diagnostic.
+- Selected grouped-reader arguments are `selected_records=<complete executable
+  binding>, source_plan=<owning inventoried source>`, not `binding.records`.
+  Return shape remains `(user_groups, tracker_groups)` with native grid IDs and
+  internal support under `tracker_groups["internal"][grid_id]`.
+- Product descriptors govern exported positions/order. Internal dependency
+  descriptors govern required support. Same-name output `[5,0]` and internal
+  `[5,6,0,1]` stay distinct; never use their union as an export selector.
+- NetCDF subsets original payload/coordinate indexers and list-valued vertical
+  positions before Dask chunk construction. Original resources stay owned until
+  execution/export finish; failures roll back. Auxiliary sample labels and bounds
+  survive clock normalization. The physical path handed to xarray is resolved,
+  while inventory/cache identity retains the declared path.
+- GRIB uses the selected offset/length, existing native lock and one scoped
+  decoder handle per message. Native units, level/member/cycle/interval evidence,
+  zero and bitmap missingness remain distinct. It does not discover neighbours
+  or decode an excluded message. A selected message is a whole horizontal field.
+- FA's selected numerical leaf is `fa_selected_array(record, source_plan, *,
+  options, diagnostics_path=None)`. Use each raw record's `native_descriptor`,
+  never a merged field summary. Existing isolated decoding/scaling/fallback and
+  freshness checks remain. Public interpretation/grouped execution stays genuinely
+  pending for Task07; no artificial bound map is permitted.
+
+### Native publication, safety and remaining owners
+
+- Native `runner.field_products[(source, product)]` uses the existing writer and
+  planned source/product paths. Explicit outputs that also serve as formula
+  coordinates remain outputs; support-only fields are not extra exports.
+- Binding and source/destination safety precede run ownership. Every inventoried,
+  deduplicated-alias and excluded path is protected, including required symlink
+  chains. Same-file/hard-link checks remain. Cross-format API engine overrides
+  fail early; select `output.format` in the configuration instead.
+- Native scalar values, units, zeroes/NaNs and independent source clocks were
+  reopened outside FrameIt. This is checked numerical preservation, not blanket
+  scientific validation or bitwise-output identity.
+- Several varying NetCDF sample axes remain explicitly unsupported. Conflicting
+  native-grid coordinates fail exact merging. These failures do not grant reader/
+  multi-grid writer qualification; Task10 owns the complete writer contract.
+- Task06 owns regions, actual tracker dependency binding, trajectories and centre
+  association; Task07 owns source interpretation; Tasks08–09 own transformations/
+  polar planners. Pending methods must remain blocked until their owning gates.
+- Tasks11–14 retain resource/report/publication/progress integration; Tasks15–16
+  retain public CLI/templates/producers; Task19 retains full green integration and
+  native/scientific qualification. The unchanged470 full-suite failure/error nodes
+  are retained by name, not suppressed or marked passed.
+
+Verification:788 distinct targeted nodes, final required5, Ruff81→81/noNew,
+strict25/publication/13 unittests, and reviewed desktop/actual320 HTML identical
+to24. Exact commands, outputs and limits are in `task-05-checks.md`.
+Docs: canonical input/output guides cover native behavior, costs, limitations,
+source preservation and format selection. No installation/dependency change,
+new scientific method or additional public configuration key belongs to Task05.
+The local commit is the next operation; nothing will be pushed.
 
 ## Task 01 evidence
 

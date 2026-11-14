@@ -132,6 +132,15 @@ class SimulationExecutionResult:
 
 
 def _product_descriptors(exports, runner):
+    if getattr(runner.conf, "schema_version", None) == 3:
+        planned = runner.conf.simulation_parameter["request_plan"]["products"]
+        return [
+            {"role": item["product"], "source": item["source"], "group": None,
+             "path": str(Path(path).resolve())}
+            for paths in exports.values() for path in paths
+            for item in planned
+            if Path(path) == runner.output_dir / item["path"]
+        ]
     products = []
     for role, paths in exports.items():
         if role == "track":
@@ -186,6 +195,24 @@ def _loaded_backend_versions():
     return versions
 
 
+def _input_path_locations(paths):
+    """Retain physical targets and all symlink entries needed to reach inputs."""
+    locations, checked = set(), set()
+    pending = list(paths)
+    while pending:
+        path = pending.pop().absolute()
+        if path in checked:
+            continue
+        checked.add(path)
+        locations.update((path, path.resolve()))
+        # resolve() hides intermediate links, including those in parent directories.
+        for entry in (path, *path.parents):
+            if entry.is_symlink():
+                locations.add(entry.parent.resolve() / entry.name)
+                pending.append(entry.parent / entry.readlink())
+    return locations
+
+
 def execute_simulation(
     config: SimulationConfig,
     options: ExecutionOptions | None = None,
@@ -205,12 +232,44 @@ def execute_simulation(
         runtime_provenance,
     )
 
-    if config.schema_version == 3 and (
-        not config.source_requests
-        or any(request.get("binding") is None for request in config.source_requests.values())
-    ):
-        raise ValueError("Cannot execute unbound sources; bind source requests to metadata first")
     requested = options or ExecutionOptions.from_config(config)
+    prepared_sources = None
+    if config.schema_version == 3:
+        requested_format = "zarr" if requested.engine == "zarr" else "netcdf"
+        if requested_format != config.yaml_config["output"]["format"]:
+            raise ValueError(
+                "Execution engine conflicts with output.format; select the format "
+                "in the configuration before execution"
+            )
+        from frameit.core.coupled import bind_sources
+
+        try:
+            prepared_sources = bind_sources(config)
+        except ValueError as exc:
+            raise ValueError(f"Cannot bind source requests to metadata: {exc}") from exc
+        if config.yaml_config["region"] or set(config.yaml_config["products"]) - {"model_grid"}:
+            raise ValueError("Region and non-native product execution require their method binding")
+        sources = prepared_sources[2].values()
+        selected = {Path(path).resolve() for source in sources for path in source["files"]}
+        if input_files is not None and {Path(path).resolve() for path in input_files} != selected:
+            raise ValueError("Explicit input inventory differs from the bound source inventory")
+        inputs = []
+        for source in sources:
+            inputs.extend(Path(path) for entry in source["file_inventory"]
+                          for path in (entry["path"], *entry["aliases"]))
+            inputs.extend(Path(path) for path in source["excluded_files"])
+        input_locations = _input_path_locations(inputs)
+        targets = [config.output_dir / item["path"] for item in
+                   config.simulation_parameter["request_plan"]["products"]]
+        targets += [config.output_dir / name for name in (
+            "resolved-config.yaml", "run-provenance.yaml", "run-status.yaml", ".frameit-run.lock")]
+        for target in targets:
+            if target.exists() and any(path.exists() and target.samefile(path) for path in inputs):
+                raise ValueError(f"Output would replace a source input: {target}")
+            if target.is_dir() and any(path.is_relative_to(target.resolve())
+                                       for path in input_locations):
+                raise ValueError(
+                    f"Output would replace a directory containing a source input: {target}")
     if requested.export_netcdf and requested.engine == "zarr":
         from frameit.io.zarr_export import check_zarr_dependencies
 
@@ -224,7 +283,8 @@ def execute_simulation(
     }) as status:
         with execution_scope(effective):
             result = _execute_simulation(
-                config, effective, status, runtime, input_files=input_files
+                config, effective, status, runtime, input_files=input_files,
+                prepared_sources=prepared_sources,
             )
         if not result.ok:
             raise RuntimeError("Processing returned an unsuccessful result")
@@ -246,7 +306,8 @@ def execute_simulation(
         return result
 
 
-def _execute_simulation(config, options, status, runtime, *, input_files=None):
+def _execute_simulation(config, options, status, runtime, *, input_files=None,
+                        prepared_sources=None):
     """Execute, export and release one simulation through the shared pipeline.
 
     An explicit inventory is consumed verbatim; ordinary runs discover files
@@ -271,10 +332,12 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
             # No ESMF/cfgrib/NetCDF backend import during CLI help or planning.
             from frameit.core.runner import FrameitRunner
 
-            runner = FrameitRunner(config, input_files=input_files)
+            runner = FrameitRunner(config, input_files=input_files,
+                                   prepared_sources=prepared_sources)
             result = runner.run(benchmark=True) if options.benchmark else runner.run()
-            status["tracking_complete"] = bool(runner.track.attrs.get("tracking_complete", True))
-            status["tracking_termination_reason"] = runner.track.attrs.get(
+            track_attrs = runner.track.attrs if runner.track is not None else {}
+            status["tracking_complete"] = bool(track_attrs.get("tracking_complete", True))
+            status["tracking_termination_reason"] = track_attrs.get(
                 "tracking_termination_reason", ""
             )
             if config.input_sources:
@@ -310,7 +373,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
                             "multifield_inputs", config.simulation_parameter.get(
                                 "pressure_centroid_inputs", {})),
                         "tracking_summary": {
-                            k: v for k, v in runner.track.attrs.items()
+                            k: v for k, v in track_attrs.items()
                             if k.startswith("tracking_")
                         },
                         "execution_options": asdict(options),
@@ -372,8 +435,8 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None):
                 regrid_performance=getattr(runner, "polar_report", {}).get(
                     "regrid_performance", {}
                 ),
-                tracking_complete=bool(runner.track.attrs.get("tracking_complete", True)),
-                tracking_termination_reason=runner.track.attrs.get(
+                tracking_complete=bool(track_attrs.get("tracking_complete", True)),
+                tracking_termination_reason=track_attrs.get(
                     "tracking_termination_reason", ""),
             )
         except BaseException:

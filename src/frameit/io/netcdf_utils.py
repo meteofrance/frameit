@@ -69,6 +69,8 @@ def normalize_netcdf_time(ds: xr.Dataset, conf) -> xr.Dataset:
 
         ds = prepare_surfex(ds, conf)
     source = getattr(conf, "name_time_dim", None) or "time"
+    if source in ds and ds[source].ndim == 1 and ds[source].dims != (source,):
+        ds = ds.swap_dims({ds[source].dims[0]: source})
     renames = {}
     if source != "time" and source in ds:
         if "time" in ds:
@@ -253,6 +255,191 @@ def concat_nc2ds(
 # -------------------------------------------------------------
 
 
+def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
+    """Keep bound product selections separate from internal native read stencils."""
+    if binding.get("status") != "bound" or source is None:
+        raise ValueError(
+            "NetCDF selected_records requires bound requests and owning source metadata")
+    if set(binding["products"]) - {"model_grid"}:
+        raise ValueError("Selected NetCDF polar processing is not bound to an executable method")
+    admitted = {Path(path).resolve() for path in files}
+    model = source["model"].upper()
+    native_conf = SimpleNamespace(
+        atm_model=model, cartesian_horizontal_winds="native",
+        cartesian_vertical_velocity="interfaces", compute_polar_proj=False,
+    )
+    samples_by_record = {}
+
+    def sample(name, record):
+        key = name, id(record)
+        if key in samples_by_record:
+            return samples_by_record[key]
+        locator = record["locator"]
+        path = Path(locator["path"])
+        if locator["format"] != "netcdf" or path.resolve() not in admitted:
+            raise ValueError(
+                f"{name}: selected locator is outside the admitted NetCDF files")
+        if record["selection_grid_id"] != record["grid_id"]:
+            raise ValueError(f"{name}: destination-grid transformation is not executable")
+        original = resources.open_netcdf(path, engine=engine, chunks=None)
+        variable = locator["variable"]
+        grid = source["native_grids"][record["grid_id"]]
+        coordinates = set(grid["coordinates"]) | {record["clock"]}
+        coordinates.update(dim for dim in locator["coordinate_indexers"]
+                           if dim in original.coords)
+        coordinates.update(n for n in original.variables if (
+            n in {"time", "valid_time", "time_counter", "time_centered",
+                  "scrum_time", "forecast_reference_time"}
+            or original[n].attrs.get("standard_name") in {"time", "forecast_reference_time"}
+            or original[n].attrs.get("axis") == "T"))
+        coordinates.update(original[n].attrs["bounds"] for n in list(coordinates)
+                           if original[n].attrs.get("bounds"))
+        dataset = xr.Dataset(
+            {name: original[variable].variable.copy(deep=False)},
+            coords={n: original[n].variable.copy(deep=False) for n in coordinates},
+            attrs=dict(original.attrs),
+        )
+        indexers = {dim: [position] for dim, position in
+                    locator["coordinate_indexers"].items() if dim in dataset.dims}
+        indexers.update({dim: [position] for dim, position in locator["indexers"].items()
+                         if dim in original[variable].dims})
+        vertical = record["vertical"]
+        if vertical is not None:
+            dim = vertical["dimension"]
+            indexers[dim] = record["source_positions"]
+            index = f"{dim}_source_native_index"
+            if model in {"NEMO", "CROCO"} and index not in dataset:
+                dataset = dataset.assign_coords({index: (dim, np.arange(original.sizes[dim]), {
+                    "units": "1", "long_name": f"zero-based native source {dim} index"})})
+        dataset = dataset.isel(indexers)
+        samples_by_record[key] = dataset
+        return dataset
+
+    def formula_support(dataset, record):
+        """Only already-bound ordinary-reader support can accompany a product."""
+        field = source["fields"][record["field_id"]]
+        for name, role in field.get("dependencies", {}).items():
+            if role not in {"coordinates", "formula_terms", "cell_measures"} or name in dataset:
+                continue
+            descriptor = binding["dependencies"].get(name)
+            records = [] if descriptor is None else [
+                other for other in descriptor["records"]
+                if all(other.get(key) == record.get(key) for key in (
+                    "time", "cycle", "native_axes"))]
+            if len(records) != 1:
+                raise ValueError(f"{name}: ordinary-reader support needs one bound native record")
+            other = records[0]
+            support = sample(name, other)
+            parent, vertical = record["vertical"], other["vertical"]
+            if parent is not None and vertical is not None and (
+                    parent["dimension"] == vertical["dimension"]):
+                native = vertical["source_native_indices"]
+                support = support.isel({vertical["dimension"]: [
+                    native.index(index) for index in parent["source_native_indices"]]})
+            dataset = dataset.assign_coords({
+                **{n: value.variable.copy(deep=False) for n, value in support.coords.items()
+                   if n not in dataset},
+                name: support[name].variable.copy(deep=False),
+            })
+        return dataset
+
+    def prepare(dataset, name, record):
+        supported = formula_support(dataset, record)
+        native_conf.requested_variables_user = {"native": {"variables": [name]}}
+        if model == "NEMO":
+            from frameit.io.nemo_utils import prepare_nemo
+
+            supported = prepare_nemo(supported, native_conf)
+        elif model == "CROCO":
+            from frameit.io.croco_utils import prepare_croco
+
+            original = resources.open_netcdf(
+                record["locator"]["path"], engine=engine, chunks=None)
+            # Admission needs the native rho/face coordinate evidence, not companions.
+            metadata = ("lat_rho", "lon_rho", "xi_rho", "eta_rho",
+                        "lat_u", "lon_u", "xi_u", "lat_v", "lon_v", "eta_v",
+                        "Vtransform")
+            validation = supported.assign_coords({
+                n: original[n].variable.copy(deep=False) for n in metadata
+                if n in original and n not in supported})
+            prepared = prepare_croco(validation, native_conf, native_axes=original.coords)
+            supported = supported.assign_coords({
+                n: prepared[n] for n in supported.coords})
+        return supported
+
+    def groups(descriptors, *, export_support=False):
+        by_grid = {}
+        for name, descriptor in descriptors.items():
+            samples, validation = {}, []
+            for record in descriptor["records"]:
+                dataset = sample(name, record)
+                prepared = prepare(dataset, name, record)
+                validation.append(prepared)
+                if export_support:
+                    dataset = prepared
+                vertical = record["vertical"]
+                if vertical is not None:
+                    for coordinate, metadata in vertical["coordinates"].items():
+                        attrs = dict(metadata["attributes"])
+                        if (coordinate in prepared
+                                and "source_standard_name" in prepared[coordinate].attrs):
+                            attrs.update({key: prepared[coordinate].attrs[key]
+                                          for key in ("standard_name", "source_standard_name")})
+                        value = xr.Variable(
+                            metadata["dimensions"], metadata["values"], attrs=attrs)
+                        value = value.isel({
+                            dim: [position] for dim, position in
+                            record["locator"]["coordinate_indexers"].items() if dim in value.dims})
+                        dataset = dataset.assign_coords({coordinate: value})
+                # Chunk the selected backend view, not a full-file Dask array.
+                # Otherwise a retained time chunk can read excluded scientific samples.
+                dataset = dataset.chunk({dim: size for dim, size in (chunks or {}).items()
+                                         if dim in dataset.dims})
+                dataset = normalize_netcdf_time(
+                    dataset, SimpleNamespace(name_time_dim=record["clock"], atm_model="AROME"))
+                samples.setdefault(record["grid_id"], []).append(dataset)
+            if model in {"NEMO", "CROCO"}:
+                validate_native_metadata(validation, [name], model=model)
+            for grid_id, sequence in samples.items():
+                concat_dim = "time"
+                if len(sequence) > 1 and sequence[0].time.ndim > 1:
+                    locators = [r["locator"]["coordinate_indexers"]
+                                for r in descriptor["records"] if r["grid_id"] == grid_id]
+                    varying = [
+                        dim for dim in sequence[0].time.dims
+                        if len({locator[dim] for locator in locators}) > 1
+                        or (dim in sequence[0].coords and any(
+                            not sequence[0][dim].variable.equals(ds[dim].variable)
+                            for ds in sequence[1:]))]
+                    if len(varying) != 1:
+                        raise ValueError(
+                            f"{name}: multiple native sample axes require an explicit "
+                            "assembly contract; no flattening or gap filling is applied")
+                    concat_dim = varying[0]
+                static = (not source["fields"][descriptor["field_id"]]["time_varying"]
+                          and len({r["locator"]["path"] for r in descriptor["records"]}) == 1)
+                # Static support in successive files belongs to each sample, not an
+                # eager equality check or an arbitrary first-file depth/mask.
+                support_coords = [
+                    n for n in sequence[0].coords
+                    if n in binding["dependencies"] and sequence[0][n].ndim >= 2
+                    and len({r["locator"]["path"]
+                             for r in binding["dependencies"][n]["records"]}) > 1]
+                combined = (sequence[0] if len(sequence) == 1 else xr.concat(
+                    sequence, dim=concat_dim, data_vars="minimal" if static else "all",
+                    coords=support_coords or "minimal",
+                    compat="equals", join="exact", combine_attrs="override"))
+                by_grid.setdefault(grid_id, []).append(combined)
+        return {grid_id: xr.merge(datasets, join="exact", compat="identical",
+                                 combine_attrs="override")
+                for grid_id, datasets in by_grid.items()}
+
+    return (
+        groups(binding["products"].get("model_grid", {}), export_support=True),
+        {"internal": groups(binding["dependencies"])} if binding["dependencies"] else {},
+    )
+
+
 @managed_loading
 def concat_nc2ds_by_vert_coord(
     files: Iterable[str | Path],
@@ -273,6 +460,8 @@ def concat_nc2ds_by_vert_coord(
     duplicate_time_policy="first",
     native_output_groups=None,
     file_layout="time_series",
+    selected_records=None,
+    source_plan=None,
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open the NetCDF files once then apply two independent requests.
@@ -291,6 +480,12 @@ def concat_nc2ds_by_vert_coord(
       selection. Native W is retained and ``_frameit_mass_w`` carries its mass
       counterpart until the runner consumes it; it is not an export variable.
     """
+
+    if selected_records is not None:
+        return _selected_netcdf(
+            files, selected_records, source_plan, resources,
+            engine=engine, chunks=chunks,
+        )
 
     # Normalise the user request
     user_req = normalize_requests(user_requested_variables_yaml)

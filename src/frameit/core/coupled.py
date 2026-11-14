@@ -433,6 +433,54 @@ def _select_times(tree, times):
     return {key: _select_times(value, times) for key, value in tree.items()}
 
 
+def bind_sources(conf):
+    """Prepare actual consumers once, then copy their bound snapshots to the parent."""
+    from frameit.core.preflight import bind_source
+
+    report, children, plans = prepare_sources(conf)
+    for name, child in children.items():
+        binding = bind_source(child, name)
+        if binding["status"] != "bound":
+            raise ValueError(f"sources.{name}: cannot execute until requests bind to metadata "
+                             f"and methods: {binding['deferred_checks']}")
+        conf.source_requests[name] = deepcopy(child.source_requests[name])
+        conf.simulation_parameter["request_plan"]["sources"][name] = deepcopy(plans[name])
+    conf.add_parameter("input_inventory", {
+        name: list(source["files"]) for name, source in plans.items()})
+    return report, children, plans
+
+
+def run_native_sources(runner, *, benchmark=False):
+    """Full-domain source extraction has no centre or cross-source time association."""
+    from frameit.core.runner import FrameitRunner, RunResult
+
+    report, children, plans = runner.prepared_sources
+    runner.preflight_report = report
+    runner.timer.start()
+    runner.ensure_dirs()
+    runner.field_products = {}
+    files = []
+    with runner.timer.section("loading_data"):
+        for name, child in children.items():
+            consumer = FrameitRunner(child)
+            runner.resources.add(consumer)
+            consumer.ds_user, consumer.ds_tracker, source_files = consumer.load_dataset()
+            files.extend(source_files)
+            if benchmark:
+                for dataset in consumer.ds_user.values():
+                    dataset.load()
+            if "model_grid" in child.source_requests[name]["exports"]:
+                fields = child.source_requests[name]["exports"]["model_grid"]
+                datasets = [ds.reset_coords([field for field in fields if field in ds.coords])
+                            for ds in consumer.ds_user.values()]
+                dataset = xr.merge(datasets, join="exact",
+                                   compat="identical", combine_attrs="override")
+                runner.field_products[(name, "model_grid")] = dataset.assign_attrs(
+                    source_id=name, source_model=plans[name]["model"],
+                    source_format=plans[name]["format"])
+    return RunResult(ok=True, n_files=len(files), output_dir=runner.output_dir, files=files)
+
+
 def _mapped_track(track, source, conf):
     from frameit.tracking.geographic import (
         locate_track,

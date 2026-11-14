@@ -812,7 +812,7 @@ assertion, or mark a failed check as passed. The final full suite remains requir
 | [x] | 02 | 01 | Strict v3 schema and shared execution interfaces |
 | [x] | 03 | 02 | Source inventory and selected physical records |
 | [x] | 04 | 03 | Field identity and shared level binding |
-| [ ] | 05 | 04 | Native NetCDF slice, then selected-record adapter reads |
+| [x] | 05 | 04 | Native NetCDF slice, then selected-record adapter reads |
 | [ ] | 06 | 05 | Regions, trajectories, tracking, time associations |
 | [ ] | 07 | 05 | Explicit SEA and FA source interpretation |
 | [ ] | 08 | 07 | Explicit transforms and derived requests |
@@ -1007,22 +1007,22 @@ competing providers. Task 10 completes the writer contract begun here.
 `test_native_scalar_roundtrip`, `test_sources_keep_independent_clocks`, and
 parameterized `test_readers_obey_selected_records`.
 
-- [ ] First prove a complete native NetCDF run using `create_first_run_input(path)`
+- [x] First prove a complete native NetCDF run using `create_first_run_input(path)`
   in `src/frameit/testing/documentation_example.py`. Preserve zeroes, NaNs, units,
   coordinates, times, source files, and no-clobber behavior. Reopen outside FrameIt.
   Build v3 YAML directly and call `load_runtime`/`execute_simulation`; do not depend
   on unconverted init templates or the old first-run CLI sequence.
-- [ ] Add an atmosphere plus ocean case with unequal clocks, for example
+- [x] Add an atmosphere plus ocean case with unequal clocks, for example
   `00:00/01:00` versus `00:30/01:30`. Preserve both clocks and one product per source.
   Use no region first; add fixed geometry when Task 06 is ready. Two sources of the
   same physical type are invalid and must not be used to bypass C1.
-- [ ] Review this runnable slice before parallel adapter work. Wire selected-record
+- [x] Review this runnable slice before parallel adapter work. Wire selected-record
   reads for NetCDF/MNH, NEMO/CROCO, GRIB, and FA in disjoint worker assignments.
-- [ ] Instrument actual payload requests, including trackers and internal inputs:
+- [x] Instrument actual payload requests, including trackers and internal inputs:
   excluded times in retained multi-time files must not be read. Preserve lazy
   loading, bounds, masks, resource rollback, and format-specific admission limits.
   Record an unsupported reader as a blocker, not a pass.
-- [ ] Run the focused checks below and each lane's applicable loader/resource tests.
+- [x] Run the focused checks below and each lane's applicable loader/resource tests.
   Full public adapter pipelines close after Tasks 07–15. Review the native slice
   and selected-record reads before closing this task.
 

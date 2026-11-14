@@ -649,6 +649,20 @@ def export_outputs(
 
     meta = build_metadata_from_conf(conf, frameit_version=frameit_version, institution=institution)
 
+    if getattr(conf, "schema_version", None) == 3:
+        results = {}
+        for item in conf.simulation_parameter["request_plan"]["products"]:
+            source, product = item["source"], item["product"]
+            dataset = runner.field_products[(source, product)]
+            path = _write_dataset(
+                dataset, root / item["path"], metadata=meta, product_type=product,
+                engine=engine, fmt=fmt, overwrite=overwrite, compress_level=compress_level,
+                compress_coords=compress_coords, unlimited_time=unlimited_time,
+                zarr_chunk_size=zarr_chunk_size, zarr_shard_size=zarr_shard_size,
+            )
+            results.setdefault(product, []).append(path)
+        return results
+
     # Track
     suffix = ".zarr" if engine == "zarr" else ".nc"
     track_file = out_path / f"{simu_name}.track{suffix}"

@@ -151,7 +151,15 @@ def setup_frameit_logging(
     sh.setLevel(level)
     sh.setFormatter(FrameitFormatter(debug=debug))
 
-    fh = logging.FileHandler(log_path, encoding="utf-8")
+    attempt = 0
+    while True:
+        try:
+            fh = logging.FileHandler(log_path, mode="x", encoding="utf-8")
+            break
+        except FileExistsError:
+            # Never append through an occupied path, including an input-file alias.
+            attempt += 1
+            log_path = output_dir / f"{name_tag}_{date_tag}.{attempt}.log"
     fh.setLevel(level)
     fh.setFormatter(FrameitFormatter(debug=debug, timestamp=True))
 

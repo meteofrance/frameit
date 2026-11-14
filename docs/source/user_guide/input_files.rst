@@ -54,6 +54,8 @@ Records are ordered by decoded timestamps, not file names. Paths, symlinks and
 hard links to the same physical file are deduplicated. Overlapping glob patterns
 are reported. Separate copies remain separate providers; FrameIt does not hash
 whole archives to decide whether they are equivalent.
+Declared symlink paths remain inspectable; exclusions match those paths before
+physical-file deduplication.
 
 Competing providers of a requested field, level, time and cycle fail.
 Use ``files``, ``exclude`` or ``time.cycle`` to make the request unambiguous.
@@ -105,6 +107,16 @@ their supported NetCDF encodings. It is independent of ``output.writer.engine``.
 ``reader.chunks`` uses input dimension names and element counts; ``-1`` means
 a whole axis. Start with automatic layouts and measure wall time, peak memory
 and output agreement before changing them.
+
+Native GRIB extraction reads only the selected encoded messages, using their
+inventoried locations. It needs no disk index. Each requested message is decoded
+as a whole horizontal field, even if a later operation uses a smaller area;
+the selected output size is not a decoder-memory limit.
+
+NetCDF assembly supports one varying native sample axis, including selected
+leads from one forecast cycle. A selection varying several sample axes at once
+fails before reading scientific values. FrameIt does not guess a flattening
+order or fill the gaps between those samples.
 
 The loader owns open inputs until calculation/export finishes, then closes them.
 Lazy preparation is not the same as computing or writing data; compare whole-run

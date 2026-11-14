@@ -188,7 +188,7 @@ def validate_croco_coefficients(datasets, variables=None):
             reference[name] = values
 
 
-def prepare_croco(ds: xr.Dataset, conf) -> xr.Dataset:
+def prepare_croco(ds: xr.Dataset, conf, *, native_axes=None) -> xr.Dataset:
     """Validate native rho scalars and retain explicit sigma formula dependencies."""
     if ds.attrs.get("type") != "CROCO history file":
         raise ValueError("CROCO currently requires the declared history file family")
@@ -223,7 +223,8 @@ def prepare_croco(ds: xr.Dataset, conf) -> xr.Dataset:
             continue
         if axis not in ds.coords or ds[axis].dims != (axis,):
             raise ValueError(f"CROCO requires native {axis} coordinates")
-        values = ds[axis].values
+        # A bound selection may reorder levels; monotonicity belongs to its source axis.
+        values = (ds.coords if native_axes is None else native_axes)[axis].values
         if (not np.isfinite(values).all() or np.any(values < -1) or np.any(values > 0)
                 or np.any(np.diff(values) <= 0)):
             raise ValueError(f"CROCO {axis} must increase from -1 toward 0")
@@ -253,8 +254,9 @@ def prepare_croco(ds: xr.Dataset, conf) -> xr.Dataset:
         if ds[axis].attrs.get("units") not in {None, "1"}:
             raise ValueError(f"CROCO {axis} is dimensionless, not physical depth")
         index = f"{axis}_source_native_index"
-        result = result.assign_coords({index: (axis, np.arange(ds.sizes[axis]), {
-            "units": "1", "long_name": f"zero-based native source {axis} index"})})
+        if index not in result:
+            result = result.assign_coords({index: (axis, np.arange(ds.sizes[axis]), {
+                "units": "1", "long_name": f"zero-based native source {axis} index"})})
         if standard == "ocean_s_coordinate_g2_at_w_location":
             result[axis].attrs = dict(result[axis].attrs, source_standard_name=standard,
                                       standard_name="ocean_s_coordinate_g2")

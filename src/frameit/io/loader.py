@@ -39,7 +39,8 @@ class DatasetResources:
         chunk_key = tuple(sorted(chunks.items())) if isinstance(chunks, Mapping) else chunks
         key = (Path(path).absolute(), engine, chunk_key)
         if key not in self._netcdf:
-            self._netcdf[key] = self.add(xr.open_dataset(path, engine=engine, chunks=chunks))
+            self._netcdf[key] = self.add(xr.open_dataset(
+                Path(path).resolve(), engine=engine, chunks=chunks))
         return self._netcdf[key]
 
     def close_from(self, start=0):

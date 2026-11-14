@@ -35,7 +35,8 @@ class RunResult:
 
 
 class FrameitRunner:
-    def __init__(self, conf, output_dir: Path | None = None, *, input_files=None):
+    def __init__(self, conf, output_dir: Path | None = None, *, input_files=None,
+                 prepared_sources=None):
         """
         Parameters
         ----------
@@ -47,6 +48,7 @@ class FrameitRunner:
         """
         self.conf = conf
         self.input_files = None if input_files is None else tuple(Path(p) for p in input_files)
+        self.prepared_sources = prepared_sources
         self.resources = DatasetResources()
         self._output_dir_override = output_dir
         self.timer = RunTimer()
@@ -171,6 +173,32 @@ class FrameitRunner:
         ValueError
             If ``conf.file_type`` is not one of "nc", "netcdf", "grib", "grib2".
         """
+        if getattr(self.conf, "schema_version", None) == 3:
+            name = self.conf.source_name
+            binding = self.conf.source_requests[name]["binding"]
+            if binding is None or binding.get("status") != "bound":
+                raise ValueError("Cannot load unbound source requests; bind metadata first")
+            source = self.conf.simulation_parameter["request_plan"]["sources"][name]
+            files = [Path(path) for path in source["files"]]
+            reader_options = {}
+            if self.conf.file_type == "netcdf":
+                from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord as load
+
+                reader_options = {"engine": self.conf.netcdf_engine,
+                                  "chunks": self.conf.netcdf_chunks}
+            elif self.conf.file_type == "grib":
+                from frameit.io.grib_utils import concat_grib2ds_by_vert_coord as load
+            elif self.conf.file_type == "fa":
+                from frameit.io.fa_utils import concat_fa2ds_by_vert_coord as load
+
+                reader_options = {"wind_conf": self.conf}
+            else:
+                raise ValueError(f"No selected-record reader for {self.conf.file_type}")
+            user, tracker = load(
+                files, {}, {}, resources=self.resources, strict=True,
+                selected_records=binding, source_plan=source, **reader_options,
+            )
+            return user, tracker, files
         files = self.find_files()
         if self.conf.infer_grid_geometry and self.preflight_report is None:
             from frameit.core.preflight import preflight
@@ -373,6 +401,10 @@ class FrameitRunner:
         RunResult
             ``ok=True`` with the number of processed files and the output directory.
         """
+        if getattr(self.conf, "schema_version", None) == 3:
+            from frameit.core.coupled import run_native_sources
+
+            return run_native_sources(self, benchmark=benchmark)
         if self.conf.input_sources:
             from frameit.core.coupled import run_coupled
 

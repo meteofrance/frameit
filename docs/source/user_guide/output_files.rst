@@ -2,63 +2,78 @@ Output files
 ============
 
 FrameIt writes NetCDF products that can be opened without FrameIt, for example
-with xarray/netCDF4, NCO or CDO. Alternatively, ``output.backend: zarr`` selects
+with xarray/netCDF4, NCO or CDO. Alternatively, ``output.format: zarr`` selects
 sharded Zarr v3 directory stores, readable with compatible xarray/Zarr readers
 (not the NetCDF readers NCO/CDO). Existing scripts still need compatible variable
 definitions, dimensions, coordinates and reader support; a matching format alone
 does not make schemas or physical quantities equivalent.
 
-The products are a track dataset, selected variables on Cartesian subdomains,
-and optionally selected polar samples. Review ``run-status.yaml`` and provenance
-before interpreting them, including tracking completeness, time exclusions and
-scaling/missing-data observations. A completed run is not scientific approval.
+Omitted ``products`` requests model-grid fields only. Omitted ``region`` keeps
+the full domain, without calculating a centre or writing a track. Independent
+sources keep their own timestamps, grids, units and missing values; their
+clocks need not overlap. Review ``run-status.yaml`` and provenance before using
+the products. A completed run is not scientific approval.
+
+Native grids with conflicting coordinate names cannot be published together in
+one source dataset on this execution path. Such a request fails rather than
+aligning different grids, dropping coordinates or interpolating implicitly.
 
 .. figure:: ../_static/figures/processing-products.svg
    :target: ../_static/figures/processing-products.svg
    :width: 480px
    :alt: Schematic of inspected inputs, declared selections and checks leading to chosen processing, separate scientific products and completion/provenance records.
 
-   Schematic. Select processing in the configuration; retain products and their
-   effective settings, provenance and completion record together.
+   Schematic of a regional scalar request with track export. Full-domain
+   model-grid copying does not require a centre or track.
 
 Naming convention
 -----------------
 
 All files use ``run.name`` as a prefix (see :doc:`configuration_file`), referred to below as ``SIMU``.
 
-Track file:
+Field datasets use one file per source and requested product:
 
-- ``SIMU.track.nc``
+- ``SIMU.<source>.model_grid.nc``
+- ``SIMU.<source>.polar.nc``
 
-Group files (one file per group key in the output dictionaries):
+Zarr field datasets use the same names with ``.zarr``. Source names are the
+keys under ``sources``; they do not identify a model or physical type.
+An explicitly requested trajectory uses ``SIMU.track.nc``, independently of
+the field format. A centre provider alone does not request trajectory export.
 
-- ``SIMU.cart.<group>.nc``  (cartesian crop products)
-- ``SIMU.polar.<group>.nc`` (polar projection products)
-
-The ``<group>`` token is the corresponding key of the dictionary (for example ``surface``, ``level``,
-``heightAboveGround``). Filename tokens retain ASCII letters/digits, ``.``, ``_``
-and ``-``; other characters become ``_``. The original group name is preserved
-in file metadata.
+Native extraction does not normalize field units, rotate winds, interpolate
+or compute unrequested diagnostics. A single component can be copied without
+loading an unselected companion. Vertical-coordinate unit conversion changes
+labels and their metadata, not the physical array values or field units.
+Unresolved scientific or representation binding fails before output; an accepted
+YAML request alone does not establish that its methods are executable.
 
 ``output.directory`` is the run root (see :doc:`configuration_file`).
 Artifacts use the same layout for ordinary runs and each matrix case::
 
     <output_dir>/
         cache/       # GRIB index files
-        products/    # Track, Cartesian and polar .nc files or .zarr stores
+        products/    # Requested source/product .nc files or .zarr stores
         logs/        # Simulation logs
-        resolved-config.yaml  # Reloadable effective schema-v2.1 configuration
+        resolved-config.yaml  # Effective schema-version-3 configuration
         run-provenance.yaml   # Geometry, inputs, units, and execution settings
         run-status.yaml       # Completion state, runtime/resources, product inventory
         .frameit-run.lock     # Present while an attempt owns this root
 
+Each attempt creates a new log file. An occupied log name gets a numeric suffix;
+existing files and file aliases are never opened for appending.
+Product and run-record destinations cannot replace an inventoried source file.
+A directory product cannot contain declared input paths, including aliases and
+excluded files: replacing the store would remove those paths.
+
 Coupled and native FA products
 ------------------------------
 
-Coupled sources use this layout with source-qualified groups, for example
-``SIMU.cart.surfex.surface.nc``. The shared track records per-source indices;
-Cartesian grids are not implicitly regridded. Exact-time exclusions and native
-FA diagnostics are reported in provenance/final status. See :doc:`fa_inputs`.
+Each source has its own model-grid dataset, for example
+``SIMU.water.model_grid.nc``. Independent extraction does not intersect clocks or
+regrid sources onto a common mesh. A requested operation needing shared centres
+must resolve its time association explicitly. See :doc:`fa_inputs` for coupled
+and FA-specific method limits.
 FA variables additionally carry a JSON ``fa_field_descriptor`` input snapshot
 and ``fa_field_descriptor_scope``. This is a representative input-record
 description, not a combined multi-time or post-crop description. Per-file
@@ -87,7 +102,7 @@ Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
 ``lat``/``lon`` remain requested centres; see
 :doc:`FA geometry and centres <fa_geometry>` for conventions.
-With ``polar.shared_target: true``, separate source-qualified polar products share
+With ``products.polar.shared_grid: true``, separate source-qualified polar products share
 a verified target ID and exactly matching time/radius/azimuth/lat/lon coordinates.
 Source masks and variable meanings remain independent. Vertical-group separation
 is retained. See :doc:`Coupled atmosphere/surface sampling <fa_surface>` for target
@@ -108,7 +123,7 @@ limits, package/native-backend versions and selected Slurm metadata. Scientific
 provenance also records versions and code revision/dirty state when available.
 Sizes and paths are not content checksums. ``completed`` means the requested
 execution finished; a permitted shortened track is marked ``incomplete``.
-With ``execution.require_complete_tracking: true``, an incomplete track fails
+With the default ``region.tracker.on_incomplete: error``, an incomplete track fails
 before export. Missing final status, a failed state or an abnormal process exit
 must not be inferred successful from the presence of one file. Atomic publication
 is per product, not an all-products transaction or an fsync durability guarantee.
@@ -125,20 +140,21 @@ See :doc:`/getting_started/hpc` for states, ownership and retry policy.
    Schematic. Final status describes execution; provenance describes how the
    data were produced. Neither replaces scientific inspection of the result.
 
-For a run using the default AROME template, an ordinary-reader inspection is:
+For the full-domain scalar request in :doc:`configuration_file`, inspect:
 
 .. code-block:: python
 
    import xarray as xr
 
-   with xr.open_dataset("output/products/arome-pressure-wind.cart.surface.nc", engine="netcdf4") as ds:
+   with xr.open_dataset("results/products/scalar.atmosphere.model_grid.nc",
+                        engine="netcdf4") as ds:
        print(ds.sizes)
        print(ds.coords)
-       print(ds["u10"].attrs)
-       print(ds["u10"].dtype, ds["u10"].encoding)
+       print(ds["instructional_scalar"].attrs)
+       print(ds["instructional_scalar"].dtype, ds["instructional_scalar"].encoding)
 
 Use the actual paths and selected variables in ``run-status.yaml``; coupled runs
-have source-qualified groups. Check each variable's coordinates, units, basis,
+have separate source datasets. Check each variable's coordinates, units, basis,
 missing-value metadata and storage dtype rather than assuming that similarly
 named variables share definitions. xarray normally decodes CF time and missing
 values; a valid zero remains data. Source valid times, forecast reference cycles
@@ -147,21 +163,21 @@ FA temporal declarations are instantaneous only; no interval conversion is
 inferred to complete a product. JSON attributes such as ``fa_field_descriptor``
 can be read with ``json.loads`` from Python's standard library.
 
-For the self-contained :doc:`first run <../getting_started/first_run>`, the
-ordinary-reader check is:
+For that request with the two-time ``frameit.testing.documentation_example``
+input, the full-domain values can be checked without FrameIt:
 
 .. code-block:: python
 
    import numpy as np
    import xarray as xr
 
-   with xr.open_dataset("results/products/first-run.cart.surface.nc",
+   with xr.open_dataset("results/products/scalar.atmosphere.model_grid.nc",
                         engine="netcdf4") as ds:
-       q = ds["instructional_scalar"].transpose("time", "y_box", "x_box")
-       assert dict(ds.sizes) == {"time": 2, "y_box": 5, "x_box": 5}
+       q = ds["instructional_scalar"]
+       assert q.shape == (2, 17, 17)
        assert q.attrs["units"] == "1"
-       assert q.values[0, 2, 2] == 0
-       assert np.isnan(q.values[0, 1, 3])
+       assert q.values[0, 8, 8] == 0
+       assert np.isnan(q.values[:, 7, 9]).all()
        print(ds.time.values, ds.latitude.attrs, ds.longitude.attrs)
 
 Use :doc:`../concepts/missingness_and_status` to distinguish missing support from
@@ -176,18 +192,20 @@ sections. See :doc:`ocean_netcdf` before reconstructing or comparing depth field
 Sharded Zarr v3
 ---------------
 
-Select ``output.backend: zarr`` after installing the optional ``zarr`` extra
+Select ``output.format: zarr`` after installing the optional ``zarr`` extra
 (Python 3.13, xarray >= 2026.9.0, Zarr-Python >= 3.4.2 and < 4). NetCDF remains
-the default. The same track, Cartesian groups and requested polar groups are
-written as local directory stores: ``SIMU.track.zarr``,
-``SIMU.cart.<group>.zarr`` and ``SIMU.polar.<group>.zarr``. Source-qualified
-groups keep the same naming rules. Only the selected backend is written.
+the default. Requested field datasets are local directory stores:
+``SIMU.<source>.model_grid.zarr`` and ``SIMU.<source>.polar.zarr``.
+A separately requested track remains NetCDF. Only one field format is written.
+Choose the format with ``output.format`` before execution. A Python execution
+option may change the NetCDF writer engine, but cannot override the declared
+field format.
 
 Variables, dimensions, coordinates, physical units, missing samples and
 scientific metadata meanings are preserved. Decoded values are written without
 additional quantization or source integer repacking. Compression is lossless
-gzip at ``output.compression.level`` (default 1; 0 disables it); coordinates are
-uncompressed unless ``output.compression.coordinates: true``. There is no
+gzip at ``output.writer.compression.level`` (default 1; 0 disables it); coordinates are
+uncompressed unless ``output.writer.compression.coordinates: true``. There is no
 NetCDF-style unlimited dimension, append/resume or remote-store support.
 
 Chunks versus shards
@@ -208,9 +226,10 @@ Both sizes count **array elements along each named dimension**, not bytes or
 numbers of files. For example::
 
     output:
-      backend: zarr
-      zarr_chunk_size: {time: 1, y_box: 128, x_box: 128}
-      zarr_shard_size: {time: 8, y_box: 512, x_box: 512}
+      format: zarr
+      writer:
+        chunks: {time: 1, latitude: 128, longitude: 128}
+        shards: {time: 8, latitude: 512, longitude: 512}
 
 Each chunk holds one time and 128 by 128 grid points. Each full shard covers
 eight times and 512 by 512 points: ``8 * 4 * 4 = 128`` chunks. Boundary shards
@@ -220,7 +239,7 @@ settings do **not** change scientific resolution, sampling, precision or values.
 Defaults and tuning
 ~~~~~~~~~~~~~~~~~~~
 
-Both mappings are optional; ``output.backend: zarr`` alone works. For each product:
+Both mappings are optional; ``output.format: zarr`` alone works. For each product:
 
 * Time chunks contain one element; a time shard spans eight chunks.
 * The last two non-time dimensions in dataset order use chunk extents of
@@ -239,9 +258,9 @@ Both mappings are optional; ``output.backend: zarr`` alone works. For each produ
 * Scalars such as a CRS variable are not sharded. Empty dimensions fail with
   an actionable error; this writer does not publish empty-axis products.
 
-Use ``x_box``/``y_box`` for Cartesian products and ``rr``/``theta`` for polar
-products, plus the actual vertical dimensions where needed. Configure both
-sets in the mappings if the same run needs different layouts. The actual
+Storage dimensions must match the exported dataset. The fragment above uses
+the full-domain scalar example's native latitude/longitude axes. Inspect
+the actual dimensions before setting chunks for another grid. The actual
 layout is inspectable in each array's ``zarr.json`` metadata or through
 ``zarr.open_group(path)[variable].chunks`` and ``.shards``.
 
@@ -282,10 +301,10 @@ No FrameIt import is needed to read a completed product:
 
    import xarray as xr
 
-   with xr.open_zarr("output/products/arome-pressure-wind.cart.surface.zarr",
+   with xr.open_zarr("results/products/scalar.atmosphere.model_grid.zarr",
                      consolidated=False) as ds:
        print(ds.sizes, ds.coords)
-       print(ds["u10"].attrs)
+       print(ds["instructional_scalar"].attrs)
 
 Stores use v3 dimension metadata and non-consolidated metadata. Readers must
 support Zarr v3, its sharding codec and the stored dtypes. The writer dependency
@@ -308,22 +327,21 @@ For a single-time automatic track, ``lat`` and ``lon`` still identify the centre
 used by every coupled source. ``heading_deg``, ``dist`` and ``speed`` are NaN:
 one position cannot establish motion, and missing motion is not physical zero.
 
-SIMU.cart.<group>.nc
-~~~~~~~~~~~~~~~~~~~~
+SIMU.<source>.model_grid.nc
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-These files contain selected fields on a native Cartesian crop around each
-geographical centre. A Cartesian product is not automatically a common regridded
-mesh across sources.
+These datasets contain requested model-grid fields. Without a region, native
+extraction keeps the full domain. It does not create a shared mesh across sources.
 
 Typical structure:
 
-- Dimensions: ``time``, plus spatial axes such as ``x_box`` and ``y_box``
-- Optional vertical dimension depending on the group (``level`` or ``heightAboveGround``)
-- Coordinates commonly include: ``latitude``, ``longitude``, and box metrics ( ``x_box_km``,
-  ``y_box_km``) when available
+- Dimensions: ``time`` and each field's spatial axes
+- Each 3D field keeps its vertical axis, including a length-one selection
+- Coordinates describe the actual source sampling locations and vertical labels
 - Data variables depend on the YAML request (see :doc:`configuration_file`)
 
-Each vertical group has its own file.
+Read each field's own coordinates; equal names alone do not establish equivalent
+sampling or physics.
 
 .. _wind-grid-contract:
 
@@ -332,9 +350,9 @@ Wind locations, reference frames and output choices
 
 .. note::
 
-   Defaults are Cartesian horizontal ``earth_centered``, Cartesian vertical
-   ``interfaces`` and polar vertical ``mass``. Numerical conventions and
-   qualification limits are in :ref:`wind-preparation-method`.
+    Native model-grid copying preserves component values, units, sample locations
+    and basis. Any change needs an explicit, supported transformation.
+    Numerical conventions and qualification limits are in :ref:`wind-preparation-method`.
 
 **Location is not direction.** On a Meso-NH C grid, U and V are sampled on
 different horizontal faces; scalars occupy mass points. **Grid-aligned components**
@@ -354,33 +372,19 @@ to the ground, not the moving storm. See :ref:`wind-component-directions`.
    For a midpoint, U at the two faces (10 and 20 m s-1) gives mass-point
    U = 15 m s-1. V is collocated along its own staggered axis.
 
-Choose Cartesian horizontal representation independently of vertical W:
+Use source ``transforms`` for requested model-grid changes. Sampling, basis and
+unit changes are separate choices; see :doc:`configuration_file`.
 
-.. list-table:: Native versus mass-point products
-   :header-rows: 1
-   :widths: 22 39 39
-   :class: config-table
+* ``sampling: native`` preserves source staggering and basis. Units stay unchanged
+  unless explicitly converted. U/V keep their own coordinates; geographic vector
+  analysis may need collocation and rotation.
+* ``sampling: mass`` puts supported components at mass points. This requires
+  interpolation and its neighbours; these are not native samples.
+* ``basis: earth`` rotates supported pairs to eastward/northward components.
+  It needs reliable pair and rotation metadata. Collocation is a separate operation.
 
-   * - Choice
-     - Benefit
-     - Trade-off
-   * - ``horizontal_vectors: native``
-     - Preserves source staggering and declared vector basis; useful for
-       model-grid calculations. Velocity units are still normalized.
-     - U/V need their own coordinates; collocate and, when needed, rotate
-       before geographic vector analysis.
-   * - ``horizontal_vectors: earth_centered`` (default)
-     - Collocated east/north components suit geographic comparison.
-     - Interpolation can smooth gradients; original face samples are not retained.
-   * - ``vertical_velocity: interfaces``
-     - Retains W at native vertical interfaces (Cartesian default).
-     - W does not share mass-level locations with scalar fields.
-   * - ``vertical_velocity: mass``
-     - W shares mass-level locations (polar default).
-     - Requires bracketing interfaces and interpolation; not native W samples.
-
-Cartesian ``native`` output preserves source sample locations, staggering and
-declared basis, with normalized velocity units. A requested box uses distinct
+Native model-grid output preserves source sample locations, staggering, units and
+basis. A requested box needs distinct
 ``(y_u_box, x_u_box)`` and ``(y_v_box, x_v_box)`` axes for U and V. Along a
 staggered direction, N mass cells have N+1 bounding faces; unavailable faces are
 NaN. Source coordinates, including face geolocation, remain auxiliary coordinates
@@ -388,24 +392,18 @@ on these box axes. Full-domain native output without a crop retains original
 dimensions. Read each field's coordinates rather than assuming literal source
 dimension names survive a crop.
 
-Tracking and polar processing use a separate mass-point, Earth-relative analysis
-representation: changing the Cartesian output switch does not change the track
-or polar result. NetCDF inputs normalize units per file before concatenation;
-tracker and user-field preparation share the declared frame/rotation contract.
+Tracking and polar processing prepare their own required analysis representations.
+A model-grid transform does not request the same transform for another product
+or change unrelated native fields.
 
-For the :ref:`Meso-NH missing-projection exception <missing-mesonh-wind-projection>`,
-wind attributes record ``wind_reference_frame_override`` and
-``source_wind_reference_frame_metadata: grid``. The effective declared basis is
-Earth-relative without rotation; original flags and standard names remain under
-``source_`` attributes, including for native output. The override is also in
-``run-provenance.yaml``. These records identify a user assumption, not evidence
-that the original grid and Earth directions coincide.
-Superseded dataset-wide basis flags are source-qualified; other raw pairs retain
-their own basis metadata. Available projection headers travel as checked
-coordinates through variable-shard assembly and native tracker preparation.
-Repeated headers must agree across shards; they are not duplicate physical fields.
+Copying a component does not resolve contradictory basis metadata. An operation
+needing a vector basis must check its declarations and input evidence, including
+any admitted :ref:`Meso-NH missing-projection exception <missing-mesonh-wind-projection>`.
+Record an applied exception as a user assumption, not evidence that grid and
+Earth directions coincide. Native copying alone does not apply that analysis
+interpretation or change source flags.
 
-Requested ``wind_speed`` uses collocated mass-point horizontal components,
+An explicitly requested derived speed uses collocated mass-point components,
 :math:`\sqrt{u_m^2+v_m^2}`, even beside native Cartesian U/V. Taking ``hypot`` of
 U and V face arrays combines different locations and is not a point wind speed.
 Polar horizontal winds are always collocated, Earth-relative samples on
@@ -436,22 +434,11 @@ W and its internal mass-point carrier are handled field by field. Choosing mass
 W moves W to the mass-level group, removes its internal carrier from exports,
 and does not move or discard other interface variables or their coordinates.
 
-Level selection follows these rules:
-
-* ``levels: stored`` retains the original stored levels,
-  including stored extra levels; neither means physical-domain trimming.
-* ``levels: physical`` uses adapter-validated physical mass and interface ranges,
-  separately. Missing or ambiguous ranges fail; no universal first/last-level
-  trimming is assumed.
-* ``levels: {indices: [...]}`` uses zero-based **original stored indexing**,
-  not indexing renumbered after physical-range selection. Value selections use
-  the native coordinate and its units.
-* If mass-level fields are explicitly selected, their selected mass levels set
-  the W-to-mass targets. Otherwise, physical W selection targets the validated
-  physical mass levels, not the physical interface range. For explicit sparse
-  interface-index requests, interface index ``k`` maps to the same native mass
-  index ``k``; the source-interface/target-mass mapping is reported.
-  This compatibility map is not an assertion that their coordinates coincide.
+The source's single ``variables.levels`` selector applies on each requested
+representation. After a grid-changing transform, select on its destination
+grid; required native neighbours remain internal support, not extra exports.
+Omission keeps all available levels. See :doc:`../task_guides/field_selection`
+for index, value, physical-domain and unit rules.
 
 AROME ``w`` is pressure vertical velocity :math:`\omega=Dp/Dt` in Pa s-1;
 ``wz`` is geometric vertical velocity in m s-1. They remain distinct quantities.
@@ -498,9 +485,9 @@ FrameIt adds a minimal set of global attributes to each file:
 
 Additional export-specific attributes:
 
-- ``product_type``: one of ``track``, ``cart``, ``polar``
-- ``group``: the original dictionary key (for group files)
-- ``track_filename``: the corresponding track file name (for group files)
+- ``product_type``: ``model_grid``, ``polar`` or ``track``
+- ``source_id``: the source name for native field datasets
+- ``track_filename``: an associated published track, when one exists
 
 A ``history`` attribute is appended at write time and includes a UTC timestamp and the exporting module.
 
@@ -528,7 +515,7 @@ Notes:
 - Export time is also controlled by dask materialization, because writing triggers computation of lazy arrays.
 
 Coordinates are not compressed by default. Configure storage with
-``output.compression: {level: 2, coordinates: false}``. The default level is 1;
+``output.writer.compression: {level: 2, coordinates: false}``. The default level is 1;
 storage chunks are backend-selected.
 Compression is lossless. The NetCDF writer adds no quantization or requested
 reduced-precision encoding; inspect each variable's actual dtype/encoding with
@@ -537,14 +524,8 @@ the reader rather than assuming every prepared quantity has the source dtype.
 Export selection
 -----------------
 
-Exports are enabled by default for available Cartesian and polar products.
-Enable polar computation separately with ``polar.enabled``. To omit polar
-products from either output backend:
-
-.. code-block:: yaml
-
-   output:
-      export: {enabled: true, cartesian: true, polar: false}
-
-Set ``enabled: false`` to disable all product writing, or ``cartesian: false`` to
-omit Cartesian products. See :doc:`configuration_file` for precedence.
+Omit ``products`` for model-grid output only. List ``model_grid``, ``polar`` or
+``track`` to request them explicitly; there is no separate export switch.
+Each field product can narrow the declared fields by source. Omit products you
+do not need. An explicit empty mapping is invalid. See :doc:`configuration_file`
+for product and method settings.

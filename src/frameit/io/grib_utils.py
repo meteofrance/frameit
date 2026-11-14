@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,253 @@ from frameit.processing.wind_reference import wind_pairs
 
 logger = logging.getLogger(__name__)
 logging.getLogger("cfgrib").setLevel(logging.WARNING)
+
+
+@contextmanager
+def _grib_message(locator):
+    """Own and release one exact message in this scope, without scanning a stream."""
+    import eccodes as ec
+    from cfgrib.xarray_plugin import ECCODES_LOCK
+
+    with ECCODES_LOCK:
+        with Path(locator["path"]).open("rb") as stream:
+            stream.seek(locator["offset"])
+            raw = stream.read(locator["length"])
+        if len(raw) != locator["length"] or raw[:4] != b"GRIB" or raw[-4:] != b"7777":
+            raise ValueError(
+                f"{locator['path']}: invalid selected GRIB message {locator['message_index']}")
+        handle = ec.codes_new_from_message(raw)
+        try:
+            if ec.codes_get_message_size(handle) != locator["length"]:
+                raise ValueError(f"{locator['path']}: selected GRIB message length changed")
+            yield handle
+        finally:
+            ec.codes_release(handle)
+
+
+def _grib_header(handle):
+    """Retain selected-message identity for the later lazy read."""
+    from datetime import datetime
+
+    import eccodes as ec
+
+    keys = (
+        "shortName", "units", "paramId", "typeOfLevel", "level", "md5GridSection",
+        "uvRelativeToGrid", "number", "stepType", "startStep", "endStep", "stepUnits",
+        "typeOfStatisticalProcessing", "perturbationNumber", "typeOfEnsembleForecast",
+        "numberOfForecastsInEnsemble",
+    )
+    header = {key: ec.codes_get(handle, key) if ec.codes_is_defined(handle, key) else None
+              for key in keys}
+    header["cycle"] = np.datetime64(datetime(*(
+        int(ec.codes_get(handle, key)) for key in (
+            "year", "month", "day", "hour", "minute", "second"))), "ns")
+    return header
+
+
+def _grib_payload(locator, shape, header):
+    """Decode only this message; its scan order also owns the inventoried geography."""
+    import eccodes as ec
+
+    with _grib_message(locator) as handle:
+        if _grib_header(handle) != header:
+            raise ValueError(f"{locator['path']}: selected GRIB message changed after binding")
+        values = ec.codes_get_values(handle)
+        if ec.codes_get(handle, "bitmapPresent"):
+            values = np.where(ec.codes_get_array(handle, "bitmap"), values, np.nan)
+        elif ec.codes_get(handle, "numberOfMissing"):
+            values = np.where(values == ec.codes_get(handle, "missingValue"), np.nan, values)
+        if ec.codes_get(handle, "jPointsAreConsecutive"):
+            return values.reshape(shape[::-1]).T
+        return values.reshape(shape)
+
+
+def _selected_grib(files, binding, source, resources):
+    """Build native lazy arrays from closed bindings, separately for each read role."""
+    import dask.array as da
+    from dask import delayed
+
+    if binding.get("status") != "bound" or source is None:
+        raise ValueError("GRIB selected_records requires bound requests and owning source metadata")
+    if set(binding["products"]) - {"model_grid"}:
+        raise ValueError("Selected GRIB polar processing is not bound to an executable method")
+    admitted = {Path(path).resolve() for path in files}
+
+    def locator_key(locator):
+        return (locator["path"], locator["message_index"], locator["offset"], locator["length"])
+
+    pool = {locator_key(record["locator"]): record for record in source["record_inventory"]}
+    originals = {}
+
+    def message(record, field, grid):
+        locator = record["locator"]
+        key = locator_key(locator)
+        if key not in originals:
+            with _grib_message(locator) as handle:
+                header = _grib_header(handle)
+                expected = {
+                    key.removeprefix("GRIB_"): value for key, value in {
+                        **field["attributes"], **record["temporal_metadata"]}.items()}
+                expected.update(
+                    cycle=record["cycle"], level=record["level"],
+                    number=record.get("native_axes", {}).get("number"),
+                    md5GridSection=grid["grib_grid_section"],
+                    **record.get("ensemble_metadata", {}),
+                )
+                if any(header.get(key) != value for key, value in expected.items()):
+                    raise ValueError(
+                        f"{locator['path']}: selected GRIB header changed after inventory")
+                attrs = dict(field["attributes"],
+                             source_variable_name=header["shortName"])
+            shape = tuple(grid["dimensions"][dim] for dim in ("y", "x"))
+            data = da.from_delayed(
+                delayed(_grib_payload)(locator, shape, header),
+                shape=shape, dtype=np.float64,
+            )
+            # No native/file handle survives either metadata inspection or a payload
+            # task. The registry still owns the original lazy dataset and rollback.
+            originals[key] = resources.add(xr.Dataset({
+                record["name"]: (("y", "x"), data, attrs)}))
+        return originals[key][record["name"]]
+
+    def groups(descriptors):
+        by_grid = {}
+        for name, descriptor in descriptors.items():
+            records_by_grid = {}
+            for record in descriptor["records"]:
+                locator = record["locator"]
+                if locator["format"] != "grib" or Path(locator["path"]).resolve() not in admitted:
+                    raise ValueError(f"{name}: selected locator is outside the admitted GRIB files")
+                native = pool.get(locator_key(locator))
+                if (native is None or descriptor["field_id"] != record["field_id"]
+                        or name != record["name"]
+                        or any(record.get(key) != value for key, value in native.items())):
+                    raise ValueError(
+                        f"{name}: selected GRIB record is outside the closed inventory")
+                if record["selection_grid_id"] != record["grid_id"]:
+                    raise ValueError(f"{name}: destination-grid transformation is not executable")
+                if set(record.get("native_axes", {})) - {"number"}:
+                    raise ValueError(f"{name}: unsupported GRIB native axes")
+                records_by_grid.setdefault(record["grid_id"], []).append(record)
+            for grid_id, records in records_by_grid.items():
+                field = source["fields"][descriptor["field_id"]]
+                grid = source["native_grids"][grid_id]
+                vertical = records[0]["vertical"]
+                if len({tuple(r.get("native_axes", {})) for r in records}) != 1:
+                    raise ValueError(f"{name}: mixed native GRIB member axes are not executable")
+                if vertical is None and len({r["level"] for r in records}) != 1:
+                    raise ValueError(f"{name}: ambiguous native GRIB surface levels")
+                if any(r["source_positions"] != records[0]["source_positions"] for r in records):
+                    raise ValueError(
+                        f"{name}: changing native GRIB read stencils are not executable")
+                native_levels = sorted(
+                    {r["level"] for r in pool.values() if r["field_id"] == descriptor["field_id"]},
+                    reverse=field["group"] in {"isobaricInhPa", "isobaricInPa"},
+                )
+                levels = ([native_levels[i] for i in records[0]["source_positions"]]
+                          if vertical is not None else [records[0]["level"]])
+                samples, references = {}, {}
+                members = sorted({r["native_axes"]["number"] for r in records
+                                  if "number" in r.get("native_axes", {})})
+                for record in records:
+                    stamp, cycle = record["time"], record["cycle"]
+                    if stamp in references and references[stamp] != cycle:
+                        raise ValueError(
+                            f"{name}: multiple GRIB cycles at one time require selection")
+                    references[stamp] = cycle
+                    member = record.get("native_axes", {}).get("number")
+                    key = stamp, member, record["level"]
+                    if key in samples:
+                        raise ValueError(f"{name}: competing selected GRIB message providers")
+                    samples[key] = message(record, field, grid)
+                times = sorted(references)
+
+                time_arrays = []
+                for stamp in times:
+                    member_arrays = []
+                    for member in members or [None]:
+                        missing = [level for level in levels
+                                   if (stamp, member, level) not in samples]
+                        if missing:
+                            raise ValueError(
+                                f"{name}: missing bound GRIB levels {missing} at {stamp}")
+                        arrays = [samples[stamp, member, level].data for level in levels]
+                        member_arrays.append(
+                            da.stack(arrays) if vertical is not None else arrays[0])
+                    time_arrays.append(da.stack(member_arrays) if members else member_arrays[0])
+                data = da.stack(time_arrays)
+                dims = ["time"] + (["number"] if members else [])
+                coords = {coordinate: xr.Variable(
+                    metadata["dimensions"], metadata["values"], metadata["attributes"])
+                    for coordinate, metadata in grid["coordinates"].items()}
+                if vertical is not None:
+                    dims.append(vertical["dimension"])
+                    coords.update({coordinate: xr.Variable(
+                        metadata["dimensions"], metadata["values"], metadata["attributes"])
+                        for coordinate, metadata in vertical["coordinates"].items()})
+                    coords[f"{vertical['dimension']}_source_native_index"] = (
+                        vertical["dimension"], vertical["source_native_indices"], {"units": "1"})
+                else:
+                    coords[field["group"]] = records[0]["level"]
+                dims.extend(("y", "x"))
+                coords["time"] = ("time", times, {"standard_name": "time"})
+                cycles = [references[stamp] for stamp in times]
+                coords["forecast_reference_time"] = (
+                    "time", cycles, {"standard_name": "forecast_reference_time"})
+                coords["step"] = ("time", np.asarray(times) - np.asarray(cycles),
+                                  {"standard_name": "forecast_period"})
+                temporal = {}
+                for record in records:
+                    stamp = record["time"]
+                    if stamp in temporal and temporal[stamp] != record["temporal_metadata"]:
+                        raise ValueError(f"{name}: inconsistent selected GRIB temporal intervals")
+                    temporal[stamp] = record["temporal_metadata"]
+                for key in records[0]["temporal_metadata"]:
+                    coords[key] = ("time", [temporal[stamp][key] for stamp in times])
+                if members:
+                    ensemble = records[0].get("ensemble_metadata", {})
+                    attrs = {"standard_name": "realization", "units": "1"}
+                    counts = {r.get("ensemble_metadata", {}).get("numberOfForecastsInEnsemble")
+                              for r in records}
+                    if "numberOfForecastsInEnsemble" in ensemble and len(counts) == 1:
+                        attrs["GRIB_numberOfForecastsInEnsemble"] = ensemble[
+                            "numberOfForecastsInEnsemble"]
+                    coords["number"] = ("number", members, attrs)
+                    by_member = {}
+                    for record in records:
+                        member = record["native_axes"]["number"]
+                        metadata = record.get("ensemble_metadata", {})
+                        if member in by_member and by_member[member] != metadata:
+                            raise ValueError(f"{name}: changing GRIB ensemble metadata")
+                        by_member[member] = metadata
+                    for key in ensemble:
+                        coords["GRIB_" + key] = (
+                            "number", [by_member[member][key] for member in members])
+                bounds = {}
+                for record in records:
+                    stamp = record["time"]
+                    if stamp in bounds and bounds[stamp] != record["time_bounds"]:
+                        raise ValueError(f"{name}: inconsistent selected GRIB time intervals")
+                    bounds[stamp] = record["time_bounds"]
+                bounds = {stamp: values for stamp, values in bounds.items() if values is not None}
+                if bounds:
+                    if set(bounds) != set(times):
+                        raise ValueError(f"{name}: inconsistent selected GRIB time intervals")
+                    coords["time_bounds"] = (("time", "nv"), [bounds[stamp] for stamp in times])
+                    coords["time"][2]["bounds"] = "time_bounds"
+                attrs = next(iter(samples.values())).attrs
+                dataset = xr.Dataset({name: (dims, data, attrs)}, coords=coords)
+                dataset.time.encoding["calendar"] = records[0]["calendar"]
+                dataset.forecast_reference_time.encoding["calendar"] = records[0]["calendar"]
+                by_grid.setdefault(grid_id, []).append(dataset)
+        return {grid_id: xr.merge(datasets, join="exact", compat="identical",
+                                 combine_attrs="override")
+                for grid_id, datasets in by_grid.items()}
+
+    return (
+        groups(binding["products"].get("model_grid", {})),
+        {"internal": groups(binding["dependencies"])} if binding["dependencies"] else {},
+    )
 
 
 def _parse_and_normalize(yaml_req: dict | None, dims_seen: set[str]) -> dict[str, dict]:
@@ -213,6 +461,8 @@ def concat_grib2ds_by_vert_coord(
     wind_conf=None,
     native_output_groups: dict[str, xr.Dataset] | None = None,
     filter_requested: bool = False,
+    selected_records=None,
+    source_plan=None,
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open a list of GRIB files and build per-group user and tracker Datasets.
@@ -247,6 +497,10 @@ def concat_grib2ds_by_vert_coord(
         When supplied with wind_conf, populate user groups from the same source
         pieces with m/s units but original names, locations and source vector
         basis. Uses the same vertical/time selection, without derived speed.
+    selected_records, source_plan : optional
+        Complete executable v3 binding and its inventoried owning source. Decode
+        exact selected message locators lazily, without legacy normalization or
+        dependency discovery. Return native grid IDs and separate internal groups.
 
     Returns
     -------
@@ -255,6 +509,9 @@ def concat_grib2ds_by_vert_coord(
     by_group_trk : dict[str, dict[str, xr.Dataset]]
         ``{method -> {group -> xr.Dataset}}`` for tracker-requested variables.
     """
+
+    if selected_records is not None:
+        return _selected_grib(files, selected_records, source_plan, resources)
 
     # Keep optional ecCodes initialization after core geometry imports: some
     # wheels globally preload a conflicting PROJ before pyproj is initialized.

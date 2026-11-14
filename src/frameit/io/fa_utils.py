@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 from copy import deepcopy
+from pathlib import Path
 from uuid import uuid4
 
 import dask.array as da
@@ -140,7 +141,7 @@ class FaArray:
             shape = tuple(len(range(*v.indices(n))) for v, n in zip(key, self.shape, strict=True)
                           if isinstance(v, slice))
             return np.empty(shape, dtype=self.dtype)
-        return request_fa({
+        result = request_fa({
             "operation": "read", "path": self.path, "identity": self.identity,
             "profile": self.options["profile"], "fields": [self.field],
             "backend": self.options["backend"],
@@ -154,7 +155,158 @@ class FaArray:
             "diagnostics_path": self.diagnostics_path,
             "timeout_seconds": self.options["timeout_seconds"],
             "max_points": self.options["max_points"],
-        })["values"]
+        })
+        observed = result["field_descriptors"][self.field]
+        if any(observed.get(name) != self.descriptor.get(name) for name in (
+            "native_id", "source", "native", "sampling", "units", "temporal_support",
+            "eligibility", "declaration",
+        )):
+            raise ValueError(f"FA decoded descriptor contradicts selection for {self.field}")
+        shape = tuple(len(range(*v.indices(n))) for v, n in zip(key, self.shape, strict=True)
+                      if isinstance(v, slice))
+        if result["values"].shape != shape:
+            raise ValueError(f"FA decoded shape contradicts selection for {self.field}")
+        return result["values"]
+
+
+def fa_selected_array(record, source_plan, *, options, diagnostics_path=None):
+    """Read one exact locator on the explicitly declared numerical FA path.
+
+    This leaf does not grant a pending public binding execution clearance.
+    Task07 must resolve source interpretation before runner dispatch uses it.
+    """
+    from frameit.processing.requests import _fa_gridpoint
+
+    locator = record["locator"]
+    context = f"{locator['path']}: {record['name']}"
+    if (source_plan.get("format") != "fa" or locator.get("format") != "fa"
+            or options["profile"] != source_plan["profile"]):
+        raise ValueError(f"{context}: selected FA profile/format contradicts its owning source")
+    if record.get("selection_grid_id", record["grid_id"]) != record["grid_id"]:
+        raise ValueError(f"{context}: FA destination sampling requires method binding")
+    # Bound cubes narrow locator.records; every other original fact stays intact.
+    original = [candidate for candidate in source_plan["record_inventory"]
+                if {k: v for k, v in candidate.items() if k != "locator"} == {
+                    k: record.get(k) for k in candidate if k != "locator"}
+                and {k: v for k, v in candidate["locator"].items() if k != "records"} == {
+                    k: v for k, v in locator.items() if k != "records"}]
+    if len(original) != 1:
+        raise ValueError(f"{context}: selected FA record is outside the closed inventory "
+                         "or contradicts original record metadata")
+    stat = Path(locator["path"]).stat()
+    if locator["identity"] != [stat.st_size, stat.st_mtime_ns]:
+        raise ValueError(f"{context}: FA input changed since inventory "
+                         "(size/mtime freshness check)")
+    grid = source_plan["native_grids"][record["grid_id"]]
+    geometry = fa_geometry(grid["fa_header"], options)
+    if locator["zone"] != geometry.attrs["fa_zone_indices"]:
+        raise ValueError(f"{context}: selected FA zone contradicts its owning grid")
+    field = source_plan["fields"][record["field_id"]]
+    cube = field.get("native_cube")
+    declaration = options["field_metadata"].get(record["name"])
+    if cube:
+        if cube != options["native_cubes"].get(record["name"]):
+            raise ValueError(f"{context}: native cube requires its original explicit declaration")
+        positions = record.get("source_positions")
+        if (not positions or any(type(i) is not int or not 0 <= i < len(cube["records"])
+                                 for i in positions) or len(set(positions)) != len(positions)):
+            raise ValueError(f"{context}: invalid selected FA cube source positions")
+        names = [cube["records"][i] for i in positions]
+    else:
+        if record.get("source_positions") is not None or record.get("vertical") is not None:
+            raise ValueError(f"{context}: a 2-D FA record has no selectable vertical axis")
+        names = [record["name"]]
+    if locator["records"] != names:
+        raise ValueError(f"{context}: selected FA records contradict source positions/declaration")
+    descriptors = {}
+    for name in names:
+        candidates = [part for part in source_plan["record_inventory"]
+                      if part["name"] == name
+                      and all(part.get(k) == record.get(k) for k in (
+                          "time", "cycle", "calendar", "clock", "time_bounds", "temporal_metadata"))
+                      and part["locator"] == {**locator, "records": [name]}]
+        if len(candidates) != 1:
+            raise ValueError(f"{context}: FA cube/raw record {name} needs one original "
+                             "provider/sample descriptor in its selected file")
+        part = candidates[0]
+        descriptor = _fa_gridpoint(source_plan, part)
+        if geometry_signature(source_plan["native_grids"][part["grid_id"]]["fa_header"],
+                              options) != geometry_signature(grid["fa_header"], options):
+            raise ValueError(f"{context}: FA cube part {name} contradicts its owning geometry")
+        for key, value in descriptor["sampling"].get("native_vertical_header", {}).items():
+            if key in grid["fa_header"] and not np.array_equal(value, grid["fa_header"][key]):
+                raise ValueError(f"{context}: FA cube part {name} contradicts its owning header")
+        descriptors[name] = resolve_descriptor(descriptor, declaration)
+    vertical = record.get("vertical")
+    coords = dict(geometry.coords)
+    dims = ("time", "y", "x")
+    if cube:
+        count = grid["fa_header"].get("KNIVER")
+        if type(count) is not int or count < 1:
+            raise ValueError(f"{context}: FA cube has no evidenced native vertical header")
+        # Validate native order, then retain the independent product/support read order.
+        ordered = [cube["records"][i] for i in sorted(positions)]
+        layout = cube_layouts(
+            {"field_descriptors": descriptors,
+             "hybrid_contract": {"interface_indices": list(range(count + 1))}},
+            {"native_cubes": {record["name"]: {**cube, "records": ordered}}},
+            [record["name"]])[record["name"]]
+        group = layout["group"]
+        labels = [descriptors[name]["sampling"]["epygram"]["levels"][0] for name in names]
+        native_indices = [int(label) - 1 for label in labels]
+        if vertical is not None and (
+            vertical["dimension"] != group or vertical["positions"] != positions
+            or vertical["values"] != labels or vertical["source_native_indices"] != native_indices
+            or vertical["units"] != "1"
+        ):
+            raise ValueError(f"{context}: selected FA vertical metadata contradicts native records")
+        coords.update({
+            group: (group, labels, {"axis": "Z", "units": "1", "positive": "down"}),
+            f"{group}_source_native_index": (group, native_indices, {"units": "1"}),
+            f"{record['name']}_native_record": (group, names),
+        })
+        if vertical is not None:
+            for coordinate, expected in (
+                (group, labels), (f"{group}_source_native_index", native_indices),
+            ):
+                spec = vertical["coordinates"].get(coordinate)
+                if spec is not None and (
+                    spec["dimensions"] != [group] or not np.array_equal(spec["values"], expected)
+                ):
+                    raise ValueError(f"{context}: FA coordinate {coordinate} "
+                                     "contradicts selected native records")
+            coords.update({name: (spec["dimensions"], spec["values"], spec["attributes"])
+                           for name, spec in vertical["coordinates"].items()})
+        dims = ("time", group, "y", "x")
+    arrays = []
+    for name in names:
+        array = FaArray(locator["path"], name, {
+            "identity": locator["identity"], "field_descriptors": descriptors,
+        }, options, locator["zone"], diagnostics_path)
+        token = hashlib.sha256(json.dumps({
+            "path": str(Path(array.path).resolve()), "identity": array.identity,
+            "field": name, "descriptor": array.descriptor, "options": array.options,
+            "zone": array.zone, "diagnostics_path": diagnostics_path,
+        }, sort_keys=True).encode()).hexdigest()
+        arrays.append(da.from_array(
+            array, chunks=array.shape, asarray=False, fancy=False, name="fa-selected-" + token,
+            meta=np.empty((0, 0), dtype="float64")))
+    values = da.stack(arrays, axis=0) if cube else arrays[0]
+    coords.update(time=("time", [record["time"]]),
+                  forecast_reference_time=record["cycle"],
+                  forecast_period=("time", [record["time"] - record["cycle"]]))
+    descriptor = descriptors[names[0]]
+    attrs = {**declaration, "source_variable_name": record["name"], "grid_mapping": "crs",
+             "source_units": declaration["units"],
+             "field_definition_source": "explicit_input.fa.field_metadata",
+             "cell_methods": "time: point",
+             "fa_field_descriptor": json.dumps(descriptor, sort_keys=True),
+             "fa_native_record_descriptors": json.dumps(descriptors, sort_keys=True)}
+    if descriptor["native"]["directory"]:
+        attrs.update(surfex_support_mask=descriptor["native"]["directory"]["MASK"],
+                     surfex_native_type=descriptor["native"]["type"])
+    return xr.DataArray(values[None, ...], name=record["name"], dims=dims,
+                        coords=coords, attrs=attrs)
 
 
 @managed_loading
@@ -162,8 +314,12 @@ def concat_fa2ds_by_vert_coord(
     files, user_requested_variables_yaml, tracker_requested_variables_by_method_yaml,
     method=None, *, wind_conf, resources=None, strict=False,
     duplicate_time_policy="first", native_output_groups=None,
+    selected_records=None, source_plan=None,
 ):
     """Gridpoint instantaneous records only; spectral transforms are not implicit."""
+    if selected_records is not None or getattr(wind_conf, "schema_version", None) == 3:
+        raise ValueError("FA source interpretation and decode-time scaling remain unresolved; "
+                         "pending metadata does not authorize payload reading")
     requests = normalize_requests(user_requested_variables_yaml)
     if not wind_conf.fa_options["native_cubes"] and (set(requests) - {"surface"} or any(
         req["level_indices"] or req["levels"] or req["level_domain"] != "stored"
