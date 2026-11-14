@@ -220,11 +220,9 @@ def validate_pair_frame(ds: xr.Dataset, pair: dict, conf: Any = None) -> str:
                             raise ValueError(
                                 f"Prepared {name}: {parameter} conflicts with recorded rotation"
                             )
-        if attrs.get("standard_name") in {
-            "eastward_wind", "northward_wind", "x_wind", "y_wind",
-            "grid_eastward_wind", "grid_northward_wind",
-        } and attrs["standard_name"] not in expected:
-            raise ValueError(f"{name}: standard_name identifies the wrong wind component")
+        if attrs.get("standard_name") and attrs["standard_name"] not in expected:
+            raise ValueError(f"{name}: standard_name identifies the wrong wind component "
+                             f"({attrs['standard_name']!r}); horizontal U/V required")
     if any(prepared) and not all(prepared):
         raise ValueError("Wind pair contains only one prepared component")
     if override:
@@ -402,3 +400,39 @@ def rotation_angle(ds: xr.Dataset, conf: Any, pair: dict) -> xr.DataArray:
     if not np.isfinite(angle).all():
         raise ValueError(f"{method} wind rotation angle must be finite")
     return angle
+
+
+def operation_pair(ds, source, names, conf):
+    """Resolve this actual sample's evidence before an explicit vector operation."""
+    definitions = [p for p in source["declaration"].get("wind_pairs", [])
+                   if (p["u"], p["v"]) == tuple(names)]
+    if definitions:
+        pair = dict(definitions[0], group="operation",
+                    reference_frame=definitions[0]["basis"])
+        pair.pop("basis")
+    else:
+        frames = [set(_metadata_frames(ds[n].attrs, n) + _metadata_frames(ds.attrs, "Dataset"))
+                  for n in names]
+        if len(frames[0]) != 1 or frames[0] != frames[1]:
+            raise ValueError("Wind basis missing or conflicting; declare sources.*.wind_pairs")
+        pair = dict(u=names[0], v=names[1], group="operation",
+                    reference_frame=next(iter(frames[0])))
+    if pair["reference_frame"] == "grid" and not pair.get("rotation"):
+        if source["model"] == "mesonh":
+            pair["rotation"] = {"method": "mesonh_projection"}
+        elif source["model"] == "croco":
+            pair["rotation"] = {"method": "coordinate", "coordinate": "angle"}
+        else:
+            raise ValueError("Grid winds require a declared supported rotation method")
+    if (pair.get("rotation") or {}).get("method") == "mesonh_projection":
+        for key in ("BETA", "RPK", "LON0"):
+            if key not in pair["rotation"] or key not in ds and key not in ds.attrs:
+                continue
+            observed, _ = _mesonh_parameters(ds, {})
+            if observed[key] != pair["rotation"][key]:
+                raise ValueError(
+                    f"mesonh_projection {key}: declaration conflicts with input geometry")
+    validate_pair_frame(ds, pair, conf)
+    if pair["reference_frame"] == "grid":
+        rotation_angle(ds, conf, pair)
+    return pair

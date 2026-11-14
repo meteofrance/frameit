@@ -669,7 +669,7 @@ def test_interpretation_does_not_clear_transform_work(tmp_path, monkeypatch):
     raw["sources"]["surface"]["transforms"] = [{"fields": ["SST"], "units": "degC"}]
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     reads = _payload_guard(monkeypatch, {"SST", "H_SEA", "FRAC_SEA", "PRES"})
-    with pytest.raises(ValueError, match="pending method binding"):
+    with pytest.raises(ValueError, match="incompatible or unsupported units"):
         execute_simulation(conf)
     assert reads == [] and not conf.output_dir.exists()
     assert path.exists()

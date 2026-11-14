@@ -29,15 +29,17 @@ A vector basis specifies the directions along which components are measured:
 
 * **Eastward/northward components** (also called **Earth-relative components**):
   U is positive toward geographic east and V toward geographic north at each
-  point. Wind-pair declarations use ``reference_frame: earth``.
+  point. Source wind-pair declarations use ``basis: earth``.
 * **Grid-aligned components** (also called **grid-relative components**): U and V
   follow the model's local x/y axes, which may not align with east/north.
-  Wind-pair declarations use ``reference_frame: grid``.
+  Source wind-pair declarations use ``basis: grid``.
 
 Rotating grid-aligned components into eastward/northward components represents
 the same physical wind using different component directions; it does not
 subtract any velocity. Preparing staggered winds can also require moving U/V
 samples to a common location; see :ref:`wind-grid-contract` for examples.
+Copying a native component needs neither operation. A declaration describes the
+stored basis; an explicit transform requests a change.
 
 Is event motion subtracted?
 ---------------------------

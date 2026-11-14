@@ -15,7 +15,7 @@ import xarray as xr
 
 from frameit.check.check_functions import drop_time_dupes
 from frameit.io.loader import managed_loading, resolve_input_files
-from frameit.processing.derived.wind import normalize_native_wind_units, normalize_winds
+from frameit.processing.derived.wind import normalize_winds
 from frameit.processing.polar.metadata import preserve_coordinate_dependencies
 from frameit.processing.wind_reference import wind_pairs
 
@@ -133,6 +133,8 @@ def _selected_grib(files, binding, source, resources):
     def groups(descriptors, *, internal=False):
         by_grid, vertical_dims = {}, set()
         for name, descriptor in descriptors.items():
+            if descriptor.get("operation"):
+                continue
             records_by_grid = {}
             for record in descriptor["records"]:
                 locator = record["locator"]
@@ -679,11 +681,12 @@ def concat_grib2ds_by_vert_coord(
             ds_file = _retain_wind_geometry(ds_file, dsets, wind_conf, g)
             if wind_conf is not None:
                 if native_output_groups is not None:
-                    native = normalize_native_wind_units(ds_file, wind_conf, g)
-                    native = _select_group_levels(native, user_req[g], float_tol)
+                    native = _select_group_levels(ds_file, user_req[g], float_tol)
                     if native is not None:
                         parts_native_all.setdefault(g, []).append(native)
-                ds_file = normalize_winds(ds_file, wind_conf, g)
+                if (getattr(wind_conf, "cartesian_horizontal_winds", "native") != "native"
+                        or "wind_speed" in user_req[g]["variables"]):
+                    ds_file = normalize_winds(ds_file, wind_conf, g)
             ds_file = _select_group_levels(ds_file, user_req[g], float_tol)
             if ds_file is not None:
                 parts_user_all.setdefault(g, []).append(ds_file)
@@ -700,6 +703,13 @@ def concat_grib2ds_by_vert_coord(
                 if ds_file is not None:
                     parts_trk_all[m].setdefault(g, []).append(ds_file)
 
+    from frameit.io.netcdf_utils import validate_native_metadata
+
+    if wind_conf is None or getattr(wind_conf, "cartesian_horizontal_winds", "native") == "native":
+        for parts in parts_user_all.values():
+            validate_native_metadata(parts, model="GRIB")
+    for parts in parts_native_all.values():
+        validate_native_metadata(parts, model="GRIB")
     # Concat unique en fin de boucle — une seule allocation par groupe
     by_group_user: dict[str, xr.Dataset] = {
         g: xr.concat(

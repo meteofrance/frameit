@@ -197,6 +197,8 @@ Transforms and derived fields
 Native copying preserves stored samples, units, grids and masks. Copying one
 wind component does not require its unselected companion or a basis declaration.
 Selecting U/V does not automatically calculate speed or radial/tangential wind.
+Native multi-file copies require consistent stored units; they do not silently
+normalize later files to the first file's label.
 
 When an operation needs a wind pair, reliable metadata takes precedence.
 ``wind_pairs`` can declare ``u``, ``v`` and ``basis: grid | earth``.
@@ -214,7 +216,9 @@ physical quantity; pressure vertical velocity remains pressure vertical velocity
 These transforms govern model-grid exports, not tracking or polar preparation.
 
 Source ``derived`` maps an output name to an admitted ``method`` and explicit
-``inputs``. Required inputs are loaded internally and exported only if requested.
+``inputs``. The current method is ``wind_speed`` with named ``u`` and ``v``
+inputs; selecting U/V alone does not request it.
+Required inputs are loaded internally and exported only if requested.
 Output-name collisions fail. Only results needed by requested products or another
 requested operation are calculated. Each method retains its own preparation,
 vertical grid and documented limits.

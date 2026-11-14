@@ -123,10 +123,13 @@ this is not a new stable diagnostic. Location/basis choices and examples are in
 :ref:`wind-grid-contract`; declarations are in
 :doc:`/user_guide/configuration_file`.
 
-**Inputs and conventions.** Each pair declares its group, U/V names and
-eastward/northward or grid-aligned component directions; a grid-aligned pair
-declares exactly one rotation method. Components
-normalize to m s-1 per input file before concatenation. Collocation uses labelled,
+**Inputs and conventions.** An operation needing a pair uses reliable metadata
+for U/V identity, units, sample locations and basis. Source ``wind_pairs`` can
+declare missing eastward/northward or grid-aligned directions, and a grid-aligned
+pair can declare one admitted rotation method. Declarations must not silently
+replace conflicting evidence. Native copies retain stored units and samples.
+Analysis methods normalize their required velocity inputs to m s-1; model-grid
+exports change units only when explicitly requested. Collocation uses labelled,
 finite, strictly monotone native coordinates and actual mass targets, before
 cropping/subsetting removes neighbours. Linear interpolation between coordinates
 :math:`s_0,s_1` uses :math:`q(s)=(1-t)q_0+tq_1`,
@@ -191,7 +194,7 @@ synthetic 1-km-cell vector check allows 2e-4 m/s for spherical-cell curvature.
 ``test_wind_preflight.py`` checks declarations and shared tracker preparation.
 
 **Metadata and remaining limits.** Effective configuration/provenance records
-pair declarations and level choices; field metadata retains source basis,
+selected operations, pair declarations and level choices; field metadata retains source basis,
 collocation, rotation method/parameters, units and target location. AROME omega
 and geometric vertical velocity remain distinct. Synthetic tests establish the
 stated numerical contracts, not all real-model regimes. Real-data qualification

@@ -93,9 +93,12 @@ def test_loader_retains_native_brackets_before_selection(tmp_path, w_only):
     if not w_only:
         requests["level"] = {"variables": ["UT", "VT"], "level_selection": "indices",
                              "level_indices": [0, 2]}
+    settings = conf()
+    settings.cartesian_horizontal_winds = "mass_earth"
+    settings.cartesian_vertical_velocity = "mass"
     with DatasetResources() as resources:
         groups, _ = concat_nc2ds_by_vert_coord(
-            [path], requests, {}, wind_conf=conf(), concat_dimension="time", resources=resources
+            [path], requests, {}, wind_conf=settings, concat_dimension="time", resources=resources
         )
         # Requested Cartesian W remains on native interfaces; its hidden mass
         # counterpart retains correct brackets from the entire lazy source.
@@ -188,3 +191,56 @@ def test_runner_loads_speed_only_native_dependencies(tmp_path, monkeypatch):
         assert settings.requested_variables_user["level"]["variables"] == ["wind_speed"]
     finally:
         runner.close()
+
+
+@pytest.mark.parametrize("units,standard", [
+    ("cm s-1", "upward_air_velocity"),
+    ("Pa s-1", "lagrangian_tendency_of_air_pressure"),
+])
+def test_native_horizontal_output_keeps_independent_sparse_mass_w(
+        tmp_path, monkeypatch, units, standard):
+    from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
+
+    from frameit.processing.wind_collocation import select_vertical_velocity
+
+    source = native()
+    source.WT.attrs.update(units=units, standard_name=standard)
+    source.WT.values[0, 1, 1, 1] = np.nan
+    path = tmp_path / "native.nc"
+    source.to_netcdf(path, engine="h5netcdf")
+    before = path.read_bytes()
+    settings = conf()
+    del settings.wind_reference_frame
+    settings.cartesian_horizontal_winds = "native"
+    settings.cartesian_vertical_velocity = "mass"
+    requests = {"level_w": {"variables": ["WT"], "level_selection": "indices",
+                            "level_indices": [0, 2]}}
+    original_get, reads = H5NetCDFArrayWrapper.__getitem__, set()
+
+    def selected(array, key):
+        assert array.variable_name not in {"UT", "VT"}
+        if array.variable_name == "WT":
+            assert np.atleast_1d(np.arange(array.shape[0])[key.tuple[0]]).tolist() == [0]
+            reads.update(np.atleast_1d(np.arange(array.shape[1])[key.tuple[1]]).tolist())
+        return original_get(array, key)
+
+    monkeypatch.setattr(H5NetCDFArrayWrapper, "__getitem__", selected)
+    with DatasetResources() as resources:
+        groups, _ = concat_nc2ds_by_vert_coord(
+            [path], requests, {}, wind_conf=settings, resources=resources,
+            chunks={"time": 1, "level_w": 1})
+        mass = select_vertical_velocity(groups, settings, "mass")
+        assert set(mass) == {"level"} and set(mass["level"].data_vars) == {"WT"}
+        np.testing.assert_array_equal(mass["level"].level, [.5, 6.])
+        expected = np.broadcast_to(np.array([.5, 6.])[None, :, None, None], (1, 2, 3, 3)).copy()
+        expected[0, 0, 1, 1] = np.nan
+        np.testing.assert_allclose(mass["level"].WT, expected, rtol=0, atol=1e-12)
+        assert mass["level"].WT.attrs["units"] == units
+        assert mass["level"].WT.attrs["standard_name"] == standard
+        assert "source_units" not in mass["level"].WT.attrs
+        interfaces = select_vertical_velocity(groups, settings, "interfaces")["level_w"]
+        np.testing.assert_array_equal(interfaces.level_w, [0., 4.])
+        np.testing.assert_array_equal(interfaces.WT[:, :, 0, 0], [[0., 4.]])
+        assert interfaces.WT.attrs["units"] == units
+    assert reads == {0, 1, 2, 3}
+    assert path.read_bytes() == before

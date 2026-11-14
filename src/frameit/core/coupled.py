@@ -266,7 +266,8 @@ def _region_grid(conf, source, grid_id):
     from frameit.processing.dims_utils import horizontal_axes
     from frameit.utils.units import normalize_geography
 
-    grid = source["native_grids"][grid_id]
+    grid = (source["native_grids"][grid_id] if grid_id in source["native_grids"]
+            else source["representation_grids"][grid_id])
     geometry = xr.Dataset(coords={
         name: xr.Variable(item["dimensions"], item["values"], attrs=item["attributes"])
         for name, item in grid["coordinates"].items()}, attrs=deepcopy(grid.get("fa_geometry", {})))
@@ -301,6 +302,8 @@ def _region_grid(conf, source, grid_id):
         raise ValueError("Regional extraction requires distinct native horizontal axes")
     geometry = normalize_geography(geometry, settings)
     settings.grid_geometry = {}
+    # Native geometry inspection does not plan or execute a polar target.
+    settings.compute_polar_proj = False
     resolve_geometry(settings, [geometry])
     return geometry, settings
 
@@ -429,10 +432,20 @@ def _prepare_v3_regions(conf, children, plans):
             region.keys() & {"center", "track", "tracker"}), None),
             "associations": alignment["sources"][name]["associations"], "grids": {}}
         # A dependency-only source is not an extraction footprint requirement.
-        fields = {field for names in children[name].source_requests[name]["exports"].values()
-                  for field in names}
-        fields.update(source.get("tracker_support", {}).get("inputs", {}))
-        grids = {r["grid_id"] for r in source["records"] if r["name"] in fields}
+        requests = children[name].source_requests[name]
+        tracker_fields = set(source.get("tracker_support", {}).get("inputs", {}))
+        if source.get("field_binding") is not None:
+            grids = {r["selection_grid_id"]
+                     for descriptors in source["field_binding"]["products"].values()
+                     for descriptor in descriptors.values() for r in descriptor["records"]}
+        else:
+            mass_transforms = {field for transform in requests.get("transforms", [])
+                               if transform.get("sampling") == "mass"
+                               for field in transform["fields"]}
+            fields = {field for product, names in requests["exports"].items() for field in names
+                      if product != "model_grid" or field not in mass_transforms}
+            grids = {r["grid_id"] for r in source["records"] if r["name"] in fields}
+        grids.update(r["grid_id"] for r in source["records"] if r["name"] in tracker_fields)
         for grid_id in grids:
             geometry, settings = _region_grid(children[name], source, grid_id)
             facts = {"geometry": settings.grid_geometry,
@@ -661,6 +674,8 @@ def bind_sources(conf):
         if binding["status"] != "bound":
             raise ValueError(f"sources.{name}: cannot execute until requests bind to metadata "
                              f"and methods: {binding['deferred_checks']}")
+    _prepare_v3_regions(conf, children, plans)
+    for name, child in children.items():
         conf.source_requests[name] = deepcopy(child.source_requests[name])
         conf.simulation_parameter["request_plan"]["sources"][name] = deepcopy(plans[name])
     conf.add_parameter("input_inventory", {
@@ -750,8 +765,19 @@ def run_native_sources(runner, *, benchmark=False):
                "field_metadata": source["metadata_origins"].get("field_metadata", {}),
                "interpretation": source.get("interpretation"),
                "region": _association_report(source.get("region")),
-               "tracker_support": source.get("tracker_support"),
-               "selected_times": [str(time) for time in source["selected_times"]]}
+                "tracker_support": source.get("tracker_support"),
+                "operations": [
+                    {**{key: operation[key] for key in (
+                        "name", "product", "method", "inputs", "sampling", "basis",
+                        "grid_id", "preparation", "result_units", "rotation_coordinate")},
+                     "source_time": str(operation["context"][0]),
+                     "cycle": (str(operation["context"][1])
+                               if operation["context"][1] is not None else None),
+                     "levels": {key: operation["vertical"][key] for key in (
+                         "dimension", "source_native_indices", "values", "units", "units_origin")}
+                     if operation["vertical"] else None}
+                    for operation in source["requests"]["binding"].get("operations", [])],
+                "selected_times": [str(time) for time in source["selected_times"]]}
         for name, source in plans.items()})
     if runner.conf.yaml_config["region"]:
         runner.conf.grid_geometry = {
@@ -770,7 +796,7 @@ def _regional_dataset(dataset, grid_id, conf, source, centres):
     target = [record["coupling_time"] for record in associations]
     track = centres.sel(time=target).assign_coords(time=native)
     track = _mapped_track(track, geometry, settings)
-    source["region"]["grids"][grid_id].update(
+    source["region"]["grids"].setdefault(grid_id, {}).update(
         _region_facts(track, geometry, settings), centres="checked")
     dataset = dataset.sel(time=native)
     sample_clock = dataset.time

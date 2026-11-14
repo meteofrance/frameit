@@ -18,6 +18,45 @@ from frameit.processing.wind_reference import wind_pairs
 from frameit.utils.units import convert_units
 
 
+def staggered_support(source: xr.DataArray, target: xr.DataArray) -> dict[int, list[int]]:
+    """Required native brackets for each target; exact hits need only that sample."""
+    if source.attrs.get("units") != target.attrs.get("units"):
+        source = convert_units(source, "distance")
+        target = convert_units(target, "distance")
+    # The numerical helper is also the authority for monotonicity and boundaries.
+    interpolate_staggered(xr.zeros_like(source), source.dims[0], target)
+    values, points = np.asarray(source, float), np.asarray(target, float)
+    order = np.argsort(values)
+    sorted_values = values[order]
+    result = {}
+    for i, point in enumerate(points):
+        exact = np.flatnonzero(values == point)
+        upper = int(np.searchsorted(sorted_values, point))
+        result[i] = ([int(exact[0])] if len(exact) else
+                     [int(order[upper - 1]), int(order[upper])]
+                     if 0 < upper < len(values) else [])
+    return result
+
+
+def collocate_mnh_component(value, geometry, conf, *, vertical=False):
+    """An explicit sampling change only; units, basis and W quantity stay intact."""
+    if vertical:
+        if "level_w" not in value.dims:
+            return value
+        if conf.name_vertical_dim not in geometry.coords:
+            raise ValueError("W mass sampling requires the native mass vertical coordinate")
+        return interpolate_staggered(value, "level_w", geometry[conf.name_vertical_dim])
+    for mass in (conf.name_lon_dim, conf.name_lat_dim):
+        native = next((d for d in (mass + "_u", mass + "_v") if d in value.dims), None)
+        if native:
+            if mass not in geometry.coords:
+                raise ValueError(f"Missing native mass coordinate {mass}")
+            value = interpolate_staggered(value, native, geometry[mass])
+        elif mass not in value.dims:
+            raise ValueError(f"{value.name}: unrecognized native horizontal mass/staggered axes")
+    return value
+
+
 def interpolate_staggered(
     da: xr.DataArray, source_dim: str, target: xr.DataArray
 ) -> xr.DataArray:
@@ -52,6 +91,7 @@ def interpolate_staggered(
     upper = np.searchsorted(sorted_values, points, side="right")
     lower = np.clip(upper - 1, 0, values.size - 1)
     upper = np.clip(upper, 0, values.size - 1)
+    upper = np.where(points == sorted_values[lower], lower, upper)
     denominator = sorted_values[upper] - sorted_values[lower]
     weights = np.divide(
         points - sorted_values[lower], denominator,

@@ -164,7 +164,10 @@ def validate_cube_requests(info, requests, conf):
             raise ValueError(f"{group}: out-of-range native FA cube indices")
         if any(label not in levels for label in spec.get("levels", [])):
             raise ValueError(f"{group}: unavailable native FA cube labels; no pressure matching")
-    _, pairs = wind_dependencies(conf, conf.requests_user())
+    _, pairs = wind_dependencies(
+        conf, conf.requests_user(),
+        native=(getattr(conf, "cartesian_horizontal_winds", "mass_earth") == "native"
+                and not getattr(conf, "compute_polar_proj", False)))
     for pair in pairs:
         for name in (pair["u"], pair["v"]):
             layout = info["native_cubes"].get(name)

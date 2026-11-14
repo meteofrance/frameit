@@ -840,6 +840,495 @@ def sea_interpretation(records):
         **({"metadata_records": list(evidence.values())} if evidence else {})}
 
 
+def _sample_context(record):
+    return record["time"], record["cycle"], tuple(sorted(record.get("native_axes", {}).items()))
+
+
+def _operation_units(value, target, *, model=None):
+    """Use the admitted scale conversions, never case-fold an unknown symbol."""
+    source = value.attrs.get("units")
+    if source == target and source:
+        return value.copy(deep=False)
+    if model == "croco":
+        from frameit.io.croco_utils import _velocity
+
+        if source in {"meter second-1", "metre second-1"}:
+            value = _velocity(value)
+            source = value.attrs["units"]
+        if target in {"meter second-1", "metre second-1"}:
+            return _operation_units(value, "m s-1").assign_attrs(
+                {**value.attrs, "units": target})
+    quantity = next((q for q, (_, factors) in UNITS.items()
+                     if unit_key(source) in factors and unit_key(target) in factors), None)
+    if quantity is None:
+        raise ValueError(
+            f"{value.name}: incompatible or unsupported units {source!r} -> {target!r}")
+    return convert_units(value, quantity, target=target)
+
+
+def _merge_operation_dependencies(source, binding, addition):
+    """Union genuine native read bindings, without changing any product selector."""
+    by_name = {}
+    for i, record in enumerate(source["record_inventory"]):
+        by_name.setdefault(record["name"], []).append((i, record))
+    for name, descriptor in addition["dependencies"].items():
+        if name not in binding["dependencies"]:
+            binding["dependencies"][name] = deepcopy(descriptor)
+            continue
+        target = binding["dependencies"][name]
+        if target["field_id"] != descriptor["field_id"]:
+            raise ValueError(f"{name}: operation inputs resolve to conflicting field identities")
+        for record in descriptor["records"]:
+            previous = next((r for r in target["records"] if
+                             _sample_context(r) == _sample_context(record)
+                             and r["locator"] == record["locator"]), None)
+            if previous is None:
+                target["records"].append(deepcopy(record))
+            elif record["vertical"] is not None:
+                positions = sorted(
+                    set(previous["source_positions"]) | set(record["source_positions"]))
+                axis = _field_axis(source, source["fields"][record["field_id"]], record, by_name)
+                previous["source_positions"] = positions
+                previous["vertical"] = _bind_vertical(
+                    axis, {"indices": axis["native"][positions].tolist()},
+                    f"internal.{name}", binding["warnings"])
+    for record in addition["records"]:
+        if not any(r["field_id"] == record["field_id"] and r["locator"] == record["locator"]
+                   and _sample_context(r) == _sample_context(record) for r in binding["records"]):
+            binding["records"].append(deepcopy(record))
+    binding["warnings"].extend(addition["warnings"])
+    binding["deferred_checks"].extend(addition["deferred_checks"])
+    if "interpretation" in addition:
+        combined = binding.setdefault("interpretation", deepcopy(addition["interpretation"]))
+        if "fields" in combined:
+            combined["fields"] = sorted(
+                set(combined["fields"]) | set(addition["interpretation"]["fields"]))
+        if addition["interpretation"].get("metadata_records"):
+            evidence = combined.setdefault("metadata_records", [])
+            for record in addition["interpretation"]["metadata_records"]:
+                if record not in evidence:
+                    evidence.append(deepcopy(record))
+
+
+def _operation_geometry(source, records, operation, conf):
+    """Read only selected-sample coordinates and required admitted rotation geometry."""
+    from frameit.io.loader import DatasetResources
+
+    coordinates, attributes = {}, {}
+    for record in (sequence[0] for sequence in records.values()):
+        grid = source["native_grids"][record["grid_id"]]
+        for name, descriptor in grid["coordinates"].items():
+            value = xr.DataArray(xr.Variable(
+                descriptor["dimensions"], descriptor["values"], descriptor["attributes"]))
+            indexers = record["locator"].get("coordinate_indexers", {})
+            value = value.isel({dim: i for dim, i in indexers.items() if dim in value.dims},
+                               drop=True)
+            if name in coordinates and not coordinates[name].identical(value):
+                raise ValueError(f"{name}: conflicting operation coordinate geometry")
+            coordinates[name] = value
+        attributes.update(grid.get("fa_geometry", {}))
+    if source["format"] == "netcdf" and (
+            operation["sampling"] == "mass" or operation["basis"] == "earth"):
+        pairs = source["declaration"].get("wind_pairs", [])
+        rotations = [p.get("rotation", {}) for p in pairs
+                     if set(records) & {p["u"], p["v"]}]
+        names = {conf.name_lon_dim, conf.name_lat_dim, conf.name_vertical_dim,
+                 conf.name_latitude, conf.name_longitude, "BETA", "RPK", "LON0", "CARTESIAN"}
+        names.update(f"{dim}_source_native_index" for dim in (
+            conf.name_lon_dim, conf.name_lat_dim, conf.name_vertical_dim))
+        if source["model"] == "croco":
+            names.update(("xi_rho", "eta_rho", "lat_rho", "lon_rho", "angle"))
+        names.update(r["coordinate"] for r in rotations if r.get("coordinate"))
+        with DatasetResources() as resources:
+            for record in (sequence[0] for sequence in records.values()):
+                original = resources.open_netcdf(
+                    record["locator"]["path"], engine=conf.netcdf_engine, chunks=None)
+                for key in ("BETA", "RPK", "LON0", "CARTESIAN", "wind_reference_frame",
+                            "GRIB_uvRelativeToGrid", "uvRelativeToGrid", "CPP-options"):
+                    if key in original.attrs:
+                        if key in attributes and attributes[key] != original.attrs[key]:
+                            raise ValueError(f"{key}: conflicting selected operation geometry")
+                        attributes[key] = original.attrs[key]
+                for name in names & set(original.variables):
+                    value = original[name]
+                    if name in {"BETA", "RPK", "LON0", "CARTESIAN"} and value.size != 1:
+                        raise ValueError(f"{name}: rotation geometry must be scalar")
+                    if name in {r.get("coordinate") for r in rotations}:
+                        convert_units(xr.DataArray(0., attrs=value.attrs, name=name), "angle")
+                    if value.attrs.keys() & {"flag_values", "flag_masks", "flag_meanings"}:
+                        raise ValueError(
+                            f"{name}: categorical data cannot supply rotation geometry")
+                    indexers = record["locator"]["coordinate_indexers"]
+                    selected = value.isel({dim: i for dim, i in indexers.items()
+                                           if dim in value.dims}, drop=True)
+                    selected = xr.DataArray(
+                        np.asarray(selected.values), dims=selected.dims, attrs=dict(selected.attrs))
+                    if name in coordinates and not coordinates[name].variable.equals(
+                            selected.variable):
+                        raise ValueError(
+                            f"{name}: conflicting selected operation coordinate geometry")
+                    coordinates[name] = selected
+    geometry = xr.Dataset(coords=coordinates, attrs=attributes)
+    if source["format"] == "grib":
+        grid = source["native_grids"][next(iter(records.values()))[0]["grid_id"]]
+        if grid.get("grid_type") == "regular_ll":
+            lat, lon = geometry.latitude.values, geometry.longitude.values
+            if np.array_equal(lat, np.broadcast_to(lat[:, :1], lat.shape)) and np.array_equal(
+                    lon, np.broadcast_to(lon[:1], lon.shape)):
+                geometry = geometry.assign_coords(
+                    y=("y", lat[:, 0]), x=("x", lon[0]))
+    return geometry
+
+
+def _grid_from_geometry(geometry, dimensions, *, rotation_coordinate=None):
+    coords = {}
+    bounds = {value.attrs.get("bounds") for value in geometry.coords.values()
+              if set(value.dims) <= set(dimensions)}
+    for name, value in geometry.coords.items():
+        if (set(value.dims) <= set(dimensions) or name in bounds) and name not in {
+                "BETA", "RPK", "LON0", "CARTESIAN", rotation_coordinate}:
+            coords[name] = {"dimensions": list(value.dims), "values": np.asarray(value.values),
+                           "attributes": deepcopy(value.attrs), "dtype": str(value.dtype),
+                           "role": "coordinate_metadata"}
+    return {"dimensions": dict(dimensions), "coordinates": coords, "grid_mapping": None}
+
+
+def bind_source_operations(source, request, conf, *, representations=None, required_inputs=()):
+    """Bind explicit result preparation separately from native exports and trackers.
+
+    Every operation's input binding is produced by ``bind_requests`` on actual
+    selected records. Result coordinates are bound on the actual preparation grid.
+    No polar target or unrelated pending method is granted execution clearance.
+    """
+    from copy import copy
+
+    import dask.array as da
+
+    from frameit.core.preflight import _metadata_id
+    from frameit.processing.derived.wind import align_wind_pair
+    from frameit.processing.wind_collocation import collocate_mnh_component, staggered_support
+    from frameit.processing.wind_reference import _metadata_frames, operation_pair
+
+    exports = request["exports"]
+    active = {}
+    for product, names in exports.items():
+        for name in names:
+            if name in request["derived"]:
+                active[product, name] = {
+                    "method": request["derived"][name]["method"],
+                    "inputs": request["derived"][name]["inputs"],
+                    "sampling": "mass" if source["model"] == "mesonh" else "native",
+                    "basis": "earth", "units": "m s-1"}
+            elif product == "model_grid":
+                transforms = [t for t in request["transforms"] if name in t["fields"]]
+                if len(transforms) > 1:
+                    raise ValueError(f"model_grid.{name}: overlapping transforms are unsupported")
+                if transforms:
+                    active[product, name] = {
+                        "method": "transform", "inputs": {"field": name},
+                        "sampling": "native", "basis": "native",
+                        **{k: v for k, v in transforms[0].items() if k != "fields"}}
+            elif request["polar_options"].get(name, {}).get("sampling") == "mass":
+                active[product, name] = {
+                    "method": "polar_input", "inputs": {"field": name},
+                    "sampling": "mass", "basis": "native"}
+    native = deepcopy(request)
+    native["exports"] = {p: [n for n in names if (p, n) not in active]
+                         for p, names in exports.items()}
+    native["exports"] = {p: names for p, names in native["exports"].items() if names}
+    native["transforms"] = []
+    native["internal_inputs"] = []
+    remaining = [p for p in source.get("pending_operations", [])
+                 if p not in {"transforms", "derived"}]
+    native_source = {**source, "pending_operations": remaining,
+                     "dependency_resolution": "pending_method_binding" if remaining else "declared"}
+    binding = (bind_requests(native_source, native, representations=representations,
+                             required_inputs=required_inputs)
+               if native["exports"] or required_inputs or not active else
+               {"status": "bound", "products": {}, "dependencies": {}, "records": [],
+                "warnings": [], "deferred_checks": []})
+    binding["operations"] = []
+    binding["operation_plans"] = []
+    binding["representation_grids"] = {}
+    pool = source["record_inventory"]
+    all_by_name = {}
+    for i, record in enumerate(pool):
+        all_by_name.setdefault(record["name"], []).append((i, record))
+    for (product, name), operation in active.items():
+        if operation["method"] == "wind_speed" and any(r["name"] == name for r in pool):
+            raise ValueError(f"derived.{name}: result name collides with a source field")
+        if operation["method"] == "wind_speed" and source["physical_type"] != "atmosphere":
+            raise ValueError(f"derived.{name}: wind_speed does not admit ocean current diagnostics")
+        inputs = dict(operation["inputs"])
+        if operation["method"] == "transform" and operation["basis"] == "earth":
+            declarations = [p for p in source["declaration"].get("wind_pairs", [])
+                            if name in (p["u"], p["v"])]
+            evidence = [r for r in pool if r["name"] == name]
+            frames = set().union(*(
+                set(_metadata_frames(source["fields"][r["field_id"]]["attributes"], name))
+                for r in evidence))
+            if declarations:
+                inputs.update(u=declarations[0]["u"], v=declarations[0]["v"])
+            elif frames != {"earth"}:
+                raise ValueError(
+                    f"{name}: Earth basis requires an unambiguous wind_pairs declaration")
+        croco = source["model"] == "croco" and operation["sampling"] == "mass"
+        if croco:
+            if operation["basis"] != "earth" or (
+                    inputs.get("u"), inputs.get("v")) not in {("u", "v"), ("ubar", "vbar")}:
+                raise ValueError(
+                    "CROCO current transforms require admitted U/V mass/Earth preparation")
+            declared = next(p for p in source["declaration"]["wind_pairs"]
+                            if (p["u"], p["v"]) == (inputs["u"], inputs["v"]))
+            rotation = declared.get("rotation", {"method": "coordinate", "coordinate": "angle"})
+            if declared["basis"] != "grid" or rotation != {
+                    "method": "coordinate", "coordinate": "angle"}:
+                raise ValueError("CROCO native currents require grid basis and rho angle rotation")
+            for mask in ("mask_rho", "mask_u", "mask_v"):
+                if mask == "mask_rho" or any(r["name"] == mask for r in pool):
+                    inputs[mask] = mask
+        by_name = {n: [(i, r) for i, r in enumerate(pool) if r["name"] == n]
+                   for n in inputs.values()}
+        for field_name, candidates in by_name.items():
+            if len({r["field_id"] for _, r in candidates}) != 1:
+                raise ValueError(
+                    f"{name}: input {field_name} missing or ambiguous in selected inventory")
+        contexts = {_sample_context(r) for _, r in by_name[next(iter(inputs.values()))]}
+        output = {"operation": name, "method": operation["method"], "records": [], "category": None}
+        if product == "polar":
+            output.update(execution="pending_polar_sampling",
+                          magnitude_order="after_sampling_components" if (
+                              operation["method"] == "wind_speed") else "not_applicable")
+        binding["products"].setdefault(product, {})[name] = output
+        for context in sorted(contexts, key=str):
+            records = {n: [r for _, r in candidates if _sample_context(r) == context]
+                       for n, candidates in by_name.items()}
+            if any(not sequence for sequence in records.values()):
+                raise ValueError(f"{name}: missing input support at selected time/cycle {context}")
+            geometry = _operation_geometry(source, records, operation, conf)
+            attrs, axes, grids, probes = {}, {}, {}, {}
+            for field_name, sequence in records.items():
+                record = sequence[0]
+                field = source["fields"][record["field_id"]]
+                metadata = record.get("field_metadata") or source_field_metadata(
+                    source, field, record=record)
+                attrs[field_name] = deepcopy(
+                    metadata["attributes"] if metadata else field["attributes"])
+                if field.get("native_cube", {}).get("vector_basis"):
+                    attrs[field_name]["wind_reference_frame"] = field["native_cube"]["vector_basis"]
+                axes[field_name] = _field_axis(source, field, record, all_by_name)
+                grids[field_name] = (axes[field_name]["grid"] if axes[field_name] else
+                                     source["native_grids"][record["grid_id"]])
+                if axes[field_name]:
+                    for n, c in grids[field_name]["coordinates"].items():
+                        if n not in geometry:
+                            geometry = geometry.assign_coords({n: xr.Variable(
+                                c["dimensions"], c["values"], c["attributes"])})
+                coords = dict(geometry.coords)
+                dims = tuple(grids[field_name]["dimensions"])
+                probes[field_name] = xr.DataArray(
+                    da.zeros(tuple(grids[field_name]["dimensions"].values()), chunks="auto"),
+                    dims=dims, coords={n: c for n, c in coords.items() if set(c.dims) <= set(dims)},
+                    attrs=attrs[field_name], name=field_name)
+                if operation.get("units") and field_name not in {"mask_rho", "mask_u", "mask_v"}:
+                    _operation_units(xr.DataArray(0., attrs=attrs[field_name], name=field_name),
+                                     operation["units"], model=source["model"])
+            prepared = dict(probes)
+            if croco:
+                from frameit.io.croco_utils import _validate_faces, _velocity
+
+                headers = xr.Dataset(probes).assign_coords(geometry.coords)
+                _validate_faces(headers, (inputs["u"], inputs["v"]))
+                for component, direction, horizontal in (
+                        (inputs["u"], "x", {"eta_rho", "xi_u"}),
+                        (inputs["v"], "y", {"eta_v", "xi_rho"})):
+                    try:
+                        _velocity(xr.DataArray(0., attrs=attrs[component], name=component))
+                    except ValueError as error:
+                        raise ValueError(f"CROCO current analysis: {error}") from error
+                    prefix = "barotropic_" if "bar" in component else ""
+                    standard = f"{prefix}sea_water_{direction}_velocity"
+                    location = "u" if direction == "x" else "v"
+                    if attrs[component].get("standard_name") not in {
+                            None, standard, f"{standard}_at_{location}_location"}:
+                        raise ValueError(f"CROCO {component}: conflicting current quantity")
+                    expected = horizontal | ({"s_rho"} if component in {"u", "v"} else set())
+                    field = source["fields"][records[component][0]["field_id"]]
+                    if set(probes[component].dims) != expected or not field["time_varying"]:
+                        raise ValueError(f"CROCO {component}: incompatible current dimensions")
+                if any(attrs[inputs["u"]].get(key) != attrs[inputs["v"]].get(key)
+                       for key in ("cell_methods", "online_operation",
+                                   "interval_operation", "interval_write")):
+                    raise ValueError("CROCO current companions have incompatible statistics")
+                if "MASKING" not in str(geometry.attrs.get("CPP-options", "")).split() or (
+                        "WET_DRY" in str(geometry.attrs.get("CPP-options", "")).split()):
+                    raise ValueError(
+                        "CROCO current analysis requires static MASKING without WET_DRY")
+                mask_attrs = attrs["mask_rho"]
+                if (mask_attrs.get("option_0") != "land" or mask_attrs.get("option_1") != "water"
+                        or probes["mask_rho"].dims != ("eta_rho", "xi_rho")):
+                    raise ValueError("CROCO mask_rho requires explicit static land/water support")
+                if "angle" not in geometry or geometry.angle.dims != ("eta_rho", "xi_rho"):
+                    raise ValueError("CROCO current analysis requires rho-point angle")
+                convert_units(geometry.angle, "angle")
+                if not np.isfinite(geometry.angle.values).all():
+                    raise ValueError("CROCO rho-point angle must be finite")
+                for field_name in (inputs["u"], inputs["v"]):
+                    dims = tuple({"xi_u": "xi_rho", "eta_v": "eta_rho"}.get(d, d)
+                                 for d in probes[field_name].dims)
+                    prepared[field_name] = xr.DataArray(
+                        da.zeros(tuple(geometry.sizes[d] for d in dims), chunks="auto"),
+                        dims=dims, coords={d: geometry[d] for d in dims if d in geometry},
+                        attrs=attrs[field_name], name=field_name)
+            elif operation["sampling"] == "mass":
+                if source["model"] != "mesonh":
+                    raise ValueError(
+                        f"{name}: mass sampling is unsupported for this model/quantity")
+                for field_name, value in probes.items():
+                    vertical_w = "level_w" in value.dims
+                    if vertical_w and field_name != getattr(
+                            conf, "velocity_aliases", {}).get("w_velocity", "WT") and (
+                            value.attrs.get("standard_name") not in {
+                                "upward_air_velocity", "lagrangian_tendency_of_air_pressure"}):
+                        raise ValueError(
+                            f"{field_name}: only admitted W quantities support mass remapping")
+                    prepared[field_name] = collocate_mnh_component(
+                        value.reset_coords(drop=True), geometry, conf, vertical=vertical_w)
+            pair = None
+            if "u" in inputs and "v" in inputs and not croco:
+                u, v = inputs["u"], inputs["v"]
+                align_wind_pair(prepared[u], prepared[v])
+                for field_name in (u, v):
+                    _operation_units(xr.DataArray(0., attrs=attrs[field_name], name=field_name),
+                                     "m s-1")
+                if any(records[u][0].get(key) != records[v][0].get(key)
+                       for key in ("time_bounds", "temporal_metadata", "calendar")):
+                    raise ValueError(f"{name}: wind inputs have incompatible temporal definitions")
+                headers = xr.Dataset({n: prepared[n] for n in (u, v)}).assign_coords(
+                    geometry.coords)
+                headers.attrs = dict(geometry.attrs)
+                rotation_settings = copy(conf)
+                if source["format"] == "grib":
+                    rotation_settings.name_lat_dim, rotation_settings.name_lon_dim = "y", "x"
+                pair = operation_pair(headers, source, (u, v), rotation_settings)
+            anchor = next(iter(inputs.values()))
+            result = prepared[anchor]
+            result_geometry = geometry.assign_coords({
+                dim: result[dim] for dim in result.dims if dim in result.coords})
+            coordinate = ("angle" if croco else
+                          ((pair or {}).get("rotation") or {}).get("coordinate"))
+            destination = _grid_from_geometry(
+                result_geometry, result.sizes, rotation_coordinate=coordinate)
+            grid_id = (records[anchor][0]["grid_id"]
+                       if operation["sampling"] == "native" else _metadata_id("grid_", destination))
+            axis = _vertical_axis(
+                {"name": name, "dimensions": list(result.dims)}, destination)
+            category = "3d" if axis else "2d"
+            output.update(field_id=records[anchor][0]["field_id"], category=category)
+            local_pool = [r for r in pool if _sample_context(r) == context]
+            local = {**source, "record_inventory": local_pool,
+                     "records": local_pool, "selected_times": [context[0]],
+                     "pending_operations": [], "dependency_resolution": "declared"}
+            anchor_axis = axes[anchor]
+            source_positions = {}
+            if axis is not None and anchor_axis is not None:
+                source_positions = (
+                    {i: [i] for i in range(axis["size"])}
+                    if axis["dimension"] == anchor_axis["dimension"] else
+                    staggered_support(geometry[anchor_axis["dimension"]],
+                                      result_geometry[axis["dimension"]]))
+            representation = {
+                "grid_id": grid_id, "grid": destination, "sampling": operation["sampling"],
+                "source_positions": source_positions}
+            result_request = {
+                **native, "fields": {key: [anchor] if key == category else []
+                                    for key in ("2d", "3d")},
+                "exports": {product: [anchor]}, "derived": {}, "internal_inputs": [],
+                "transforms": [{"fields": [anchor], "sampling": operation["sampling"]}],
+                "polar_options": {anchor: {"sampling": operation["sampling"]}},
+            }
+            result_binding = bind_requests(
+                local, result_request, representations={
+                    product: {anchor: {records[anchor][0]["grid_id"]: representation}}})
+            bound_result = result_binding["products"][product][anchor]
+            if not bound_result["records"]:
+                raise ValueError(
+                    f"{name}: result representation support remains pending method binding")
+            selected = bound_result["records"][0]["vertical"]
+            binding["warnings"].extend(result_binding["warnings"])
+            binding["deferred_checks"].extend(result_binding["deferred_checks"])
+            selectors = {}
+            for field_name, native_axis in axes.items():
+                if native_axis is None:
+                    selectors[field_name] = {}
+                    continue
+                if axis is None:
+                    raise ValueError(f"{name}: operation must preserve the input field category")
+                if native_axis["dimension"] == axis["dimension"]:
+                    positions = selected["positions"]
+                else:
+                    target = result_geometry[axis["dimension"]].isel(
+                        {axis["dimension"]: selected["positions"]})
+                    support_map = staggered_support(
+                        geometry[native_axis["dimension"]], target)
+                    if any(not support for support in support_map.values()):
+                        raise ValueError(
+                            f"{name}: source support unavailable for selected mass levels")
+                    positions = sorted({i for support in support_map.values() for i in support})
+                selectors[field_name] = {"indices": native_axis["native"][positions].tolist()}
+            subrequest = {**native, "fields": {key: [n for n in dict.fromkeys(inputs.values())
+                                                   if n in request["fields"][key]]
+                                             for key in ("2d", "3d")},
+                          "exports": {}, "internal_inputs": [], "derived": {}, "levels": {}}
+            support = bind_requests(local, subrequest, required_inputs=selectors)
+            _merge_operation_dependencies(source, binding, support)
+            output["records"].extend(deepcopy(bound_result["records"]))
+            binding["representation_grids"][grid_id] = destination
+            planned = {
+                **deepcopy(operation), "name": name, "product": product,
+                "inputs": inputs, "input_binding": support, "pair": pair,
+                "vertical": selected, "grid_id": grid_id,
+                "grid": destination, "geometry": {
+                    "coordinates": {
+                        n: {"dimensions": list(c.dims), "values": np.asarray(c.values),
+                            "attributes": dict(c.attrs)} for n, c in geometry.coords.items()},
+                    "attributes": dict(geometry.attrs)},
+                "context": context, "model": source["model"], "preparation": (
+                    "croco_midpoint_both_valid_then_rho_angle" if croco else
+                    "native_coordinate_linear_strict_then_earth_preparation" if pair
+                    and operation["sampling"] == "mass" else
+                    "native_coordinate_linear_strict" if operation["sampling"] == "mass" else
+                    "native_collocated_components" if pair else "native_samples"),
+                "rotation_coordinate": {
+                    "name": coordinate, "dimensions": list(geometry[coordinate].dims),
+                    "values": np.asarray(geometry[coordinate].values).tolist(),
+                    "attributes": {
+                        key: value.tolist() if isinstance(value, (np.ndarray, np.generic))
+                        else deepcopy(value)
+                        for key, value in geometry[coordinate].attrs.items()}
+                } if coordinate else None,
+            }
+            planned["result_units"] = operation.get("units", attrs[anchor].get("units"))
+            output.setdefault("representations", []).append({
+                "time": context[0], "cycle": context[1], "grid_id": grid_id,
+                "units": planned["result_units"], "preparation": planned["preparation"],
+                "sampling": operation["sampling"], "basis": operation["basis"],
+                "levels": {key: selected[key] for key in (
+                    "dimension", "source_native_indices", "values", "units", "units_origin")}
+                if selected else None})
+            binding["operation_plans"].append(planned)
+            if product == "model_grid":
+                binding["operations"].append(planned)
+    if "polar" in exports:
+        binding["deferred_checks"].append(
+            "Polar target planning/sampling remains pending method binding; "
+            "bound preparation levels are not polar execution clearance.")
+    binding["warnings"] = list(dict.fromkeys(binding["warnings"]))
+    binding["deferred_checks"] = list(dict.fromkeys(binding["deferred_checks"]))
+    binding["status"] = "pending_method_binding" if binding["deferred_checks"] else "bound"
+    return binding
+
+
 def bind_requests(source, request, *, representations=None, required_inputs=()):
     """Bind v3 declarations using only a closed, metadata-only record inventory.
 

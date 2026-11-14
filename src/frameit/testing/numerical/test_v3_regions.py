@@ -815,6 +815,31 @@ def test_tracker_binding_does_not_clear_unrelated_pending_operations(tmp_path, p
     conf = configuration(tmp_path, {"weather": source},
                          region={"tracker": {"method": "pressure_wind"},
                                  "width_km": {"x": 2, "y": 2}}, products=products)
+    if pending == "derived":
+        before = (tmp_path / "weather.nc").read_bytes()
+        _, children, plans = bind_sources(conf)
+        binding = children["weather"].source_requests["weather"]["binding"]
+        assert binding["status"] == "bound"
+        assert set(binding["products"]["model_grid"]) == {"speed"}
+        assert set(binding["dependencies"]) == {"MSLP", "UM10", "VM10"}
+        assert plans["weather"]["tracker_support"]["inputs"] == {
+            "MSLP": {}, "UM10": {}, "VM10": {}}
+        result = execute_simulation(conf)
+        subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1]) as out:
+    assert set(out.data_vars) == {'speed'}
+    assert out.speed.shape == (2, 3, 3)
+    expected = np.full((2, 3, 3), np.sqrt(100 + (25/9)**2))
+    expected[:, 1, 1] = 0
+    np.testing.assert_allclose(out.speed, expected, atol=1e-12)
+    assert out.speed.attrs['units'] == 'm s-1'
+    assert out.speed.attrs['frameit_method'] == 'wind_speed'
+    assert np.diff(out.time.values).tolist() == [7200000000000]
+assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
+""", result.products[0]["path"]], check=True, capture_output=True, text=True)
+        assert (tmp_path / "weather.nc").read_bytes() == before
+        return
     if pending == "interpretation":
         _, children, plans = bind_sources(conf)
         binding = children["weather"].source_requests["weather"]["binding"]

@@ -380,3 +380,145 @@ def test_polar_cube_keeps_native_full_and_interface_axes(tmp_path):
         assert data.level_w.values.tolist() == [4, 1]
         assert data.w_if.attrs["fa_vertical_position"] == "interface"
         assert data.fa_hybrid_interface.values.tolist() == [1, 2, 3, 4]
+
+
+@pytest.fixture
+def native_wind_singleton(tmp_path):
+    path = tmp_path / "native-wind.fa"
+    j, i = np.indices((7, 9))
+    fields = []
+    for level in (1, 2, 3):
+        for component, offset in (("U", 0.), ("V", 100.)):
+            values = offset + 10 * level + j + i
+            values[1, 1], values[2, 2] = np.nan, 0.
+            fields.append({"name": f"S{level:03d}WIND.{component}.PHYS",
+                           "values": values.tolist()})
+    written = subprocess.run([EPYTHON, "-m", "frameit.testing.fa_fixture"], input=json.dumps([{
+        "path": str(path), "hours": 0, "projection_latitude": -20.,
+        "atmospheric_fields": fields, "hybrid_header": HYBRID,
+    }]), capture_output=True, text=True, timeout=30)
+    assert written.returncode == 0, written.stdout + written.stderr
+    path.chmod(0o444)
+    conf = SimulationConfig(
+        simulation_name="native-fa-singleton", file_name_prefix="", file_name="",
+        file_name_suffix="", file_type="fa", atm_model="AROME", ocean_model="",
+        wave_model="", resolution=1000, comment="", input_files=[str(path)],
+        simulation_output_dir=str(tmp_path),
+        frameit_output_dir=str(tmp_path / "output"), tracking_method="fixed_box",
+        fix_subdomain_center=[50., -20.], name_vertical_dim="level",
+        cartesian_horizontal_winds="native",
+        velocity_aliases={"u_velocity": "u", "v_velocity": "v", "w_velocity": "w"},
+        requested_variables_user={"level": {
+            "variables": ["u"], "level_selection": "indices", "level_indices": [2, 0]}},
+        fa_options={"profile": "arome_history", "python_executable": EPYTHON,
+                    "earth_radius_m": 6371229., "max_points": 1000, "timeout_seconds": 30,
+                    "field_metadata": {"u": {**DECLARATION, "units": "knots"}},
+                    "native_cubes": {"u": {
+                        "records": [f"S{k:03d}WIND.U.PHYS" for k in (1, 2, 3)],
+                        "vertical_position": "mass", "sampling": "center"}}})
+    return path, conf
+
+
+@NATIVE
+def test_native_wind_cube_singleton_metadata_and_numerical_copy(
+        tmp_path, monkeypatch, native_wind_singleton):
+    from frameit.core.preflight import open_metadata, selected_level_records
+    from frameit.io.loader import DatasetResources
+    from frameit.testing.numerical.test_v3_interpretation import _fa_requests
+
+    path, conf = native_wind_singleton
+    before = path.read_bytes()
+    assert conf.schema_version == 1 and not conf.yaml_config  # Direct numerical constructor.
+    assert not conf.wind_pairs and conf.wind_reference_frame is None
+    assert "vector_basis" not in conf.fa_options["native_cubes"]["u"]
+    assert "component_scaling" not in conf.fa_options["native_cubes"]["u"]
+    calls = _fa_requests(monkeypatch)
+    with DatasetResources() as resources:
+        _, datasets = next(open_metadata([path], conf, resources))
+        assert set(datasets[0].data_vars) == {"u"}
+        assert selected_level_records(datasets, conf.requests_user(), path)[0][
+            "source_native_indices"] == [2, 0]
+    assert calls and all(call["operation"] == "inspect" for call in calls)
+    native = {}
+    groups, _ = concat_fa2ds_by_vert_coord(
+        [path], conf.requests_user(), {}, wind_conf=conf, native_output_groups=native)
+    assert all(call["operation"] == "inspect" for call in calls)
+    out = groups["level"].compute(scheduler="synchronous")
+    assert set(out.data_vars) == set(native["level"].data_vars) == {"u"}
+    reads = [call for call in calls if call["operation"] == "read"]
+    assert reads and {tuple(call["fields"]) for call in reads} == {
+        ("S003WIND.U.PHYS",), ("S001WIND.U.PHYS",)}
+    assert {call["path"] for call in reads} == {str(path)}
+    assert out.u.attrs["units"] == "knots"
+    assert "wind_reference_frame" not in out.u.attrs
+    assert "frameit_wind_prepared" not in out.u.attrs
+    product = tmp_path / "native-copy.nc"
+    out.to_netcdf(product)
+    subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+j, i = np.indices((7, 9))
+expected = np.stack([30. + j + i, 10. + j + i])[None]
+expected[:, :, 1, 1], expected[:, :, 2, 2] = np.nan, 0.
+with xr.open_dataset(sys.argv[1]) as out:
+    assert set(out.data_vars) == {'u'}
+    np.testing.assert_array_equal(out.u.values, expected)
+    np.testing.assert_array_equal(out.level, [3, 1])
+    np.testing.assert_array_equal(out.level_source_native_index, [2, 0])
+    assert out.u.attrs['units'] == 'knots'
+    assert 'wind_reference_frame' not in out.u.attrs
+    assert out.fa_hybrid_interface.size == 4 and 'crs' in out
+assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
+""", str(product)], check=True, capture_output=True, text=True)
+    assert path.read_bytes() == before and not conf.output_dir.exists()
+
+
+@NATIVE
+@pytest.mark.parametrize("problem", [
+    None, "pair", "basis", "scaling", "companion", "speed", "polar",
+])
+def test_explicit_wind_cube_analysis_retains_metadata_requirements(
+        monkeypatch, native_wind_singleton, problem):
+    from frameit.core.preflight import open_metadata
+    from frameit.io.loader import DatasetResources
+    from frameit.testing.numerical.test_v3_interpretation import _fa_requests
+
+    path, conf = native_wind_singleton
+    before = path.read_bytes()
+    conf.cartesian_horizontal_winds = "mass_earth"
+    conf.wind_pairs = [{"group": "level", "u": "u", "v": "v", "reference_frame": "grid",
+                        "rotation": {"method": "geolocation"}}]
+    options = conf.fa_options
+    options["field_metadata"]["v"] = {**DECLARATION, "units": "knots"}
+    options["native_cubes"]["v"] = {
+        "records": [f"S{k:03d}WIND.V.PHYS" for k in (1, 2, 3)],
+        "vertical_position": "mass", "sampling": "center"}
+    for cube in options["native_cubes"].values():
+        cube.update(vector_basis="grid", component_scaling="physical_velocity")
+    message = "wind basis/scaling"
+    if problem == "pair":
+        conf.wind_pairs = []
+        message = "wind_pairs"
+    elif problem == "basis":
+        options["native_cubes"]["u"]["vector_basis"] = "earth"
+    elif problem == "scaling":
+        options["native_cubes"]["u"].pop("component_scaling")
+    elif problem == "companion":
+        options["native_cubes"]["v"]["records"] = [f"S{k:03d}WIND.V.NONE" for k in (1, 2, 3)]
+        message = "field|record|missing|found"
+    elif problem == "speed":
+        conf.cartesian_horizontal_winds = "native"
+        conf.requested_variables_user["level"]["variables"] = ["wind_speed"]
+        options["native_cubes"]["u"].pop("vector_basis")
+    elif problem == "polar":
+        conf.cartesian_horizontal_winds = "native"
+        conf.compute_polar_proj = True
+        options["native_cubes"]["u"].pop("vector_basis")
+    calls = _fa_requests(monkeypatch)
+    with DatasetResources() as resources:
+        if problem is None:
+            list(open_metadata([path], conf, resources))
+        else:
+            with pytest.raises(ValueError, match=message):
+                list(open_metadata([path], conf, resources))
+    assert all(call["operation"] == "inspect" for call in calls)
+    assert path.read_bytes() == before and not conf.output_dir.exists()

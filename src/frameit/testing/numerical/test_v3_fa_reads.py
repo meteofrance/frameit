@@ -182,11 +182,23 @@ def test_public_pending_fa_binding_still_rejected_without_helper_calls(
                      field_metadata=original.fa_options["field_metadata"],
                      transforms=[{"fields": ["SFX.WG1P1"], "units": "1"}])
     source = inventory_source(conf, "weather")
+    calls = payload_requests(monkeypatch)
+    with pytest.raises(ValueError, match="incompatible or unsupported units"):
+        bind_source(conf, "weather")
+    assert calls == []
+    assert conf.source_requests["weather"]["binding"] is None
+    assert source["requests"]["binding"] is None
+    raw = copy.deepcopy(conf.yaml_config)
+    raw["sources"]["weather"]["transforms"] = []
+    raw["region"] = {"center": {"latitude": -20., "longitude": 50.}}
+    raw["products"] = {"polar": {"radius_km": 1.}}
+    conf = type(conf).from_mapping_with_model_preset(raw)
+    source = inventory_source(conf, "weather")
     binding = bind_source(conf, "weather")
     assert binding["status"] == "pending_method_binding"
     assert conf.source_requests["weather"]["binding"] is None
     assert source["requests"]["binding"] is None
-    calls = payload_requests(monkeypatch)
+    calls.clear()
     with DatasetResources() as resources:
         import xarray as xr
 

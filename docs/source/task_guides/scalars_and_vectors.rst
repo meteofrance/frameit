@@ -1,67 +1,116 @@
 Choose scalar and vector representations
 ========================================
 
-Start from an inspected stream and its matching starter:
+Field names alone do not establish quantity, sampling location or vector basis.
+Inspect :ref:`source metadata and producer conventions <wind-metadata>` before
+requesting an operation.
 
-.. code-block:: bash
+Copy native components
+-----------------------
 
-   frameit init mesonh-pressure-wind
-
-Adapt paths, selected fields and domain. Scalar copies retain source units;
-prepared atmospheric velocities use m s-1. Field names alone do not establish
-quantity, sample location or vector basis.
-
-Declare atmospheric wind pairs
-------------------------------
-
-Check :ref:`source metadata or producer documentation <wind-metadata>`, declare
-each selected pair, then run ``frameit validate``. FrameIt cross-checks your
-declaration against available metadata; it does not choose the basis for you.
-
-Declare **eastward/northward components** with ``reference_frame: earth``:
-U is positive eastward and V northward, also called **Earth-relative components**.
-Declare **grid-aligned components**, following the model's x/y axes, with
-``reference_frame: grid``. These labels specify component directions, not
-storm-motion subtraction; see :ref:`wind-component-directions`.
-
-For Meso-NH, native ``UT/VT`` are grid-aligned and ``UM10/VM10`` are
-eastward/northward. Declare each pair separately. This fragment assumes the
-inspected projection metadata establishes the native grid rotation:
+This complete request copies two existing levels of one Meso-NH component.
+Replace the illustrative path, field and indices with those in your input:
 
 .. code-block:: yaml
 
-   input:
-     wind_pairs:
-       - group: level
-         u: UT
-         v: VT
-         reference_frame: grid
-         rotation: {method: mesonh_projection}
-       - group: fields_2d
-         u: UM10
-         v: VM10
-         reference_frame: earth
+   schema_version: 3
+   run:
+     name: native-component
+   sources:
+     atmosphere:
+       model: mesonh
+       files: ./data/mnh*.nc
+       variables:
+         3d: [UT]
+         levels: {indices: [2, 0]}
    output:
-     cartesian:
-       horizontal_vectors: earth_centered
-       vertical_velocity: interfaces
-     polar:
-       vertical_velocity: mass
+     directory: ./results/native-component
 
-If the input lacks ``BETA``, ``RPK`` or ``LON0``, supply known values under
-``rotation``. An explicit ``reference_frame: earth`` may instead accept
-responsibility for Earth-relative directions, with a warning under the narrow
-Meso-NH NetCDF missing-projection exception. This does not rotate grid winds or prove
-that the directions coincide. See :ref:`missing-mesonh-wind-projection` for both
-YAML examples and the conditions that still fail.
+No wind pair is needed for native copying. Values, units, staggering and masks
+stay native; the unselected V component is not required. Selecting both U and V
+still does not calculate speed or radial/tangential winds.
 
-``earth_centered`` collocates atmospheric U/V and rotates grid-aligned pairs to
-eastward/northward components. ``native`` retains their source staggering and
-declared basis, with normalized velocity units. W location is an independent
-choice. Tracking and polar processing use a separate analysis representation,
-so changing Cartesian
-representation does not change their results. See :ref:`wind-grid-contract`
-for existing C-grid/W diagrams, level mapping and method limitations.
+.. _declare-atmospheric-wind-pairs:
+
+Request a model-grid transform
+------------------------------
+
+Source ``transforms`` target explicit exported fields. Sampling, vector basis
+and units are separate choices. This fragment supplements the request above,
+selecting U/V/W and moving them to mass points. It also rotates U/V to east/north
+and explicitly converts their velocity units:
+
+.. code-block:: yaml
+
+   sources:
+     atmosphere:
+       variables:
+         3d: [UT, VT, WT]
+         levels: {indices: [2, 0]}
+       wind_pairs:
+         - u: UT
+           v: VT
+           basis: grid
+           rotation: {method: mesonh_projection}
+       transforms:
+         - fields: [UT, VT]
+           sampling: mass
+           basis: earth
+           units: m s-1
+         - fields: [WT]
+           sampling: mass
+           units: m s-1
+
+Here ``basis: grid`` describes stored U/V directions; ``basis: earth`` requests
+eastward/northward output. This example requires the applicable Meso-NH
+``BETA``, ``RPK`` and ``LON0``. Missing or conflicting geometry fails. Supply
+producer-confirmed parameters only; see :ref:`missing-mesonh-wind-projection`
+for the narrow existing exception and its responsibilities.
+
+An explicit remap selects levels on its destination axis. Required native
+neighbours remain internal; they do not add exported levels. W remapping is
+independent of U/V rotation and does not turn pressure velocity into geometric
+velocity. Mass points are model cell centres, not fixed heights.
+The example's ``WT`` conversion to m s-1 requires geometric vertical velocity
+in compatible units. Pressure velocity in Pa s-1 cannot use that conversion;
+remapping its sample locations must retain its pressure-velocity units.
+See :ref:`wind-grid-contract` for C-grid/W diagrams and boundary rules.
+
+Calculate only a requested result
+---------------------------------
+
+This complete request calculates a speed from inspected eastward/northward
+10-m components. It does not export the input components:
+
+.. code-block:: yaml
+
+   schema_version: 3
+   run:
+     name: horizontal-speed
+   sources:
+     atmosphere:
+       model: mesonh
+       files: ./data/mnh*.nc
+       wind_pairs:
+         - u: UM10
+           v: VM10
+           basis: earth
+       derived:
+         speed:
+           method: wind_speed
+           inputs: {u: UM10, v: VM10}
+   products:
+     model_grid:
+       fields: {atmosphere: [speed]}
+   output:
+     directory: ./results/horizontal-speed
+
+``wind_speed`` uses collocated, physically compatible components and reports
+m s-1. It is not ``hypot`` of two staggered face arrays. The method prepares its
+own required inputs; a model-grid export transform does not change another
+calculation, tracker or polar preparation.
+Output-name collisions, incompatible units and unavailable support fail.
+Definitions excluded from all requested products and dependencies do not execute.
 
 .. figure:: ../_static/figures/sampling-frames.svg
    :target: ../_static/figures/sampling-frames.svg
@@ -75,14 +124,13 @@ for existing C-grid/W diagrams, level mapping and method limitations.
 Check the result
 ----------------
 
-Run ``frameit validate``, ``frameit run --dry-run`` and ``frameit run``. Reopen the
-selected products and check each component's dimensions, coordinates, units and
-basis. Do not take ``hypot`` of staggered face arrays as though they were a
-collocated point vector. A requested ``wind_speed`` uses the prepared pair and
-does not export internal-only companions.
+Check metadata with ``frameit validate`` and ``frameit run --dry-run`` before
+``frameit run``. Reopen the source-qualified model-grid output with an ordinary
+reader. Check each field's values, dimensions, native indices, coordinates,
+units, basis and recorded method. Internal-only companions must not appear as
+extra physical outputs.
 
-For native ocean components, select ``horizontal_vectors: native`` unless the
-documented CROCO rho/Earth analysis is intended and its angle/mask/bracket
-requirements are met. NEMO component analysis and ocean wind diagnostics are
-unsupported. See :doc:`../user_guide/ocean_netcdf`; atmospheric wind declarations
-do not supply missing ocean geometry or physical meaning.
+Ocean component operations keep their adapter-specific angle, mask, bracket and
+quantity requirements. Atmospheric declarations do not supply missing ocean
+geometry or make currents into atmospheric winds.
+See :doc:`../user_guide/ocean_netcdf` for the admitted source limits.

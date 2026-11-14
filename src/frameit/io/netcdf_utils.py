@@ -402,6 +402,8 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
     def groups(descriptors, *, export_support=False):
         by_grid, vertical_dims = {}, set()
         for name, descriptor in descriptors.items():
+            if descriptor.get("operation"):
+                continue
             samples, validation = {}, []
             for record in descriptor["records"]:
                 dataset = sample(name, record)
@@ -411,7 +413,8 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     dataset = prepared.reset_coords(
                         [field for field in descriptors if field in prepared.coords])
                 elif name in binding.get("interpretation", {}).get("fields", []):
-                    dataset = prepared
+                    dataset = prepared.reset_coords(
+                        [field for field in descriptors if field in prepared.coords])
                 vertical = record["vertical"]
                 if vertical is not None:
                     vertical_dims.add(vertical["dimension"])
@@ -626,7 +629,8 @@ def concat_nc2ds_by_vert_coord(
             result = {}
             for group in dict.fromkeys(g for part in parts for g in part):
                 sequence = [part[group] for part in parts if group in part]
-                if ocean:
+                if ocean or (wind_conf is not None and getattr(
+                        wind_conf, "cartesian_horizontal_winds", "native") == "native"):
                     validate_native_metadata(sequence, model=wind_conf.atm_model)
                 if getattr(wind_conf, "netcdf_surfex_fields", []):
                     from frameit.io.surfex_utils import validate_surfex_metadata
@@ -658,7 +662,11 @@ def concat_nc2ds_by_vert_coord(
         requested_vars_all.update(vortex_fields.variables)
 
     wind_geometry = set()
-    if wind_conf is not None and not ocean:
+    prepare_user_winds = (wind_conf is not None and not ocean
+                          and (getattr(wind_conf, "cartesian_horizontal_winds", "native")
+                               != "native"
+                               or any("wind_speed" in r["variables"] for r in user_req.values())))
+    if prepare_user_winds or tracker_req_by_method:
         from frameit.processing.derived.wind import wind_names
         from frameit.processing.wind_reference import wind_pairs
 
@@ -666,7 +674,7 @@ def concat_nc2ds_by_vert_coord(
             pairs = wind_pairs(wind_conf, group)
             names = [(p["u"], p["v"]) for p in pairs] or [wind_names(wind_conf, group)]
             for pair in names:
-                if requested_vars_all.intersection(pair):
+                if prepare_user_winds and requested_vars_all.intersection(pair):
                     requested_vars_all.update(pair)
         for pair in getattr(wind_conf, "wind_pairs", []):
             if requested_vars_all.intersection((pair["u"], pair["v"])):
@@ -735,7 +743,7 @@ def concat_nc2ds_by_vert_coord(
         if keep_as_coords:
             ds = ds.set_coords(keep_as_coords)
 
-    if wind_conf is not None and not ocean:
+    if prepare_user_winds:
         from frameit.processing.derived.wind import normalize_native_wind_units
         from frameit.utils.units import normalize_geography
 
@@ -766,7 +774,7 @@ def concat_nc2ds_by_vert_coord(
 
     # Native collocation precedes both horizontal cropping and vertical selection.
     mass_w = None
-    if wind_conf is not None and str(wind_conf.atm_model).upper() == "MNH":
+    if prepare_user_winds and str(wind_conf.atm_model).upper() == "MNH":
         from frameit.processing.wind_collocation import prepare_native_mnh
 
         ds_user_native, mass_w = prepare_native_mnh(ds, wind_conf)
@@ -774,7 +782,7 @@ def concat_nc2ds_by_vert_coord(
         from frameit.io.croco_utils import prepare_croco_currents
 
         ds_user_native = prepare_croco_currents(ds, wind_conf)
-    elif wind_conf is not None and not ocean:
+    elif prepare_user_winds:
         from frameit.processing.derived.wind import normalize_winds
 
         ds_user_native = ds
@@ -782,6 +790,16 @@ def concat_nc2ds_by_vert_coord(
             ds_user_native = normalize_winds(ds_user_native, wind_conf, group)
     else:
         ds_user_native = ds
+
+    if mass_w is None and wind_conf is not None and wind_conf.atm_model == "MNH":
+        w_name = wind_conf.velocity_aliases.get("w_velocity", "WT")
+        mass_requested = getattr(wind_conf, "cartesian_vertical_velocity", "interfaces") == "mass"
+        mass_requested |= (getattr(wind_conf, "compute_polar_proj", False)
+                           and getattr(wind_conf, "polar_vertical_velocity", "mass") == "mass")
+        if mass_requested and w_name in ds and "level_w" in ds[w_name].dims:
+            from frameit.processing.wind_collocation import collocate_mnh_component
+
+            mass_w = collocate_mnh_component(ds[w_name], ds, wind_conf, vertical=True)
 
     # Build groups
     out_user: dict[str, xr.Dataset] = {}

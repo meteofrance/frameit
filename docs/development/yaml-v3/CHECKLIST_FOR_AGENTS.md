@@ -813,9 +813,9 @@ assertion, or mark a failed check as passed. The final full suite remains requir
 | [x] | 03 | 02 | Source inventory and selected physical records |
 | [x] | 04 | 03 | Field identity and shared level binding |
 | [x] | 05 | 04 | Native NetCDF slice, then selected-record adapter reads |
-| [ ] | 06 | 05 | Regions, trajectories, tracking, time associations |
-| [ ] | 07 | 05 | Explicit SEA and FA source interpretation |
-| [ ] | 08 | 07 | Explicit transforms and derived requests |
+| [x] | 06 | 05 | Regions, trajectories, tracking, time associations |
+| [x] | 07 | 05 | Explicit SEA and FA source interpretation |
+| [x] | 08 | 07 | Explicit transforms and derived requests |
 | [ ] | 09 | 06, 08 | Product-driven polar processing |
 | [ ] | 10 | 09 | Complete coordinate and writer contract |
 | [ ] | 11 | 10 | CPU budget and chunk/storage settings |
@@ -1084,15 +1084,15 @@ PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/t
 **Interfaces:** source `requests` distinguishes exports from internal inputs and
 records each result's method, preparation, grid, and shared-level selection.
 
-- [ ] Test that copying U alone needs neither V nor wind interpretation and preserves
+- [x] Test that copying U alone needs neither V nor wind interpretation and preserves
   stored units/samples. Selecting U/V must not add speed or radial/tangential winds.
-- [ ] Test explicit U/V collocation/rotation, each admitted rotation method, separate
+- [x] Test explicit U/V collocation/rotation, each admitted rotation method, separate
   W remapping, missing geometry, and incompatible units. Use independent known vectors
   and masks; preserve pressure-velocity meaning and documented boundary rules.
-- [ ] Test derived inputs without exports, output-name collisions, filtered-out unused
+- [x] Test derived inputs without exports, output-name collisions, filtered-out unused
   results, and native/model-grid/polar level binding. Remove implicit calculations
   from all loader/runner/extraction paths, not only the public parser.
-- [ ] Review numerical meaning and optionality.
+- [x] Review numerical meaning and optionality.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_native_extraction.py src/frameit/testing/numerical/test_wind_collocation.py src/frameit/testing/numerical/test_wind_reference.py src/frameit/testing/numerical/test_wind_preflight.py src/frameit/testing/numerical/test_grid_representations.py src/frameit/testing/numerical/test_croco_vectors.py

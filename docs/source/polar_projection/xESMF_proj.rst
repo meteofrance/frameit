@@ -340,9 +340,10 @@ and needs resampling before ordinary Fourier analysis.
 
 Derived wind components
 ~~~~~~~~~~~~~~~~~~~~~~~
-If the zonal (``u``) and meridional (``v``) wind components are included in
-``polar.variables``, FrameIt automatically computes the radial and tangential
-wind components on the polar grid and adds them to the output dataset:
+The numerical radial/tangential method uses collocated eastward/northward
+components on the polar grid. Selecting U/V alone does not request these
+additional quantities. The current public source ``derived`` catalogue admits
+``wind_speed``, not a radial/tangential method.
 
 - ``vrad``: radial wind component, positive **outward** from the storm centre.
 - ``vtan``: tangential wind component, positive for **clockwise** rotation.
@@ -357,8 +358,7 @@ azimuth ``theta``. These angles generally differ on a curved Earth:
 
    v_\mathrm{tan} = u \cos\alpha - v \sin\alpha
 
-Diagnostics are generated for groups containing the configured wind pair;
-surface winds use the separate 10-m aliases. At zero radius, the radial
+For this numerical method, at zero radius the radial
 direction is undefined: ``vrad``, ``vtan`` and ``radial_bearing`` are NaN,
 while scalar values and horizontal speed remain available.
 

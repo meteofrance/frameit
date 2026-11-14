@@ -476,12 +476,12 @@ def test_grib_per_file_units_rotation_and_native_branch(tmp_path, monkeypatch):
     request = {"isobaricInhPa": {
         "variables": ["u", "v"], "level_selection": "values", "level_values": [850.],
     }}
-    native = {}
+    settings = grib_settings()
+    settings.cartesian_horizontal_winds = "mass_earth"
     with DatasetResources() as resources:
         user, tracker = grib_utils.concat_grib2ds_by_vert_coord(
             paths, request, {"pressure_centroid": request}, method="pressure_centroid",
-            index_dir=tmp_path / "indexes", wind_conf=grib_settings(),
-            native_output_groups=native, resources=resources,
+            index_dir=tmp_path / "indexes", wind_conf=settings, resources=resources,
         )
         prepared = user["isobaricInhPa"]
         assert prepared.sizes["time"] == 2
@@ -491,15 +491,22 @@ def test_grib_per_file_units_rotation_and_native_branch(tmp_path, monkeypatch):
         np.testing.assert_allclose(prepared.u.isel(time=1), 3., atol=1e-14)
         np.testing.assert_allclose(prepared.v.isel(time=1), 4., atol=1e-14)
         xr.testing.assert_identical(tracker["pressure_centroid"]["isobaricInhPa"], prepared)
-        raw = native["isobaricInhPa"]
-        np.testing.assert_allclose(raw.u, 3.)
-        np.testing.assert_allclose(raw.v, 4.)
-        assert set(raw.data_vars) == {"u", "v"}
-        assert raw.u.attrs["units"] == prepared.u.attrs["units"] == "m s-1"
-        assert raw.u.attrs["GRIB_uvRelativeToGrid"] == 1
-        assert prepared.u.attrs["GRIB_uvRelativeToGrid"] == 0
-        assert "crs" in raw.coords and "rotation" in raw.coords
-        np.testing.assert_allclose(raw.rotation, [90., 0.])
+        for index, (unit, u, v, angle) in enumerate((
+                ("m s-1", 3., 4., 90.), ("km h-1", 10.8, 14.4, 0.))):
+            native = {}
+            grib_utils.concat_grib2ds_by_vert_coord(
+                [paths[index]], request, {}, index_dir=tmp_path / "indexes",
+                wind_conf=settings, native_output_groups=native, resources=resources)
+            raw = native["isobaricInhPa"]
+            np.testing.assert_allclose(raw.u, u)
+            np.testing.assert_allclose(raw.v, v)
+            assert set(raw.data_vars) == {"u", "v"}
+            assert raw.u.attrs["units"] == unit
+            assert prepared.u.attrs["units"] == "m s-1"
+            assert raw.u.attrs["GRIB_uvRelativeToGrid"] == 1
+            assert prepared.u.attrs["GRIB_uvRelativeToGrid"] == 0
+            assert "crs" in raw.coords and "rotation" in raw.coords
+            np.testing.assert_allclose(raw.rotation, angle)
 
 
 def test_grib_later_frame_conflict_is_checked_before_concatenation(tmp_path, monkeypatch):
@@ -514,10 +521,12 @@ def test_grib_later_frame_conflict_is_checked_before_concatenation(tmp_path, mon
         str(paths[1]): grib_blocks("2024-01-01T01:00", flag=0),
     }
     monkeypatch.setattr(cfgrib, "open_datasets", lambda path, **kw: blocks[path])
+    settings = grib_settings()
+    settings.cartesian_horizontal_winds = "mass_earth"
     with pytest.raises(ValueError, match="Conflicting wind reference metadata"):
         grib_utils.concat_grib2ds_by_vert_coord(
             paths, {"isobaricInhPa": {"variables": ["u", "v"], "level_selection": "all"}},
-            {}, index_dir=tmp_path / "indexes", wind_conf=grib_settings(),
+            {}, index_dir=tmp_path / "indexes", wind_conf=settings,
         )
 
 

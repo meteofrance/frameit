@@ -11,7 +11,7 @@ from copy import deepcopy
 import numpy as np
 import xarray as xr
 
-from .derived.wind import add_speed_from_uv_dict
+from .derived.wind import add_speed_from_uv_dict as add_speed_from_uv_dict
 from .dims_utils import horizontal_axes, normalize_dims_for_extraction
 from .polar.metadata import preserve_coordinate_dependencies
 
@@ -951,8 +951,4 @@ def extract_data(
             y_box_km=y_box_km,
             track_box=track_box,
         )
-    # Add total wind speed here :
-    if not native_winds and getattr(conf, "atm_model", None) not in {"NEMO", "CROCO"}:
-        extracted = add_speed_from_uv_dict(extracted, conf)
-
     return track_box, extracted

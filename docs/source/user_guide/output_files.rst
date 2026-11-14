@@ -375,9 +375,9 @@ to the ground, not the moving storm. See :ref:`wind-component-directions`.
 Use source ``transforms`` for requested model-grid changes. Sampling, basis and
 unit changes are separate choices; see :doc:`configuration_file`.
 
-* ``sampling: native`` preserves source staggering and basis. Units stay unchanged
-  unless explicitly converted. U/V keep their own coordinates; geographic vector
-  analysis may need collocation and rotation.
+* ``sampling: native`` preserves source sampling locations. Basis and units stay
+  unchanged unless separately transformed. U/V keep their own coordinates;
+  geographic vector analysis may need collocation and rotation.
 * ``sampling: mass`` puts supported components at mass points. This requires
   interpolation and its neighbours; these are not native samples.
 * ``basis: earth`` rotates supported pairs to eastward/northward components.
@@ -395,6 +395,16 @@ dimension names survive a crop.
 Tracking and polar processing prepare their own required analysis representations.
 A model-grid transform does not request the same transform for another product
 or change unrelated native fields.
+
+Explicit results carry ``frameit_method``, ``frameit_preparation``,
+``frameit_sampling``, ``frameit_basis``, ``frameit_selection_grid`` and
+``frameit_shared_levels``. These describe the requested operation and selection;
+``native`` means preserve that aspect, not an inferred geographic direction.
+Read actual component metadata and coordinates alongside them. Per-source
+provenance records method, inputs, preparation, time/cycle, units and shared levels.
+For coordinate rotations, each operation also records the actual angle's name,
+dimensions, values and attributes under ``rotation_coordinate``. A changing
+exported angle follows ``time``; it does not define a different sampling grid.
 
 Copying a component does not resolve contradictory basis metadata. An operation
 needing a vector basis must check its declarations and input evidence, including

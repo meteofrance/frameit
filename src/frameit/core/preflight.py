@@ -886,9 +886,15 @@ def bind_source(conf, name, *, representations=None, required_inputs=()):
         source.pop("tracker_support", None)
         source["tracker_support"] = resolve_tracker_support(conf, source)
         required_inputs = source["tracker_support"]["inputs"]
-    binding = bind_requests({**source, "name": name}, request,
-                            representations=representations, required_inputs=required_inputs)
+    from frameit.processing.requests import bind_source_operations
+
+    binding = (bind_requests({**source, "name": name}, request,
+                             representations=representations, required_inputs=required_inputs)
+               if representations is not None else
+               bind_source_operations(
+                   {**source, "name": name}, request, conf, required_inputs=required_inputs))
     source["field_binding"] = binding
+    source["representation_grids"] = deepcopy(binding.get("representation_grids", {}))
     source["metadata_origins"]["field_metadata"] = {
         field: descriptor["field_metadata"]["origins"]
         for descriptors in (*binding["products"].values(), binding["dependencies"])
@@ -927,8 +933,10 @@ def open_metadata(files, conf, resources, *, chunks=None):
             path, engine=conf.netcdf_engine, chunks=chunks), conf) for path in files]
         requested = set()
         selected_pairs = []
-        for request in (conf.requests_user(), conf.requests_tracker().get(conf.tracking_method, {})):
-            expanded, pairs = wind_dependencies(conf, request)
+        for native, request in (
+                (conf.cartesian_horizontal_winds == "native", conf.requests_user()),
+                (False, conf.requests_tracker().get(conf.tracking_method, {}))):
+            expanded, pairs = wind_dependencies(conf, request, native=native)
             selected_pairs.extend(pairs)
             requested.update(name for spec in expanded.values() for name in spec.get("variables", [])
                              if name != "wind_speed")
@@ -952,7 +960,8 @@ def open_metadata(files, conf, resources, *, chunks=None):
                 inspect_fa_inputs,
             )
 
-            dependencies, _ = wind_dependencies(conf, conf.requests_user())
+            dependencies, _ = wind_dependencies(
+                conf, conf.requests_user(), native=conf.cartesian_horizontal_winds == "native")
             info = inspect_fa_inputs(path, conf, fa_field_names(dependencies))
             if info["native_cubes"]:
                 from frameit.io.fa_cubes import vertical_signature
@@ -1154,8 +1163,8 @@ def _belongs_to_group(ds, name, group):
     return not (set(ds[name].dims) & vertical)
 
 
-def wind_dependencies(conf, requests):
-    """Expand identified horizontal pairs, including single-component requests."""
+def wind_dependencies(conf, requests, *, native=False):
+    """Expand explicit calculation inputs; native copies need no wind interpretation."""
     from frameit.processing.derived.wind import wind_names
 
     expanded = deepcopy(requests)
@@ -1164,6 +1173,8 @@ def wind_dependencies(conf, requests):
     pairs = []
     for group, spec in expanded.items():
         variables = spec.setdefault("variables", [])
+        if native and "wind_speed" not in variables:
+            continue
         definitions = wind_pairs(conf, group)
         if "wind_speed" in variables:
             names = wind_names(conf, group)
@@ -1330,7 +1341,8 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                 layout = resolve_mnh_fields(header, f"{path}; time={stamps}")
                 tracker = layout.requests()
                 mnh_records.append((path, header))
-            user_dependencies, user_pairs = wind_dependencies(conf, conf.requests_user())
+            user_dependencies, user_pairs = wind_dependencies(
+                conf, conf.requests_user(), native=conf.cartesian_horizontal_winds == "native")
             tracker_dependencies, tracker_pairs = wind_dependencies(conf, tracker)
             if conf.file_type == "netcdf":
                 tolerance = 0. if conf.atm_model in {"NEMO", "CROCO"} else .5

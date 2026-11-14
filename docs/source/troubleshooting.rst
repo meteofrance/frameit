@@ -36,40 +36,44 @@ Meso-NH wind projection parameters are missing
 ``rotation.method: mesonh_projection`` needs ``BETA``, ``RPK`` and ``LON0``.
 The error lists the affected pair and all missing parameters. If you know them
 from the producer configuration, supply them under that pair's ``rotation``:
+this fragment supplements a complete source request in
+:doc:`task_guides/scalars_and_vectors`.
 
 .. code-block:: yaml
 
-   input:
-     wind_pairs:
-       - group: level
-         u: UT
-         v: VT
-         reference_frame: grid
-         rotation:
-           method: mesonh_projection
-           BETA: 0
-           RPK: 0
-           LON0: 54.2
+   sources:
+     atmosphere:
+       wind_pairs:
+         - u: UT
+           v: VT
+           basis: grid
+           rotation:
+             method: mesonh_projection
+             BETA: 0
+             RPK: 0
+             LON0: 54.2
 
 These numbers are an example, not defaults. ``BETA`` and ``LON0`` are degrees;
 ``RPK`` is dimensionless in [-1, 1]. The required longitude is ``LON0``, not
-``LAT0``. Each YAML value takes precedence over the source variable, then the
-dataset attribute; omitted values must be available in the source. Explicit
-zero is retained. FrameIt does not infer missing parameters.
+``LAT0``. YAML values can supply missing projection parameters; conflicts with
+reliable source geometry fail. Omitted values must be available in source
+variables or dataset attributes. Explicit zero is retained. FrameIt does not
+infer missing parameters.
 
 If you have independently established that the components can be treated as
 eastward/northward, declare that decision explicitly instead:
 
 .. code-block:: yaml
 
-   input:
-     wind_pairs:
-       - group: level
-         u: UT
-         v: VT
-         reference_frame: earth
+   sources:
+     atmosphere:
+       wind_pairs:
+         - u: UT
+           v: VT
+           basis: earth
 
-For explicit Meso-NH NetCDF pairs only, when at least one projection parameter is
+When an operation needs the pair, for explicit Meso-NH NetCDF declarations only,
+when at least one projection parameter is
 missing, coherent grid-aligned metadata produces a warning rather than a failure.
 **No grid-to-Earth rotation is applied.** Missing projection metadata does not
 prove that grid and Earth directions coincide; you are responsible for this

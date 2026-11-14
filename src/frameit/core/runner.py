@@ -198,6 +198,10 @@ class FrameitRunner:
                 files, {}, {}, resources=self.resources, strict=True,
                 selected_records=binding, source_plan=source, **reader_options,
             )
+            from frameit.processing.derived.wind import execute_source_operations
+
+            user = execute_source_operations(
+                user, tracker.get("internal", {}), source, binding, self.conf)
             return user, tracker, files
         files = self.find_files()
         if self.conf.infer_grid_geometry and self.preflight_report is None:
@@ -231,9 +235,10 @@ class FrameitRunner:
             pairs = [(p["u"], p["v"]) for p in wind_pairs(self.conf, group)] or [pair]
             dependencies = []
             for names in pairs:
-                if any(name in variables for name in names) or (
+                if (getattr(self.conf, "cartesian_horizontal_winds", "native") != "native"
+                    and any(name in variables for name in names)) or (
                     names == pair and ("wind_speed" in variables or "wind_speed" in polar_names)
-                ):
+                ) or any(name in polar_names for name in names):
                     dependencies.extend(names)
             if dependencies:
                 self._internal_wind_names[group] = [
@@ -306,7 +311,8 @@ class FrameitRunner:
         from frameit.processing.derived.wind import normalize_winds
         from frameit.utils.units import normalize_geography
 
-        dict_user = {g: normalize_geography(ds, self.conf) for g, ds in dict_user.items()}
+        if getattr(self.conf, "cartesian_horizontal_winds", "native") != "native":
+            dict_user = {g: normalize_geography(ds, self.conf) for g, ds in dict_user.items()}
         from frameit.tracking.pressure_centroid_inputs import is_mnh_centroid
 
         dict_tracker = {m: {g: (normalize_geography(ds, self.conf) if
@@ -320,13 +326,17 @@ class FrameitRunner:
             # New FA cubes prepare selected vector components, while magnitude
             # remains an explicitly requested diagnostic. Legacy loaders retain
             # their established output contract.
-            dict_user = {g: normalize_winds(ds, self.conf, g) for g, ds in dict_user.items()}
+            if getattr(self.conf, "cartesian_horizontal_winds", "native") != "native":
+                dict_user = {g: normalize_winds(ds, self.conf, g) for g, ds in dict_user.items()}
             speed_groups = {g for g, spec in requested_vars_user.items()
                             if "wind_speed" in spec.get("variables", [])}
             requested_speed = {g: ds for g, ds in dict_user.items() if g in speed_groups}
             dict_user.update(add_speed_from_uv_dict(requested_speed, self.conf))
         elif self.conf.atm_model not in {"NEMO", "CROCO"}:
-            dict_user = add_speed_from_uv_dict(dict_user, self.conf)
+            requested_speed = {g: ds for g, ds in dict_user.items()
+                               if "wind_speed" in requested_vars_user.get(g, {}).get(
+                                   "variables", [])}
+            dict_user.update(add_speed_from_uv_dict(requested_speed, self.conf))
         # Record the effective per-component transformations, including direct
         # Python API runs which did not call metadata preflight.
         transformations = []

@@ -331,6 +331,8 @@ def _selected_fa(files, binding, source, conf, resources):
     def groups(descriptors, *, internal=False):
         by_grid, vertical_dims = {}, set()
         for name, descriptor in descriptors.items():
+            if descriptor.get("operation"):
+                continue
             samples = {}
             for record in descriptor["records"]:
                 if Path(record["locator"]["path"]).resolve() not in admitted:
@@ -507,9 +509,6 @@ def concat_fa2ds_by_vert_coord(
               for group, req in requests.items()}
     native = {key: value for key, value in native.items() if value is not None}
     if native_output_groups is not None:
-        from frameit.processing.derived.wind import normalize_native_wind_units
-
-        native_output_groups.update({g: normalize_native_wind_units(ds, wind_conf, g)
-                                     for g, ds in native.items()})
+        native_output_groups.update(native)
     geometry = combined.drop_vars(list(combined.data_vars))
     return native, {name: {"surface": geometry} for name in methods}

@@ -270,3 +270,142 @@ def add_speed_from_uv_dict(
         out[group] = ds.assign({speed_name: speed})
         out[group].attrs["wind_reference_frame"] = "earth"
     return out
+
+
+def execute_source_operations(user, internal, source, binding, conf):
+    """Execute only bound model-grid results, on separate native input views."""
+    import json
+    from copy import copy
+
+    from frameit.processing.requests import _operation_units, source_field_metadata
+    from frameit.processing.wind_collocation import collocate_mnh_component
+
+    out = dict(user)
+    results = {}
+    rotation_coordinates = {}
+    for operation in binding.get("operations", []):
+        geometry = xr.Dataset(coords={
+            n: xr.Variable(c["dimensions"], c["values"], c["attributes"])
+            for n, c in operation["geometry"]["coordinates"].items()},
+            attrs=operation["geometry"]["attributes"])
+        target_vertical = operation["vertical"]
+        if target_vertical is not None:
+            dim = target_vertical["dimension"]
+            geometry = geometry.isel({dim: target_vertical["positions"]})
+        arrays = {}
+        native_views = []
+        input_names = set(operation["inputs"].values())
+        for name in operation["input_binding"]["dependencies"]:
+            descriptor = operation["input_binding"]["dependencies"][name]
+            record = descriptor["records"][0]
+            native = internal[record["grid_id"]]
+            value = native[name]
+            native_view = native
+            if "time" in value.dims:
+                value = value.sel(time=[record["time"]])
+                native_view = native_view.sel(time=[record["time"]])
+            for dim, member in record.get("native_axes", {}).items():
+                value = value.sel({dim: [member]})
+            vertical = record["vertical"]
+            if vertical is not None:
+                dim = vertical["dimension"]
+                index = f"{dim}_source_native_index"
+                original = native[index].values.tolist()
+                value = value.isel({dim: [original.index(i) for i in
+                                         vertical["source_native_indices"]]})
+                native_view = native_view.isel({dim: [original.index(i) for i in
+                                                      vertical["source_native_indices"]]})
+            field = source["fields"][record["field_id"]]
+            metadata = record.get("field_metadata") or source_field_metadata(
+                source, field, record=record) or descriptor.get("field_metadata")
+            attrs = {**value.attrs, **(
+                field["attributes"] if metadata is None else metadata["attributes"])}
+            if metadata:
+                attrs["frameit_metadata_origins"] = json.dumps(metadata["origins"], sort_keys=True)
+            native_views.append(native_view)
+            value = value.reset_coords(drop=True).assign_attrs(attrs)
+            if (name in input_names and operation["sampling"] == "mass"
+                    and operation["model"] == "mesonh"):
+                value = collocate_mnh_component(
+                    value, geometry, conf, vertical="level_w" in value.dims)
+            arrays[name] = value
+        prepared = xr.Dataset({n: value for n, value in arrays.items() if n in input_names})
+        prepared = prepared.assign_coords({
+            n: c for n, c in geometry.coords.items() if set(c.dims) <= set(prepared.dims)})
+        prepared.attrs = dict(geometry.attrs)
+        if operation["preparation"] == "croco_midpoint_both_valid_then_rho_angle":
+            from frameit.io.croco_utils import prepare_croco_currents
+
+            settings = copy(conf)
+            settings.cartesian_horizontal_winds = "mass_earth"
+            settings.compute_polar_proj = False
+            settings.requested_variables_user = {"current": {
+                "variables": [operation["inputs"]["u"], operation["inputs"]["v"]]}}
+            prepared = prepare_croco_currents(prepared, settings)
+        if operation["pair"]:
+            settings = copy(conf)
+            settings.wind_pairs = [operation["pair"]]
+            if source["format"] == "grib":
+                settings.name_lat_dim, settings.name_lon_dim = "y", "x"
+            settings.velocity_aliases = {
+                "u_velocity": operation["inputs"]["u"], "v_velocity": operation["inputs"]["v"]}
+            prepared = normalize_winds(prepared, settings, "operation")
+        if operation["method"] == "wind_speed":
+            u, v = align_wind_pair(*(prepared[operation["inputs"][key]] for key in ("u", "v")))
+            value = np.hypot(u, v).assign_attrs(
+                units="m s-1", long_name="horizontal wind speed",
+                wind_reference_frame="earth", derivation="magnitude_of_collocated_components")
+        else:
+            input_name = operation["inputs"]["field"]
+            value = prepared[input_name]
+            if operation["preparation"] == "croco_midpoint_both_valid_then_rho_angle":
+                value = value.assign_coords(mask_rho=prepared.mask_rho)
+            units = operation.get("units") or arrays[input_name].attrs.get("units")
+            if units and (operation["pair"] or "units" in operation):
+                value = _operation_units(value, units, model=operation["model"])
+        from frameit.processing.polar.metadata import preserve_coordinate_dependencies
+
+        support = xr.Dataset(arrays)
+        support = support.assign_coords({
+            n: c for n, c in geometry.coords.items() if set(c.dims) <= set(support.dims)})
+        dataset = preserve_coordinate_dependencies(
+            support, value.to_dataset(name=operation["name"]))
+        for native_view in native_views:
+            dataset = preserve_coordinate_dependencies(native_view, dataset)
+        vertical = operation["vertical"]
+        if vertical is not None:
+            dataset = dataset.assign_coords({
+                n: xr.Variable(c["dimensions"], c["values"], c["attributes"])
+                for n, c in vertical["coordinates"].items()})
+            dataset = dataset.assign_coords({f"{vertical['dimension']}_source_native_index": (
+                vertical["dimension"], vertical["source_native_indices"], {"units": "1"})})
+        dataset = dataset.drop_vars(
+            [n for n in dataset.coords if n in {"BETA", "RPK", "LON0", "CARTESIAN"}],
+            errors="ignore")
+        key = operation["grid_id"], operation["name"]
+        if operation["pair"]:
+            coordinate = (operation["pair"].get("rotation") or {}).get("coordinate")
+            if coordinate in dataset.coords:
+                rotation_coordinates.setdefault(key, set()).add(coordinate)
+        dataset[operation["name"]].attrs.update(
+            frameit_method=operation["method"], frameit_preparation=operation["preparation"],
+            frameit_sampling=operation["sampling"], frameit_basis=operation["basis"],
+            frameit_selection_grid=operation["grid_id"],
+            frameit_shared_levels=json.dumps(
+                {key: vertical[key] for key in ("source_native_indices", "values", "units")}
+                if vertical else None, sort_keys=True),
+        )
+        results.setdefault(key, []).append(dataset)
+    for (grid, name), sequence in results.items():
+        for coordinate in rotation_coordinates.get((grid, name), set()):
+            if any(not sequence[0][coordinate].variable.equals(ds[coordinate].variable)
+                   for ds in sequence[1:]):
+                sequence = [ds.assign_coords({
+                    coordinate: ds[coordinate].expand_dims(time=ds.time)
+                    if "time" not in ds[coordinate].dims else ds[coordinate]}) for ds in sequence]
+        result = (sequence[0] if len(sequence) == 1 else xr.concat(
+            sequence, dim="time", data_vars="all", coords="minimal",
+            compat="equals", join="exact", combine_attrs="override"))
+        out[grid] = (xr.merge([out[grid], result], join="exact", compat="identical",
+                              combine_attrs="override") if grid in out else result)
+    return out
