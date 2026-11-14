@@ -462,4 +462,142 @@ def test_w_interpolation_uses_physical_coordinates_with_km_interfaces(tmp_path):
             assert mass.WT.attrs["units"] == "m s-1"
             interfaces = select_vertical_velocity(loaded, conf, "interfaces")["level_w"]
             np.testing.assert_allclose(interfaces.WT.isel(time=0, nj=4, ni=4),
-                                       [70., 100., 130.], rtol=0, atol=1e-12)
+                                        [70., 100., 130.], rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize("case", [
+    "native", "model_mass", "polar_mass", "both_mass", "missing_destination_level",
+    "pending_transform", "pending_derived", "unavailable_support", "destination_loses_axis",
+    "model_mass_ancillary", "model_mass_ancillary_exported", "model_mass_ancillary_nested",
+    "model_mass_ancillary_missing", "pending_transform_ancillary",
+])
+def test_v3_representation_level_binding(tmp_path, monkeypatch, case):
+    from frameit.testing.numerical.test_request_selection import (
+        bind_inventory,
+        binding_inventory,
+        binding_scene,
+    )
+
+    # Destination coordinates/support are declared fixtures, not a W-remap test.
+    ds = binding_scene()
+    ancillary = "ancillary" in case
+    if ancillary:
+        ds["quality"] = (("time", "level_w", "y", "x"), np.ones((2, 7, 2, 3)),
+                         {"units": "1", "flag_values": [0, 1]})
+        ds.W.attrs["ancillary_variables"] = "quality"
+        if case == "model_mass_ancillary_nested":
+            ds["quality2"] = ds.quality.copy()
+            ds.quality.attrs["ancillary_variables"] = "quality2"
+    variables = {"3d": ["T", "W"], "levels": {"indices": [5, 0]}}
+    extra = {"region": {"center": {"latitude": 0, "longitude": 0}},
+             "products": {"model_grid": True, "polar": {"radius_km": 1}}}
+    if case != "native":
+        extra["sources"] = {"weather": {
+            "files": str(tmp_path / "source.nc"), "variables": variables}}
+        if case in {"model_mass", "both_mass", "missing_destination_level",
+                    "pending_transform", "unavailable_support", "destination_loses_axis",
+                    "pending_transform_ancillary"} or case.startswith("model_mass_ancillary"):
+            extra["sources"]["weather"]["transforms"] = [
+                {"fields": ["W"], "sampling": "mass"}]
+    if case == "model_mass_ancillary_exported":
+        variables["3d"].append("quality")
+    if case == "model_mass_ancillary_missing":
+        support = tmp_path / "support.nc"
+        ds[["quality"]].isel(level_w=slice(0, 6)).to_netcdf(support, engine="h5netcdf")
+        ds = ds.drop_vars("quality")
+        extra["sources"]["weather"]["files"] = [str(tmp_path / "source.nc"), str(support)]
+    if case == "pending_derived":
+        extra["sources"]["weather"]["derived"] = {
+            "speed": {"method": "wind_speed", "inputs": {"u": "T", "v": "U"}}}
+        extra["products"] = {"model_grid": {"fields": {"weather": ["speed"]}}}
+    if case == "pending_transform_ancillary":
+        extra["products"] = {"model_grid": True}
+    conf, source, reads = binding_inventory(
+        tmp_path, monkeypatch, ds, variables=variables, extra=extra)
+    original_files, original_times = list(source["files"]), list(source["selected_times"])
+    request = conf.source_requests["weather"]
+    representations = {}
+    destination = {
+        "dimensions": {"level": 6, "y": 2, "x": 3},
+        "coordinates": {"level": {
+            "dimensions": ["level"], "values": np.array([0., 10., 20., 30., 40., 50.]),
+            "attributes": {"axis": "Z", "units": "m"}, "dtype": "float64",
+            "role": "coordinate_metadata"}},
+    }
+    if case == "missing_destination_level":
+        destination["dimensions"]["level"] = 5
+        destination["coordinates"]["level"]["values"] = np.arange(5.) * 10
+    native_id = next(r["grid_id"] for r in source["record_inventory"] if r["name"] == "W")
+    for product in ("model_grid", "polar"):
+        mass = (product == "model_grid" and case in {
+            "model_mass", "both_mass", "missing_destination_level", "unavailable_support",
+            "destination_loses_axis"}
+                or product == "model_grid" and case.startswith("model_mass_ancillary")
+                or product == "polar" and case in {"polar_mass", "both_mass"})
+        if not mass:
+            continue
+        if product == "polar":
+            request["polar_options"]["W"] = {"sampling": "mass"}
+        representations[product] = {"W": {native_id: {
+            "grid_id": "fixture_mass", "grid": destination, "sampling": "mass",
+            "source_positions": {i: [i, i + 1] for i in range(6)}}}}
+    if case == "unavailable_support":
+        representations["model_grid"]["W"][native_id]["source_positions"][5] = [6, 7]
+    if case == "destination_loses_axis":
+        destination["dimensions"].pop("level")
+        destination["coordinates"] = {}
+    if case in {"missing_destination_level", "unavailable_support", "destination_loses_axis",
+                "model_mass_ancillary_missing"}:
+        error = (r"quality.*vertical index support unavailable for \[6\]"
+                 if case == "model_mass_ancillary_missing" else
+                 "unavailable.*5|support.*unavailable|vertical.*axis")
+        with pytest.raises(ValueError, match=error):
+            bind_inventory(conf, representations=representations)
+        assert request["binding"] is None
+        assert not (tmp_path / "out").exists()
+        assert source["files"] == original_files and source["selected_times"] == original_times
+        assert not any(name in {"T", "W", "quality", "quality2"} for name, _ in reads)
+        return
+    binding = bind_inventory(conf, representations=representations)
+    assert source["files"] == original_files and source["selected_times"] == original_times
+    assert not any(name in {"T", "W", "quality", "quality2"} for name, _ in reads)
+    # Polar preparation/derived method support is not implemented by these fixtures.
+    assert binding["status"] == "pending_method_binding"
+    assert request["binding"] is None
+    if case in {"pending_transform", "pending_derived", "pending_transform_ancillary"}:
+        assert binding["deferred_checks"]
+        if ancillary:
+            assert binding["products"]["model_grid"]["W"]["records"] == []
+            assert binding["dependencies"]["quality"]["records"] == []
+            assert any("quality" in check and "pending method binding" in check
+                       for check in binding["deferred_checks"])
+        return
+    for product in ("model_grid", "polar"):
+        record = binding["products"][product]["W"]["records"][0]
+        mass = product in representations
+        assert record["vertical"]["dimension"] == ("level" if mass else "level_w")
+        assert record["vertical"]["positions"] == [5, 0]
+        assert record["vertical"]["values"] == ([50., 0.] if mass else [45., -5.])
+        assert record["selection_grid_id"] == ("fixture_mass" if mass else native_id)
+        assert record["source_positions"] == ([5, 6, 0, 1] if mass else [5, 0])
+    assert request["levels"] == {"indices": [5, 0]}
+    if ancillary:
+        assert len(binding["dependencies"]["quality"]["records"]) == 2
+        for record in binding["dependencies"]["quality"]["records"]:
+            assert record["selection_grid_id"] == native_id
+            assert record["source_positions"] == [5, 6, 0, 1]
+            assert record["vertical"]["dimension"] == "level_w"
+            assert record["vertical"]["positions"] == [5, 6, 0, 1]
+            assert record["vertical"]["values"] == [45., 55., -5., 5.]
+        if case == "model_mass_ancillary_exported":
+            for product in ("model_grid", "polar"):
+                assert len(binding["products"][product]["quality"]["records"]) == 2
+                for record in binding["products"][product]["quality"]["records"]:
+                    assert record["source_positions"] == [5, 0]
+                    assert record["vertical"]["positions"] == [5, 0]
+                    assert record["vertical"]["values"] == [45., -5.]
+        if case == "model_mass_ancillary_nested":
+            assert len(binding["dependencies"]["quality2"]["records"]) == 2
+            for record in binding["dependencies"]["quality2"]["records"]:
+                assert set(record["source_positions"]) == {5, 6, 0, 1}
+        assert source["files"] == [str(tmp_path / "source.nc")]

@@ -146,6 +146,8 @@ It can accompany a selection or convert all coordinates by itself. Compatible
 conversions change coordinate values and metadata together, not the physical
 field values. For example, ``850 hPa`` can select a stored ``85000 Pa`` label.
 Value selection across axes with different known units needs explicit units.
+Matching permits only storage/conversion roundoff; see
+:ref:`vertical-level-roundoff` for the limit and ambiguous-match errors.
 
 If source units are missing, requested units declare an assumption: the stored
 numbers already use them, without rescaling. Missing units with or without a

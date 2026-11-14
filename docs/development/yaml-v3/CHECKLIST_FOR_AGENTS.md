@@ -811,7 +811,7 @@ assertion, or mark a failed check as passed. The final full suite remains requir
 | [x] | 01 | 00 | Correct parent/worker installation identity |
 | [x] | 02 | 01 | Strict v3 schema and shared execution interfaces |
 | [x] | 03 | 02 | Source inventory and selected physical records |
-| [ ] | 04 | 03 | Field identity and shared level binding |
+| [x] | 04 | 03 | Field identity and shared level binding |
 | [ ] | 05 | 04 | Native NetCDF slice, then selected-record adapter reads |
 | [ ] | 06 | 05 | Regions, trajectories, tracking, time associations |
 | [ ] | 07 | 05 | Explicit SEA and FA source interpretation |
@@ -980,16 +980,16 @@ representation, selected vertical positions, coordinate units, and required supp
 `test_grid_representations.py`. Use native/destination coordinate fixtures here;
 Task 08 tests actual transformations.
 
-- [ ] Test wrong 2D/3D categories, duplicate requests, unsupported duplicated names,
+- [x] Test wrong 2D/3D categories, duplicate requests, unsupported duplicated names,
   and a singleton 3D axis. Test mixed U/V/W axes and one missing requested level.
-- [ ] Test `[5, 0]` order, inclusive ranges/intervals, duplicates, unknown physical
+- [x] Test `[5, 0]` order, inclusive ranges/intervals, duplicates, unknown physical
   bounds, original indices, and omitted all-level selection on unequal axes.
-- [ ] Test `850 hPa` against stored `85000 Pa`, incompatible units, units-only
+- [x] Test `850 hPa` against stored `85000 Pa`, incompatible units, units-only
   conversion, and both missing-unit warning cases. Assert field values are unchanged.
-- [ ] Specify and test the roundoff rule with storage/conversion evidence. Bind
+- [x] Specify and test the roundoff rule with storage/conversion evidence. Bind
   after an explicit representation change; do not make native/polar W inherit a
   model-grid remap. Known failures must occur before product writing.
-- [ ] Review level semantics and unit evidence.
+- [x] Review level semantics and unit evidence.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_request_selection.py::test_v3_field_and_level_binding src/frameit/testing/numerical/test_request_selection.py::test_v3_vertical_units src/frameit/testing/numerical/test_grid_representations.py::test_v3_representation_level_binding

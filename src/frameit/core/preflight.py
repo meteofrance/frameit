@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import logging
 import os
 import re
 from contextlib import nullcontext
@@ -22,7 +23,7 @@ from frameit.io.loader import (
     inventory_source_files,
     resolve_input_files,
 )
-from frameit.processing.requests import normalize_requests, selected_native_indices
+from frameit.processing.requests import bind_requests, normalize_requests, selected_native_indices
 from frameit.processing.wind_reference import (
     MESONH_PROJECTION_METADATA,
     inspect_wind_metadata,
@@ -498,6 +499,7 @@ def _fa_source_inventory(path, source, conf):
             continue
         dimensions = (["y", "x"] if descriptor["native"]["representation"] == "gridpoint"
                       and descriptor["native"]["shape"] is not None else None)
+        # Field summaries may span providers; only records retain sample-local evidence.
         field = {"name": name, "dimensions": dimensions,
                  "dtype": descriptor["native"]["decoded_dtype"],
                  "grid_id": grid_id, "attributes": {},
@@ -510,6 +512,7 @@ def _fa_source_inventory(path, source, conf):
             "time": np.datetime64(info["valid_time"]), "calendar": "proleptic_gregorian",
             "cycle": np.datetime64(info["reference_time"]), "time_bounds": None,
             "clock": "FA_validity", "temporal_metadata": {},
+            "native_descriptor": deepcopy(descriptor),
             "locator": {"format": "fa", "path": str(path), "records": [name],
                         "zone": list(geometry.attrs["fa_zone_indices"]),
                         "identity": list(info["identity"])}})
@@ -529,7 +532,8 @@ def _fa_source_inventory(path, source, conf):
             "attributes": {}, "coordinate_names": list(grid["coordinates"]), "dependencies": {},
             "native_cube": deepcopy(cube), "time_varying": False,
         }
-        records.append({**records[0], "field_id": field_id, "name": name,
+        records.append({**{k: v for k, v in records[0].items() if k != "native_descriptor"},
+                        "field_id": field_id, "name": name,
                         "grid_id": cube_grid_id,
                         "locator": {"format": "fa", "path": str(path),
                                     "records": list(cube["records"]),
@@ -820,6 +824,40 @@ def inventory_source(conf, name, *, resources=None):
     conf.input_files = selected_paths
     conf.add_parameter("input_inventory", list(selected_paths))
     return result
+
+
+def bind_source(conf, name, *, representations=None, required_inputs=()):
+    """Explicit post-inventory v3 binding; no discovery, scientific reads or execution."""
+    source = conf.simulation_parameter["request_plan"]["sources"][name]
+    request = conf.source_requests[name]
+    # A failed rebind must never retain executable clearance from an earlier selection.
+    request["binding"] = None
+    source["requests"]["binding"] = None
+    source["field_binding"] = None
+    binding = bind_requests({**source, "name": name}, request,
+                            representations=representations, required_inputs=required_inputs)
+    source["field_binding"] = binding
+    for warning in binding["warnings"]:
+        logging.getLogger(__name__).warning(warning)
+    plan = conf.simulation_parameter["request_plan"]
+    plan["warnings"] = list(dict.fromkeys([*plan["warnings"], *binding["warnings"]]))
+    if binding["status"] == "bound":
+        source["records"] = binding["records"]
+        source["files"] = list(dict.fromkeys(r["locator"]["path"] for r in source["records"]))
+        source["provider_conflicts"] = []
+        for entry in source["file_inventory"]:
+            if entry["path"] in source["files"]:
+                entry.update(status="selected", reason="supplies bound fields or required support")
+            elif entry["status"] != "time_excluded":
+                entry.update(status="irrelevant",
+                             reason="metadata proves no bound field or required dependency")
+        request["binding"] = binding
+        source["requests"]["binding"] = binding
+        if conf.source_name == name:
+            conf.input_files = list(source["files"])
+        conf.add_parameter("input_inventory", {
+            n: list(s["files"]) for n, s in plan["sources"].items()})
+    return binding
 
 
 def open_metadata(files, conf, resources, *, chunks=None):
