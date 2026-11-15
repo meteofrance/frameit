@@ -41,8 +41,8 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 10 | done | Task10 worker + lead + independent reviewer | 09 | `2a77b1d`; C7 approved after I1–I3/N1 closures; frozen handoff below. |
 | 11 | done | Task11 worker + lead + independent reviewer | 10 | `c7d1c65`; C8 independently approved after origin fix; frozen handoff below. |
 | 12 | done | Task12 worker + lead + independent reviewer | 10,11 | `69e6992`; records/checkpoints approved after I1; frozen handoff below. |
-| 13 | done | Task13 worker + lead + independent reviewer | 11, 12 | Shared reports/diagnostics approved after two fix rounds; frozen handoff below. Local commit in ledger. |
-| 14 | blocked | lead | 13 | Runner/execution/coupled/logging; integrated execution and progress. |
+| 13 | done | Task13 worker + lead + independent reviewer | 11, 12 | `106812d`; shared reports/diagnostics approved after two fix rounds; frozen handoff below. |
+| 14 | done | Task14 worker + lead + independent reviewer | 13 | Owning plan and honest progress approved; A1 corrected. Frozen handoff below; local commit in ledger. |
 | 15 | blocked | lead | 14 | CLI/configuration/templates/schema assets; preserved init and v3 commands. |
 | 16 | blocked | lead | 15 | All producers, canonical examples, public guides and tests; direct v3 guidance. |
 | 17 | blocked | lead | 16 | Analytical fixtures and task pages; ocean fixture formula approved, not implemented. |
@@ -3251,6 +3251,177 @@ Remaining cannot-verify/later gates retain owners: actual integrated progress14,
 complete CLI/producers15–16, HPC18, native/warnings/full integration19, docs20,
 human21. Inherited470full failed/error causes and Task09Minor3 remain explicit,
 not waived. No source-data write, package repair, push or merge. Commit before14.
+
+## Task14 active execution/progress scope
+
+Base106812d83d0ace0a0930c52409c43b3bbd1d9f32; clean tree verified after13commit.
+One fresh worker owns runner/execution/coupled/logging boundaries and necessary
+existing writer hooks; lead owns docs/STATE/contracts/commits. No new event
+framework, dependency, scientific planner or progress controls.
+
+Ruling: use existing timing/logging plus one small owned quiet-work reporter.
+Boundary-only logs miss blocked/quiet synchronous work; an event bus/worker
+telemetry service exceeds the task. Cost if wrong: lifecycle/logging integration
+rework, covered by deterministic/real gated tests and independent14review.
+Technical contract task-14-progress-contract.md distinguishes lazy preparation,
+actual compute/write/publication, honest counts/elapsed/last-real-activity and
+pending cleanup/records. No extra reads/compute/graph scans, percentages/ETAs,
+status heartbeat or premature final success. Reporter stops before handlers close.
+Provisional30second quiet interval follows existing matrix precedent;14must
+freeze actual interval/API from bounded evidence, not invent approval.
+
+Execution wraps the existing owning prepared facts via Task13 preflight_result,
+never recollects/rebinds/serializes a scientific plan. Preserve pre-ownership
+safety and Task12 authoritative inventory/draining/capture/record semantics.
+Actual final state, not scheduled futures or prepared arrays, governs completion.
+
+Required prior81nodes61passed/19failed/1error is saved inventory, not a14run.
+Composite2621nodes is mixed-age:600Fix2-covered/279Fix1-only/1742pre-fix-full-only;
+no final corrected13full exists,2021historical full nodes unrun afterFix2.
+Task14 owes focused/covering/required and one full after genuine freeze.
+No Task14 implementation or results implied by opening the task; all13agents idle.
+
+Task14 author reports frozen source/tests and30sinterval, focused67passes and
+required67passed/19failed/1error, retaining all81old outcomes plus6new cases.
+These are author claims awaiting lead corroboration/review. Its full has not
+yet run; scope question concerns the two unchanged PNG-generating script tests.
+
+Ruling: retain those ordinary script/PNG-signature/overwrite/source-safety smoke
+tests in the already-required one unfiltered diagnostic, as explicitly recorded
+for13. They use disposable fixtures and do not inspect pixels or establish visual
+acceptance. No standalone plot run, screenshots/JPEG/image viewing or new asset/
+check is authorized. Do not silently filter an "unfiltered" suite.
+Exact scope/rationale: task-14-full-ruling.md in the session ledger workspace.
+No source/test edit after freeze, package/native repair, second full or commit.
+Lead verification and independent14review remain pending.
+
+Lead frozen checks:67passed/213warnings/2subtests/46.89s; all175source/test hashes
+match.179other tracked Python paths, old483-line/26case execution prefix,
+scientific processing/export/result AST, writer callbacks,2430immutable root
+artifacts and9payload/all12fixture-entry hashes unchanged; Ruff noNew.
+Three unchanged scalar/vector/polar harnesses pass4/3/6source hashes and ordinary
+readers. Four independent YAML/log checks match terminal counts/state to actual
+status/provenance/request products, no pending work or stale lock.
+
+Lead raw scoped XML checks637pass19fail1error covering/67pass19fail1error required:
+619old+38new/81old+6new respectively. Every20failed/error raw pair retains complete
+exception lines/message/call-site paths;15expanded --tb=long contexts and5runtime-
+only pairs explicit. First whole-trace-equality proof failure retained, not a
+test regression or waived cause. Full outcome still author-owned/pending.
+
+Strict67/publication/13unit and live text-only1020/320storage/HPC checks pass;
+canonical67retained. Exact original66preview bytes saved before pointer update;
+mutable lead histories explicitly accounted, no old full/test/review rewrite.
+No source/test/plot/image/package change or scientific/native/HPC/human approval.
+Fresh independent14review still required before commit/Task15.
+
+Task14 author full is complete:2189passed/468failed/2errors/6570warnings/4subtests/
+583.64s, all2621prior statuses/38newpasses; complete causes preserved per author
+and awaiting lead raw audit. Frozen175hashes/7447pre-full artifacts still exact.
+Author found A1 before review: callback-entry interruption leaves2actual retained
+products/status/provenance but terminal progress says1. Lead independently
+reproduces the original passing retention test and the new counter mismatch.
+This is new Task14 debt, not an inherited cause or independent-review finding.
+
+Ruling: thaw only progress-counter reconciliation in execution/private helper
+plus appended progress tests. Writer retention/draining/callback order/records
+and all scientific controls remain exact. Preserve PRE-A1 full/freeze/evidence;
+175hashes/536progress-test prefix/1148Task14 artifacts copied before thaw.
+TDD then progress/execution/logging/run_state plus exact required command,
+per-covered causes/unrun full IDs/exact non-target proof and independent14review.
+No second full/harness/benchmark for scalar reconciliation;2189/468/2is PRE-A1
+only. Missed integration risk remains with exact scope and final19/full gate.
+No14commit/15dispatch; original worker resumes A1, lead owns full audit/docs.
+
+Lead full raw audit corroborates all2659nodes/all2621old outcomes/38newpasses and
+all470complete raw cause pairs:197runtime-only,272same complete exception/call-site
+paths with context/repr,1explicit truncated scratch187/227substitution yielding
+whole message/trace equality. Automatic flag/raw pairs preserved; no cause or
+numerical assertion waived.175pre-A1snapshot/7447pre-full hashes verified.
+Full2189/468/2remains PRE-A1; A1 author correction and independent14review pending.
+
+A1 corrected/refrozen; fresh lead78progress/execution/logging passes253warnings/
+2subtests58.27s. Eleven new cases cover both formats/four retention boundaries,
+successful non-double-counting and scalar idempotence/activity preservation.
+Production delta from PRE-A1 is six counter-only lines;172other Python paths,
+old536progress lines/other tests, writer/records/scientific code byte/AST exact.
+175corrected hashes/7447pre-full1146Task14 immutable artifacts/explicit histories/
+9payload12fixture proof passes; actual HEAD/PRE-A1 Ruff4→4/noNew.
+Raw XML corroborates142module passes/67pass19fail1error required:194distinct
+corrected nodes,183old statuses/20complete causes unchanged plus11newpasses.
+2476full nodes unrun corrected;2189/468/2full and scientific harnesses PRE-A1 only.
+Strict68/publication/13unit pass/2HTMLequal live67; canonical67retained without
+new image/DOM/human claim. Whole-Task14 independent spec/quality review next;
+no14commit/15dispatch.
+
+## Task14 frozen handoff — independently approved
+
+Fresh reviewer approves complete Task14 spec/quality,0Critical/Important/Minor.
+A1 was corrected before review and is closed; no open or parked Task14 finding.
+Approved tree0114028b1e17632057cbbb560255ae8532ac77bc. Completion is task-scoped,
+not a green full suite or scientific/native/HPC/human sign-off.
+
+Public execute_simulation and FrameitRunner signatures and execution-result/
+Task12 record serialization remain unchanged. Execution wraps its already-owned
+prepared_sources[0] via preflight_result(conf, facts, command="run") once.
+runner.preflight_result retains that typed result; prepared tuple/facts/children/
+bindings retain identity. Task15 must not collect/bind again or execute a report
+projection. No large scientific plan is added to results or portable records.
+
+Private _QuietProgress lives in existing utils/logging.py:
+
+```python
+_QuietProgress(logger, *, interval=30., clock=time.monotonic)
+update(operation, *, source=None, prepared_sources=0,
+       tracking_operations=0, published_products=0)
+reconcile_published(count)
+start()
+stop()
+finish(state)
+```
+
+Updates add observed preparation/tracking/publication counts and real activity.
+Reconciliation sets the actual retained publication total under the scalar lock,
+without callback replay, emission or new activity. It runs after export/drain/
+recovery before cleanup/terminal reporting. Writer retention/draining and records
+remain authoritative and unchanged. Task15 summaries must use actual products,
+not infer them from a progress line or scheduled work.
+
+One passive parent thread,30srate limit, shared deadline across logging transition,
+no thread at INFO-disabled levels. Early frameit_logging_scope(None, ...) owns
+stderr only/no paths; owned file scope remains alive through cleanup and final
+record/ownership exit. Stop/join precedes handler close. Final complete/incomplete/
+failed/interrupted notice follows those owning exits; primary processing errors
+survive added progress/cleanup faults. No payload/graph/future/directory scans,
+status heartbeat, percentages or ETA. Unknown spawned source stays unknown.
+
+Latest lead78passes/253warnings/2subtests58.27s on corrected source. Author full
+four modules142passes and exact required67passed/19failed/1error; raw XML confirms
+194distinct corrected nodes,183old outcomes/20complete causes unchanged plus11
+A1 passes. The one full2189passed/468failed/2errors is strictly PRE-A1.
+2476full nodes remain unrun after A1; every ID/historical status is recorded.
+PRE-A1 full raw audit confirms all2621prior outcomes/38then-new passes/470causes.
+No second full/harness/benchmark; final19/full remains required.
+
+175corrected hashes/172other package Python paths, production outside six A1
+lines/old536progress prefix/writer records/scientific code,7447pre-full/1146Task14
+immutable artifacts/explicit report-history prefixes/9payload12fixture proof pass.
+No added Ruff findings; inherited warnings/diagnostics retained. Three unchanged
+scientific harnesses/ordinary readers remain PRE-A1, with exact counter-only scope,
+not fresh corrected-source scientific qualification.
+
+Storage/HPC prose documents actual progress and limits. Strict68/publication/
+13unit pass; affected HTML equals checked67. Same67preview retained with prior
+text-only1020/320inspection; no new image/DOM/human claim.
+Scientific impact: none. Compatibility: intentional progress wording/correct
+terminal counts, no scientific/output/configuration/schema/dependency change.
+
+Cannot-verify notes are retained limits, not new unresolved Task14 requirements:
+hard native/GIL/log-I/O timing and SIGKILL finalization are not promised; existing
+Task12 record-write failure/transaction behavior is unchanged; inherited failures/
+ABI warnings remain19debt. CLI/producers15–16, HPC18, native/warnings/integration19,
+docs20/human21/Task09Minor3 retain named owners. Human acceptance is not invented.
+Local commit precedes15; no source data/package changes, push or merge.
 
 ## Task 01 evidence
 

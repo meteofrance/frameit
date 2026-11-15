@@ -1222,14 +1222,14 @@ PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/t
 **Interfaces:** `execute_simulation` uses the same selected plan and product
 descriptors as preflight. Reuse existing timing/logging rather than an event framework.
 
-- [ ] Test no-region native runs, independent clocks, sparse-time tracking/derived
+- [x] Test no-region native runs, independent clocks, sparse-time tracking/derived
   inputs, explicit transforms, track-only, and polar-only through public execution.
-- [ ] Test slow preparation, lazy compute, export, failure, and interruption. Counts
+- [x] Test slow preparation, lazy compute, export, failure, and interruption. Counts
   describe completed work; elapsed/last-activity messages continue during quiet work.
-- [ ] Add rate-limited progress with a testable clock. Assert bounded output and no
+- [x] Add rate-limited progress with a testable clock. Assert bounded output and no
   extra payload reads or eager compute merely to update progress. Final states agree
   with Task 12's publications and incomplete tracking.
-- [ ] Review integrated execution and progress reporting.
+- [x] Review integrated execution and progress reporting.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_v3_execution.py src/frameit/testing/numerical/test_hpc_execution.py src/frameit/testing/numerical/test_logging.py src/frameit/testing/numerical/test_matrix_progress.py src/frameit/testing/numerical/test_coupled_shared_polar.py

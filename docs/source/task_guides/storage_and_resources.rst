@@ -80,3 +80,25 @@ peak memory. FA decode budgets can apply to a full native horizontal record even
 for a small crop. Measure whole-run wall time, peak memory and I/O with the same
 selection and numerical checks before increasing concurrency. Use
 :doc:`../getting_started/hpc` for site-neutral Slurm launchers and retry policy.
+
+.. _execution-progress:
+
+Read execution progress
+-----------------------
+
+Progress identifies the operation and source when known, completed counts,
+elapsed time and time since the last recorded activity. At ``INFO``, repeated
+notices appear no more than once every 30 seconds, plus start and terminal
+messages. They follow the selected logging level. Logs go to standard error
+and, after run ownership is established, the run's log file.
+
+Preparing lazy fields or calculation graphs is not completed computation.
+Computing and writing may happen together during export. Published-product
+counts increase only after a complete product is observed, not when a worker
+is scheduled. Quiet notices do not increase counts or reset the last activity.
+
+A notice shows that the reporter can run, not that a native calculation is
+advancing. A blocked interpreter or logging call can delay notices.
+Read ``run-status.yaml`` for the final execution state and actual inventory;
+progress messages are not scientific validation. See
+:doc:`../user_guide/output_files` for incomplete and failed attempts.

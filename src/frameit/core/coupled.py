@@ -909,6 +909,7 @@ def run_native_sources(runner, *, benchmark=False):
 
     report, children, plans = runner.prepared_sources
     runner.preflight_report = report
+    progress = runner.progress
     runner.timer.start()
     runner.ensure_dirs()
     runner.field_products = {}
@@ -917,19 +918,28 @@ def run_native_sources(runner, *, benchmark=False):
     consumers = {}
     with runner.timer.section("loading_data"):
         for name, child in children.items():
+            if progress is not None:
+                progress.update("preparing lazy source views/calculations", source=name)
             consumer = FrameitRunner(child)
             runner.resources.add(consumer)
             consumer.ds_user, consumer.ds_tracker, source_files = consumer.load_dataset()
             consumers[name] = consumer
             files.extend(source_files)
             if benchmark:
+                if progress is not None:
+                    progress.update("loading/computing source fields (benchmark)", source=name)
                 for dataset in consumer.ds_user.values():
                     dataset.load()
+            if progress is not None:
+                progress.update("lazy source views/calculations prepared", source=name,
+                                prepared_sources=1)
     if runner.conf.yaml_config["region"].get("tracker"):
         from frameit.core.grid_geometry import resolve_geometry
         from frameit.processing.derived.wind import normalize_winds
 
         name = runner.conf.tracking_source
+        if progress is not None:
+            progress.update("preparing tracking inputs", source=name)
         consumer = consumers[name]
         internal = consumer.ds_tracker["internal"]
         geometry, settings = _region_grid(consumer.conf, plans[name], next(iter(internal)))
@@ -945,12 +955,16 @@ def run_native_sources(runner, *, benchmark=False):
         with runner.timer.section("tracking"):
             from frameit.tracking.tracker_core import make_tracking_dataset
 
+            if progress is not None:
+                progress.update("tracking/calculating centres", source=name)
             operation_times = [
                 r["source_time"] for r in plans[name]["region"]["associations"]]
             selected = make_tracking_dataset(
                 {consumer.conf.tracking_method: prepared}, consumer.conf.tracking_method,
                 selected_times=operation_times)
             centres = consumer.run_tracking({consumer.conf.tracking_method: {"selected": selected}})
+            if progress is not None:
+                progress.update("tracking operation returned", source=name, tracking_operations=1)
     if centres is not None:
         selected = runner.conf.simulation_parameter["region_alignment"]["selected_times"]
         accepted = set(centres.time.values)
@@ -970,6 +984,8 @@ def run_native_sources(runner, *, benchmark=False):
         for name, consumer in consumers.items():
             child = consumer.conf
             if "model_grid" in child.source_requests[name]["exports"]:
+                if progress is not None:
+                    progress.update("preparing lazy model-grid product", source=name)
                 fields = child.source_requests[name]["exports"]["model_grid"]
                 layout = layouts[name]
                 sequences = {}
@@ -999,6 +1015,8 @@ def run_native_sources(runner, *, benchmark=False):
         for name, consumer in consumers.items():
             binding = consumer.conf.source_requests[name]["binding"]
             if "polar" in binding["products"]:
+                if progress is not None:
+                    progress.update("preparing lazy polar sampling/calculations", source=name)
                 from functools import partial
 
                 from frameit.io.netcdf_export import format_polar_output
@@ -1045,6 +1063,8 @@ def run_native_sources(runner, *, benchmark=False):
     if runner.conf.yaml_config["region"]:
         runner.conf.grid_geometry = {
             name: source["region"]["grids"] for name, source in plans.items()}
+    if progress is not None:
+        progress.update("lazy products prepared; awaiting compute/write")
     return RunResult(ok=True, n_files=len(files), output_dir=runner.output_dir, files=files)
 
 

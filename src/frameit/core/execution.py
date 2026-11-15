@@ -276,6 +276,29 @@ def execute_simulation(
     input cleanup complete. A permitted shortened track is marked incomplete;
     strict batch callers may require full tracking explicitly.
     """
+    from contextlib import ExitStack
+
+    from frameit.utils.logging import _QuietProgress
+
+    options = options or ExecutionOptions.from_config(config)
+    level = options.log_level or ("DEBUG" if config.DEBUG else "INFO")
+    with ExitStack() as logs:
+        logs.enter_context(frameit_logging_scope(None, level=level))
+        progress = _QuietProgress(logging.getLogger("frameit"))
+        logs.callback(progress.stop)
+        progress.start()
+        try:
+            result = _execute_owned_simulation(config, options, input_files, progress, logs, level)
+        except BaseException as exc:
+            progress.finish("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
+                            else "failed")
+            raise
+        progress.finish("complete" if result.tracking_complete else "incomplete")
+        return result
+
+
+def _execute_owned_simulation(config, options, input_files, progress, logs, level):
+    """Keep logging alive through ownership finalization, not just export."""
     from copy import deepcopy
 
     from frameit.core.run_state import owned_run
@@ -288,6 +311,7 @@ def execute_simulation(
     requested = options or ExecutionOptions.from_config(config)
     effective, resources = resolve_execution_resources(requested)
     prepared_sources = None
+    selected_plan = None
     if config.schema_version == 3:
         from frameit.utils.output_paths import OutputPaths
 
@@ -301,10 +325,19 @@ def execute_simulation(
             )
         from frameit.core.coupled import bind_sources
 
+        progress.update("preparing metadata/selected source plans",
+                        source=next(iter(config.sources)) if len(config.sources) == 1 else None)
         try:
             prepared_sources = bind_sources(config, execution_options=effective)
         except ValueError as exc:
             raise ValueError(f"Cannot bind source requests to metadata: {exc}") from exc
+        from frameit.core.preflight import preflight_result
+        from frameit.core.reports import PreflightError
+
+        selected_plan = preflight_result(config, prepared_sources[0], command="run")
+        if selected_plan.errors:
+            raise PreflightError(selected_plan.errors, facts=selected_plan.facts,
+                                 deferred_checks=selected_plan.deferred_checks)
         if set(config.yaml_config["products"]) - {"model_grid", "polar", "track"}:
             raise ValueError("Non-native product execution requires its method binding")
         from frameit.processing.polar.contracts import require_executable_products
@@ -355,6 +388,14 @@ def execute_simulation(
         provenance["layouts"] = prepared_sources[0].get("layouts")
     with owned_run(config.output_dir, overwrite=effective.overwrite, initial=initial,
                    request=request, provenance=provenance) as status:
+        progress.stop()
+        log_path = logs.enter_context(frameit_logging_scope(
+            config.output_dir, level=level, simu_name=config.simulation_name))
+        logs.callback(progress.stop)
+        progress.start()
+        log = logging.getLogger("frameit")
+        log.info("Log file: %s", log_path)
+        log.info("Execution resources: %s", status["resources"])
         if config.schema_version == 3:
             from frameit.core.configuration import resolved_configuration
             from frameit.utils.atomic import write_yaml_atomic
@@ -366,6 +407,7 @@ def execute_simulation(
             result = _execute_simulation(
                 config, effective, status, runtime, input_files=input_files,
                 prepared_sources=prepared_sources, provenance=provenance,
+                selected_plan=selected_plan, progress=progress, log_path=log_path,
             )
         if not result.ok:
             raise RuntimeError("Processing returned an unsuccessful result")
@@ -379,11 +421,13 @@ def execute_simulation(
             pending=[],
             products=[_recorded_product(product, config.output_dir) for product in result.products],
         )
+        progress.update("finalizing run records/ownership")
         return result
 
 
 def _execute_simulation(config, options, status, runtime, *, input_files=None,
-                        prepared_sources=None, provenance=None):
+                        prepared_sources=None, provenance=None, selected_plan=None,
+                        progress, log_path):
     """Execute, export and release one simulation through the shared pipeline.
 
     An explicit inventory is consumed verbatim; ordinary runs discover files
@@ -392,154 +436,161 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
     options = options or ExecutionOptions.from_config(config)
     if not options.no_hdf5_debug_pop:
         os.environ.pop("HDF5_DEBUG", None)
-    level = options.log_level or ("DEBUG" if config.DEBUG else "INFO")
     started = time.monotonic()
     runner = None
+    failure = None
+    log = logging.getLogger("frameit")
     from frameit.core.run_state import checkpoint_run
 
     def published(product):
+        progress.update("computing/writing exports", published_products=1)
         status["products"].append(_recorded_product(product, config.output_dir))
         checkpoint_run(config.output_dir, status, provenance)
 
-    with frameit_logging_scope(
-        config.output_dir, level=level, simu_name=config.simulation_name
-    ) as log_path:
-        log = logging.getLogger("frameit")
-        log.info("Log file: %s", log_path)
-        log.info("Execution resources: %s", status["resources"])
-        if options.benchmark:
-            log.info("Benchmark: eager inputs; computation timed separately from I/O")
-        try:
-            # No ESMF/cfgrib/NetCDF backend import during CLI help or planning.
-            from frameit.core.runner import FrameitRunner
+    if options.benchmark:
+        log.info("Benchmark: eager inputs; computation timed separately from I/O")
+    try:
+        # No ESMF/cfgrib/NetCDF backend import during CLI help or planning.
+        from frameit.core.runner import FrameitRunner
 
-            runner = FrameitRunner(config, input_files=input_files,
-                                   prepared_sources=prepared_sources)
-            result = runner.run(benchmark=True) if options.benchmark else runner.run()
-            status["pending"].remove("processing")
-            layouts = None
-            if config.schema_version == 3:
-                layouts = runner.preflight_report["layouts"]
-                for name, source in runner.prepared_sources[2].items():
-                    if "reader_layout" in source:
-                        layouts["inputs"][name].update(source["reader_layout"])
-                for (source, product), dataset in runner.field_products.items():
-                    spec = config.yaml_config["products"][product]
-                    chunks = (spec.get("processing", {}).get("chunks", {})
-                              if isinstance(spec, dict) else {})
-                    dataset = dataset.chunk({dim: size for dim, size in chunks.items()
-                                             if dim in dataset.dims})
-                    runner.field_products[(source, product)] = dataset
-                    layouts["products"][f"{source}.{product}"].update(
-                        chunks={name: {dim: list(sizes)
-                                       for dim, sizes in value.variable.chunksizes.items()}
-                                for name, value in dataset.data_vars.items()},
-                        dimensions=dict(dataset.sizes),
-                        uncompressed_arrays_bytes=sum(
-                            value.nbytes for value in dataset.variables.values()),
-                        resolved_chunks="actual lazy product before storage rechunking")
-            track_attrs = runner.track.attrs if runner.track is not None else {}
-            status["tracking_complete"] = bool(track_attrs.get("tracking_complete", True))
-            status["tracking_termination_reason"] = track_attrs.get(
-                "tracking_termination_reason", ""
+        runner = FrameitRunner(config, input_files=input_files,
+                               prepared_sources=prepared_sources)
+        runner.preflight_result = selected_plan
+        runner.progress = progress
+        progress.update("preparing lazy source views/calculations")
+        result = runner.run(benchmark=True) if options.benchmark else runner.run()
+        status["pending"].remove("processing")
+        layouts = None
+        if config.schema_version == 3:
+            layouts = runner.preflight_report["layouts"]
+            for name, source in runner.prepared_sources[2].items():
+                if "reader_layout" in source:
+                    layouts["inputs"][name].update(source["reader_layout"])
+            for (source, product), dataset in runner.field_products.items():
+                spec = config.yaml_config["products"][product]
+                chunks = (spec.get("processing", {}).get("chunks", {})
+                          if isinstance(spec, dict) else {})
+                dataset = dataset.chunk({dim: size for dim, size in chunks.items()
+                                         if dim in dataset.dims})
+                runner.field_products[(source, product)] = dataset
+                layouts["products"][f"{source}.{product}"].update(
+                    chunks={name: {dim: list(sizes)
+                                   for dim, sizes in value.variable.chunksizes.items()}
+                            for name, value in dataset.data_vars.items()},
+                    dimensions=dict(dataset.sizes),
+                    uncompressed_arrays_bytes=sum(
+                        value.nbytes for value in dataset.variables.values()),
+                    resolved_chunks="actual lazy product before storage rechunking")
+        track_attrs = runner.track.attrs if runner.track is not None else {}
+        status["tracking_complete"] = bool(track_attrs.get("tracking_complete", True))
+        status["tracking_termination_reason"] = track_attrs.get(
+            "tracking_termination_reason", ""
+        )
+        if config.input_sources:
+            status["time_alignment"] = config.simulation_parameter["time_alignment"]
+            if config.simulation_parameter.get("common_polar_target") is not None:
+                status["common_polar_target"] = config.simulation_parameter[
+                    "common_polar_target"]
+        if config.schema_version == 3:
+            provenance.update(_run_provenance(config, options, status, runtime))
+            provenance.update(
+                input_inventory=[str(path) for path in result.files],
+                tracking_summary={key: value for key, value in track_attrs.items()
+                                  if key.startswith("tracking_")},
+                layouts=layouts)
+            checkpoint_run(config.output_dir, status, provenance)
+        if options.require_complete_tracking and not status["tracking_complete"]:
+            raise ValueError(
+                "Tracking is incomplete and execution.require_complete_tracking is true: "
+                + status["tracking_termination_reason"]
             )
-            if config.input_sources:
-                status["time_alignment"] = config.simulation_parameter["time_alignment"]
-                if config.simulation_parameter.get("common_polar_target") is not None:
-                    status["common_polar_target"] = config.simulation_parameter[
-                        "common_polar_target"]
-            if config.schema_version == 3:
-                provenance.update(_run_provenance(config, options, status, runtime))
-                provenance.update(
-                    input_inventory=[str(path) for path in result.files],
-                    tracking_summary={key: value for key, value in track_attrs.items()
-                                      if key.startswith("tracking_")},
-                    layouts=layouts)
-                checkpoint_run(config.output_dir, status, provenance)
-            if options.require_complete_tracking and not status["tracking_complete"]:
-                raise ValueError(
-                    "Tracking is incomplete and execution.require_complete_tracking is true: "
-                    + status["tracking_termination_reason"]
+        exports = {}
+        if options.export_netcdf:
+            from frameit.io.netcdf_export import export_outputs
+
+            progress.update("computing/writing exports")
+            with runner.timer.section("Netcdf export"):
+                exports = export_outputs(
+                    runner,
+                    institution=options.institution,
+                    out_dir=config.output_dir.resolve(),
+                    export_polar=options.export_polar,
+                    export_cart=options.export_cart,
+                    compress_level=options.compress_level,
+                    synchronous=options.synchronous_export,
+                    engine=options.engine, fmt=options.fmt, overwrite=options.overwrite,
+                    compress_coords=options.compress_coords,
+                    unlimited_time=options.unlimited_time,
+                    max_workers=options.max_workers,
+                    dask_scheduler=options.dask_scheduler, dask_workers=options.dask_workers,
+                    native_threads=options.native_threads,
+                    zarr_chunk_size=options.zarr_chunk_size,
+                    zarr_shard_size=options.zarr_shard_size,
+                    netcdf_chunk_size=options.netcdf_chunk_size,
+                    on_published=published,
                 )
-            exports = {}
-            if options.export_netcdf:
-                from frameit.io.netcdf_export import export_outputs
-
-                with runner.timer.section("Netcdf export"):
-                    exports = export_outputs(
-                        runner,
-                        institution=options.institution,
-                        out_dir=config.output_dir.resolve(),
-                        export_polar=options.export_polar,
-                        export_cart=options.export_cart,
-                        compress_level=options.compress_level,
-                        synchronous=options.synchronous_export,
-                        engine=options.engine, fmt=options.fmt, overwrite=options.overwrite,
-                        compress_coords=options.compress_coords,
-                        unlimited_time=options.unlimited_time,
-                        max_workers=options.max_workers,
-                        dask_scheduler=options.dask_scheduler, dask_workers=options.dask_workers,
-                        native_threads=options.native_threads,
-                        zarr_chunk_size=options.zarr_chunk_size,
-                         zarr_shard_size=options.zarr_shard_size,
-                        netcdf_chunk_size=options.netcdf_chunk_size,
-                        on_published=published,
-                    )
-                log.debug("Product export finished (engine=%s)", options.engine)
-            else:
-                log.info("Product export skipped (--no-export).")
-            status["pending"].remove("publication")
-            runner.timer.log_summary(log, title="FrameIt runtime summary")
-            products = _product_descriptors(exports, runner)
-            log.info("Run complete: %d input file(s) · %d product(s)",
-                     result.n_files, len(products))
-            return SimulationExecutionResult(
-                ok=result.ok,
-                n_files=result.n_files,
-                output_dir=str(result.output_dir.resolve()),
-                files=[str(path) for path in result.files],
-                products=products,
-                duration_s=time.monotonic() - started,
-                log_path=str(log_path.resolve()),
-                backend_versions=_loaded_backend_versions(),
-                timing_sections_s=dict(runner.timer.sections),
-                computation_s=sum(
-                    runner.timer.sections.get(name, 0.0)
-                    for name in ("tracking", "extraction", "polar_projection")
-                ),
-                regrid_performance=getattr(runner, "polar_report", {}).get(
-                    "regrid_performance", {}
-                ),
-                tracking_complete=bool(track_attrs.get("tracking_complete", True)),
-                tracking_termination_reason=track_attrs.get(
-                    "tracking_termination_reason", ""),
-            )
-        except BaseException:
-            if runner is not None and hasattr(runner, "published_products"):
+            log.debug("Product export finished (engine=%s)", options.engine)
+        else:
+            log.info("Product export skipped (--no-export).")
+        status["pending"].remove("publication")
+        runner.timer.log_summary(log, title="FrameIt runtime summary")
+        products = _product_descriptors(exports, runner)
+        return SimulationExecutionResult(
+            ok=result.ok,
+            n_files=result.n_files,
+            output_dir=str(result.output_dir.resolve()),
+            files=[str(path) for path in result.files],
+            products=products,
+            duration_s=time.monotonic() - started,
+            log_path=str(log_path.resolve()),
+            backend_versions=_loaded_backend_versions(),
+            timing_sections_s=dict(runner.timer.sections),
+            computation_s=sum(
+                runner.timer.sections.get(name, 0.0)
+                for name in ("tracking", "extraction", "polar_projection")
+            ),
+            regrid_performance=getattr(runner, "polar_report", {}).get(
+                "regrid_performance", {}
+            ),
+            tracking_complete=bool(track_attrs.get("tracking_complete", True)),
+            tracking_termination_reason=track_attrs.get(
+                "tracking_termination_reason", ""),
+        )
+    except BaseException as exc:
+        failure = exc
+        if runner is not None and hasattr(runner, "published_products"):
+            status["products"] = [
+                _recorded_product(item, config.output_dir)
+                for item in runner.published_products]
+        log.exception("Simulation execution failed")
+        raise
+    finally:
+        progress.reconcile_published(len(getattr(runner, "published_products", ())))
+        progress.update("cleanup")
+        try:
+            if runner is not None:
+                runner.close()
+            status["pending"].remove("cleanup")
+        except BaseException as exc:
+            if failure is None:
+                raise
+            failure.add_note(f"Input cleanup also failed: {type(exc).__name__}: {exc}")
+            log.exception("Input cleanup also failed")
+        finally:
+            progress.update("finalizing execution records")
+            runtime["loaded_backends"] = _loaded_backend_versions()
+            if provenance is not None:
+                provenance.update(_run_provenance(config, options, status, runtime))
                 status["products"] = [
                     _recorded_product(item, config.output_dir)
-                    for item in runner.published_products]
-            log.exception("Simulation execution failed")
-            raise
-        finally:
-            try:
-                if runner is not None:
-                    runner.close()
-                status["pending"].remove("cleanup")
-            finally:
-                runtime["loaded_backends"] = _loaded_backend_versions()
-                if provenance is not None:
-                    provenance.update(_run_provenance(config, options, status, runtime))
-                    status["products"] = [
-                        _recorded_product(item, config.output_dir)
-                        for item in getattr(runner, "published_products", [])]
-                    from frameit.io.fa_backend import collect_fa_diagnostics
+                    for item in getattr(runner, "published_products", [])]
+                from frameit.io.fa_backend import collect_fa_diagnostics
 
-                    if provenance["fa_inputs"]:
-                        provenance["fa_decoder"] = collect_fa_diagnostics(
-                            config.output_dir, provenance["fa_inputs"])
-                    for source in provenance["sources"].values():
-                        if source["fa_inputs"]:
-                            source["fa_decoder"] = collect_fa_diagnostics(
-                                config.output_dir, source["fa_inputs"])
-                    checkpoint_run(config.output_dir, status, provenance)
+                if provenance["fa_inputs"]:
+                    provenance["fa_decoder"] = collect_fa_diagnostics(
+                        config.output_dir, provenance["fa_inputs"])
+                for source in provenance["sources"].values():
+                    if source["fa_inputs"]:
+                        source["fa_decoder"] = collect_fa_diagnostics(
+                            config.output_dir, source["fa_inputs"])
+                checkpoint_run(config.output_dir, status, provenance)

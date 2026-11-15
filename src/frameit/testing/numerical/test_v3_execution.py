@@ -481,3 +481,152 @@ assert not any(name == 'frameit' or name.startswith('frameit.') for name in sys.
         assert status["products"][0]["path"] == f"products/{product.name}"
         assert resolved["output"]["format"] == declared
         assert _digest(source) == original
+
+
+@pytest.mark.parametrize("case", [
+    "no_region", "independent_clocks", "sparse_tracker_derived", "transform",
+    "track_only", "polar_only",
+])
+def test_selected_execution_owns_one_typed_plan(tmp_path, monkeypatch, case):
+    """Rebinding or serializing the plan loses owning selections and decoded clocks."""
+    from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
+
+    from frameit.core import coupled, preflight
+    from frameit.core.configuration import to_runtime
+    from frameit.core.runner import FrameitRunner
+    from frameit.testing.numerical.test_v3_polar import scene
+    from frameit.testing.numerical.test_v3_regions import pressure_wind_scene
+
+    source = tmp_path / "input.nc"
+    dataset = scene()
+    if case == "transform":
+        dataset.q.attrs["units"] = "hPa"
+    dataset.to_netcdf(source)
+    sources = {"weather": {
+        "model": "mesonh", "files": str(source), "variables": {"2d": ["q"]},
+        "time": {"values": ["2024-01-01T00:00:00", "2024-01-01T02:00:00"]},
+        "reader": {"engine": "h5netcdf", "chunks": {"time": 3}},
+    }}
+    raw = {
+        "schema_version": 3, "run": {"name": "selected"}, "sources": sources,
+        "output": {"directory": str(tmp_path / "out")},
+        "resources": {"cpus": 1, "scheduler": "synchronous", "synchronous_export": True},
+    }
+    fields = {"weather": ["q"]}
+    if case == "independent_clocks":
+        ocean = scene(hours=(1,))
+        ocean = ocean.rename(time="time_counter", nj="y", ni="x",
+                             latitude="nav_lat", longitude="nav_lon")
+        ocean.to_netcdf(tmp_path / "ocean.nc")
+        sources["water"] = {
+            "model": "nemo", "files": str(tmp_path / "ocean.nc"),
+            "variables": {"2d": ["q"]}, "reader": {"engine": "h5netcdf"},
+        }
+        fields["water"] = ["q"]
+    elif case in {"sparse_tracker_derived", "track_only"}:
+        sources["weather"] = pressure_wind_scene(source)
+        sources["weather"]["reader"] = {"engine": "h5netcdf", "chunks": {"time": 3}}
+        sources["weather"]["variables"] = {}
+        sources["weather"]["derived"] = {
+            "speed": {"method": "wind_speed", "inputs": {"u": "UM10", "v": "VM10"}}}
+        raw["region"] = {"tracker": {"method": "pressure_wind"}}
+        raw["products"] = ({"track": True} if case == "track_only" else
+                           {"model_grid": True, "track": True})
+        fields = {} if case == "track_only" else {"weather": ["speed"]}
+    elif case == "transform":
+        sources["weather"]["transforms"] = [{"fields": ["q"], "units": "Pa"}]
+    elif case == "polar_only":
+        raw["region"] = {"center": {"latitude": -20., "longitude": 60.}}
+        raw["products"] = {"polar": {"radius_km": 2.5, "azimuth_count": 8}}
+    originals = {Path(declaration["files"]): _digest(Path(declaration["files"]))
+                 for declaration in sources.values()}
+    conf = SimulationConfig(**to_runtime(raw, base_dir=tmp_path))
+    owners, wrapped, reads = [], [], []
+    bind, wrap, run = coupled.bind_sources, preflight.preflight_result, FrameitRunner.run
+    read = H5NetCDFArrayWrapper.__getitem__
+
+    def binding(*args, **kwargs):
+        owners.append(bind(*args, **kwargs))
+        return owners[-1]
+
+    def result(*args, **kwargs):
+        wrapped.append(wrap(*args, **kwargs))
+        return wrapped[-1]
+
+    def running(runner, **kwargs):
+        assert len(owners) == len(wrapped) == 1
+        assert runner.prepared_sources is owners[0]
+        assert runner.preflight_result is wrapped[0]
+        assert wrapped[0].facts is owners[0][0] and wrapped[0].conf is conf
+        assert wrapped[0].command == "run"
+        for name, child in owners[0][1].items():
+            assert child.source_requests[name]["binding"] is (
+                owners[0][2][name]["requests"]["binding"])
+            assert all(isinstance(time, np.datetime64)
+                       for time in owners[0][2][name]["selected_times"])
+        return run(runner, **kwargs)
+
+    def reading(array, key):
+        if array.variable_name in {"q", "MSLP", "UM10", "VM10", "scalar"}:
+            indices = np.atleast_1d(np.arange(array.shape[0])[key.tuple[0]]).tolist()
+            assert set(indices) <= ({0} if array.shape[0] == 1 else {0, 2})
+            reads.extend((array.variable_name, index) for index in indices)
+        return read(array, key)
+
+    monkeypatch.setattr(coupled, "bind_sources", binding)
+    monkeypatch.setattr(preflight, "preflight_result", result)
+    monkeypatch.setattr(FrameitRunner, "run", running)
+    monkeypatch.setattr(H5NetCDFArrayWrapper, "__getitem__", reading)
+    outcome = execute_simulation(conf)
+    assert outcome.ok and len(owners) == len(wrapped) == 1
+    final = [line for line in Path(outcome.log_path).read_text().splitlines()
+             if "Progress | Run complete" in line]
+    assert len(final) == 1
+    assert f"prepared sources={len(sources)}" in final[0]
+    assert f"published products={len(outcome.products)}" in final[0]
+    assert f"completed tracking operations={int(case in {
+        'sparse_tracker_derived', 'track_only'})}" in final[0]
+    assert reads
+    if case in {"sparse_tracker_derived", "track_only"}:
+        assert set(reads) == {(name, index) for name in ("MSLP", "UM10", "VM10")
+                              for index in (0, 2)}
+    assert len(outcome.products) == len(fields) + (
+        case in {"sparse_tracker_derived", "track_only"})
+    for product in outcome.products:
+        subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+path, source, case, role = sys.argv[1:]
+with xr.open_dataset(path) as out, xr.open_dataset(source) as native:
+    assert out.attrs['frameit_version']
+    assert out.attrs['product_type'] == role
+    if role == 'track':
+        assert out.latitude.dims == out.longitude.dims == ('time',)
+        np.testing.assert_allclose(out.latitude, [-20., -20.], rtol=0, atol=1e-12)
+        np.testing.assert_allclose(out.longitude, [60., 60.], rtol=0, atol=1e-12)
+        assert out.latitude.attrs['units'] == 'degrees_north'
+        assert out.longitude.attrs['units'] == 'degrees_east'
+        assert 'since' in out.time.encoding['units'] and out.time.encoding['calendar']
+    elif role == 'polar':
+        np.testing.assert_allclose(out.q, 7., rtol=0, atol=1e-10)
+        np.testing.assert_array_equal(out.radius, [0., 1., 2., 2.5])
+        assert out.radius.attrs['units'] == 'km' and out.azimuth.attrs['units'] == 'rad'
+    elif case == 'sparse_tracker_derived':
+        assert set(out.data_vars) == {'speed'}
+        expected = np.hypot(native.UM10.values[[0,2]] / 3.6, native.VM10.values[[0,2]])
+        np.testing.assert_allclose(out.speed, expected, rtol=0, atol=1e-12)
+        assert out.speed.attrs['units'] == 'm s-1'
+    elif case == 'transform':
+        np.testing.assert_array_equal(out.q, 700.)
+        assert out.q.attrs['units'] == 'Pa'
+    else:
+        clock = 'time_counter' if 'time_counter' in native.dims else 'time'
+        positions = [0] if native.sizes[clock] == 1 else [0,2]
+        np.testing.assert_array_equal(out.q, native.q.values[positions])
+        assert out.q.dtype == native.q.dtype and out.q.attrs == native.q.attrs
+    clock = 'time_counter' if 'time_counter' in native.dims else 'time'
+    np.testing.assert_array_equal(out.time, native[clock].values[
+        [0] if native.sizes[clock] == 1 else [0,2]])
+assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
+""", product["path"], sources[product["source"] or "weather"]["files"],
+                        case, product["role"]], check=True, capture_output=True, text=True)
+    assert {path: _digest(path) for path in originals} == originals

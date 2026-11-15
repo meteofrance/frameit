@@ -65,6 +65,8 @@ class FrameitRunner:
 
         self.tracker = None
         self.preflight_report = None
+        self.preflight_result = None
+        self.progress = None
 
     def close(self):
         """Release original lazy input handles after computation/export."""
