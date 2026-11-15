@@ -56,6 +56,56 @@ and possible repairs. Independent errors are collected together; checks blocked
 by another error are not reported as passed. A successful schema or metadata
 check is not proof of scientific validity. See :doc:`../troubleshooting`.
 
+Authored and effective views
+----------------------------
+
+Use the same file for inspection, validation and execution:
+
+.. code-block:: bash
+
+   frameit inspect frameit.yaml
+   frameit config show frameit.yaml
+   frameit config show frameit.yaml --json
+   frameit config show frameit.yaml --effective --json
+
+Plain ``config show`` presents the authored mapping without adding defaults.
+Its JSON view converts YAML dates/timestamps to ISO strings and sets to arrays.
+Binary values use ``{"hex": "..."}``. Non-finite numbers use
+``{"nonfinite": "..."}``, with ``"nan"``, ``"inf"`` or ``"-inf"`` as the value.
+Object keys become strings.
+The YAML view keeps the parsed YAML values.
+
+``--effective`` checks metadata and separates resolved settings, their origins,
+observed inputs, the plan and pending checks. Neither view rewrites the file.
+Inspection accepts unfinished field selections and reports available selectors.
+
+``validate``, ``run`` and ``config show --effective`` accept
+``--output-directory``, ``--cpus``, ``--overwrite`` or ``--no-overwrite``, and
+``--log-level``. Command-line values override YAML values, which override defaults.
+Command-line paths start at the launch directory; YAML paths remain relative to
+the YAML file. Overwrite flags are mutually exclusive. For example:
+
+.. code-block:: bash
+
+   frameit validate frameit.yaml --cpus 1 --no-overwrite --log-level INFO
+
+Keep fields, times, methods and other scientific selections in the YAML.
+
+Capabilities and editor assistance
+----------------------------------
+
+.. code-block:: bash
+
+   frameit capabilities
+   frameit capabilities --json
+   python -c "from importlib.resources import files; print(files('frameit').joinpath('schemas/config-v3.schema.json'))"
+
+Capabilities describe implemented support, required inputs/dependencies and
+method limits. The packaged version-3 JSON Schema supports editor checks of
+configuration structure. Point your editor's schema setting at the displayed
+file; it is not a new YAML control. Input-dependent field names, units, geometry
+and scientific eligibility still require inspection and validation.
+
 .. _starter-catalogue:
 
 Starter catalogue

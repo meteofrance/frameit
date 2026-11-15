@@ -69,7 +69,7 @@ see :doc:`../getting_started/hpc`.
 .. code-block:: bash
 
    frameit validate
-   frameit run --dry-run
+   frameit config show frameit.yaml --effective
    frameit run
 
 Inspect effective worker counts and setting origins, planned products and polar

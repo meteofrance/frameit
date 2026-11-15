@@ -70,8 +70,7 @@ The path is relative to the YAML file and is made absolute without dereferencing
 virtual-environment Python symlinks. Each FA source may choose its own runtime.
 Resolved YAML preserves the selection. A missing interpreter or worker
 failure is reported; there is no automatic retry in another environment.
-For raw FA CLI inspection, ``--fa-python /path/to/runtime/bin/python`` selects
-the interpreter for that invocation.
+``frameit inspect frameit.yaml`` uses the same source runtime declaration.
 
 Troubleshoot failures
 ---------------------

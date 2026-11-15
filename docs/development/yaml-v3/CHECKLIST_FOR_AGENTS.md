@@ -1244,17 +1244,17 @@ PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/t
 force=False)`. Use Task 13 reports and Task 12 run records. Record the chosen status
 command/exit contract; `frameit status <run-directory>` is only a candidate spelling.
 
-- [ ] Test every existing init model/recipe/composition/default/force rule with v3
+- [x] Test every existing init model/recipe/composition/default/force rule with v3
   output. Do not invent task-based starters or change the selected workflow.
-- [ ] Implement inspect/validate/run on the same YAML; authored/effective config;
+- [x] Implement inspect/validate/run on the same YAML; authored/effective config;
   exact operational flags, path bases, precedence, and JSON behavior from C9.
   Remove the retired public dry-run/resolved options and their help references.
-- [ ] Build capabilities and versioned JSON Schema from authoritative definitions.
+- [x] Build capabilities and versioned JSON Schema from authoritative definitions.
   Test actual support/maturity/dependencies and packaged schema availability.
-- [ ] Implement lightweight status and matching final summary. Test with original
+- [x] Implement lightweight status and matching final summary. Test with original
   inputs absent; show actual fields/paths, warnings/exclusions, failures, and ordinary
   reader guidance. Do not infer liveness from an old running record.
-- [ ] Review complete command, help, and error text.
+- [x] Review complete command, help, and error text.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_configuration_v3.py src/frameit/testing/numerical/test_templates.py src/frameit/testing/numerical/test_inspect_metadata.py src/frameit/testing/numerical/test_hpc_execution.py

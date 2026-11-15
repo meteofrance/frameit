@@ -18,7 +18,7 @@ bypass them. NetCDF is the base path; FA, GRIB, polar and Zarr dependencies are
 not needed for native scalar extraction.
 
 Use ``frameit init nemo`` for a fixed-box starting configuration and
-``frameit inspect ./data --model nemo --format netcdf --pattern '*.nc'`` for
+``frameit inspect frameit.yaml`` for
 metadata inspection. Set actual paths, fields and geographical centres before
 running. Fixed and prescribed centres need no reference source. Calculated
 tracking requires an atmospheric source. The ocean uses its own geographical
@@ -173,8 +173,8 @@ CROCO native history scalars
 ``model: croco`` admits the tested regional ``CROCO history file`` family with
 decoded Gregorian ``time``, optional agreeing ``scrum_time``, native rho geography
 ``lat_rho/lon_rho`` on ``(eta_rho, xi_rho)`` and explicit consistent
-``Vtransform=2`` declarations. Use ``frameit init croco`` or ``frameit inspect
-./data --model croco --format netcdf --pattern '*.nc'``. Adapt the generated paths,
+``Vtransform=2`` declarations. Use ``frameit init croco``, edit its source request,
+then run ``frameit inspect frameit.yaml``. Adapt the generated paths,
 fields, native level indices and geographical centre to the data. Fixed and
 prescribed centres are supported independently or in named-source exact-time runs.
 This does not admit every CROCO release, restart/averaged products, other vertical

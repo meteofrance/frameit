@@ -52,7 +52,7 @@ where = ["src"]
 include-package-data = false
 
 [tool.setuptools.package-data]
-frameit = ["presets/**/*.yaml", "templates/*.yaml", "testing/catalogs/*.yaml", "testing/recipes/*.yaml", "testing/ci_dataset/manifest.json"]
+frameit = ["presets/**/*.yaml", "templates/*.yaml", "schemas/*.json", "testing/catalogs/*.yaml", "testing/recipes/*.yaml", "testing/ci_dataset/manifest.json"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

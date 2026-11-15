@@ -386,43 +386,70 @@ def _execute_owned_simulation(config, options, input_files, progress, logs, leve
                   if config.schema_version == 3 else None)
     if provenance is not None:
         provenance["layouts"] = prepared_sources[0].get("layouts")
-    with owned_run(config.output_dir, overwrite=effective.overwrite, initial=initial,
-                   request=request, provenance=provenance) as status:
-        progress.stop()
-        log_path = logs.enter_context(frameit_logging_scope(
-            config.output_dir, level=level, simu_name=config.simulation_name))
-        logs.callback(progress.stop)
-        progress.start()
-        log = logging.getLogger("frameit")
-        log.info("Log file: %s", log_path)
-        log.info("Execution resources: %s", status["resources"])
-        if config.schema_version == 3:
-            from frameit.core.configuration import resolved_configuration
-            from frameit.utils.atomic import write_yaml_atomic
+    owned_status = None
+    try:
+        with owned_run(config.output_dir, overwrite=effective.overwrite, initial=initial,
+                       request=request, provenance=provenance) as status:
+            owned_status = status
+            progress.stop()
+            log_path = logs.enter_context(frameit_logging_scope(
+                config.output_dir, level=level, simu_name=config.simulation_name))
+            logs.callback(progress.stop)
+            progress.start()
+            log = logging.getLogger("frameit")
+            log.info("Log file: %s", log_path)
+            log.info("Execution resources: %s", status["resources"])
+            if config.schema_version == 3:
+                from frameit.core.configuration import resolved_configuration
+                from frameit.utils.atomic import write_yaml_atomic
 
-            write_yaml_atomic(config.output_dir / "resolved-config.yaml",
-                              resolved_configuration(config, effective),
-                              overwrite=effective.overwrite)
-        with execution_scope(effective):
-            result = _execute_simulation(
-                config, effective, status, runtime, input_files=input_files,
-                prepared_sources=prepared_sources, provenance=provenance,
-                selected_plan=selected_plan, progress=progress, log_path=log_path,
+                write_yaml_atomic(config.output_dir / "resolved-config.yaml",
+                                  resolved_configuration(config, effective),
+                                  overwrite=effective.overwrite)
+            with execution_scope(effective):
+                result = _execute_simulation(
+                    config, effective, status, runtime, input_files=input_files,
+                    prepared_sources=prepared_sources, provenance=provenance,
+                    selected_plan=selected_plan, progress=progress, log_path=log_path,
+                )
+            if not result.ok:
+                raise RuntimeError("Processing returned an unsuccessful result")
+            result.execution_resources = resources
+            status.update(
+                state="completed" if result.tracking_complete else "incomplete",
+                tracking_complete=result.tracking_complete,
+                tracking_termination_reason=result.tracking_termination_reason,
+                n_files=result.n_files, duration_s=result.duration_s,
+                timing_sections_s=result.timing_sections_s,
+                pending=[],
+                products=[_recorded_product(product, config.output_dir)
+                          for product in result.products],
             )
-        if not result.ok:
-            raise RuntimeError("Processing returned an unsuccessful result")
-        result.execution_resources = resources
-        status.update(
-            state="completed" if result.tracking_complete else "incomplete",
-            tracking_complete=result.tracking_complete,
-            tracking_termination_reason=result.tracking_termination_reason,
-            n_files=result.n_files, duration_s=result.duration_s,
-            timing_sections_s=result.timing_sections_s,
-            pending=[],
-            products=[_recorded_product(product, config.output_dir) for product in result.products],
-        )
-        progress.update("finalizing run records/ownership")
-        return result
+            progress.update("finalizing run records/ownership")
+            return result
+    except BaseException as exc:
+        if owned_status is not None:
+            try:
+                facts = {key: deepcopy(owned_status[key]) for key in (
+                    "products", "pending", "tracking_complete", "tracking_termination_reason",
+                    "started_at", "finished_at") if key in owned_status}
+                plan = config.simulation_parameter.get("request_plan", {})
+                facts.update(
+                    state=("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
+                           else "failed"),
+                    observed_owner_state=owned_status["state"],
+                    error={"type": type(exc).__name__, "message": str(exc)},
+                    warnings=deepcopy(plan.get("warnings", [])),
+                    exclusions={name: deepcopy(source.get("excluded_files", []))
+                                for name, source in plan.get("sources", {}).items()},
+                    current_attempt="Owner-attested in-memory facts after ownership unwind; "
+                                    "final record persistence is not verified.",
+                )
+                exc._frameit_failure = {"root": str(config.output_dir), "facts": facts}
+            except BaseException:
+                # Optional presentation metadata must not replace the execution failure.
+                pass
+        raise
 
 
 def _execute_simulation(config, options, status, runtime, *, input_files=None,

@@ -108,7 +108,7 @@ input size:
 
    python -m frameit validate /absolute/path/case.yaml --schema-only
    python -m frameit validate /absolute/path/case.yaml
-   python -m frameit run /absolute/path/case.yaml --dry-run
+   python -m frameit config show /absolute/path/case.yaml --effective
 
 Planning reports effective settings and resources. Use the pilot run to measure
 memory, disk use and runtime.

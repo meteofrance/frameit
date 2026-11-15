@@ -58,6 +58,336 @@ TRACKER_DEFAULTS = {
     },
 }
 
+# Structural keys and choices are shared by validation, capabilities and the editor asset.
+V3_KEYS = {
+    "source": ("model", "format", "profile", "files", "exclude", "time", "variables",
+               "field_metadata", "interpretation", "native_cubes", "fa", "reader",
+               "wind_pairs", "transforms", "derived"),
+    "time": ("cycle", "start", "end", "values", "stride"),
+    "variables": ("2d", "3d", "levels"),
+    "levels": ("indices", "values", "domain", "units"),
+    "field_metadata": ("units", "kind", "temporal_kind", "allow_unscaled",
+                       "long_name", "standard_name"),
+    "reader": ("engine", "chunks", "python_executable", "timeout_seconds", "max_points"),
+    "fa": ("subdomain", "earth_radius_m", "expected_source"),
+    "rotation": ("method", "coordinate", "BETA", "RPK", "LON0"),
+    "wind_pair": ("u", "v", "basis", "rotation"),
+    "transform": ("fields", "sampling", "basis", "units"),
+    "derived": ("method", "inputs"),
+    "region": ("center", "track", "tracker", "width_km", "sources_coupling_time_association"),
+    "model_grid": ("fields", "processing"),
+    "polar": ("fields", "processing", "radius_km", "radial_step_km", "azimuth_count",
+              "shared_grid", "missing_data_policy", "min_valid_weight_fraction", "field_options"),
+    "polar_processing": ("chunks", "max_target_points", "plan_cache", "source_halo_points",
+                         "weight_zero_tolerance", "profile"),
+    "field_options": ("interpolation", "missing_data_policy",
+                      "min_valid_weight_fraction", "sampling"),
+    "writer": ("engine", "unlimited_time", "compression", "chunks", "shards"),
+    "compression": ("level", "coordinates"),
+    "resources": ("cpus", "scheduler", "compute_workers", "export_workers", "native_threads",
+                  "synchronous_export"),
+    "metadata": ("institution", "extra"),
+}
+V3_CHOICES = {
+    "model": ("arome", "mesonh", "nemo", "croco"),
+    "format": ("netcdf", "grib", "fa"),
+    "profile": ("arome_history", "surfex_history"),
+    "kind": ("continuous", "categorical"),
+    "temporal_kind": ("instantaneous", "mean", "accumulated"),
+    "interpretation": ("mesonh_surfex_sea",),
+    "reader_engine": ("h5netcdf", "netcdf4", "scipy"),
+    "subdomain": ("CI", "C"),
+    "rotation": ("coordinate", "geolocation", "mesonh_projection"),
+    "wind_basis": ("earth", "grid"),
+    "sampling": ("native", "mass"),
+    "transform_basis": ("native", "earth"),
+    "derived": ("wind_speed",),
+    "association": ("exact", "common", "preceding_hour"),
+    "tracker": tuple(TRACKER_DEFAULTS),
+    "on_incomplete": ("error", "keep_prefix"),
+    "solver": ("aitken", "fixed"),
+    "interpolation": ("bilinear", "nearest"),
+    "missing_data_policy": ("strict", "renormalize"),
+    "output_format": ("netcdf", "zarr"),
+    "writer_engine": ("netcdf4", "h5netcdf"),
+    "scheduler": ("threads", "synchronous"),
+    "log_level": ("DEBUG", "INFO", "WARNING", "ERROR"),
+}
+V3_LIMITS = {
+    "latitude": 90, "longitude": 180, "compression_level": 9,
+    "azimuth_count": 3, "weight_zero_tolerance": 1e-6,
+}
+COMPRESSION_DEFAULTS = {"level": 1, "coordinates": False}
+
+
+def configuration_schema():
+    """Build the v3 editor structure; input-dependent eligibility stays in preflight."""
+    def ref(name):
+        return {"$ref": f"#/$defs/{name}"}
+
+    def choice(name):
+        return ref("choices_" + name)
+
+    def obj(properties, required=(), **extra):
+        return {"type": "object", "properties": properties, "additionalProperties": False,
+                **({"required": list(required)} if required else {}), **extra}
+
+    def array(items, **extra):
+        return {"type": "array", "items": items, "minItems": 1, "uniqueItems": True, **extra}
+
+    def mapping(values, **extra):
+        return {"type": "object", "additionalProperties": values, **extra}
+
+    positive = {"type": "number", "exclusiveMinimum": 0}
+    integer = {"type": "integer", "minimum": 1}
+    nonnegative = {"type": "integer", "minimum": 0}
+    boolean = {"type": "boolean"}
+    number = {"type": "number"}
+    text = ref("text")
+    names = array(text)
+    paths = {"anyOf": [text, array(text, uniqueItems=False)]}
+    chunks = mapping(integer)
+    processing_chunks = mapping({"anyOf": [integer, {"const": -1}]})
+    center = obj({key: {"type": "number", "minimum": -V3_LIMITS[key], "maximum": V3_LIMITS[key]}
+                  for key in ("latitude", "longitude")},
+                 ("latitude", "longitude"))
+    defs = {"text": {"type": "string", "pattern": r"\S"},
+            **{"choices_" + name: {"enum": list(values)}
+               for name, values in V3_CHOICES.items()}}
+    defs["time"] = obj({
+        **{key: text for key in ("cycle", "start", "end")},
+        "values": names, "stride": integer})
+    defs["levels"] = obj({
+        "indices": {"anyOf": [array(nonnegative), obj({
+            "start": nonnegative, "end": nonnegative, "step": integer}, ("start", "end"))]},
+        "values": {"anyOf": [array(number), obj({
+            "min": number, "max": number}, ("min", "max"))]},
+        "domain": {"const": "physical"}, "units": text})
+    defs["variables"] = obj({"2d": names, "3d": names, "levels": ref("levels")})
+    defs["field_metadata"] = obj({
+        **{key: text for key in ("units", "long_name", "standard_name")},
+        "kind": choice("kind"), "temporal_kind": choice("temporal_kind"),
+        "allow_unscaled": boolean})
+    defs["reader"] = obj({
+        "engine": choice("reader_engine"), "chunks": processing_chunks,
+        "python_executable": text, "timeout_seconds": positive, "max_points": integer})
+    defs["fa"] = obj({
+        "subdomain": choice("subdomain"), "earth_radius_m": positive,
+        "expected_source": obj({
+            "PROGRAM": text,
+            **{key: nonnegative for key in ("VERSION", "BUG", "MASDEV", "BUGFIX")}})})
+    defs["rotation"] = obj({
+        "method": choice("rotation"), "coordinate": text,
+        "BETA": number, "RPK": {"type": "number", "minimum": -1, "maximum": 1}, "LON0": number},
+        ("method",))
+    defs["wind_pair"] = obj({
+        "u": text, "v": text, "basis": choice("wind_basis"), "rotation": ref("rotation")},
+        ("u", "v", "basis"))
+    defs["transform"] = obj({
+        "fields": names, "sampling": choice("sampling"), "basis": choice("transform_basis"),
+        "units": text}, ("fields",))
+    defs["derived"] = obj({
+        "method": choice("derived"), "inputs": obj({"u": text, "v": text}, ("u", "v"))},
+        ("method", "inputs"))
+    defs["source"] = obj({
+        "model": choice("model"), "format": choice("format"), "profile": choice("profile"),
+        "files": paths, "exclude": array(text, minItems=0, uniqueItems=False), "time": ref("time"),
+        "variables": ref("variables"), "field_metadata": mapping(ref("field_metadata")),
+        "interpretation": choice("interpretation"), "reader": ref("reader"), "fa": ref("fa"),
+        "native_cubes": mapping(obj({
+            "records": names, "vertical_position": {"enum": ["mass", "interface"]},
+            "sampling": {"const": "center"}, "vector_basis": choice("wind_basis"),
+            "component_scaling": {"const": "physical_velocity"}},
+            ("records", "vertical_position", "sampling"))),
+        "wind_pairs": array(ref("wind_pair"), minItems=0),
+        "transforms": array(ref("transform"), minItems=0, uniqueItems=False),
+        "derived": mapping(ref("derived"))},
+        ("files",))
+    trackers = []
+    for method, defaults in TRACKER_DEFAULTS.items():
+        properties = {"method": {"const": method}, "on_incomplete": choice("on_incomplete")}
+        for key, value in defaults.items():
+            if isinstance(value, dict):
+                properties[key] = obj({
+                    name: {**(choice("solver") if name == "solver" else
+                              integer if isinstance(item, int) else
+                              positive if isinstance(item, float) else text), "default": item}
+                    for name, item in value.items()})
+            else:
+                properties[key] = {
+                    **(boolean if isinstance(value, bool) else
+                       integer if isinstance(value, int) else
+                       positive if isinstance(value, float) else text), "default": value}
+                if key == "profile":
+                    properties[key]["const"] = value
+        required = ["method"]
+        if method != "multifield_vortex":
+            properties["on_incomplete"] = {"const": "error"}
+        if method == "pressure_wind":
+            properties["initial_guess"] = obj({
+                **center["properties"], "search_radius_km": positive},
+                ("latitude", "longitude", "search_radius_km"))
+        elif method == "utrack":
+            properties["weights_file"] = text
+            required.append("weights_file")
+        elif method == "multifield_vortex":
+            properties.update(
+                seed=obj({**center["properties"], "time": text,
+                          "motion_u_m_s": number, "motion_v_m_s": number},
+                         ("latitude", "longitude", "motion_u_m_s", "motion_v_m_s")),
+                mnh_gravity_m_s2=positive)
+            required.append("seed")
+        trackers.append(obj(properties, required))
+    defs["region"] = obj({
+        "center": center, "track": obj({"file": text}, ("file",)),
+        "tracker": {"oneOf": trackers}, "width_km": obj({"x": positive, "y": positive}, ("x", "y")),
+        "sources_coupling_time_association": choice("association")})
+    fields = mapping(names, minProperties=1)
+    defs["model_grid"] = obj({
+        "fields": fields, "processing": obj({"chunks": processing_chunks})})
+    defs["polar_processing"] = obj({
+        "chunks": processing_chunks, "max_target_points": integer, "source_halo_points": integer,
+        "weight_zero_tolerance": {
+            "type": "number", "minimum": 0, "exclusiveMaximum": V3_LIMITS["weight_zero_tolerance"]},
+        "plan_cache": obj({"entries": nonnegative, "max_bytes": nonnegative}), "profile": boolean})
+    mask = {"missing_data_policy": choice("missing_data_policy"),
+            "min_valid_weight_fraction": {**positive, "maximum": 1}}
+    defs["field_options"] = obj({
+        **mask, "interpolation": choice("interpolation"), "sampling": choice("sampling")})
+    defs["polar"] = obj({
+        "fields": fields, "processing": ref("polar_processing"), **mask,
+        "radius_km": positive, "radial_step_km": positive,
+        "azimuth_count": {"type": "integer", "minimum": V3_LIMITS["azimuth_count"]},
+        "shared_grid": {**boolean, "default": False},
+        "field_options": mapping(mapping(ref("field_options")))}, ("radius_km",))
+    defs["compression"] = obj({
+        "level": {"type": "integer", "minimum": 0, "maximum": V3_LIMITS["compression_level"],
+                  "default": COMPRESSION_DEFAULTS["level"]},
+        "coordinates": {**boolean, "default": COMPRESSION_DEFAULTS["coordinates"]}})
+    defs["writer"] = obj({
+        "engine": choice("writer_engine"), "unlimited_time": boolean,
+        "compression": ref("compression"), "chunks": chunks, "shards": chunks})
+    defs["resources"] = obj({
+        **{key: integer for key in ("cpus", "compute_workers", "export_workers", "native_threads")},
+        "scheduler": choice("scheduler"), "synchronous_export": boolean})
+    defs["metadata"] = obj({
+        "institution": {"type": "string"},
+        "extra": {"type": "object", "additionalProperties": True, "default": {}}})
+    for name, keys in V3_KEYS.items():
+        assert set(defs[name]["properties"]) == set(keys), name
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://meteofrance.github.io/frameit/schemas/config-v3.schema.json",
+        "title": "FrameIt configuration v3",
+        "description": (
+            "Editor structure only. Use frameit inspect/validate for input-dependent selection, "
+            "scientific applicability, dependencies and resource checks. "
+            "Omit optional controls for defaults; null is allowed only in metadata.extra."),
+        **obj({
+            "schema_version": {"type": "integer", "const": DEFAULTS["schema_version"]},
+            "run": obj({"name": text, "description": {"type": "string"}}),
+            "sources": mapping(ref("source"), minProperties=1,
+                               propertyNames={"pattern": "^[A-Za-z][A-Za-z0-9_-]*$"}),
+            "region": ref("region"),
+            "products": obj({
+                "model_grid": {"anyOf": [{"const": True}, ref("model_grid")]},
+                "polar": ref("polar"), "track": {"anyOf": [{"const": True}, obj({})]}},
+                minProperties=1),
+            "output": obj({
+                "directory": text, "format": choice("output_format"), "overwrite": boolean,
+                "writer": ref("writer")}),
+            "resources": ref("resources"), "logging": obj({"level": choice("log_level")}),
+            "metadata": ref("metadata")}, ("schema_version", "sources")),
+        "$defs": defs,
+    }
+
+
+def capabilities():
+    """Describe the current public structure and implemented paths, without native imports."""
+    import importlib.util
+
+    sources = {
+        model: {
+            "formats": list(V3_CHOICES["format"]) if model == "arome" else ["netcdf"],
+            "inputs": ["declared paths", "unambiguous model/format metadata", "native coordinates",
+                       "selected variables and source units"],
+            "maturity": "implemented; input-profile and scientific applicability checks required",
+            "limits": [],
+        } for model in V3_CHOICES["model"]
+    }
+    sources["arome"]["limits"] = [
+        "FA: explicit instantaneous gridpoint declarations/native cubes and producer evidence; "
+        "spectral decoding and packed SURFEX reconstruction are gated.",
+        "FA tracker support is not executable in v3; arbitrary GRIB/FA profiles are not promised."]
+    sources["mesonh"]["limits"] = [
+        "NetCDF only; mesonh_surfex_sea interpretation is explicit and requires FRAC_SEA; "
+        "no inferred units, flux sign or temperature equivalence."]
+    sources["nemo"]["limits"] = [
+        "Regional native scalars/components; separate grids, depths, masks and sample clocks."]
+    sources["croco"]["limits"] = [
+        "History/Vtransform=2; native sigma axes and masks; no arbitrary restart support."]
+    tracking = {
+        method: {
+            "maturity": ("experimental_native_grid_adaptation" if method == "multifield_vortex"
+                         else "implemented; no new scientific validation claim"),
+            "v3_execution": method != "utrack",
+            "models": ["arome", "mesonh"], "dependencies": [],
+            "inputs": ["selected pressure/wind metadata and Earth-relative wind evidence"],
+            "limits": ["Selected metadata, values and geometry must pass preflight and execution; "
+                       "FA tracking is gated."],
+        } for method in V3_CHOICES["tracker"]
+    }
+    tracking["pressure_wind"]["inputs"] += ["MSLP and 10-m U/V"]
+    tracking["pressure_centroid"]["inputs"] += [
+        "at least two selected times", "MSLP, 10-m U/V and vertical U/V/height",
+        "AROME isobaric support or Meso-NH native pressure/ASL brackets"]
+    tracking["multifield_vortex"]["inputs"] += [
+        "explicit seed/motion", "pressure-level or Meso-NH native multi-field support"]
+    tracking["utrack"].update(
+        dependencies=["torch", "utrack"],
+        inputs=["weights_file", "UTrack-compatible input fields"],
+        limits=["Configuration and optional adapter exist, but v3 selected tracker binding "
+                "is not yet executable. Dependency presence does not enable it."])
+    for method, inputs in (
+        ("fixed_box", ["geographic center"]),
+        ("prescribed_track", ["track file with exact selected timestamps and geographic degrees"]),
+    ):
+        tracking[method] = {
+            "maturity": "implemented", "v3_execution": True,
+            "models": list(V3_CHOICES["model"]), "dependencies": [], "inputs": inputs,
+            "limits": ["No nearest-time matching or inferred track."]}
+    dependencies = {
+        "netcdf": ["xarray", "netCDF4", "h5netcdf"],
+        "grib": ["cfgrib", "eccodes"],
+        "fa": ["epygram", "ctypesForFortran"],
+        "zarr": ["zarr", "xarray"],
+        "polar": ["xesmf", "ESMF"],
+        "utrack": tracking["utrack"]["dependencies"],
+    }
+    return {
+        "configuration_version": DEFAULTS["schema_version"],
+        "sources": sources, "tracking": tracking,
+        "products": {
+            "model_grid": {"dependencies": [], "limits": [
+                "Native fields by default; transformations and derived results are explicit."]},
+            "polar": {"dependencies": dependencies["polar"],
+                      "interpolation": list(V3_CHOICES["interpolation"]),
+                      "maturity": "implemented point sampling",
+                      "limits": ["No area-budget conservation guarantee; missing-data policy "
+                                 "is explicit. "
+                                 "Experimental comparison methods are not public v3 selectors."]},
+            "track": {"dependencies": [], "limits": ["Requires a declared center/track/tracker."]},
+        },
+        "derived": list(V3_CHOICES["derived"]), "dependencies": dependencies,
+        "installed_modules": {name: importlib.util.find_spec(name) is not None
+                              for name in sorted({name for names in dependencies.values()
+                                                  for name in names})},
+        "dependency_check": (
+            "Module presence only in this interpreter; not scientific qualification "
+            "or proof of backend initialization/helper-interpreter availability."),
+        "editor_schema": "schemas/config-v3.schema.json",
+    }
+
 
 class UniqueLoader(yaml.SafeLoader):
     """Reject duplicate keys, including duplicates hidden in nested sections."""
@@ -304,7 +634,8 @@ def _paths(value, base, path, *, empty=False):
 
 def _center(value, path):
     result = _keys(value, {"latitude", "longitude"}, path, required={"latitude", "longitude"})
-    for name, limit in (("latitude", 90), ("longitude", 180)):
+    for name in ("latitude", "longitude"):
+        limit = V3_LIMITS[name]
         _finite(result[name], f"{path}.{name}")
         if abs(result[name]) > limit:
             raise PreflightError([Diagnostic(
@@ -363,10 +694,10 @@ def validate_wind_pairs(pairs):
 
 
 def _rotation(rotation, path, *, strict=True):
-    checked = _keys(rotation, {"method", "coordinate", "BETA", "RPK", "LON0"},
+    checked = _keys(rotation, V3_KEYS["rotation"],
                     path, required={"method"})
     method = checked["method"]
-    _choice(method, {"coordinate", "geolocation", "mesonh_projection"}, f"{path}.method")
+    _choice(method, V3_CHOICES["rotation"], f"{path}.method")
     if method == "coordinate" and "coordinate" not in checked:
         raise PreflightError([Diagnostic(
             f"{path}.coordinate", f"{path}.coordinate is required for method coordinate",
@@ -408,10 +739,10 @@ def validate_fa_options(options, selected=False):
     if options["python_executable"] is not None:
         _text(options["python_executable"], "input.fa.python_executable")
     if options["profile"] is not None:
-        _choice(options["profile"], {"arome_history", "surfex_history"}, "input.fa.profile")
+        _choice(options["profile"], V3_CHOICES["profile"], "input.fa.profile")
     if selected and options["profile"] is None:
         raise ValueError("input.format fa requires input.fa.profile")
-    _choice(options["subdomain"], {"CI", "C"}, "input.fa.subdomain")
+    _choice(options["subdomain"], V3_CHOICES["subdomain"], "input.fa.subdomain")
     if options["earth_radius_m"] is not None:
         _positive(options["earth_radius_m"], "input.fa.earth_radius_m")
     _positive(options["max_points"], "input.fa.max_points", integer=True)
@@ -435,7 +766,7 @@ def validate_fa_options(options, selected=False):
             raise ValueError(f"input.fa.field_metadata.{name}: invalid metadata keys")
         if not isinstance(definition.get("units"), str) or not definition["units"].strip():
             raise ValueError(f"{name}: explicit source units are required")
-        _choice(definition.get("kind"), {"continuous", "categorical"}, f"{name}.kind")
+        _choice(definition.get("kind"), V3_CHOICES["kind"], f"{name}.kind")
         if definition.get("temporal_kind") != "instantaneous":
             raise ValueError(f"{name}: only explicit instantaneous FA fields are supported; "
                              "no accumulation interval is inferred from the file header")
@@ -507,7 +838,7 @@ def _timestamp(value, path):
 
 
 def _time(raw, path):
-    time = _keys(raw, {"cycle", "start", "end", "values", "stride"}, path)
+    time = _keys(raw, V3_KEYS["time"], path)
     if "values" in time and time.keys() & {"start", "end", "stride"}:
         raise PreflightError([Diagnostic(
             f"{path}.values", f"{path}.values is exclusive with start, end and stride",
@@ -534,7 +865,7 @@ def _time(raw, path):
 
 
 def _levels(raw, path):
-    levels = _keys(raw, {"indices", "values", "domain", "units"}, path)
+    levels = _keys(raw, V3_KEYS["levels"], path)
     strategies = levels.keys() & {"indices", "values", "domain"}
     if len(strategies) > 1:
         raise PreflightError([Diagnostic(
@@ -582,15 +913,11 @@ def _levels(raw, path):
 
 def _source(raw, name, base):
     path = f"sources.{name}"
-    source = _keys(raw, {
-        "model", "format", "profile", "files", "exclude", "time", "variables",
-        "field_metadata", "interpretation", "native_cubes", "fa", "reader",
-        "wind_pairs", "transforms", "derived",
-    }, path, required={"files"})
+    source = _keys(raw, V3_KEYS["source"], path, required={"files"})
     if "model" in source:
-        _choice(source["model"], {"arome", "mesonh", "nemo", "croco"}, f"{path}.model")
+        _choice(source["model"], V3_CHOICES["model"], f"{path}.model")
     if "format" in source:
-        _choice(source["format"], {"netcdf", "grib", "fa"}, f"{path}.format")
+        _choice(source["format"], V3_CHOICES["format"], f"{path}.format")
     model, fmt = source.get("model"), source.get("format")
     fa_declared = (fmt == "fa" or bool(source.keys() & {"profile", "native_cubes", "fa"})
                    or (isinstance(source.get("reader"), dict) and bool(
@@ -607,7 +934,7 @@ def _source(raw, name, base):
     source["exclude"] = _paths(exclude, base, f"{path}.exclude", empty=True)
     if "time" in source:
         source["time"] = _time(source["time"], f"{path}.time")
-    variables = _keys(source.get("variables", {}), {"2d", "3d", "levels"}, f"{path}.variables")
+    variables = _keys(source.get("variables", {}), V3_KEYS["variables"], f"{path}.variables")
     names = []
     for category in ("2d", "3d"):
         if category in variables:
@@ -624,17 +951,15 @@ def _source(raw, name, base):
             "mapping", metadata, [f"Provide a mapping for {path}.field_metadata."])])
     for field, declaration in metadata.items():
         _text(field, f"{path}.field_metadata")
-        checked = _keys(declaration, {
-            "units", "kind", "temporal_kind", "allow_unscaled", "long_name", "standard_name",
-        }, f"{path}.field_metadata.{field}")
+        checked = _keys(declaration, V3_KEYS["field_metadata"], f"{path}.field_metadata.{field}")
         for key in ("units", "long_name", "standard_name"):
             if key in checked:
                 _text(checked[key], f"{path}.field_metadata.{field}.{key}")
         if "kind" in checked:
-            _choice(checked["kind"], {"continuous", "categorical"},
+            _choice(checked["kind"], V3_CHOICES["kind"],
                     f"{path}.field_metadata.{field}.kind")
         if "temporal_kind" in checked:
-            _choice(checked["temporal_kind"], {"instantaneous", "mean", "accumulated"},
+            _choice(checked["temporal_kind"], V3_CHOICES["temporal_kind"],
                     f"{path}.field_metadata.{field}.temporal_kind")
         if "allow_unscaled" in checked:
             if not fa_declared:
@@ -645,23 +970,21 @@ def _source(raw, name, base):
                     [f"Omit {loc} for non-FA inputs."])])
             _boolean(checked["allow_unscaled"], f"{path}.field_metadata.{field}.allow_unscaled")
     if "interpretation" in source:
-        _choice(source["interpretation"], {"mesonh_surfex_sea"}, f"{path}.interpretation")
+        _choice(source["interpretation"], V3_CHOICES["interpretation"], f"{path}.interpretation")
         if model not in {None, "mesonh"} or fmt not in {None, "netcdf"}:
             raise PreflightError([Diagnostic(
                 f"{path}.interpretation", f"{path}.interpretation requires Meso-NH NetCDF",
                 {"model": "mesonh", "format": "netcdf"},
                 {"model": model, "format": fmt, "interpretation": source["interpretation"]},
                 [f"Omit {path}.interpretation unless the source is Meso-NH NetCDF."])])
-    reader = _keys(source.get("reader", {}), {
-        "engine", "chunks", "python_executable", "timeout_seconds", "max_points",
-    }, f"{path}.reader")
+    reader = _keys(source.get("reader", {}), V3_KEYS["reader"], f"{path}.reader")
     if "engine" in reader:
         if fmt not in {None, "netcdf"} or fa_declared:
             raise PreflightError([Diagnostic(
                 f"{path}.reader.engine", f"{path}.reader.engine is NetCDF-only",
                 {"format": "netcdf"}, {"format": fmt, "value": reader["engine"]},
                 [f"Omit {path}.reader.engine for non-NetCDF inputs."])])
-        _choice(reader["engine"], {"h5netcdf", "netcdf4", "scipy"}, f"{path}.reader.engine")
+        _choice(reader["engine"], V3_CHOICES["reader_engine"], f"{path}.reader.engine")
     if "chunks" in reader:
         if fa_declared:
             raise PreflightError([Diagnostic(
@@ -687,7 +1010,7 @@ def _source(raw, name, base):
             raise PreflightError([Diagnostic(
                 f"{path}.model", f"{path}.model: current FA profiles require model: arome",
                 "arome", model, [f"Use {path}.model: arome only for the admitted FA profiles."])])
-        _keys(source.get("fa", {}), {"subdomain", "earth_radius_m", "expected_source"}, f"{path}.fa")
+        _keys(source.get("fa", {}), V3_KEYS["fa"], f"{path}.fa")
         options = _fa_runtime_options(source)
         try:
             validate_fa_options(options, selected=True)
@@ -733,13 +1056,13 @@ def _source(raw, name, base):
     seen = set()
     for index, pair in enumerate(pairs):
         loc = f"{path}.wind_pairs[{index}]"
-        _keys(pair, {"u", "v", "basis", "rotation"}, loc, required={"u", "v", "basis"})
+        _keys(pair, V3_KEYS["wind_pair"], loc, required={"u", "v", "basis"})
         for component in ("u", "v"):
             _text(pair[component], f"{loc}.{component}")
             if pair[component] in seen:
                 raise ValueError(f"{loc}: duplicate wind component {pair[component]}")
             seen.add(pair[component])
-        _choice(pair["basis"], {"earth", "grid"}, f"{loc}.basis")
+        _choice(pair["basis"], V3_CHOICES["wind_basis"], f"{loc}.basis")
         if "rotation" in pair:
             if pair["basis"] != "grid":
                 raise PreflightError([Diagnostic(
@@ -752,14 +1075,15 @@ def _source(raw, name, base):
         raise ValueError(f"{path}.transforms must be a list")
     for index, transform in enumerate(transforms):
         loc = f"{path}.transforms[{index}]"
-        _keys(transform, {"fields", "sampling", "basis", "units"}, loc, required={"fields"})
+        _keys(transform, V3_KEYS["transform"], loc, required={"fields"})
         _names(transform["fields"], f"{loc}.fields")
         if not transform.keys() & {"sampling", "basis", "units"}:
             raise PreflightError([Diagnostic(
                 loc, f"{loc} needs sampling, basis or units",
                 {"one_of": ["basis", "sampling", "units"]}, transform,
                 [f"Declare sampling, basis or units in {loc}."])])
-        for key, choices in (("sampling", {"native", "mass"}), ("basis", {"native", "earth"})):
+        for key, choices in (("sampling", V3_CHOICES["sampling"]),
+                             ("basis", V3_CHOICES["transform_basis"])):
             if key in transform:
                 _choice(transform[key], choices, f"{loc}.{key}")
         if "units" in transform:
@@ -774,8 +1098,8 @@ def _source(raw, name, base):
         _text(field, f"{path}.derived")
         if field in names:
             raise ValueError(f"{loc} collides with an exported source field")
-        _keys(definition, {"method", "inputs"}, loc, required={"method", "inputs"})
-        _choice(definition["method"], {"wind_speed"}, f"{loc}.method")
+        _keys(definition, V3_KEYS["derived"], loc, required={"method", "inputs"})
+        _choice(definition["method"], V3_CHOICES["derived"], f"{loc}.method")
         inputs = _keys(definition["inputs"], {"u", "v"}, f"{loc}.inputs", required={"u", "v"})
         for key, value in inputs.items():
             _text(value, f"{loc}.inputs.{key}")
@@ -797,9 +1121,7 @@ def _fa_runtime_options(source):
 
 def _region(raw, base):
     path = "region"
-    region = _keys(raw, {
-        "center", "track", "tracker", "width_km", "sources_coupling_time_association",
-    }, path)
+    region = _keys(raw, V3_KEYS["region"], path)
     providers = region.keys() & {"center", "track", "tracker"}
     if len(providers) > 1:
         raise PreflightError([Diagnostic(
@@ -824,7 +1146,7 @@ def _region(raw, base):
     if region:
         region.setdefault("sources_coupling_time_association", "exact")
         _choice(region["sources_coupling_time_association"],
-                {"exact", "common", "preceding_hour"}, "region.sources_coupling_time_association")
+                V3_CHOICES["association"], "region.sources_coupling_time_association")
     if "tracker" not in region:
         return region
     tracker = region["tracker"]
@@ -836,7 +1158,7 @@ def _region(raw, base):
             {"present": False} if isinstance(tracker, dict) else tracker,
             ["Provide region.tracker.method in a tracker mapping."])])
     method = tracker["method"]
-    _choice(method, set(TRACKER_DEFAULTS), "region.tracker.method")
+    _choice(method, V3_CHOICES["tracker"], "region.tracker.method")
     optional = {
         "pressure_wind": {"initial_guess"},
         "pressure_centroid": set(),
@@ -849,7 +1171,7 @@ def _region(raw, base):
                 **{key: None for key in optional[method]}}
     tracker = _merge_checked(tracker, defaults, "region.tracker")
     tracker = {key: value for key, value in tracker.items() if value is not None}
-    _choice(tracker["on_incomplete"], {"error", "keep_prefix"}, "region.tracker.on_incomplete")
+    _choice(tracker["on_incomplete"], V3_CHOICES["on_incomplete"], "region.tracker.on_incomplete")
     if tracker["on_incomplete"] == "keep_prefix" and method != "multifield_vortex":
         raise PreflightError([Diagnostic(
             "region.tracker.on_incomplete",
@@ -873,7 +1195,7 @@ def _region(raw, base):
                 if key != "solver":
                     _positive(value, f"region.tracker.{section}.{key}",
                               integer=key == "max_iterations")
-        _choice(tracker["motion"]["solver"], {"aitken", "fixed"}, "region.tracker.motion.solver")
+        _choice(tracker["motion"]["solver"], V3_CHOICES["solver"], "region.tracker.motion.solver")
         if tracker["motion"]["relaxation"] > 1:
             raise PreflightError([Diagnostic(
                 "region.tracker.motion.relaxation",
@@ -923,9 +1245,9 @@ def _mask_options(options, path, *, defaults=False):
     if defaults:
         options.setdefault("missing_data_policy", "strict")
     if "interpolation" in options:
-        _choice(options["interpolation"], {"bilinear", "nearest"}, f"{path}.interpolation")
+        _choice(options["interpolation"], V3_CHOICES["interpolation"], f"{path}.interpolation")
     policy = options.get("missing_data_policy", "strict")
-    _choice(policy, {"strict", "renormalize"}, f"{path}.missing_data_policy")
+    _choice(policy, V3_CHOICES["missing_data_policy"], f"{path}.missing_data_policy")
     if policy == "renormalize":
         if "min_valid_weight_fraction" not in options:
             raise PreflightError([Diagnostic(
@@ -976,10 +1298,7 @@ def _products(raw, sources, region):
                     {"requires_one_of": ["center", "track", "tracker"]}, raw[product],
                     ["Declare a region center, track or tracker for products.track."])])
             continue
-        allowed = {"fields", "processing"}
-        if product == "polar":
-            allowed |= {"radius_km", "radial_step_km", "azimuth_count", "shared_grid",
-                        "missing_data_policy", "min_valid_weight_fraction", "field_options"}
+        allowed = V3_KEYS[product]
         spec = _keys(spec, allowed, path, required={"radius_km"} if product == "polar" else ())
         if "fields" in spec:
             fields = spec["fields"]
@@ -1003,10 +1322,7 @@ def _products(raw, sources, region):
                         {"declared_fields": available}, names,
                         [f"Select declared fields/results in {path}.fields.{name}."])])
         processing = spec.get("processing", {})
-        processing_keys = {"chunks"}
-        if product == "polar":
-            processing_keys |= {"max_target_points", "plan_cache", "source_halo_points",
-                                "weight_zero_tolerance", "profile"}
+        processing_keys = V3_KEYS["polar_processing"] if product == "polar" else {"chunks"}
         _keys(processing, processing_keys, f"{path}.processing")
         if "chunks" in processing:
             _sizes(processing["chunks"], f"{path}.processing.chunks", whole_axis=True)
@@ -1021,7 +1337,7 @@ def _products(raw, sources, region):
                 _positive(spec["radial_step_km"], f"{path}.radial_step_km")
             if "azimuth_count" in spec:
                 _positive(spec["azimuth_count"], f"{path}.azimuth_count", integer=True)
-                if spec["azimuth_count"] < 3:
+                if spec["azimuth_count"] < V3_LIMITS["azimuth_count"]:
                     raise PreflightError([Diagnostic(
                         f"{path}.azimuth_count", f"{path}.azimuth_count must be at least 3",
                         {"min": 3}, spec["azimuth_count"],
@@ -1035,7 +1351,7 @@ def _products(raw, sources, region):
             if "weight_zero_tolerance" in processing:
                 value = processing["weight_zero_tolerance"]
                 _positive(value, f"{path}.processing.weight_zero_tolerance", allow_zero=True)
-                if value >= 1e-6:
+                if value >= V3_LIMITS["weight_zero_tolerance"]:
                     raise PreflightError([Diagnostic(
                         f"{path}.processing.weight_zero_tolerance",
                         f"{path}.processing.weight_zero_tolerance must be below 1e-6",
@@ -1072,8 +1388,7 @@ def _products(raw, sources, region):
                             loc, f"{loc}: field is unused by this product",
                             {"selected_fields": sorted(needed)}, field,
                             [f"Remove {loc}, or explicitly select this field for the product."])])
-                    _keys(values, {"interpolation", "missing_data_policy",
-                                   "min_valid_weight_fraction", "sampling"}, loc)
+                    _keys(values, V3_KEYS["field_options"], loc)
                     effective = {key: spec[key] for key in
                                  ("missing_data_policy", "min_valid_weight_fraction") if key in spec}
                     if values.get("missing_data_policy") == "strict":
@@ -1081,7 +1396,7 @@ def _products(raw, sources, region):
                     effective.update(values)
                     _mask_options(effective, loc)
                     if "sampling" in values:
-                        _choice(values["sampling"], {"native", "mass"}, f"{loc}.sampling")
+                        _choice(values["sampling"], V3_CHOICES["sampling"], f"{loc}.sampling")
                     if field in sources[name]["derived"] and values.keys() & {
                         "interpolation", "sampling", "missing_data_policy", "min_valid_weight_fraction",
                     }:
@@ -1120,11 +1435,9 @@ def _derived_inputs(source, exports, visiting=()):
 def _output(raw, base):
     output = _merge_checked(raw, DEFAULTS["output"], "output")
     output["directory"] = _path(output["directory"], base, "output.directory")
-    _choice(output["format"], {"netcdf", "zarr"}, "output.format")
+    _choice(output["format"], V3_CHOICES["output_format"], "output.format")
     _boolean(output["overwrite"], "output.overwrite")
-    writer = _keys(output["writer"], {
-        "engine", "unlimited_time", "compression", "chunks", "shards",
-    }, "output.writer")
+    writer = _keys(output["writer"], V3_KEYS["writer"], "output.writer")
     if output["format"] == "zarr":
         for key in ("engine", "unlimited_time"):
             if key in writer:
@@ -1141,12 +1454,12 @@ def _output(raw, base):
                 ["Omit output.writer.shards for NetCDF, or select output.format: zarr."])])
         writer.setdefault("engine", "netcdf4")
         writer.setdefault("unlimited_time", True)
-        _choice(writer["engine"], {"netcdf4", "h5netcdf"}, "output.writer.engine")
+        _choice(writer["engine"], V3_CHOICES["writer_engine"], "output.writer.engine")
         _boolean(writer["unlimited_time"], "output.writer.unlimited_time")
     compression = _merge_checked(writer.get("compression", {}),
-                                 {"level": 1, "coordinates": False}, "output.writer.compression")
+                                 COMPRESSION_DEFAULTS, "output.writer.compression")
     _positive(compression["level"], "output.writer.compression.level", integer=True, allow_zero=True)
-    if compression["level"] > 9:
+    if compression["level"] > V3_LIMITS["compression_level"]:
         raise PreflightError([Diagnostic(
             "output.writer.compression.level", "output.writer.compression.level must be in [0, 9]",
             {"min": 0, "max": 9}, compression["level"],
@@ -1218,19 +1531,17 @@ def resolve_schema(raw, *, base_dir=None):
     conf["products"] = _products(raw.get("products", DEFAULTS["products"]),
                                 conf["sources"], conf["region"])
     conf["output"] = _output(raw.get("output", {}), base)
-    resources = _keys(raw.get("resources", {}), {
-        "cpus", "scheduler", "compute_workers", "export_workers", "native_threads", "synchronous_export",
-    }, "resources")
+    resources = _keys(raw.get("resources", {}), V3_KEYS["resources"], "resources")
     resources = {**DEFAULTS["resources"], **resources}
-    _choice(resources["scheduler"], {"threads", "synchronous"}, "resources.scheduler")
+    _choice(resources["scheduler"], V3_CHOICES["scheduler"], "resources.scheduler")
     _boolean(resources["synchronous_export"], "resources.synchronous_export")
     for key in ("cpus", "compute_workers", "export_workers", "native_threads"):
         if key in resources:
             _positive(resources[key], f"resources.{key}", integer=True)
     conf["resources"] = resources
     conf["logging"] = _merge_checked(raw.get("logging", {}), DEFAULTS["logging"], "logging")
-    _choice(conf["logging"]["level"], {"DEBUG", "INFO", "WARNING", "ERROR"}, "logging.level")
-    conf["metadata"] = _keys(raw.get("metadata", {}), {"institution", "extra"}, "metadata")
+    _choice(conf["logging"]["level"], V3_CHOICES["log_level"], "logging.level")
+    conf["metadata"] = _keys(raw.get("metadata", {}), V3_KEYS["metadata"], "metadata")
     conf["metadata"].setdefault("extra", {})
     if "institution" in conf["metadata"] and not isinstance(conf["metadata"]["institution"], str):
         raise PreflightError([Diagnostic(
@@ -1600,42 +1911,50 @@ def write_template(name, path, *, tracking=None, coupling=None, force=False):
 
     text = resources.files("frameit").joinpath(f"templates/{resource}.yaml").read_text(encoding="utf-8")
     starter = yaml.safe_load(text)
-    method = tracking or starter["tracking"]["method"]
-    if method != starter["tracking"]["method"]:
-        block = "tracking:\n" + ("  source: atmosphere\n" if coupling else "")
-        block += f"  method: {method}\n"
+    starter_method = starter["region"].get("tracker", {}).get("method", "fixed_box")
+    method = tracking or starter_method
+    if method != starter_method:
+        block = "region:\n"
+        if coupling:
+            block += "  sources_coupling_time_association: common\n"
         if method == "prescribed_track":
             block += ("  # Exact timestamps and geographic degrees; no nearest-time matching.\n"
                       "  # Replace both instructional data and track when using real inputs.\n"
-                      "  prescribed_track:\n    file: ./track.nc\n")
-        text = re.sub(r"(?ms)^tracking:\n.*?(?=^domain:)", lambda _: block, text, count=1)
+                      "  track:\n    file: ./track.nc\n")
+        else:
+            block += f"  tracker:\n    method: {method}\n"
+        text = re.sub(r"(?ms)^region:\n.*?(?=^  # Illustrative|^  # Full widths)",
+                      lambda _: block, text, count=1)
         text = text.replace(f"  name: {starter['run']['name']}\n",
                             f"  name: {name}{'-' + coupling if coupling else ''}-{method.replace('_', '-')}\n")
     if method == "pressure_centroid":
-        pair = ("{group: isobaricInhPa, u: u, v: v, reference_frame: earth}" if name == "arome"
-                else "{group: level, u: UT_ZM, v: VT_ZM, reference_frame: earth}")
+        pair = ("{u: u, v: v, basis: earth}" if name == "arome"
+                else "{u: UT_ZM, v: VT_ZM, basis: earth}")
         if not coupling:
-            text = text.replace("tracking:\n", f"    - {pair}\ntracking:\n", 1)
+            text = text.replace("    # Preserve the selected", f"      - {pair}\n"
+                                "    # Preserve the selected", 1)
         guidance = ("# Verify wind declarations and source ASL/pressure/native brackets.\n"
                     "# Keep full 500-km reference-ring support; Meso-NH must bracket 2000 m ASL.\n")
         if coupling:
             guidance += "# Requires at least two exact common times across sources.\n"
-        text = text.replace("tracking:\n", guidance + "tracking:\n", 1)
+        text = text.replace("region:\n", guidance + "region:\n", 1)
     if coupling and method in {"pressure_wind", "pressure_centroid"}:
         u, v = ("u10", "v10") if name == "arome" else ("UM10", "VM10")
-        declarations = ("        # Atmospheric tracker winds, independent of ocean sampling.\n"
-                        "        # Verify the actual source wind basis and velocity/pressure units.\n"
-                        "        # earth: u positive eastward, v positive northward.\n"
-                        "        wind_pairs:\n"
-                        f"          - {{group: fields_2d, u: {u}, v: {v}, reference_frame: earth}}\n")
+        declarations = ("    # Atmospheric tracker winds, independent of ocean sampling.\n"
+                        "    # Verify the actual source wind basis and velocity/pressure units.\n"
+                        "    # earth: u positive eastward, v positive northward.\n"
+                        "    wind_pairs:\n"
+                        f"      - {{u: {u}, v: {v}, basis: earth}}\n")
         if method == "pressure_centroid":
-            declarations += f"          - {pair}\n"
+            declarations += f"      - {pair}\n"
         # Both coupled resources put the atmosphere first; leave ocean inputs untouched.
-        text = text.replace("        format: netcdf\n", "        format: netcdf\n" + declarations, 1)
+        text = text.replace("    format: netcdf\n", "    format: netcdf\n" + declarations, 1)
         text = text.replace("target, winds, currents", "target, currents")
     if coupling and name == "mesonh" and method == "pressure_wind":
-        text = text.replace("          names: [SST, SSS]", "          names: [SST, SSS, UM10, VM10, MSLP]")
-        text += "  cartesian:\n    horizontal_vectors: earth_centered\n"
+        text = text.replace("      2d: [SST, SSS]", "      2d: [SST, SSS, UM10, VM10, MSLP]")
+        text = text.replace("  ocean:\n", "    transforms:\n"
+                            "      - {fields: [UM10, VM10], sampling: mass, basis: earth}\n"
+                            "  ocean:\n", 1)
     path = Path(path)
     resolve_schema(yaml.safe_load(text), base_dir=path.absolute().parent)
     with atomic_output(path, overwrite=force) as temporary:

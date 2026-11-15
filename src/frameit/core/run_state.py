@@ -74,6 +74,64 @@ def _recognized_record(path):
         return False
 
 
+def read_run_status(root):
+    """Read fixed portable checkpoints only; never inspect archives or product payloads."""
+    from frameit.core.configuration import read_yaml
+
+    root = Path(root)
+    path = root / "run-status.yaml"
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"Missing or unsafe required record: {path}. "
+                         "Select a run directory containing run-status.yaml; do not recreate "
+                         "records or remove a lock to infer completion.")
+    try:
+        status = read_yaml(path)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Cannot read required record {path}: {exc}") from exc
+    if not (
+        type(status.get("schema_version")) is int and status["schema_version"] == 1
+        and status.get("state") in {"running", "completed", "incomplete", "failed", "interrupted"}
+        and isinstance(status.get("started_at"), str) and isinstance(status.get("products"), list)
+        and all(isinstance(item, dict) and isinstance(item.get("path"), str)
+                for item in status["products"])
+    ):
+        raise ValueError(f"Unrecognized required record: {path}. "
+                         "Use the original version-1 run-status.yaml, "
+                         "not an effective configuration.")
+    notes = []
+    provenance = None
+    optional = root / "run-provenance.yaml"
+    if optional.is_file() and not optional.is_symlink():
+        try:
+            candidate = read_yaml(optional)
+            shared = ("updated_at", "state", "products", "pending")
+            if status.get("updated_at") and all(
+                key in status and candidate.get(key) == status[key] for key in shared
+            ):
+                provenance = candidate
+            else:
+                notes.append("Provenance checkpoint does not match authoritative status; "
+                             "its supplemental facts are unavailable.")
+        except (OSError, ValueError) as exc:
+            notes.append(f"Optional provenance record unavailable: {exc}")
+    else:
+        notes.append("Optional provenance record unavailable.")
+    # Checkpoint files are not a cross-record transaction; refuse a torn read.
+    if read_yaml(path) != status:
+        raise ValueError(f"Required record {path} changed during reading. Retry status; "
+                         "no current-attempt inventory was inferred.")
+    return {
+        **status,
+        "planned_products": status.get("planned_products"),
+        "pending": status.get("pending"),
+        "warnings": status.get("warnings", (provenance or {}).get("warnings")),
+        "record_notes": notes,
+        "recorded_processing": {key: provenance.get(key) for key in (
+            "binding", "sources", "time_alignment", "unit_provenance")}
+        if provenance is not None else None,
+    }
+
+
 @contextmanager
 def owned_run(root, *, overwrite, initial, request=None, provenance=None):
     """Claim a directory before logging/processing; never steal an existing lock."""

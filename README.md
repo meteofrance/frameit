@@ -30,10 +30,9 @@ and [dependency troubleshooting](https://meteofrance.github.io/frameit/user_guid
 
 New to FrameIt? Follow [Your first run](https://meteofrance.github.io/frameit/getting_started/first_run.html).
 
-1. Inspect your inputs and create a starter:
+1. Create a starter:
 
 ```bash
-frameit inspect ./data --model arome --format grib --pattern '*.grib'
 frameit init arome
 # For Meso-NH: frameit init mesonh --output chido.yaml
 # Coupled native scalars: frameit init arome --coupling nemo
@@ -47,13 +46,14 @@ frameit init arome
 3. Check and run:
 
 ```bash
-frameit validate --schema-only  # YAML checks; opens no datasets
-frameit validate                # Metadata, units, geometry and required inputs
-frameit run --dry-run           # Preview effective settings, resources and products
-frameit run
+frameit inspect frameit.yaml
+frameit validate frameit.yaml --schema-only  # Opens no datasets
+frameit validate frameit.yaml
+frameit config show frameit.yaml --effective
+frameit run frameit.yaml
 ```
 
-Validation and dry-run check metadata and coordinates; values are read during
+Inspection and validation check metadata and coordinates; values are read during
 execution. See [Quick start](https://meteofrance.github.io/frameit/getting_started/quick_start.html) for CLI tips.
 
 4. Review `run-status.yaml` under `output.directory`, then open the listed NetCDF
@@ -62,7 +62,7 @@ execution. See [Quick start](https://meteofrance.github.io/frameit/getting_start
    execution facts. A failed run can leave earlier complete products; use the
    status inventory. See [output files](https://meteofrance.github.io/frameit/user_guide/output_files.html).
 
-Set `output.backend: zarr` for `.zarr` stores instead of `.nc` files. See
+Set `output.format: zarr` for `.zarr` stores instead of `.nc` files. See
 [storage settings](https://meteofrance.github.io/frameit/user_guide/output_files.html#sharded-zarr-v3) and the
 [configuration reference](https://meteofrance.github.io/frameit/user_guide/configuration_file.html).
 
@@ -73,8 +73,8 @@ Set `output.backend: zarr` for `.zarr` stores instead of `.nc` files. See
   The seeded multi-field vortex tracker is experimental, with scientific
   qualification pending. UTrack requires its own weights and dependencies.
 - **Coupled inputs:** sources share centres but keep their own grids, masks,
-  quantities and products. `input.time_alignment: common` selects exact common
-  times and records exclusions; `strict` fails on unequal times. See
+  quantities, clocks and products. Operations needing shared centres require
+  an explicit time association. See
   [coupled sources](https://meteofrance.github.io/frameit/user_guide/fa_inputs.html).
 - **Native FA:** EPyGrAM reads selected instantaneous AROME/SURFEX gridpoint
   records and explicitly associated native cubes. Declare units, sampling and
@@ -84,7 +84,7 @@ Set `output.backend: zarr` for `.zarr` stores instead of `.nc` files. See
 - **Optional polar sampling:** continuous production fields default to bilinear
   point sampling, without an area-budget conservation guarantee. Categorical
   data require an explicit appropriate method such as `nearest_s2d`. Shared
-  targets are opt-in (`polar.shared_target: true`); equal target coordinates do
+  targets are opt-in (`products.polar.shared_grid: true`); equal target coordinates do
   not imply equal source masks or quantities. Conservative, patch and additional
   vector-transport methods remain experimental.
 - **Ocean inputs:** regional NEMO supports native scalars and separate components;

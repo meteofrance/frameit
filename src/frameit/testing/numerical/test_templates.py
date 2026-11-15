@@ -12,15 +12,14 @@ from frameit.cli import _build_parser, main
 from frameit.core.configuration import resolve_schema, write_template
 
 
-B = set("schema_version model run.name input.directory input.pattern input.format "
-        "tracking.method domain.width_km.x domain.width_km.y polar.enabled "
-        "output.directory output.overwrite".split())
-F = {"tracking.fixed_box.center.latitude", "tracking.fixed_box.center.longitude"}
-A = {"input.wind_pairs", "variables.fields_2d.names", "output.cartesian.horizontal_vectors"}
-N = {"variables.deptht.names", "variables.deptht.levels.indices"}
-C = {"variables.s_rho.names", "variables.s_rho.levels.indices", "variables.fields_2d.names"}
-K = (B - {"input.directory", "input.pattern", "input.format"}
-     | {"input.time_alignment", "tracking.source"})
+B = set("schema_version run.name region.width_km.x region.width_km.y "
+        "products.model_grid output.directory output.overwrite".split())
+F = {"region.center.latitude", "region.center.longitude"}
+A = {"sources.atmosphere.wind_pairs", "sources.atmosphere.variables.2d",
+     "sources.atmosphere.transforms"}
+N = {"sources.ocean.variables.3d", "sources.ocean.variables.levels.indices"}
+C = N | {"sources.ocean.variables.2d"}
+K = B | {"region.sources_coupling_time_association"}
 
 NAMED = {
     "arome-pressure-wind": ("arome", "*.grib", "grib", 500, B | A,
@@ -28,7 +27,7 @@ NAMED = {
     "mesonh-pressure-wind": ("mesonh", "*.nc", "netcdf", 500, B | A,
                              ("UM10/VM10", "000", "source wind basis")),
     "arome-fixed-scalar": ("arome", "first-run.nc", "netcdf", 4,
-                            B | F | {"variables.fields_2d.names"},
+                            B | F | {"sources.atmosphere.variables.2d"},
                             ("instructional", "not an AROME producer file", "zero", "missing")),
     "nemo-native": ("nemo", "*.nc", "netcdf", 100, B | F | N,
                     ("potential temperature", "zero-based stored index", "depth", "native")),
@@ -94,87 +93,90 @@ def test_every_advertised_command_is_minimal_and_commented(tmp_path, monkeypatch
     raw = yaml.safe_load(text)
     resolve_schema(raw, base_dir=tmp_path)
     model, pattern, fmt, width, expected, comments = NAMED.get(workflow, (
-        "mesonh", "*.nc", "netcdf", 100, B | F | {"variables.fields_2d.names"}, ("MSLP",)))
+        "mesonh", "*.nc", "netcdf", 100, B | F | {"sources.atmosphere.variables.2d"}, ("MSLP",)))
     expected = set(expected)
     method = method or ("pressure_wind" if workflow.endswith("pressure-wind") else "fixed_box")
     if method != "fixed_box":
         expected -= F
     if method == "prescribed_track":
-        expected.add("tracking.prescribed_track.file")
-        assert raw["tracking"]["prescribed_track"]["file"] == "./track.nc"
+        expected.add("region.track.file")
+        assert raw["region"]["track"]["file"] == "./track.nc"
         assert "exact" in text.lower() and "track" in text.lower()
+    if method in {"pressure_wind", "pressure_centroid"}:
+        expected.add("region.tracker.method")
+        assert raw["region"]["tracker"]["method"] == method
     if pattern is None:
-        assert raw["tracking"]["source"] == "atmosphere"
-        assert raw["input"]["time_alignment"] == "common"
-        assert set(raw["input"]["sources"]) == {"atmosphere", "ocean"}
+        assert raw["region"]["sources_coupling_time_association"] == "common"
+        assert set(raw["sources"]) == {"atmosphere", "ocean"}
         for source in ("atmosphere", "ocean"):
-            expected |= {f"input.sources.{source}.{p}" for p in (
-                "model", "input.directory", "input.pattern", "input.format")}
-        atmosphere = raw["input"]["sources"]["atmosphere"]
-        ocean = raw["input"]["sources"]["ocean"]
-        expected.add("input.sources.atmosphere.variables.fields_2d.names")
+            expected |= {f"sources.{source}.{p}" for p in ("model", "files", "format")}
+        atmosphere = raw["sources"]["atmosphere"]
+        ocean = raw["sources"]["ocean"]
+        expected.add("sources.atmosphere.variables.2d")
         if method in {"pressure_wind", "pressure_centroid"}:
-            expected.add("input.sources.atmosphere.input.wind_pairs")
+            expected.add("sources.atmosphere.wind_pairs")
             u, v = ("u10", "v10") if model == "arome" else ("UM10", "VM10")
-            pairs = [{"group": "fields_2d", "u": u, "v": v, "reference_frame": "earth"}]
+            pairs = [{"u": u, "v": v, "basis": "earth"}]
             if method == "pressure_centroid":
-                pairs.append({"group": "isobaricInhPa" if model == "arome" else "level",
-                              "u": "u" if model == "arome" else "UT_ZM",
-                              "v": "v" if model == "arome" else "VT_ZM", "reference_frame": "earth"})
+                pairs.append({"u": "u" if model == "arome" else "UT_ZM",
+                              "v": "v" if model == "arome" else "VT_ZM", "basis": "earth"})
                 assert "500-km" in text and "bracket" in text.lower() and "ASL" in text
                 assert "two exact common times" in text
-            assert atmosphere["input"]["wind_pairs"] == pairs
-            assert "wind_pairs" not in ocean["input"]
+            assert atmosphere["wind_pairs"] == pairs
+            assert "wind_pairs" not in ocean
             assert "No polar/shared target, winds" not in text
         if model == "arome":
-            expected |= {f"input.sources.ocean.{p}" for p in N}
-            assert atmosphere["variables"] == {"fields_2d": {"names": ["prmsl"]}}
-            assert ocean["variables"] == {"deptht": {"names": ["votemper"], "levels": {"indices": [0]}}}
+            expected |= N
+            assert atmosphere["variables"] == {"2d": ["prmsl"]}
+            assert ocean["variables"] == {"3d": ["votemper"], "levels": {"indices": [0]}}
         else:
-            expected |= {"input.sources.atmosphere.input.netcdf.surfex_fields",
-                         "input.sources.ocean.variables.s_rho.names",
-                         "input.sources.ocean.variables.s_rho.levels.indices"}
-            assert atmosphere["input"]["netcdf"]["surfex_fields"] == ["SST", "SSS"]
-            assert ocean["variables"] == {"s_rho": {"names": ["temp", "salt"], "levels": {"indices": [0]}}}
+            expected |= {"sources.atmosphere.interpretation"} | N
+            assert atmosphere["interpretation"] == "mesonh_surfex_sea"
+            assert ocean["variables"] == {"3d": ["temp", "salt"], "levels": {"indices": [0]}}
             fields = ["SST", "SSS"]
             if method == "pressure_wind":
                 fields += ["UM10", "VM10", "MSLP"]
-                expected.add("output.cartesian.horizontal_vectors")
-            assert atmosphere["variables"]["fields_2d"]["names"] == fields
+                expected.add("sources.atmosphere.transforms")
+            assert atmosphere["variables"]["2d"] == fields
         assert atmosphere["model"] == model
-        assert atmosphere["input"]["directory"] == f"./data/{model}"
-        assert ocean["input"]["directory"] == f"./data/{ocean['model']}"
+        assert atmosphere["files"] == f"./data/{model}/{'*.nc' if model == 'arome' else '*diag.nc'}"
+        ocean_pattern = "*.nc" if model == "arome" else "*_his.nc"
+        assert ocean["files"] == f"./data/{ocean['model']}/{ocean_pattern}"
     else:
-        assert raw["input"]["pattern"] == pattern and raw["input"]["format"] == fmt
+        source_name = "atmosphere" if model in {"arome", "mesonh"} else "ocean"
+        source = raw["sources"][source_name]
+        expected |= {f"sources.{source_name}.{p}" for p in ("model", "files", "format")}
+        assert source["files"] == f"./data/{pattern}" and source["format"] == fmt
+        assert source["model"] == model
         if workflow.endswith("pressure-wind"):
             fields = ["u10", "v10", "prmsl"] if model == "arome" else ["UM10", "VM10", "MSLP"]
-            assert raw["variables"] == {"fields_2d": {"names": fields}}
-            pairs = [{"group": "fields_2d", "u": fields[0], "v": fields[1], "reference_frame": "earth"}]
+            assert source["variables"] == {"2d": fields}
+            pairs = [{"u": fields[0], "v": fields[1], "basis": "earth"}]
             if method == "pressure_centroid":
-                pairs.append({"group": "isobaricInhPa" if model == "arome" else "level",
-                              "u": "u" if model == "arome" else "UT_ZM",
-                              "v": "v" if model == "arome" else "VT_ZM", "reference_frame": "earth"})
+                pairs.append({"u": "u" if model == "arome" else "UT_ZM",
+                              "v": "v" if model == "arome" else "VT_ZM", "basis": "earth"})
                 assert "500-km" in text and "bracket" in text.lower() and "ASL" in text
-            assert raw["input"]["wind_pairs"] == pairs
+            assert source["wind_pairs"] == pairs
         elif model == "arome":
-            assert raw["variables"] == {"fields_2d": {"names": ["instructional_scalar"]}}
+            assert source["variables"] == {"2d": ["instructional_scalar"]}
         elif workflow == "mesonh-fixed-scalar":
-            assert raw["variables"] == {"fields_2d": {"names": ["MSLP"]}}
+            assert source["variables"] == {"2d": ["MSLP"]}
         elif model == "nemo":
-            assert raw["variables"] == {"deptht": {"names": ["votemper"], "levels": {"indices": [0]}}}
+            assert source["variables"] == {"3d": ["votemper"], "levels": {"indices": [0]}}
         else:
-            assert raw["variables"] == {"s_rho": {"names": ["temp", "salt"], "levels": {"indices": [0]}},
-                                        "fields_2d": {"names": ["zeta"]}}
+            assert source["variables"] == {"3d": ["temp", "salt"], "levels": {"indices": [0]},
+                                          "2d": ["zeta"]}
     assert leaves(raw) == expected
-    assert raw["model"] == model and raw["schema_version"] == "2.1"
-    assert raw["tracking"]["method"] == method
-    assert raw["domain"]["width_km"] == {"x": width, "y": width}
-    assert raw["polar"] == {"enabled": False}
+    assert type(raw["schema_version"]) is int and raw["schema_version"] == 3
+    assert raw["region"]["width_km"] == {"x": width, "y": width}
+    assert raw["products"] == {"model_grid": True}
     assert raw["output"]["directory"] == "./output" and raw["output"]["overwrite"] is False
     if method == "fixed_box":
-        assert raw["tracking"]["fixed_box"]["center"] == {"latitude": -20., "longitude": 60.}
-    if "output.cartesian.horizontal_vectors" in expected:
-        assert raw["output"]["cartesian"] == {"horizontal_vectors": "earth_centered"}
+        assert raw["region"]["center"] == {"latitude": -20., "longitude": 60.}
+    if "sources.atmosphere.transforms" in expected:
+        fields = ["u10", "v10"] if model == "arome" else ["UM10", "VM10"]
+        assert raw["sources"]["atmosphere"]["transforms"] == [
+            {"fields": fields, "sampling": "mass", "basis": "earth"}]
     for comment in ("relative", "full widths", "polar", *comments):
         assert comment.lower() in "\n".join(line for line in text.splitlines() if line.lstrip().startswith("#")).lower()
     if workflow in NAMED and (method == "fixed_box" or method == "pressure_wind" and "--coupling" not in command):
@@ -224,7 +226,7 @@ def test_refusal_force_and_no_input_overwrite(tmp_path):
         write_template("arome", path)
     assert path.read_bytes() == b"researcher's configuration"
     write_template("nemo", path, force=True)
-    assert yaml.safe_load(path.read_text())["model"] == "nemo"
+    assert yaml.safe_load(path.read_text())["sources"]["ocean"]["model"] == "nemo"
     path.unlink()
     path.symlink_to(source)
     write_template("arome", path, force=True)
@@ -243,9 +245,11 @@ def test_no_full_starter_but_complete_inspection(tmp_path, capsys):
     with pytest.raises(SystemExit) as result:
         main(["config", "show", str(path)])
     assert result.value.code == 0
-    resolved = yaml.safe_load(capsys.readouterr().out)
-    assert resolved["tracking"]["pressure_centroid"]["motion"]["solver"] == "aitken"
-    assert resolved["output"]["backend"] == "netcdf4"
+    authored = yaml.safe_load(capsys.readouterr().out)
+    assert authored == yaml.safe_load(path.read_text())
+    resolved = resolve_schema(authored, base_dir=tmp_path)[0]
+    assert resolved["region"]["tracker"]["method"] == "pressure_wind"
+    assert resolved["output"]["writer"]["engine"] == "netcdf4"
 
 
 @pytest.mark.parametrize("name,coupling,tracking", [

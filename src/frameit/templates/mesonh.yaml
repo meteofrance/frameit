@@ -1,31 +1,31 @@
 # Paths are relative to this YAML. Adapt the inspected fields and geometry.
-schema_version: "2.1"
-model: mesonh
+schema_version: 3
 run:
   name: mesonh-pressure-wind
-input:
-  directory: ./data
-  pattern: "*.nc"
-  format: netcdf
-  # Exclude the exact 000 timeseries filename via input.exclude when needed.
-  # Verify the source wind basis of UM10/VM10, pressure and velocity units.
-  # earth: u positive eastward, v positive northward; no storm motion subtracted.
-  # Not auto-detected: confirm this preset from source metadata or producer docs.
-  wind_pairs:
-    - {group: fields_2d, u: UM10, v: VM10, reference_frame: earth}
-tracking:
-  method: pressure_wind
-domain:
+sources:
+  atmosphere:
+    model: mesonh
+    files: "./data/*.nc"
+    format: netcdf
+    variables:
+      2d: [UM10, VM10, MSLP]
+    # Exclude the exact 000 timeseries filename via sources.atmosphere.exclude when needed.
+    # Verify the source wind basis of UM10/VM10, pressure and velocity units.
+    # earth: u positive eastward, v positive northward; no storm motion subtracted.
+    # Not auto-detected: confirm this declaration from source metadata or producer docs.
+    wind_pairs:
+      - {u: UM10, v: VM10, basis: earth}
+    # Preserve the selected Earth-relative, mass-point output representation.
+    transforms:
+      - {fields: [UM10, VM10], sampling: mass, basis: earth}
+region:
+  tracker:
+    method: pressure_wind
   # Illustrative full widths in km, NOT tracker search half-widths.
   width_km: {x: 500, y: 500}
-variables:
-  fields_2d:
-    names: [UM10, VM10, MSLP]
-polar:
+products:
   # No polar sampling or embedded SURFEX interpretation is selected.
-  enabled: false
+  model_grid: true
 output:
   directory: ./output
   overwrite: false
-  cartesian:
-    horizontal_vectors: earth_centered

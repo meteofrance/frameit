@@ -42,8 +42,8 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 11 | done | Task11 worker + lead + independent reviewer | 10 | `c7d1c65`; C8 independently approved after origin fix; frozen handoff below. |
 | 12 | done | Task12 worker + lead + independent reviewer | 10,11 | `69e6992`; records/checkpoints approved after I1; frozen handoff below. |
 | 13 | done | Task13 worker + lead + independent reviewer | 11, 12 | `106812d`; shared reports/diagnostics approved after two fix rounds; frozen handoff below. |
-| 14 | done | Task14 worker + lead + independent reviewer | 13 | Owning plan and honest progress approved; A1 corrected. Frozen handoff below; local commit in ledger. |
-| 15 | blocked | lead | 14 | CLI/configuration/templates/schema assets; preserved init and v3 commands. |
+| 14 | done | Task14 worker + lead + independent reviewer | 13 | `bde826b`; owning plan/progress approved, A1 corrected; frozen handoff below. |
+| 15 | done | Task15 worker + lead + independent reviewer | 14 | C9 surface approved after fix1; frozen handoff below, local commit in ledger. |
 | 16 | blocked | lead | 15 | All producers, canonical examples, public guides and tests; direct v3 guidance. |
 | 17 | blocked | lead | 16 | Analytical fixtures and task pages; ocean fixture formula approved, not implemented. |
 | 18 | blocked | unassigned | 16 | Repeated-case/Slurm examples and tests. |
@@ -3422,6 +3422,215 @@ Task12 record-write failure/transaction behavior is unchanged; inherited failure
 ABI warnings remain19debt. CLI/producers15–16, HPC18, native/warnings/integration19,
 docs20/human21/Task09Minor3 retain named owners. Human acceptance is not invented.
 Local commit precedes15; no source data/package changes, push or merge.
+
+## Task15 active CLI boundary
+
+Basebde826b31957e67808f6219e175d3f960d7fd85e; clean tree verified after14commit.
+One fresh worker owns CLI/configuration/templates/editor asset and bounded
+presentation/read-only status additions; lead owns public prose/contracts/
+STATE/commits. Task13 reports,14one-owning execution/progress and12portable records
+are consumed, not replaced by a new planner/workflow or science/runtime changes.
+
+Ruling: status spelling `frameit status <run-directory>`, exits0for recorded
+completed/accepted-incomplete,1for unfinished/failed/interrupted or unreadable
+records,2for syntax errors. This follows actual12acceptance states; running is
+not a liveness observation. Ordinary metadata/status/final summary never requires
+the archive, payload scans or claims that stale/concurrent records are current.
+Cost if wrong: CLI contract rework before15review, not scientific default change.
+Exact common flags/JSON/authored-versus-effective behavior and status policy:
+task-15-cli-contract.md. Existing non-retired operational run controls remain;
+explicit dry-run/resolved retire, no new scientific-selection flags/aliases.
+
+Generate packaged schemas/config-v3.schema.json from authoritative definitions,
+not another validator/registry or input-specific field list. Preserve all init
+workflows/quantities/safety/comments in v3; report scientific conflicts explicitly.
+jsonschema is unavailable; build/setuptools/wheel are already present. No new
+dependency/environment/package install. Actual definition/asset/wheel inclusion
+checks proceed; independent standards-conformance validation stays an explicit
+missing check unless available evidence genuinely establishes it.
+
+Prior inventory540required=484passed/55failed/1error,2670mixed-age total=
+194post-A1/2476PRE-A1. Not a15run or corrected14full. Task15 owes focused/
+covering/required and one full after genuine freeze; source/evidence protections
+and the existing no-separate-image/full-smoke boundary remain.
+No Task15 implementation/result is claimed by opening the task.
+
+Task15 author blocked/not frozen:120focused passes/1publication-suppression failure,
+wheel asset/identity/proof claims saved; covering/required/full not yet run.
+Lead independently reproduces suppressionfalse→actualmodel-grid output and a
+real owned CLI failure retaining one ordinary-reader-verified product whose
+current summary lacks inventory. Current unowned fallback is safe but insufficient
+for known owned partial failure. All export/ownership/count callers traced.
+
+Ruling B1: permit only v3 writer local-publication filtering by existing export
+flags and safe empty selection, retaining requested track/plan/science/encodings/
+retention-before-callback/dedup/drain semantics. B2: permit compact in-memory
+owner-attested failure facts from yielded ownership after unwind; no disk-based
+ownership guesses, public result/record change or new event/status framework.
+Pre-ownership failures remain inventory-unavailable; finalization failure must
+not print success or promise a checkpoint that did not persist.
+176pre-extension source hashes/111Task15 artifacts and original code/test/report
+copies preserved. Exact TDD/non-target/safety proofs, covering including relevant
+writer callers, required540/freeze/one full/review remain. Cost if wrong: bounded
+rework before review, not changed physics or weakened data safety. No15commit/
+review yet; independent JSON Schema conformance remains unavailable.
+
+Task15 source/tests/assets genuinely frozen; author single full is running,
+not a result yet. Lead fresh146focused passes/60warnings/21.58s.188freeze hashes,
+352outside tracked paths/45expanded old config ASTs,8704immutable old artifacts/
+explicit histories/9payload12fixture checks pass; actual-path Ruff49→36/noNew.
+Pyproject only adds schema package-data, no dependency/version/environment change.
+
+All9exact first-run commands and original5×5values/mask/units/times/CF geography
+pass independent ordinary readers; one actual atmosphere.model_grid product/
+no track/source/request unchanged.28CLI commands verify same-file views, strict
+seven-key JSON/raw authored mapping, path/origin precedence, retired/conflicting
+flags, status/schema-only with input absent and both independent repairable causes.
+Actual B1suppression/B2partial-owned-failure facts verified without stale-root
+guess or false persistence claim. Initial human warning-wrap probe assertion is
+retained; whitespace-only proof correction, no source/test fix.
+
+Lead raw scoped XML corroborates530/9/1required540IDs/46starter recoveries/56pairs;
+cover1012/20/1old961+new72/46recoveries/one retired-handler new failure/67pairs.
+Three cause changes match explicit C9argparse retirement. First proof's XML-only
+guard assumption retained:9guard traces in XML,37in original captured full-log
+sections, all46roots corroborated. No numerical/HPC waiver or full outcome claim.
+
+Existing pre-boundary wheel asset bytes/isolated resource match frozen schema,
+not final-code wheel execution; independent conformance still unavailable.
+Strict69/publication/13unit/all12changed pages live text-only1020/320pass;
+canonical69retained, original67preview saved exactly. No images/pixel/human
+claim. Author full/cause audit then fresh15spec+quality review/commit remain.
+
+Task15 full handover received/read through281. Single frozen diagnostic:
+2316passed/424failed/2errors6669warnings4subtests608.79s/exit1. All2742nodes:
+2670prior+72newpasses/no prior unrun. Lead independently checks every472raw
+before/after pair and470before/426after complete captured sections against
+original XML/logs.46starter recoveries and2old-pass→failure C9CLI rejections:
+planning handler and FA directory-inspection/privacy caller. Their scientific/
+privacy assertions remain unexecuted, not waived or qualified.
+
+404retained causes:360whole runtime-normalized/43complete exceptions+callsites/
+1exact truncated scratch227→267pair.20same-status changed roots:4dry-run,
+2old starter-version assertions,9coupled raw.input.sources consumers,1quick-start
+input consumer,1unselected FA-backend lookup,2old directory inspectors and1MNH
+root-input/caplog consumer with full stdout diagnostic/location/repair/blocked
+plan. Original producer/FA/test bytes intact; Task16 owns conversion.
+Both existing PNG smoke tests pass only inside this full; no image review.
+
+Lead proof assumptions about imported setup-fixture path and Python quote style
+failed, preserved, and corrected with exact observed evidence; no code/test/result
+fix followed. Fresh188freeze/352outside/8704immutable/45configAST/9payload12fixture/
+noNewRuff proofs pass. Existing strict69/live12page checks and real commands remain
+lead-accepted, not human approval. Conformance unavailable and asset-only wheel
+limits explicit. Source/tests/assets frozen/authoridle/HEADbde826b/indexempty;
+complete15diff packaging/fresh independent spec+quality review next, no commit16.
+
+Task15 independent review returns spec❌/qualityNeedsfixes:2Important,0Critical/
+Minor. F1editor's scalar default branch emits string constraints for the two
+numeric pressure-wind widths; F2authored JSON fails on accepted YAML annotation
+dates. Lead verifies both against actual callers/validators/projection and fresh
+in-memory CLI probes. These are real Task15 gaps, not unavailable-validator debt.
+
+Fix1/5: thaw only configuration_schema float branch/generated asset, authored
+JSON use of existing _metadata_view, appended CLI regressions and the lead's
+small canonical convention paragraph. No runtime/scientific/default/record/
+progress/writer/template change.188pre-fix hashes/34reviewed paths/2365Task15
+artifacts and14source/test/asset/history copies saved before thaw.
+TDD/four complete CLI-template-config-report modules, new wheel asset check,
+exact non-target/prefix/evidence/fixture/no-new-Ruff proof and scoped re-review.
+No second full/old540/1033covering/harness/benchmark for two presentation fixes;
+2316/424/2full and530/9/1required now PRE-fix1 only. Integration risk remains with
+exact unchanged-code proof/fresh covering/reviewer and final19/full gate.
+No15commit16dispatch. Independent conformance and human acceptance remain absent.
+
+Fix1 corrected/refrozen. Fresh lead155passes/60warnings21.27s; all9new width/
+annotation regressions included. Raw covering607pass1oldfail:599old statuses/
+complete argparse cause unchanged,9newpasses,2143old full IDs unrun corrected.
+All9TDD RED→GREEN IDs verified. Full2316/424/2andrequired530/9/1PRE-fix1 only.
+Only two production substitutions/two-property asset delta/82test-line append.
+188newhashes/184other/774prefix/352outside/2365+8704evidence/9payload12fixture
+exact; Ruff49→36/36→36/noNew. Three actual authored JSON/YAML/offline commands
+and new wheel ZIP/resource check match corrected conventions/asset. No install/
+conformance claim. Strict70/publication13unit/config live1020/320pass;11other
+pages equal checked69. Same70preview retained/exactoldcopy/no images.
+Authoridle/source-tests-assetsfrozen/HEADbde826b/indexempty; scoped review next.
+BothImportantopen until reviewer closure; no15commit16implementation.
+
+## Task15 frozen handoff — independently approved after fix1
+
+Original complete34file review and scoped8file fix1review together approve the
+Task15 specification and quality. Both Important findings closed;0open/parked/
+new findings. Reviewed final treec3765d530bc86f69f6a75de8491dc5ad7b274827.
+Completion is task-scoped, not a green full suite, scientific qualification,
+installed-wheel/native/HPC acceptance or human sign-off.
+
+Consumers16–19 use the same authored YAML for inspect/validate/run. Task13's
+shared collector/report and Task14's one owning execution remain authoritative.
+No extra collect/bind to print summaries; no presentation plan executed.
+Authored config show retains the raw mapping/no defaults; its JSON uses existing
+metadata projection for YAML-native annotations. Authored YAML remains unchanged.
+Effective JSON keeps the version1seven-key envelope and separate configuration/
+origins/inputs/plan/pending sections. Logs/progress go to stderr; errors nonzero.
+Common operational flags/precedence/path bases and early request capture remain
+as documented. Retired dry-run/resolved and directory-inspector flags stay retired.
+No public compatibility converter or scientific-selection CLI is introduced.
+
+write_template(name, path, *, tracking=None, coupling=None, force=False)
+retains model/named/composed/default/force/no-clobber/source-safety behavior.
+All74starter scenarios preserve quantities/levels/widths/basis/comments in v3.
+Public atmosphere/ocean/surface examples do not restrict arbitrary parser IDs.
+configuration_schema() generates schemas/config-v3.schema.json from shared
+definitions; capabilities() reports actual support/dependencies/maturity/limits.
+Corrected schema SHA256:
+6b9f8b00f094eeb15f9c6fe43eede3940dd71da8cbf7cabb193a03e412fbac36.
+Both numeric pressure-wind widths match existing positive-number runtime
+controls/defaults; no scientific value, unit or eligibility change.
+
+`frameit status <run-directory>` uses fixed portable records only:
+completed/accepted-incomplete exit0; running/failed/interrupted/unreadable
+required records exit1; argument syntax exit2. Actual publications and plans
+are distinct. Running is not liveness; no archive/payload-integrity scan.
+Available recorded warnings are shown; absent optional warnings stay unknown,
+not a claim that none occurred. Current successful/B2failure summaries use known
+plan warnings. Preservation of every execution warning remains unestablished
+recording/Task19qualification debt, not an invented status fact.
+
+B1 filters only the writer-local publication list by existing suppression flags,
+retaining independently requested track and handling an empty list safely.
+Plans/scientific work/encoding/retention-before-callback/dedup/drain stay exact.
+B2attaches compact private _frameit_failure only after this invocation's yielded
+owner unwinds; unowned failure inventory stays unavailable. No stale/concurrent
+disk attribution, changed public result/record schema or persistence guarantee.
+Task12writing/ownership and Task14/A1progress lifetimes remain unchanged.
+
+Latest corrected lead155CLI/template passes/60warnings21.27s. Four complete
+modules607passed/1unchanged legacy CLI failure:599old outcomes/complete cause
+exact plus9newpasses;2143full IDs unrun corrected, each historical status listed.
+One full2316passed/424failed/2errors6669warnings/4subtests608.79s and required
+530passed/9failed/1error are PRE-fix1 only. Their all2742nodes/472raw pairs/
+470before426after complete captured sections have a lead audit.46starter
+recoveries/2new rejected old callers/20same-status root changes are explicit;
+unreached scientific/privacy assertions are not passed or waived. Task16 must
+restore those scenarios with current v3 producers without weakening guards.
+
+188corrected hashes/184non-target paths/old774CLI-test lines, exact other
+AST/bytes after two substitutions/two-property asset delta,352outside paths,
+2365+8704immutable evidence with explicit history copies,9payload12fixture
+and no new HEAD/review-tree Ruff findings pass. This is not clean lint/native.
+New wheel ZIP/isolated resource matches the corrected asset without installation.
+Independent JSON Schema standards conformance and installed-wheel execution
+remain missing qualification checks; Task19 retains the affected gates.
+
+Strict70/publication/13unit and configuration live text-only1020/320pass;
+other11affected HTML pages equal checked69. Same70preview/tab/server/restart
+retained; no screenshot/image/pixel or human acceptance. The old first-run
+scientific readbacks remain PRE-fix1, with exact unchanged scientific scope.
+Scientific impact:none. Compatibility:intentional approved v3 CLI/starters/
+editor/status plus actual suppression and private failure facts; no scientific/
+output/record-schema/dependency/environment change. Local commit precedes16.
+Producer16/tutorial17/HPC18/native-integration19/docs20/human21/Task09Minor3
+retain named gates. No push or merge.
 
 ## Task 01 evidence
 

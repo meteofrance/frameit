@@ -27,15 +27,13 @@ Inspect first
 
 .. code-block:: bash
 
-   frameit inspect ./data --model arome --format fa --pattern "historic.surfex*.fa"
-   frameit inspect ./data --model arome --format fa --pattern "historic.surfex*.fa" \
-       --fa-profile surfex_history --fa-backend epygram --fa-fields SFX.T2M SFX.SST
-   # Add --fa-python /path/to/helper/bin/python for a separate environment.
+   frameit inspect frameit.yaml
+   frameit inspect frameit.yaml --json
 
-Inspection returns native headers, record names/lengths, backend versions and
-SURFEX typed field-directory metadata. Optional field probes report encoding
-flags or native errors without decoding data. Raw inspection does not select
-units or infer an Earth model. An atmospheric record rejected with native error
+Set source files, ``format: fa`` and the applicable ``profile`` in the request.
+Select a separate helper through ``reader.python_executable`` when needed.
+Inspection reports native metadata without choosing units or inferring an Earth
+model. An atmospheric record rejected with native error
 -91 is not automatically treated as harmless metadata.
 
 Continue with the topic relevant to your request:

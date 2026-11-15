@@ -124,8 +124,9 @@ Definitions excluded from all requested products and dependencies do not execute
 Check the result
 ----------------
 
-Check metadata with ``frameit validate`` and ``frameit run --dry-run`` before
-``frameit run``. Reopen the source-qualified model-grid output with an ordinary
+Check metadata with ``frameit validate frameit.yaml`` and review
+``frameit config show frameit.yaml --effective`` before running. Reopen the
+source-qualified model-grid output with an ordinary
 reader. Check each field's values, dimensions, native indices, coordinates,
 units, basis and recorded method. Internal-only companions must not appear as
 extra physical outputs.

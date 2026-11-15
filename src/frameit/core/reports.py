@@ -195,6 +195,29 @@ def render_report(result):
     return "\n".join(lines)
 
 
+def render_run_summary(facts, *, root, recorded=False):
+    """Present actual publications without opening a product or source archive."""
+    import yaml
+
+    state = facts["state"]
+    label = "Last-recorded state" if recorded else "Run state"
+    lines = [f"{label}: {state}", f"Run directory: {root}"]
+    if state == "incomplete":
+        lines.append("Accepted incomplete tracking; this is not a complete trajectory.")
+    if recorded:
+        lines.append("Recorded metadata only; not a liveness or payload integrity check.")
+    if state in {"failed", "interrupted", "running"}:
+        lines.append("Use a fresh attempt directory for retries. A recorded running state does not "
+                     "show whether its process is alive. Confirm the owner has stopped before "
+                     "removing a stale lock; no automatic repair is performed.")
+    lines.append("Products list completed publications; planned_products are not completions.")
+    lines.append(yaml.safe_dump(
+        _metadata_view(facts), sort_keys=False, allow_unicode=True).rstrip())
+    lines.append("Open listed .nc products with xarray.open_dataset; open .zarr products with "
+                 "xarray.open_zarr (Zarr v3 reader required). FrameIt is not required.")
+    return "\n".join(lines)
+
+
 def diagnostic_locations(error, conf):
     if error.locations:
         return list(error.locations)

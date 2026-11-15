@@ -1,0 +1,1302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meteofrance.github.io/frameit/schemas/config-v3.schema.json",
+  "title": "FrameIt configuration v3",
+  "description": "Editor structure only. Use frameit inspect/validate for input-dependent selection, scientific applicability, dependencies and resource checks. Omit optional controls for defaults; null is allowed only in metadata.extra.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 3
+    },
+    "run": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/text"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/source"
+      },
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+      }
+    },
+    "region": {
+      "$ref": "#/$defs/region"
+    },
+    "products": {
+      "type": "object",
+      "properties": {
+        "model_grid": {
+          "anyOf": [
+            {
+              "const": true
+            },
+            {
+              "$ref": "#/$defs/model_grid"
+            }
+          ]
+        },
+        "polar": {
+          "$ref": "#/$defs/polar"
+        },
+        "track": {
+          "anyOf": [
+            {
+              "const": true
+            },
+            {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "minProperties": 1
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "directory": {
+          "$ref": "#/$defs/text"
+        },
+        "format": {
+          "$ref": "#/$defs/choices_output_format"
+        },
+        "overwrite": {
+          "type": "boolean"
+        },
+        "writer": {
+          "$ref": "#/$defs/writer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "resources": {
+      "$ref": "#/$defs/resources"
+    },
+    "logging": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/choices_log_level"
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sources"
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "choices_model": {
+      "enum": [
+        "arome",
+        "mesonh",
+        "nemo",
+        "croco"
+      ]
+    },
+    "choices_format": {
+      "enum": [
+        "netcdf",
+        "grib",
+        "fa"
+      ]
+    },
+    "choices_profile": {
+      "enum": [
+        "arome_history",
+        "surfex_history"
+      ]
+    },
+    "choices_kind": {
+      "enum": [
+        "continuous",
+        "categorical"
+      ]
+    },
+    "choices_temporal_kind": {
+      "enum": [
+        "instantaneous",
+        "mean",
+        "accumulated"
+      ]
+    },
+    "choices_interpretation": {
+      "enum": [
+        "mesonh_surfex_sea"
+      ]
+    },
+    "choices_reader_engine": {
+      "enum": [
+        "h5netcdf",
+        "netcdf4",
+        "scipy"
+      ]
+    },
+    "choices_subdomain": {
+      "enum": [
+        "CI",
+        "C"
+      ]
+    },
+    "choices_rotation": {
+      "enum": [
+        "coordinate",
+        "geolocation",
+        "mesonh_projection"
+      ]
+    },
+    "choices_wind_basis": {
+      "enum": [
+        "earth",
+        "grid"
+      ]
+    },
+    "choices_sampling": {
+      "enum": [
+        "native",
+        "mass"
+      ]
+    },
+    "choices_transform_basis": {
+      "enum": [
+        "native",
+        "earth"
+      ]
+    },
+    "choices_derived": {
+      "enum": [
+        "wind_speed"
+      ]
+    },
+    "choices_association": {
+      "enum": [
+        "exact",
+        "common",
+        "preceding_hour"
+      ]
+    },
+    "choices_tracker": {
+      "enum": [
+        "pressure_wind",
+        "pressure_centroid",
+        "utrack",
+        "multifield_vortex"
+      ]
+    },
+    "choices_on_incomplete": {
+      "enum": [
+        "error",
+        "keep_prefix"
+      ]
+    },
+    "choices_solver": {
+      "enum": [
+        "aitken",
+        "fixed"
+      ]
+    },
+    "choices_interpolation": {
+      "enum": [
+        "bilinear",
+        "nearest"
+      ]
+    },
+    "choices_missing_data_policy": {
+      "enum": [
+        "strict",
+        "renormalize"
+      ]
+    },
+    "choices_output_format": {
+      "enum": [
+        "netcdf",
+        "zarr"
+      ]
+    },
+    "choices_writer_engine": {
+      "enum": [
+        "netcdf4",
+        "h5netcdf"
+      ]
+    },
+    "choices_scheduler": {
+      "enum": [
+        "threads",
+        "synchronous"
+      ]
+    },
+    "choices_log_level": {
+      "enum": [
+        "DEBUG",
+        "INFO",
+        "WARNING",
+        "ERROR"
+      ]
+    },
+    "time": {
+      "type": "object",
+      "properties": {
+        "cycle": {
+          "$ref": "#/$defs/text"
+        },
+        "start": {
+          "$ref": "#/$defs/text"
+        },
+        "end": {
+          "$ref": "#/$defs/text"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "stride": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "levels": {
+      "type": "object",
+      "properties": {
+        "indices": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "end": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "step": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "start",
+                "end"
+              ]
+            }
+          ]
+        },
+        "values": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "min": {
+                  "type": "number"
+                },
+                "max": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "min",
+                "max"
+              ]
+            }
+          ]
+        },
+        "domain": {
+          "const": "physical"
+        },
+        "units": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "additionalProperties": false
+    },
+    "variables": {
+      "type": "object",
+      "properties": {
+        "2d": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "3d": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "levels": {
+          "$ref": "#/$defs/levels"
+        }
+      },
+      "additionalProperties": false
+    },
+    "field_metadata": {
+      "type": "object",
+      "properties": {
+        "units": {
+          "$ref": "#/$defs/text"
+        },
+        "long_name": {
+          "$ref": "#/$defs/text"
+        },
+        "standard_name": {
+          "$ref": "#/$defs/text"
+        },
+        "kind": {
+          "$ref": "#/$defs/choices_kind"
+        },
+        "temporal_kind": {
+          "$ref": "#/$defs/choices_temporal_kind"
+        },
+        "allow_unscaled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "reader": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "$ref": "#/$defs/choices_reader_engine"
+        },
+        "chunks": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "const": -1
+              }
+            ]
+          }
+        },
+        "python_executable": {
+          "$ref": "#/$defs/text"
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_points": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "fa": {
+      "type": "object",
+      "properties": {
+        "subdomain": {
+          "$ref": "#/$defs/choices_subdomain"
+        },
+        "earth_radius_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "expected_source": {
+          "type": "object",
+          "properties": {
+            "PROGRAM": {
+              "$ref": "#/$defs/text"
+            },
+            "VERSION": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "BUG": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "MASDEV": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "BUGFIX": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "rotation": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/choices_rotation"
+        },
+        "coordinate": {
+          "$ref": "#/$defs/text"
+        },
+        "BETA": {
+          "type": "number"
+        },
+        "RPK": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "LON0": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "method"
+      ]
+    },
+    "wind_pair": {
+      "type": "object",
+      "properties": {
+        "u": {
+          "$ref": "#/$defs/text"
+        },
+        "v": {
+          "$ref": "#/$defs/text"
+        },
+        "basis": {
+          "$ref": "#/$defs/choices_wind_basis"
+        },
+        "rotation": {
+          "$ref": "#/$defs/rotation"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "u",
+        "v",
+        "basis"
+      ]
+    },
+    "transform": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "sampling": {
+          "$ref": "#/$defs/choices_sampling"
+        },
+        "basis": {
+          "$ref": "#/$defs/choices_transform_basis"
+        },
+        "units": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "fields"
+      ]
+    },
+    "derived": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/choices_derived"
+        },
+        "inputs": {
+          "type": "object",
+          "properties": {
+            "u": {
+              "$ref": "#/$defs/text"
+            },
+            "v": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "u",
+            "v"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "inputs"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/choices_model"
+        },
+        "format": {
+          "$ref": "#/$defs/choices_format"
+        },
+        "profile": {
+          "$ref": "#/$defs/choices_profile"
+        },
+        "files": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/text"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/text"
+              },
+              "minItems": 1,
+              "uniqueItems": false
+            }
+          ]
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "minItems": 0,
+          "uniqueItems": false
+        },
+        "time": {
+          "$ref": "#/$defs/time"
+        },
+        "variables": {
+          "$ref": "#/$defs/variables"
+        },
+        "field_metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/field_metadata"
+          }
+        },
+        "interpretation": {
+          "$ref": "#/$defs/choices_interpretation"
+        },
+        "reader": {
+          "$ref": "#/$defs/reader"
+        },
+        "fa": {
+          "$ref": "#/$defs/fa"
+        },
+        "native_cubes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "records": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/text"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "vertical_position": {
+                "enum": [
+                  "mass",
+                  "interface"
+                ]
+              },
+              "sampling": {
+                "const": "center"
+              },
+              "vector_basis": {
+                "$ref": "#/$defs/choices_wind_basis"
+              },
+              "component_scaling": {
+                "const": "physical_velocity"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "records",
+              "vertical_position",
+              "sampling"
+            ]
+          }
+        },
+        "wind_pairs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wind_pair"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "transforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/transform"
+          },
+          "minItems": 0,
+          "uniqueItems": false
+        },
+        "derived": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/derived"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "files"
+      ]
+    },
+    "region": {
+      "type": "object",
+      "properties": {
+        "center": {
+          "type": "object",
+          "properties": {
+            "latitude": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "longitude": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "latitude",
+            "longitude"
+          ]
+        },
+        "track": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "file"
+          ]
+        },
+        "tracker": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "pressure_wind"
+                },
+                "on_incomplete": {
+                  "const": "error"
+                },
+                "search_width_km": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "default": 200.0
+                },
+                "refine_width_km": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "default": 100.0
+                },
+                "initial_guess": {
+                  "type": "object",
+                  "properties": {
+                    "latitude": {
+                      "type": "number",
+                      "minimum": -90,
+                      "maximum": 90
+                    },
+                    "longitude": {
+                      "type": "number",
+                      "minimum": -180,
+                      "maximum": 180
+                    },
+                    "search_radius_km": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "latitude",
+                    "longitude",
+                    "search_radius_km"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "method"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "pressure_centroid"
+                },
+                "on_incomplete": {
+                  "const": "error"
+                },
+                "convergence": {
+                  "type": "object",
+                  "properties": {
+                    "max_iterations": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "default": 15
+                    },
+                    "tolerance_m": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 250.0
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "motion": {
+                  "type": "object",
+                  "properties": {
+                    "max_iterations": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "default": 50
+                    },
+                    "solver": {
+                      "$ref": "#/$defs/choices_solver",
+                      "default": "aitken"
+                    },
+                    "relaxation": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 0.25
+                    },
+                    "tolerance_m": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 250.0
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "sampling": {
+                  "type": "object",
+                  "properties": {
+                    "r80_max_distance_km": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 250.0
+                    },
+                    "radial_step_km": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 2.5
+                    },
+                    "azimuth_step_deg": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 5.0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "method"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "utrack"
+                },
+                "on_incomplete": {
+                  "const": "error"
+                },
+                "use_gpu": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "batch_size": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 16
+                },
+                "weights_file": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "method",
+                "weights_file"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "multifield_vortex"
+                },
+                "on_incomplete": {
+                  "$ref": "#/$defs/choices_on_incomplete"
+                },
+                "profile": {
+                  "$ref": "#/$defs/text",
+                  "default": "all_no_thick",
+                  "const": "all_no_thick"
+                },
+                "numerics": {
+                  "type": "object",
+                  "properties": {
+                    "analysis_step_km": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 25.0
+                    },
+                    "refinement_km": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 2.5
+                    },
+                    "max_iterations": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "default": 20
+                    },
+                    "minimum_support": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 0.8
+                    },
+                    "minimum_samples": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "default": 16
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "quality": {
+                  "type": "object",
+                  "properties": {
+                    "minimum_parameters": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "default": 2
+                    },
+                    "pressure_rise_pa": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 50.0
+                    },
+                    "vt850_min_m_s": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 1.5
+                    },
+                    "max_separation_km": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 425.0
+                    },
+                    "max_speed_m_s": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 30.866666666666667
+                    },
+                    "speed_check_interval_hours": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "default": 6.0
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "seed": {
+                  "type": "object",
+                  "properties": {
+                    "latitude": {
+                      "type": "number",
+                      "minimum": -90,
+                      "maximum": 90
+                    },
+                    "longitude": {
+                      "type": "number",
+                      "minimum": -180,
+                      "maximum": 180
+                    },
+                    "time": {
+                      "$ref": "#/$defs/text"
+                    },
+                    "motion_u_m_s": {
+                      "type": "number"
+                    },
+                    "motion_v_m_s": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "latitude",
+                    "longitude",
+                    "motion_u_m_s",
+                    "motion_v_m_s"
+                  ]
+                },
+                "mnh_gravity_m_s2": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "method",
+                "seed"
+              ]
+            }
+          ]
+        },
+        "width_km": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "y": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "x",
+            "y"
+          ]
+        },
+        "sources_coupling_time_association": {
+          "$ref": "#/$defs/choices_association"
+        }
+      },
+      "additionalProperties": false
+    },
+    "model_grid": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/text"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "minProperties": 1
+        },
+        "processing": {
+          "type": "object",
+          "properties": {
+            "chunks": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "const": -1
+                  }
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "polar_processing": {
+      "type": "object",
+      "properties": {
+        "chunks": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "const": -1
+              }
+            ]
+          }
+        },
+        "max_target_points": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_halo_points": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "weight_zero_tolerance": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1e-06
+        },
+        "plan_cache": {
+          "type": "object",
+          "properties": {
+            "entries": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_bytes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "profile": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "field_options": {
+      "type": "object",
+      "properties": {
+        "missing_data_policy": {
+          "$ref": "#/$defs/choices_missing_data_policy"
+        },
+        "min_valid_weight_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "interpolation": {
+          "$ref": "#/$defs/choices_interpolation"
+        },
+        "sampling": {
+          "$ref": "#/$defs/choices_sampling"
+        }
+      },
+      "additionalProperties": false
+    },
+    "polar": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/text"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "minProperties": 1
+        },
+        "processing": {
+          "$ref": "#/$defs/polar_processing"
+        },
+        "missing_data_policy": {
+          "$ref": "#/$defs/choices_missing_data_policy"
+        },
+        "min_valid_weight_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "radius_km": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "radial_step_km": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "azimuth_count": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "shared_grid": {
+          "type": "boolean",
+          "default": false
+        },
+        "field_options": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/field_options"
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "radius_km"
+      ]
+    },
+    "compression": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9,
+          "default": 1
+        },
+        "coordinates": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "writer": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "$ref": "#/$defs/choices_writer_engine"
+        },
+        "unlimited_time": {
+          "type": "boolean"
+        },
+        "compression": {
+          "$ref": "#/$defs/compression"
+        },
+        "chunks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "shards": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "cpus": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "compute_workers": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "export_workers": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "native_threads": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scheduler": {
+          "$ref": "#/$defs/choices_scheduler"
+        },
+        "synchronous_export": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "institution": {
+          "type": "string"
+        },
+        "extra": {
+          "type": "object",
+          "additionalProperties": true,
+          "default": {}
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

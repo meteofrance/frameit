@@ -12,16 +12,18 @@ Create, edit, check, run
    conda activate frameit_env
    frameit init mesonh --tracking fixed_box --output region.yaml
    # Edit region.yaml for your input files, fields, region and output directory.
+   frameit inspect region.yaml
    frameit validate region.yaml --schema-only
    frameit validate region.yaml
-   frameit run region.yaml --dry-run
+   frameit config show region.yaml --effective
    frameit run region.yaml
 
 Before running, check these YAML settings:
 
-* ``input``: the selected files and their format. Paths are relative to the YAML.
-* ``variables``: source field names and native levels.
-* ``tracking`` and ``domain.width_km``: centre or method, and full widths in km.
+* ``sources``: each source's files, format, fields and native levels.
+  Paths are relative to the YAML.
+* ``region``: centre or tracker, and full widths in km.
+* ``products``: the requested model-grid, polar and optional trajectory outputs.
 * ``output.directory``: a fresh run directory. Keep ``overwrite: false`` unless
   replacement is intended.
 
@@ -37,16 +39,17 @@ Useful commands
 
 .. code-block:: bash
 
-   # Inspect a selected Meso-NH input stream.
-   frameit inspect ./data --model mesonh --format netcdf --pattern '*.nc'
-   # Show settings, including defaults.
+   # Inspect the sources selected in the request.
+   frameit inspect region.yaml --json
+   # Show the authored mapping, without adding defaults.
    frameit config show region.yaml
    # Show settings after input metadata checks.
-   frameit config show region.yaml --resolved
+   frameit config show region.yaml --effective
+   frameit capabilities
    frameit init --help
    frameit run --help
 
-Schema-only checks open no data. Validation and dry-run read metadata and
+Schema-only checks open no data. Inspection and validation read metadata and
 coordinates, not scientific field values. Execution reads the selected fields.
 
 Templates and results

@@ -40,8 +40,6 @@ import logging  # noqa: E402
 import platform  # noqa: E402
 from typing import Any  # noqa: E402
 
-_DEFAULT_INSTITUTION = "LACy, Université de La Réunion, CNRS, Météo-France"
-
 
 def _package_version(pkg_name: str) -> str | None:
     try:
@@ -65,8 +63,27 @@ def _probe_module(mod_name: str) -> dict[str, Any]:
         return out
 
 
+def _operational_arguments(parser):
+    parser.add_argument("--output-directory", type=Path,
+                        help="Override output.directory; relative paths use the launch directory")
+    parser.add_argument("--cpus", type=int, help="Override the total CPU budget (positive integer)")
+    overwrite = parser.add_mutually_exclusive_group()
+    overwrite.add_argument("--overwrite", dest="overwrite", action="store_true", default=None,
+                           help="Allow replacement of recognized run artifacts")
+    overwrite.add_argument("--no-overwrite", dest="overwrite", action="store_false",
+                           help="Refuse existing run artifacts (the default)")
+    parser.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+                        help="Override logging.level")
+
+
+def _operational_overrides(args):
+    keys = ("output_directory", "cpus", "overwrite", "log_level")
+    return {key: getattr(args, key) for key in keys
+            if getattr(args, key, None) is not None}
+
+
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="frameit", description="FrameIt CLI")
+    p = argparse.ArgumentParser(prog="frameit", description="FrameIt CLI", allow_abbrev=False)
     sub = p.add_subparsers(dest="command", required=True)
 
     # run
@@ -75,16 +92,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "config", nargs="?", default=Path("frameit.yaml"), type=Path,
         help="YAML file (default: frameit.yaml)",
     )
-    pr.add_argument(
-        "--dry-run", action="store_true",
-        help="Inspect inputs and preview the scientific plan without writing products",
-    )
-    pr.add_argument(
-        "--log-level",
-        default=None,
-        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
-        help="Override log level. If not set, uses conf.DEBUG to choose DEBUG/INFO.",
-    )
+    _operational_arguments(pr)
     pr.add_argument(
         "--no-hdf5-debug-pop",
         action="store_true",
@@ -97,21 +105,21 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="export_netcdf",
         action="store_false",
         default=None,
-        help="Disable product export (NetCDF or Zarr; enabled by default).",
+        help="Suppress publication of all declared products; keep processing and records.",
     )
     pr.add_argument(
         "--no-export-polar",
         dest="export_polar",
         action="store_false",
         default=None,
-        help="Disable polar export (enabled by default).",
+        help="Suppress publication of declared polar products.",
     )
     pr.add_argument(
         "--no-export-cartesian",
         dest="export_cart",
         action="store_false",
         default=None,
-        help="Disable cartesian export (enabled by default).",
+        help="Suppress publication of declared model-grid products.",
     )
     pr.add_argument(
         "--compress-level",
@@ -125,10 +133,6 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Institution string stored in exported files.",
     )
-    pr.add_argument("--output-directory", type=Path, default=None,
-                    help="Override output.directory (relative to the launch directory)")
-    pr.add_argument("--no-overwrite", dest="overwrite", action="store_false", default=None,
-                    help="Refuse an output directory containing previous run artifacts")
     pr.add_argument("--synchronous-export", action="store_true", default=None,
                     help="Write groups in the controlling process without an export pool")
     pr.add_argument("--max-workers", type=int, default=None,
@@ -137,7 +141,8 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Fail if the selected tracker returns an incomplete trajectory")
 
     # validate
-    pv = sub.add_parser("validate", help="Load and validate the YAML configuration (lightweight).")
+    pv = sub.add_parser("validate", allow_abbrev=False,
+                        help="Check YAML, selected metadata, dependencies and the processing plan.")
     pv.add_argument(
         "config", nargs="?", default=Path("frameit.yaml"), type=Path,
         help="YAML file (default: frameit.yaml)",
@@ -146,11 +151,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--schema-only", action="store_true", help="Validate YAML without opening datasets"
     )
     pv.add_argument("--json", action="store_true", help="Emit one structured validation report")
+    _operational_arguments(pv)
 
     from frameit.core.configuration import TEMPLATES
 
     pin = sub.add_parser(
-        "init", help="Create a minimal commented schema-v2.1 starter", allow_abbrev=False,
+        "init", help="Create a minimal commented v3 starter", allow_abbrev=False,
         epilog="Named workflows reject composition flags. Coupling: arome+nemo or mesonh+croco; "
                "both support fixed_box (default), prescribed_track, pressure_wind and pressure_centroid.")
     pin.add_argument("name", choices=("arome", "mesonh", "nemo", "croco", *TEMPLATES))
@@ -162,26 +168,35 @@ def _build_parser() -> argparse.ArgumentParser:
     pin.add_argument("--coupling", choices=("nemo", "croco"), default=None)
     pin.add_argument("--force", action="store_true", help="Replace only the selected configuration file")
 
-    pc = sub.add_parser("config", help="Display effective configuration")
+    pc = sub.add_parser("config", help="Display the authored or effective configuration",
+                        allow_abbrev=False)
     pcs = pc.add_subparsers(dest="config_command", required=True)
-    pcs_show = pcs.add_parser("show", help="Show effective settings")
+    pcs_show = pcs.add_parser("show", help="Show the authored request; use --effective for a plan",
+                              allow_abbrev=False)
     pcs_show.add_argument("config", nargs="?", type=Path, default=Path("frameit.yaml"))
     pcs_show.add_argument(
-        "--resolved", action="store_true", help="Inspect datasets and geometry-dependent defaults"
+        "--effective", action="store_true",
+        help="Check metadata and show effective settings and origins"
     )
+    pcs_show.add_argument("--json", action="store_true", help="Emit one JSON document")
+    _operational_arguments(pcs_show)
 
-    pins = sub.add_parser("inspect", help="Inspect dataset metadata, units, and grid geometry")
-    pins.add_argument("directory", type=Path)
-    pins.add_argument("--model", required=True, choices=("arome", "mesonh", "nemo", "croco"))
-    pins.add_argument("--format", choices=("grib", "netcdf", "fa"), default=None)
-    pins.add_argument("--pattern", default="*", help="Explicit input glob (default: *)")
-    pins.add_argument("--fa-profile", choices=("arome_history", "surfex_history"), default=None)
-    pins.add_argument("--fa-fields", nargs="+", default=[],
-                      help="Probe native FA encoding flags without decoding values")
-    pins.add_argument("--fa-backend", choices=("epygram",), default=None,
-                      help="FA decoder: epygram (default)")
-    pins.add_argument("--fa-python", default=None,
-                      help="Optional path to the FA helper's Python interpreter")
+    pins = sub.add_parser("inspect", allow_abbrev=False,
+                          help="Inspect sources in a YAML request, including unfinished selections")
+    pins.add_argument("config", type=Path, help="The same YAML used by validate and run")
+    pins.add_argument("--json", action="store_true", help="Emit one structured metadata report")
+
+    capabilities_parser = sub.add_parser(
+        "capabilities", allow_abbrev=False,
+        help="Show implemented support, dependencies, maturity and limits")
+    capabilities_parser.add_argument("--json", action="store_true",
+                                     help="Emit one structured support report")
+
+    status_parser = sub.add_parser(
+        "status", allow_abbrev=False,
+        help="Show last-recorded run facts without the original inputs")
+    status_parser.add_argument("run_directory", type=Path,
+                               help="Directory containing run-status.yaml")
 
     # info (fusion of version and doctor, verbose by default)
     pi = sub.add_parser(
@@ -260,11 +275,52 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False) -> int:
-    from frameit.core.preflight import collect_preflight
+def _load_config(path, overrides):
+    from frameit.core.configuration import load_runtime
+    from frameit.core.settings_class import SimulationConfig
+    from frameit.io.loader import _apply_model_presets
+    from frameit.utils.logging import frameit_logging_scope
 
-    return _print_preflight(collect_preflight(cfg_path, schema_only=schema_only),
-                            json_output=json_output)
+    runtime = load_runtime(path, launch_dir=Path.cwd(), overrides=overrides)
+    with frameit_logging_scope(None, level=runtime["log_level"]):
+        for handler in logging.getLogger("frameit").handlers:
+            handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+        return SimulationConfig(**_apply_model_presets(runtime, strict_locked=True))
+
+
+def _report_failure(exc, command):
+    from frameit.core.reports import (
+        PreflightResult,
+        blocked_check,
+        exception_diagnostics,
+    )
+
+    errors = exception_diagnostics(
+        exc, path="configuration", expected="valid v3 configuration",
+        observed={"cause": str(exc)}, repairs=[f"Correct the reported prerequisite: {exc}"])
+    return PreflightResult(command, errors=errors, deferred_checks=[blocked_check(
+        "plan", [error.path for error in errors],
+        "Dependent planning and execution are blocked until these errors are repaired.")])
+
+
+def _collect_report(path, *, command, schema_only=False, overrides=None):
+    from frameit.core.preflight import collect_preflight
+    from frameit.utils.logging import frameit_logging_scope
+
+    try:
+        request = _load_config(path, overrides or {})
+        with frameit_logging_scope(None, level=request.log_level):
+            for handler in logging.getLogger("frameit").handlers:
+                handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+            return collect_preflight(request, command=command, schema_only=schema_only)
+    except (OSError, ValueError, ImportError) as exc:
+        return _report_failure(exc, command)
+
+
+def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False, overrides=None) -> int:
+    return _print_preflight(_collect_report(
+        cfg_path, command="validate", schema_only=schema_only, overrides=overrides),
+        json_output=json_output)
 
 
 def _print_preflight(result, *, json_output=False):
@@ -329,30 +385,54 @@ def _cmd_info(short: bool) -> int:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     from frameit.core.execution import ExecutionOptions, execute_simulation
-    from frameit.core.settings_class import SimulationConfig
 
-    conf = SimulationConfig.from_yaml_with_model_preset(args.config)
-    if args.output_directory is not None:
-        destination = str(args.output_directory.resolve())
-        conf.frameit_output_dir = destination
-        conf.yaml_config["output"]["directory"] = destination
-        conf.schema_sources["output.directory"] = "execution_override"
+    conf = _load_config(args.config, _operational_overrides(args))
     options = ExecutionOptions.from_config(
         conf, export_netcdf=args.export_netcdf, export_polar=args.export_polar,
         export_cart=args.export_cart, compress_level=args.compress_level,
-        institution=args.institution, log_level=args.log_level,
+        institution=args.institution,
         no_hdf5_debug_pop=args.no_hdf5_debug_pop,
-        overwrite=args.overwrite, synchronous_export=args.synchronous_export,
+        synchronous_export=args.synchronous_export,
         max_workers=args.max_workers, require_complete_tracking=args.require_complete_tracking,
     )
-    if args.dry_run:
-        from frameit.core.preflight import collect_preflight
-
-        return _print_preflight(collect_preflight(conf, command="run", execution_options=options))
+    for attr, path in (("compress_level", "output.writer.compression.level"),
+                       ("institution", "metadata.institution")):
+        if getattr(args, attr) is not None:
+            options.setting_sources[path] = "cli"
+    from frameit.core.reports import render_run_summary
     from frameit.core.runtime import termination_scope
 
-    with termination_scope():
-        result = execute_simulation(conf, options)
+    try:
+        with termination_scope():
+            result = execute_simulation(conf, options)
+    except BaseException as exc:
+        try:
+            attested = getattr(exc, "_frameit_failure", None)
+            if attested is not None:
+                print(render_run_summary(attested["facts"], root=attested["root"]))
+            else:
+                print(render_run_summary({
+                    "state": ("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
+                              else "failed"),
+                    "error": {"type": type(exc).__name__, "message": str(exc)},
+                    "current_attempt": (
+                        "Inventory unavailable; no owning final facts were returned. "
+                        "On-disk status may belong to an earlier or concurrent attempt. "
+                        "Use frameit status for separate last-recorded information."),
+                }, root=conf.output_dir))
+        except BaseException:
+            # Reporting must preserve the primary failure, including interruptions.
+            pass
+        raise
+    plan = conf.simulation_parameter.get("request_plan", {})
+    print(render_run_summary({
+        "state": "completed" if result.tracking_complete else "incomplete",
+        "products": result.products, "pending": [],
+        "tracking_termination_reason": result.tracking_termination_reason,
+        "warnings": plan.get("warnings", []),
+        "exclusions": {name: source.get("excluded_files", [])
+                       for name, source in plan.get("sources", {}).items()},
+    }, root=result.output_dir))
     return 0 if result.ok else 1
 
 
@@ -363,47 +443,28 @@ def _print_yaml(value):
 
 
 def _cmd_config(args):
-    from frameit.core.settings_class import SimulationConfig
+    if args.effective:
+        return _print_preflight(_collect_report(
+            args.config, command="config show --effective", overrides=_operational_overrides(args)),
+            json_output=args.json)
+    if _operational_overrides(args):
+        raise ValueError("Operational overrides require config show --effective")
+    from frameit.core.configuration import read_yaml
 
-    if args.resolved:
-        from frameit.core.preflight import collect_preflight
+    authored = read_yaml(args.config)
+    if args.json:
+        import json
 
-        return _print_preflight(collect_preflight(args.config, command="config show --effective"))
+        from frameit.core.reports import _metadata_view
+
+        print(json.dumps(_metadata_view(authored), indent=2, ensure_ascii=False, allow_nan=False))
     else:
-        conf = SimulationConfig.from_yaml(args.config)
-        _print_yaml(conf.yaml_config)
+        _print_yaml(authored)
     return 0
 
 
 def _cmd_inspect(args):
-    if args.format == "fa":
-        from frameit.io.fa_backend import inspect_fa
-
-        paths = sorted(path for path in args.directory.glob(args.pattern) if path.is_file())
-        if not paths:
-            raise FileNotFoundError("No FA inspection inputs match the selected pattern")
-        _print_yaml({"format": "fa", "inputs": [{"path": str(path), **inspect_fa(
-            path, args.fa_profile, args.fa_fields, validate_selection=False,
-            backend=args.fa_backend or "epygram", python_executable=args.fa_python)}
-            for path in paths],
-            "interpretation": "Raw native metadata; scientific field definitions and "
-                              "projected Earth shape must be declared before execution"})
-        return 0
-    if (args.fa_profile is not None or args.fa_fields
-            or args.fa_backend is not None or args.fa_python):
-        raise ValueError("--fa-profile/--fa-fields/--fa-backend/--fa-python require --format fa")
-    from frameit.core.preflight import preflight
-    from frameit.core.settings_class import SimulationConfig
-
-    conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": args.model,
-        "input": {"directory": str(args.directory.resolve()), "pattern": args.pattern,
-                  "format": args.format},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": 0., "longitude": 0.}}},
-    })
-    _print_yaml(preflight(conf, check_output=False, include_variable_metadata=True))
-    return 0
+    return _print_preflight(_collect_report(args.config, command="inspect"), json_output=args.json)
 
 
 def _cmd_prepare_ci_dataset(args: argparse.Namespace) -> int:
@@ -469,14 +530,16 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     # Minimal fallback logging for unexpected errors before FrameIt logging is configured
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+    logging.basicConfig(level=getattr(logging, getattr(args, "log_level", None) or "INFO"),
+                        format="%(levelname)s:%(name)s:%(message)s")
 
     try:
         if args.command == "run":
             code = _cmd_run(args)
         elif args.command == "validate":
             code = _cmd_validate(
-                args.config, schema_only=args.schema_only, json_output=args.json)
+                args.config, schema_only=args.schema_only, json_output=args.json,
+                overrides=_operational_overrides(args))
         elif args.command == "init":
             from frameit.core.configuration import write_template
 
@@ -492,6 +555,19 @@ def main(argv: list[str] | None = None) -> None:
             code = _cmd_config(args)
         elif args.command == "inspect":
             code = _cmd_inspect(args)
+        elif args.command == "capabilities":
+            from frameit.core.configuration import capabilities
+            from frameit.core.reports import PreflightResult
+
+            code = _print_preflight(PreflightResult(
+                "capabilities", facts={"capabilities": capabilities()}), json_output=args.json)
+        elif args.command == "status":
+            from frameit.core.reports import render_run_summary
+            from frameit.core.run_state import read_run_status
+
+            facts = read_run_status(args.run_directory)
+            print(render_run_summary(facts, root=args.run_directory.resolve(), recorded=True))
+            code = 0 if facts["state"] in {"completed", "incomplete"} else 1
         elif args.command == "info":
             code = _cmd_info(short=bool(args.short))
         elif args.command == "prepare-ci-dataset":

@@ -140,7 +140,7 @@ MNH preparation settings above. Check regenerated inputs with:
 
    frameit init mesonh --tracking pressure_centroid --output mnh.yaml
    frameit validate mnh.yaml
-   frameit run mnh.yaml --dry-run
+   frameit config show mnh.yaml --effective
 
 Edit the generated paths before validation. A complete example is
 ``example/config_file/conf_pressure_centroid_mnh.yml``.

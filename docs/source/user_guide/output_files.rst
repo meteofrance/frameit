@@ -138,6 +138,21 @@ must not be inferred successful from the presence of one file. Atomic publicatio
 is per product, not an all-products transaction or an fsync durability guarantee.
 See :doc:`/getting_started/hpc` for states, ownership and retry policy.
 
+Read the last-recorded result without reopening the original archive:
+
+.. code-block:: bash
+
+   frameit status ./results
+
+The summary distinguishes actual publications from plans and shows recorded
+fields/paths, warnings, exclusions, failures and pending work. It does not verify
+payload values or infer process liveness from ``running``. A successful status
+command is not scientific validation.
+Recorded ``completed`` or accepted ``incomplete`` returns exit code 0.
+``running``, ``failed``, ``interrupted`` or unreadable required records returns 1.
+Syntax errors return 2.
+An accepted shortened track remains visibly incomplete.
+
 The attempt captures ``run-request.yaml`` before processing. It keeps the
 original parsed YAML or mapping, operational overrides, requested execution
 options, available code identity and configuration/launch path bases. Editing

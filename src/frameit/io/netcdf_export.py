@@ -1125,7 +1125,11 @@ def export_outputs(
 
         results = {}
         runner.published_products = []
-        planned = conf.simulation_parameter["request_plan"]["products"]
+        planned = [item for item in conf.simulation_parameter["request_plan"]["products"]
+                   if (item["product"] != "model_grid" or export_cart)
+                   and (item["product"] != "polar" or export_polar)]
+        if not planned:
+            return results
         destinations = OutputPaths(root).planned_products(planned)
         field_datasets = [runner.field_products[(item["source"], item["product"])]
                           for item in planned if item["product"] != "track"]

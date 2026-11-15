@@ -23,10 +23,10 @@ Inspect and declare exact associations
 
 .. code-block:: bash
 
-   frameit inspect ./data --model arome --format fa --pattern '*.fa' \
-       --fa-profile arome_history --fa-fields S003TEMPERATURE
-   # Add --fa-python /path/to/runtime/bin/python only for a separate runtime.
+   frameit inspect frameit.yaml
 
+Use the declared source files/profile and exact record associations in the YAML.
+For a separate runtime, set source ``reader.python_executable``.
 Inspection reads selected metadata, not physical field payloads. Preflight uses
 lazy NaN shape placeholders, never physical zeroes or decoded data. A selected
 spectral record or native -91/-93/-94 error fails before physical decoding; it

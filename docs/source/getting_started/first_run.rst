@@ -26,7 +26,7 @@ Inspect the input:
 
 .. code-block:: bash
 
-   frameit inspect ./data --model arome --format netcdf --pattern first-run.nc
+   frameit inspect frameit.yaml
 
 Check the reported field names, units, times and coordinates. For this file,
 the field to extract is ``instructional_scalar``.
@@ -41,19 +41,19 @@ This is the starter created by ``frameit init``:
 
 The main choices are:
 
-* ``schema_version: "2.1"`` identifies the configuration format. Keep the quotes.
-* ``model: arome`` selects the input adapter. Choose the adapter for your source,
-  not the quantity you want to study.
-* ``input.directory`` and ``input.pattern`` select files. Here they select
-  ``data/first-run.nc``. Relative paths start at the YAML file's directory.
-* ``input.format: netcdf`` declares the file format.
-* ``variables.fields_2d.names`` lists the fields to extract. Only the example
-  scalar is selected here. Field names and units come from the source.
-* ``tracking.method: fixed_box`` keeps one geographical centre at every time.
-  The centre uses degrees north and east.
-* ``domain.width_km`` sets **full widths**, not half-widths. This 4×4 km request
+* Integer ``schema_version: 3`` identifies the configuration format.
+* ``sources.atmosphere.model: arome`` selects the input adapter. Choose the
+  adapter for your source, not the quantity you want to study.
+* Source ``files`` selects ``data/first-run.nc`` and ``format: netcdf`` declares
+  its format. Relative paths start at the YAML file's directory.
+* Source ``variables.2d`` selects the example scalar. Field names and units come
+  from the source.
+* ``region.center`` keeps one geographical centre at every time, in degrees
+  north and east.
+* ``region.width_km`` sets **full widths**, not half-widths. This 4×4 km request
   selects 5×5 native points on this grid. It does not create a new grid.
-* ``polar.enabled: false`` leaves polar sampling off.
+* ``products.model_grid: true`` requests native-grid fields only, without polar
+  sampling or an exported trajectory.
 * ``output.overwrite: false`` protects existing products.
 
 Name your run
@@ -71,7 +71,7 @@ unchanged; do not add a second ``run`` or ``output`` block.
 
 ``run.name`` supplies the product filename prefix. ``output.directory`` sets the
 run directory. These choices give filenames such as
-``results/products/first-run.cart.surface.nc``.
+``results/products/first-run.atmosphere.model_grid.nc``.
 
 Check before running
 ---------------------
@@ -80,13 +80,13 @@ Check before running
 
    frameit validate --schema-only
    frameit validate
-   frameit run --dry-run
+   frameit config show frameit.yaml --effective
 
 Without a filename, these commands read ``frameit.yaml``.
 
 * ``--schema-only`` checks YAML keys, types and declared choices. It opens no data.
 * ``validate`` also checks input metadata, units, coordinates and required fields.
-* ``--dry-run`` shows the settings and planned products without writing them.
+* ``config show --effective`` shows settings and planned products without writing them.
 
 Check that the preview selects the intended work. Validation reads metadata and
 coordinates; field values are read during execution.
@@ -105,18 +105,18 @@ Run and check the result
 .. code-block:: bash
 
    frameit run
-   grep -E '^(state|tracking_complete):' results/run-status.yaml
+   frameit status ./results
 
 Expect ``state: completed`` and ``tracking_complete: true``. The products are:
 
-* ``results/products/first-run.track.nc``: the centre and native grid indices;
-* ``results/products/first-run.cart.surface.nc``: the scalar window and coordinates.
+* ``results/products/first-run.atmosphere.model_grid.nc``: the scalar window and
+  its native-grid coordinates. A fixed centre alone does not request a track file.
 
 Open the scalar with xarray, without importing FrameIt:
 
 .. code-block:: bash
 
-   python -c 'import xarray as xr; d=xr.open_dataset("results/products/first-run.cart.surface.nc", engine="netcdf4"); print(d.instructional_scalar.isel(time=0).values); print(d.instructional_scalar.attrs); d.close()'
+   python -c 'import xarray as xr; d=xr.open_dataset("results/products/first-run.atmosphere.model_grid.nc", engine="netcdf4"); print(d.instructional_scalar.isel(time=0).values); print(d.instructional_scalar.attrs); d.close()'
 
 The first time has units ``1`` and these values:
 
