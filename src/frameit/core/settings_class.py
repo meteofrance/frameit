@@ -150,6 +150,7 @@ class SimulationConfig:
     schema_version: int | str = 1
     yaml_config: dict[str, Any] = field(default_factory=dict)
     schema_sources: dict[str, str] = field(default_factory=dict)
+    request_context: dict[str, Any] | None = field(default=None, repr=False, kw_only=True)
     infer_grid_geometry: bool = False
     grid_geometry: dict[str, Any] = field(default_factory=dict)
     input_pattern: str | None = None
@@ -300,6 +301,12 @@ class SimulationConfig:
     # Validation
     # -----------------------
     def __post_init__(self):
+        self.request_context = copy.deepcopy(self.request_context) if self.request_context else {
+            "request_kind": "runtime", "authored_configuration": None, "request_path": None,
+            "path_bases": {"configuration_directory": None,
+                           "launch_directory": str(Path.cwd().resolve())},
+            "overrides": {},
+        }
         if type(self.polar_shared_target) is not bool:
             raise ValueError("polar_shared_target must be a boolean")
         if self.file_type == "fa":

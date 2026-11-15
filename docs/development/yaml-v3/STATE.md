@@ -39,8 +39,8 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 08 | done | Task08 worker + lead + independent reviewer | 07 | `db6258e`; review approved after two fix rounds; frozen handoff below. |
 | 09 | done | Task09 worker + lead + independent reviewer | 06, 08 | `393e7d9`; approved I1/I2 closure; frozen handoff below. Minor3 retained19. |
 | 10 | done | Task10 worker + lead + independent reviewer | 09 | `2a77b1d`; C7 approved after I1–I3/N1 closures; frozen handoff below. |
-| 11 | done | Task11 worker + lead + independent reviewer | 10 | C8 independently approved after origin fix; frozen handoff below. Local commit recorded in ledger. |
-| 12 | blocked | lead | 10 | Run state, execution and writer callbacks; early request and publication facts. |
+| 11 | done | Task11 worker + lead + independent reviewer | 10 | `c7d1c65`; C8 independently approved after origin fix; frozen handoff below. |
+| 12 | done | Task12 worker + lead + independent reviewer | 10,11 | Records/checkpoints independently approved after I1; frozen handoff below. Local commit recorded in ledger. |
 | 13 | blocked | lead | 11, 12 | Preflight/configuration/coupled; common reports and independent errors. |
 | 14 | blocked | lead | 13 | Runner/execution/coupled/logging; integrated execution and progress. |
 | 15 | blocked | lead | 14 | CLI/configuration/templates/schema assets; preserved init and v3 commands. |
@@ -2891,6 +2891,171 @@ request/status/interruption12, CLI/producers13–16, HPC18, documentation20 and
 human scientific/usability21. Task09Minor3 remains19/final debt. The reporting
 fix's prescribed checks are complete; no unresolved new C8 review gap remains.
 No source-data write, package repair, push or merge. Commit locally before12.
+
+## Task12 active scope and record contract
+
+Basec7d1c658f6b9e7df0f69439e014efb42b5abaa57; clean tree verified after commit.
+Approved12 remains bounded: extend existing ownership/status/provenance and
+parent writer completion, plus necessary authored-context capture at existing
+configuration/settings boundaries. No new service/parser/scientific schema or
+replay. Lead owns public docs/STATE/contracts/commits; one fresh implementer.
+
+Ruling: use one `run-request.yaml` metadata envelope plus existing records,
+not separate authored/override files or a journal. Why: preserve the approved
+early snapshot with the smallest shared state. Cost if wrong: reader integration
+or capture rework, addressed by Task12 independent review before Task15 consumes it.
+`task-12-record-contract.md` freezes record_version1, authored mapping/kind/path,
+configuration/launch bases, raw overrides, requested options and runtime/code
+identity. Status/provenance retain actual products separately from planned,
+pending phases and updated_at. Existing metadata filenames stay unchanged.
+Authored mapping capture does not claim original bytes/comments or input identity.
+
+Ruling: retain pre-ownership CPU/source/path/binding safety; only the already-owned
+failure window requires early records. Parent callbacks checkpoint actual atomic
+returns in both export modes; no eager reads/progress service or altered physics.
+Stale running/locks and SIGKILL/Zarr gaps remain honest limits, not auto-recovery.
+These are technical decisions within the approved task, not human scientific
+choices or a replacement plan requiring repeated scope approval.
+
+Task12 prior required inventory is62nodes45passed/16failed/1error. No post-fix11
+full exists: the saved composite2430node baseline combines2421pre-fix full nodes
+and613post-fix covered nodes/9newpasses, preserving freshness per node rather than
+claiming a current full. Task12 must run its own focused/covering/required checks
+and one final full after freeze. No Task12 implementation/result is implied by
+opening the task; all11workers/reviewers are idle.
+
+The first frozen Task12 candidate reports55new passes and required62 retains
+45passed/16failed/1error. Its single full exercises2485nodes:
+2015passed/468failed/2errors, retaining all2430mixed-age baseline outcomes.
+This does not cover the separately found positional-constructor defect: the
+new internal field shifts old optional arguments. Lead reproduces the actual
+old position71 silently binding to request_context instead of infer_grid_geometry.
+
+Ruling: preserve that candidate/full/freeze and lift source freeze only to make
+the new field keyword-only, retaining old positional order/defaults and adding
+a compact actual-construction regression. No second full for this one-field
+correction: the full is explicitly pre-correction; covering/required checks,
+exact unchanged-behavior proof and independent review must qualify the final
+candidate, with Task19/full integration still required. All prior tests,
+evidence/fixture hashes and scientific paths remain unchanged. No Task12 lead
+runtime/docs acceptance, source fix or completion is claimed merely by this ruling.
+
+The bounded constructor correction is frozen: kw_onlyTrue restores old optional
+positional/order/match-argument semantics. All55prior cases remain byte-exact,
+with1newconstructor regression. Fresh lead56passes/175warnings/23.59s; covering
+574passed/16failed/1error and required45passed/16failed/1error independently
+corroborated, every covered old outcome/complete cause retained.591distinct
+post-correction nodes tested;1895full nodes unrun afterward. Full2015/468/2 stays
+PRE-CORRECTION only, not a new full result.
+
+All172freeze hashes,170other paths, original tests/artifact contents and9fixture
+hashes match. Older evidence has4388exact current files plus append-only lead
+ledger prefixes, not4389current whole-file hashes. Fresh aligned6path Ruff41→39/
+noNew. All3unchanged scientific harnesses pass4/3/6hashes; four independent YAML
+readers verify actual request/base/options/code and status/provenance/inventory
+records without FrameIt/archive reads. Strict62/publication/13unit and text-only
+live1020/320five-page layout checks pass. Canonical output62 remains available,
+no image/pixel/human claim. Fresh independent Task12 spec/quality review is next;
+original worker idle, source/tests frozen, no Task12 staging/commit yet.
+
+Independent12review reports0Critical/1Important/0Minor: a yielded successful
+future is marked observed before descriptor retention, so caught parent SIGTERM
+in that window makes the drain skip its actual completed publication. Lead
+reproduces it on the exact current parent loop (retained1control,0/exit143signal),
+without source/product writes. This is not the documented uncatchable-loss gap.
+
+Original implementer owns fix1/5 in parent export accounting plus appended
+regressions; preserve all56existing cases and every scientific/capture/constructor/
+resource/ownership boundary. Actual retention must be exactly once even when a
+callback fails after retention. No new scan/service/signal policy.
+Ruling: targeted TDD/same8file covering/required62 and exact scope proof, not a
+second unfiltered full for this bounded accounting lane. Existing2015/468/2full
+remains pre-constructor/pre-I1 only; final19/full integration and scoped independent
+closure remain required. No Task12 commit or Task13 dispatch before closure.
+
+Task12 I1 fix1 is frozen and lead-verified: parent guards actual retained paths
+and drains successful results without relying on iterator observation. Fresh
+lead64cases pass207warnings/38.93s, including real spawned-writer SIGTERM/callback
+before/after retention and exactly-once status/provenance/callback checks.
+All56old cases exact; scope preserves170other paths and172freeze hashes, prior
+evidence contents/explicit mutable-handoff history and9fixture hashes.
+
+Lead raw XML corroborates covering582passed/16failed/1error (591old unchanged+
+8newpasses), required45passed/16failed/1error, complete failed/error causes
+unchanged.599distinct post-I1 nodes tested;1895historical full nodes unrun.
+Full2015/468/2 remains pre-constructor/pre-I1 only. Fresh fix-path Ruff3existing/
+noNew. Public source unchanged; strict63/publication/13unit pass,5HTMLpages equal62,
+live1020/320text-only bounds pass. No image/pixel/human or extra full/benchmark
+claim. Original-reviewer I1/new-fix-breakage closure is next; no Task12 commit.
+
+## Task12 frozen handoff — independently approved
+
+Original review plus scoped fix1 approve spec/quality; I1 closed with no new
+Critical/Important/Minor finding. The earlier positional constructor issue is
+corrected. No open or parked Task12 finding. Final reviewed tree:
+`7add8194bd499560db0ec618395ecb6cd6cac692`.
+
+Task13–15 consume these interfaces without redefining the frozen record contract:
+
+- `to_runtime(raw, *, base_dir=None, launch_dir=None, overrides=None)` and
+  `load_runtime(path, *, launch_dir=None, overrides=None)` preserve parsed
+  authored values/omissions and original configuration/launch bases before
+  resolution. Operational overrides reuse existing precedence/origins, retaining
+  raw path text. Presets copy the context; no second parser/precedence system.
+- `SimulationConfig.request_context` is a copied, keyword-only internal field.
+  Old positional/keyword parameters/defaults/match ordering are preserved.
+  Runtime-only callers explicitly lack an authored configuration/base rather
+  than inventing one. No new public YAML key.
+- `owned_run(root, *, overwrite, initial, request=None, provenance=None)` keeps
+  the exclusive lock/yielded status API. The request is written once after
+  ownership, before processing; all four records join source/alias/no-clobber/
+  recognized-replacement checks. Unsafe pre-ownership guards still fail without
+  creating an attempt. Old unknown artifacts/locks/partials are not reclaimed.
+- `checkpoint_run(root, status, provenance=None)` persists actual/pending facts
+  and UTC updated_at, not liveness. Provenance failure still attempts authoritative
+  status; a failed terminal checkpoint cannot claim completed/incomplete.
+  Record names/fields/path bases are frozen in task-12-record-contract.md.
+- Existing `export_outputs(..., on_published=None)` invokes its optional v3
+  callback only in the owning parent after atomic publication/reopened facts.
+  Actual retained paths guard duplicate accounting/callback replay; graceful
+  drain revisits successful results even if interrupted before retention.
+  Execution recovery consumes retained descriptors. No archive scan/worker
+  callback/new registry or changed scientific writer.
+- Actual products stay separate from common planned descriptors. Processing/
+  publication/cleanup pending phases clear only at observed boundaries.
+  Known effective controls/resources/binding facts are saved early and later
+  source/backend facts refreshed on failures as well as success.
+
+Final lead64passes/207warnings/38.93s; covering582passed/16failed/1error and
+required62:45passed/16failed/1error. All591pre-I1 covered outcomes plus8newpasses
+are preserved, with complete causes per failed/error node.599distinct post-I1
+nodes tested;1895historical full nodes unrun afterward. Full2015/468/2 remains
+PRE-CONSTRUCTOR/PRE-I1 only, not a current full-suite result.
+172frozen hashes,170other Python paths, original56test prefix, exact non-parent
+AST/old evidence contents/explicit mutable handoff history and9input hashes are
+verified. Fix-path Ruff3existing/noNew; no unrelated lint/environment repair.
+
+Five canonical pages explain all four records, original bases, pending/actual
+facts and failure/retry limits. Strict63/publication/13unit pass; five HTML pages
+equal62 with text-only desktop/320bounds checked. Earlier unchanged scientific
+harnesses/ordinary metadata readers remain pre-I1; fresh real-writer boundary
+tests and exact unchanged numerical/encoding paths support the bounded fix.
+No plot/image/pixel/human approval or extra full/benchmark.
+
+Scientific impact: no new method/default, physical quantity/unit/basis, sampling,
+mask/clock/precision/grid/coordinate schema or scientific sign-off. Compatibility:
+additive request metadata/loader keywords and parent callback, stricter refusal
+of unrecognized record replacement; old constructor and ordinary writer usage
+remain. Sources/data and agreed C4/C6/C7/C8 safeguards are preserved.
+
+Retained limits: status/provenance are separate atomic checkpoints, not an fsync
+or cross-record/product transaction. SIGKILL/native loss may retain last-known
+running/locks/partials/uncheckpointed output; Zarr replacement has its visibility
+gap. No scan/repair/replay/resume or liveness inference.
+Cannot-verify items map to approved later owners, not new unresolved Task12 gaps:
+CLI/producers13–16, HPC18, native/warnings/full integration19, docs20, human21.
+Inherited470failure/error causes and Task09Minor3 remain explicit. No source-data
+write, package repair, push or merge. Commit locally before13.
 
 ## Task 01 evidence
 

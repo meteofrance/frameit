@@ -170,6 +170,8 @@ preparation, caches and export have separate costs.
 ``incomplete``, ``failed`` and ``interrupted``. ``completed`` is written only
 after requested exports and input cleanup; its inventory uses relative product
 paths and sizes. Check the expected times and permitted masks before using products.
+Running checkpoints retain observed complete publications separately from planned
+products. ``updated_at`` records a checkpoint, not proof that the process is alive.
 
 Without strict tracking, an accepted shortened trajectory can exit zero but is
 marked ``incomplete``. ``execution.require_complete_tracking: true`` or the
@@ -199,6 +201,8 @@ use the current manifest inventory.
 Keep the run records
 ------------------------------------------------------------
 
-Keep job accounting, checker reports, configuration, status and provenance with
-the products. For a failed run, include the scheduler and FrameIt error logs
+Keep job accounting, checker reports and all four :doc:`run records
+<../user_guide/output_files>` with the products. ``run-request.yaml`` retains the
+authored request, overrides and original path bases even if the original YAML
+is edited or moved. For a failed run, include scheduler and FrameIt error logs
 when asking for help.

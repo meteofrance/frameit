@@ -1176,16 +1176,16 @@ PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/t
 **Interfaces:** extend `owned_run` and the existing status/provenance records.
 Freeze record filenames/path bases for Task 15's reader before delegation.
 
-- [ ] Test failure after ownership but before source processing. Preserve an immutable
+- [x] Test failure after ownership but before source processing. Preserve an immutable
   authored request, operational overrides, code identity, and original path bases.
   Editing/moving the original YAML must not change the saved request's meaning.
-- [ ] Test failure/interruption after the first successful product publication.
+- [x] Test failure/interruption after the first successful product publication.
   Inventory that product accurately; distinguish planned, failed, and incomplete work.
-- [ ] Test existing locks/artifacts, explicit replacement, orphan partial products,
+- [x] Test existing locks/artifacts, explicit replacement, orphan partial products,
   stale running status, and the documented Zarr replacement visibility limit.
-- [ ] Save actual effective facts as they become known. Keep pending facts explicit;
+- [x] Save actual effective facts as they become known. Keep pending facts explicit;
   do not publish a misleading completed configuration or erase failure evidence.
-- [ ] Review recovery behavior and run-directory docs.
+- [x] Review recovery behavior and run-directory docs.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_hpc_execution.py src/frameit/testing/numerical/test_output_layout.py src/frameit/testing/numerical/test_zarr_export.py

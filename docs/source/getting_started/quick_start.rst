@@ -64,8 +64,8 @@ workflow. For example:
 Edit the starter using your source metadata. Polar sampling stays off unless selected.
 
 Check ``run-status.yaml`` under your output directory, then open the listed
-products with an ordinary NetCDF/Zarr reader. Keep ``resolved-config.yaml`` and
-``run-provenance.yaml`` with the data.
+products with an ordinary NetCDF/Zarr reader. Keep ``run-request.yaml``,
+``resolved-config.yaml``, ``run-provenance.yaml`` and ``run-status.yaml`` with the data.
 
 See :doc:`../task_guides/fixed_region` for a worked extraction,
 :doc:`../user_guide/configuration_file` for settings, and

@@ -223,6 +223,47 @@ def _input_path_locations(paths):
     return locations
 
 
+def _run_provenance(config, options, status, runtime):
+    from frameit.core.configuration import resolved_sources
+
+    sources = config.simulation_parameter.get("request_plan", {}).get("sources", {})
+    return {
+        "runtime": runtime, "execution_resources": status["resources"],
+        "time_alignment": config.simulation_parameter.get("time_alignment", {}),
+        "sources": config.simulation_parameter.get("source_provenance", {}),
+        "binding": {name: {
+            "status": source.get("requests", {}).get("binding", {}).get("status"),
+            "model": source.get("model"), "format": source.get("format"),
+            "files": source.get("files"),
+            "selected_times": [str(value) for value in source.get("selected_times", [])],
+            "excluded_files": source.get("excluded_files", []),
+        } for name, source in sources.items()},
+        "common_polar_target": config.simulation_parameter.get("common_polar_target"),
+        "fa_inputs": config.simulation_parameter.get("fa_inputs", []),
+        "grid_geometry": config.grid_geometry,
+        "input_inventory": list(dict.fromkeys(
+            str(path) for source in sources.values() for path in source.get("files") or [])),
+        **{key: config.simulation_parameter.get(key, []) for key in (
+            "unit_provenance", "surfex_provenance", "current_provenance", "wind_provenance",
+            "wind_transformations", "selected_levels")},
+        "tracking_inputs": config.simulation_parameter.get(
+            "multifield_inputs", config.simulation_parameter.get("pressure_centroid_inputs", {})),
+        "execution_options": asdict(options),
+        "setting_sources": resolved_sources(config, options),
+        "preset_provenance": {key: value for key, value in config.simulation_parameter.items()
+                              if key.startswith("preset_")},
+    }
+
+
+def _recorded_product(product, root):
+    path = Path(product["path"])
+    return {
+        **product, "path": str(path.relative_to(root.resolve())),
+        "size_bytes": (sum(entry.stat().st_size for entry in path.rglob("*") if entry.is_file())
+                       if path.is_dir() else path.stat().st_size),
+    }
+
+
 def execute_simulation(
     config: SimulationConfig,
     options: ExecutionOptions | None = None,
@@ -235,6 +276,8 @@ def execute_simulation(
     input cleanup complete. A permitted shortened track is marked incomplete;
     strict batch callers may require full tracking explicitly.
     """
+    from copy import deepcopy
+
     from frameit.core.run_state import owned_run
     from frameit.core.runtime import (
         execution_scope,
@@ -282,7 +325,8 @@ def execute_simulation(
         input_locations = _input_path_locations(inputs)
         targets = planned_paths
         targets += [config.output_dir / name for name in (
-            "resolved-config.yaml", "run-provenance.yaml", "run-status.yaml", ".frameit-run.lock")]
+            "run-request.yaml", "resolved-config.yaml", "run-provenance.yaml",
+            "run-status.yaml", ".frameit-run.lock")]
         for target in targets:
             if target.exists() and any(path.exists() and target.samefile(path) for path in inputs):
                 raise ValueError(f"Output would replace a source input: {target}")
@@ -295,15 +339,33 @@ def execute_simulation(
 
         check_zarr_dependencies()
     runtime = runtime_provenance(resources)
-    with owned_run(config.output_dir, overwrite=effective.overwrite, initial={
+    initial = {
         "runtime": runtime, "resources": resources,
         "requested_execution_options": asdict(requested),
         "effective_execution_options": asdict(effective),
-    }) as status:
+        "planned_products": deepcopy(config.simulation_parameter.get(
+            "request_plan", {}).get("products", [])),
+        "pending": ["processing", "publication", "cleanup"],
+    }
+    request = {"record_version": 1, **deepcopy(config.request_context),
+               "requested_execution_options": asdict(requested), "runtime": deepcopy(runtime)}
+    provenance = (_run_provenance(config, effective, initial, runtime)
+                  if config.schema_version == 3 else None)
+    if provenance is not None:
+        provenance["layouts"] = prepared_sources[0].get("layouts")
+    with owned_run(config.output_dir, overwrite=effective.overwrite, initial=initial,
+                   request=request, provenance=provenance) as status:
+        if config.schema_version == 3:
+            from frameit.core.configuration import resolved_configuration
+            from frameit.utils.atomic import write_yaml_atomic
+
+            write_yaml_atomic(config.output_dir / "resolved-config.yaml",
+                              resolved_configuration(config, effective),
+                              overwrite=effective.overwrite)
         with execution_scope(effective):
             result = _execute_simulation(
                 config, effective, status, runtime, input_files=input_files,
-                prepared_sources=prepared_sources,
+                prepared_sources=prepared_sources, provenance=provenance,
             )
         if not result.ok:
             raise RuntimeError("Processing returned an unsuccessful result")
@@ -314,19 +376,14 @@ def execute_simulation(
             tracking_termination_reason=result.tracking_termination_reason,
             n_files=result.n_files, duration_s=result.duration_s,
             timing_sections_s=result.timing_sections_s,
-            products=[{
-                **product,
-                "path": str(Path(product["path"]).relative_to(config.output_dir.resolve())),
-                "size_bytes": (sum(p.stat().st_size for p in Path(product["path"]).rglob("*")
-                                   if p.is_file()) if Path(product["path"]).is_dir()
-                               else Path(product["path"]).stat().st_size),
-            } for product in result.products],
+            pending=[],
+            products=[_recorded_product(product, config.output_dir) for product in result.products],
         )
         return result
 
 
 def _execute_simulation(config, options, status, runtime, *, input_files=None,
-                        prepared_sources=None):
+                        prepared_sources=None, provenance=None):
     """Execute, export and release one simulation through the shared pipeline.
 
     An explicit inventory is consumed verbatim; ordinary runs discover files
@@ -338,7 +395,12 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
     level = options.log_level or ("DEBUG" if config.DEBUG else "INFO")
     started = time.monotonic()
     runner = None
-    provenance = None
+    from frameit.core.run_state import checkpoint_run
+
+    def published(product):
+        status["products"].append(_recorded_product(product, config.output_dir))
+        checkpoint_run(config.output_dir, status, provenance)
+
     with frameit_logging_scope(
         config.output_dir, level=level, simu_name=config.simulation_name
     ) as log_path:
@@ -354,6 +416,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
             runner = FrameitRunner(config, input_files=input_files,
                                    prepared_sources=prepared_sources)
             result = runner.run(benchmark=True) if options.benchmark else runner.run()
+            status["pending"].remove("processing")
             layouts = None
             if config.schema_version == 3:
                 layouts = runner.preflight_report["layouts"]
@@ -386,45 +449,13 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                     status["common_polar_target"] = config.simulation_parameter[
                         "common_polar_target"]
             if config.schema_version == 3:
-                from frameit.utils.atomic import write_yaml_atomic
-
-                resolved_path = config.output_dir / "resolved-config.yaml"
-                from frameit.core.configuration import resolved_configuration, resolved_sources
-
-                resolved = resolved_configuration(config, options)
-                write_yaml_atomic(resolved_path, resolved, overwrite=options.overwrite)
-                provenance = {
-                        "runtime": runtime, "execution_resources": status["resources"],
-                        "time_alignment": config.simulation_parameter.get("time_alignment", {}),
-                        "sources": config.simulation_parameter.get("source_provenance", {}),
-                        "common_polar_target": config.simulation_parameter.get(
-                            "common_polar_target"),
-                        "fa_inputs": config.simulation_parameter.get("fa_inputs", []),
-                        "grid_geometry": config.grid_geometry,
-                        "input_inventory": [str(p) for p in result.files],
-                        "unit_provenance": config.simulation_parameter.get("unit_provenance", []),
-                        "surfex_provenance": config.simulation_parameter.get("surfex_provenance", []),
-                        "current_provenance": config.simulation_parameter.get("current_provenance", []),
-                        "wind_provenance": config.simulation_parameter.get("wind_provenance", []),
-                        "wind_transformations": config.simulation_parameter.get(
-                            "wind_transformations", []),
-                        "selected_levels": config.simulation_parameter.get("selected_levels", []),
-                        "tracking_inputs": config.simulation_parameter.get(
-                            "multifield_inputs", config.simulation_parameter.get(
-                                "pressure_centroid_inputs", {})),
-                        "tracking_summary": {
-                            k: v for k, v in track_attrs.items()
-                            if k.startswith("tracking_")
-                        },
-                        "execution_options": asdict(options),
-                         "setting_sources": resolved_sources(config, options),
-                         "layouts": layouts,
-                        "preset_provenance": {
-                            k: v for k, v in config.simulation_parameter.items()
-                            if k.startswith("preset_")
-                        },
-                    }
-                write_yaml_atomic(config.output_dir / "run-provenance.yaml", provenance)
+                provenance.update(_run_provenance(config, options, status, runtime))
+                provenance.update(
+                    input_inventory=[str(path) for path in result.files],
+                    tracking_summary={key: value for key, value in track_attrs.items()
+                                      if key.startswith("tracking_")},
+                    layouts=layouts)
+                checkpoint_run(config.output_dir, status, provenance)
             if options.require_complete_tracking and not status["tracking_complete"]:
                 raise ValueError(
                     "Tracking is incomplete and execution.require_complete_tracking is true: "
@@ -452,10 +483,12 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                         zarr_chunk_size=options.zarr_chunk_size,
                          zarr_shard_size=options.zarr_shard_size,
                         netcdf_chunk_size=options.netcdf_chunk_size,
+                        on_published=published,
                     )
                 log.debug("Product export finished (engine=%s)", options.engine)
             else:
                 log.info("Product export skipped (--no-export).")
+            status["pending"].remove("publication")
             runner.timer.log_summary(log, title="FrameIt runtime summary")
             products = _product_descriptors(exports, runner)
             log.info("Run complete: %d input file(s) · %d product(s)",
@@ -484,8 +517,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
         except BaseException:
             if runner is not None and hasattr(runner, "published_products"):
                 status["products"] = [
-                    {**item, "path": str(Path(item["path"]).relative_to(
-                        config.output_dir.resolve()))}
+                    _recorded_product(item, config.output_dir)
                     for item in runner.published_products]
             log.exception("Simulation execution failed")
             raise
@@ -493,12 +525,13 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
             try:
                 if runner is not None:
                     runner.close()
+                status["pending"].remove("cleanup")
             finally:
                 runtime["loaded_backends"] = _loaded_backend_versions()
                 if provenance is not None:
-                    provenance["products"] = [
-                        {**item, "path": str(Path(item["path"]).relative_to(
-                            config.output_dir.resolve()))}
+                    provenance.update(_run_provenance(config, options, status, runtime))
+                    status["products"] = [
+                        _recorded_product(item, config.output_dir)
                         for item in getattr(runner, "published_products", [])]
                     from frameit.io.fa_backend import collect_fa_diagnostics
 
@@ -509,4 +542,4 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                         if source["fa_inputs"]:
                             source["fa_decoder"] = collect_fa_diagnostics(
                                 config.output_dir, source["fa_inputs"])
-                    write_yaml_atomic(config.output_dir / "run-provenance.yaml", provenance)
+                    checkpoint_run(config.output_dir, status, provenance)

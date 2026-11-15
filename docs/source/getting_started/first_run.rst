@@ -132,9 +132,11 @@ Zero is a valid sample. ``nan`` is missing, not zero. The second time adds 1000
 to finite samples. The source values follow ``1000*t + 10*(j-8) + (i-8)``;
 ``j=7,i=9`` is missing. Indices start at zero. The source file is unchanged.
 
-Keep ``results/resolved-config.yaml`` and ``results/run-provenance.yaml`` with the
-products. They record the settings and processing facts. A failed run can leave
-earlier complete products, so check status before using them.
+Keep ``results/run-request.yaml``, ``results/resolved-config.yaml``,
+``results/run-provenance.yaml`` and ``results/run-status.yaml`` with the products.
+They separate the captured request, effective settings, processing facts and
+execution state. A failed run can leave earlier complete products, so check
+status before using them.
 
 .. figure:: ../_static/figures/first-run.png
    :target: ../_static/figures/first-run.png

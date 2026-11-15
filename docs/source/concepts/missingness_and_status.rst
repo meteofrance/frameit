@@ -34,7 +34,9 @@ export. A missing final status or ``failed`` state is not success, even when
 some products exist.
 
 Complete earlier files can survive an interrupted run. Inspect the status
-inventory, effective configuration and provenance before reusing them. Use a
+inventory, captured request, effective configuration and provenance before
+reusing them. Planned products are not published products; a last-recorded
+``running`` state does not establish that a process is still alive. Use a
 fresh output directory for a retry; never remove a lock while its writer is
 alive. See :doc:`../user_guide/output_files`, :doc:`../getting_started/hpc` and
 :doc:`../troubleshooting`.

@@ -55,6 +55,7 @@ Artifacts use the same layout for ordinary runs and each matrix case::
         cache/       # GRIB index files
         products/    # Requested source/product .nc files or .zarr stores
         logs/        # Simulation logs
+        run-request.yaml      # Captured authored request, overrides and path bases
         resolved-config.yaml  # Effective schema-version-3 configuration
         run-provenance.yaml   # Geometry, inputs, units, and execution settings
         run-status.yaml       # Completion state, runtime/resources, product inventory
@@ -117,10 +118,14 @@ loading does not create disk indexes; its processing caches remain in memory.
 Normal execution atomically publishes each complete NetCDF/YAML file through a
 same-directory temporary file. Interrupted attempts can retain complete earlier
 products or hidden ``*.partial`` files. The authoritative completion record is
-``run-status.yaml`` (schema version 1), written last after export and input cleanup.
+``run-status.yaml`` (schema version 1). Running checkpoints record successful
+publications; the final state is written after export and input cleanup.
 It lists relative product paths, byte sizes, tracking completeness, execution
 limits, package/native-backend versions and selected Slurm metadata. Scientific
 provenance also records versions and code revision/dirty state when available.
+``planned_products`` describes intent; ``products`` lists complete publications
+observed by the parent. ``pending`` retains unresolved processing, publication
+or cleanup phases. ``updated_at`` is the last checkpoint time, not a heartbeat.
 Its ``layouts`` section records selected-reader and product chunk applications,
 dimensions and uncompressed array sizes. Published field descriptors record
 the actual reopened storage layout. Array estimates exclude unresolved decoder,
@@ -132,6 +137,25 @@ before export. Missing final status, a failed state or an abnormal process exit
 must not be inferred successful from the presence of one file. Atomic publication
 is per product, not an all-products transaction or an fsync durability guarantee.
 See :doc:`/getting_started/hpc` for states, ownership and retry policy.
+
+The attempt captures ``run-request.yaml`` before processing. It keeps the
+original parsed YAML or mapping, operational overrides, requested execution
+options, available code identity and configuration/launch path bases. Editing
+or moving the original YAML does not change this snapshot. Runtime-only callers
+without an authored request are labelled accordingly. The record preserves
+parsed values, not YAML comments, formatting or checksums of the source archive.
+
+This request record is a metadata envelope, not a runnable configuration.
+Authored relative paths keep their original configuration base; operational
+path overrides keep their launch base. They are not relative to the output root.
+``resolved-config.yaml`` contains effective controls, but its presence does not
+mean processing completed. Available provenance is saved early and updated as
+facts become known; unresolved facts remain explicit.
+
+Keep all four records with the data. After a forced kill, the last checkpoint
+can remain ``running`` and omit a publication whose parent callback never ran.
+It is not a full archive audit. Do not delete locks, partials or backups merely
+because they look old, or infer a live process from the recorded state.
 
 ``metadata.extra`` is serialized as the JSON global attribute
 ``frameit_user_metadata_json`` for ordinary readers of either output backend.

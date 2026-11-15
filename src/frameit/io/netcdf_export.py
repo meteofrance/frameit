@@ -8,7 +8,7 @@ import datetime as dt
 import json
 import logging
 import multiprocessing
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import nullcontext
 from dataclasses import dataclass, field
@@ -1040,6 +1040,7 @@ def export_outputs(
     zarr_chunk_size: dict[str, int] | None = None,
     zarr_shard_size: dict[str, int] | None = None,
     netcdf_chunk_size: dict[str, int] | None = None,
+    on_published: Callable[[dict], None] | None = None,
 ) -> dict[str, Path | list[Path]]:
     """
     Export all FrameIt products using the selected NetCDF or Zarr engine.
@@ -1079,6 +1080,9 @@ def export_outputs(
         Declare the "time" dimension unlimited. Default True.
     max_workers : int or None, optional
         Maximum parallel workers for group export. Default None.
+    on_published : callable or None, optional
+        Parent-only v3 checkpoint after each complete atomic publication.
+        Callback failures propagate; they do not undo published products.
 
     Returns
     -------
@@ -1180,8 +1184,13 @@ def export_outputs(
             tasks.append((item, dataset, destination, writer))
 
         def published(facts):
+            # A signal or callback failure can leave retention complete but handling unfinished.
+            if any(item["path"] == facts["path"] for item in runner.published_products):
+                return
             runner.published_products.append(facts)
             results.setdefault(facts["role"], []).append(Path(facts["path"]))
+            if on_published is not None:
+                on_published(facts)
 
         if synchronous:
             for args in tasks:
@@ -1189,15 +1198,27 @@ def export_outputs(
         elif tasks:
             with _export_pool(len(tasks), max_workers, dask_scheduler,
                               dask_workers, native_threads) as executor:
-                futures = [executor.submit(_write_product, *args) for args in tasks]
+                futures = []
                 failure = None
-                for future in as_completed(futures):
-                    try:
-                        published(future.result())
-                    except Exception as exc:
-                        # Drain all workers: a later failure must not hide complete publications.
-                        if failure is None:
-                            failure = exc
+                try:
+                    for args in tasks:
+                        futures.append(executor.submit(_write_product, *args))
+                    for future in as_completed(futures):
+                        try:
+                            published(future.result())
+                        except BaseException as exc:
+                            if failure is None:
+                                failure = exc
+                except BaseException as exc:
+                    failure = exc
+                finally:
+                    # Graceful interruption still waits for workers; inventory their actual results.
+                    for future in futures:
+                        try:
+                            published(future.result())
+                        except BaseException as exc:
+                            if failure is None:
+                                failure = exc
                 if failure is not None:
                     raise failure
         return results

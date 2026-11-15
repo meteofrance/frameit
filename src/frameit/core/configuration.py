@@ -1033,10 +1033,29 @@ def _request_plan(conf, requests):
     }
 
 
-def to_runtime(raw, *, base_dir=None):
+def to_runtime(raw, *, base_dir=None, launch_dir=None, overrides=None):
     """Return SimulationConfig arguments; source requests remain unbound."""
-    conf, requests, _ = resolve_schema(raw, base_dir=base_dir)
-    return _runtime_from_resolved(conf, requests, setting_sources(raw, conf), base_dir=base_dir)
+    context = {
+        "request_kind": "mapping", "authored_configuration": copy.deepcopy(raw),
+        "request_path": None,
+        "path_bases": {
+            "configuration_directory": str(Path(base_dir or Path.cwd()).resolve()),
+            "launch_directory": str(Path(launch_dir or Path.cwd()).resolve()),
+        },
+        "overrides": copy.deepcopy(overrides) if overrides is not None else {},
+    }
+    if overrides is not None:
+        conf, origins = resolve_operational_overrides(
+            raw, base_dir=base_dir, launch_dir=launch_dir, overrides=overrides)
+        if isinstance(context["overrides"].get("output_directory"), os.PathLike):
+            context["overrides"]["output_directory"] = os.fspath(overrides["output_directory"])
+        _, requests, _ = resolve_schema(conf, base_dir=base_dir)
+    else:
+        conf, requests, _ = resolve_schema(raw, base_dir=base_dir)
+        origins = setting_sources(raw, conf)
+    runtime = _runtime_from_resolved(conf, requests, origins, base_dir=base_dir)
+    runtime["request_context"] = context
+    return runtime
 
 
 def _runtime_from_resolved(conf, requests, origins, *, base_dir=None):
@@ -1210,12 +1229,15 @@ def resolved_sources(conf, options=None):
     return origins
 
 
-def load_runtime(path):
+def load_runtime(path, *, launch_dir=None, overrides=None):
     """Load strict YAML and add authored line locations to dotted-key errors."""
     path = Path(path)
     raw = read_yaml(path)
     try:
-        return to_runtime(raw, base_dir=path.resolve().parent)
+        runtime = to_runtime(raw, base_dir=path.resolve().parent,
+                             launch_dir=launch_dir, overrides=overrides)
+        runtime["request_context"].update(request_kind="yaml", request_path=str(path.absolute()))
+        return runtime
     except ValueError as exc:
         locations = {}
 
