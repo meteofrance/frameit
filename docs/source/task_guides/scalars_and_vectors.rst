@@ -129,6 +129,10 @@ Check metadata with ``frameit validate`` and ``frameit run --dry-run`` before
 reader. Check each field's values, dimensions, native indices, coordinates,
 units, basis and recorded method. Internal-only companions must not appear as
 extra physical outputs.
+Public model-grid axes use the :ref:`output coordinate names
+<model-grid-coordinate-names>`. Native copying preserves sample locations and
+values, not necessarily the source file's dimension labels. Use retained native
+coordinate/index auxiliaries when you need the original source positions.
 
 Ocean component operations keep their adapter-specific angle, mask, bracket and
 quantity requirements. Atmospheric declarations do not supply missing ocean

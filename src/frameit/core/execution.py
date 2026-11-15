@@ -36,6 +36,7 @@ class ExecutionOptions:
     require_complete_tracking: bool = False
     zarr_chunk_size: dict[str, int] = field(default_factory=dict)
     zarr_shard_size: dict[str, int] = field(default_factory=dict)
+    netcdf_chunk_size: dict[str, int] = field(default_factory=dict)
     cpus: int | None = None
 
     @classmethod
@@ -60,6 +61,8 @@ class ExecutionOptions:
                     "on_incomplete", "error") == "error",
                 "zarr_chunk_size": writer.get("chunks", {}) if output["format"] == "zarr" else {},
                 "zarr_shard_size": writer.get("shards", {}),
+                "netcdf_chunk_size": writer.get("chunks", {})
+                if output["format"] == "netcdf" else {},
             }
             values.update({key: value for key, value in overrides.items() if value is not None})
             return cls(**values)
@@ -91,6 +94,8 @@ class ExecutionOptions:
         from frameit.io.zarr_export import validate_zarr_sizes
 
         validate_zarr_sizes(self.zarr_chunk_size, self.zarr_shard_size)
+        validate_zarr_sizes(self.netcdf_chunk_size, {})
+        object.__setattr__(self, "netcdf_chunk_size", self.netcdf_chunk_size.copy())
         object.__setattr__(self, "zarr_chunk_size", self.zarr_chunk_size.copy())
         object.__setattr__(self, "zarr_shard_size", self.zarr_shard_size.copy())
         if self.engine not in {"netcdf4", "h5netcdf", "zarr"}:
@@ -133,14 +138,9 @@ class SimulationExecutionResult:
 
 def _product_descriptors(exports, runner):
     if getattr(runner.conf, "schema_version", None) == 3:
-        planned = runner.conf.simulation_parameter["request_plan"]["products"]
-        return [
-            {"role": item["product"], "source": item["source"], "group": None,
-             "path": str(Path(path).resolve())}
-            for paths in exports.values() for path in paths
-            for item in planned
-            if Path(path) == runner.output_dir / item["path"]
-        ]
+        published = {str(Path(path).resolve()) for paths in exports.values() for path in paths}
+        return [item for item in getattr(runner, "published_products", [])
+                if item["path"] in published]
     products = []
     for role, paths in exports.items():
         if role == "track":
@@ -235,6 +235,10 @@ def execute_simulation(
     requested = options or ExecutionOptions.from_config(config)
     prepared_sources = None
     if config.schema_version == 3:
+        from frameit.utils.output_paths import OutputPaths
+
+        planned_paths = OutputPaths(config.output_dir).planned_products(
+            config.simulation_parameter["request_plan"]["products"])
         requested_format = "zarr" if requested.engine == "zarr" else "netcdf"
         if requested_format != config.yaml_config["output"]["format"]:
             raise ValueError(
@@ -265,8 +269,7 @@ def execute_simulation(
         if "track" in config.yaml_config["region"]:
             inputs.append(Path(config.yaml_config["region"]["track"]["file"]))
         input_locations = _input_path_locations(inputs)
-        targets = [config.output_dir / item["path"] for item in
-                   config.simulation_parameter["request_plan"]["products"]]
+        targets = planned_paths
         targets += [config.output_dir / name for name in (
             "resolved-config.yaml", "run-provenance.yaml", "run-status.yaml", ".frameit-run.lock")]
         for target in targets:
@@ -415,7 +418,8 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                         dask_scheduler=options.dask_scheduler, dask_workers=options.dask_workers,
                         native_threads=options.native_threads,
                         zarr_chunk_size=options.zarr_chunk_size,
-                        zarr_shard_size=options.zarr_shard_size,
+                         zarr_shard_size=options.zarr_shard_size,
+                        netcdf_chunk_size=options.netcdf_chunk_size,
                     )
                 log.debug("Product export finished (engine=%s)", options.engine)
             else:
@@ -446,6 +450,11 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                     "tracking_termination_reason", ""),
             )
         except BaseException:
+            if runner is not None and hasattr(runner, "published_products"):
+                status["products"] = [
+                    {**item, "path": str(Path(item["path"]).relative_to(
+                        config.output_dir.resolve()))}
+                    for item in runner.published_products]
             log.exception("Simulation execution failed")
             raise
         finally:
@@ -455,6 +464,10 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
             finally:
                 runtime["loaded_backends"] = _loaded_backend_versions()
                 if provenance is not None:
+                    provenance["products"] = [
+                        {**item, "path": str(Path(item["path"]).relative_to(
+                            config.output_dir.resolve()))}
+                        for item in getattr(runner, "published_products", [])]
                     from frameit.io.fa_backend import collect_fa_diagnostics
 
                     if provenance["fa_inputs"]:

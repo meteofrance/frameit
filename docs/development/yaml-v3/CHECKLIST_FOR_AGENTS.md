@@ -1130,17 +1130,17 @@ PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/t
 **Interfaces:** writers consume the common product descriptors; return actual
 published paths and field metadata for result/status records. No independent naming rule.
 
-- [ ] Test one dataset per source/product with mixed U/V/W/native ocean axes. Prevent
+- [x] Test one dataset per source/product with mixed U/V/W/native ocean axes. Prevent
   automatic alignment between different grids; retain singleton vertical dimensions.
-- [ ] Assert every C7 dimension/geographic/vertical/polar name, units, bounds, formula
+- [x] Assert every C7 dimension/geographic/vertical/polar name, units, bounds, formula
   dependency, original-index auxiliary, and time-dependent sample position.
   Add/reorder/filter fields and assert existing axis names stay unchanged.
-- [ ] Test custom run names, safe path components, collisions, overwrite false,
+- [x] Test custom run names, safe path components, collisions, overwrite false,
   NetCDF4 and sharded Zarr v3, compression defaults, precision, and inapplicable options.
   A Zarr field run with a track still rejects writer `engine` and `unlimited_time`.
-- [ ] Reopen both formats in fresh processes without importing FrameIt. Check exact
+- [x] Reopen both formats in fresh processes without importing FrameIt. Check exact
   native values/masks and justified transformed tolerances, metadata, and inventory.
-- [ ] Review output schema, publication safety, and output docs.
+- [x] Review output schema, publication safety, and output docs.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_output_layout.py src/frameit/testing/numerical/test_grid_representations.py src/frameit/testing/numerical/test_zarr_export.py src/frameit/testing/numerical/test_hpc_execution.py

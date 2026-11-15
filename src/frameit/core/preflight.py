@@ -931,6 +931,49 @@ def _publish_source_binding(conf, name, binding):
         conf.input_files = list(source["files"])
     conf.add_parameter("input_inventory", {
         n: list(s["files"]) for n, s in plan["sources"].items()})
+    for product in plan["products"]:
+        if product["source"] == name and product["product"] == "model_grid":
+            describe_model_grid_output(source, binding, product)
+
+
+def describe_model_grid_output(source, binding, product):
+    """Preview the same exported axis names used by dataset assembly."""
+    from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
+
+    layout = output_grid_layout(source)
+    product.update(stored_names={}, dimensions={}, units={})
+    for name in product["fields"]:
+        descriptor = binding["products"]["model_grid"][name]
+        for record in descriptor["records"]:
+            grid_id = record["selection_grid_id"]
+            grid = (source["native_grids"].get(grid_id)
+                    or source.get("representation_grids", {})[grid_id])
+            vertical = record.get("vertical")
+            field = source["fields"][record["field_id"]]
+            # FA summaries can include an excluded record with unknown shape.
+            dims = (list(grid["dimensions"]) if source["format"] == "fa" else
+                    [dim for dim in field["dimensions"]
+                     if dim in grid["dimensions"] or dim in record.get("native_axes", {})])
+            if vertical and vertical["dimension"] not in dims:
+                dims.insert(0, vertical["dimension"])
+            if source["format"] in {"grib", "fa"}:
+                dims = [*record.get("native_axes", {}), *dims]
+            if descriptor.get("operation"):
+                dims = [dim for dim in dims if dim in grid["dimensions"]]
+                if vertical and vertical["dimension"] not in dims:
+                    dims.insert(0, vertical["dimension"])
+            facts = _output_grid_facts(layout, grid_id, name)
+            exported = [facts["dimensions"].get(dim, dim) for dim in dims]
+            if (field["time_varying"] or descriptor.get("operation")
+                    or source["format"] in {"grib", "fa"}):
+                exported.insert(0, "time")
+            previous = product["dimensions"].setdefault(name, exported)
+            if previous != exported:
+                # The owning reader still rejects unrepresentable native-axis mixtures.
+                product["dimensions"][name] = None
+        product["stored_names"][name] = name
+        product["units"][name] = descriptor.get(
+            "result_units", field["attributes"].get("units"))
 
 
 def open_metadata(files, conf, resources, *, chunks=None):

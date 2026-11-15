@@ -70,6 +70,8 @@ def _sanitize_attrs(attrs: Mapping[str, Any]) -> dict[str, Any]:
 
         js = _jsonify_if_needed(v)
         if js is not None:
+            if f"{k}_json" in attrs:
+                raise ValueError(f"Metadata annotation collision: {k}_json")
             out[f"{k}_json"] = js
             continue
 
@@ -97,18 +99,413 @@ def _append_history(ds: xr.Dataset, entry: str) -> xr.Dataset:
     return ds
 
 
+def _output_geography(grid_id, coordinates):
+    geography = {}
+    for kind, conventional in (
+        ("latitude", {"latitude", "latitude_u", "latitude_v", "nav_lat",
+                      "lat_rho", "lat_u", "lat_v"}),
+        ("longitude", {"longitude", "longitude_u", "longitude_v", "nav_lon",
+                       "lon_rho", "lon_u", "lon_v"}),
+    ):
+        found = [n for n, c in coordinates.items()
+                 if c["attributes"].get("standard_name") == kind or n in conventional]
+        if len(found) > 1:
+            raise ValueError(f"{grid_id}: ambiguous output {kind}: {found}")
+        if found:
+            geography[kind] = found[0]
+    return geography
+
+
+def _moving_grid_trajectories(source):
+    """Identify complete inventoried coordinate trajectories, not individual snapshots."""
+    from frameit.core.preflight import _metadata_id
+
+    snapshots = {}
+    for grid_id, grid in source["native_grids"].items():
+        geography = _output_geography(grid_id, grid["coordinates"])
+        if not any(set(grid["coordinates"][n]["dimensions"]) - grid["dimensions"].keys()
+                   for n in geography.values()):
+            continue
+        snapshots[grid_id] = {}
+        for name in geography.values():
+            coordinate = grid["coordinates"][name]
+            frames = set()
+            for provider in grid.get("coordinate_providers", {}).get(name, []):
+                for sample in provider["samples"]:
+                    indexers = sample["indexers"]
+                    spatial = [d for d in coordinate["dimensions"] if d not in indexers]
+                    frames.add(_metadata_id("", {
+                        "time": sample["time"], "calendar": sample["calendar"],
+                        "cycle": sample["cycle"], "time_bounds": sample.get("time_bounds"),
+                        "dimensions": spatial, "attributes": coordinate["attributes"],
+                        "dtype": str(np.asarray(coordinate["values"]).dtype),
+                        "axes": {d: grid["coordinates"][d] for d in spatial
+                                 if d in grid["coordinates"]},
+                        "values": np.asarray(coordinate["values"])[tuple(
+                            indexers.get(d, slice(None)) for d in coordinate["dimensions"])],
+                    }))
+            # Excluded records still contribute known geometry, without inventing their clocks.
+            snapshots[grid_id][name] = frames or {_metadata_id("", coordinate)}
+    if not snapshots:
+        return {}
+    owners, signatures, cache = {}, {}, {}
+    for field_id, entry in source["fields"].items():
+        grid_ids = tuple(sorted(g for g in entry.get("grid_ids", [entry.get("grid_id")])
+                                if g in snapshots))
+        if not grid_ids:
+            continue
+        if grid_ids not in cache:
+            cache[grid_ids] = _metadata_id("", {
+                name: sorted({frame for g in grid_ids for frame in snapshots[g][name]})
+                for name in snapshots[grid_ids[0]]})
+        signatures[field_id] = cache[grid_ids]
+        for grid_id in grid_ids:
+            owners.setdefault(grid_id, {}).setdefault(cache[grid_ids], set()).add(entry["name"])
+    for descriptors in source.get("requests", {}).get("binding", {}).get("products", {}).values():
+        for name, descriptor in descriptors.items():
+            signature = signatures.get(descriptor.get("field_id"))
+            for record in descriptor["records"]:
+                grid_id = record["selection_grid_id"]
+                if signature is not None and grid_id in owners:
+                    owners[grid_id].setdefault(signature, set()).add(name)
+    return owners
+
+
+def _output_grid_facts(layout, grid_id, field=None):
+    if grid_id in layout:
+        return layout[grid_id]
+    matches = [facts for facts in layout.values()
+               if facts["native_grid_id"] == grid_id and field in facts["fields"]]
+    if len(matches) != 1:
+        raise ValueError(f"{grid_id}: unresolved output trajectory for {field!r}")
+    return matches[0]
+
+
+def output_grid_layout(source):
+    """Resolve names from the complete inventory, never the selected field order."""
+    from frameit.core.preflight import _metadata_id
+
+    moving = _moving_grid_trajectories(source)
+    grids, origins = {}, {}
+    for grid_id, grid in {
+        **source["native_grids"], **source.get("representation_grids", {})
+    }.items():
+        variants = moving.get(grid_id, {None: set()})
+        for trajectory, fields in variants.items():
+            key = grid_id if len(variants) == 1 else f"{grid_id}_{trajectory}"
+            grids[key] = grid
+            origins[key] = grid_id, trajectory, sorted(fields)
+    layouts, axes, horizontal = {}, {}, {}
+    for grid_id, grid in grids.items():
+        native_id, trajectory, fields = origins[grid_id]
+        grid = {**grid, "dimensions": dict(grid["dimensions"]),
+                "coordinates": dict(grid["coordinates"])}
+        if group := grid.get("vertical_group"):
+            levels = sorted({value for field in source["fields"].values()
+                             if native_id in field.get("grid_ids", [field.get("grid_id")])
+                             for value in field.get("levels", [])})
+            if levels:
+                grid["dimensions"][group] = len(levels)
+                grid["coordinates"][group] = {
+                    "dimensions": [group], "values": np.asarray(levels), "attributes": {}}
+        if "vertical_position" in grid:
+            group = "level_w" if grid["vertical_position"] == "interface" else "level"
+            cubes = [field["native_cube"] for field in source["fields"].values()
+                     if "native_cube" in field and native_id in field.get(
+                         "grid_ids", [field.get("grid_id")])]
+            if cubes:
+                labels = {field["name"]: field["native_descriptor"]["sampling"].get(
+                    "epygram", {}).get("levels", [])
+                          for field in source["fields"].values() if "native_descriptor" in field}
+                grid["dimensions"][group] = len(cubes[0]["records"])
+                grid["coordinates"][group] = {
+                    "dimensions": [group],
+                    "values": [labels[record][0] for record in cubes[0]["records"]],
+                    "attributes": {}}
+        model = source["model"]
+        names = ({"eta_rho": "y_rho", "xi_rho": "x_rho", "eta_v": "y_v", "xi_u": "x_u"}
+                 if model == "croco" else
+                 {"y": "y_t", "x": "x_t"} if model == "nemo" else
+                 {"nj": "y", "ni": "x", "latitude": "y", "longitude": "x",
+                  "y": "y", "x": "x", "nj_u": "y", "ni_u": "x_u",
+                  "nj_v": "y_v", "ni_v": "x"})
+        dims, identities = {}, {}
+        coordinates = grid["coordinates"]
+        h_dims = {dim: names[dim] for dim in grid["dimensions"] if dim in names}
+        geography = _output_geography(grid_id, coordinates)
+        h_facts = ({"trajectory": trajectory} if trajectory is not None else
+                   {n: coordinates[n] for n in geography.values()})
+        h_identity = _metadata_id("", {"dimensions": h_dims, "geography": h_facts})
+        pair = tuple(sorted(h_dims.values()))
+        horizontal.setdefault(pair, set()).add(h_identity)
+        for dim in grid["dimensions"]:
+            coord = coordinates.get(dim, {})
+            attrs = coord.get("attributes", {})
+            base = names.get(dim, dim)
+            if dim in {"isobaricInhPa", "isobaricInPa"} or attrs.get(
+                "standard_name") == "air_pressure":
+                base = "pressure"
+            elif dim == "heightAboveGround":
+                base = "height_above_ground"
+            elif dim == "native_level":
+                base = "level_w" if grid.get("vertical_location") == "interface" else "level"
+            dims[dim] = base
+            dependencies = {n: c for n, c in coordinates.items()
+                            if dim in c["dimensions"] and n not in geography.values()
+                            and not n.endswith("_source_native_index")}
+            if native_id in source.get("representation_grids", {}) and dim not in h_dims:
+                originals = [
+                    {n: c for n, c in native["coordinates"].items()
+                     if dim in c["dimensions"] and not n.endswith("_source_native_index")}
+                    for native in source["native_grids"].values()
+                    if dim in native["coordinates"]
+                    and coord.get("attributes", {}).get("units")
+                    == native["coordinates"][dim]["attributes"].get("units")
+                    and np.isin(coord.get("values", []),
+                                native["coordinates"][dim]["values"]).all()]
+                unique = {_metadata_id("", value): value for value in originals}
+                if len(unique) == 1:
+                    dependencies = next(iter(unique.values()))
+            identity = _metadata_id("", (
+                {"coordinate": {k: v for k, v in coord.items() if k != "dimensions"},
+                 "size": grid["dimensions"][dim]}
+                if dim in h_dims and coord else
+                {"native_name": dim, "coordinates": dependencies,
+                 "size": len(dependencies[dim]["values"]) if dim in dependencies
+                 else grid["dimensions"][dim]}))
+            identities[dim] = identity
+            axes.setdefault(base, set()).add(identity)
+        suffix = ("_u" if "x_u" in h_dims.values() else
+                  "_v" if "y_v" in h_dims.values() else
+                  "_rho" if model == "croco" else "_t" if model == "nemo" else "")
+        layouts[grid_id] = {
+            "native_grid_id": native_id, "fields": fields,
+            "dimensions": dims, "identities": identities, "horizontal": h_dims,
+            "horizontal_identity": h_identity, "pair": pair,
+            "geography": {native: kind + suffix for kind, native in geography.items()},
+            "suffix": suffix,
+        }
+    for layout in layouts.values():
+        multiple_grids = len(horizontal[layout["pair"]]) > 1
+        for dim, base in layout["dimensions"].items():
+            identity = layout["identities"][dim]
+            if dim in layout["horizontal"] and multiple_grids:
+                identity = layout["horizontal_identity"]
+            if len(axes[base]) > 1 or (dim in layout["horizontal"] and multiple_grids):
+                layout["dimensions"][dim] = f"{base}_{identity}"
+        if multiple_grids:
+            layout["geography"] = {
+                n: f"{target}_{layout['horizontal_identity']}"
+                for n, target in layout["geography"].items()}
+    coordinates, identities = {}, {}
+    for grid_id, layout in layouts.items():
+        names, signatures = {}, {}
+        for name, coord in grids[grid_id]["coordinates"].items():
+            if name in layout["horizontal"]:
+                continue
+            target = layout["geography"].get(name, layout["dimensions"].get(name, name))
+            signature = _metadata_id("", {
+                "dimensions": [layout["dimensions"].get(d, d) for d in coord["dimensions"]],
+                **{k: v for k, v in coord.items() if k not in {"dimensions", "values"}
+                   or k == "values" and set(coord["dimensions"]) <= set(layout["dimensions"])}})
+            names[name], signatures[name] = target, signature
+            identities.setdefault(target, set()).add(signature)
+        coordinates[grid_id] = names, signatures
+    for grid_id, (names, signatures) in coordinates.items():
+        layout = layouts[grid_id]
+        layout["coordinates"] = {
+            name: (f"{target}_{signatures[name]}" if len(identities[target]) > 1
+                   and name not in layout["dimensions"] and name not in layout["geography"]
+                   else target)
+            for name, target in names.items()}
+        layout["original_coordinates"] = {
+            native: {
+                "coordinate": f"{target if target != base else native}_source_coordinate"
+                if native in grids[grid_id]["coordinates"] else None,
+                "index": f"{target if target != base else native}_source_native_index",
+            }
+            for native, base in layout["horizontal"].items()
+            for target in [layout["dimensions"][native]]}
+    return layouts
+
+
+def _rename_coordinate_links(dataset, names):
+    """Rename CF variable references, not semantic labels, methods or comments."""
+    import re
+
+    if not names:
+        return
+    for variable in dataset.variables.values():
+        for mapping in (variable.attrs, variable.encoding):
+            for key in ("coordinates", "bounds", "formula_terms", "cell_measures",
+                        "ancillary_variables", "grid_mapping", "cell_methods"):
+                if isinstance(mapping.get(key), str):
+                    if key in {"formula_terms", "cell_measures"}:
+                        mapping[key] = re.sub(
+                            r"(:\s*)(\S+)", lambda m: m[1] + names.get(m[2], m[2]), mapping[key])
+                    elif key == "cell_methods":
+                        mapping[key] = re.sub(
+                            r"\([^)]*\)|([^\s:()]+)(?=\s*:)",
+                            lambda m: names.get(m[1], m[1])
+                            if m[1] and m[1] not in {"area", "volume"} else m[0], mapping[key])
+                    else:
+                        mapping[key] = re.sub(
+                            r"[^\s:]+", lambda m: names.get(m[0], m[0]), mapping[key])
+
+
+def format_model_grid(dataset, grid_id, source, layout, *, field=None):
+    """Qualify an already selected/cropped grid without changing its samples."""
+    ds = dataset.copy(deep=False)
+    facts = _output_grid_facts(layout, grid_id, field)
+    dimensions, horizontal = dict(facts["dimensions"]), dict(facts["horizontal"])
+    geography = dict(facts["geography"])
+    # Formula support can live on another admitted native grid (e.g. CROCO rho
+    # depth supporting a U face). Keep that support's axes, not the field's axes.
+    for other in layout.values():
+        for dim, target in other["dimensions"].items():
+            if dim in ds.dims and dim not in dimensions:
+                candidates = {item["dimensions"][dim] for item in layout.values()
+                              if dim in item["dimensions"]}
+                if len(candidates) != 1:
+                    raise ValueError(f"{grid_id}: ambiguous output support axis {dim}")
+                dimensions[dim] = target
+                if dim in other["horizontal"]:
+                    horizontal[dim] = other["horizontal"][dim]
+        for native, target in other["geography"].items():
+            if native in ds and native not in geography:
+                candidates = {item["geography"][native] for item in layout.values()
+                              if native in item["geography"]}
+                if len(candidates) == 1:
+                    geography[native] = target
+    rename_dims = {}
+    rename_vars = {**facts["coordinates"], **geography}
+    auxiliary = {}
+    for native, target in dimensions.items():
+        if native in horizontal:
+            # Cropped geography may be 2-D; its retained index identifies the axis.
+            index = f"{native}_source_native_index"
+            actual = native if native in ds.dims else None
+            if actual is None and index in ds:
+                actual, = (dim for dim in ds[index].dims if dim != "time")
+            if actual is None or actual not in ds.dims:
+                continue
+            rename_dims[actual] = target
+            qualified = target != horizontal[native]
+            source_coord = f"{target if qualified else native}_source_coordinate"
+            if native in ds:
+                if native in rename_vars:
+                    auxiliary[source_coord] = ds[native].variable.copy(deep=False)
+                else:
+                    rename_vars[native] = source_coord
+            stored_index = f"{target if qualified else native}_source_native_index"
+            if index not in ds:
+                auxiliary[stored_index] = xr.Variable(actual, np.arange(ds.sizes[actual]), {
+                    "units": "1", "long_name": f"zero-based native source {native} index"})
+            elif index != stored_index:
+                rename_vars[index] = stored_index
+        else:
+            if native in ds.dims:
+                rename_dims[native] = target
+            if native in ds:
+                rename_vars[native] = target
+            index = f"{native}_source_native_index"
+            if index in ds:
+                rename_vars[index] = f"{target}_source_native_index"
+            elif native in ds.dims:
+                descriptor = next((
+                    record["vertical"] for descriptor in
+                    source["requests"]["binding"]["products"]["model_grid"].values()
+                    for record in descriptor["records"]
+                    if record["grid_id"] == grid_id and record.get("vertical")
+                    and record["vertical"]["dimension"] == native), None)
+                if descriptor:
+                    auxiliary[f"{target}_source_native_index"] = xr.Variable(
+                        native, descriptor["source_native_indices"], {"units": "1"})
+    for name in ("grid_selected_latitude", "grid_selected_longitude",
+                 "region_coverage_fraction", "x_box_km", "y_box_km", "x_box", "y_box"):
+        if name in ds and name not in rename_vars:
+            suffix = facts["suffix"]
+            if len({v["horizontal_identity"] for v in layout.values()
+                    if v["pair"] == facts["pair"]}) > 1:
+                suffix += "_" + facts["horizontal_identity"]
+            rename_vars[name] = name + suffix
+    rename_vars = {n: target for n, target in rename_vars.items() if n in ds and n != target}
+    for name in auxiliary.keys() | set(rename_vars.values()):
+        if name in ds and name not in rename_vars:
+            raise ValueError(f"Output coordinate collision: {name}")
+    ds = ds.assign_coords(auxiliary)
+    # Separate dimension renames from variables: geographic dimension-coordinates
+    # remain geographic auxiliaries rather than being relabelled as indices.
+    variables, coords = {}, {}
+    for name, value in ds.variables.items():
+        target = rename_vars.get(name, name)
+        if target in variables or target in coords:
+            raise ValueError(f"Output coordinate collision: {target}")
+        variable = xr.Variable(tuple(rename_dims.get(d, d) for d in value.dims),
+                               value.data, value.attrs, encoding=value.encoding)
+        (coords if name in ds.coords else variables)[target] = variable
+    ds = xr.Dataset(variables, coords=coords, attrs=ds.attrs)
+    _rename_coordinate_links(ds, rename_vars)
+    for dim in horizontal:
+        target = dimensions[dim]
+        if target in ds.dims:
+            ds = ds.assign_coords({target: (target, np.arange(ds.sizes[target]), {
+                "units": "1", "long_name": "local zero-based array position"})})
+    ds.attrs["frameit_output_coordinates"] = {
+        identity: {key: value[key] for key in (
+            "native_grid_id", "dimensions", "geography", "original_coordinates")}
+        for identity, value in layout.items()}
+    for name in ds.data_vars:
+        links = str(ds[name].encoding.get(
+            "coordinates", ds[name].attrs.pop("coordinates", ""))).split()
+        links.extend(n for n in geography.values()
+                     if n in ds and set(ds[n].dims) <= set(ds[name].dims))
+        ds[name].encoding["coordinates"] = " ".join(dict.fromkeys(links))
+    return ds
+
+
+def format_polar_output(dataset, job, *, layout):
+    """Qualify completed vertical samples, never the polar target or calculations."""
+    facts = _output_grid_facts(layout, job["grid_id"], job["name"])
+    spatial = set(facts["horizontal"]) | set(facts["geography"])
+    names = {**facts["dimensions"], **facts["coordinates"]}
+    for native, target in facts["dimensions"].items():
+        if native not in spatial:
+            names[f"{native}_source_native_index"] = f"{target}_source_native_index"
+    rename = {native: target for native, target in names.items()
+              if native not in spatial and native != target
+              and (native in dataset.variables or native in dataset.dims)}
+    result = dataset.rename(rename)
+    _rename_coordinate_links(result, rename)
+    result.attrs["frameit_output_coordinates"] = {
+        identity: {
+            "native_grid_id": value["native_grid_id"],
+            "dimensions": {native: target for native, target in value["dimensions"].items()
+                           if native not in value["horizontal"]},
+            "coordinates": {native: target for native, target in value["coordinates"].items()
+                            if native not in value["geography"]},
+        } for identity, value in layout.items()}
+    return result
+
+
 def _make_encoding(
     ds: xr.Dataset,
     compress_level: int = 1,
     compress_coords: bool = False,
+    chunk_size: dict[str, int] | None = None,
 ) -> dict[str, dict[str, Any]]:
     enc: dict[str, dict[str, Any]] = {}
     for v in ds.data_vars:
-        enc[v] = {"zlib": True, "complevel": int(compress_level), "shuffle": True}
+        enc[v] = {"zlib": compress_level > 0, "complevel": int(compress_level), "shuffle": True}
     if compress_coords:
         for c in ds.coords:
             if ds[c].ndim >= 1:
                 enc[c] = {"zlib": True, "complevel": int(compress_level), "shuffle": True}
+    if chunk_size:
+        for name, var in ds.variables.items():
+            if var.ndim:
+                enc.setdefault(name, {})["chunksizes"] = tuple(
+                    min(ds.sizes[d], chunk_size.get(d, ds.sizes[d])) for d in var.dims)
     return enc
 
 
@@ -220,6 +617,14 @@ def _prepare_dataset(ds, metadata, product_type, group=None, track_filename=None
     ds_out.attrs = _sanitize_attrs(ds_out.attrs)
     for name in ds_out.variables:
         ds_out[name].attrs = _sanitize_attrs(ds_out[name].attrs)
+        original = ds_out[name].encoding
+        keep = {"_FillValue", "units", "calendar", "coordinates", "grid_mapping"}
+        if ds_out[name].dtype.kind in "Mm":
+            keep.add("dtype")
+        ds_out[name].encoding = {key: value for key, value in original.items() if key in keep}
+        # A source fill code may equal a valid decoded floating value.
+        if ds_out[name].dtype.kind == "f" and original.get("_FillValue") is not None:
+            ds_out[name].encoding["_FillValue"] = np.nan
     ds_out.attrs.update(_sanitize_attrs(metadata.base_attrs()))
     ds_out.attrs["product_type"] = str(product_type)
     if group is not None:
@@ -243,6 +648,7 @@ def write_dataset_netcdf(
     compress_level: int = 1,
     compress_coords: bool = False,
     unlimited_time: bool = True,
+    chunk_size: dict[str, int] | None = None,
 ) -> Path:
     """
     Write a single xarray Dataset to a NetCDF file with CF-compliant metadata.
@@ -291,6 +697,16 @@ def write_dataset_netcdf(
     FileExistsError
         If ``path`` already exists and ``overwrite=False``.
     """
+    from frameit.io.zarr_export import validate_zarr_sizes
+
+    validate_zarr_sizes(chunk_size or {}, {})
+    unknown = set(chunk_size or {}) - set(ds.dims)
+    if unknown:
+        raise ValueError(f"Unknown output chunk dimensions: {sorted(unknown)}")
+    if engine not in {"netcdf4", "h5netcdf"} or fmt != "NETCDF4":
+        raise ValueError("NetCDF output requires netcdf4 or h5netcdf and NETCDF4 format")
+    if type(compress_level) is not int or not 0 <= compress_level <= 9:
+        raise ValueError("compress_level must be an integer in [0, 9]")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -316,7 +732,8 @@ def write_dataset_netcdf(
     ds_out = _append_history(ds_out, f"{_utc_now_iso()}: written by frameit io.netcdf_export")
 
     encoding = _make_encoding(
-        ds_out, compress_level=compress_level, compress_coords=compress_coords
+        ds_out, compress_level=compress_level, compress_coords=compress_coords,
+        chunk_size=chunk_size,
     )
     unlimited_dims = ["time"] if (unlimited_time and ("time" in ds_out.dims)) else None
 
@@ -573,6 +990,7 @@ def export_outputs(
     native_threads: int = 1,
     zarr_chunk_size: dict[str, int] | None = None,
     zarr_shard_size: dict[str, int] | None = None,
+    netcdf_chunk_size: dict[str, int] | None = None,
 ) -> dict[str, Path | list[Path]]:
     """
     Export all FrameIt products using the selected NetCDF or Zarr engine.
@@ -650,8 +1068,42 @@ def export_outputs(
     meta = build_metadata_from_conf(conf, frameit_version=frameit_version, institution=institution)
 
     if getattr(conf, "schema_version", None) == 3:
+        from frameit.io.zarr_export import validate_zarr_sizes
+
         results = {}
-        for item in conf.simulation_parameter["request_plan"]["products"]:
+        runner.published_products = []
+        planned = conf.simulation_parameter["request_plan"]["products"]
+        destinations = OutputPaths(root).planned_products(planned)
+        field_datasets = [runner.field_products[(item["source"], item["product"])]
+                          for item in planned if item["product"] != "track"]
+        sizes = (zarr_chunk_size or {}) if engine == "zarr" else (netcdf_chunk_size or {})
+        validate_zarr_sizes(sizes, zarr_shard_size or {})
+        unknown = (set(sizes) | set(zarr_shard_size or {})) - {
+            dim for dataset in field_datasets or [runner.track] for dim in dataset.dims}
+        if unknown:
+            raise ValueError(f"Unknown output writer dimensions: {sorted(unknown)}")
+        for item, destination in zip(planned, destinations, strict=True):
+            if destination.exists() and not overwrite:
+                raise FileExistsError(f"File exists and overwrite=False: {destination}")
+            if destination.exists() and overwrite:
+                try:
+                    if destination.is_dir():
+                        header = json.loads((destination / "zarr.json").read_text())
+                        attrs = header.get("attributes", {}) if isinstance(header, dict) else {}
+                    else:
+                        with xr.open_dataset(destination, decode_times=False) as existing:
+                            attrs = existing.attrs
+                    owned = (isinstance(attrs, Mapping)
+                             and attrs.get("simulation_id") == simu_name
+                             and attrs.get("product_type") == item["product"]
+                             and attrs.get("frameit_version")
+                             and (item["source"] is None or
+                                  attrs.get("source_id") == item["source"]))
+                except (OSError, ValueError):
+                    owned = False
+                if not owned:
+                    raise ValueError(f"Refusing to replace an unrelated product: {destination}")
+        for item, destination in zip(planned, destinations, strict=True):
             source, product = item["source"], item["product"]
             dataset = (runner.track.rename(lat="latitude", lon="longitude")
                        if product == "track" else runner.field_products[(source, product)])
@@ -663,12 +1115,50 @@ def export_outputs(
                     units="seconds since 1970-01-01", calendar=dataset.time.encoding.get(
                         "calendar", "proleptic_gregorian"))
             path = _write_dataset(
-                dataset, root / item["path"], metadata=meta, product_type=product,
-                engine="netcdf4" if product == "track" else engine,
+                dataset, destination, metadata=meta, product_type=product,
+                engine="netcdf4" if product == "track" and engine == "zarr" else engine,
                 fmt=fmt, overwrite=overwrite, compress_level=compress_level,
                 compress_coords=compress_coords, unlimited_time=unlimited_time,
                 zarr_chunk_size=zarr_chunk_size, zarr_shard_size=zarr_shard_size,
+                **({"chunk_size": {d: s for d, s in (netcdf_chunk_size or {}).items()
+                                   if d in dataset.dims}} if engine != "zarr" else {}),
             )
+            fields = {name: {
+                "source": source, "path": item["path"], "stored_name": name,
+                "dimensions": list(dataset[name].dims), "units": dataset[name].attrs.get("units"),
+                "representation": item["representation"],
+            } for name in item["fields"]}
+            encoding = {
+                "format": "netcdf4" if product == "track" or engine != "zarr" else "zarr3",
+                "engine": "netcdf4" if product == "track" and engine == "zarr" else engine,
+                "compression": {"level": compress_level, "coordinates": compress_coords},
+                "chunks": {}, "shards": {},
+                "publication": ("complete-directory replacement has a visibility gap"
+                                if engine == "zarr" and product != "track"
+                                else "atomic file publication; no append/resume"),
+            }
+            if product != "track" and engine == "zarr":
+                import zarr
+
+                stored = zarr.open_group(path, mode="r")
+                for name in dataset.variables:
+                    encoding["chunks"][name] = list(stored[name].chunks)
+                    encoding["shards"][name] = list(stored[name].shards or ())
+                encoding["reader_requirements"] = "Zarr v3 with sharding_indexed codec"
+            else:
+                with xr.open_dataset(path, engine=encoding["engine"], decode_times=False) as saved:
+                    encoding["unlimited_time"] = "time" in saved.encoding.get("unlimited_dims", ())
+                    encoding["chunks"] = {
+                        name: list(value.encoding.get("chunksizes") or ())
+                        for name, value in saved.variables.items()}
+                encoding["reader_requirements"] = "NetCDF4/HDF5 reader"
+            runner.published_products.append({
+                **item, "role": product, "group": None, "path": str(path.resolve()),
+                "fields": fields, "dimensions": {name: value["dimensions"]
+                                                for name, value in fields.items()},
+                "units": {name: value["units"] for name, value in fields.items()},
+                "stored_names": {name: name for name in fields}, "encoding": encoding,
+            })
             results.setdefault(product, []).append(path)
         return results
 

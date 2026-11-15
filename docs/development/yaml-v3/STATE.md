@@ -37,8 +37,8 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 06 | done | Task06 worker + lead + independent reviewer | 05 | `edaf602`; four Important findings closed,64 new nodes pass; reviewed handoff below. |
 | 07 | done | Task07 worker + lead + independent reviewer | 05 | `bc2a470`; three Important findings closed;54 new nodes pass; reviewed handoff below. |
 | 08 | done | Task08 worker + lead + independent reviewer | 07 | `db6258e`; review approved after two fix rounds; frozen handoff below. |
-| 09 | done | Task09 worker + lead + independent reviewer | 06, 08 | Approved after I1/I2 closure; frozen handoff below. Minor3 retained19. |
-| 10 | ready | unassigned | 09 | C7 datasets/coordinates/writers start after Task09 local commit. |
+| 09 | done | Task09 worker + lead + independent reviewer | 06, 08 | `393e7d9`; approved I1/I2 closure; frozen handoff below. Minor3 retained19. |
+| 10 | done | Task10 worker + lead + independent reviewer | 09 | C7 approved after I1–I3/N1 closures; frozen handoff below. Local commit recorded in ledger. |
 | 11 | blocked | lead | 10 | Runtime/resources and chunk integrations; measured bounded layouts. |
 | 12 | blocked | lead | 10 | Run state, execution and writer callbacks; early request and publication facts. |
 | 13 | blocked | lead | 11, 12 | Preflight/configuration/coupled; common reports and independent errors. |
@@ -2515,6 +2515,210 @@ Remaining owners: full writer/schema10, resources11, old producers/assertions16/
 native/legacy/encoding/warnings19, human science/usability21. Minor3 and inherited
 direct-numerical formatter limitation remain. No source archive write, environment
 repair, push or merge occurred.
+
+## Task10 work in progress
+
+Base393e7d92ddafefd31542ea7a7a49751db860efda, reviewed local Task09 commit.
+Postcommit tree clean; nothing pushed/merged. One fresh sole Task10 worker owns
+the C7 writer/path/execution brief, plus bounded existing coupled dataset assembly/
+regional-output mapping and preflight product-descriptor integration. Lead traced
+the actual direct native-grid merge and common field_products writer path; C7
+requires a dataset boundary change, not encoding-only edits. No scientific
+preparation/target/binding/schema/default/dependency expansion is authorized.
+
+Lead owns public pages/examples/figures/STATE and commits. Original workers and
+reviewers are idle. Ruling: old intermediate v3 output-axis assertions may adopt
+C7 names only with preserved values/masks/units/original coordinates/indices/
+bounds/clocks and explicit stability checks. Source fixture axes/shared producers/
+payload assertions/numerical API names are not renamed; every adaptation reviewed.
+
+Task10 prior exact4file inventory91nodes59pass31fail1error is extracted from
+Task09's reviewed final XML, not a Task10 run or exemption. All scientific/
+resource/native/warning/producer/human qualification retains the stated owners.
+No Task10 implementation or verification result is claimed at dispatch.
+
+Fresh sole Task10 worker is active under the bounded packet. Lead's four-page
+C7 draft teaches canonical output names, local-zero versus original coordinates,
+stable-grid naming and exported storage dimensions without renaming input or
+numerical API conventions. Complete scalar context and two supplementary
+storage/resource fragments resolve schema-only. One strict50 list-indent error
+was corrected; final draft51 raw checks/live inspection remain next. Actual
+writer/output examples and independent Task10 review are still pending.
+
+Draft51 strict/publication/13unit/4plot-release+2subtests pass with15backend
+warnings. Four draft pages inspected live desktop1020/actual320, including the
+coordinate table and code right edges, without page overflow/missing images.
+Canonical51 preview remains available. This is documentation-draft inspection,
+not runtime C7 qualification or human/scientific approval. The original sole
+Task10 worker remains active; lead prepares ordinary-reader examples disjointly.
+
+The original worker returned NEEDS_CONTEXT:31of32 new cases pass, while distinct
+valid vertical axes fail at execute_source_polar's exact per-field merge before
+runner output qualification can run. Lead read the complete report/actual trace
+and reproduced that boundary. A bounded output-only hook there is authorized:
+reuse inventory-derived C7 names/references after sampling/quality calculations,
+before merging. No preparation, interpolation, quantity, target/budget/binding or
+low-level numerical API changes are authorized. Both-format values/metadata and
+name-stability checks plus the full frozen diagnostic remain required.
+The original worker resumes; no final Task10 handoff, review or commit yet.
+
+First frozen Task10 delivery reports35new passes and full1874pass/468fail/2errors,
+all2309 prior statuses retained. Lead fresh35case check passes/210warnings/21.85s;
+the frozen Task09 example harness passes unchanged with6source hashes.
+Full-domain ordinary NetCDF/Zarr and explicit storage examples pass, but the
+documented fixed pilot exposes incorrect cropped dimensions(time,y_box,x).
+Lead traced geographic2-D broadcast followed by last-axis lookup in the output
+formatter; both native axes map to x_box. The original worker resumes a bounded
+formatter correction with actual-generator/crop regressions, without changing
+scientific extraction. No first independent Task10 review or commit yet.
+The pilot's declaredcpus1 versus effectivebudget16 is separately recorded for
+Task11 resource wiring; workers stay1 and no CPU-ceiling check is claimed here.
+
+Canonical draft55 strict/publication/13unit/4plot-release+2subtests pass with15
+backend warnings. The mobile coordinate table fit but was cramped; it now uses
+the site's existing full-width definition-list style with all7C7 mappings and
+the original anchor. Live desktop1020/actual320 inspection shows readable names,
+no overflow/missing images; four other affected55pages equal inspected54/52/51.
+Original-auxiliary/CF-reference/annotation/storage facts are reconciled with the
+reported implementation. This preview remains available, not runtime/scientific/
+human acceptance. The original worker still owns the cropped-axis correction.
+
+Task10's cropped correction is delivered and frozen; original worker idle.
+Lead fresh39output cases pass/214warnings/25.43s. Saved XML corroborates final
+1878pass/468fail/2errors/2348nodes, all2344firstTask10/all2309Task09 statuses and
+exact470failed/error IDs,4/39added passes. Required59pass/31fail/1error and
+connected1194pass/84fail/1error remain red with per-node evidence, not exemptions.
+Fresh14freeze hashes/scope/Ruff12paths23base22current/noNew/9inputhashes pass.
+
+Final lead scalar/readers/storage/pilot, vector/transform and unchanged09harness
+pass with4/3/6source hashes. Actual crop axes are(time,y,x), local0..4/native6..10;
+values/masks/clocks/units/provenance and default/configured Zarr storage agree.
+Strict56/publication/13unit/4plot-release+2subtests pass15warnings; all5pages equal
+inspected55/54/52/51HTML. Canonical56 remains available. First independent
+spec/quality review is next; no Task10 commit or scientific/human approval yet.
+
+First independent Task10 review is active on the complete19-file snapshot
+`42b14ad894a327c69d29179a16859bfb395259a6` against393e7d9. Both spec and quality
+verdicts are required, including old output-assertion adaptations, five public
+pages and the approved output-only polar hook. The original worker is idle;
+real index/HEAD unchanged. No Task10 commit or later task dispatch before closure.
+
+Independent Task10 review requires fixes for three Important C7 defects:
+packed fill codes can mask a valid decoded coordinate zero; CF formula semantic
+labels are renamed with dependencies; distinct moving grids lose output identity.
+Lead traced actual callers and fresh compact probes confirmed all three. The
+original worker resumes bounded fix round1/5 in existing output boundaries,
+preserving scientific preparation/sampling/binding/targets and prior assertions.
+New Zarr tests' avoidable consolidation-fallback warnings receive small explicit
+reader cleanup, not global suppression or storage changes. All earlier output-axis
+adaptations were independently accepted. Original reviewer idle; no Task10 commit
+or Task11 implementation before scoped independent closure.
+
+Fix round1 author delivery is frozen. Lead51output cases pass/282warnings/51.51s;
+all39reviewed cases retained, M1 fallback warnings gone. Saved XML corroborates
+1890pass/468fail/2errors/2360nodes, all2348reviewed/all2309Task09statuses and exact
+470failed/error IDs,12/51added passes. Required59pass/31fail/1error and12file
+covering571pass/64fail/1error remain red. Fresh15freeze hashes/scope/9inputhashes
+and base/review-relative Ruff23/22→22/noNew pass.
+Scalar/vector/unchanged09harness03 pass with4/3/6source hashes. Canonical57
+records missing encoding/CF labels/complete trajectory provenance; strict/
+publication/docs checks pass15warnings, new notes inspected live1020/320 and
+other4pages equal inspected56. Original worker idle; scoped original-reviewer
+I1–I3 closure and new fix-breakage assessment remain required before commit.
+
+Scoped fix1 review independently closes I1–I3 and M1, but finds new Important N1:
+shared-snapshot field-list selection drops bounds on an extra dimension while
+retaining the declaring CF attribute. Lead ordinary-reader checks confirm source
+pruning and a successfully published dangling reference; four compact reviewer
+inputs remain unchanged. Original worker resumes bounded round2/5 on that output
+view only, with first-time/singleton-level both-format regression. The closed
+missing-encoding, CF-label and trajectory roots remain intact. No Task10 commit
+or Task11 dispatch before N1 closure. Per user preference, further rendered checks
+use text-only DOM/HTML/build evidence, not screenshots.
+
+N1 round2 author delivery is frozen: one output-view expression drops other
+physical data variables while retaining coordinate/support dimensions. Two new
+both-format regressions append to the byte-exact51-case module. Fresh lead
+2cases pass/33warnings/5.87s;16freeze hashes, exact2path scope, preserved prior
+evidence/reviewer inputs,9fixture hashes and zero new Ruff diagnostics verified.
+Required failed/error traces retain their ordered exceptions/locations, not passes.
+All3unchanged example harnesses04 pass with4/3/6source hashes. Strict58/publication/
+13unit/4plot-release+2subtests pass15warnings; five HTML pages equal57. Text-only
+live1020/320 DOM checks show no page overflow; no image capture/pixel/human claim.
+Canonical58 remains available. The original worker owns the one final full
+diagnostic/comparisons; original reviewer N1/new-fix closure is still required.
+No Task10 commit or Task11 implementation yet.
+
+Round2 final full evidence is complete:1892passed/468failed/2errors,2362nodes,
+6031warnings/4passed subtests/480.61s/exit1. Lead raw-XML assertions preserve all
+2360fix1/all2309Task09 statuses and exact470failed/error IDs;2new/53total additions
+pass. Every failed/error message and trace is either423byte-identical or47declared
+run-context-only differences against both baselines. Covering366passed and
+required59passed/31failed/1error are corroborated. All16freeze hashes still match.
+The author also confirms correct both-format bounds on the four unchanged
+read-only reviewer inputs in fresh attempts. Full/required red diagnostics and
+later producer/native/resource/human gates remain explicit. Original reviewer
+must close N1/new-fix breakage before Task10 commit or Task11 dispatch.
+
+## Task10 frozen handoff — independently approved
+
+The original reviewer closes N1 in the second scoped fix round: spec approved,
+task quality approved,0Critical/Important/Minor new findings. I1–I3/M1 remain
+closed; no Task10 finding is parked or open. Fresh lead precommit command:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 TMPDIR=/tmp/opencode PYTHONPATH="$PWD/src" FRAMEIT_CI_DATA_ROOT="$PWD/build/yaml-v3-ci-fixture-01" conda run --no-capture-output -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_v3_outputs.py --tb=short --junitxml=.superpowers/sdd/CHECKLIST_FOR_AGENTS/task-10-lead-precommit.xml
+```
+
+Observed53passed/314warnings/51.55s. All16frozen hashes and `git diff --check`
+pass after review; source/tests/public pages match reviewed tree
+`a47b2d8375e7cd05ca3ddf45765785c1632ed91e`. Only final internal closure records
+and checklist marks differ. Strict58/publication/examples and text-only live
+desktop/narrow evidence above remain current; no new public source changed.
+
+Later tasks consume these interfaces rather than redefining them:
+
+- Common request-plan products supply paths. `OutputPaths.planned_products`
+  validates them; writers do not invent another naming map. One field dataset
+  is assembled per source/product, preserving each field's native grid.
+- `runner.field_products[(source,product)]` carries those datasets;
+  `runner.published_products` receives only actual complete publications.
+  Result/status fields record source, run-relative path, stored name,
+  dimensions, units, representation and actual reopened encoding/layout.
+  Preserve earlier complete publications when a later write fails.
+- `output_grid_layout(source)` uses complete inventoried grid/trajectory
+  identity before filtering; per-field lookup resolves shared snapshots.
+  Coordinate names/own geography stay stable under add/reorder/filter. Local
+  horizontal positions start at zero, including crops; explicit auxiliaries
+  retain original coordinate labels, units and source-native indices.
+- `format_model_grid` and `format_polar_output` qualify axes, original
+  auxiliaries and CF references without changing scientific values/units.
+  Semantic formula/cell-measure labels remain labels. Bounds/support on extra
+  dimensions survive field-only output views; singleton vertical levels remain.
+- `execute_source_polar(..., *, plan_cache=None, output_formatter=None)` retains
+  the single approved output-only hook after calculations and before per-field
+  assembly. C6 preparation, targets, sampling, numeric types, speed/W meaning,
+  source clocks and centre associations remain frozen.
+- NetCDF4 engines and sharded Zarr3 preserve dtype/precision and missingness.
+  Decoded floating non-None fill codes become NaN, not masked physical zeroes;
+  integer/time handling stays unchanged. Defaults remain compression1/
+  coordinate compression off. Writer chunks/shards use exported dimensions;
+  storage-option applicability and safety/ownership rules remain strict.
+
+Scientific impact: no new calculation, physical interpretation, method or
+scientific approval. C7 output names/local-index auxiliaries and actual encoding/
+publication facts are the intended public output contract, documented on the
+five affected canonical pages. No new configuration/installation control.
+No direct-source/numerical-API rename or blanket downstream-script compatibility
+promise. Existing exact/native and justified transformed checks are not general
+real-producer validation.
+
+The required59passed/31failed/1error and full1892passed/468failed/2errors remain
+red with exact per-node evidence; no passing scientific assertions are inferred.
+Remaining owners: CPU wiring/layout resources11, records/CLI/status12–15,
+producers/native/backend warnings16/19 and human scientific/usability21.
+Inherited Task09 Minor3 remains for19/final branch review. No package repair,
+source-data write, screenshot/image capture, push, merge or human approval.
 
 ## Task 01 evidence
 

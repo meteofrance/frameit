@@ -52,8 +52,16 @@ with xr.open_dataset(sys.argv[1]) as out, xr.open_dataset(sys.argv[2]) as source
     assert out.time.encoding['calendar'] == source[clock].encoding['calendar']
     for name in ('latitude', 'longitude', 'nav_lat', 'nav_lon'):
         if name in source:
-            np.testing.assert_array_equal(out[name].values, source[name].values)
-            assert out[name].attrs == source[name].attrs
+            stored = {'nav_lat': 'latitude_t', 'nav_lon': 'longitude_t'}.get(name, name)
+            np.testing.assert_array_equal(out[stored].values, source[name].values)
+            assert out[stored].attrs == source[name].attrs
+    for native, dim in (('latitude','y'),('longitude','x'),('y','y_t'),('x','x_t')):
+        if native in source.dims and dim in out.dims:
+            np.testing.assert_array_equal(out[dim], np.arange(source.sizes[native]))
+            np.testing.assert_array_equal(out[f'{native}_source_native_index'],
+                                          np.arange(source.sizes[native]))
+            if native in source.coords:
+                np.testing.assert_array_equal(out[f'{native}_source_coordinate'],source[native])
     assert not any(name in out for name in ('wind_speed', 'vrad', 'vtan', 'center_latitude'))
     assert 'track_filename' not in out.attrs
     assert out.attrs['frameit_version']
@@ -263,7 +271,7 @@ def test_native_auxiliary_clock_keeps_samples_and_native_indices(tmp_path):
 
     _ordinary_reader(result.products[0]["path"], source, "instructional_scalar", "valid_time")
     with xr.open_dataset(result.products[0]["path"], engine="netcdf4") as out:
-        assert out.instructional_scalar.dims == ("time", "latitude", "longitude")
+        assert out.instructional_scalar.dims == ("time", "y", "x")
         assert out["sample"].dims == ("time",)
         np.testing.assert_array_equal(out["sample"], [41, 42])
         assert out["sample"].attrs == {"long_name": "original sample identifier"}

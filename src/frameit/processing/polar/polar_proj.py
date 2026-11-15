@@ -94,7 +94,8 @@ def verify_polar_target(dataset, plan, conf, source, centres):
             raise ValueError(f"Shared polar target mismatch for {conf.source_name}: {actual}")
 
 
-def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache=None):
+def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache=None,
+                         output_formatter=None):
     """Execute only declared v3 results on each source's associated native sample clock."""
     from frameit.processing.derived.wind import prepare_source_operation
     from frameit.processing.polar.contracts import require_executable_products
@@ -241,6 +242,8 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             if key in {"units", "calendar", "dtype"}}
         result.attrs.update(source_id=source.get("name", conf.source_name),
                             time_association=conf.time_alignment)
+        if output_formatter is not None:
+            result = output_formatter(result, job)
         results.setdefault(job["name"], []).append(result)
         reports.append({
             "field": job["name"], "source_time": str(stamp),

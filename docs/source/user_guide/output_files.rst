@@ -14,9 +14,9 @@ sources keep their own timestamps, grids, units and missing values; their
 clocks need not overlap. Review ``run-status.yaml`` and provenance before using
 the products. A completed run is not scientific approval.
 
-Native grids with conflicting coordinate names cannot be published together in
-one source dataset on this execution path. Such a request fails rather than
-aligning different grids, dropping coordinates or interpolating implicitly.
+Distinct admitted native grids keep their own coordinates in one source dataset.
+Colliding axes use inventoried grid identity, not implicit alignment. Unsupported
+or ambiguous combinations fail rather than dropping coordinates or interpolating.
 
 .. figure:: ../_static/figures/processing-products.svg
    :target: ../_static/figures/processing-products.svg
@@ -102,10 +102,10 @@ Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
 ``lat``/``lon`` remain requested centres; see
 :doc:`FA geometry and centres <fa_geometry>` for conventions.
-With ``products.polar.shared_grid: true``, separate source-qualified polar products share
-a verified target ID and exactly matching time/radius/azimuth/lat/lon coordinates.
-Source masks and variable meanings remain independent. Vertical-group separation
-is retained. See :doc:`Coupled atmosphere/surface sampling <fa_surface>` for target
+With ``products.polar.shared_grid: true``, source-qualified products use common
+radius/azimuth controls and verified geography at their associated centres.
+Native source clocks need not match. Masks, variable meanings and vertical axes
+remain independent. See :doc:`Coupled atmosphere/surface sampling <fa_surface>` for target
 settings and :doc:`ocean_netcdf` for ocean-specific conventions.
 
 Completion, provenance and ordinary readers
@@ -175,6 +175,9 @@ input, the full-domain values can be checked without FrameIt:
                         engine="netcdf4") as ds:
        q = ds["instructional_scalar"]
        assert q.shape == (2, 17, 17)
+       assert q.dims == ("time", "y", "x")
+       np.testing.assert_array_equal(ds.y, np.arange(17))
+       np.testing.assert_array_equal(ds.x, np.arange(17))
        assert q.attrs["units"] == "1"
        assert q.values[0, 8, 8] == 0
        assert np.isnan(q.values[:, 7, 9]).all()
@@ -182,8 +185,8 @@ input, the full-domain values can be checked without FrameIt:
 
 Use :doc:`../concepts/missingness_and_status` to distinguish missing support from
 zero, and :doc:`../concepts/time_support` when labels and averaging intervals differ.
-For NEMO ``preceding_hour`` association, inspect ``source_time`` and unchanged
-bounds as well as coupling ``time``. Native ocean depth and CROCO sigma groups
+For NEMO ``preceding_hour`` association, inspect native ``time``, unchanged bounds
+and the separate ``center_time`` association. Native ocean depth and CROCO sigma
 retain their own axes/dependencies; polar sigma samples are not constant-depth
 sections. See :doc:`ocean_netcdf` before reconstructing or comparing depth fields.
 
@@ -228,10 +231,11 @@ numbers of files. For example::
     output:
       format: zarr
       writer:
-        chunks: {time: 1, latitude: 128, longitude: 128}
-        shards: {time: 8, latitude: 512, longitude: 512}
+        chunks: {time: 1, y: 128, x: 128}
+        shards: {time: 8, y: 512, x: 512}
 
-Each chunk holds one time and 128 by 128 grid points. Each full shard covers
+On a sufficiently large ``y/x`` grid, each chunk holds one time and 128 by 128
+grid points. Each full shard covers
 eight times and 512 by 512 points: ``8 * 4 * 4 = 128`` chunks. Boundary shards
 can be partially filled; arrays need not be divisible by these sizes. These
 settings do **not** change scientific resolution, sampling, precision or values.
@@ -253,13 +257,14 @@ Both mappings are optional; ``output.format: zarr`` alone works. For each produc
   both settings avoids surprises and gives direct control.
 * All sizes must be positive integers, not YAML booleans. Explicit shard
   extents must be multiples of explicit chunk extents. Configured dimensions
-  absent from a product are ignored, so Cartesian settings do not break the
-  track or polar stores. Check spelling against the actual output dimensions.
+  absent from one product need not apply to it, but an explicit dimension that
+  matches no applicable field dataset fails. A separate track does not make a
+  field-writer setting valid. Check actual exported dimensions, not input names.
 * Scalars such as a CRS variable are not sharded. Empty dimensions fail with
   an actionable error; this writer does not publish empty-axis products.
 
 Storage dimensions must match the exported dataset. The fragment above uses
-the full-domain scalar example's native latitude/longitude axes. Inspect
+the atmospheric centre-grid output axes, not native latitude/longitude axes. Inspect
 the actual dimensions before setting chunks for another grid. The actual
 layout is inspectable in each array's ``zarr.json`` metadata or through
 ``zarr.open_group(path)[variable].chunks`` and ``.shards``.
@@ -342,6 +347,78 @@ Typical structure:
 
 Read each field's own coordinates; equal names alone do not establish equivalent
 sampling or physics.
+
+.. _model-grid-coordinate-names:
+
+Model-grid coordinate names
+''''''''''''''''''''''''''''
+
+Horizontal dimension names identify sampling locations. Their dimension-coordinate
+values are local zero-based array positions, including in a crop. Original native
+coordinates and source indices remain as auxiliaries; the local index is not a
+distance, source-file index or wind direction. Coordinate naming alone does not
+interpolate a field, rotate a vector or convert units.
+
+**Atmospheric/SURFEX centres**
+    Dimensions ``y, x``; geography ``latitude, longitude``.
+
+**Meso-NH U**
+    Dimensions ``y, x_u``; geography ``latitude_u, longitude_u``.
+
+**Meso-NH V**
+    Dimensions ``y_v, x``; geography ``latitude_v, longitude_v``.
+
+**NEMO T**
+    Dimensions ``y_t, x_t``; geography ``latitude_t, longitude_t``.
+
+**CROCO rho**
+    Dimensions ``y_rho, x_rho``; geography ``latitude_rho, longitude_rho``.
+
+**CROCO U**
+    Dimensions ``y_rho, x_u``; geography ``latitude_u, longitude_u``.
+
+**CROCO V**
+    Dimensions ``y_v, x_rho``; geography ``latitude_v, longitude_v``.
+
+These names apply to admitted grids; they do not add support for another adapter or
+grid. Each field references its own geography. Geographic positions include time
+when they move. Distinct grids and vertical axes remain separate in one dataset;
+they are not aligned merely because shapes or coordinate values match.
+
+Pressure axes use ``pressure`` with their actual units. Height above ground uses
+``height_above_ground``. Meso-NH/FA native labels retain ``level`` and ``level_w``;
+NEMO depth axes retain their own ``deptht/depthu/depthv/depthw`` identity, and
+CROCO sigma retains ``s_rho/s_w``. Labels, bounds, formula dependencies and
+singleton selections remain. Hybrid/sigma/model labels do not become fixed
+pressure, height or depth.
+NetCDF may omit a bounds variable's redundant units attribute; those bounds use
+the units of the coordinate declaring them.
+
+When distinct axes would collide, qualification uses inventoried grid identity,
+resolved before field filtering. Adding, reordering or filtering fields must not
+rename an existing field's axes. Inspect original-coordinate identity/provenance
+before adapting a downstream script; a matching file format alone does not make
+its expected schema or physical definitions compatible.
+
+For an unqualified horizontal axis, original labels use
+``<native-dimension>_source_coordinate`` and source-file positions use
+``<native-dimension>_source_native_index``. For example, ``ni_source_coordinate``
+retains the native labels and units behind exported ``x``. If the source has no
+explicit dimension-coordinate, only the index auxiliary is supplied; no physical
+coordinate is invented.
+
+Distinct colliding axes use deterministic inventory-derived suffixes. Their
+original auxiliaries use the qualified exported axis as prefix. Bounds,
+coefficients and mapping variables are also qualified when necessary, and field
+references use the stored names. Read JSON ``frameit_output_coordinates_json``
+for original dimension/geography identities and auxiliary names.
+Formula and cell-measure term labels retain their defined meanings; only the
+referenced variable names change.
+
+Moving-grid identity follows the complete inventoried coordinate trajectory,
+not just the horizontal shape. Independent trajectories can share a snapshot.
+Coordinate provenance includes ``native_grid_id`` for each exported coordinate
+set, including separate output views of a shared native snapshot.
 
 .. _wind-grid-contract:
 
@@ -528,6 +605,11 @@ Additional export-specific attributes:
 - ``source_id``: the source name for native field datasets
 - ``track_filename``: an associated published track, when one exists
 
+Optional ``metadata.extra`` annotations are stored separately under
+``frameit_user_metadata_json``. They cannot replace generated scientific
+provenance. A conflicting generated JSON attribute name fails rather than
+silently hiding either value.
+
 A ``history`` attribute is appended at write time and includes a UTC timestamp and the exporting module.
 
 Attribute sanitization
@@ -555,10 +637,18 @@ Notes:
 
 Coordinates are not compressed by default. Configure storage with
 ``output.writer.compression: {level: 2, coordinates: false}``. The default level is 1;
-storage chunks are backend-selected.
+NetCDF storage chunks are backend-selected unless ``output.writer.chunks``
+sets element counts on exported dimensions. Zarr chunk/shard rules are described
+above.
 Compression is lossless. The NetCDF writer adds no quantization or requested
 reduced-precision encoding; inspect each variable's actual dtype/encoding with
 the reader rather than assuming every prepared quantity has the source dtype.
+Source packing and storage-layout encodings are not reapplied to decoded values
+or coordinates. Required time/calendar and missing-value declarations retain
+their meaning.
+A non-``None`` ``_FillValue`` on a decoded floating array is written as NaN.
+The source's packed fill code must not mask a valid decoded zero. Explicit
+no-fill declarations and integer/time handling are unchanged.
 
 Export selection
 -----------------

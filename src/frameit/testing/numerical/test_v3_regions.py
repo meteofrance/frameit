@@ -178,9 +178,11 @@ def test_fixed_crop_uses_native_axes_when_geography_is_transposed(tmp_path):
             nj=slice(1, 6), ni=slice(2, 5)))
         for name in ("latitude", "longitude"):
             expected = native[name].transpose("nj", "ni").isel(nj=slice(1, 6), ni=slice(2, 5))
-            np.testing.assert_array_equal(out[name].transpose("time", "y_box", "x_box"),
+            np.testing.assert_array_equal(out[name].transpose("time", "y", "x"),
                                           np.broadcast_to(expected, (3, 5, 3)))
             assert out[name].attrs == native[name].attrs
+        np.testing.assert_array_equal(out.x, [0, 1, 2])
+        np.testing.assert_array_equal(out.ni_source_native_index, [[2, 3, 4]] * 3)
         np.testing.assert_array_equal(out.grid_selected_latitude, [-20.] * 3)
         np.testing.assert_array_equal(out.grid_selected_longitude, [60.] * 3)
 
@@ -212,9 +214,10 @@ def test_equivalent_geography_units_keep_native_products_and_degree_grid_facts(t
                 nj=slice(0, 5), ni=slice(3, 6)))
             for name in ("latitude", "longitude"):
                 expected = native[name].isel(nj=slice(0, 5), ni=slice(3, 6))
-                np.testing.assert_array_equal(out[name].transpose("time", "y_box", "x_box"),
+                np.testing.assert_array_equal(out[name].transpose("time", "y", "x"),
                                               np.broadcast_to(expected, (3, 5, 3)))
                 assert out[name].attrs == native[name].attrs
+            np.testing.assert_array_equal(out.ni_source_native_index, [[3, 4, 5]] * 3)
             for name, value, unit in (("latitude", latitude, "degrees_north"),
                                       ("longitude", longitude, "degrees_east")):
                 for prefix in ("center_", "grid_selected_"):
@@ -691,7 +694,8 @@ import sys, numpy as np, xarray as xr
 with xr.open_dataset(sys.argv[1]) as out, xr.open_dataset(sys.argv[2]) as source, \
      xr.open_dataset(sys.argv[3]) as track:
     assert set(out.data_vars) == {'u'}
-    np.testing.assert_array_equal(out.isobaricInhPa, [500.])
+    np.testing.assert_array_equal(out.pressure, [500.])
+    np.testing.assert_array_equal(out.pressure_source_native_index, [2])
     np.testing.assert_array_equal(out.time, source.time.isel(time=[0, 2]))
     # 24-bit GRIB packing of this <70-m/s range has error below 1e-4 m/s.
     np.testing.assert_allclose(out.u, source.u.isel(time=[0, 2], isobaricInhPa=[2]),

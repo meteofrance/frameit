@@ -80,7 +80,8 @@ def write_dataset_zarr(
     for name, var in ds_out.variables.items():
         # Retain CF missing/time/coordinate declarations, not source packing or storage layout.
         var.encoding = {key: value for key, value in var.encoding.items()
-                        if key in {"_FillValue", "units", "calendar", "coordinates", "grid_mapping"}}
+                        if key in {"_FillValue", "units", "calendar", "coordinates", "grid_mapping"}
+                        or key == "dtype" and var.dtype.kind in "Mm"}
         compressed = compress_level > 0 and (name in ds_out.data_vars or compress_coords)
         enc = {"compressors": [GzipCodec(level=compress_level)] if compressed else []}
         if var.ndim:

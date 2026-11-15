@@ -237,7 +237,9 @@ def test_explicit_mass_earth_rotation_uses_known_vectors(tmp_path, method):
     result = execute_simulation(conf)
     with xr.open_dataset(result.products[0]["path"]) as out:
         assert set(out.data_vars) == {"UT", "VT", "THT"}
-        assert out.UT.dims == out.VT.dims == ("time", "level", "nj", "ni")
+        assert out.UT.dims == out.VT.dims == ("time", "level", "y", "x")
+        np.testing.assert_array_equal(out.ni_source_coordinate, ds.ni)
+        np.testing.assert_array_equal(out.nj_source_coordinate, ds.nj)
         np.testing.assert_array_equal(out.level, [15., -5.])
         # Grid x points north and grid y west. The finite-neighbour geolocation
         # approximation has <0.001-radian curvature error on this 8-km grid.
@@ -329,7 +331,9 @@ def test_derived_preparation_is_independent_of_export_units_and_basis(tmp_path):
     result = execute_simulation(conf)
     with xr.open_dataset(result.products[0]["path"]) as out:
         assert set(out.data_vars) == {"UT", "speed"}
-        assert "ni_u" in out.UT.dims and "ni" in out.speed.dims
+        assert "x_u" in out.UT.dims and "x" in out.speed.dims
+        np.testing.assert_array_equal(out.ni_u_source_coordinate, ds.ni_u)
+        np.testing.assert_array_equal(out.ni_source_coordinate, ds.ni)
         np.testing.assert_allclose(out.UT, 3 / .5144444444444445, atol=1e-12)
         np.testing.assert_allclose(out.speed, 5., atol=1e-12)
         assert out.UT.attrs["standard_name"] == "x_wind"
@@ -481,7 +485,9 @@ def test_croco_explicit_transform_reuses_joint_masks_and_rho_rotation(tmp_path, 
     result = execute_simulation(conf)
     with xr.open_dataset(result.products[0]["path"]) as out:
         assert set(out.data_vars) == {"u"}
-        assert out.u.dims == ("time", "s_rho", "eta_rho", "xi_rho")
+        assert out.u.dims == ("time", "s_rho", "y_rho", "x_rho")
+        np.testing.assert_array_equal(out.xi_rho_source_coordinate, ds.xi_rho)
+        np.testing.assert_array_equal(out.eta_rho_source_coordinate, ds.eta_rho)
         assert not {"v", "wind_speed", "vrad", "vtan"} & set(out)
         np.testing.assert_allclose(out.u[0, 0, 2, 4], -4., atol=1e-12)
         assert np.isnan(out.u[0, 0, 3, 3])

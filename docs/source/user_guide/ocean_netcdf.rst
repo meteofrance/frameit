@@ -227,13 +227,13 @@ Native CROCO faces and current analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Regional history fields on ``xi_u/eta_v`` retain their actual N-1 midpoint
-locations and ``lat_u/lon_u`` or ``lat_v/lon_v`` geography. With
-``output.cartesian.horizontal_vectors: native`` selector, values, source units and
-vector basis are copied unchanged; no wet-mask interpretation, companion current
-or angle is required. Local face dimensions are ``x_u_box`` and ``y_v_box``;
+locations and ``lat_u/lon_u`` or ``lat_v/lon_v`` geography. Native copying preserves
+values, source units and vector basis; no wet-mask interpretation, companion current
+or angle is required. Public face dimensions use ``x_u`` and ``y_v``;
 unavailable bounding faces are missing, not fabricated or extrapolated. Source
-coordinate labels remain available. Rho dimensions use ``x_box/y_box``. This
-selector applies to ocean currents without making them winds.
+coordinate labels remain available. Rho dimensions use ``y_rho/x_rho``; see
+:ref:`model-grid-coordinate-names` for each field's geography and original-index
+auxiliaries. Copying ocean currents does not make them winds.
 
 Explicit ``earth_centered`` selects rho/Earth analysis for ``u/v`` on ``s_rho`` and
 ``ubar/vbar`` on ``fields_2d``. Selecting either component loads its companion.

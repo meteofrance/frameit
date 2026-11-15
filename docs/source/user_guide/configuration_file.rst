@@ -327,6 +327,9 @@ Under ``output.writer``, ``engine`` and ``unlimited_time`` are NetCDF-only;
 Explicit inapplicable settings fail, even if a Zarr field run also requests a
 NetCDF track. Unlimited time does not promise append/resume support.
 Precision and missing values are preserved. See :doc:`output_files`.
+Storage keys use the :ref:`exported coordinate names <model-grid-coordinate-names>`,
+not source reader dimension names. Naming preserves distinct sampling grids;
+it is not a numerical remap.
 
 Optional ``resources.cpus`` sets the CPU budget; omission uses detected
 allocation/affinity limits. Requests above that limit fail.

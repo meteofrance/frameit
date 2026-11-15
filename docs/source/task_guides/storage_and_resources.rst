@@ -23,30 +23,35 @@ Separate the three chunk choices
    Schematic. Compute chunks schedule work; storage chunks encode values; shards
    group storage chunks into fewer files. None changes scientific resolution.
 
-* ``input.netcdf.chunks`` uses source dimension names; ``{}`` respects native
+* ``sources.<id>.reader.chunks`` uses source dimension names; ``{}`` respects native
   storage chunks. A whole-axis ``-1`` can read far more than a small crop needs.
-* ``polar.chunks`` controls polar result computation using its dimension names.
-* ``output.zarr_chunk_size`` and ``output.zarr_shard_size`` control Zarr storage
-  in **elements**, not bytes. NetCDF storage chunks are backend-selected.
+* ``products.polar.processing.chunks`` controls polar computation using
+  ``radius/azimuth`` and its retained leading dimensions.
+* ``output.writer.chunks`` and ``output.writer.shards`` control storage in
+  **elements**, not bytes. Shards apply only to Zarr.
 
 Start with defaults. For example, a Zarr time chunk of 1 and spatial chunks of
 128×128 can be packed in a shard of 8×512×512: 128 chunks per full shard.
 Explicit shard extents must be multiples of explicit chunk extents. Use actual
-output dimensions (``x_box/y_box`` or ``rr/theta``); absent dimensions are ignored.
+output dimensions (for example ``y/x`` or ``radius/azimuth``), not input dimension
+names. A key may apply to only some field datasets; a key matching none fails.
+See :ref:`model-grid-coordinate-names` for staggered/ocean grids.
 Large shards can increase write memory. See :doc:`../user_guide/output_files`
 for automatic layouts and the directory-replacement visibility limit.
 
 Cap concurrency before tuning
 -----------------------------
 
+This fragment supplements a complete request such as :doc:`fixed_region`:
+
 .. code-block:: yaml
 
-   execution:
-     dask_scheduler: synchronous
+   resources:
+     cpus: 1
+     scheduler: synchronous
      native_threads: 1
-   output:
      synchronous_export: true
-     max_workers: 1
+     export_workers: 1
 
 This is a bounded pilot, not a universal fastest configuration. Threaded Dask
 work, native threads and spawned export processes share the CPU budget. Requests
@@ -60,7 +65,7 @@ pool; it does not change sampling or select a different numerical method.
    frameit run
 
 Inspect effective worker counts, planned products and polar geometry points.
-``polar.max_points`` bounds target geometry, not every variable/level array or
+``products.polar.processing.max_target_points`` bounds target geometry, not every variable/level array or
 peak memory. FA decode budgets can apply to a full native horizontal record even
 for a small crop. Measure whole-run wall time, peak memory and I/O with the same
 selection and numerical checks before increasing concurrency. Use

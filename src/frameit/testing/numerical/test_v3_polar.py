@@ -325,7 +325,10 @@ def test_independent_pressure_w_and_mixed_vertical_grids(tmp_path, mass_polar, m
             dim = "level" if mass else "level_w"
             np.testing.assert_array_equal(saved[dim], [15., -5.] if mass else [10., -10.])
             selection = ({"radius": 0, "azimuth": 0} if item["role"] == "polar"
-                         else {"nj": 4, "ni": 4})
+                         else {"y": 4, "x": 4})
+            if item["role"] == "model_grid":
+                np.testing.assert_array_equal(saved.ni_source_coordinate, ds.ni)
+                np.testing.assert_array_equal(saved.nj_source_coordinate, ds.nj)
             np.testing.assert_allclose(saved.WT.isel(selection),
                                        [[115., 55.]] if mass else [[100., 40.]])
             assert saved.WT.attrs["units"] == "Pa s-1"
@@ -685,8 +688,10 @@ def test_admitted_grib_polar_uses_selected_cycle_level_and_actual_decoder(tmp_pa
     subprocess.run([sys.executable, "-c", """
 import sys, numpy as np, xarray as xr
 with xr.open_dataset(sys.argv[1]) as ds:
-    assert ds.u.dims == ('time','isobaricInhPa','radius','azimuth')
-    np.testing.assert_array_equal(ds.isobaricInhPa, [700.])
+    assert ds.u.dims == ('time','pressure','radius','azimuth')
+    np.testing.assert_array_equal(ds.pressure, [700.])
+    assert ds.pressure.attrs['units'] == 'hPa'
+    np.testing.assert_array_equal(ds.pressure_source_native_index, [1])
     np.testing.assert_array_equal(ds.radius, [0.,2.5])
     np.testing.assert_allclose(ds.u.isel(radius=0), 0., atol=1e-10)
     np.testing.assert_array_equal(ds.u_interpolation_status.isel(radius=0), 0)

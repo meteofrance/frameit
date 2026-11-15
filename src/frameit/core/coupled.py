@@ -771,9 +771,17 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
     conf.add_parameter("input_inventory", {
         name: list(source["files"]) for name, source in plans.items()})
     for product in conf.simulation_parameter["request_plan"]["products"]:
+        if product["product"] == "model_grid":
+            from frameit.core.preflight import describe_model_grid_output
+
+            name = product["source"]
+            describe_model_grid_output(plans[name], bindings[name], product)
         if product["product"] != "polar":
             continue
         binding = children[product["source"]].source_requests[product["source"]]["binding"]
+        from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
+
+        layout = output_grid_layout(plans[product["source"]])
         product["stored_names"] = {name: name for name in product["fields"]}
         product["dimensions"], product["units"] = {}, {}
         for job in binding["operation_plans"]:
@@ -781,8 +789,10 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                 continue
             horizontal = set(job["polar_geometry"]["horizontal_dimensions"].values())
             native_axes = [dim for dim, _ in job["context"][2]]
-            dimensions = ["time", *native_axes, *[dim for dim in job["grid"]["dimensions"]
-                                                 if dim not in horizontal | set(native_axes)],
+            dimensions = ["time", *native_axes, *[
+                _output_grid_facts(layout, job["grid_id"], job["name"])["dimensions"].get(dim, dim)
+                for dim in job["grid"]["dimensions"]
+                if dim not in horizontal | set(native_axes)],
                           "radius", "azimuth"]
             previous = product["dimensions"].setdefault(job["name"], dimensions)
             if previous != dimensions:
@@ -854,16 +864,32 @@ def run_native_sources(runner, *, benchmark=False):
                     r for r in source["region"]["associations"] if r["coupling_time"] in accepted]
         runner.track = centres.sel(time=selected)
     with runner.timer.section("extraction"):
+        from frameit.io.netcdf_export import format_model_grid, output_grid_layout
+
+        layouts = {name: output_grid_layout(plans[name]) for name in consumers}
         for name, consumer in consumers.items():
             child = consumer.conf
             if "model_grid" in child.source_requests[name]["exports"]:
                 fields = child.source_requests[name]["exports"]["model_grid"]
-                datasets = [ds.reset_coords([field for field in fields if field in ds.coords])
-                            for ds in consumer.ds_user.values()]
-                if runner.conf.yaml_config["region"]:
-                    datasets = [
-                        _regional_dataset(ds, grid_id, child, plans[name], centres)
-                        for grid_id, ds in consumer.ds_user.items()]
+                layout = layouts[name]
+                sequences = {}
+                for grid_id, ds in consumer.ds_user.items():
+                    ds = ds.reset_coords([field for field in fields if field in ds.coords])
+                    if runner.conf.yaml_config["region"]:
+                        ds = _regional_dataset(ds, grid_id, child, plans[name], centres)
+                    views = ([(None, ds)] if grid_id in layout else
+                             [(field, ds.drop_vars(set(ds.data_vars) - {field}))
+                              for field in ds.data_vars])
+                    for field, view in views:
+                        formatted = format_model_grid(
+                            view, grid_id, plans[name], layout, field=field)
+                        sequences.setdefault(tuple(sorted(formatted.data_vars)), []).append(
+                            formatted)
+                datasets = [
+                    sequence[0] if len(sequence) == 1 else xr.combine_by_coords(
+                        sequence, join="exact", compat="identical",
+                        combine_attrs="override", data_vars="all", coords="minimal")
+                    for sequence in sequences.values()]
                 dataset = xr.merge(datasets, join="exact",
                                    compat="identical", combine_attrs="override")
                 runner.field_products[(name, "model_grid")] = dataset.assign_attrs(
@@ -873,11 +899,15 @@ def run_native_sources(runner, *, benchmark=False):
         for name, consumer in consumers.items():
             binding = consumer.conf.source_requests[name]["binding"]
             if "polar" in binding["products"]:
+                from functools import partial
+
+                from frameit.io.netcdf_export import format_polar_output
                 from frameit.processing.polar.polar_proj import execute_source_polar
 
                 dataset, polar_report = execute_source_polar(
                     consumer.ds_tracker.get("internal", {}), plans[name], binding,
-                    consumer.conf, centres)
+                    consumer.conf, centres,
+                    output_formatter=partial(format_polar_output, layout=layouts[name]))
                 runner.field_products[(name, "polar")] = dataset.assign_attrs(
                     source_id=name, source_model=plans[name]["model"],
                     source_format=plans[name]["format"])
@@ -934,6 +964,11 @@ def _regional_dataset(dataset, grid_id, conf, source, centres):
     dataset = dataset.sel(time=native)
     sample_clock = dataset.time
     if conf.x_boxsize_km and conf.y_boxsize_km:
+        dataset = dataset.assign_coords({
+            f"{dim}_source_native_index": (dim, np.arange(dataset.sizes[dim]), {
+                "units": "1", "long_name": f"zero-based native source {dim} index"})
+            for dim in (settings.name_lat_dim, settings.name_lon_dim)
+            if f"{dim}_source_native_index" not in dataset})
         field_attrs = {name: dict(value.attrs) for name, value in dataset.data_vars.items()}
         time_encoding = {name: {key: value.encoding[key] for key in ("units", "calendar", "dtype")
                                if key in value.encoding}
