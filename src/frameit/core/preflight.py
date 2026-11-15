@@ -976,6 +976,140 @@ def describe_model_grid_output(source, binding, product):
             "result_units", field["attributes"].get("units"))
 
 
+def _describe_v3_unbound_resources(conf, execution_options=None):
+    """Resolve execution budgets without selecting fields or claiming applied layouts."""
+    from frameit.core.configuration import resolved_configuration, resolved_sources
+    from frameit.core.execution import ExecutionOptions
+    from frameit.core.runtime import resolve_execution_resources
+
+    options, resources = resolve_execution_resources(
+        execution_options or ExecutionOptions.from_config(conf))
+    layouts = {
+        "pending": "field/method binding",
+        "inputs": {
+            name: {"requested": dict(source.get("reader", {}).get("chunks", {})),
+                   "applications": [], "estimates": None}
+            for name, source in conf.sources.items()
+        },
+        "products": {},
+        "writer": {
+            "requested": {
+                "chunks": dict(options.zarr_chunk_size if options.engine == "zarr"
+                               else options.netcdf_chunk_size),
+                "shards": dict(options.zarr_shard_size),
+            },
+            "chunks": None, "shards": None,
+        },
+    }
+    for item in conf.simulation_parameter["request_plan"]["products"]:
+        key = f"{item['source']}.{item['product']}" if item["source"] else "track"
+        spec = conf.yaml_config["products"][item["product"]]
+        chunks = spec.get("processing", {}).get("chunks", {}) if isinstance(spec, dict) else {}
+        layouts["products"][key] = {
+            "requested": dict(chunks), "applicable_dimensions": None, "applied_settings": None,
+            "resolved_chunks": "pending field/method binding",
+        }
+    return {"execution_resources": resources, "layouts": layouts,
+            "configuration": resolved_configuration(conf, options),
+            "setting_sources": resolved_sources(conf, options)}
+
+
+def describe_v3_resources(conf, sources, execution_options=None):
+    """Describe bounded concurrency and match layout namespaces on already-bound metadata."""
+    from frameit.core.execution import ExecutionOptions
+    from frameit.core.runtime import resolve_execution_resources
+    from frameit.io.netcdf_utils import input_chunk_plan
+
+    options, resources = resolve_execution_resources(
+        execution_options or ExecutionOptions.from_config(conf))
+    products = conf.simulation_parameter["request_plan"]["products"]
+    layouts = {"inputs": {}, "products": {}, "writer": {}}
+    for name, source in sources.items():
+        binding = source["requests"]["binding"]
+        chunks = conf.sources[name].get("reader", {}).get("chunks", {})
+        layout = (input_chunk_plan(source, chunks) if source["format"] == "netcdf" else {
+            "requested": {}, "applications": [],
+            "decoder": "full native record per selected locator"})
+        estimates = []
+        full_records = []
+        unknown_dtypes = set()
+        for record in binding["records"]:
+            field = source["fields"][record["field_id"]]
+            grid = source["native_grids"][record["grid_id"]]
+            sizes = dict(grid["dimensions"])
+            if not field.get("dtype"):
+                unknown_dtypes.add(field["name"])
+                continue
+            itemsize = np.dtype(field["dtype"]).itemsize
+            full_records.append(int(np.prod(list(sizes.values()), dtype=object)) * itemsize)
+            if record.get("vertical"):
+                sizes[record["vertical"]["dimension"]] = len(record["source_positions"])
+            estimates.append(int(np.prod(list(sizes.values()), dtype=object)) * itemsize)
+        layout["estimates"] = {
+            "selected_native_arrays_bytes": None if unknown_dtypes else sum(estimates),
+            "largest_full_native_record_bytes": (None if unknown_dtypes
+                                                else max(full_records, default=0)),
+            "unresolved_dtype_fields": sorted(unknown_dtypes),
+            "scope": "uncompressed bound input records; repeated consumers may reuse data",
+            "unresolved": (
+                "decoder workspace, backend caches, transform/mask/interpolation temporaries "
+                "and compressed storage; these estimates are not a memory ceiling"
+            ),
+        }
+        layouts["inputs"][name] = layout
+    dimensions = {}
+    for item in products:
+        key = f"{item['source']}.{item['product']}" if item["source"] else "track"
+        dims = ({"time"} if item["product"] == "track" else {
+            dim for axes in item["dimensions"].values() if axes for dim in axes})
+        if item["source"]:
+            from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
+
+            source = sources[item["source"]]
+            binding = source["requests"]["binding"]
+            layout = output_grid_layout(source)
+            for descriptor in binding["products"][item["product"]].values():
+                for record in descriptor["records"]:
+                    vertical = record.get("vertical")
+                    if vertical:
+                        facts = _output_grid_facts(layout, record["selection_grid_id"],
+                                                   descriptor.get("operation") or record["name"])
+                        dims.update(facts["dimensions"].get(dim, dim)
+                                    for coord in vertical["coordinates"].values()
+                                    for dim in coord["dimensions"])
+        dimensions[key] = dims
+        spec = conf.yaml_config["products"][item["product"]]
+        requested = spec.get("processing", {}).get("chunks", {}) if isinstance(spec, dict) else {}
+        layouts["products"][key] = {
+            "requested": dict(requested), "applicable_dimensions": sorted(dims),
+            "applied_settings": {dim: size for dim, size in requested.items() if dim in dims},
+            "resolved_chunks": "pending selected lazy product construction",
+        }
+    for product, spec in conf.yaml_config["products"].items():
+        requested = spec.get("processing", {}).get("chunks", {}) if isinstance(spec, dict) else {}
+        applicable = {dim for item in products if item["product"] == product
+                      for dim in dimensions[
+                          f"{item['source']}.{product}" if item["source"] else "track"]}
+        unknown = set(requested) - applicable
+        if unknown:
+            raise ValueError(f"Unknown {product} processing chunks dimensions: {sorted(unknown)}")
+    field_keys = [key for key in dimensions if key != "track"] or list(dimensions)
+    storage_chunks = (options.zarr_chunk_size if options.engine == "zarr"
+                      else options.netcdf_chunk_size)
+    for setting, sizes in (("chunks", storage_chunks), ("shards", options.zarr_shard_size)):
+        unknown = set(sizes) - {dim for key in field_keys for dim in dimensions[key]}
+        if unknown:
+            raise ValueError(f"Unknown output writer {setting} dimensions: {sorted(unknown)}")
+        layouts["writer"][setting] = {
+            key: {dim: size for dim, size in sizes.items() if dim in dimensions[key]}
+            for key in field_keys}
+    from frameit.core.configuration import resolved_configuration, resolved_sources
+
+    return {"execution_resources": resources, "layouts": layouts,
+            "configuration": resolved_configuration(conf, options),
+            "setting_sources": resolved_sources(conf, options)}
+
+
 def open_metadata(files, conf, resources, *, chunks=None):
     """Open lazily with no disk indexes, closing originals on all error paths."""
     if conf.file_type == "netcdf" and getattr(conf, "netcdf_file_layout", "time_series") == "variables":
@@ -1331,9 +1465,16 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
             selected = conf.simulation_parameter["request_plan"]["sources"][conf.source_name]
             if selected["records"] is None or list(map(str, input_files)) != selected["files"]:
                 raise ValueError("v3 input_files must be the bound selected source inventory")
-        prepare = bind_sources if "polar" in conf.yaml_config["products"] else prepare_sources
-        return prepare(conf, check_output=check_output, execution_options=execution_options,
-                       resources=resources)[0]
+        if "polar" in conf.yaml_config["products"]:
+            return bind_sources(
+                conf, check_output=check_output, execution_options=execution_options,
+                resources=resources)[0]
+        resource_plan = _describe_v3_unbound_resources(conf, execution_options)
+        report = prepare_sources(
+            conf, check_output=check_output, execution_options=execution_options,
+            resources=resources)[0]
+        report.update(resource_plan)
+        return report
     if conf.input_sources:
         if input_files is not None:
             raise ValueError("Coupled inventories are specified per input.sources entry")

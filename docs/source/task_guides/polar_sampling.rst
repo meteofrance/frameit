@@ -119,9 +119,10 @@ Execute the request through the Python API:
    from frameit.core.execution import execute_simulation
    from frameit.core.settings_class import SimulationConfig
 
-   config = SimulationConfig.from_yaml("frameit.yaml")
-   result = execute_simulation(config)
-   print(result.products)
+   if __name__ == "__main__":
+       config = SimulationConfig.from_yaml("frameit.yaml")
+       result = execute_simulation(config)
+       print(result.products)
 
 Reopen the source-qualified polar product without importing FrameIt:
 

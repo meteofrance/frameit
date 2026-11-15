@@ -1171,13 +1171,12 @@ def resolved_configuration(conf, options=None):
     if options.engine == "zarr":
         writer.pop("engine", None)
         writer.pop("unlimited_time", None)
-        if options.zarr_chunk_size:
-            writer["chunks"] = dict(options.zarr_chunk_size)
-        if options.zarr_shard_size:
-            writer["shards"] = dict(options.zarr_shard_size)
+        writer["chunks"] = dict(options.zarr_chunk_size)
+        writer["shards"] = dict(options.zarr_shard_size)
     else:
         writer.pop("shards", None)
         writer["engine"], writer["unlimited_time"] = options.engine, options.unlimited_time
+        writer["chunks"] = dict(options.netcdf_chunk_size)
     for attr, key in (("cpus", "cpus"), ("dask_workers", "compute_workers"), ("max_workers", "export_workers")):
         if getattr(options, attr) is not None:
             resources[key] = getattr(options, attr)
@@ -1194,11 +1193,12 @@ def resolved_sources(conf, options=None):
     if options is not None:
         effective = resolved_configuration(conf, options)
         baseline = setting_sources(conf.yaml_config, effective)
+        origins = {path: origin for path, origin in origins.items() if path in baseline}
 
         def mark(before, after, prefix=""):
             for key, value in after.items():
                 path = f"{prefix}.{key}" if prefix else key
-                if isinstance(value, dict):
+                if isinstance(value, dict) and value:
                     mark(before.get(key, {}), value, path)
                 elif key not in before or before[key] != value:
                     origins[path] = "cli"
@@ -1206,6 +1206,7 @@ def resolved_sources(conf, options=None):
         mark(conf.yaml_config, effective)
         for path in baseline:
             origins.setdefault(path, "default")
+        origins.update(options.setting_sources)
     return origins
 
 

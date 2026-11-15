@@ -23,10 +23,12 @@ Separate the three chunk choices
    Schematic. Compute chunks schedule work; storage chunks encode values; shards
    group storage chunks into fewer files. None changes scientific resolution.
 
-* ``sources.<id>.reader.chunks`` uses source dimension names; ``{}`` respects native
-  storage chunks. A whole-axis ``-1`` can read far more than a small crop needs.
-* ``products.polar.processing.chunks`` controls polar computation using
-  ``radius/azimuth`` and its retained leading dimensions.
+* ``sources.<id>.reader.chunks`` uses native source dimension names and is applied
+  after time/level selection. A whole-axis ``-1`` can increase a task's working set.
+* Product ``processing.chunks`` uses public product axes:
+  ``products.model_grid.processing.chunks`` for model-grid blocks, or
+  ``products.polar.processing.chunks`` for ``radius/azimuth`` and leading
+  dimensions such as ``height_above_ground``.
 * ``output.writer.chunks`` and ``output.writer.shards`` control storage in
   **elements**, not bytes. Shards apply only to Zarr.
 
@@ -53,10 +55,16 @@ This fragment supplements a complete request such as :doc:`fixed_region`:
      synchronous_export: true
      export_workers: 1
 
-This is a bounded pilot, not a universal fastest configuration. Threaded Dask
-work, native threads and spawned export processes share the CPU budget. Requests
-above affinity/machine/Slurm limits fail. ``synchronous_export`` avoids the export
-pool; it does not change sampling or select a different numerical method.
+This is a bounded pilot, not a universal fastest configuration. Omit ``cpus`` to
+use the strictest detected machine, affinity and Slurm limit. Explicit requests
+above that limit fail. Readers run serially; compute and export use successive
+phases. Export workers × compute workers × native threads must fit the budget.
+Inactive synchronous pools count as one.
+
+The defaults use one native thread and spawned export processes.
+``synchronous_export: true`` avoids the export pool without changing sampling.
+Python scripts using spawned export need an ``if __name__ == "__main__":`` guard;
+see :doc:`../getting_started/hpc`.
 
 .. code-block:: bash
 
@@ -64,7 +72,9 @@ pool; it does not change sampling or select a different numerical method.
    frameit run --dry-run
    frameit run
 
-Inspect effective worker counts, planned products and polar geometry points.
+Inspect effective worker counts and setting origins, planned products and polar
+geometry points. ``run-provenance.yaml`` records actual input/product chunk
+applications; published field descriptors record the stored chunks and shards.
 ``products.polar.processing.max_target_points`` bounds target geometry, not every variable/level array or
 peak memory. FA decode budgets can apply to a full native horizontal record even
 for a small crop. Measure whole-run wall time, peak memory and I/O with the same

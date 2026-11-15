@@ -121,6 +121,10 @@ products or hidden ``*.partial`` files. The authoritative completion record is
 It lists relative product paths, byte sizes, tracking completeness, execution
 limits, package/native-backend versions and selected Slurm metadata. Scientific
 provenance also records versions and code revision/dirty state when available.
+Its ``layouts`` section records selected-reader and product chunk applications,
+dimensions and uncompressed array sizes. Published field descriptors record
+the actual reopened storage layout. Array estimates exclude unresolved decoder,
+backend and processing workspace; they are not process-memory limits.
 Sizes and paths are not content checksums. ``completed`` means the requested
 execution finished; a permitted shortened track is marked ``incomplete``.
 With the default ``region.tracker.on_incomplete: error``, an incomplete track fails

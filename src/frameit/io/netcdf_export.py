@@ -810,9 +810,16 @@ def _write_single_group(args: tuple) -> Path:
 
 
 def _export_pool(group_count, max_workers, dask_scheduler, dask_workers, native_threads):
-    from frameit.core.runtime import cpu_budget, initialize_export_worker
+    from frameit.core.runtime import (
+        cpu_budget,
+        current_execution_resources,
+        initialize_export_worker,
+    )
 
     cpus, _ = cpu_budget()
+    active = current_execution_resources()
+    if active is not None:
+        cpus = min(cpus, active["cpu_budget"])
     per_process = (1 if dask_scheduler == "synchronous" else dask_workers) * native_threads
     if per_process > cpus:
         raise ValueError("Export thread counts exceed CPU budget")
@@ -822,6 +829,48 @@ def _export_pool(group_count, max_workers, dask_scheduler, dask_workers, native_
         initializer=initialize_export_worker,
         initargs=(dask_scheduler, dask_workers, native_threads),
     )
+
+
+def _write_product(item, dataset, destination, options):
+    """Publish one v3 product and return only its actual reopened field/encoding facts."""
+    source, product = item["source"], item["product"]
+    engine = options["engine"]
+    path = _write_dataset(dataset, destination, **options)
+    fields = {name: {
+        "source": source, "path": item["path"], "stored_name": name,
+        "dimensions": list(dataset[name].dims), "units": dataset[name].attrs.get("units"),
+        "representation": item["representation"],
+    } for name in item["fields"]}
+    encoding = {
+        "format": "zarr3" if engine == "zarr" else "netcdf4", "engine": engine,
+        "compression": {"level": options["compress_level"],
+                        "coordinates": options["compress_coords"]},
+        "chunks": {}, "shards": {},
+        "publication": ("complete-directory replacement has a visibility gap"
+                        if engine == "zarr" else "atomic file publication; no append/resume"),
+    }
+    if engine == "zarr":
+        import zarr
+
+        stored = zarr.open_group(path, mode="r")
+        for name in dataset.variables:
+            encoding["chunks"][name] = list(stored[name].chunks)
+            encoding["shards"][name] = list(stored[name].shards or ())
+        encoding["reader_requirements"] = "Zarr v3 with sharding_indexed codec"
+    else:
+        with xr.open_dataset(path, engine=engine, decode_times=False) as saved:
+            encoding["unlimited_time"] = "time" in saved.encoding.get("unlimited_dims", ())
+            encoding["chunks"] = {
+                name: list(value.encoding.get("chunksizes") or ())
+                for name, value in saved.variables.items()}
+        encoding["reader_requirements"] = "NetCDF4/HDF5 reader"
+    return {
+        **item, "role": product, "group": None, "path": str(path.resolve()),
+        "fields": fields,
+        "dimensions": {name: value["dimensions"] for name, value in fields.items()},
+        "units": {name: value["units"] for name, value in fields.items()},
+        "stored_names": {name: name for name in fields}, "encoding": encoding,
+    }
 
 
 def write_group_dict(
@@ -1103,6 +1152,7 @@ def export_outputs(
                     owned = False
                 if not owned:
                     raise ValueError(f"Refusing to replace an unrelated product: {destination}")
+        tasks = []
         for item, destination in zip(planned, destinations, strict=True):
             source, product = item["source"], item["product"]
             dataset = (runner.track.rename(lat="latitude", lon="longitude")
@@ -1114,52 +1164,42 @@ def export_outputs(
                 dataset.time.encoding = dict(dataset.time.encoding,
                     units="seconds since 1970-01-01", calendar=dataset.time.encoding.get(
                         "calendar", "proleptic_gregorian"))
-            path = _write_dataset(
-                dataset, destination, metadata=meta, product_type=product,
-                engine="netcdf4" if product == "track" and engine == "zarr" else engine,
-                fmt=fmt, overwrite=overwrite, compress_level=compress_level,
-                compress_coords=compress_coords, unlimited_time=unlimited_time,
-                zarr_chunk_size=zarr_chunk_size, zarr_shard_size=zarr_shard_size,
-                **({"chunk_size": {d: s for d, s in (netcdf_chunk_size or {}).items()
-                                   if d in dataset.dims}} if engine != "zarr" else {}),
-            )
-            fields = {name: {
-                "source": source, "path": item["path"], "stored_name": name,
-                "dimensions": list(dataset[name].dims), "units": dataset[name].attrs.get("units"),
-                "representation": item["representation"],
-            } for name in item["fields"]}
-            encoding = {
-                "format": "netcdf4" if product == "track" or engine != "zarr" else "zarr3",
+            writer = {
+                "metadata": meta, "product_type": product,
                 "engine": "netcdf4" if product == "track" and engine == "zarr" else engine,
-                "compression": {"level": compress_level, "coordinates": compress_coords},
-                "chunks": {}, "shards": {},
-                "publication": ("complete-directory replacement has a visibility gap"
-                                if engine == "zarr" and product != "track"
-                                else "atomic file publication; no append/resume"),
+                "fmt": fmt, "overwrite": overwrite, "compress_level": compress_level,
+                "compress_coords": compress_coords, "unlimited_time": unlimited_time,
+                "zarr_chunk_size": {d: s for d, s in (zarr_chunk_size or {}).items()
+                                    if d in dataset.dims},
+                "zarr_shard_size": {d: s for d, s in (zarr_shard_size or {}).items()
+                                    if d in dataset.dims},
             }
-            if product != "track" and engine == "zarr":
-                import zarr
+            if engine != "zarr":
+                writer["chunk_size"] = {d: s for d, s in (netcdf_chunk_size or {}).items()
+                                        if d in dataset.dims}
+            tasks.append((item, dataset, destination, writer))
 
-                stored = zarr.open_group(path, mode="r")
-                for name in dataset.variables:
-                    encoding["chunks"][name] = list(stored[name].chunks)
-                    encoding["shards"][name] = list(stored[name].shards or ())
-                encoding["reader_requirements"] = "Zarr v3 with sharding_indexed codec"
-            else:
-                with xr.open_dataset(path, engine=encoding["engine"], decode_times=False) as saved:
-                    encoding["unlimited_time"] = "time" in saved.encoding.get("unlimited_dims", ())
-                    encoding["chunks"] = {
-                        name: list(value.encoding.get("chunksizes") or ())
-                        for name, value in saved.variables.items()}
-                encoding["reader_requirements"] = "NetCDF4/HDF5 reader"
-            runner.published_products.append({
-                **item, "role": product, "group": None, "path": str(path.resolve()),
-                "fields": fields, "dimensions": {name: value["dimensions"]
-                                                for name, value in fields.items()},
-                "units": {name: value["units"] for name, value in fields.items()},
-                "stored_names": {name: name for name in fields}, "encoding": encoding,
-            })
-            results.setdefault(product, []).append(path)
+        def published(facts):
+            runner.published_products.append(facts)
+            results.setdefault(facts["role"], []).append(Path(facts["path"]))
+
+        if synchronous:
+            for args in tasks:
+                published(_write_product(*args))
+        elif tasks:
+            with _export_pool(len(tasks), max_workers, dask_scheduler,
+                              dask_workers, native_threads) as executor:
+                futures = [executor.submit(_write_product, *args) for args in tasks]
+                failure = None
+                for future in as_completed(futures):
+                    try:
+                        published(future.result())
+                    except Exception as exc:
+                        # Drain all workers: a later failure must not hide complete publications.
+                        if failure is None:
+                            failure = exc
+                if failure is not None:
+                    raise failure
         return results
 
     # Track

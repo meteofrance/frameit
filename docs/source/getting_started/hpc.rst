@@ -83,19 +83,21 @@ Merge this fragment into your configuration:
 
 .. code-block:: yaml
 
-   execution:
-     dask_scheduler: threads
-     dask_workers: 1
+   resources:
+     cpus: 1
+     scheduler: threads
+     compute_workers: 1
      native_threads: 1
-     require_complete_tracking: true
+     export_workers: 1
+     synchronous_export: false
    output:
      overwrite: false
-     max_workers: 1
-     synchronous_export: false
+
+For tracked runs, keep ``region.tracker.on_incomplete: error``.
 
 Spawned exports require Python API callers to protect their entry point with
 ``if __name__ == "__main__":``. Scripts without that guard can select
-``output.synchronous_export: true``. The ordinary FrameIt CLI already has the
+``resources.synchronous_export: true``. The ordinary FrameIt CLI already has the
 required entry-point guard. Resource scopes are process-wide; run concurrent
 independent cases in separate processes.
 

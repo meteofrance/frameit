@@ -45,10 +45,13 @@ def _binding(tmp_path, scenes, model, variables, *, time=None, engine="h5netcdf"
 
 
 def _load(paths, binding, source, *, engine="h5netcdf", resources=None):
+    native_dimensions = {dim for record in binding["records"]
+                         for dim in source["fields"][record["field_id"]]["dimensions"]}
     return concat_nc2ds_by_vert_coord(
         paths, {}, {}, strict=True, selected_records=binding, source_plan=source,
         engine=engine, chunks={dim: 100 for dim in (
-            "time", "time_counter", "valid_time", "level", "deptht", "s_rho")},
+            "time", "time_counter", "valid_time", "level", "deptht", "s_rho")
+            if dim in native_dimensions},
         resources=resources,
     )
 

@@ -102,6 +102,12 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
 
     require_executable_products(binding, source)
     require_polar_backend()
+    validate_execution_options(conf.polar_regrid_cache_size, conf.polar_regrid_cache_max_bytes,
+                               conf.polar_output_chunks, conf.polar_profile)
+    started = perf_counter() if conf.polar_profile else None
+    from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
+
+    layout = output_grid_layout(source)
     plan = binding["polar_plan"]
     cache = plan_cache if plan_cache is not None else PolarRegridPlanCache(
         conf.polar_regrid_cache_size, conf.polar_regrid_cache_max_bytes)
@@ -142,9 +148,13 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             if name in prepared.variables and name != target})
         settings = copy(conf)
         settings.name_latitude, settings.name_longitude = "latitude", "longitude"
+        facts = _output_grid_facts(layout, job["grid_id"], job["name"])
+        public_to_native = {target: native for native, target in facts["dimensions"].items()}
+        public_to_native.update(radius="rr", azimuth="theta", time="time")
+        public_to_native.update({dim: dim for dim, _ in job["context"][2]})
         settings.polar_output_chunks = {
-            {"radius": "rr", "azimuth": "theta"}.get(dim, dim): size
-            for dim, size in conf.polar_output_chunks.items()}
+            public_to_native[dim]: size
+            for dim, size in conf.polar_output_chunks.items() if dim in public_to_native}
         pieces, signatures, footprints, numeric_types = {}, [], [], {}
         for name in dict.fromkeys(job["inputs"].values()):
             options = job["polar_options"][name]
@@ -281,12 +291,25 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
     return dataset, {
         "status": "executed", "sampling": {key: value for key, value in plan.items()
                                          if key not in {"associations", "source_times"}},
-        "records": reports, "regrid_performance": cache.statistics(),
-        "source_geometry_cache": geometry_cache.statistics(),
+        "records": reports, "regrid_performance": cache.statistics(profile=conf.polar_profile),
+        "source_geometry_cache": geometry_cache.statistics(profile=conf.polar_profile),
+        "processing": {
+            "requested_chunks": dict(conf.yaml_config["products"]["polar"].get(
+                "processing", {}).get("chunks", {})),
+            "applied_chunks": dict(conf.polar_output_chunks),
+            "chunks": {name: {dim: list(sizes) for dim, sizes in value.variable.chunksizes.items()}
+                       for name, value in dataset.data_vars.items()},
+            "plan_cache": {"entries": cache.maxsize, "max_bytes": cache.max_bytes},
+            "source_halo_points": conf.polar_source_halo_points,
+            "weight_zero_tolerance": conf.polar_weight_zero_tolerance,
+            "max_target_points": conf.polar_max_points, "profile": conf.polar_profile,
+        },
         "profile": {
+            "preparation_s": perf_counter() - started,
             "graph_tasks": dask_graph_tasks([dataset]),
             "process_peak_rss_bytes": process_peak_rss_bytes(),
             "rss_scope": "process lifetime high-water mark, not a polar memory ceiling",
+            "timing_scope": "lazy polar construction, not deferred field computation or export",
         } if conf.polar_profile else None,
     }
 
@@ -373,8 +396,10 @@ def _broadcast_auxiliary(value, grid):
 
 def _sample_piece(source, names, pair, geometry, conf, method, plan_cache, source_geometry_cache):
     geography = source.isel(time=0, drop=True) if "time" in source.dims else source
+    timing = ({"profile": conf.polar_profile}
+              if getattr(conf, "schema_version", None) == 3 else {})
     _, grid, footprint = source_geometry_cache.get(
-        geography, conf.name_longitude, conf.name_latitude
+        geography, conf.name_longitude, conf.name_latitude, **timing
     )
     cropped = source.isel(
         y_box=slice(*footprint["y_slice"]), x_box=slice(*footprint["x_slice"])
@@ -383,11 +408,13 @@ def _sample_piece(source, names, pair, geometry, conf, method, plan_cache, sourc
         grid, geometry, method=method,
         zero_tolerance=getattr(conf, "polar_weight_zero_tolerance", 1e-14),
         regridder_factory=xe.Regridder,
+        **timing,
     )
     application_options = dict(
         policy=getattr(conf, "polar_missing_data_policy", "strict"),
         minimum_support=getattr(conf, "polar_min_valid_weight_fraction", .5),
         output_chunks=getattr(conf, "polar_output_chunks", {}),
+        **timing,
     )
     if getattr(conf, "schema_version", None) == 3:
         application_options["source_halo_points"] = conf.polar_source_halo_points

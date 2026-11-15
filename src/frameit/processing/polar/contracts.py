@@ -314,9 +314,12 @@ class SourceGeometryCache:
         self._bytes = 0
         self.hits, self.misses, self.evictions = 0, 0, 0
         self.normalization_s, self.fingerprint_s = 0., 0.
+        self._timed_calls = dict(normalization_s=0, fingerprint_s=0)
 
-    def get(self, source, lon_name, lat_name):
-        started = perf_counter()
+    def get(self, source, lon_name, lat_name, *, profile=True):
+        if not isinstance(profile, bool):
+            raise ValueError("profile must be boolean")
+        started = perf_counter() if profile else None
         digest = hashlib.sha256()
         for name in (lon_name, lat_name):
             coord = source[name]
@@ -331,19 +334,23 @@ class SourceGeometryCache:
                 array = np.ascontiguousarray(coord.data)
                 digest.update(memoryview(array).cast("B"))
         key = digest.hexdigest()
-        self.fingerprint_s += perf_counter() - started
+        if profile:
+            self.fingerprint_s += perf_counter() - started
+            self._timed_calls["fingerprint_s"] += 1
         if key in self._entries:
             self.hits += 1
             self._entries.move_to_end(key)
             grid, footprint, _ = self._entries[key]
         else:
             self.misses += 1
-            started = perf_counter()
+            started = perf_counter() if profile else None
             _, grid, footprint = finite_source_footprint(source, lon_name, lat_name)
             grid = grid.copy(deep=True)
             grid.lon.data.setflags(write=False)
             grid.lat.data.setflags(write=False)
-            self.normalization_s += perf_counter() - started
+            if profile:
+                self.normalization_s += perf_counter() - started
+                self._timed_calls["normalization_s"] += 1
             size = grid.lon.data.nbytes + grid.lat.data.nbytes
             if self.maxsize and size <= self.max_bytes:
                 while self._entries and (len(self._entries) >= self.maxsize or
@@ -357,8 +364,15 @@ class SourceGeometryCache:
                               x_box=slice(*footprint["x_slice"]))
         return cropped, grid, deepcopy(footprint)
 
-    def statistics(self):
+    def statistics(self, *, profile=True):
+        if not isinstance(profile, bool):
+            raise ValueError("profile must be boolean")
         return dict(hits=self.hits, misses=self.misses, evictions=self.evictions,
-                    normalization_s=self.normalization_s, fingerprint_s=self.fingerprint_s,
+                    normalization_s=(self.normalization_s
+                                     if profile and self._timed_calls["normalization_s"] else None),
+                    fingerprint_s=(self.fingerprint_s
+                                   if profile and self._timed_calls["fingerprint_s"] else None),
+                    timing={"enabled": profile, "measured_calls": dict(self._timed_calls),
+                            "scope": "cumulative timed cache calls; excludes unmeasured calls"},
                     retained_entries=len(self._entries), retained_bytes=self._bytes,
                     max_entries=self.maxsize, max_bytes=self.max_bytes)

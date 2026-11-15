@@ -212,7 +212,7 @@ def test_unknown_output_dimension_fails_before_any_publication(tmp_path, fmt):
                          output={"format": fmt, "writer": {"chunks": {"ni": 2}}})
     with pytest.raises(ValueError, match="Unknown.*dimension"):
         execute_simulation(conf)
-    assert not list((conf.output_dir / "products").iterdir())
+    assert not list((conf.output_dir / "products").glob("*"))
 
 
 @pytest.mark.parametrize("collision", ["auxiliary", "json_annotation"])

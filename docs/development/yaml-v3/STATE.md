@@ -38,8 +38,8 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 07 | done | Task07 worker + lead + independent reviewer | 05 | `bc2a470`; three Important findings closed;54 new nodes pass; reviewed handoff below. |
 | 08 | done | Task08 worker + lead + independent reviewer | 07 | `db6258e`; review approved after two fix rounds; frozen handoff below. |
 | 09 | done | Task09 worker + lead + independent reviewer | 06, 08 | `393e7d9`; approved I1/I2 closure; frozen handoff below. Minor3 retained19. |
-| 10 | done | Task10 worker + lead + independent reviewer | 09 | C7 approved after I1–I3/N1 closures; frozen handoff below. Local commit recorded in ledger. |
-| 11 | blocked | lead | 10 | Runtime/resources and chunk integrations; measured bounded layouts. |
+| 10 | done | Task10 worker + lead + independent reviewer | 09 | `2a77b1d`; C7 approved after I1–I3/N1 closures; frozen handoff below. |
+| 11 | done | Task11 worker + lead + independent reviewer | 10 | C8 independently approved after origin fix; frozen handoff below. Local commit recorded in ledger. |
 | 12 | blocked | lead | 10 | Run state, execution and writer callbacks; early request and publication facts. |
 | 13 | blocked | lead | 11, 12 | Preflight/configuration/coupled; common reports and independent errors. |
 | 14 | blocked | lead | 13 | Runner/execution/coupled/logging; integrated execution and progress. |
@@ -2719,6 +2719,178 @@ Remaining owners: CPU wiring/layout resources11, records/CLI/status12–15,
 producers/native/backend warnings16/19 and human scientific/usability21.
 Inherited Task09 Minor3 remains for19/final branch review. No package repair,
 source-data write, screenshot/image capture, push, merge or human approval.
+
+## Task11 active scope
+
+Base is the reviewed local Task10 commit2a77b1dcfd06eccbabf10d1a58aac71881b8f6f8;
+tree clean immediately after commit, no push. The exact Task11 brief and bounded
+handoff reserve runtime/execution and necessary existing reader/product/writer
+resource/chunk integration for one fresh worker. Lead owns canonical docs,
+STATE/checklist and final staging/commits. No new scientific method/default,
+public key, dependency, scheduler service or status engine is authorized.
+
+The demonstrated cpus1→budget16 mismatch belongs here; enforce effective budgets
+and record origins without changing C6 scientific sampling/C7 publication semantics.
+Preserve selected backend views before chunks, actual async/spawn publication
+facts, all native metadata/CF support and optionality. Small layout measurements
+are bounded, not a production/HPC or memory-ceiling claim.
+
+Refreshed prior required inventory comes from committed Task10's frozen full XML:
+79nodes60passed/18failed/1error, exact names/messages/traces in the ignored
+task-11-committed-baseline-nodes records. This is not a Task11 run or exemption.
+Fresh focused/required/covering, independent measurements/reopening and final
+full-node evidence are still required. All prior agents are idle; no Task11
+implementation or verification is claimed merely by opening this task.
+
+The Task11 worker requests bounded context before freeze:35new focused cases have
+33passes/2cross-source-union failures; covering710passes/2failures and required
+60passes/18failures/1error preserve the79prior statuses. No final full run exists.
+Lead fresh probes confirm the ocean's per-source chunk guard wrongly rejects the
+atmospheric height_above_ground key, and profileFalse still invokes cache clocks
+14/8times. These are real remaining C8 gaps, not inherited failure waivers.
+
+Ruling: extend the same worker to bind_sources resource/union validation and
+child runtime projection, and timing-only boundaries in the existing regrid-plan/
+source-geometry cache classes. C8 requires union-wide applicability and optional
+performance measurement. Preserve bind-once/failure revocation, geometry hashes,
+weights, scientific operations, direct numerical defaults and cache injection.
+Disabled timings must be explicitly unmeasured. The exact risks/negative controls/
+measurement caps are in the ignored task-11-scope-rulings.md. Lead also inspected
+and narrowly accepted the local selected-reader test helper's applicable-key
+filter and the earlier no-publication assertion; scientific/payload guards stay.
+Original worker resumes; no new scientific policy, human approval, final freeze,
+Task11 commit, package repair or image check is implied.
+
+The first frozen Task11 full diagnostic finds15new regressions:
+1921passed/483failed/2errors across2406nodes, while44new cases pass and all470prior
+failed/error IDs retain their causes. Native preflight was changed from metadata
+preparation to full scientific binding, prematurely narrowing candidate pools or
+rejecting requests meant to remain pending. Lead reproduces four groups freshly
+(4failed/8warnings/0.94s). The candidate is not ready to review or commit.
+
+Ruling: lift that failed freeze only for the native preflight/resource-report
+boundary and appended guards. Restore discovery without weakening actual binding/
+execution, union checks, failure revocation or payload restrictions. Preserve
+all15old assertions and44new cases. The failed source tree/report/freeze/full
+evidence is retained; all171Python hashes matched before lifting the freeze.
+After expanded coverage and required checks, allow one replacement freeze/full
+under new artifact names, with every prior status/cause compared individually.
+No more benchmark trials; measured execution-path scope must stay unchanged.
+No Task11 lead runtime examples/new published docs have been run yet. Independent
+review remains required; no failure waiver, new scientific approval or commit.
+
+The authorized native-preflight correction is frozen and verified. The15old
+regressions recover;44retained resource cases and15newguards pass (59total).
+Lead fresh four-group GREEN passes4/8warnings/0.86s; raw XML corroborates expanded
+covering961passed/20inherited failures and required60passed/18failed/1error.
+All171frozen Python hashes,169unchanged correction paths, old44case prefix,
+unrelated/bound preflight AST,20prior final artifacts and9fixture hashes match.
+
+Replacement full:1951passed/468failed/2errors/2421nodes,6189warnings/4passed
+subtests/492.92s/exit1. Lead raw XML checks preserve every2362Task10 status and
+every2406failed-candidate node except exactly15failed→passed recoveries;59new
+passes/no removed or new failed IDs. All470inherited failed/error causes remain
+individually classified, not passed or waived. Rejected evidence is retained;
+no third full or further benchmark trial.
+
+Lead unchanged scalar/vector/frozen09harnesses pass4/3/6source hashes. The actual
+pilot reports budget1/nested limits1 with correct origins/layouts. The vector
+verification launcher needed a guarded outer entry for actual spawn; original
+harness bytes/scientific assertions stay unchanged and the failed attempt remains.
+The published guarded polar API also runs as a real script with its ordinary
+reader and unchanged source hash. No source fix/freeze lift was needed for those
+verification-entry/extraction corrections.
+
+Six canonical pages document C8 facts/current keys/spawn-safe entry. Five YAML
+contexts pass schema-only. Strict60/publication/13unit/4plot-release+2subtests
+pass15warnings; six HTML pages equal text-DOM-checked59. Text-only1020/320checks
+show no page overflow; no image/pixel/human claim. Canonical60 remains available.
+Fresh lead14path Ruff73→56/noNew; scientific methods/defaults/precision unchanged.
+Complete Task11 independent spec/quality review is next; implementer idle, no
+Task11 staging/commit yet.
+
+Independent Task11 review requires one Important fix: direct Python scheduler,
+native-thread and synchronous-export choices are mislabelled as defaults when
+origins are absent. Lead fresh probes confirm the labels survive incorrectly
+through repeated resolution and effective-origin overlay; CPU enforcement itself
+is not the defect. A small Minor report string also incorrectly promises backend-
+preferred reader chunks. Lead reproduces stored1x3x3 versus selected-view1x9x9
+chunks with exact equal values.
+
+The same implementer owns round1/5: fallback-origin labels and the one description
+only, plus appended compact tests; no numerical/reader/binding/thread/export
+behavior change. All59resource cases and15recovered metadata assertions remain.
+Ruling: use focused/named6file covering/required79 checks and exact scope proof
+rather than a third whole-suite diagnostic for this metadata-only fix. The full
+1951passed/468failed/2errors remains explicitly pre-fix evidence; no post-fix full
+outcome is claimed, and final Task19/full integration remains necessary. No
+benchmark, image check, Task11 commit or Task12 dispatch before scoped closure.
+
+## Task11 frozen handoff — independently approved
+
+Original review plus fix1 closure approve Task11 spec and quality. Important1
+and Minor2 are closed; no new Critical/Important/Minor finding and no open or
+parked Task11 finding. Reviewed final tree:
+`6199d8f502432356d307fabfc37997367b202713`.
+
+Fresh lead68resource cases pass/162warnings/19.91s, including actual direct-option
+execution provenance and selected-view chunk reports. Post-fix covering is
+555passed/6failed/1error; required79 is60passed/18failed/1error. Saved XML retains
+all604covered baseline statuses/causes plus9newpasses (613distinct nodes).
+1817baseline nodes, including15earlier metadata recoveries, were not rerun in
+fix1. The1951passed/468failed/2errors full is PRE-FIX only, not a post-fix result.
+No third full/extra benchmark or fresh status for unrun nodes is implied.
+
+Final171source/test freeze hashes,168other unchanged Python paths, exact old59
+resource cases,2188immutable artifacts,9fixture/24benchmark input hashes and
+zero-new-Ruff proofs are recorded. Fresh strict61/publication/13unittests pass;
+six public HTML pages equal60 and reviewed public source stays exact. Text-only
+live1020/320checks show no page overflow. Earlier scientific-example/benchmark
+checks remain pre-fix; unchanged numeric paths and fresh actual-provenance tests
+provide the proportionate reporting-fix evidence. No image/pixel/human claim.
+
+Later tasks consume these interfaces:
+
+- `resolve_execution_resources(options)` returns effective options and one budget
+  with detected limits, actual worker/native counts, export mode and setting
+  origins. Supplied labels survive; unlabelled direct nondefaults are explicit,
+  equal-to-default values use default fallback. Constructor intent for equal
+  values is not recoverable or claimed. Readers are serial; compute/export are
+  successive; export×compute×native must fit the budget.
+- `execution_scope` and the existing spawned export pool share effective resource
+  facts, limit Dask/native threads and restore outer state. Asynchronous export
+  genuinely spawns by default; Python file callers need a main guard or explicit
+  synchronous export. Preserve actual complete descriptors on ordinary failures.
+- Native metadata preflight remains discovery-only with unbound requests and
+  explicitly pending field/method-dependent layout facts. Actual bind/execution
+  validates complete product/source/writer chunk applicability before payload
+  or publication and revokes clearance on failure; no rebind or wider read.
+- `describe_v3_resources` reports resources/layouts/configuration/setting_sources.
+  Input keys are native axes, processing/storage keys public product axes.
+  Matching uses applicable unions, not every dataset. Actual reader applications,
+  product chunks and reopened storage sizes remain separate.
+- Selected backend views precede Dask chunks. Automatic reader wording points
+  to applications rather than promising backend-preferred blocks. Estimates
+  distinguish selected/native arrays and unresolved decoder/workspace/storage
+  costs; none is an enforced process-memory ceiling.
+- YAML polar profileFalse makes optional timings/graph/RSS measurements unmeasured.
+  Cheap cache/retention counters remain. Per-call timing controls preserve injected
+  caches and low-level timing defaults; profile is not a geometry-key component.
+  Scientific geometry/weights/masks/precision/cache limits remain unchanged.
+
+Scientific impact: no new method, units, interpolation, missing-data policy,
+reference frame or scientific approval. C4/C6/C7 values, clocks, W/speed semantics,
+stable coordinates/CF support and output ownership remain frozen. Compatibility:
+actual default spawned execution, stricter unmatched-dimension errors, additional
+resource/layout origins and unmeasured timings are documented on six canonical
+pages. No new public key/dependency or migration machinery.
+
+Cannot-verify items retain approved owners rather than fabricated passes:
+post-fix whole integration and inherited470failure/error causes/warnings19/final;
+request/status/interruption12, CLI/producers13–16, HPC18, documentation20 and
+human scientific/usability21. Task09Minor3 remains19/final debt. The reporting
+fix's prescribed checks are complete; no unresolved new C8 review gap remains.
+No source-data write, package repair, push or merge. Commit locally before12.
 
 ## Task 01 evidence
 

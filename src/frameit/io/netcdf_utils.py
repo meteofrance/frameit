@@ -255,6 +255,26 @@ def concat_nc2ds(
 # -------------------------------------------------------------
 
 
+def input_chunk_plan(source, chunks):
+    """Match native keys against the complete owning read binding, never a wider read."""
+    targets = {}
+    binding = source["requests"]["binding"]
+    for record in binding["records"]:
+        field = source["fields"][record["field_id"]]
+        targets.setdefault(field["name"], set()).update(field["dimensions"])
+    unknown = set(chunks or {}) - {dim for dims in targets.values() for dim in dims}
+    if unknown:
+        raise ValueError(f"Unknown source reader chunks dimensions: {sorted(unknown)}")
+    return {
+        "requested": dict(chunks or {}),
+        "targets": {name: {dim: size for dim, size in (chunks or {}).items() if dim in dims}
+                    for name, dims in targets.items()},
+        "automatic": (
+            "Dask resolves chunks on selected backend views; applications record actual sizes"),
+        "applications": [],
+    }
+
+
 def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
     """Keep bound product selections separate from internal native read stencils."""
     if binding.get("status") != "bound" or source is None:
@@ -263,6 +283,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
     from frameit.processing.polar.contracts import require_executable_products
 
     require_executable_products(binding, source)
+    layout = source.setdefault("reader_layout", input_chunk_plan(source, chunks))
     admitted = {Path(path).resolve() for path in files}
     model = {"mesonh": "MNH"}.get(source["model"], source["model"].upper())
     native_conf = SimpleNamespace(
@@ -440,7 +461,15 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                 # Chunk the selected backend view, not a full-file Dask array.
                 # Otherwise a retained time chunk can read excluded scientific samples.
                 dataset = dataset.chunk({dim: size for dim, size in (chunks or {}).items()
-                                         if dim in dataset.dims})
+                                          if dim in dataset.dims})
+                application = {
+                    "field": name, "grid_id": record["grid_id"],
+                    "source_time": str(record["time"]),
+                    "chunks": {dim: list(sizes)
+                               for dim, sizes in dataset[name].variable.chunksizes.items()},
+                }
+                if application not in layout["applications"]:
+                    layout["applications"].append(application)
                 dataset = normalize_netcdf_time(
                     dataset, SimpleNamespace(name_time_dim=record["clock"], atm_model="AROME"))
                 samples.setdefault(record["grid_id"], []).append(dataset)

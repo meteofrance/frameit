@@ -178,15 +178,6 @@ def bind_polar_plan(source, request, binding, conf, *, radial_step_km=None):
     if conf.polar_source_halo_points < 1:
         raise ValueError(
             "Polar source halo is insufficient: at least one native neighbour is required")
-    dimensions = {"time", "radius", "azimuth"} | {
-        dim for job in binding["operation_plans"] if job["product"] == "polar"
-        for dim in job["grid"]["dimensions"]
-        if dim not in job["polar_geometry"]["horizontal_dimensions"].values()}
-    dimensions.update(dim for job in binding["operation_plans"] if job["product"] == "polar"
-                      for dim, _ in job["context"][2])
-    unknown = set(conf.polar_output_chunks) - dimensions
-    if unknown:
-        raise ValueError(f"Unknown polar processing chunks dimensions: {sorted(unknown)}")
     binding["polar_plan"] = {"status": "prepared", "native_spacing_m": spacing}
     if conf.polar_shared_target and radial_step_km is None:
         return binding["polar_plan"]

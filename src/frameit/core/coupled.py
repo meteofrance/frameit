@@ -705,7 +705,11 @@ def _select_times(tree, times):
 
 def bind_sources(conf, *, check_output=True, execution_options=None, resources=None):
     """Prepare actual consumers once, then copy their bound snapshots to the parent."""
-    from frameit.core.preflight import _publish_source_binding, bind_source
+    from frameit.core.preflight import (
+        _publish_source_binding,
+        bind_source,
+        describe_v3_resources,
+    )
 
     for request in conf.source_requests.values():
         request["binding"] = None
@@ -751,6 +755,42 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                 "radius_km": target["radius_km"], "azimuth_degrees": target["azimuth_degrees"],
                 "verification": "pending_exact_output_coordinates"})
         _prepare_v3_regions(conf, children, plans)
+        for product in conf.simulation_parameter["request_plan"]["products"]:
+            if product["product"] == "model_grid":
+                from frameit.core.preflight import describe_model_grid_output
+
+                name = product["source"]
+                describe_model_grid_output(plans[name], bindings[name], product)
+            if product["product"] != "polar":
+                continue
+            binding = children[product["source"]].source_requests[product["source"]]["binding"]
+            from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
+
+            layout = output_grid_layout(plans[product["source"]])
+            product["stored_names"] = {name: name for name in product["fields"]}
+            product["dimensions"], product["units"] = {}, {}
+            for job in binding["operation_plans"]:
+                if job["product"] != "polar":
+                    continue
+                horizontal = set(job["polar_geometry"]["horizontal_dimensions"].values())
+                native_axes = [dim for dim, _ in job["context"][2]]
+                dimensions = ["time", *native_axes, *[
+                    _output_grid_facts(layout, job["grid_id"], job["name"])["dimensions"].get(
+                        dim, dim)
+                    for dim in job["grid"]["dimensions"]
+                    if dim not in horizontal | set(native_axes)],
+                              "radius", "azimuth"]
+                previous = product["dimensions"].setdefault(job["name"], dimensions)
+                if previous != dimensions:
+                    raise ValueError(
+                        f"polar.{job['name']}: incompatible selected sample dimensions")
+                product["units"][job["name"]] = job["result_units"]
+        resource_plan = describe_v3_resources(conf, plans, execution_options)
+        for name, child in children.items():
+            product = resource_plan["layouts"]["products"].get(f"{name}.polar")
+            if product is not None:
+                child.polar_output_chunks = dict(product["applied_settings"])
+        report.update(resource_plan)
     except Exception:
         for name, child in children.items():
             binding = bindings.get(name) or plans[name].get("field_binding")
@@ -770,34 +810,6 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
         conf.simulation_parameter["request_plan"]["sources"][name] = deepcopy(plans[name])
     conf.add_parameter("input_inventory", {
         name: list(source["files"]) for name, source in plans.items()})
-    for product in conf.simulation_parameter["request_plan"]["products"]:
-        if product["product"] == "model_grid":
-            from frameit.core.preflight import describe_model_grid_output
-
-            name = product["source"]
-            describe_model_grid_output(plans[name], bindings[name], product)
-        if product["product"] != "polar":
-            continue
-        binding = children[product["source"]].source_requests[product["source"]]["binding"]
-        from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
-
-        layout = output_grid_layout(plans[product["source"]])
-        product["stored_names"] = {name: name for name in product["fields"]}
-        product["dimensions"], product["units"] = {}, {}
-        for job in binding["operation_plans"]:
-            if job["product"] != "polar":
-                continue
-            horizontal = set(job["polar_geometry"]["horizontal_dimensions"].values())
-            native_axes = [dim for dim, _ in job["context"][2]]
-            dimensions = ["time", *native_axes, *[
-                _output_grid_facts(layout, job["grid_id"], job["name"])["dimensions"].get(dim, dim)
-                for dim in job["grid"]["dimensions"]
-                if dim not in horizontal | set(native_axes)],
-                          "radius", "azimuth"]
-            previous = product["dimensions"].setdefault(job["name"], dimensions)
-            if previous != dimensions:
-                raise ValueError(f"polar.{job['name']}: incompatible selected sample dimensions")
-            product["units"][job["name"]] = job["result_units"]
     report["sources"] = conf.simulation_parameter["request_plan"]["sources"]
     report["common_polar_target"] = conf.simulation_parameter.get("common_polar_target")
     return report, children, plans

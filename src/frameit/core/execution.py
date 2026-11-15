@@ -38,6 +38,7 @@ class ExecutionOptions:
     zarr_shard_size: dict[str, int] = field(default_factory=dict)
     netcdf_chunk_size: dict[str, int] = field(default_factory=dict)
     cpus: int | None = None
+    setting_sources: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_config(cls, config, **overrides):
@@ -63,7 +64,16 @@ class ExecutionOptions:
                 "zarr_shard_size": writer.get("shards", {}),
                 "netcdf_chunk_size": writer.get("chunks", {})
                 if output["format"] == "netcdf" else {},
+                "setting_sources": {key: value for key, value in config.schema_sources.items()
+                                    if key.startswith("resources.")},
             }
+            for attr, key in (
+                ("cpus", "cpus"), ("max_workers", "export_workers"),
+                ("dask_workers", "compute_workers"), ("dask_scheduler", "scheduler"),
+                ("native_threads", "native_threads"), ("synchronous_export", "synchronous_export"),
+            ):
+                if overrides.get(attr) is not None:
+                    values["setting_sources"][f"resources.{key}"] = "cli"
             values.update({key: value for key, value in overrides.items() if value is not None})
             return cls(**values)
         output = config.yaml_config.get("output", {})
@@ -233,6 +243,7 @@ def execute_simulation(
     )
 
     requested = options or ExecutionOptions.from_config(config)
+    effective, resources = resolve_execution_resources(requested)
     prepared_sources = None
     if config.schema_version == 3:
         from frameit.utils.output_paths import OutputPaths
@@ -248,7 +259,7 @@ def execute_simulation(
         from frameit.core.coupled import bind_sources
 
         try:
-            prepared_sources = bind_sources(config)
+            prepared_sources = bind_sources(config, execution_options=effective)
         except ValueError as exc:
             raise ValueError(f"Cannot bind source requests to metadata: {exc}") from exc
         if set(config.yaml_config["products"]) - {"model_grid", "polar", "track"}:
@@ -283,8 +294,7 @@ def execute_simulation(
         from frameit.io.zarr_export import check_zarr_dependencies
 
         check_zarr_dependencies()
-    effective, resources = resolve_execution_resources(requested)
-    runtime = runtime_provenance()
+    runtime = runtime_provenance(resources)
     with owned_run(config.output_dir, overwrite=effective.overwrite, initial={
         "runtime": runtime, "resources": resources,
         "requested_execution_options": asdict(requested),
@@ -344,6 +354,27 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
             runner = FrameitRunner(config, input_files=input_files,
                                    prepared_sources=prepared_sources)
             result = runner.run(benchmark=True) if options.benchmark else runner.run()
+            layouts = None
+            if config.schema_version == 3:
+                layouts = runner.preflight_report["layouts"]
+                for name, source in runner.prepared_sources[2].items():
+                    if "reader_layout" in source:
+                        layouts["inputs"][name].update(source["reader_layout"])
+                for (source, product), dataset in runner.field_products.items():
+                    spec = config.yaml_config["products"][product]
+                    chunks = (spec.get("processing", {}).get("chunks", {})
+                              if isinstance(spec, dict) else {})
+                    dataset = dataset.chunk({dim: size for dim, size in chunks.items()
+                                             if dim in dataset.dims})
+                    runner.field_products[(source, product)] = dataset
+                    layouts["products"][f"{source}.{product}"].update(
+                        chunks={name: {dim: list(sizes)
+                                       for dim, sizes in value.variable.chunksizes.items()}
+                                for name, value in dataset.data_vars.items()},
+                        dimensions=dict(dataset.sizes),
+                        uncompressed_arrays_bytes=sum(
+                            value.nbytes for value in dataset.variables.values()),
+                        resolved_chunks="actual lazy product before storage rechunking")
             track_attrs = runner.track.attrs if runner.track is not None else {}
             status["tracking_complete"] = bool(track_attrs.get("tracking_complete", True))
             status["tracking_termination_reason"] = track_attrs.get(
@@ -386,7 +417,8 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                             if k.startswith("tracking_")
                         },
                         "execution_options": asdict(options),
-                        "setting_sources": resolved_sources(config, options),
+                         "setting_sources": resolved_sources(config, options),
+                         "layouts": layouts,
                         "preset_provenance": {
                             k: v for k, v in config.simulation_parameter.items()
                             if k.startswith("preset_")

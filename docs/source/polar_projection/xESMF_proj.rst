@@ -501,8 +501,10 @@ Dask field data remain lazy. Backend output blocks default to at most 32
 radial rings with the complete angular axis, avoiding tiny LocStream chunks
 inferred from the source's horizontal layout. ``products.polar.processing.chunks`` can
 override ``radius``, ``azimuth`` and relevant leading dimensions such as ``time``,
-``level`` or ``heightAboveGround``. Sizes are positive integers or -1 for a
-whole axis. Unknown output dimensions fail clearly. NumPy inputs stay eager.
+``level`` or ``height_above_ground``. Use inventory-qualified names when axes
+collide; see :ref:`model-grid-coordinate-names`. Sizes are positive integers or
+-1 for a whole axis. A key must match a requested product, not every source.
+Unknown dimensions fail clearly. NumPy inputs stay eager.
 An explicit angular split still needs consolidation before ordinary Fourier
 analysis. Output chunking changes storage/computation layout, not the operator.
 CSR target rows are partitioned before multiplication, so these radial blocks
@@ -511,15 +513,17 @@ uses one cropped horizontal source plane per existing leading-dimension chunk;
 it does not combine all times or levels. Selecting a subset of target chunks
 does not multiply the unselected target rows.
 
-The projection report and ordinary execution result include
-``regrid_performance``: plan builds, hits, evictions, retained-array estimates,
-normalization/fingerprinting time, weight-construction time, field-application
-time, and geometry signatures with row-sum/mapping diagnostics. Application
-time is NumPy computation or Dask graph construction; it does not silently
-include later lazy materialization. ``products.polar.processing.profile: true`` additionally
-records unique Dask task count and the process-lifetime RSS high-water mark.
-Graph inspection does not compute physical fields. RSS includes previous
-imports/loading and is not an incremental interpolation-only memory measure.
+The projection report includes cache builds, hits, evictions, retained-array
+estimates and geometry signatures. In YAML runs,
+``products.polar.processing.profile: true`` also records cache-operation timings,
+unique Dask task count and the process-lifetime RSS high-water mark. With false,
+optional measurements are unmeasured, not zero; cache activity counters remain.
+Reused caches distinguish timed calls from earlier unmeasured calls.
+
+Timings cover eager work or Dask graph construction, not later lazy
+materialization or export. Graph inspection does not compute physical fields.
+RSS includes previous imports/loading, not an incremental interpolation-only
+memory measure. Direct low-level cache calls retain timing by default.
 
 For callers reusing a cache across repeated invocations:
 

@@ -150,15 +150,16 @@ class PolarRegridPlan:
 
     geometry: RegridGeometry
     supported: SupportedRegridder
-    construction_s: float
+    construction_s: float | None
 
     @classmethod
-    def build(cls, geometry: RegridGeometry, *, regridder_factory=None):
+    def build(cls, geometry: RegridGeometry, *, regridder_factory=None, profile=True):
+        validate_execution_options(0, 0, {}, profile)
         if regridder_factory is None:
             import xesmf
 
             regridder_factory = xesmf.Regridder
-        started = perf_counter()
+        started = perf_counter() if profile else None
         source = xr.Dataset({"lon": (("y_box", "x_box"), geometry.source_lon),
                              "lat": (("y_box", "x_box"), geometry.source_lat)})
         targets = target_locstream(geometry.target_lon, geometry.target_lat)
@@ -188,7 +189,7 @@ class PolarRegridPlan:
             backend, zero_tolerance=options["zero_weight_tolerance"],
             source_mask=geometry.source_mask,
         )
-        return cls(geometry, supported, perf_counter() - started)
+        return cls(geometry, supported, perf_counter() - started if profile else None)
 
     @property
     def signature(self):
@@ -278,21 +279,27 @@ class PolarRegridPlanCache:
         self._bytes = 0
         self.counters = dict(hits=0, misses=0, builds=0, evictions=0, oversized_plans=0,
                              signature_s=0., construction_s=0., application_s=0., applications=0)
+        self._timed_calls = dict(signature_s=0, construction_s=0, application_s=0)
         self.peak_entries, self.peak_bytes = 0, 0
 
-    def get(self, source, target, **options):
+    def get(self, source, target, *, profile=True, **options):
+        validate_execution_options(0, 0, {}, profile)
         factory = options.pop("regridder_factory", None)
-        started = perf_counter()
+        started = perf_counter() if profile else None
         geometry = RegridGeometry.capture(source, target, **options)
-        self.counters["signature_s"] += perf_counter() - started
+        if profile:
+            self.counters["signature_s"] += perf_counter() - started
+            self._timed_calls["signature_s"] += 1
         if geometry.signature in self._plans:
             self.counters["hits"] += 1
             self._plans.move_to_end(geometry.signature)
             return self._plans[geometry.signature]
         self.counters["misses"] += 1
-        plan = PolarRegridPlan.build(geometry, regridder_factory=factory)
+        plan = PolarRegridPlan.build(geometry, regridder_factory=factory, profile=profile)
         self.counters["builds"] += 1
-        self.counters["construction_s"] += plan.construction_s
+        if profile:
+            self.counters["construction_s"] += plan.construction_s
+            self._timed_calls["construction_s"] += 1
         if self.maxsize and self.max_bytes:
             if plan.estimated_bytes > self.max_bytes:
                 self.counters["oversized_plans"] += 1
@@ -308,15 +315,26 @@ class PolarRegridPlanCache:
                 self.peak_bytes = max(self.peak_bytes, self._bytes)
         return plan
 
-    def apply(self, plan, field, mask=None, **options):
-        started = perf_counter()
+    def apply(self, plan, field, mask=None, *, profile=True, **options):
+        validate_execution_options(0, 0, {}, profile)
+        started = perf_counter() if profile else None
         result = plan.apply(field, mask, **options)
         self.counters["applications"] += 1
-        self.counters["application_s"] += perf_counter() - started
+        if profile:
+            self.counters["application_s"] += perf_counter() - started
+            self._timed_calls["application_s"] += 1
         return result
 
-    def statistics(self):
-        return {**self.counters, "retained_entries": len(self._plans),
+    def statistics(self, *, profile=True):
+        validate_execution_options(0, 0, {}, profile)
+        return {**self.counters,
+                **{name: self.counters[name] if profile and count else None
+                   for name, count in self._timed_calls.items()},
+                "timing": {
+                    "enabled": profile, "measured_calls": dict(self._timed_calls),
+                    "scope": "cumulative timed cache calls; excludes unmeasured calls",
+                },
+                "retained_entries": len(self._plans),
                 "retained_bytes": self._bytes,
                 "peak_retained_entries": self.peak_entries, "peak_retained_bytes": self.peak_bytes,
                 "max_entries": self.maxsize, "max_estimated_bytes": self.max_bytes}

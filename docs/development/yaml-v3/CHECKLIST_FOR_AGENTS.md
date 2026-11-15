@@ -1154,15 +1154,15 @@ their existing workers; HPC/Zarr/polar-Dask tests below.
 **Interfaces:** `resolve_execution_resources(options)`, `execution_scope(options)`,
 and `runtime_provenance()` expose one effective CPU budget and setting origins.
 
-- [ ] Test omitted and explicit CPU budgets against allocation/affinity, nested
+- [x] Test omitted and explicit CPU budgets against allocation/affinity, nested
   reader/compute/export/native threads, and excess-budget errors. Keep one native
   thread and asynchronous export as defaults.
-- [ ] Test input/product/output chunk namespaces, automatic layouts, mixed products,
+- [x] Test input/product/output chunk namespaces, automatic layouts, mixed products,
   unmatched dimensions, shards, halos, cache limits, and recorded weight tolerance.
   Verify that polar `processing.profile` controls performance measurements.
-- [ ] Measure small representative arrays before/after layout choices. Keep precision,
+- [x] Measure small representative arrays before/after layout choices. Keep precision,
   masks, and values; report time/memory/I/O and unresolved full-record decoder costs.
-- [ ] Review budget accounting and estimates.
+- [x] Review budget accounting and estimates.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_hpc_execution.py src/frameit/testing/numerical/test_zarr_export.py src/frameit/testing/numerical/test_polar_dask.py src/frameit/testing/numerical/test_fa_resources.py

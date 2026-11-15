@@ -306,6 +306,8 @@ Advanced polar ``processing`` keys are ``chunks``, ``max_target_points``,
 ``plan_cache.entries``, ``plan_cache.max_bytes``, ``source_halo_points``,
 ``weight_zero_tolerance`` and ``profile``. Insufficient support fails.
 ``profile`` enables performance measurements, not extra scientific diagnostics.
+When false, optional polar timings and graph/RSS measurements are unmeasured;
+cache activity and retention counters remain available.
 
 Output, resources and metadata
 -------------------------------
@@ -339,6 +341,10 @@ Defaults are threads, one native thread, asynchronous export and automatic worke
 Input chunks belong under source ``reader``; computation chunks under each
 product's ``processing``; storage chunks under ``output.writer``.
 An explicit dimension must match an applicable target, not every product.
+Product chunks use public product axes, including qualified vertical names;
+native input names are not silent aliases. Run provenance records effective
+origins and actual chunk applications. Unresolved layout/decoder estimates are
+reported as pending, not as memory limits.
 
 ``logging.level`` accepts ``DEBUG``, ``INFO``, ``WARNING`` or ``ERROR`` and
 defaults to ``INFO``. Optional ``metadata.institution`` has no institutional
