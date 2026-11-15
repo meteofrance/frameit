@@ -11,6 +11,13 @@ import numpy as np
 import xarray as xr
 
 from frameit.core.configuration import resolved_configuration, source_document
+from frameit.core.reports import (
+    Diagnostic,
+    PreflightError,
+    blocked_check,
+    diagnostic_locations,
+    exception_diagnostics,
+)
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.loader import DatasetResources, discover_input_files
 
@@ -625,29 +632,57 @@ def prepare_sources(conf, *, check_output=True, execution_options=None, resource
 def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, resources=None):
     """Independent metadata inventories; associations and payloads belong to later tasks."""
     from frameit.core.configuration import _fa_runtime_options, _source_runtime, resolved_sources
-    from frameit.core.preflight import inventory_source
+    from frameit.core.preflight import _required_dependencies, inventory_source
     from frameit.io.loader import _apply_model_presets
 
-    children, plans, errors, types = {}, {}, [], {}
+    dependencies, errors = _required_dependencies(conf, execution_options)
+    children, plans, types = {}, {}, {}
+    deferred = []
     for name in conf.sources:
-        runtime = _source_runtime(conf, name)
-        if not runtime["file_type"] and "profile" in conf.sources[name]:
-            runtime["file_type"] = "fa"
-            runtime["fa_options"] = _fa_runtime_options(conf.sources[name])
-        child = SimulationConfig(**_apply_model_presets(runtime))
-        children[name] = child
         try:
+            runtime = _source_runtime(conf, name)
+            if not runtime["file_type"] and "profile" in conf.sources[name]:
+                runtime["file_type"] = "fa"
+                runtime["fa_options"] = _fa_runtime_options(conf.sources[name])
+            child = SimulationConfig(**_apply_model_presets(runtime))
+            children[name] = child
             source = inventory_source(child, name, resources=resources)
             physical = source["physical_type"]
             if physical in types:
-                errors.append(f"Allow only one source per physical type {physical}: "
-                              f"{types[physical]}, {name}")
+                errors.append(Diagnostic(
+                    "sources", f"Allow only one source per physical type {physical}: "
+                    f"{types[physical]}, {name}", {"maximum_per_physical_type": 1},
+                    {"physical_type": physical, "sources": [types[physical], name]},
+                    ["Keep one source per physical type; "
+                     "combine compatible files in that source."]))
             types[physical] = name
             plans[name] = source
-        except (OSError, ValueError) as exc:
-            errors.append(str(exc))
+        except (OSError, ValueError, ImportError) as exc:
+            diagnostics = exception_diagnostics(
+                exc, path=f"sources.{name}", expected="valid selected source metadata",
+                observed={"cause": str(exc)},
+                repairs=[f"Correct sources.{name} using the reported input evidence: {exc}"])
+            errors.extend(diagnostics)
+            deferred.append(blocked_check(
+                f"sources.{name}.binding", [error.path for error in diagnostics],
+                "Source binding requires its valid owning inventory."))
     if errors:
-        raise ValueError("\n".join(errors))
+        for error in errors:
+            error.locations = diagnostic_locations(error, conf)
+        facts = {
+            "configuration": resolved_configuration(conf, execution_options),
+            "setting_sources": resolved_sources(conf, execution_options), "sources": plans,
+            "dependencies": dependencies,
+            "inputs": [{"source": name, **deepcopy(entry)}
+                       for name, source in plans.items() for entry in source["file_inventory"]],
+        }
+        failure = PreflightError(errors, facts=facts, deferred_checks=[blocked_check(
+            "plan", [error.path for error in errors],
+            "Source binding, time associations and product planning "
+            "require valid source inventories."), *deferred])
+        # Only explicit binding consumes these owners; ordinary discovery still raises.
+        failure._binding_inputs = facts, {name: children[name] for name in plans}, plans
+        raise failure
     if conf.yaml_config["region"].get("tracker") and "atmosphere" not in types:
         raise ValueError("region.tracker requires an atmospheric source in the selected inventory")
     if conf.yaml_config["region"].get("tracker"):
@@ -692,6 +727,7 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
         "planned_products": [str(conf.output_dir / item["path"])
                              for item in request_plan["products"]],
         "warnings": request_plan["warnings"], "deferred_checks": request_plan["deferred_checks"],
+        "products": deepcopy(request_plan["products"]), "dependencies": dependencies,
         "output_directory": str(conf.output_dir),
     }
     return report, children, plans
@@ -718,18 +754,69 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
             source["requests"]["binding"] = None
         source["field_binding"] = None
     conf.simulation_parameter.pop("common_polar_target", None)
-    report, children, plans = prepare_sources(
-        conf, check_output=check_output, execution_options=execution_options, resources=resources)
+    errors, deferred, preparation_prerequisites = [], [], []
+    try:
+        report, children, plans = prepare_sources(
+            conf, check_output=check_output,
+            execution_options=execution_options, resources=resources)
+    except PreflightError as exc:
+        if not hasattr(exc, "_binding_inputs"):
+            raise
+        report, children, plans = exc._binding_inputs
+        errors = list(exc.diagnostics)
+        preparation_prerequisites = [error.path for error in errors]
+        deferred = [check for check in exc.deferred_checks if check["path"] != "plan"]
     bindings = {}
     try:
         for name, child in children.items():
-            binding = bindings[name] = bind_source(child, name)
-            prepared = (conf.polar_shared_target and binding["status"] == "pending_polar_target"
-                        and binding.get("polar_plan", {}).get("status") == "prepared"
-                        and not binding["deferred_checks"])
-            if binding["status"] != "bound" and not prepared:
-                raise ValueError(f"sources.{name}: cannot execute until requests bind to metadata "
-                                 f"and methods: {binding['deferred_checks']}")
+            prerequisites = [error.path for error in errors if (
+                error.path == "products.polar" and "polar" in child.source_requests[name]["exports"]
+                or error.path == "region.tracker" and plans[name]["physical_type"] == "atmosphere")]
+            if prerequisites:
+                deferred.append(blocked_check(
+                    f"sources.{name}.binding", prerequisites,
+                    "Source binding requires its selected method dependencies."))
+                continue
+            try:
+                binding = bindings[name] = bind_source(child, name)
+                if preparation_prerequisites:
+                    deferred.append(blocked_check(
+                        f"sources.{name}.execution", preparation_prerequisites,
+                        "Final geometry, product planning and execution require "
+                        "the complete selected request."))
+                    continue
+                prepared = (conf.polar_shared_target and binding["status"] == "pending_polar_target"
+                            and binding.get("polar_plan", {}).get("status") == "prepared"
+                            and not binding["deferred_checks"])
+                if binding["status"] != "bound" and not prepared:
+                    raise ValueError(
+                        f"sources.{name}: cannot execute until requests bind to metadata "
+                        f"and methods: {binding['deferred_checks']}")
+            except (OSError, ValueError) as exc:
+                diagnostics = exception_diagnostics(
+                    exc, path=f"sources.{name}",
+                    expected="requests compatible with selected field, level, unit "
+                             "and method metadata",
+                    observed={
+                        "requests": deepcopy(child.source_requests[name]),
+                        "fields": {field["name"]: field["attributes"]
+                                   for field in plans[name]["fields"].values()},
+                        "cause": str(exc),
+                    },
+                    repairs=[f"Correct sources.{name} selections or declarations: {exc}"])
+                for error in diagnostics:
+                    error.contexts.append({"source": name, "files": list(plans[name]["files"])})
+                errors.extend(diagnostics)
+                deferred.append(blocked_check(
+                    f"sources.{name}.execution", [error.path for error in diagnostics],
+                    "Source execution requires successful local request binding."))
+        if errors:
+            for error in errors:
+                error.locations = diagnostic_locations(error, conf)
+            raise PreflightError(errors, facts=report, deferred_checks=[blocked_check(
+                "plan", [error.path for error in errors],
+                "Product geometry, layouts and execution require successful source bindings."),
+                *deferred])
         participants = {name: child for name, child in children.items()
                         if "polar" in bindings[name]["products"]}
         if conf.polar_shared_target and participants:
@@ -811,6 +898,7 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
     conf.add_parameter("input_inventory", {
         name: list(source["files"]) for name, source in plans.items()})
     report["sources"] = conf.simulation_parameter["request_plan"]["sources"]
+    report["products"] = deepcopy(conf.simulation_parameter["request_plan"]["products"])
     report["common_polar_target"] = conf.simulation_parameter.get("common_polar_target")
     return report, children, plans
 

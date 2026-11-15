@@ -16,6 +16,13 @@ import numpy as np
 import xarray as xr
 
 from frameit.core.grid_geometry import resolve_geometry
+from frameit.core.reports import (
+    Diagnostic,
+    PreflightError,
+    PreflightResult,
+    blocked_check,
+    exception_diagnostics,
+)
 from frameit.io.loader import (
     DatasetResources,
     discover_input_files,
@@ -67,8 +74,13 @@ def _source_model(source, datasets, path, *, fmt):
                              "value": ds.attrs["MNH_cleanly_closed"], "model": "mesonh"})
     declared = source.get("model")
     if len(models) > 1 or declared and models and models != {declared}:
-        raise ValueError(f"{path}: source model declaration {declared!r} "
-                         f"conflicts with metadata {evidence}")
+        raise PreflightError([Diagnostic(
+            "input.model",
+            f"source model declaration {declared!r} conflicts with input metadata",
+            {"model": declared} if declared else "one unambiguous source model",
+            {"models": sorted(models), "evidence": evidence},
+            ["Select files with consistent model evidence; "
+             "correct model only from producer evidence."])])
     model = declared or next(iter(models), None)
     if model is None:
         raise ValueError(f"{path}: model has no unambiguous metadata evidence; "
@@ -100,7 +112,10 @@ def _decoded_clock(ds, path):
 
     if not (values.dtype.kind == "M" or values.dtype.kind == "O" and all(
             isinstance(t, cftime.datetime) for t in values.flat)):
-        raise ValueError(f"{path}: {name} must contain decoded timestamps")
+        raise PreflightError([Diagnostic(
+            "input.clock", f"{name} must contain decoded timestamps",
+            {"clock": "decoded timestamps"}, {"clock": name, "dtype": str(values.dtype)},
+            [f"Provide a CF-decodable {name} coordinate with units and calendar metadata."])])
     if values.size == 0 or values.dtype.kind == "M" and np.isnat(values).any():
         raise ValueError(f"{path}: missing sample timestamps in {name}")
     calendar = clock.encoding.get("calendar", clock.attrs.get("calendar", "standard"))
@@ -647,11 +662,50 @@ def _select_source_records(records, selection, context):
     return [r for r in records if r["time"] in selected_times], selected
 
 
+def _source_file_entries(source, name):
+    """A failed pattern must not hide independent metadata errors in other patterns."""
+    patterns = source["files"] if isinstance(source["files"], list) else [source["files"]]
+
+    def failure(exc, patterns):
+        return Diagnostic(
+            f"sources.{name}.files", str(exc), "readable selected input files",
+            {"files": patterns, "exclude": source["exclude"], "cause": str(exc)},
+            [f"Correct sources.{name}.files/exclude so required input files exist and match."],
+            contexts=[{"source": name, "patterns": patterns}])
+
+    try:
+        entries, excluded, overlaps = inventory_source_files(source)
+        return entries, excluded, overlaps, []
+    except (OSError, ValueError) as original:
+        if len(patterns) == 1:
+            return [], [], [], [failure(original, patterns)]
+        entries, excluded, overlaps, errors, identities = [], [], [], [], {}
+        # Reuse discovery only after failure; these partial entries cannot grant clearance.
+        for pattern in patterns:
+            try:
+                part, skipped, repeated = inventory_source_files({**source, "files": pattern})
+            except (OSError, ValueError) as exc:
+                errors.append(failure(exc, [pattern]))
+                continue
+            excluded.extend(skipped)
+            overlaps.extend(repeated)
+            for entry in part:
+                identity = tuple(entry["identity"][key] for key in ("device", "inode"))
+                if identity not in identities:
+                    identities[identity] = entry
+                    entries.append(entry)
+                else:
+                    known = identities[identity]
+                    known["patterns"].extend(
+                        item for item in entry["patterns"] if item not in known["patterns"])
+        return entries, excluded, overlaps, errors or [failure(original, patterns)]
+
+
 def inventory_source(conf, name, *, resources=None):
     """Populate a v3 source's metadata handoff without binding or processing fields."""
     source = conf.sources[name]
-    entries, excluded, overlaps = inventory_source_files(source)
-    fields, grids, records, facts, errors = {}, {}, [], [], []
+    entries, excluded, overlaps, errors = _source_file_entries(source, name)
+    fields, grids, records, facts = {}, {}, [], []
     with (DatasetResources() if resources is None else nullcontext(resources)) as owned:
         for entry in entries:
             path = Path(entry["path"])
@@ -667,6 +721,17 @@ def inventory_source(conf, name, *, resources=None):
                     raise ValueError("sources.*.reader: engine/chunks are NetCDF-only")
                 if fmt != "fa" and source.keys() & {"profile", "fa", "native_cubes"}:
                     raise ValueError("sources.*.profile/fa/native_cubes require FA inputs")
+                engine = reader.get("engine", "h5netcdf")
+                module = ({"netcdf4": "netCDF4"}.get(engine, engine) if fmt == "netcdf"
+                          else "eccodes" if fmt == "grib" else None)
+                if module:
+                    _, dependency_error = _installed_dependency(
+                        f"sources.{name}.reader.engine" if fmt == "netcdf"
+                        else f"sources.{name}.format",
+                        module, f"Install the selected {module} reader "
+                        "in the selected environment.")
+                    if dependency_error:
+                        raise PreflightError([dependency_error])
                 if fmt == "netcdf":
                     info = _netcdf_inventory(path, source, owned)
                 elif fmt == "grib":
@@ -695,10 +760,20 @@ def inventory_source(conf, name, *, resources=None):
                 entry["fields"] = sorted({f["name"] for f in info["fields"].values()
                                           if f["name"] is not None})
                 entry["unmapped_records"] = [r for r in info["records"] if r["name"] is None]
-            except (OSError, ValueError) as exc:
-                errors.append(f"sources.{name}: {path}: {exc}")
+            except (OSError, ValueError, ImportError) as exc:
+                diagnostics = exception_diagnostics(
+                    exc, path=f"sources.{name}.files",
+                    expected="readable admitted source metadata", observed={"cause": str(exc)},
+                    repairs=[f"Correct the input or source declaration: {exc}"])
+                for error in diagnostics:
+                    if error.path.startswith("input."):
+                        error.path = f"sources.{name}." + (
+                            "model" if error.path == "input.model" else "files")
+                    error.contexts.append({
+                        "source": name, "file": str(path), "patterns": entry["patterns"]})
+                errors.extend(diagnostics)
     if errors:
-        raise ValueError("\n".join(errors))
+        raise PreflightError(errors)
     profiles = {fact[:4] for fact in facts}
     if len(profiles) != 1:
         raise ValueError(f"sources.{name}: selected files have conflicting "
@@ -748,10 +823,22 @@ def inventory_source(conf, name, *, resources=None):
                     pending.append(dep)
     missing = required - by_name.keys()
     if missing:
-        raise ValueError(f"sources.{name}: required fields/dependencies "
-                         f"{sorted(missing)} unavailable in selected files")
+        raise PreflightError([Diagnostic(
+            f"sources.{name}.variables",
+            f"required fields/dependencies {sorted(missing)} unavailable in selected files",
+            {"required_fields": sorted(required)},
+            {"available_fields": sorted(n for n in by_name if n is not None),
+             "missing_fields": sorted(missing)},
+            [f"Select files containing {', '.join(sorted(missing))}, "
+             "or correct the required field names. "
+             "Dependencies cannot widen the authored files/time selection."],
+            contexts=[{"source": name, "files": [entry["path"] for entry in entries]}])])
     relevant = [r for r in records if r["name"] in needed]
-    selected, times = _select_source_records(relevant, source.get("time", {}), f"sources.{name}")
+    if not relevant and not required and not tracker and not source.get("time"):
+        selected, times = [], []
+    else:
+        selected, times = _select_source_records(
+            relevant, source.get("time", {}), f"sources.{name}")
     errors, providers, conflicts = [], {}, []
     for field_name in sorted(required & by_name.keys()):
         identities = {r["field_id"] for r in selected if r["name"] == field_name}
@@ -818,11 +905,13 @@ def inventory_source(conf, name, *, resources=None):
     relevant_paths = {r["locator"]["path"] for r in relevant}
     candidate_paths = {r["locator"]["path"] for r in record_inventory}
     for entry in entries:
-        entry["status"] = ("selected" if entry["path"] in selected_paths else
+        entry["status"] = ("metadata_only" if not records and not required else
+                           "selected" if entry["path"] in selected_paths else
                            "time_excluded" if entry["path"] in relevant_paths else
                            "dependency_pending" if dependency_resolution == "pending_method_binding"
                            and entry["path"] in candidate_paths else "irrelevant")
         entry["reason"] = {
+            "metadata_only": "available field metadata; no decoded sample clock",
             "selected": "supplies selected records",
             "time_excluded": "no records in the source time/cycle selection",
             "irrelevant": "metadata proves no requested field or required dependency",
@@ -869,7 +958,98 @@ def inventory_source(conf, name, *, resources=None):
     conf.atm_model = {"mesonh": "MNH", "arome": "AROME", "nemo": "NEMO", "croco": "CROCO"}[model]
     conf.input_files = selected_paths
     conf.add_parameter("input_inventory", list(selected_paths))
+    _available_source_selectors(result)
     return result
+
+
+def _available_source_selectors(source):
+    """Reuse the binder's axis evidence, without binding or checking scientific values."""
+    from frameit.processing.requests import _field_axis, _vertical_axis
+
+    source["available_selectors"], source["selection_pending"] = [], []
+    by_name, records_by_name = {}, {}
+    for field in source["fields"].values():
+        by_name.setdefault(field["name"], []).append(field)
+    for index, record in enumerate(source["record_inventory"]):
+        records_by_name.setdefault(record["name"], []).append((index, record))
+    for name, fields in by_name.items():
+        if name is None:
+            continue
+        if len(fields) != 1 or any(
+                conflict["name"] == name for conflict in source["provider_conflicts"]):
+            source["selection_pending"].append(
+                f"{name}: select unambiguous files/exclude/time.cycle before selecting this field; "
+                "qualified selectors are unsupported.")
+            continue
+        field = fields[0]
+        try:
+            records = records_by_name.get(name, [])
+            if source["format"] == "fa":
+                if field.get("dimensions") is None:
+                    raise ValueError(f"{name}: native shape is unresolved")
+                axis = field.get("native_cube")
+            elif records:
+                axis = _field_axis(source, field, records[0][1], records_by_name)
+            else:
+                axis = _vertical_axis(field, source["native_grids"][field["grid_id"]])
+        except ValueError as exc:
+            source["selection_pending"].append(str(exc))
+            continue
+        source["available_selectors"].append({
+            "field": name, "variables": {"3d" if axis is not None else "2d": [name]},
+        })
+    if not source["selected_times"]:
+        source["selection_pending"].append("A decoded sample clock is required before execution.")
+
+
+def _installed_dependency(path, module, repair):
+    available = importlib.util.find_spec(module) is not None
+    fact = {"path": path, "module": module, "available": available,
+            "scope": "installed module; runtime initialization remains deferred"}
+    error = None if available else Diagnostic(
+        path, f"Selected feature requires {module}", {"module": module, "available": True},
+        {"module": module, "available": False}, [repair])
+    return fact, error
+
+
+def _required_dependencies(conf, execution_options=None):
+    """Probe only consumers selected by the request, without importing optional backends."""
+    from frameit.core.configuration import resolved_configuration
+
+    selected = []
+    if any("polar" in request["exports"] for request in conf.source_requests.values()):
+        selected.append(("products.polar", "xesmf", "FrameIt's polar extra"))
+    if conf.tracking_method == "utrack":
+        selected.extend(("region.tracker", module, "the selected UTrack environment")
+                        for module in ("torch", "utrack"))
+    products = conf.simulation_parameter["request_plan"]["products"]
+    export = execution_options is None or execution_options.export_netcdf
+    output = resolved_configuration(conf, execution_options)["output"]
+    if products and export and output["format"] == "netcdf":
+        engine = output["writer"]["engine"]
+        selected.append(("output.writer.engine", {"netcdf4": "netCDF4"}.get(engine, engine),
+                         f"the {engine} writer dependency"))
+    facts, errors = [], []
+    for path, module, installation in selected:
+        fact, error = _installed_dependency(
+            path, module, f"Install {installation} in the selected environment, "
+            "or deselect this feature.")
+        facts.append(fact)
+        if error:
+            errors.append(error)
+    if products and export and output["format"] == "zarr":
+        from frameit.io.zarr_export import check_zarr_dependencies
+
+        try:
+            check_zarr_dependencies()
+        except (ValueError, ImportError) as exc:
+            errors.append(Diagnostic(
+                "output.format", str(exc), "xarray>=2026.9.0 and zarr>=3.4.2,<4",
+                {"cause": str(exc)}, ["Install FrameIt's zarr extra, or select NetCDF output."]))
+        else:
+            facts.append({"path": "output.format", "module": "zarr", "available": True,
+                          "scope": "supported installed xarray/Zarr versions"})
+    return facts, errors
 
 
 def bind_source(conf, name, *, representations=None, required_inputs=()):
@@ -1302,7 +1482,10 @@ def infer_format(files, declared=None):
         elif magic.startswith(b"CDF") or magic == b"\x89HDF\r\n\x1a\n":
             formats.add("netcdf")
         else:
-            raise ValueError(f"Unsupported input file format: {path}")
+            raise PreflightError([Diagnostic(
+                "input.format", "Unsupported input file format",
+                {"formats": ["netcdf", "grib", "declared fa"]}, {"magic_hex": magic.hex()},
+                ["Select readable NetCDF/GRIB inputs, or declare an admitted FA profile for FA."])])
     if len(formats) != 1:
         raise ValueError("Mixed GRIB/NetCDF inputs are not supported")
     detected = formats.pop()
@@ -1450,6 +1633,87 @@ def polar_sampling_plan(conf, time_count):
     return {**metadata, "radial_count": len(radii),
             "estimated_points_per_time": len(radii) * len(angles),
             "estimated_time_count": time_count}
+
+
+def preflight_result(conf, facts, *, command="validate"):
+    """Wrap already-produced facts, including execution's owning prepare/bind result."""
+    result = PreflightResult(command, conf=conf, facts=facts)
+    for name, source in facts.get("sources", {}).items():
+        messages = list(source.get("selection_pending", []))
+        if source.get("field_binding") is None:
+            messages.append("Field, level, unit and method binding remains pending; "
+                            "metadata discovery is not executable clearance.")
+        if (not conf.source_requests[name]["exports"]
+                and not source.get("tracker_support")
+                and not source.get("tracker_support_pending")):
+            messages.append(
+                f"Select fields in sources.{name}.variables using available_selectors.")
+        if source.get("tracker_support_pending"):
+            messages.append(source["tracker_support_pending"])
+        result.deferred_checks.extend({
+            "path": f"sources.{name}", "status": "unfinished-selection", "message": message,
+        } for message in messages)
+    result.deferred_checks.append({
+        "path": "execution", "status": "execution-dependent",
+        "message": "Selected payload decoding, value/mask checks, calculation, "
+                   "publication and cleanup require execution.",
+    })
+    if command != "inspect" and not conf.simulation_parameter["request_plan"]["products"]:
+        result.errors.append(Diagnostic(
+            "products", "No fields or trajectory selected for a product",
+            "at least one selected product", conf.yaml_config["products"],
+            ["Select fields in sources.<name>.variables, "
+             "or explicitly request a trajectory."]))
+        result.deferred_checks.append(blocked_check(
+            "plan", ["products"], "Product planning requires an explicit selection."))
+    return result
+
+
+def collect_preflight(request, *, command="validate", schema_only=False, check_output=True,
+                      execution_options=None, resources=None):
+    """Collect existing preflight facts once; failures never grant execution clearance."""
+    from frameit.core.configuration import resolved_configuration, resolved_sources
+    from frameit.core.settings_class import SimulationConfig
+
+    result = PreflightResult(command)
+    try:
+        conf = request if isinstance(request, SimulationConfig) else (
+            SimulationConfig.from_mapping_with_model_preset(request) if isinstance(request, dict)
+            else SimulationConfig.from_yaml_with_model_preset(request))
+        result.conf = conf
+        if schema_only:
+            result.facts = {"configuration": resolved_configuration(conf),
+                            "setting_sources": resolved_sources(conf)}
+            result.deferred_checks = [{
+                "path": "inputs", "status": "schema-only",
+                "message": "Offline schema-only: inputs, dependencies "
+                           "and execution were not checked.",
+            }]
+        else:
+            if command == "inspect":
+                from frameit.core.coupled import prepare_sources
+
+                result.facts = prepare_sources(
+                    conf, check_output=False, execution_options=execution_options,
+                    resources=resources)[0]
+            else:
+                result.facts = preflight(
+                    conf, check_output=check_output, execution_options=execution_options,
+                    resources=resources)
+            return preflight_result(conf, result.facts, command=command)
+    except (OSError, ValueError, ImportError) as exc:
+        result.errors = exception_diagnostics(
+            exc, path="configuration" if result.conf is None else "plan",
+            expected="valid v3 configuration" if result.conf is None else "valid selected metadata",
+            observed={"cause": str(exc)}, repairs=[f"Correct the reported prerequisite: {exc}"])
+        if isinstance(exc, PreflightError):
+            result.facts = exc.facts
+            result.deferred_checks = exc.deferred_checks
+        if not result.deferred_checks:
+            result.deferred_checks = [blocked_check(
+                "plan", [error.path for error in result.errors],
+                "Dependent planning and execution are blocked until these errors are repaired.")]
+    return result
 
 
 def preflight(conf, *, input_files=None, check_output=True, execution_options=None, resources=None,

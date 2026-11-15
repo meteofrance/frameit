@@ -40,8 +40,8 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 09 | done | Task09 worker + lead + independent reviewer | 06, 08 | `393e7d9`; approved I1/I2 closure; frozen handoff below. Minor3 retained19. |
 | 10 | done | Task10 worker + lead + independent reviewer | 09 | `2a77b1d`; C7 approved after I1–I3/N1 closures; frozen handoff below. |
 | 11 | done | Task11 worker + lead + independent reviewer | 10 | `c7d1c65`; C8 independently approved after origin fix; frozen handoff below. |
-| 12 | done | Task12 worker + lead + independent reviewer | 10,11 | Records/checkpoints independently approved after I1; frozen handoff below. Local commit recorded in ledger. |
-| 13 | blocked | lead | 11, 12 | Preflight/configuration/coupled; common reports and independent errors. |
+| 12 | done | Task12 worker + lead + independent reviewer | 10,11 | `69e6992`; records/checkpoints approved after I1; frozen handoff below. |
+| 13 | done | Task13 worker + lead + independent reviewer | 11, 12 | Shared reports/diagnostics approved after two fix rounds; frozen handoff below. Local commit in ledger. |
 | 14 | blocked | lead | 13 | Runner/execution/coupled/logging; integrated execution and progress. |
 | 15 | blocked | lead | 14 | CLI/configuration/templates/schema assets; preserved init and v3 commands. |
 | 16 | blocked | lead | 15 | All producers, canonical examples, public guides and tests; direct v3 guidance. |
@@ -3056,6 +3056,201 @@ Cannot-verify items map to approved later owners, not new unresolved Task12 gaps
 CLI/producers13–16, HPC18, native/warnings/full integration19, docs20, human21.
 Inherited470failure/error causes and Task09Minor3 remain explicit. No source-data
 write, package repair, push or merge. Commit locally before13.
+
+## Task13 active report boundary
+
+Base69e69923f2d827c724c03812ce248a67e08b41a2; clean tree verified after12commit.
+One fresh worker owns preflight/configuration/coupled report/error integration,
+with an optional narrow reports module and minimal validate JSON/existing-handler
+routing. Lead owns docs/STATE/contracts/commits. No new scientific planner/parser/
+service or full CLI rewrite.
+
+Ruling: freeze C9 report_version1 and the seven-key envelope in
+task-13-report-contract.md, keeping configuration/origins/inputs/plan/pending
+separate and internal decoded clocks untouched. Why:14/15 need one inspectable
+report contract, not ad hoc reconstructions. Cost if wrong: report/CLI consumer
+rework caught by independent13review before those consumers are implemented.
+Independent diagnostics retain actual facts/locations/repairs; blocked/deferred
+are not passes or scientific fallback decisions.
+
+Ruling: minimal `validate --json` and shared existing planning/effective routing
+belong here to test a real stdout/nonzero/stderr contract. Full same-file inspect,
+operational flags/retired options/init/capabilities/status/schema stay15; integrated
+execution/progress stays14. Do not add another preflight before execution or
+prematurely bind native discovery merely to populate a report.
+
+Prior required473nodes456passed/17failed is a saved inventory, not a13run.
+Composite2494uses2485pre-constructor/pre-I1 full nodes overlaid with599post-I1
+covered nodes/9newpasses.1895historical full nodes retain older evidence; no
+post-I1 Task12 full is invented. Task13 owes focused/covering/required and one
+final full after freeze. No Task13 implementation/result is claimed by opening
+the task; all12agents are idle.
+
+Task13 implementation is frozen and lead-verified, not yet independently
+approved. All174Python hashes/94old tests/178other tracked Python boundaries,
+9fixture hashes and5,885prior evidence hashes plus append-only lead history match.
+Fresh6path Ruff46inherited/46current/noNew. Fresh lead reports38passes/3.21s.
+
+Raw XML independently corroborates required456passed/17failed, covering773passed/
+17failed and full2062passed/468failed/2errors. All2494old full outcomes retained,
+38newpasses and no old nodes unrun.470failed/error complete pairs retain causes:
+428integer-v3 producer failures with typed wrapper/marks,38context/repr-only,
+4runtime-only;6extra guard-wrapper context cases explicitly examined. This full
+exercises all formerly mixed-age nodes without retroactively relabelling Task12's
+historical runs. Inherited failures remain failures, not scientific/native clearance.
+
+Actual3documented validate commands pass; schema-only works with inputs absent.
+Strict JSON independently checks7envelope/5data keys/one document, nonzero two-source
+failure with both repairs/locations/observed facts and blocked checks, stderr logs
+and no outputs/source mutation. All3unchanged scientific harnesses pass4/3/6hashes.
+Strict64/publication/13unit and live text-only1020/320two-page checks pass, no page
+overflow/code clipping; canonical64retained, no images/pixel/human claim.
+Original implementer idle; fresh independent spec/quality review and local commit
+remain pending. No Task14 implementation or Task13 staging/commit yet.
+
+After updating the retained preview pointer, current old evidence preservation
+is5,884exact whole-file hashes plus exact original preview bytes and append-only
+ledger prefix, not5,885current whole files. Both mutable handovers are explicit;
+all174frozen hashes remain exact and no full/test/review evidence changed.
+
+First independent13review: spec❌/qualityNeedsfixes,0Critical/4Important/0Minor.
+Lead reproduces all4roots: known schema facts/marks lost to generic prose;
+invalid source name discards independent model errors; one inventory failure
+blocks unrelated local binding checks; required writer deps use authored rather
+than effective options. These are new task gaps, not waived inherited failures.
+
+Original implementer owns fix1/5 within existing v3 schema/required-dependency/
+inventory-to-binding diagnostic boundaries and appended tests; old38cases and
+scientific/record/resource controls remain frozen. Preserve valid owning metadata
+for local checks without re-inventory, premature native binding or partial
+execution; any failure still revokes all clearance. Actual schema facts remain
+at their owner, not reverse-parsed from text or new validation rules.
+
+Ruling: no second full/benchmark for bounded report/local-check corrections.
+Existing2062/468/2full is PRE-FIX1 only; complete reports/same8covering/required473,
+extra focused shared-target safety, exact source/evidence/fixture proof and
+original-reviewer closure qualify changed lanes. Final19/full integration remains.
+Reviewed candidate/tree and1124pre-fix artifacts preserved. No13commit/14dispatch.
+
+Fix1 source/tests frozen; fresh lead158report/safety cases pass159warnings/
+14.90s. All126report cases and32existing selected shared-target/bind-once/
+clearance checks pass. Scope is3production diagnostic owners plus88appended cases;
+all38old cases/662line prefix exact.174hashes/170other reviewed Python paths/
+179other tracked Python paths, outer/non-target AST,1124prior artifacts/7020start
+evidence contents/explicit mutable history and9fixture hashes verified.
+Fresh6path HEAD/review Ruff46→42/noNew.
+
+Raw XML independently retains790pre-fix covered outcomes plus88newpasses:
+861passed/17failed, required456passed/17failed. Complete covered messages/traces
+match after runtime-only normalization.1742historical full nodes remain unrun
+after Fix1;2062/468/2full stays PRE-FIX1. Actual documented CLI/offline and
+corrected schema/name failure checks pass with independent strict JSON readers,
+no outputs/source mutation. All3unchanged scientific harnesses pass4/3/6hashes.
+Strict65/publication/13unit pass/2HTMLequal64/live1020/320textbounds/code scroll.
+Original reviewer findings1–4/new-fix closure pending; no13commit/14dispatch.
+
+Fix1 original reviewer closes findings2–4; finding1 remains open only via
+new ImportantN1: root required sources gets nonexistent configuration.sources
+path/repair. Lead reproduces the missing/wrong nesting/valid root cases offline.
+This is changed required-key code, not an untouched-validator scope expansion.
+Round1result:3closed/1open,0Critical/1newImportant/0Minor; no duplicate count.
+
+Original implementer owns round2's one missing-key path/repair construction and
+one appended regression; old126cases/1230-line prefix and all closed-finding/
+scientific/report/record/resource code stay exact. Reviewed75a17b79/174hashes/
+1376prior artifacts preserved. Ruling: reports+four-file report/required covering
+and exact required473, not another8file/full/benchmark for this narrow fix.
+Earlier158safety/examples/full remain PRE-FIX2; fresh focused/CLI/scope proof,
+original reviewer and final19/full retain integration risk. No13commit/14dispatch.
+
+Fix2 frozen and lead-verified: one `_keys` root missing-key path/repair normalization
+plus one appended regression; all126old cases/1230prefix exact. Fresh127report
+passes4.21s; actual schema-only/JSON CLI missingroot→valid repair accepted and
+nested prefix preserved, strict independent JSON/exit/no-output checks pass.
+174hashes/172other Python/byte+AST/prefixes,1376prior artifacts/7268start evidence
+contents/explicit histories and9fixture hashes match. Fresh6path RuffHEAD46→42/
+review42→42/noNew. Raw XML corroborates covering583pass17fail/required456pass17fail,
+all covered old outcomes/complete causes unchanged; one new Fix2 case separate.
+279Fix1-covered/2021historicalfull nodes remain unrun; full2062/468/2PRE-FIX1/
+PRE-FIX2only. No broader integration/harness/full/benchmark rerun.
+Strict66/publication/13unit pass/2HTMLequal65/live1020/320text bounds/code-scroll.
+N1/finding1 and new-fix-only original-reviewer closure next;2–4stayclosed.
+No13commit/14dispatch or image/pixel/human claim.
+
+## Task13 frozen handoff — independently approved
+
+Original review and two scoped fix rounds approve spec/quality. Findings1–4
+closed, including N1's root-repair correction; no new Critical/Important/Minor
+finding, no open or parked Task13 issue. Final reviewed tree:
+`3125fe12d847fc0f55cab9bf5ad57f3ffd384806`.
+
+Tasks14/15 consume these existing-producer interfaces:
+
+```python
+collect_preflight(request, *, command="validate", schema_only=False,
+                  check_output=True, execution_options=None, resources=None)
+preflight_result(conf, facts, *, command="validate")
+```
+
+Both return `core.reports.PreflightResult`; the first accepts YAML path/mapping/
+existing config, the second wraps the already-produced typed facts by identity.
+**Execution/progress must wrap its existing owning prepared_sources[0] with
+command="run"; do not call collect_preflight again, re-inventory, rebind or feed
+the serialized view back into execution.** Native discovery remains unbound;
+selected polar metadata planning retains its original method/budget/clearance rules.
+
+`core.reports` exposes Diagnostic, PreflightError(ValueError), PreflightResult,
+project_report, serialize_report and render_report. The version1seven-key C9
+envelope and five separate data sections are frozen in task-13-report-contract.md.
+Projection copies metadata/labels calendars/bounds large coordinate descriptions,
+without mutating internal decoded times or computing scientific arrays.
+Authored context stays in Task12 records; YAML marks are private
+simulation_parameter["_yaml_locations"], not new run-request fields.
+
+Known owned schema checks retain actual rule/value/path/repair and same-text
+marks; root display labels are not invented YAML paths. Source names collect
+independently, preserving the existing identifier rule. Genuine repeats group
+only equal causes while retaining affected contexts. Unavailable prerequisites
+are blocked; unfinished selection/runtime checks remain explicitly pending.
+No invalid report provides execution clearance or partial effective controls.
+
+Explicit binding retains valid owning metadata through inventory errors only
+for independent local checks, without a second inventory. Its private error
+handoff is not a public plan or replay interface. All failures revoke parent/
+child/shared-target clearance; cross-source geometry/product checks stay blocked.
+Ordinary discovery still raises without binding. Selected dependency checks use
+effective writer options and preserve disabled-export isolation; module/version
+presence is not backend initialization or a new engine/format execution promise.
+
+Minimal validate --json and existing planning/effective routing share this result.
+Actual stdout is one JSON document/errors nonzero/logs stderr; human rendering
+shares useful facts/repairs. Complete same-file inspect, retired flags, init/
+capabilities/status/editor-schema/operational flags remain15; progress14.
+
+Final fresh lead127reports pass4.21s. Fix2 covering583passed/17failed and required
+456passed/17failed retain all covered old statuses/complete causes plus1new Fix2
+case. Prior Fix1 covering861/17/158safety and scientific harness4/3/6hash evidence
+are PRE-FIX2, supported by exact unchanged-code proof, not fresh execution.
+279Fix1-covered/2021historical full nodes remain unrun after Fix2.
+Full2062/468/2 is PRE-FIX1/PRE-FIX2 only; no corrected-source full is claimed.
+
+174frozen hashes/172other Python paths, exact non-missing-branch AST/bytes,
+old126case prefix/report/check/evidence histories/1376prior artifacts/7268start
+entries and9fixture hashes verified. Fresh6path RuffHEAD46→42/review42→42/noNew,
+not clean lint. All old producers/tests/scientific assertions remain intact.
+Actual final root/nested CLI repair checks pass with independent strict JSON.
+Two canonical pages document commands/report/errors; strict66/publication/13unit
+and text-only desktop/320bounds pass, both HTML pages equal65. Preview retained;
+no screenshot/image/pixel/human acceptance or extra full/benchmark/harness run.
+
+Scientific impact: none; no method/default, quantity/unit/basis, time/mask/
+precision/read/selection/grid/schema or scientific sign-off. Compatibility:
+additive versioned JSON/typed diagnostics, intentional human/error-text changes,
+same scientific API/record/output contracts; no YAML migration or dependency.
+Remaining cannot-verify/later gates retain owners: actual integrated progress14,
+complete CLI/producers15–16, HPC18, native/warnings/full integration19, docs20,
+human21. Inherited470full failed/error causes and Task09Minor3 remain explicit,
+not waived. No source-data write, package repair, push or merge. Commit before14.
 
 ## Task 01 evidence
 

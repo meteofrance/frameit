@@ -30,6 +30,32 @@ Omitted ``products`` requests only model-grid output. Omitted ``region`` keeps
 the full domain without calculating a track. The output directory must be fresh
 unless you explicitly request replacement.
 
+Read the validation report
+--------------------------
+
+Check the same request before running it:
+
+.. code-block:: bash
+
+   frameit validate frameit.yaml
+   frameit validate frameit.yaml --json
+   frameit validate frameit.yaml --schema-only --json
+
+Schema-only checks the controls without opening inputs. Ordinary validation
+inspects metadata, needed coordinates and required dependencies; it does not
+validate scientific field values. Execution-dependent checks remain deferred.
+
+The JSON report has ``report_version: 1``, ``command``, ``status``, ``data``,
+``warnings``, ``errors`` and ``deferred_checks``. Standard output contains one
+document; logs go to standard error. An error report exits nonzero.
+``data`` separates effective ``configuration``, ``origins``, ``inputs``, ``plan``
+and ``pending`` facts. Pending metadata is not a completed configuration choice.
+
+Errors identify affected keys/files, YAML locations, expected and observed facts,
+and possible repairs. Independent errors are collected together; checks blocked
+by another error are not reported as passed. A successful schema or metadata
+check is not proof of scientific validity. See :doc:`../troubleshooting`.
+
 .. _starter-catalogue:
 
 Starter catalogue

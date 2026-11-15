@@ -145,6 +145,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pv.add_argument(
         "--schema-only", action="store_true", help="Validate YAML without opening datasets"
     )
+    pv.add_argument("--json", action="store_true", help="Emit one structured validation report")
 
     from frameit.core.configuration import TEMPLATES
 
@@ -259,19 +260,18 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _cmd_validate(cfg_path: Path, *, schema_only=False) -> int:
-    from frameit.core.settings_class import SimulationConfig
+def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False) -> int:
+    from frameit.core.preflight import collect_preflight
 
-    conf = SimulationConfig.from_yaml_with_model_preset(cfg_path)
+    return _print_preflight(collect_preflight(cfg_path, schema_only=schema_only),
+                            json_output=json_output)
 
-    if not schema_only:
-        from frameit.core.preflight import preflight
 
-        plan = preflight(conf)
-        print(f"OK: {len(plan['inputs'])} input file(s); grid spacing {conf.resolution:.3f} m")
-    else:
-        print("OK: schema validated")
-    return 0
+def _print_preflight(result, *, json_output=False):
+    from frameit.core.reports import render_report, serialize_report
+
+    print(serialize_report(result) if json_output else render_report(result))
+    return int(bool(result.errors))
 
 
 def _cmd_info(short: bool) -> int:
@@ -346,10 +346,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         max_workers=args.max_workers, require_complete_tracking=args.require_complete_tracking,
     )
     if args.dry_run:
-        from frameit.core.preflight import preflight
+        from frameit.core.preflight import collect_preflight
 
-        _print_yaml(preflight(conf, execution_options=options))
-        return 0
+        return _print_preflight(collect_preflight(conf, command="run", execution_options=options))
     from frameit.core.runtime import termination_scope
 
     with termination_scope():
@@ -366,12 +365,12 @@ def _print_yaml(value):
 def _cmd_config(args):
     from frameit.core.settings_class import SimulationConfig
 
-    conf = SimulationConfig.from_yaml(args.config)
     if args.resolved:
-        from frameit.core.preflight import preflight
+        from frameit.core.preflight import collect_preflight
 
-        _print_yaml(preflight(conf))
+        return _print_preflight(collect_preflight(args.config, command="config show --effective"))
     else:
+        conf = SimulationConfig.from_yaml(args.config)
         _print_yaml(conf.yaml_config)
     return 0
 
@@ -476,7 +475,8 @@ def main(argv: list[str] | None = None) -> None:
         if args.command == "run":
             code = _cmd_run(args)
         elif args.command == "validate":
-            code = _cmd_validate(args.config, schema_only=args.schema_only)
+            code = _cmd_validate(
+                args.config, schema_only=args.schema_only, json_output=args.json)
         elif args.command == "init":
             from frameit.core.configuration import write_template
 

@@ -1199,16 +1199,16 @@ PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/t
 **Interfaces:** common plan plus the exact C9 report envelope. Keep authored mapping,
 effective configuration, origins, inputs, plan, and pending facts separate.
 
-- [ ] Test two independent invalid sources/files in one request. Both repairs must
+- [x] Test two independent invalid sources/files in one request. Both repairs must
   appear once with YAML location and observed/expected facts. Dependent checks must
   be marked blocked rather than run against invented values.
-- [ ] Test unfinished inspection, valid copyable selectors, required-only dependency
+- [x] Test unfinished inspection, valid copyable selectors, required-only dependency
   checks, offline schema-only checks, and deferred execution-dependent facts.
-- [ ] Make validate/run/effective-view share the same preflight result. Serialize
+- [x] Make validate/run/effective-view share the same preflight result. Serialize
   calendars and origins explicitly without losing internal decoded-time meaning.
-- [ ] Test one JSON stdout document with all seven envelope keys, nonzero failure,
+- [x] Test one JSON stdout document with all seven envelope keys, nonzero failure,
   stderr-only logs, and readable human summaries. Do not use snapshots alone.
-- [ ] Review reports and error repairs.
+- [x] Review reports and error repairs.
 
 ```bash
 PYTHONPATH="$PWD/src" conda run -n frameit_env python -m pytest -q src/frameit/testing/numerical/test_configuration_v3.py src/frameit/testing/numerical/test_inspect_metadata.py src/frameit/testing/numerical/test_wind_preflight.py

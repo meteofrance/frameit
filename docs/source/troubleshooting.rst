@@ -7,20 +7,26 @@ problem. Keep the configuration and logs with the attempt.
 Configuration fails before inputs open
 --------------------------------------
 
-Run ``frameit validate --schema-only``. Use the exact quoted
-``schema_version: "2.1"`` and current key/value spellings. Check duplicate keys,
-native group names, one level strategy and mutually exclusive angular options.
+Run ``frameit validate frameit.yaml --schema-only``. Supply integer
+``schema_version: 3`` and current key/value spellings. Check duplicate keys,
+source declarations and mutually exclusive selection controls.
 Relative YAML paths start at the configuration file, not the launch directory.
 See :doc:`user_guide/configuration_file`.
+
+Add ``--json`` for a single machine-readable report. Read each error's affected
+path, YAML location, expected/observed facts and suggested repairs. A missing
+location is explicit when the request did not come from a marked YAML file.
+Fix prerequisite errors before checks marked blocked; deferred value checks
+require execution and are not successful validation results.
 
 Input or metadata validation fails
 ----------------------------------
 
 Run ``frameit inspect`` on the affected stream, then ``frameit validate``.
 Check selected fields in every file, coordinate units, grids and time/cycle
-metadata. Use ``file_layout: variables`` only for complementary fields on the
-same grid and clocks; unlike grids need separate sources. Do not fix a scientific
-ambiguity by renaming units or selecting a different quantity. See
+metadata. The report retains each affected source/file rather than choosing a
+substitute. Do not fix a scientific ambiguity by renaming units or selecting a
+different quantity. See
 :doc:`user_guide/input_files`, :doc:`user_guide/fa_inputs` and
 :doc:`user_guide/ocean_netcdf`.
 

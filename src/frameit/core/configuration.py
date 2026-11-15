@@ -16,6 +16,8 @@ from pathlib import Path
 
 import yaml
 
+from frameit.core.reports import Diagnostic, PreflightError, exception_diagnostics
+
 DEFAULTS = {
     "schema_version": 3,
     "run": {"name": "analysis", "description": ""},
@@ -65,71 +67,152 @@ class UniqueLoader(yaml.SafeLoader):
         result = {}
         for key_node, value_node in node.value:
             key = self.construct_object(key_node, deep=deep)
+            location = {
+                "file": getattr(self, "source_path", None),
+                "line": key_node.start_mark.line + 1,
+                "column": key_node.start_mark.column + 1,
+            }
             if not isinstance(key, str):
-                raise ValueError(f"YAML keys must be strings (line {key_node.start_mark.line + 1})")
+                raise PreflightError([Diagnostic(
+                    getattr(self, "node_paths", {}).get(id(key_node), "configuration"),
+                    f"YAML keys must be strings (line {location['line']})", "string keys", key,
+                    ["Use string keys from the configuration schema."], locations=[location])])
             if key in result:
-                raise ValueError(f"Duplicate key {key!r} at line {key_node.start_mark.line + 1}")
+                raise PreflightError([Diagnostic(
+                    getattr(self, "node_paths", {}).get(id(key_node), "configuration"),
+                    f"Duplicate key {key!r} at line {location['line']}",
+                    "unique mapping keys", {"key": key},
+                    [f"Keep one {key} entry in this mapping."], locations=[location])])
             result[key] = self.construct_object(value_node, deep=deep)
         return result
 
 
 def read_yaml(path):
+    return _read_yaml(path)[0]
+
+
+def _read_yaml(path):
+    """Use one strict parse tree for values and authored marks."""
     path = Path(path)
+    locations = {}
+    loader = UniqueLoader(path.read_text(encoding="utf-8"))
+    loader.node_paths = {}
+    loader.source_path = str(path.absolute())
     try:
-        data = yaml.load(path.read_text(encoding="utf-8"), Loader=UniqueLoader)
+        node = loader.get_single_node()
+
+        def visit(node, prefix="", ancestors=()):
+            if node is None or id(node) in ancestors:
+                return
+            if isinstance(node, yaml.MappingNode):
+                for key, value in node.value:
+                    name = f"{prefix}.{key.value}" if prefix else key.value
+                    loader.node_paths[id(key)] = name
+                    locations[name] = {
+                        "file": str(path.absolute()), "line": key.start_mark.line + 1,
+                        "column": key.start_mark.column + 1,
+                    }
+                    visit(value, name, (*ancestors, id(node)))
+            elif isinstance(node, yaml.SequenceNode):
+                for index, value in enumerate(node.value):
+                    name = f"{prefix}[{index}]"
+                    locations[name] = {
+                        "file": str(path.absolute()), "line": value.start_mark.line + 1,
+                        "column": value.start_mark.column + 1,
+                    }
+                    visit(value, name, (*ancestors, id(node)))
+
+        visit(node)
+        data = loader.construct_document(node) if node is not None else None
     except yaml.YAMLError as exc:
-        raise ValueError(f"Invalid YAML in {path}: {exc}") from exc
+        mark = getattr(exc, "problem_mark", None)
+        raise PreflightError([Diagnostic(
+            "configuration", f"Invalid YAML in {path}: {exc}", "valid YAML mapping syntax",
+            {"problem": str(exc)}, ["Correct the YAML syntax at the reported location."],
+            locations=[{"file": str(path.absolute()), "line": mark.line + 1,
+                        "column": mark.column + 1}] if mark else [],
+        )]) from exc
+    finally:
+        loader.dispose()
     if not isinstance(data, dict):
-        raise ValueError(f"{path}: expected a YAML mapping")
-    return data
+        raise PreflightError([Diagnostic(
+            "configuration", f"{path}: expected a YAML mapping", "YAML mapping", data,
+            ["Provide a mapping with schema_version: 3 and sources."],
+            locations=[{"file": str(path.absolute()), "line": node.start_mark.line + 1,
+                        "column": node.start_mark.column + 1}] if node else [],
+        )])
+    return data, locations
 
 
 def _merge_checked(raw, defaults, prefix=""):
     """Merge fixed-key controls; dynamic mappings are checked by their owner."""
     if not isinstance(raw, dict):
-        raise ValueError(f"{prefix or 'configuration'} must be a mapping")
+        raise PreflightError([Diagnostic(
+            prefix or "configuration", f"{prefix or 'configuration'} must be a mapping",
+            "mapping", raw, [f"Provide a mapping for {prefix or 'configuration'}."])])
     result = copy.deepcopy(defaults)
     errors = []
     for key, value in raw.items():
         if not isinstance(key, str):
-            errors.append(f"{prefix or 'configuration'} keys must be strings")
+            errors.append(Diagnostic(
+                prefix or "configuration", f"{prefix or 'configuration'} keys must be strings",
+                "string keys", key, [f"Use string keys in {prefix or 'configuration'}."]))
             continue
         location = f"{prefix}.{key}" if prefix else key
         if key not in defaults:
             suggestion = difflib.get_close_matches(key, defaults, n=1)
-            errors.append(f"Unknown key {location}" +
-                          (f"; did you mean {suggestion[0]}?" if suggestion else ""))
+            errors.append(Diagnostic(
+                location, f"Unknown key {location}" +
+                (f"; did you mean {suggestion[0]}?" if suggestion else ""),
+                {"keys": sorted(defaults)}, key,
+                [f"Remove {location} or use an accepted key: {', '.join(sorted(defaults))}."]))
         elif isinstance(defaults[key], dict) and defaults[key]:
             try:
                 result[key] = _merge_checked(value, defaults[key], location)
             except ValueError as exc:
-                errors.append(str(exc))
+                errors.extend(exception_diagnostics(
+                    exc, path=location, expected="mapping", observed=value,
+                    repairs=[f"Provide a valid mapping for {location}."]))
         else:
             result[key] = copy.deepcopy(value)
     if errors:
-        raise ValueError("\n".join(errors))
+        raise PreflightError(errors)
     return result
 
 
 def _keys(raw, allowed, path, *, required=()):
     if not isinstance(raw, dict):
-        raise ValueError(f"{path} must be a mapping")
+        raise PreflightError([Diagnostic(
+            path, f"{path} must be a mapping", "mapping", raw,
+            [f"Provide a mapping for {path}."])])
     for key in raw:
         if not isinstance(key, str) or key not in allowed:
-            raise ValueError(f"Unknown key {path}.{key}")
+            raise PreflightError([Diagnostic(
+                str(key) if path == "configuration" else f"{path}.{key}",
+                f"Unknown key {path}.{key}", sorted(allowed), key,
+                [f"Remove {path}.{key}; accepted keys: {', '.join(sorted(allowed))}."])])
     missing = set(required) - raw.keys()
     if missing:
-        raise ValueError(f"{path} requires {', '.join(sorted(missing))}")
+        prefix = "" if path == "configuration" else f"{path}."
+        raise PreflightError([Diagnostic(
+            f"{prefix}{key}", f"{path} requires {', '.join(sorted(missing))}",
+            {"present": True}, {"present": False}, [f"Provide {prefix}{key}."])
+            for key in sorted(missing)])
     return copy.deepcopy(raw)
 
 
 def _reject_nulls(value, path=""):
     if path == "metadata.extra":
         if not isinstance(value, dict):
-            raise ValueError("metadata.extra must be a mapping")
+            raise PreflightError([Diagnostic(
+                path, "metadata.extra must be a mapping", "mapping", value,
+                ["Provide a mapping for metadata.extra."])])
         return
     if value is None:
-        raise ValueError(f"{path or 'configuration'} cannot be null; omit the key for its default")
+        raise PreflightError([Diagnostic(
+            path or "configuration", "cannot be null; omit the key for its default",
+            "omit the key, or provide its declared value type", None,
+            [f"Omit {path or 'configuration'} for its default, or provide a valid value."])])
     if isinstance(value, dict):
         for key, child in value.items():
             if not isinstance(key, str):
@@ -142,34 +225,48 @@ def _reject_nulls(value, path=""):
 
 def _text(value, path):
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{path} must be a nonempty string")
+        raise PreflightError([Diagnostic(
+            path, "must be a nonempty string", "nonempty string", value,
+            [f"Set {path} to a nonempty string."])])
 
 
 def _choice(value, choices, path):
     if not isinstance(value, str) or value not in choices:
-        raise ValueError(f"{path} must be one of {', '.join(sorted(choices))}")
+        raise PreflightError([Diagnostic(
+            path, f"must be one of {', '.join(sorted(choices))}", sorted(choices), value,
+            [f"Set {path} to one of: {', '.join(sorted(choices))}."])])
 
 
 def _boolean(value, path):
     if type(value) is not bool:
-        raise ValueError(f"{path} must be a YAML boolean")
+        raise PreflightError([Diagnostic(
+            path, "must be a YAML boolean", "YAML boolean", value,
+            [f"Use true or false for {path}, without quotes."])])
 
 
 def _finite(value, path):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise ValueError(f"{path} must be a finite number")
+        raise PreflightError([Diagnostic(
+            path, "must be a finite number", "finite number", value,
+            [f"Set {path} to a finite number; missing data are not zero."])])
 
 
 def _positive(value, path, *, integer=False, allow_zero=False):
     _finite(value, path)
     if (integer and not isinstance(value, int)) or value < 0 or (value == 0 and not allow_zero):
-        raise ValueError(f"{path} must be {'nonnegative' if allow_zero else 'positive'}" +
-                         (" integer" if integer else ""))
+        expected = ("nonnegative" if allow_zero else "positive") + (
+            " integer" if integer else " number")
+        raise PreflightError([Diagnostic(
+            path, f"must be {expected}", expected, value,
+            [f"Set {path} to a {expected}."])])
 
 
 def _names(value, path, *, empty=False):
     if not isinstance(value, list) or (not empty and not value):
-        raise ValueError(f"{path} must be a {'nonempty ' if not empty else ''}list of names")
+        expected = f"{'nonempty ' if not empty else ''}list of names"
+        raise PreflightError([Diagnostic(
+            path, f"{path} must be a {expected}", expected, value,
+            [f"Provide a {expected} for {path}."])])
     for name in value:
         _text(name, path)
     if len(set(value)) != len(value):
@@ -179,7 +276,9 @@ def _names(value, path, *, empty=False):
 
 def _sizes(value, path, *, whole_axis=False):
     if not isinstance(value, dict):
-        raise ValueError(f"{path} must be a dimension-size mapping")
+        raise PreflightError([Diagnostic(
+            path, f"{path} must be a dimension-size mapping", "dimension-size mapping", value,
+            [f"Provide a dimension-size mapping for {path}."])])
     for name, count in value.items():
         _text(name, path)
         if not (whole_axis and type(count) is int and count == -1):
@@ -196,7 +295,10 @@ def _paths(value, base, path, *, empty=False):
     if isinstance(value, str):
         return _path(value, base, path, preserve_symlink=True)
     if not isinstance(value, list) or (not value and not empty):
-        raise ValueError(f"{path} must be a path/glob or a {'nonempty ' if not empty else ''}list")
+        expected = f"path/glob or a {'nonempty ' if not empty else ''}list"
+        raise PreflightError([Diagnostic(
+            path, f"must be a {expected}", expected, value,
+            [f"Set {path} to a path/glob string or a list of path/glob strings."])])
     return [_path(item, base, path, preserve_symlink=True) for item in value]
 
 
@@ -205,7 +307,10 @@ def _center(value, path):
     for name, limit in (("latitude", 90), ("longitude", 180)):
         _finite(result[name], f"{path}.{name}")
         if abs(result[name]) > limit:
-            raise ValueError(f"{path}.{name} must be in [-{limit}, {limit}] degrees")
+            raise PreflightError([Diagnostic(
+                f"{path}.{name}", f"{path}.{name} must be in [-{limit}, {limit}] degrees",
+                {"min": -limit, "max": limit, "units": "degrees"}, result[name],
+                [f"Set {path}.{name} within [-{limit}, {limit}] degrees."])])
     return result
 
 
@@ -263,18 +368,28 @@ def _rotation(rotation, path, *, strict=True):
     method = checked["method"]
     _choice(method, {"coordinate", "geolocation", "mesonh_projection"}, f"{path}.method")
     if method == "coordinate" and "coordinate" not in checked:
-        raise ValueError(f"{path}.coordinate is required for method coordinate")
+        raise PreflightError([Diagnostic(
+            f"{path}.coordinate", f"{path}.coordinate is required for method coordinate",
+            {"present": True}, {"present": False}, [f"Provide {path}.coordinate."])])
     if "coordinate" in checked:
         _text(checked["coordinate"], f"{path}.coordinate")
         if strict and method != "coordinate":
-            raise ValueError(f"{path}.coordinate requires method coordinate")
+            raise PreflightError([Diagnostic(
+                f"{path}.coordinate", f"{path}.coordinate requires method coordinate",
+                {"method": "coordinate"}, {"method": method, "value": checked["coordinate"]},
+                [f"Omit {path}.coordinate unless method is coordinate."])])
     for name in ("BETA", "RPK", "LON0"):
         if name in checked:
             if method != "mesonh_projection":
-                raise ValueError(f"{path}.{name} requires method mesonh_projection")
+                raise PreflightError([Diagnostic(
+                    f"{path}.{name}", f"{path}.{name} requires method mesonh_projection",
+                    {"method": "mesonh_projection"}, {"method": method, "value": checked[name]},
+                    [f"Omit {path}.{name} unless method is mesonh_projection."])])
             _finite(checked[name], f"{path}.{name}")
             if name == "RPK" and abs(checked[name]) > 1:
-                raise ValueError(f"{path}.RPK must be in [-1, 1]")
+                raise PreflightError([Diagnostic(
+                    f"{path}.RPK", f"{path}.RPK must be in [-1, 1]",
+                    {"min": -1, "max": 1}, checked[name], [f"Set {path}.RPK within [-1, 1]."])])
 
 
 def validate_output_selections(horizontal, cartesian_vertical, polar_vertical):
@@ -379,16 +494,25 @@ def _timestamp(value, path):
     numbers = tuple(int(item or 0) for item in (year, month, day, hour, minute, second))
     if not (1 <= numbers[1] <= 12 and 1 <= numbers[2] <= 31
             and numbers[3] < 24 and numbers[4] < 60 and numbers[5] < 60):
-        raise ValueError(f"{path} must be an ISO timestamp with valid month/day/time ranges")
+        raise PreflightError([Diagnostic(
+            path, f"{path} must be an ISO timestamp with valid month/day/time ranges",
+            "ISO timestamp with valid month/day/time ranges", value,
+            [f"Use an ISO timestamp with valid month/day/time ranges for {path}."])])
     if zone and zone != "Z" and (int(zone[1:3]) > 23 or int(zone[4:]) > 59):
-        raise ValueError(f"{path} has an invalid ISO timezone offset")
+        raise PreflightError([Diagnostic(
+            path, f"{path} has an invalid ISO timezone offset",
+            "ISO timezone offset with hours <= 23 and minutes <= 59", value,
+            [f"Use a valid ISO timezone offset in {path}."])])
     return (*numbers, Decimal(f"0.{fraction or '0'}")), zone
 
 
 def _time(raw, path):
     time = _keys(raw, {"cycle", "start", "end", "values", "stride"}, path)
     if "values" in time and time.keys() & {"start", "end", "stride"}:
-        raise ValueError(f"{path}.values is exclusive with start, end and stride")
+        raise PreflightError([Diagnostic(
+            f"{path}.values", f"{path}.values is exclusive with start, end and stride",
+            {"exclusive_with": ["start", "end", "stride"]}, time,
+            [f"Use {path}.values alone, or use start/end/stride without values."])])
     for key in ("start", "end", "cycle"):
         if key in time:
             _timestamp(time[key], f"{path}.{key}")
@@ -396,7 +520,10 @@ def _time(raw, path):
         start, start_zone = _timestamp(time["start"], f"{path}.start")
         end, end_zone = _timestamp(time["end"], f"{path}.end")
         if start_zone == end_zone and start > end:
-            raise ValueError(f"{path}.start must not follow end")
+            raise PreflightError([Diagnostic(
+                f"{path}.start", f"{path}.start must not follow end",
+                {"not_after": time["end"]}, time["start"],
+                [f"Set {path}.start no later than {path}.end."])])
     if "values" in time:
         _names(time["values"], f"{path}.values")
         for value in time["values"]:
@@ -410,7 +537,10 @@ def _levels(raw, path):
     levels = _keys(raw, {"indices", "values", "domain", "units"}, path)
     strategies = levels.keys() & {"indices", "values", "domain"}
     if len(strategies) > 1:
-        raise ValueError(f"{path} requires exactly one of indices, values or domain")
+        raise PreflightError([Diagnostic(
+            path, f"{path} requires exactly one of indices, values or domain",
+            {"at_most_one": ["domain", "indices", "values"]}, levels,
+            [f"Keep only one of {path}.indices, values or domain."])])
     if "units" in levels:
         _text(levels["units"], f"{path}.units")
     if "domain" in levels:
@@ -421,7 +551,9 @@ def _levels(raw, path):
         value = levels[key]
         if isinstance(value, list):
             if not value:
-                raise ValueError(f"{path}.{key} must be a nonempty list")
+                raise PreflightError([Diagnostic(
+                    f"{path}.{key}", f"{path}.{key} must be a nonempty list", "nonempty list",
+                    value, [f"Provide a nonempty list for {path}.{key}."])])
             for item in value:
                 if key == "indices":
                     _positive(item, f"{path}.indices", integer=True, allow_zero=True)
@@ -441,7 +573,10 @@ def _levels(raw, path):
                     _finite(item, f"{path}.{key}.{bound}")
             low, high = ("start", "end") if key == "indices" else ("min", "max")
             if interval[low] > interval[high]:
-                raise ValueError(f"{path}.{key}.{low} must not exceed {high}")
+                raise PreflightError([Diagnostic(
+                    f"{path}.{key}.{low}", f"{path}.{key}.{low} must not exceed {high}",
+                    {"max": interval[high]}, interval[low],
+                    [f"Set {path}.{key}.{low} no greater than {path}.{key}.{high}."])])
     return levels
 
 
@@ -461,7 +596,10 @@ def _source(raw, name, base):
                    or (isinstance(source.get("reader"), dict) and bool(
                        source["reader"].keys() & {"python_executable", "timeout_seconds", "max_points"})))
     if model in {"nemo", "croco"} and fmt not in {None, "netcdf"}:
-        raise ValueError(f"{path}.format: {model} supports only NetCDF")
+        raise PreflightError([Diagnostic(
+            f"{path}.format", f"{path}.format: {model} supports only NetCDF",
+            {"format": "netcdf"}, {"model": model, "format": fmt},
+            [f"Select {path}.format: netcdf for {model}."])])
     source["files"] = _paths(source["files"], base, f"{path}.files")
     exclude = source.get("exclude", [])
     if not isinstance(exclude, list):
@@ -481,7 +619,9 @@ def _source(raw, name, base):
     source["variables"] = variables
     metadata = source.setdefault("field_metadata", {})
     if not isinstance(metadata, dict):
-        raise ValueError(f"{path}.field_metadata must be a mapping")
+        raise PreflightError([Diagnostic(
+            f"{path}.field_metadata", f"{path}.field_metadata must be a mapping",
+            "mapping", metadata, [f"Provide a mapping for {path}.field_metadata."])])
     for field, declaration in metadata.items():
         _text(field, f"{path}.field_metadata")
         checked = _keys(declaration, {
@@ -498,28 +638,45 @@ def _source(raw, name, base):
                     f"{path}.field_metadata.{field}.temporal_kind")
         if "allow_unscaled" in checked:
             if not fa_declared:
-                raise ValueError(f"{path}.field_metadata.{field}.allow_unscaled is FA-only")
+                loc = f"{path}.field_metadata.{field}.allow_unscaled"
+                raise PreflightError([Diagnostic(
+                    loc, f"{loc} is FA-only", {"format": "fa"},
+                    {"format": fmt, "value": checked["allow_unscaled"]},
+                    [f"Omit {loc} for non-FA inputs."])])
             _boolean(checked["allow_unscaled"], f"{path}.field_metadata.{field}.allow_unscaled")
     if "interpretation" in source:
         _choice(source["interpretation"], {"mesonh_surfex_sea"}, f"{path}.interpretation")
         if model not in {None, "mesonh"} or fmt not in {None, "netcdf"}:
-            raise ValueError(f"{path}.interpretation requires Meso-NH NetCDF")
+            raise PreflightError([Diagnostic(
+                f"{path}.interpretation", f"{path}.interpretation requires Meso-NH NetCDF",
+                {"model": "mesonh", "format": "netcdf"},
+                {"model": model, "format": fmt, "interpretation": source["interpretation"]},
+                [f"Omit {path}.interpretation unless the source is Meso-NH NetCDF."])])
     reader = _keys(source.get("reader", {}), {
         "engine", "chunks", "python_executable", "timeout_seconds", "max_points",
     }, f"{path}.reader")
     if "engine" in reader:
         if fmt not in {None, "netcdf"} or fa_declared:
-            raise ValueError(f"{path}.reader.engine is NetCDF-only")
+            raise PreflightError([Diagnostic(
+                f"{path}.reader.engine", f"{path}.reader.engine is NetCDF-only",
+                {"format": "netcdf"}, {"format": fmt, "value": reader["engine"]},
+                [f"Omit {path}.reader.engine for non-NetCDF inputs."])])
         _choice(reader["engine"], {"h5netcdf", "netcdf4", "scipy"}, f"{path}.reader.engine")
     if "chunks" in reader:
         if fa_declared:
-            raise ValueError(f"{path}.reader.chunks is not supported by the FA decoder")
+            raise PreflightError([Diagnostic(
+                f"{path}.reader.chunks", f"{path}.reader.chunks is not supported by the FA decoder",
+                "no FA reader chunks", {"format": fmt, "value": reader["chunks"]},
+                [f"Omit {path}.reader.chunks for the FA decoder."])])
         _sizes(reader["chunks"], f"{path}.reader.chunks", whole_axis=True)
     for key in ("python_executable", "timeout_seconds", "max_points"):
         if key not in reader:
             continue
         if fmt not in {None, "fa"}:
-            raise ValueError(f"{path}.reader.{key} is FA-only")
+            raise PreflightError([Diagnostic(
+                f"{path}.reader.{key}", f"{path}.reader.{key} is FA-only",
+                {"format": "fa"}, {"format": fmt, "value": reader[key]},
+                [f"Omit {path}.reader.{key} for non-FA inputs."])])
         if key == "python_executable":
             reader[key] = _path(reader[key], base, f"{path}.reader.{key}", preserve_symlink=True)
         else:
@@ -527,7 +684,9 @@ def _source(raw, name, base):
     source["reader"] = reader
     if fa_declared and fmt in {None, "fa"}:
         if model not in {None, "arome"}:
-            raise ValueError(f"{path}.model: current FA profiles require model: arome")
+            raise PreflightError([Diagnostic(
+                f"{path}.model", f"{path}.model: current FA profiles require model: arome",
+                "arome", model, [f"Use {path}.model: arome only for the admitted FA profiles."])])
         _keys(source.get("fa", {}), {"subdomain", "earth_radius_m", "expected_source"}, f"{path}.fa")
         options = _fa_runtime_options(source)
         try:
@@ -542,10 +701,19 @@ def _source(raw, name, base):
             message = message.replace("input.format fa", f"{path}.format: fa")
             raise ValueError(f"{path}: {message}") from exc
         if variables.get("levels", {}).get("domain") == "physical":
-            raise ValueError(f"{path}.variables.levels: FA physical-domain selection is gated")
+            raise PreflightError([Diagnostic(
+                f"{path}.variables.levels",
+                f"{path}.variables.levels: FA physical-domain selection is gated",
+                {"selection": ["indices", "values"]}, variables["levels"],
+                [f"Do not use physical-domain selection in {path}.variables.levels for FA."])])
         for field in variables.get("3d", []):
             if field not in options["native_cubes"]:
-                raise ValueError(f"{path}.variables.3d.{field} requires an explicit FA native cube")
+                raise PreflightError([Diagnostic(
+                    f"{path}.variables.3d.{field}",
+                    f"{path}.variables.3d.{field} requires an explicit FA native cube",
+                    {"native_cubes": [field]},
+                    {"field": field, "native_cubes": sorted(options["native_cubes"])},
+                    [f"Declare a native cube for {path}.variables.3d.{field}."])])
         if set(variables.get("2d", [])) & options["native_cubes"].keys():
             raise ValueError(f"{path}.variables: select FA native cubes under 3d")
         source["fa"] = {key: options[key] for key in ("subdomain", "expected_source")}
@@ -555,7 +723,10 @@ def _source(raw, name, base):
             reader.setdefault(key, options[key])
     elif source.keys() & {"profile", "native_cubes", "fa"}:
         key = sorted(source.keys() & {"profile", "native_cubes", "fa"})[0]
-        raise ValueError(f"{path}.{key} is FA-only; declare format: fa")
+        raise PreflightError([Diagnostic(
+            f"{path}.{key}", f"{path}.{key} is FA-only; declare format: fa",
+            {"format": "fa"}, {"format": fmt, "value": source[key]},
+            [f"Omit {path}.{key} for non-FA inputs."])])
     pairs = source.setdefault("wind_pairs", [])
     if not isinstance(pairs, list):
         raise ValueError(f"{path}.wind_pairs must be a list")
@@ -571,7 +742,10 @@ def _source(raw, name, base):
         _choice(pair["basis"], {"earth", "grid"}, f"{loc}.basis")
         if "rotation" in pair:
             if pair["basis"] != "grid":
-                raise ValueError(f"{loc}.rotation requires basis: grid")
+                raise PreflightError([Diagnostic(
+                    f"{loc}.rotation", f"{loc}.rotation requires basis: grid",
+                    {"basis": "grid"}, {"basis": pair["basis"], "value": pair["rotation"]},
+                    [f"Omit {loc}.rotation unless basis is grid."])])
             _rotation(pair["rotation"], f"{loc}.rotation")
     transforms = source.setdefault("transforms", [])
     if not isinstance(transforms, list):
@@ -581,7 +755,10 @@ def _source(raw, name, base):
         _keys(transform, {"fields", "sampling", "basis", "units"}, loc, required={"fields"})
         _names(transform["fields"], f"{loc}.fields")
         if not transform.keys() & {"sampling", "basis", "units"}:
-            raise ValueError(f"{loc} needs sampling, basis or units")
+            raise PreflightError([Diagnostic(
+                loc, f"{loc} needs sampling, basis or units",
+                {"one_of": ["basis", "sampling", "units"]}, transform,
+                [f"Declare sampling, basis or units in {loc}."])])
         for key, choices in (("sampling", {"native", "mass"}), ("basis", {"native", "earth"})):
             if key in transform:
                 _choice(transform[key], choices, f"{loc}.{key}")
@@ -589,7 +766,9 @@ def _source(raw, name, base):
             _text(transform["units"], f"{loc}.units")
     derived = source.setdefault("derived", {})
     if not isinstance(derived, dict):
-        raise ValueError(f"{path}.derived must be a mapping")
+        raise PreflightError([Diagnostic(
+            f"{path}.derived", f"{path}.derived must be a mapping", "mapping", derived,
+            [f"Provide a mapping for {path}.derived."])])
     for field, definition in derived.items():
         loc = f"{path}.derived.{field}"
         _text(field, f"{path}.derived")
@@ -623,10 +802,16 @@ def _region(raw, base):
     }, path)
     providers = region.keys() & {"center", "track", "tracker"}
     if len(providers) > 1:
-        raise ValueError("region.center, region.track and region.tracker are mutually exclusive")
+        raise PreflightError([Diagnostic(
+            path, "region.center, region.track and region.tracker are mutually exclusive",
+            {"at_most_one": ["center", "track", "tracker"]}, region,
+            ["Keep only one region.center, region.track or region.tracker."])])
     if "width_km" in region:
         if not providers:
-            raise ValueError("region.width_km requires a center, track or tracker")
+            raise PreflightError([Diagnostic(
+                "region.width_km", "region.width_km requires a center, track or tracker",
+                {"requires_one_of": ["center", "track", "tracker"]}, region["width_km"],
+                ["Declare a center, track or tracker for region.width_km."])])
         size = _keys(region["width_km"], {"x", "y"}, "region.width_km", required={"x", "y"})
         for key, value in size.items():
             _positive(value, f"region.width_km.{key}")
@@ -644,7 +829,12 @@ def _region(raw, base):
         return region
     tracker = region["tracker"]
     if not isinstance(tracker, dict) or "method" not in tracker:
-        raise ValueError("region.tracker.method is required")
+        raise PreflightError([Diagnostic(
+            "region.tracker.method" if isinstance(tracker, dict) else "region.tracker",
+            "region.tracker.method is required",
+            {"present": True} if isinstance(tracker, dict) else "mapping with method",
+            {"present": False} if isinstance(tracker, dict) else tracker,
+            ["Provide region.tracker.method in a tracker mapping."])])
     method = tracker["method"]
     _choice(method, set(TRACKER_DEFAULTS), "region.tracker.method")
     optional = {
@@ -661,7 +851,12 @@ def _region(raw, base):
     tracker = {key: value for key, value in tracker.items() if value is not None}
     _choice(tracker["on_incomplete"], {"error", "keep_prefix"}, "region.tracker.on_incomplete")
     if tracker["on_incomplete"] == "keep_prefix" and method != "multifield_vortex":
-        raise ValueError(f"region.tracker.on_incomplete: {method} does not support keep_prefix")
+        raise PreflightError([Diagnostic(
+            "region.tracker.on_incomplete",
+            f"region.tracker.on_incomplete: {method} does not support keep_prefix",
+            {"method": "multifield_vortex"},
+            {"method": method, "on_incomplete": tracker["on_incomplete"]},
+            ["Use region.tracker.on_incomplete: error for this method."])])
     if method == "pressure_wind":
         for key in ("search_width_km", "refine_width_km"):
             _positive(tracker[key], f"region.tracker.{key}")
@@ -680,9 +875,17 @@ def _region(raw, base):
                               integer=key == "max_iterations")
         _choice(tracker["motion"]["solver"], {"aitken", "fixed"}, "region.tracker.motion.solver")
         if tracker["motion"]["relaxation"] > 1:
-            raise ValueError("region.tracker.motion.relaxation must not exceed 1")
+            raise PreflightError([Diagnostic(
+                "region.tracker.motion.relaxation",
+                "region.tracker.motion.relaxation must not exceed 1", {"max": 1},
+                tracker["motion"]["relaxation"],
+                ["Set region.tracker.motion.relaxation no greater than 1."])])
         if tracker["sampling"]["azimuth_step_deg"] >= 180:
-            raise ValueError("region.tracker.sampling.azimuth_step_deg must be below 180")
+            raise PreflightError([Diagnostic(
+                "region.tracker.sampling.azimuth_step_deg",
+                "region.tracker.sampling.azimuth_step_deg must be below 180",
+                {"exclusive_max": 180}, tracker["sampling"]["azimuth_step_deg"],
+                ["Set region.tracker.sampling.azimuth_step_deg below 180."])])
     elif method == "utrack":
         tracker["weights_file"] = _path(tracker.get("weights_file"), base,
                                        "region.tracker.weights_file")
@@ -695,7 +898,11 @@ def _region(raw, base):
         }, "region.tracker.seed", required={"latitude", "longitude", "motion_u_m_s", "motion_v_m_s"})
         _center({key: seed[key] for key in ("latitude", "longitude")}, "region.tracker.seed")
         if not 0 < abs(seed["latitude"]) < 90:
-            raise ValueError("region.tracker.seed.latitude must be non-equatorial and nonpolar")
+            raise PreflightError([Diagnostic(
+                "region.tracker.seed.latitude",
+                "region.tracker.seed.latitude must be non-equatorial and nonpolar",
+                {"absolute_min_exclusive": 0, "absolute_max_exclusive": 90}, seed["latitude"],
+                ["Provide a non-equatorial, nonpolar region.tracker.seed.latitude."])])
         for key in ("motion_u_m_s", "motion_v_m_s"):
             _finite(seed[key], f"region.tracker.seed.{key}")
         if "time" in seed:
@@ -721,22 +928,42 @@ def _mask_options(options, path, *, defaults=False):
     _choice(policy, {"strict", "renormalize"}, f"{path}.missing_data_policy")
     if policy == "renormalize":
         if "min_valid_weight_fraction" not in options:
-            raise ValueError(f"{path}.min_valid_weight_fraction is required for renormalize")
+            raise PreflightError([Diagnostic(
+                f"{path}.min_valid_weight_fraction",
+                f"{path}.min_valid_weight_fraction is required for renormalize",
+                {"present": True}, {"present": False},
+                [f"Declare {path}.min_valid_weight_fraction for renormalize."])])
         if options.get("interpolation") == "nearest":
-            raise ValueError(f"{path}: nearest interpolation cannot renormalize a partial stencil")
+            raise PreflightError([Diagnostic(
+                f"{path}.interpolation",
+                f"{path}: nearest interpolation cannot renormalize a partial stencil",
+                {"interpolation_not": "nearest"},
+                {"missing_data_policy": policy, "interpolation": options["interpolation"]},
+                [f"Do not combine {path}.interpolation: nearest with renormalize."])])
     elif "min_valid_weight_fraction" in options:
-        raise ValueError(f"{path}.min_valid_weight_fraction requires renormalize")
+        raise PreflightError([Diagnostic(
+            f"{path}.min_valid_weight_fraction",
+            f"{path}.min_valid_weight_fraction requires renormalize",
+            {"missing_data_policy": "renormalize"},
+            {"missing_data_policy": policy, "value": options["min_valid_weight_fraction"]},
+            [f"Omit {path}.min_valid_weight_fraction for strict missing-data policy."])])
     if "min_valid_weight_fraction" in options:
         value = options["min_valid_weight_fraction"]
         _positive(value, f"{path}.min_valid_weight_fraction")
         if value > 1:
-            raise ValueError(f"{path}.min_valid_weight_fraction must not exceed 1")
+            raise PreflightError([Diagnostic(
+                f"{path}.min_valid_weight_fraction",
+                f"{path}.min_valid_weight_fraction must not exceed 1", {"max": 1}, value,
+                [f"Set {path}.min_valid_weight_fraction no greater than 1."])])
 
 
 def _products(raw, sources, region):
     products = _keys(raw, {"model_grid", "polar", "track"}, "products")
     if not products:
-        raise ValueError("products must request at least one product; omit it for model_grid")
+        raise PreflightError([Diagnostic(
+            "products", "products must request at least one product; omit it for model_grid",
+            "at least one product", products,
+            ["Request at least one products entry, or omit products for model_grid."])])
     for product, spec in list(products.items()):
         path = f"products.{product}"
         if product in {"model_grid", "track"} and spec is True:
@@ -744,7 +971,10 @@ def _products(raw, sources, region):
         if product == "track":
             _keys(spec, set(), path)
             if not region.keys() & {"center", "track", "tracker"}:
-                raise ValueError("products.track requires a region center, track or tracker")
+                raise PreflightError([Diagnostic(
+                    path, "products.track requires a region center, track or tracker",
+                    {"requires_one_of": ["center", "track", "tracker"]}, raw[product],
+                    ["Declare a region center, track or tracker for products.track."])])
             continue
         allowed = {"fields", "processing"}
         if product == "polar":
@@ -754,14 +984,24 @@ def _products(raw, sources, region):
         if "fields" in spec:
             fields = spec["fields"]
             if not isinstance(fields, dict) or not fields:
-                raise ValueError(f"{path}.fields must be a nonempty source-name mapping")
+                raise PreflightError([Diagnostic(
+                    f"{path}.fields", f"{path}.fields must be a nonempty source-name mapping",
+                    "nonempty source-name mapping", fields,
+                    [f"Provide a nonempty source-name mapping for {path}.fields."])])
             for name, names in fields.items():
                 if name not in sources:
-                    raise ValueError(f"{path}.fields.{name}: unknown source")
+                    raise PreflightError([Diagnostic(
+                        f"{path}.fields.{name}", f"{path}.fields.{name}: unknown source",
+                        {"sources": sorted(sources)}, name,
+                        [f"Use a declared source name for {path}.fields.{name}."])])
                 _names(names, f"{path}.fields.{name}")
                 available = _declared_fields(sources[name])
                 if not set(names) <= set(available):
-                    raise ValueError(f"{path}.fields.{name}: unknown field/result; declare it in sources")
+                    raise PreflightError([Diagnostic(
+                        f"{path}.fields.{name}",
+                        f"{path}.fields.{name}: unknown field/result; declare it in sources",
+                        {"declared_fields": available}, names,
+                        [f"Select declared fields/results in {path}.fields.{name}."])])
         processing = spec.get("processing", {})
         processing_keys = {"chunks"}
         if product == "polar":
@@ -772,14 +1012,20 @@ def _products(raw, sources, region):
             _sizes(processing["chunks"], f"{path}.processing.chunks", whole_axis=True)
         if product == "polar":
             if not region.keys() & {"center", "track", "tracker"}:
-                raise ValueError(f"{path} requires a region center, track or tracker")
+                raise PreflightError([Diagnostic(
+                    path, f"{path} requires a region center, track or tracker",
+                    {"requires_one_of": ["center", "track", "tracker"]}, spec,
+                    [f"Declare a region center, track or tracker for {path}."])])
             _positive(spec["radius_km"], f"{path}.radius_km")
             if "radial_step_km" in spec:
                 _positive(spec["radial_step_km"], f"{path}.radial_step_km")
             if "azimuth_count" in spec:
                 _positive(spec["azimuth_count"], f"{path}.azimuth_count", integer=True)
                 if spec["azimuth_count"] < 3:
-                    raise ValueError(f"{path}.azimuth_count must be at least 3")
+                    raise PreflightError([Diagnostic(
+                        f"{path}.azimuth_count", f"{path}.azimuth_count must be at least 3",
+                        {"min": 3}, spec["azimuth_count"],
+                        [f"Set {path}.azimuth_count to at least 3."])])
             spec.setdefault("shared_grid", False)
             _boolean(spec["shared_grid"], f"{path}.shared_grid")
             _mask_options(spec, path, defaults=True)
@@ -790,7 +1036,11 @@ def _products(raw, sources, region):
                 value = processing["weight_zero_tolerance"]
                 _positive(value, f"{path}.processing.weight_zero_tolerance", allow_zero=True)
                 if value >= 1e-6:
-                    raise ValueError(f"{path}.processing.weight_zero_tolerance must be below 1e-6")
+                    raise PreflightError([Diagnostic(
+                        f"{path}.processing.weight_zero_tolerance",
+                        f"{path}.processing.weight_zero_tolerance must be below 1e-6",
+                        {"min": 0, "exclusive_max": 1e-6}, value,
+                        [f"Set {path}.processing.weight_zero_tolerance below 1e-6."])])
             if "profile" in processing:
                 _boolean(processing["profile"], f"{path}.processing.profile")
             if "plan_cache" in processing:
@@ -801,16 +1051,27 @@ def _products(raw, sources, region):
                               integer=True, allow_zero=True)
             options = spec.get("field_options", {})
             if not isinstance(options, dict):
-                raise ValueError(f"{path}.field_options must be a source-name mapping")
+                raise PreflightError([Diagnostic(
+                    f"{path}.field_options", f"{path}.field_options must be a source-name mapping",
+                    "source-name mapping", options,
+                    [f"Provide a source-name mapping for {path}.field_options."])])
             for name, fields in options.items():
                 if name not in sources or not isinstance(fields, dict):
-                    raise ValueError(f"{path}.field_options.{name}: unknown source or invalid mapping")
+                    raise PreflightError([Diagnostic(
+                        f"{path}.field_options.{name}",
+                        f"{path}.field_options.{name}: unknown source or invalid mapping",
+                        {"sources": sorted(sources)} if name not in sources else "mapping",
+                        name if name not in sources else fields,
+                        [f"Use a declared source and a mapping in {path}.field_options.{name}."])])
                 exports = _product_fields(spec, sources, name)
                 needed = set(exports) | set(_derived_inputs(sources[name], exports))
                 for field, values in fields.items():
                     loc = f"{path}.field_options.{name}.{field}"
                     if field not in needed:
-                        raise ValueError(f"{loc}: field is unused by this product")
+                        raise PreflightError([Diagnostic(
+                            loc, f"{loc}: field is unused by this product",
+                            {"selected_fields": sorted(needed)}, field,
+                            [f"Remove {loc}, or explicitly select this field for the product."])])
                     _keys(values, {"interpolation", "missing_data_policy",
                                    "min_valid_weight_fraction", "sampling"}, loc)
                     effective = {key: spec[key] for key in
@@ -824,7 +1085,11 @@ def _products(raw, sources, region):
                     if field in sources[name]["derived"] and values.keys() & {
                         "interpolation", "sampling", "missing_data_policy", "min_valid_weight_fraction",
                     }:
-                        raise ValueError(f"{loc}: set polar preparation on the derived result's inputs")
+                        raise PreflightError([Diagnostic(
+                            loc, f"{loc}: set polar preparation on the derived result's inputs",
+                            {"configure_inputs": list(
+                                sources[name]["derived"][field]["inputs"].values())},
+                            values, [f"Set preparation on the inputs of {loc}, not the result."])])
         products[product] = (True if product == "model_grid" and not spec else spec)
     return products
 
@@ -863,10 +1128,17 @@ def _output(raw, base):
     if output["format"] == "zarr":
         for key in ("engine", "unlimited_time"):
             if key in writer:
-                raise ValueError(f"output.writer.{key} is NetCDF-only, even with products.track")
+                raise PreflightError([Diagnostic(
+                    f"output.writer.{key}",
+                    f"output.writer.{key} is NetCDF-only, even with products.track",
+                    {"format": "netcdf"}, {"format": output["format"], "value": writer[key]},
+                    [f"Omit output.writer.{key} for Zarr, or select output.format: netcdf."])])
     else:
         if "shards" in writer:
-            raise ValueError("output.writer.shards is Zarr-only")
+            raise PreflightError([Diagnostic(
+                "output.writer.shards", "output.writer.shards is Zarr-only",
+                {"format": "zarr"}, {"format": output["format"], "value": writer["shards"]},
+                ["Omit output.writer.shards for NetCDF, or select output.format: zarr."])])
         writer.setdefault("engine", "netcdf4")
         writer.setdefault("unlimited_time", True)
         _choice(writer["engine"], {"netcdf4", "h5netcdf"}, "output.writer.engine")
@@ -875,7 +1147,10 @@ def _output(raw, base):
                                  {"level": 1, "coordinates": False}, "output.writer.compression")
     _positive(compression["level"], "output.writer.compression.level", integer=True, allow_zero=True)
     if compression["level"] > 9:
-        raise ValueError("output.writer.compression.level must be in [0, 9]")
+        raise PreflightError([Diagnostic(
+            "output.writer.compression.level", "output.writer.compression.level must be in [0, 9]",
+            {"min": 0, "max": 9}, compression["level"],
+            ["Set output.writer.compression.level to an integer in [0, 9]."])])
     _boolean(compression["coordinates"], "output.writer.compression.coordinates")
     writer["compression"] = compression
     for key in ("chunks", "shards"):
@@ -892,24 +1167,53 @@ def _output(raw, base):
 def resolve_schema(raw, *, base_dir=None):
     """Return ``(document, source_requests, polar_fields)`` without opening inputs."""
     if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int or raw["schema_version"] != 3:
-        raise ValueError("Expected schema_version: 3 (a YAML integer, not a boolean or string)")
-    _reject_nulls(raw)
+        raise PreflightError([Diagnostic(
+            "schema_version",
+            "Expected schema_version: 3 (a YAML integer, not a boolean or string)",
+            {"type": "integer", "value": 3},
+            raw.get("schema_version") if isinstance(raw, dict) else raw,
+            ["Use schema_version: 3 with an unquoted YAML integer."])])
+    _reject_nulls({key: value for key, value in raw.items() if key != "sources"})
     _keys(raw, set(DEFAULTS), "configuration", required={"sources"})
     base = Path(base_dir or Path.cwd()).resolve()
     conf = copy.deepcopy(DEFAULTS)
     conf["run"] = _merge_checked(raw.get("run", {}), DEFAULTS["run"], "run")
     _text(conf["run"]["name"], "run.name")
     if "/" in conf["run"]["name"] or "\\" in conf["run"]["name"] or conf["run"]["name"] in {".", ".."}:
-        raise ValueError("run.name must be an identifier without path separators")
+        raise PreflightError([Diagnostic(
+            "run.name", "run.name must be an identifier without path separators",
+            "identifier without path separators", conf["run"]["name"],
+            ["Set run.name to an identifier without path separators."])])
     if not isinstance(conf["run"]["description"], str):
-        raise ValueError("run.description must be a string")
+        raise PreflightError([Diagnostic(
+            "run.description", "run.description must be a string", "string",
+            conf["run"]["description"], ["Use a string for run.description."])])
     sources = raw["sources"]
+    if sources is None:
+        _reject_nulls(sources, "sources")
     if not isinstance(sources, dict) or not sources:
-        raise ValueError("sources must be a nonempty mapping of source names")
+        raise PreflightError([Diagnostic(
+            "sources", "sources must be a nonempty mapping of source names",
+            "nonempty mapping of source names", sources,
+            ["Provide a nonempty source-name mapping for sources."])])
+    errors = []
     for name, spec in sources.items():
-        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name):
-            raise ValueError("sources names must start with a letter and contain letters/digits/_/-")
-        conf["sources"][name] = _source(spec, name, base)
+        try:
+            if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name):
+                raise PreflightError([Diagnostic(
+                    f"sources.{name}",
+                    "sources names must start with a letter and contain letters/digits/_/-",
+                    {"pattern": "[A-Za-z][A-Za-z0-9_-]*"}, name,
+                    [f"Rename sources.{name} to start with a letter "
+                     "and contain letters/digits/_/-."])])
+            _reject_nulls(spec, f"sources.{name}")
+            conf["sources"][name] = _source(spec, name, base)
+        except ValueError as exc:
+            errors.extend(exception_diagnostics(
+                exc, path=f"sources.{name}", expected="valid source declaration", observed=spec,
+                repairs=[f"Correct sources.{name}: {exc}"]))
+    if errors:
+        raise PreflightError(errors)
     conf["region"] = _region(raw.get("region", {}), base)
     conf["products"] = _products(raw.get("products", DEFAULTS["products"]),
                                 conf["sources"], conf["region"])
@@ -929,7 +1233,9 @@ def resolve_schema(raw, *, base_dir=None):
     conf["metadata"] = _keys(raw.get("metadata", {}), {"institution", "extra"}, "metadata")
     conf["metadata"].setdefault("extra", {})
     if "institution" in conf["metadata"] and not isinstance(conf["metadata"]["institution"], str):
-        raise ValueError("metadata.institution must be a string")
+        raise PreflightError([Diagnostic(
+            "metadata.institution", "metadata.institution must be a string", "string",
+            conf["metadata"]["institution"], ["Use a string for metadata.institution."])])
     requests, polar = {}, {}
     for name, source in conf["sources"].items():
         exports = {product: _product_fields(spec, conf["sources"], name)
@@ -1232,25 +1538,22 @@ def resolved_sources(conf, options=None):
 def load_runtime(path, *, launch_dir=None, overrides=None):
     """Load strict YAML and add authored line locations to dotted-key errors."""
     path = Path(path)
-    raw = read_yaml(path)
+    raw, locations = _read_yaml(path)
     try:
         runtime = to_runtime(raw, base_dir=path.resolve().parent,
                              launch_dir=launch_dir, overrides=overrides)
         runtime["request_context"].update(request_kind="yaml", request_path=str(path.absolute()))
+        runtime["simulation_parameter"]["_yaml_locations"] = locations
         return runtime
     except ValueError as exc:
-        locations = {}
+        if isinstance(exc, PreflightError):
+            from frameit.core.reports import _locations
 
-        def visit(node, prefix=""):
-            if isinstance(node, yaml.MappingNode):
-                for key, value in node.value:
-                    name = f"{prefix}.{key.value}" if prefix else key.value
-                    locations[name] = key.start_mark.line + 1
-                    visit(value, name)
-
-        visit(yaml.compose(path.read_text(encoding="utf-8")))
+            for error in exc.diagnostics:
+                error.locations = error.locations or _locations(locations, error.path)
+            raise
         message = str(exc)
-        matches = [(name, line) for name, line in locations.items() if name in message]
+        matches = [(name, mark["line"]) for name, mark in locations.items() if name in message]
         if matches:
             message += "\n" + ", ".join(f"{name}: line {line}" for name, line in matches)
         raise ValueError(f"{path}: {message}") from exc
