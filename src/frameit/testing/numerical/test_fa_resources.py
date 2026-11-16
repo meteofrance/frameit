@@ -143,9 +143,9 @@ def test_primary_pair_failed_transfer_never_publishes_surface_product(
     tmp_path, synchronous,
 ):
     raw = primary_pair_document(tmp_path, synchronous=synchronous)
-    sources = raw["input"]["sources"]
+    sources = raw["sources"]
     originals = {Path(path): Path(path).read_bytes() for source in sources.values()
-                 for path in source["input"]["files"]}
+                 for path in source["files"]}
     # A selected executable also reaches spawned exporters; monkeypatches do not.
     shim = tmp_path / "failing-helper"
     shim.write_text(f"#!{sys.executable}\n" + """
@@ -167,16 +167,16 @@ else:
                             text=True, timeout=30)
     sys.exit(result.returncode)
 """.replace("RESPONSE", repr(transfer_response([1, 2]))).replace(
-        "REAL_HELPER", repr(sources["surfex"]["input"]["fa"]["python_executable"])).replace(
+        "REAL_HELPER", repr(sources["surface"]["reader"]["python_executable"])).replace(
         "DESTINATIONS", repr(str(tmp_path / "transfers.txt"))))
     shim.chmod(0o755)
-    sources["surfex"]["input"]["fa"]["python_executable"] = str(shim)
+    sources["surface"]["reader"]["python_executable"] = str(shim)
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises((ValueError, RuntimeError), match="Invalid native array transfer"):
         execute_simulation(conf)
     status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
     assert status["state"] == "failed" and not status.get("products")
-    assert not (conf.output_dir / "products/primary-pair.cart.surfex.surface.nc").exists()
+    assert not (conf.output_dir / "products/primary-pair.surface.model_grid.nc").exists()
     assert not (conf.output_dir / ".frameit-run.lock").exists()
     assert not list(conf.output_dir.rglob("*.partial"))
     destinations = (tmp_path / "transfers.txt").read_text().splitlines()

@@ -11,9 +11,9 @@ import numpy as np
 import pytest
 import yaml
 
-from frameit.core.configuration import resolved_configuration, write_template
+from frameit.core.configuration import resolved_configuration, source_document, write_template
 from frameit.core.execution import execute_simulation
-from frameit.core.preflight import preflight
+from frameit.core.preflight import collect_preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.testing.numerical.test_fa_cubes import EPYTHON, NATIVE
 from frameit.testing.numerical.test_fa_pipeline import (
@@ -28,14 +28,12 @@ from frameit.testing.numerical.test_fa_pipeline import (
 def test_current_yaml_all_settings_and_resolved_replay(tmp_path, coupled, backend):
     raw = (document(tmp_path, tmp_path / "atmosphere.nc", [tmp_path / "surface.fa"])
            if coupled else single_fa_document(tmp_path, [tmp_path / "surface.fa"]))
-    inp = raw["input"]["sources"]["surfex"]["input"] if coupled else raw["input"]
-    inp["grid_spacing_m"] = 1100.
-    inp["fa"].update(expected_source={"PROGRAM": "AROME", "VERSION": 8, "BUG": 1,
-                                       "MASDEV": 47, "BUGFIX": 0},
-                     subdomain="C", earth_radius_m=6371229., max_points=6300,
-                     timeout_seconds=17., python_executable="./helper/bin/python")
-    if backend is not None:
-        inp["fa"]["backend"] = backend
+    inp = raw["sources"]["surface"]
+    inp["fa"] = {"expected_source": {"PROGRAM": "AROME", "VERSION": 8, "BUG": 1,
+                                    "MASDEV": 47, "BUGFIX": 0},
+                 "subdomain": "C", "earth_radius_m": 6371229.}
+    inp["reader"] = {"max_points": 6300, "timeout_seconds": 17.,
+                     "python_executable": "./helper/bin/python"}
     original = copy.deepcopy(raw)
     path = tmp_path / "current.yaml"
     path.write_text(yaml.safe_dump(raw))
@@ -44,8 +42,11 @@ def test_current_yaml_all_settings_and_resolved_replay(tmp_path, coupled, backen
     replay_path = tmp_path / "resolved.yaml"
     replay_path.write_text(yaml.safe_dump(resolved))
     replay = SimulationConfig.from_yaml(replay_path)
-    fa = (replay.input_sources["surfex"]["input"]["fa"] if coupled else replay.fa_options)
-    expected = {**inp["fa"], "backend": backend or "epygram", "native_cubes": {},
+    fa = (SimulationConfig.from_mapping_with_model_preset(
+        source_document(replay.yaml_config, "surface")).fa_options if coupled else replay.fa_options)
+    expected = {**inp["fa"], **inp["reader"], "profile": inp["profile"],
+                "field_metadata": inp["field_metadata"],
+                "backend": backend or "epygram", "native_cubes": {},
                 "python_executable": str(tmp_path / "helper/bin/python")}
     assert fa == expected
     assert resolved_configuration(replay) == resolved
@@ -70,18 +71,20 @@ def test_init_and_inspect_use_maintained_default(
 
     monkeypatch.setattr("frameit.io.fa_backend.inspect_fa", inspect)
     for backend in (None, "epygram"):
-        args = _build_parser().parse_args([
-            "inspect", str(tmp_path), "--model", "arome", "--format", "fa", "--pattern", "*.fa",
-            *(["--fa-backend", backend] if backend else [])])
+        request = single_fa_document(tmp_path, [source])
+        path.write_text(yaml.safe_dump(request))
+        args = _build_parser().parse_args(["inspect", str(path), "--json"])
         assert _cmd_inspect(args) == 0
-        report = yaml.safe_load(capsys.readouterr().out)["inputs"][0]
+        report = yaml.safe_load(capsys.readouterr().out)["data"]["plan"]["sources"]["surface"][
+            "metadata_origins"]["model"]["evidence"][0]
         assert report["backend_versions"]["FA_backend"] == "epygram"
         assert calls[-1]["backend"] == (backend or "epygram")
         assert not calls[-1]["validate_selection"]
-    args = _build_parser().parse_args([
-        "inspect", str(tmp_path), "--model", "arome", "--fa-backend", "epygram"])
-    with pytest.raises(ValueError, match="require --format fa"):
-        _cmd_inspect(args)
+    request["sources"]["surface"]["format"] = "netcdf"
+    request["sources"]["surface"]["reader"] = {"python_executable": sys.executable}
+    path.write_text(yaml.safe_dump(request))
+    with pytest.raises(ValueError, match="reader.python_executable.*FA-only"):
+        SimulationConfig.from_yaml(path)
 
 
 @NATIVE
@@ -101,33 +104,35 @@ def test_replayed_current_or_implicit_backend_exports_independent_values(
     before = [p.read_bytes() for p in paths]
     raw = (document(tmp_path, atmospheric_file(tmp_path), paths) if coupled
            else single_fa_document(tmp_path, paths))
-    inp = raw["input"]["sources"]["surfex"]["input"] if coupled else raw["input"]
+    inp = raw["sources"]["surface"]
     inp["files"] = [p.name for p in paths]
-    inp["fa"].update(python_executable=os.path.relpath(EPYTHON, tmp_path), max_points=63,
-                     timeout_seconds=30., expected_source={"PROGRAM": "AROME", "MASDEV": 47})
-    inp["fa"]["field_metadata"]["SFX.T2M"]["allow_unscaled"] = False
-    if backend is not None:
-        inp["fa"]["backend"] = backend
+    inp["reader"] = {"python_executable": os.path.relpath(EPYTHON, tmp_path),
+                     "max_points": 63, "timeout_seconds": 30.}
+    inp["fa"] = {"expected_source": {"PROGRAM": "AROME", "MASDEV": 47}}
+    inp["field_metadata"]["SFX.T2M"]["allow_unscaled"] = False
     path = tmp_path / "current.yaml"
     path.write_text(yaml.safe_dump(raw))
     original = SimulationConfig.from_yaml(path)
-    preflight(original)
+    checked = collect_preflight(original)
+    assert not checked.errors, checked.errors
     replay = tmp_path / "replay.yaml"
     replay.write_text(yaml.safe_dump(resolved_configuration(original)))
     conf = SimulationConfig.from_yaml(replay)
     result = execute_simulation(conf)
     assert result.ok, result.error
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
-    source = provenance["sources"]["surfex"] if coupled else provenance
-    facts = source["fa_inputs"][0]
-    assert facts["backend"] == facts["backend_versions"]["FA_backend"] == "epygram"
-    assert facts["requested_backend"] == (backend or "epygram")
+    source = provenance["sources"]["surface"]
+    effective = SimulationConfig.from_mapping_with_model_preset(
+        source_document(conf.yaml_config, "surface")).fa_options
+    facts = source["fa_decoder"]
+    assert effective["backend"] == facts["backend_versions"]["FA_backend"] == "epygram"
+    assert effective["backend"] == (backend or "epygram")
     assert facts["backend_versions"]["FA_backend_requested"] == (backend or "epygram")
     assert not facts["backend_versions"]["FA_backend_migration"]
     assert all(observation["library"] == "EPyGrAM" for fields in
                source["fa_decoder"]["payload_reads"].values() for observation in fields.values())
-    product = next(p["path"] for p in result.products if p["role"] == "cart"
-                   and (not coupled or p["group"] == "surfex.surface"))
+    product = next(p["path"] for p in result.products if p["role"] == "model_grid"
+                    and p["source"] == "surface")
     reader = subprocess.run([sys.executable, "-c", """
 import sys, numpy as np, xarray as xr
 with xr.open_dataset(sys.argv[1], engine='netcdf4') as d:
@@ -145,6 +150,7 @@ assert not {'frameit', 'epygram', 'falfilfa4py'} & sys.modules.keys()
     assert reader.returncode == 0, reader.stdout + reader.stderr
     assert [p.read_bytes() for p in paths] == before
     saved = yaml.safe_load((conf.output_dir / "resolved-config.yaml").read_text())
-    saved_input = saved["input"]["sources"]["surfex"]["input"] if coupled else saved["input"]
-    assert saved_input["fa"]["backend"] == (backend or "epygram")
-    assert saved_input["fa"]["field_metadata"] == inp["fa"]["field_metadata"]
+    saved_input = saved["sources"]["surface"]
+    assert SimulationConfig.from_mapping_with_model_preset(source_document(
+        saved, "surface")).fa_options["backend"] == (backend or "epygram")
+    assert saved_input["field_metadata"] == inp["field_metadata"]

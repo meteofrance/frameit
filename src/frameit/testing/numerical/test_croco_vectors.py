@@ -129,31 +129,41 @@ def test_croco_native_nminus1_faces_keep_locations(tmp_path, representation):
 
     source = tmp_path/"ocean.nc"
     vector_scene().to_netcdf(source)
-    raw = croco_document(tmp_path, [source], variables={"s_rho": {
-        "names": ["u", "v"], "levels": {"indices": [1, 0]}}})
-    raw["output"]["cartesian"]["horizontal_vectors"] = "earth_centered" if representation == "mass_earth" else representation
+    raw = croco_document(tmp_path, [source], variables={
+        "3d": ["u", "v"], "levels": {"indices": [1, 0]}})
+    if representation == "mass_earth":
+        raw["sources"]["ocean"]["wind_pairs"] = [
+            {"u": "u", "v": "v", "basis": "grid",
+             "rotation": {"method": "coordinate", "coordinate": "angle"}}]
+        raw["sources"]["ocean"]["transforms"] = [
+            {"fields": ["u", "v"], "sampling": "mass", "basis": "earth"}]
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
-    path = next(p["path"] for p in result.products if p["role"] == "cart")
+    path = next(p["path"] for p in result.products
+                if p["role"] == "model_grid" and p["source"] == "ocean")
     with xr.open_dataset(path) as out:
-        np.testing.assert_array_equal(out.s_rho_source_native_index, [1, 0])
-        assert all(name in out for name in ("h", "hc", "Cs_rho", "zeta"))
+        for name in ("u", "v"):
+            sigma = out[out[name].dims[1]]
+            np.testing.assert_array_equal(out[f"{sigma.name}_source_native_index"], [1, 0])
+            tokens = sigma.attrs["formula_terms"].split()
+            terms = dict(zip(tokens[::2], tokens[1::2], strict=True))
+            assert all(terms[role] in out for role in ("depth:", "depth_c:", "C:", "eta:"))
         if representation == "native":
-            assert "x_u_box" in out.u.dims and "y_v_box" in out.v.dims
-            np.testing.assert_allclose(out.xi_u.isel(time=0), [1.5, 2.5, 3.5, 4.5])
+            assert "x_u" in out.u.dims and "y_v" in out.v.dims
+            np.testing.assert_allclose(out.xi_u_source_coordinate.isel(time=0), [1.5, 2.5, 3.5, 4.5])
             np.testing.assert_allclose(out.u, 2.)
             np.testing.assert_allclose(out.v, 4.)
-            assert "lat_u" in out and "lon_v" in out
+            assert "latitude_u" in out and "longitude_v" in out
             assert out.u.attrs["units"] == "meter second-1"
         else:
-            assert "x_box" in out.u.dims and "y_box" in out.v.dims
+            assert "x_rho" in out.u.dims and "y_rho" in out.v.dims
             np.testing.assert_allclose(out.u, -4., atol=1e-12)
             np.testing.assert_allclose(out.v, 2., atol=1e-12)
             assert out.u.attrs["standard_name"] == "eastward_sea_water_velocity"
-            assert not set(out.dims).intersection({"xi_u", "eta_v", "x_u_box", "y_v_box"})
+            assert not set(out.dims).intersection({"xi_u", "eta_v", "x_u", "y_v"})
         provenance = __import__("yaml").safe_load((tmp_path/"out"/"run-provenance.yaml").read_text())
         if representation == "mass_earth":
-            assert provenance["current_provenance"]
+            assert provenance["sources"]["ocean"]["operations"]
         assert "wind_speed" not in out
     subprocess.run([sys.executable, "-c", """
 import sys, numpy as np, xarray as xr
@@ -161,8 +171,10 @@ with xr.open_dataset(sys.argv[1]) as out:
     native=sys.argv[2]=='native'
     np.testing.assert_allclose(out.u,2. if native else -4.,atol=1e-12)
     np.testing.assert_allclose(out.v,4. if native else 2.,atol=1e-12)
-    np.testing.assert_array_equal(out.s_rho_source_native_index,[1,0])
-    for name in out.s_rho.attrs['formula_terms'].split()[1::2]: assert name in out
+    for field in ('u','v'):
+        axis=out[field].dims[1]
+        np.testing.assert_array_equal(out[axis+'_source_native_index'],[1,0])
+        for name in out[axis].attrs['formula_terms'].split()[1::2]: assert name in out
     assert 'wind_speed' not in out and 'vrad' not in out and 'vtan' not in out
 assert 'frameit' not in sys.modules
 """, str(path), representation], check=True)
@@ -193,14 +205,18 @@ def test_croco_native_faces_do_not_require_analysis_inputs():
 
 
 def test_croco_preflight_current_payload_stays_unread(tmp_path, monkeypatch):
-    from frameit.core.preflight import preflight
+    from frameit.core.preflight import collect_preflight
     from frameit.core.settings_class import SimulationConfig
     from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
 
     path = tmp_path/"ocean.nc"
     vector_scene().to_netcdf(path)
-    raw = croco_document(tmp_path, [path], variables={"s_rho": {"names": ["u"]}})
-    raw["output"]["cartesian"]["horizontal_vectors"] = "earth_centered"
+    raw = croco_document(tmp_path, [path], variables={"3d": ["u"]})
+    raw["sources"]["ocean"]["wind_pairs"] = [
+        {"u": "u", "v": "v", "basis": "grid",
+         "rotation": {"method": "coordinate", "coordinate": "angle"}}]
+    raw["sources"]["ocean"]["transforms"] = [
+        {"fields": ["u"], "sampling": "mass", "basis": "earth"}]
     original = H5NetCDFArrayWrapper.__getitem__
 
     def metadata_only(self, key):
@@ -209,12 +225,14 @@ def test_croco_preflight_current_payload_stays_unread(tmp_path, monkeypatch):
         return original(self, key)
 
     monkeypatch.setattr(H5NetCDFArrayWrapper, "__getitem__", metadata_only)
-    preflight(SimulationConfig.from_mapping_with_model_preset(raw), check_output=False)
+    report = collect_preflight(SimulationConfig.from_mapping_with_model_preset(raw),
+                               check_output=False)
+    assert not report.errors, "\n".join(error.message for error in report.errors)
 
 
 @pytest.mark.parametrize("field", ["angle", "mask_rho", "v"])
 def test_croco_analysis_sequence_rejects_changed_support_or_companion_metadata(tmp_path, field):
-    from frameit.core.preflight import preflight
+    from frameit.core.coupled import bind_sources
     from frameit.core.settings_class import SimulationConfig
     from frameit.io.loader import DatasetResources
     from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
@@ -229,11 +247,20 @@ def test_croco_analysis_sequence_rejects_changed_support_or_companion_metadata(t
         path = tmp_path/f"ocean-{index}.nc"
         ds.to_netcdf(path)
         paths.append(path)
-    raw = croco_document(tmp_path, paths, variables={"s_rho": {"names": ["u"]}})
-    raw["output"]["cartesian"]["horizontal_vectors"] = "earth_centered"
+    raw = croco_document(tmp_path, paths, variables={"3d": ["u"]})
+    raw["sources"]["ocean"]["wind_pairs"] = [
+        {"u": "u", "v": "v", "basis": "grid",
+         "rotation": {"method": "coordinate", "coordinate": "angle"}}]
+    raw["sources"]["ocean"]["transforms"] = [
+        {"fields": ["u"], "sampling": "mass", "basis": "earth"}]
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    with pytest.raises(ValueError, match="CROCO"):
-        preflight(conf, check_output=False)
-    with DatasetResources() as resources, pytest.raises(ValueError, match="CROCO"):
-        concat_nc2ds_by_vert_coord(paths, conf.requests_user(), conf.requests_tracker(),
-                                   method="fixed_box", wind_conf=conf, resources=resources)
+    with pytest.raises(ValueError, match="CROCO|input v missing or ambiguous in selected inventory"):
+        bind_sources(conf, check_output=False)
+    with DatasetResources() as resources:
+        _, children, plans = bind_sources(conf, check_output=False, resources=resources)
+        child = children["ocean"]
+        with pytest.raises(ValueError, match="CROCO"):
+            concat_nc2ds_by_vert_coord(paths, {}, {}, method="fixed_box", wind_conf=child,
+                                        resources=resources,
+                                        selected_records=child.source_requests["ocean"]["binding"],
+                                        source_plan=plans["ocean"])

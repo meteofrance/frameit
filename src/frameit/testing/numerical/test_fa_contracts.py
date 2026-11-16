@@ -132,9 +132,12 @@ def test_raw_vertical_header_survives_without_coordinate_or_field_assumptions():
 def test_native_atmospheric_cubes_and_vertical_selectors_remain_gated(tmp_path, group, levels):
     path = tmp_path / "unopened.fa"
     raw = single_fa_document(tmp_path, [path])
-    raw["input"]["fa"].update(profile="arome_history",
-                             field_metadata={"CLSTEMPERATURE": DECLARATION})
-    raw["variables"] = {group: {"names": ["CLSTEMPERATURE"], "levels": levels}}
+    source = raw["sources"]["surface"]
+    source.update(profile="arome_history", field_metadata={"CLSTEMPERATURE": DECLARATION})
+    source["variables"] = {"3d" if group == "level" else "2d": ["CLSTEMPERATURE"]}
+    if levels != "stored":
+        source["variables"]["levels"] = {"domain": "physical"} if levels == "physical" else levels
+    # The historical blanket rejection remains a contract conflict, not a new gate.
     message = ("FA 2-D records must be selected in variables.fields_2d" if group == "level"
                else "variables.fields_2d.levels cannot select a vertical axis")
     with pytest.raises(ValueError, match=message):
@@ -201,16 +204,17 @@ def test_typed_words_are_reinterpreted_not_cast_and_unknowns_never_read(tmp_path
 
 def test_expected_source_schema_and_resolved_yaml_compatibility(tmp_path):
     raw = single_fa_document(tmp_path, [tmp_path / "unopened.fa"])
-    raw["input"]["grid_spacing_m"] = 1100.
-    raw["input"]["fa"]["expected_source"] = {"PROGRAM": "AROME", "MASDEV": 47, "VERSION": 8}
+    raw["sources"]["surface"]["fa"] = {
+        "expected_source": {"PROGRAM": "AROME", "MASDEV": 47, "VERSION": 8}}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     resolved = resolved_configuration(conf)
-    assert resolved["input"]["fa"]["field_metadata"] == raw["input"]["fa"]["field_metadata"]
+    assert resolved["sources"]["surface"]["field_metadata"] == raw["sources"]["surface"][
+        "field_metadata"]
     restored = SimulationConfig.from_mapping_with_model_preset(resolved)
     assert restored.fa_options == conf.fa_options
     for bad in ({"MASDEV": True}, {"VERSION": "8"}, {"units": "K"}, {"PROGRAM": ""}):
         invalid = copy.deepcopy(raw)
-        invalid["input"]["fa"]["expected_source"] = bad
+        invalid["sources"]["surface"]["fa"]["expected_source"] = bad
         with pytest.raises(ValueError, match="expected_source"):
             resolve_schema(invalid)
 

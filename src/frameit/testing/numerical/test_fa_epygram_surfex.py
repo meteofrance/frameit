@@ -77,8 +77,7 @@ def surface_fixture(directory, **options):
 
 def test_surfex_schema_replay_and_actual_library_type_guards(tmp_path):
     raw = single_fa_document(tmp_path, [tmp_path / "unopened.fa"])
-    raw["input"]["grid_spacing_m"] = 1100.
-    raw["input"]["fa"].update(OPTIONS)
+    raw["sources"]["surface"]["reader"] = {"python_executable": OPTIONS["python_executable"]}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     restored = SimulationConfig.from_mapping_with_model_preset(resolved_configuration(conf))
     assert restored.fa_options == conf.fa_options

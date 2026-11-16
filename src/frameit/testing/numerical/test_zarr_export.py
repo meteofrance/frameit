@@ -165,8 +165,8 @@ def test_empty_dimension_fails_actionably(tmp_path):
 def test_zarr_schema_only_needs_no_optional_imports(tmp_path):
     from frameit.testing.numerical.test_configuration_v2_1 import document
 
-    raw = document(tmp_path, output={"backend": "zarr", "zarr_chunk_size": {"x_box": 2},
-                                     "zarr_shard_size": {"x_box": 4}})
+    raw = document(tmp_path, output={
+        "format": "zarr", "writer": {"chunks": {"x": 2}, "shards": {"x": 4}}})
     subprocess.run([sys.executable, "-c", """
 import json, sys
 from frameit.core.configuration import resolve_schema
@@ -176,16 +176,18 @@ assert 'zarr' not in sys.modules
 
 
 @pytest.mark.parametrize("setting", [
-    {"zarr_chunk_size": {"x": True}}, {"zarr_chunk_size": {"x": 0}},
-    {"zarr_shard_size": {"x": -1}}, {"zarr_shard_size": {"x": 1.5}},
-    {"zarr_chunk_size": []}, {"zarr_chunk_size": {"x": 3}, "zarr_shard_size": {"x": 4}},
+    {"chunks": {"x": True}}, {"chunks": {"x": 0}},
+    {"shards": {"x": -1}}, {"shards": {"x": 1.5}},
+    {"chunks": []}, {"chunks": {"x": 3}, "shards": {"x": 4}},
 ])
 def test_schema_rejects_invalid_zarr_sizes(tmp_path, setting):
     from frameit.core.configuration import resolve_schema
     from frameit.testing.numerical.test_configuration_v2_1 import document
 
-    with pytest.raises(ValueError, match="chunk|shard"):
-        resolve_schema(document(tmp_path, output={"backend": "zarr", **setting}))
+    with pytest.raises(
+            ValueError, match=r"output.writer.*(chunk|shard)|Zarr shard size for x must be "
+                              r"a multiple of chunk size"):
+        resolve_schema(document(tmp_path, output={"format": "zarr", "writer": setting}))
 
 
 @pytest.mark.parametrize("synchronous", [True, False])
@@ -227,30 +229,33 @@ def test_pipeline_planning_inventory_and_replay(tmp_path):
     from frameit.testing.numerical.test_configuration_v2_1 import dataset, document
 
     dataset(tmp_path)
-    raw = document(tmp_path, output={"directory": str(tmp_path / "run"), "backend": "zarr",
-                                     "synchronous_export": True,
-                                     "zarr_chunk_size": {"time": 1, "x_box": 2},
-                                     "zarr_shard_size": {"time": 2, "x_box": 4}})
+    raw = document(tmp_path, output={
+        "directory": str(tmp_path / "run"), "format": "zarr",
+        "writer": {"chunks": {"time": 1, "x": 2}, "shards": {"time": 2, "x": 4}}},
+        resources={"synchronous_export": True, "cpus": 1})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan = preflight(conf)
-    assert all(p.endswith(".zarr") for p in plan["planned_products"])
+    assert all(item["path"].endswith(".nc" if item["product"] == "track" else ".zarr")
+               for item in plan["products"])
     result = execute_simulation(conf)
     assert result.ok
     status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
     assert status["state"] == "completed"
     for product in status["products"]:
         path = conf.output_dir / product["path"]
-        assert product["size_bytes"] == sum(p.stat().st_size for p in path.rglob("*")
-                                            if p.is_file())
-        with xr.open_zarr(path, consolidated=False) as saved:
+        assert product["size_bytes"] == (
+            sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
+            if path.is_dir() else path.stat().st_size)
+        opener = xr.open_zarr if path.suffix == ".zarr" else xr.open_dataset
+        with opener(path, **({"consolidated": False} if path.suffix == ".zarr" else {})) as saved:
             assert saved.sizes["time"] == 2
-            if product["role"] == "cart":
+            if product["role"] == "model_grid":
                 np.testing.assert_allclose(saved.UM10, 10.)
-                assert product["group"] == "surface"
+                assert product["source"] == "atmosphere"
     assert "zarr" in result.backend_versions
     resolved = yaml.safe_load((conf.output_dir / "resolved-config.yaml").read_text())
-    assert resolved["output"]["zarr_chunk_size"] == {"time": 1, "x_box": 2}
-    assert resolved["output"]["zarr_shard_size"] == {"time": 2, "x_box": 4}
+    assert resolved["output"]["writer"]["chunks"] == {"time": 1, "x": 2}
+    assert resolved["output"]["writer"]["shards"] == {"time": 2, "x": 4}
     resolved["output"]["directory"] = str(tmp_path / "replay")
     assert execute_simulation(SimulationConfig.from_mapping_with_model_preset(resolved)).ok
 
@@ -263,17 +268,19 @@ def test_coupled_preview_and_execution(tmp_path):
     from frameit.testing.numerical.test_arome_fa_coupling import arome_netcdf_document
 
     raw = arome_netcdf_document(tmp_path)
-    raw["polar"]["enabled"] = False
-    raw["output"]["backend"] = "zarr"
+    raw["products"].pop("polar")
+    raw["output"]["format"] = "zarr"
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan = preflight(conf)
-    assert all(p.endswith(".zarr") for p in plan["planned_products"])
+    assert all(item["path"].endswith(".nc" if item["product"] == "track" else ".zarr")
+               for item in plan["products"])
     result = execute_simulation(conf)
-    cart = [p for p in result.products if p["role"] == "cart"]
+    cart = [p for p in result.products if p["role"] == "model_grid"]
     assert {p["source"] for p in cart} == {"atmosphere", "surface"}
     for product in cart:
         with xr.open_zarr(product["path"], consolidated=False) as saved:
-            np.testing.assert_allclose(saved.temperature.sel(x_box=0, y_box=0), [280., 281.])
+            np.testing.assert_allclose(saved.temperature.isel(
+                x=saved.sizes["x"] // 2, y=saved.sizes["y"] // 2), [280., 281.])
 
 
 def test_missing_optional_dependency_fails_before_processing(tmp_path, monkeypatch):
@@ -291,12 +298,12 @@ def test_missing_optional_dependency_fails_before_processing(tmp_path, monkeypat
         return original(name)
 
     monkeypatch.setattr(importlib.metadata, "version", missing_zarr)
-    raw = document(tmp_path, output={"directory": str(tmp_path / "run"), "backend": "zarr"})
+    dataset(tmp_path)
+    raw = document(tmp_path, output={"directory": str(tmp_path / "run"), "format": "zarr"})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match=r"frameit\[zarr\]"):
         execute_simulation(conf)
     assert not conf.output_dir.exists()
-    dataset(tmp_path)
     options = ExecutionOptions.from_config(conf, export_netcdf=False)
     assert execute_simulation(conf, options).products == []
 

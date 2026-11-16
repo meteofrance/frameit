@@ -213,13 +213,14 @@ def test_native_projected_extraction_and_ordinary_reader_provenance(tmp_path):
     path = fa_files(tmp_path, projection_latitude=-30.)[0]
     before = path.read_bytes()
     raw = single_fa_document(tmp_path, [path])
-    raw["input"]["fa"]["profile"] = "arome_history"
-    raw["input"]["fa"]["earth_radius_m"] = 6371229.
-    raw["input"]["fa"]["field_metadata"] = {
+    source = raw["sources"]["surface"]
+    source["profile"] = "arome_history"
+    source["fa"] = {"earth_radius_m": 6371229.}
+    source["field_metadata"] = {
         "CLSTEMPERATURE": {"units": "K", "kind": "continuous", "temporal_kind": "instantaneous"}}
-    raw["variables"] = {"fields_2d": {"names": ["CLSTEMPERATURE"]}}
+    source["variables"] = {"2d": ["CLSTEMPERATURE"]}
     centre = track_at(500.01, -100.)
-    raw["tracking"]["fixed_box"]["center"] = {
+    raw["region"]["center"] = {
         "latitude": float(centre.lat[0]), "longitude": float(centre.lon[0])}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     result = execute_simulation(conf)
@@ -233,7 +234,7 @@ with xr.open_dataset(p['track']) as t:
     np.testing.assert_allclose(t.grid_snap_dx_m, 499.99, atol=1.e-5)
     np.testing.assert_allclose(t.grid_snap_dy_m, 100., atol=1.e-5)
     assert t.attrs['tracking_grid_lookup'] == 'fa_source_crs_native_axes_v1'
-with xr.open_dataset(p['cart']) as d:
+with xr.open_dataset(p['model_grid']) as d:
     np.testing.assert_array_equal(d.CLSTEMPERATURE[0],
         280. + 10*np.arange(1,6)[:,None] + np.arange(3,8))
 assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
@@ -259,9 +260,9 @@ def test_coupled_projected_source_retains_offsets_and_own_indices(tmp_path):
     data.to_netcdf(atmosphere)
     surface = fa_files(tmp_path, profile="surfex_history", projection_latitude=-30.)
     raw = document(tmp_path, atmosphere, surface)
-    raw["input"]["sources"]["surfex"]["input"]["fa"]["earth_radius_m"] = 6371229.
+    raw["sources"]["surface"]["fa"] = {"earth_radius_m": 6371229.}
     centre = track_at(500.01, -100.)
-    raw["tracking"]["fixed_box"]["center"] = {
+    raw["region"]["center"] = {
         "latitude": float(centre.lat[0]), "longitude": float(centre.lon[0])}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     result = execute_simulation(conf)
@@ -270,14 +271,14 @@ def test_coupled_projected_source_retains_offsets_and_own_indices(tmp_path):
     check = subprocess.run([sys.executable, "-c", """
 import sys, xarray as xr, numpy as np
 with xr.open_dataset(sys.argv[1]) as t:
-    assert int(t.atmosphere_cx[0]) == 3 and int(t.surfex_cx[0]) == 5
-    assert t.surfex_grid_snap_dx_m.attrs['units'] == 'm'
-    np.testing.assert_allclose(t.surfex_grid_snap_dx_m, 499.99, atol=1.e-5)
-    assert t.surfex_grid_selected_latitude.attrs['source_id'] == 'surfex'
+    assert int(t.atmosphere_cx[0]) == 3 and int(t.surface_cx[0]) == 5
+    assert t.surface_grid_snap_dx_m.attrs['units'] == 'm'
+    np.testing.assert_allclose(t.surface_grid_snap_dx_m, 499.99, atol=1.e-5)
+    assert t.surface_grid_selected_latitude.attrs['source_id'] == 'surface'
 assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
 """, str(track)], capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
-    mapping = provenance["sources"]["surfex"]["grid_lookup"]
+    mapping = provenance["sources"]["surface"]["grid_lookup"]
     assert mapping["method"] == NATIVE_LOOKUP
-    assert mapping["offsets"][0] == "track.surfex_grid_snap_dx_m"
+    assert mapping["offsets"][0] == "track.surface_grid_snap_dx_m"

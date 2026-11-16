@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 import yaml
 
+from frameit.core.coupled import bind_sources
 from frameit.core.execution import execute_simulation
-from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.fa_backend import inspect_fa
 from frameit.io.fa_utils import concat_fa2ds_by_vert_coord
@@ -46,9 +46,10 @@ def test_dense_directory_order_single_native_layer_masks_and_zero(
     info = inspect_fa(path, None, **backend_options)
     assert list(info["field_directory"]) == ["SFX.TG2P1", "SFX.WG1P1", "SFX.SST"]
     raw = single_fa_document(tmp_path, [path])
-    raw["input"]["fa"].update(backend_options)
-    raw["variables"] = {"fields_2d": {"names": ["SFX.WG1P1"]}}
-    raw["input"]["fa"]["field_metadata"] = {"SFX.WG1P1": {
+    source = raw["sources"]["surface"]
+    source["reader"] = {"python_executable": backend_options["python_executable"]}
+    source["variables"] = {"2d": ["SFX.WG1P1"]}
+    source["field_metadata"] = {"SFX.WG1P1": {
         "units": "m3 m-3", "kind": "continuous", "temporal_kind": "instantaneous"}}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     from frameit.io import fa_utils
@@ -61,10 +62,14 @@ def test_dense_directory_order_single_native_layer_masks_and_zero(
         return native(request)
 
     monkeypatch.setattr(fa_utils, "request_fa", counted)
-    user, _ = concat_fa2ds_by_vert_coord([path], conf.requests_user(),
-                                        conf.requests_tracker(), method="fixed_box", wind_conf=conf)
+    _, children, sources = bind_sources(conf)
+    child = children["surface"]
+    user, _ = concat_fa2ds_by_vert_coord(
+        [path], {}, {}, wind_conf=child,
+        selected_records=child.source_requests["surface"]["binding"],
+        source_plan=sources["surface"])
     assert calls == []
-    data = user["surface"]
+    data, = user.values()
     assert set(data.data_vars) == {"SFX.WG1P1"}
     actual = data["SFX.WG1P1"].compute()
     np.testing.assert_array_equal(actual[0], moisture)
@@ -168,8 +173,8 @@ def categorical_document(tmp_path):
     path = fa_files(tmp_path, profile="surfex_history", surface_fields=[{
         "name": "COVERCLASS", "mask": "FULL", "values": classes.tolist()}])[0]
     raw = single_fa_document(tmp_path, [path])
-    raw["variables"] = {"fields_2d": {"names": ["SFX.COVERCLASS"]}}
-    raw["input"]["fa"]["field_metadata"] = {"SFX.COVERCLASS": {
+    raw["sources"]["surface"]["variables"] = {"2d": ["SFX.COVERCLASS"]}
+    raw["sources"]["surface"]["field_metadata"] = {"SFX.COVERCLASS": {
         "units": "1", "kind": "categorical", "temporal_kind": "instantaneous"}}
     return raw
 
@@ -178,16 +183,18 @@ def test_categorical_selection_rejects_bilinear_before_payload_reads(
     tmp_path, monkeypatch, backend_options,
 ):
     raw = categorical_document(tmp_path)
-    raw["input"]["fa"].update(backend_options)
-    raw["polar"] = {"enabled": True}
+    raw["sources"]["surface"]["reader"] = {
+        "python_executable": backend_options["python_executable"]}
+    raw["products"]["polar"] = {"radius_km": 2., "field_options": {
+        "surface": {"SFX.COVERCLASS": {"interpolation": "bilinear"}}}}
 
     def forbidden(*args, **kwargs):
         raise AssertionError("categorical method validation must precede physical decoding")
 
     monkeypatch.setattr("frameit.io.fa_utils.request_fa", forbidden)
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    with pytest.raises(ValueError, match="categorical FA fields require explicit nearest_s2d"):
-        preflight(conf)
+    with pytest.raises(ValueError, match="categorical.*nearest"):
+        bind_sources(conf)
     assert not conf.output_dir.exists()
 
 
@@ -198,9 +205,12 @@ def test_dense_x1_categories_keep_codes_and_masks_in_ordinary_outputs(
     if polar:
         pytest.importorskip("xesmf")
     raw = categorical_document(tmp_path)
-    raw["input"]["fa"].update(backend_options)
-    raw["polar"] = {"enabled": polar, "interpolation_method": "nearest_s2d",
-                    "radial_step_m": 2000., "azimuth_count": 8}
+    raw["sources"]["surface"]["reader"] = {
+        "python_executable": backend_options["python_executable"]}
+    if polar:
+        raw["products"]["polar"] = {
+            "radius_km": 2., "radial_step_km": 2., "azimuth_count": 8,
+            "field_options": {"surface": {"SFX.COVERCLASS": {"interpolation": "nearest"}}}}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     result = execute_simulation(conf)
     assert result.ok
@@ -208,7 +218,7 @@ def test_dense_x1_categories_keep_codes_and_masks_in_ordinary_outputs(
     check = subprocess.run([sys.executable, "-c", """
 import json, sys, numpy as np, xarray as xr
 paths = json.loads(sys.argv[1])
-with xr.open_dataset(paths['cart']) as native:
+with xr.open_dataset(paths['model_grid']) as native:
     v = native['SFX.COVERCLASS']
     np.testing.assert_array_equal(v[0], np.tile([2., 2., 5., np.nan, 0.], (5, 1)))
     assert v.attrs['kind'] == 'categorical' and v.attrs['units'] == '1'
@@ -224,9 +234,11 @@ assert not {'frameit', 'falfilfa4py', 'epygram'} & sys.modules.keys()
 """, json.dumps(paths)], capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
-    assert provenance["fa_inputs"][0]["fields"]["SFX.COVERCLASS"]["kind"] == "categorical"
-    versions = provenance["fa_inputs"][0]["backend_versions"]
+    source = provenance["sources"]["surface"]
+    assert source["fa_inputs"][0]["field_descriptors"]["SFX.COVERCLASS"][
+        "declaration"]["kind"] == "categorical"
+    versions = source["fa_decoder"]["backend_versions"]
     assert versions["FA_backend"] == "epygram"
     assert versions["FA_backend_requested"] == backend_options["backend"]
     assert not versions["FA_backend_migration"]
-    assert provenance["fa_decoder"]["backend_versions"]["EPyGrAM"] == "2.1.0"
+    assert source["fa_decoder"]["backend_versions"]["EPyGrAM"] == "2.1.0"

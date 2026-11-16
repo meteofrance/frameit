@@ -54,15 +54,22 @@ def test_resource_limits_use_strictest_allocation_and_affinity(monkeypatch):
     assert resolve_execution_resources(ExecutionOptions())[1]["cpu_budget"] == 1
 
 
-@pytest.mark.parametrize("section", [
-    {"execution": {"native_threads": 0}}, {"execution": {"dask_workers": True}},
-    {"execution": {"dask_scheduler": "processes"}},
-    {"execution": {"require_complete_tracking": "false"}},
-    {"output": {"synchronous_export": "false"}},
+@pytest.mark.parametrize("path,value", [
+    (("resources", "native_threads"), 0), (("resources", "compute_workers"), True),
+    (("resources", "scheduler"), "processes"),
+    (("region", "tracker", "on_incomplete"), "false"),
+    (("resources", "synchronous_export"), "false"),
 ])
-def test_invalid_execution_schema(tmp_path, section):
-    with pytest.raises(ValueError):
-        resolve_schema(document(tmp_path, **section))
+def test_invalid_execution_schema(tmp_path, path, value):
+    raw = document(tmp_path)
+    if path[:2] == ("region", "tracker"):
+        raw["region"] = {"tracker": {"method": "pressure_wind"}}
+    target = raw
+    for key in path[:-1]:
+        target = target.setdefault(key, {})
+    target[path[-1]] = value
+    with pytest.raises(ValueError, match=".".join(path)):
+        resolve_schema(raw)
 
 
 def test_thread_scope_restores_environment_and_dask(monkeypatch):
@@ -84,6 +91,7 @@ def test_exclusive_run_ownership_and_early_no_clobber(tmp_path, monkeypatch):
                 pytest.fail("A second owner entered the directory")
         status["state"] = "completed"
     original = (root / "run-status.yaml").read_bytes()
+    dataset(tmp_path)
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, output={
         "directory": str(root), "overwrite": False,
     }))
@@ -285,8 +293,14 @@ if __name__ == "__main__":
 
 
 def test_cli_info_reports_selected_installation():
+    from importlib.metadata import PackageNotFoundError, version
+
     import frameit
 
+    try:
+        selected_version = version("frameit")
+    except PackageNotFoundError:
+        selected_version = frameit.__version__
     for short in (False, True):
         run = subprocess.run(
             [sys.executable, "-m", "frameit", "info", *(["--short"] if short else [])],
@@ -294,7 +308,7 @@ def test_cli_info_reports_selected_installation():
         )
         assert run.returncode == 0, run.stdout + run.stderr
         if short:
-            assert run.stdout == f"FrameIt {frameit.__version__}\n"
+            assert run.stdout == f"FrameIt {selected_version}\n"
         else:
             assert f"FrameIt location: {frameit.__file__}" in run.stdout.splitlines()
             assert "Overall: OK" in run.stdout.splitlines()
@@ -305,9 +319,12 @@ def cli_attempts(tmp_path_factory):
     tmp_path = tmp_path_factory.mktemp("hpc-concurrent")
     dataset(tmp_path)
     config = tmp_path / "case.yaml"
-    config.write_text(yaml.safe_dump(document(
-        tmp_path, domain={"width_km": {"x": 20, "y": 20}},
-    )))
+    raw = document(tmp_path)
+    raw["region"]["width_km"] = {"x": 20, "y": 20}
+    raw["sources"]["atmosphere"]["derived"] = {
+        "wind_speed": {"method": "wind_speed", "inputs": {"u": "UM10", "v": "VM10"}}}
+    raw["sources"]["atmosphere"]["reader"] = {"engine": "netcdf4"}
+    config.write_text(yaml.safe_dump(raw))
 
     def run(mode):
         args = [
@@ -336,8 +353,8 @@ def cli_attempts(tmp_path_factory):
         provenance = yaml.safe_load((root / "run-provenance.yaml").read_text())
         assert "netCDF4" in provenance["runtime"]["loaded_backends"]
         replay = SimulationConfig.from_yaml(root / "resolved-config.yaml")
-        assert replay.yaml_config["output"]["synchronous_export"] == (mode == "sync")
-        cart = next(p for p in status["products"] if p["role"] == "cart")
+        assert replay.yaml_config["resources"]["synchronous_export"] == (mode == "sync")
+        cart = next(p for p in status["products"] if p["role"] == "model_grid")
         with netCDF4.Dataset(root / cart["path"]) as saved:
             np.testing.assert_allclose(saved.variables["wind_speed"][:], 10., rtol=0, atol=0)
             assert saved.variables["UM10"].units == "m s-1"
@@ -354,21 +371,22 @@ def test_concurrent_cli_attempts_spawn_and_sync_export_exactly(cli_attempts):
                 xr.testing.assert_identical(actual[name], reference[name])
 
 
-def test_batch_overrides_dry_run_does_not_claim_output(tmp_path):
+def test_batch_overrides_validation_does_not_claim_output(tmp_path):
     dataset(tmp_path)
     config = tmp_path / "case.yaml"
-    config.write_text(yaml.safe_dump(document(tmp_path)))
+    raw = document(tmp_path, resources={"synchronous_export": True})
+    config.write_text(yaml.safe_dump(raw))
     destination = tmp_path / "planned-only"
     run = subprocess.run([
-        sys.executable, "-m", "frameit", "run", str(config), "--dry-run",
-        "--output-directory", str(destination), "--synchronous-export", "--no-overwrite",
+        sys.executable, "-m", "frameit", "validate", str(config), "--json",
+        "--output-directory", str(destination), "--no-overwrite",
     ], capture_output=True, text=True, env=cli_environment(), timeout=30)
     assert run.returncode == 0, run.stderr
-    plan = yaml.safe_load(run.stdout)
+    plan = yaml.safe_load(run.stdout)["data"]
     assert plan["configuration"]["output"]["directory"] == str(destination)
-    assert plan["configuration"]["output"]["synchronous_export"] is True
+    assert plan["configuration"]["resources"]["synchronous_export"] is True
     assert plan["configuration"]["output"]["overwrite"] is False
-    assert plan["execution_resources"]["export_start_method"] is None
+    assert plan["plan"]["execution_resources"]["export_start_method"] is None
     assert not destination.exists()
 
 
@@ -381,29 +399,50 @@ def test_cli_processing_failure_never_marks_completed(tmp_path):
         "--output-directory", str(root), "--no-overwrite",
     ], capture_output=True, text=True, env=cli_environment(), timeout=30)
     assert run.returncode == 1
+    assert not root.exists()
+    dataset(tmp_path)
+    script = """
+import sys
+from frameit.core.runner import FrameitRunner
+from frameit.cli import main
+def fail(self, **kwargs):
+    raise OSError("simulated processing failure")
+FrameitRunner.run = fail
+main(['run', sys.argv[1], '--output-directory', sys.argv[2], '--no-overwrite'])
+"""
+    run = subprocess.run(
+        [sys.executable, "-c", script, str(config), str(root)],
+        capture_output=True, text=True, env=cli_environment(), timeout=30)
+    assert run.returncode == 1 and "simulated processing failure" in run.stderr
     status = yaml.safe_load((root / "run-status.yaml").read_text())
     assert status["state"] == "failed" and status["products"] == []
     assert not (root / ".frameit-run.lock").exists()
 
 
 def test_incomplete_tracking_is_explicit_and_strict_policy_fails(tmp_path, monkeypatch):
+    from frameit.core.runner import FrameitRunner
+
+    dataset(tmp_path)
+    original = FrameitRunner.run
+
     def shortened(runner, **kwargs):
-        runner.track = xr.Dataset(attrs={
-            "tracking_complete": False, "tracking_termination_reason": "lost test vortex",
-        })
-        return SimpleNamespace(ok=True, n_files=0, output_dir=runner.output_dir, files=[])
+        result = original(runner, **kwargs)
+        runner.track.attrs.update(
+            tracking_complete=False, tracking_termination_reason="lost test vortex")
+        return result
 
     monkeypatch.setattr("frameit.core.runner.FrameitRunner.run", shortened)
     for strict in (False, True):
         root = tmp_path / str(strict)
         conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, output={
-            "directory": str(root), "export": {"enabled": False},
-        }, execution={"require_complete_tracking": strict}))
+            "directory": str(root)}))
+        options = ExecutionOptions.from_config(
+            conf, export_netcdf=False, require_complete_tracking=strict)
         if strict:
             with pytest.raises(ValueError, match="Tracking is incomplete"):
-                execute_simulation(conf)
+                execute_simulation(conf, options)
         else:
-            assert not execute_simulation(conf).tracking_complete
+            assert not execute_simulation(conf, options).tracking_complete
         status = yaml.safe_load((root / "run-status.yaml").read_text())
         assert status["state"] == ("failed" if strict else "incomplete")
         assert status["tracking_complete"] is False
@@ -411,6 +450,7 @@ def test_incomplete_tracking_is_explicit_and_strict_policy_fails(tmp_path, monke
 
 @pytest.mark.parametrize("kill", [False, True], ids=["sigterm", "sigkill"])
 def test_cancellation_and_same_root_exclusion(tmp_path, kill):
+    dataset(tmp_path)
     config = tmp_path / "case.yaml"
     root = tmp_path / "out"
     ready = tmp_path / "ready"

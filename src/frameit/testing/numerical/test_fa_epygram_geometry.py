@@ -9,6 +9,7 @@ import subprocess
 import numpy as np
 import pytest
 
+from frameit.core.coupled import bind_sources
 from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.fa_backend import inspect_fa, request_fa
@@ -124,11 +125,11 @@ def test_regular_library_axes_are_angular_and_keep_orientation(tmp_path, directi
 @NATIVE
 def test_geometry_earth_model_corners_and_full_native_budget_fail_closed(tmp_path):
     path = write_grid(tmp_path, projection_latitude=-30.)
-    with pytest.raises(ValueError, match="explicit input.fa.earth_radius_m"):
+    with pytest.raises(ValueError, match=r"explicit sources\.<id>\.fa\.earth_radius_m"):
         inspect_grid(path, {**OPTIONS, "earth_radius_m": None})
     with pytest.raises(ValueError, match="contradicts encoded CI corners"):
         inspect_grid(path, {**OPTIONS, "earth_radius_m": 5000000.})
-    with pytest.raises(ValueError, match="input.fa.max_points"):
+    with pytest.raises(ValueError, match=r"sources\.<id>\.reader\.max_points"):
         inspect_grid(path, {**OPTIONS, "max_points": 116})
 
 
@@ -144,11 +145,17 @@ def test_same_shape_different_library_grids_cannot_share_a_source_sequence(tmp_p
     assert geometry_signature(infos[0]["geometry"], OPTIONS) != geometry_signature(
         infos[1]["geometry"], OPTIONS)
     raw = single_fa_document(tmp_path, paths)
-    raw["input"]["fa"].update(**BACKEND, earth_radius_m=6371229.)
-    raw["tracking"]["fixed_box"]["center"] = {"latitude": -30., "longitude": 50.}
+    raw["sources"]["surface"]["reader"] = {"python_executable": BACKEND["python_executable"]}
+    raw["sources"]["surface"]["fa"] = {"earth_radius_m": 6371229.}
+    raw["region"]["center"] = {"latitude": -30., "longitude": 50.}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match="incompatible horizontal geometry"):
-        concat_fa2ds_by_vert_coord(paths, conf.requests_user(), {}, wind_conf=conf)
+        _, children, sources = bind_sources(conf)
+        child = children["surface"]
+        concat_fa2ds_by_vert_coord(
+            paths, {}, {}, wind_conf=child,
+            selected_records=child.source_requests["surface"]["binding"],
+            source_plan=sources["surface"])
     with pytest.raises(ValueError, match="[Gg]eometr|[Gg]rid"):
         preflight(conf)
     assert not conf.output_dir.exists()
