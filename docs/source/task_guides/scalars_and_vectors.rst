@@ -124,10 +124,9 @@ Definitions excluded from all requested products and dependencies do not execute
 Request a polar wind component
 -------------------------------
 
-For the inspected UM10/VM10 pair above, add continuous-kind evidence under
-``sources.atmosphere`` and replace its ``derived`` and the top-level
-``region``/``products`` blocks as follows. Adapt the illustrative centre to your
-input. ``vrad`` and ``vtan`` are user-chosen aliases:
+In the speed request above, merge ``field_metadata`` and replace ``derived``
+under ``sources.atmosphere``. Add ``region`` and replace ``products`` as shown.
+Adapt the centre; ``vrad`` and ``vtan`` are user-chosen aliases:
 
 .. code-block:: yaml
 
@@ -183,3 +182,42 @@ Ocean component operations keep their adapter-specific angle, mask, bracket and
 quantity requirements. Atmospheric declarations do not supply missing ocean
 geometry or make currents into atmospheric winds.
 See :doc:`../user_guide/ocean_netcdf` for the admitted source limits.
+
+Run and read a selected representation
+---------------------------------------
+
+For native copying, save the first complete request as ``native-component.yaml``
+and adapt the input path and confirmed native indices:
+
+.. code-block:: bash
+
+   python -m frameit inspect native-component.yaml
+   python -m frameit validate native-component.yaml
+   python -m frameit run native-component.yaml
+   python -m frameit status results/native-component
+
+The field product is
+``results/native-component/products/native-component.atmosphere.model_grid.nc``:
+
+.. code-block:: python
+
+   import xarray as xr
+
+   with xr.open_dataset(
+       "results/native-component/products/native-component.atmosphere.model_grid.nc"
+   ) as fields:
+       print(fields.UT.dims, fields.UT.attrs["units"])
+       print(fields.level_source_native_index.values)  # [2, 0].
+
+Apply the transform fragment to that complete request only after checking its
+quantity and geometry prerequisites, and choose a fresh output directory.
+Save the speed-only request as ``horizontal-speed.yaml``. Use the same inspect,
+validate and run commands with that filename, then run
+``python -m frameit status results/horizontal-speed``. Its product is
+``results/horizontal-speed/products/horizontal-speed.atmosphere.model_grid.nc``;
+it contains ``speed`` in m s-1, not the internal U/V inputs.
+
+If a transform reports incompatible units or missing rotation geometry, correct
+the declaration using producer evidence. Native copying remains available
+without enabling that transform. The small :doc:`analytical_event` example
+provides known values for practicing a supported interface remap.

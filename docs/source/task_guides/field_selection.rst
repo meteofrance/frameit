@@ -66,8 +66,8 @@ Separate native vertical groups
 -------------------------------
 
 Use groups when a requested name identifies distinct fields, or different axes
-need different level selections. Qualification is required even when you want
-only one of the fields called ``u``. Repeated times or levels of one field are
+need different level selections. Qualify a repeated name with its native group
+even if you request only one ``u``. Repeated times or levels of one field are
 not name ambiguity. Unrequested ambiguous names do not block another field.
 
 This supplementary source fragment selects original height positions and
@@ -172,5 +172,34 @@ before writing products. After export, reopen the listed products with an
 ordinary reader and compare dimensions, coordinates, bounds and values with a
 small source window. Internal calculation inputs need not be exported.
 Available fields do not select additional diagnostics.
+For the first complete example, save the request as ``pressure-levels.yaml``
+after adapting the input path and confirmed field names:
+
+.. code-block:: bash
+
+   python -m frameit inspect pressure-levels.yaml
+   python -m frameit validate pressure-levels.yaml
+   python -m frameit config show pressure-levels.yaml --effective
+   python -m frameit run pressure-levels.yaml
+   python -m frameit status results/pressure-levels
+
+The completed inventory lists
+``results/pressure-levels/products/pressure-levels.atmosphere.model_grid.nc``.
+Check the retained axis and units with an ordinary reader:
+
+.. code-block:: python
+
+   import xarray as xr
+
+   with xr.open_dataset(
+       "results/pressure-levels/products/pressure-levels.atmosphere.model_grid.nc"
+   ) as fields:
+       print(fields["t"].dims, fields["t"].attrs["units"])
+       print(fields["pressure"].values)  # [850, 700] hPa, not interpolated levels.
+
+If validation reports ambiguity, use the group-qualified request above rather
+than dropping an unrelated quantity. An unavailable level needs a corrected
+selection from the source metadata, not a nearest-level substitution. Use a
+fresh output directory for a retry.
 See :doc:`../user_guide/configuration_file` for the complete controls and
 :doc:`polar_sampling` for polar product selection.

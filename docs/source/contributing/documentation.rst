@@ -41,7 +41,7 @@ not commentary about alternative steps the reader was never asked to take.
 Keep analysis and display in downstream tools. Documentation figures may explain
 the data and methods. HPC instructions must use site-neutral paths and settings.
 
-Document the current ``schema_version: "2.1"`` only. Do not publish schema history,
+Document the current integer ``schema_version: 3`` only. Do not publish schema history,
 conversion instructions or upgrade pages. Internal development and provenance
 records are separate from user guidance.
 

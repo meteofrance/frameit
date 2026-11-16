@@ -4,7 +4,9 @@ How to add a new tracker
 To add a tracker, implement its class, register it, declare its inputs and expose
 its settings in the configuration schema.
 
-The ``UtrackTracker`` is used as a concrete reference throughout.
+The ``UtrackTracker`` is a low-level adapter reference, not an executable v3
+binding; see :doc:`../tracker/utrack`. A supported new method also needs explicit
+scientific inputs, selected-input binding and independent verification.
 
 Overview of the tracker system
 -------------------------------
@@ -13,7 +15,8 @@ All trackers inherit from the abstract base class ``TcTracker`` defined in
 ``src/frameit/tracking/tracker_core.py``. A tracker must:
 
 - be decorated with ``@register_tracker`` so the factory can discover it;
-- declare a ``name`` attribute that matches YAML ``tracking.method`` (internal Python ``tracking_method``);
+- declare a factory ``name`` and map the public ``region.tracker.method`` to it
+  through the configuration layer (internal Python ``tracking_method``);
 - declare a ``logical_fields`` tuple listing the aliased physical fields it consumes;
 - implement ``from_config(cls, conf: SimulationConfig)`` to build itself from the global configuration;
 - implement ``_track_method(self, ds: xr.Dataset) -> xr.Dataset`` to perform the actual tracking.
@@ -36,7 +39,7 @@ Minimal skeleton::
 
     @register_tracker
     class MyTracker(TcTracker):
-        name = "my_tracker"                  # must match YAML tracking.method
+        name = "my_tracker"                # internal name mapped from the public selector
         logical_fields = ("u10m", "v10m")   # fields your method needs
 
         def __init__(self, var_aliases, **kwargs):
@@ -93,7 +96,7 @@ The ``@register_tracker`` decorator runs at import time, so the import is all th
     from .PressureWind_Tracker import PressureWindTracker
     from .tracker_core import TcTracker, build_tracker_from_config, register_tracker
     from .Utrack_Tracker import UtrackTracker
-    from .MyTracker import MyTracker     # <-- add this line
+    from .MyTracker_Tracker import MyTracker
 
 Step 3 — Declare the required variables
 ----------------------------------------
@@ -136,7 +139,9 @@ Step 4 — Expose configuration parameters
 -----------------------------------------
 
 Add tracker-specific settings to the public defaults and validation in
-``src/frameit/core/configuration.py``, then translate them in ``to_runtime``.
+``src/frameit/core/configuration.py`` under ``region.tracker``, then translate
+them in ``to_runtime``. Extend selected-input binding/preflight and regenerate
+the editor schema; factory registration alone does not enable v3 execution.
 Add the corresponding internal fields to ``SimulationConfig`` in
 ``src/frameit/core/settings_class.py``::
 

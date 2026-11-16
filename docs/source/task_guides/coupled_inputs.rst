@@ -97,3 +97,32 @@ A centre outside a required source footprint fails. Read source-qualified
 products separately and compare coordinates, time bounds, units and missing
 support before combining them. Equal array shapes or target IDs do not establish
 physical equivalence; see :doc:`../user_guide/output_files`.
+
+Save the first complete request as ``coupled.yaml`` after adapting both input
+paths, quantities and native level selection:
+
+.. code-block:: bash
+
+   python -m frameit inspect coupled.yaml
+   python -m frameit validate coupled.yaml
+   python -m frameit run coupled.yaml
+   python -m frameit status results/coupled
+
+Expect two field products under ``results/coupled/products``:
+``coupled.atmosphere.model_grid.nc`` and ``coupled.ocean.model_grid.nc``.
+No separate trajectory or polar file is selected by this example.
+
+.. code-block:: python
+
+   import xarray as xr
+
+   with xr.open_dataset("results/coupled/products/coupled.atmosphere.model_grid.nc") as air:
+       print(air.prmsl.dims, air.prmsl.attrs["units"], air.time.values)
+   with xr.open_dataset("results/coupled/products/coupled.ocean.model_grid.nc") as ocean:
+       print(ocean.votemper.dims, ocean.votemper.attrs["units"], ocean.time.values)
+
+Compare each product with its own source; different clocks are not an error
+unless a selected operation requires an association. Missing required centre
+times or unresolved physical types must be repaired explicitly. Use a fresh
+output directory for a retry. For a runnable generated-input case, follow
+:doc:`analytical_event`.

@@ -14,8 +14,7 @@ Relative YAML paths start at the configuration file, not the launch directory.
 See :doc:`user_guide/configuration_file`.
 
 Add ``--json`` for a single machine-readable report. Read each error's affected
-path, YAML location, expected/observed facts and suggested repairs. A missing
-location is explicit when the request did not come from a marked YAML file.
+path, YAML location, expected/observed facts and suggested repairs.
 Fix prerequisite errors before checks marked blocked; deferred value checks
 require execution and are not successful validation results.
 
@@ -78,9 +77,9 @@ eastward/northward, declare that decision explicitly instead:
            v: VT
            basis: earth
 
-When an operation needs the pair, for explicit Meso-NH NetCDF declarations only,
-when at least one projection parameter is
-missing, coherent grid-aligned metadata produces a warning rather than a failure.
+For an explicitly declared Meso-NH NetCDF pair, coherent grid-aligned metadata
+warns rather than fails only when the pair is needed and a projection parameter
+is missing.
 **No grid-to-Earth rotation is applied.** Missing projection metadata does not
 prove that grid and Earth directions coincide; you are responsible for this
 assumption. Native sample locations and any required collocation are unchanged.

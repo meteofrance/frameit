@@ -1,13 +1,10 @@
 Choose storage and resource limits
 ==================================
 
-Begin with a small field/time/level selection in a fresh output directory:
+Start from a complete request, such as :doc:`fixed_region`. Use a fresh
+``output.directory`` and keep ``overwrite: false``.
 
-.. code-block:: bash
-
-   frameit init arome-fixed-scalar
-
-Keep the generated overwrite refusal. NetCDF is the default; choose Zarr only
+NetCDF is the default; choose Zarr only
 when your downstream reader supports sharded v3 stores. The reference environment
 includes both. Core-only installations need the optional ``zarr`` extra for Zarr
 export; see :ref:`sharded-zarr-output` for versions and ordinary-reader examples.

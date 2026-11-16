@@ -103,3 +103,34 @@ defaults to ``error``. Explicit ``keep_prefix`` is accepted only for a method
 supporting it and leaves incomplete status; it is not ordinary time selection.
 One position cannot establish motion: motion diagnostics are missing, not zero.
 See :doc:`coupled_inputs` before comparing separate source products.
+
+Run and check the prescribed-track example
+-------------------------------------------
+
+Save the first complete request as ``moving.yaml``, adapting its input and
+trajectory paths. Then run:
+
+.. code-block:: bash
+
+   python -m frameit inspect moving.yaml
+   python -m frameit validate moving.yaml
+   python -m frameit run moving.yaml
+   python -m frameit status results/moving
+
+Expect ``products/moving.atmosphere.model_grid.nc`` and
+``products/moving.track.nc`` under ``results/moving``. Check the completed
+inventory before opening them:
+
+.. code-block:: python
+
+   import xarray as xr
+
+   with xr.open_dataset("results/moving/products/moving.track.nc") as track:
+       print(track.time.values, track.longitude.values, track.latitude.values)
+   with xr.open_dataset("results/moving/products/moving.atmosphere.model_grid.nc") as fields:
+       print(fields.prmsl.dims, fields.prmsl.attrs["units"])
+       print(fields.time.values)
+
+Missing centre times fail; supply the intended trajectory samples or correct
+the explicit time selection. Do not interpolate positions merely to pass the
+check. Use a fresh output directory after a failed attempt.

@@ -24,5 +24,5 @@ check the quantities, units, time support and reference frames in
 
 To start processing your model outputs, follow the
 :doc:`task-oriented guides <task_guides/index>`.
-The :doc:`configuration reference <user_guide/configuration_file>` and
-:doc:`troubleshooting` remain available without repeating the tutorial.
+Use the :doc:`configuration reference <user_guide/configuration_file>` for
+settings and :doc:`troubleshooting` for repairs.

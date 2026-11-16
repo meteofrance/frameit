@@ -72,8 +72,9 @@ edit ``frameit.yaml`` only after inspecting the intended stream:
    crop keeps its shape with missing outside samples. A centre outside a required
    source footprint fails rather than snapping to an edge point.
 * Keep a fresh ``output.directory`` and ``overwrite: false``. Leave polar sampling
-  off unless selected for a separate purpose. Adding winds or currents requires
-  their own sampling/basis declarations, not just extra field names.
+  off unless selected for a separate purpose. Native wind/current copies need no
+  pair declaration. Analysis operations require the documented sampling and basis
+  evidence.
 
 See :doc:`../user_guide/configuration_file` for the full schema/defaults,
 :doc:`../user_guide/input_files` for stream layouts, and

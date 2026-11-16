@@ -31,11 +31,10 @@ extraction boxes are unaffected.
 The fixed geographical centre is the first file's MSLP minimum,
 (-16.342215°, 62.154875°). Both extractions request full 500×500 km widths, which
 give 167×167 native points at the resolved 3000 m spacing. The fixed run samples
-``UM10`` on 43 radii at 6 km spacing and 180 azimuths. It interpolates the declared
-eastward/northward wind components. Polar coordinates
-describe sampling locations: ``UM10`` remains eastward wind, not radial wind.
-The moving run uses the pressure-wind method with default 100/50 km search/refine
-half-widths. Its centres move from native ``(cy,cx)=(380,732)`` to ``(380,731)``.
+``UM10`` on 43 radii at 6 km spacing and 180 azimuths. The field retains its
+declared eastward basis: changing sampling locations does not make it radial wind.
+The moving run uses the pressure-wind method with default 200/100 km full
+search/refine widths. Its centres move from native ``(cy,cx)=(380,732)`` to ``(380,731)``.
 The files describe ``UM10/VM10`` as zonal/meridian 10-m winds in m/s, declared here
 as eastward/northward components. These two fixes illustrate extraction, not track
 validation.
@@ -46,14 +45,14 @@ Regenerate from the checkout
 Download or copy the two configurations:
 :download:`fixed <../../../example/plots/batsirai-fixed.yaml>` and
 :download:`moving <../../../example/plots/batsirai-moving.yaml>`.
-Keep the input files read-only. Set ``input.directory`` in both YAML files to
-their actual directory; relative paths use the YAML's location.
+Keep the input files read-only. Set ``sources.atmosphere.files`` in both YAML
+files to the actual input paths; relative paths use the YAML's location.
 
 .. code-block:: bash
 
    mkdir figures-batsirai
    cp example/plots/batsirai-fixed.yaml example/plots/batsirai-moving.yaml figures-batsirai/
-   # Edit input.directory in both copied YAML files, then:
+   # Edit sources.atmosphere.files in both copied YAML files, then:
    frameit validate figures-batsirai/batsirai-fixed.yaml
    frameit validate figures-batsirai/batsirai-moving.yaml
    frameit run figures-batsirai/batsirai-fixed.yaml
@@ -65,9 +64,9 @@ their actual directory; relative paths use the YAML's location.
 
 The :download:`plotting script <../../../example/plots/batsirai_wind.py>`
 imports no FrameIt code. It requires a new figure directory outside the source
-data directory. Both configurations select ``UM10``; vector preparation also
-loads its declared companion ``VM10``. The moving tracker additionally reads
-MSLP. No three-dimensional field is needed.
+data directory. Both configurations export ``UM10``. The fixed run samples it
+without vector preparation. The moving tracker additionally reads ``VM10`` and
+MSLP. Neither run needs a three-dimensional field.
 Check both ``run-status.yaml`` files before using the products. Raw source files
 are not bundled or downloaded by this example.
 
@@ -85,7 +84,7 @@ from the tutorial directory, using the checkout's actual path:
 .. code-block:: bash
 
    python /path/to/frameit/example/plots/first_run.py \
-     data/first-run.nc results/products/first-run.cart.surface.nc first-run.png
+     data/first-run.nc results/products/first-run.atmosphere.model_grid.nc first-run.png
 
 The script refuses an existing output filename. It retains zero as a valid value
 and shows the missing sample in grey. Neither plotting script changes its inputs.
