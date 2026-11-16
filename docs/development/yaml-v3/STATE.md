@@ -3923,6 +3923,40 @@ needed for this internal-only proposal; the existing preview remains available.
 Docs: no user-facing impact because only an unpublished proposed design and this
 internal status record change. Detailed design approval remains the next gate.
 
+### CROCO detailed design approved — implementation planning
+
+The maintainer answered “Approved” to the detailed design at
+f8e9c879c7e977cbe44d53b8d7df372390821c1b, authorizing implementation planning.
+The accepted specification is `task-16-croco-support-design.md`; its earlier
+proposed-status wording records the preapproval document, not a new hold.
+No runtime changes or implementation approval are implied by this planning step.
+The previously agreed inline workflow and independent review before commit remain.
+
+The bounded plan is `task-16-croco-support-plan.md`. It separates bound-role
+repair from regional presentation, preserves default C3/polar/uncropped layout
+calls, and connects planned, stored and resource dimensions. Canonical naming
+guidance goes in the already-linked output guide; all25pre-existing dirty paths,
+including the partial ocean guide, remain byte-exact. The fresh planning baseline
+is `task-16-croco-plan-baseline.json` (HEADf8e9c87, Python3.13.18, empty index).
+Plan self-review and scoped review precede local plan commit/handover; the
+maintainer's review of the implementation plan remains required before coding.
+All prior CROCO, Task16/full and qualification gates remain open.
+
+Scoped plan review of treec2bee67f2d5cf6857d5cf3e559a090b5da25d1d5 returned
+PLAN READY with zero Critical/Important findings. Its one Minor helper-module
+attribution was checked against the defining symbols and corrected; no interface,
+test requirement or design decision changed. The reviewer independently verified
+19existing references, both candidate hashes, the exact two-path scope and
+all25preserved paths, with index/HEAD unchanged. No runtime, build or visual
+check was performed. The lead verified the frozen bytes before the attribution/
+status corrections. The plan's tests remain future work, not acceptance evidence.
+Docs: no user-facing impact because this local change is only an unpublished
+implementation plan and its status record. Human plan review remains the next gate.
+Final static checks verified21existing literal references and all3corrected helper
+definitions; the approved design and25prior paths remain unchanged. Diff and
+publication-boundary checks pass. No new test module or runtime implementation
+was created; only the plan and this record are included in the local commit.
+
 ## Task 01 evidence
 
 Root cause: CLI removed all paths below `~/.local`, including the selected
