@@ -29,7 +29,8 @@ or ambiguous combinations fail rather than dropping coordinates or interpolating
 Naming convention
 -----------------
 
-All files use ``run.name`` as a prefix (see :doc:`configuration_file`), referred to below as ``SIMU``.
+Product filenames use ``run.name`` as a prefix, called ``SIMU`` below
+(see :doc:`configuration_file`).
 
 Field datasets use one file per source and requested product:
 
@@ -101,7 +102,7 @@ scaling observations; see :doc:`fa_contracts` for descriptor meanings and limits
 
 Projected FA tracking adds selected-grid latitude/longitude and source-CRS
 snapping offsets to the track, source-prefixed in coupled products. Continuous
-``lat``/``lon`` remain requested centres; see
+``latitude``/``longitude`` remain requested centres; see
 :doc:`FA geometry and centres <fa_geometry>` for conventions.
 With ``products.polar.shared_grid: true``, source-qualified products use common
 radius/azimuth controls and verified geography at their associated centres.
@@ -371,7 +372,7 @@ This file contains the fixed or moving geographical centres and track diagnostic
   (for example ``heading_deg``, ``speed``), and any additional diagnostic variables created by
   ``enrich_track_with_kinematics``.
 
-For a single-time automatic track, ``lat`` and ``lon`` still identify the centre
+For a single-time automatic track, ``latitude`` and ``longitude`` still identify the centre
 used by every coupled source. ``heading_deg``, ``dist`` and ``speed`` are NaN:
 one position cannot establish motion, and missing motion is not physical zero.
 
@@ -562,13 +563,13 @@ unit changes are separate choices; see :doc:`configuration_file`.
   It needs reliable pair and rotation metadata. Collocation is a separate operation.
 
 Native model-grid output preserves source sample locations, staggering, units and
-basis. A requested box needs distinct
-``(y_u_box, x_u_box)`` and ``(y_v_box, x_v_box)`` axes for U and V. Along a
-staggered direction, N mass cells have N+1 bounding faces; unavailable faces are
-NaN. Source coordinates, including face geolocation, remain auxiliary coordinates
-on these box axes. Full-domain native output without a crop retains original
-dimensions. Read each field's coordinates rather than assuming literal source
-dimension names survive a crop.
+basis. Both cropped and full-domain products use the
+:ref:`public coordinate names <model-grid-coordinate-names>`. Native faces bracket
+mass points, but a geographical crop selects each native grid independently.
+It does not promise N+1 faces for N exported mass points.
+Source coordinates, including face geolocation, remain auxiliary coordinates
+on the corresponding public axes. Read each field's coordinates and retained
+source labels/indices rather than assuming literal source dimension names survive.
 
 Tracking and polar processing prepare their own required analysis representations.
 A model-grid transform does not request the same transform for another product
@@ -594,12 +595,14 @@ interpretation or change source flags.
 An explicitly requested derived speed uses collocated mass-point components,
 :math:`\sqrt{u_m^2+v_m^2}`, even beside native Cartesian U/V. Taking ``hypot`` of
 U and V face arrays combines different locations and is not a point wind speed.
-Polar horizontal winds are always collocated, Earth-relative samples on
-``(rr, theta)``; speed is computed from the interpolated components, not by
-interpolating native scalar speed. A speed-only request loads the declared pair
-internally without exporting internal-only components. For polar products,
-retaining native staggering applies only to **vertical W interfaces**, never to
-horizontal U/V faces or their basis.
+Polar base components default to native sampling and basis. Explicit per-field
+``sampling`` and ``basis`` options request admitted collocation/rotation; another
+product's transforms do not apply. Derived polar wind speed and radial/tangential
+components require their own collocated Earth-relative inputs on
+``(radius, azimuth)``. Speed uses the sampled components, not an interpolated
+native scalar speed. A speed-only request loads its declared pair internally
+without exporting internal-only components. Native W interfaces remain native
+unless their own field option requests supported mass sampling.
 
 Vertical W and level selection
 ''''''''''''''''''''''''''''''
@@ -767,7 +770,9 @@ Export selection
 -----------------
 
 Omit ``products`` for model-grid output only. List ``model_grid``, ``polar`` or
-``track`` to request them explicitly; there is no separate export switch.
+``track`` to request them explicitly. CLI ``--no-export``,
+``--no-export-cartesian`` and ``--no-export-polar`` suppress the corresponding
+product files, not the selected processing or run records.
 Each field product can narrow the declared fields by source. Omit products you
 do not need. An explicit empty mapping is invalid. See :doc:`configuration_file`
 for product and method settings.

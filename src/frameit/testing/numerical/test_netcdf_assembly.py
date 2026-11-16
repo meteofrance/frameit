@@ -190,40 +190,36 @@ def test_variable_shards_selected_only_payload_stays_lazy(tmp_path):
 def configuration(tmp_path, paths, *, coupled=False):
     from frameit.core.settings_class import SimulationConfig
 
-    source = {'model': 'arome', 'input': {'format': 'netcdf', 'files': list(map(str, paths)),
-                                        'wind_pairs': [{'group': 'fields_2d', 'u': 'u10', 'v': 'v10', 'reference_frame': 'earth'}],
-                                        'netcdf': {'file_layout': 'variables'}},
-              'variables': {'fields_2d': {'names': ['prmsl', 'u10']}}}
-    raw = {'schema_version': '2.1', **source,
-           'tracking': {'method': 'fixed_box', 'fixed_box': {'center': {'latitude': -19.99,
-                                                                       'longitude': 60.01}}},
+    source = {'model': 'arome', 'format': 'netcdf', 'files': list(map(str, paths)),
+              'wind_pairs': [{'u': 'u10', 'v': 'v10', 'basis': 'earth'}],
+              'variables': {'2d': ['prmsl', 'u10']},
+              'transforms': [{'fields': ['u10'], 'sampling': 'native', 'basis': 'earth'}]}
+    raw = {'schema_version': 3, 'sources': {'atmosphere': source},
+           'region': {'center': {'latitude': -19.99, 'longitude': 60.01}},
            'output': {'directory': str(tmp_path / 'out'), 'overwrite': False}}
     if coupled:
-        raw['input'] = {'sources': {'atmosphere': source, 'other': source}}
-        raw.pop('variables')
-        raw['tracking']['source'] = 'atmosphere'
+        raw['sources']['surface'] = source
     return SimulationConfig.from_mapping_with_model_preset(raw)
 
 
 def test_variable_shards_preflight_companion_inventory_and_replay(tmp_path):
     from frameit.core.configuration import resolved_configuration
-    from frameit.core.coupled import _inventory
-    from frameit.core.preflight import preflight
+    from frameit.core.coupled import bind_sources
 
     paths = write_shards(tmp_path, [shard('prmsl', 100000.), shard('u10', 0.), shard('v10', 3.)])
     conf = configuration(tmp_path, paths)
-    assert conf.netcdf_file_layout == 'variables'
-    preflight(conf)
-    inventory = _inventory(conf)
-    assert len(inventory) == 3
-    for entry in inventory:
-        assert entry['times'] == [str(t) for t in TIMES]
-        assert entry['reference_times'] == [str(REFERENCE)]
+    source = bind_sources(conf)[0]['sources']['atmosphere']
+    assert len(source['files']) == 3
+    for path in source['files']:
+        records = [record for record in source['records'] if record['locator']['path'] == path]
+        assert sorted({str(record['time']) for record in records}) == [str(t) for t in TIMES]
+        assert sorted({str(record['cycle']) for record in records}) == [str(REFERENCE)]
     replay = type(conf).from_mapping_with_model_preset(resolved_configuration(conf))
-    assert replay.netcdf_file_layout == 'variables'
+    assert replay.sources == conf.sources
+    assert 'file_layout' not in replay.sources['atmosphere']['reader']
     coupled = configuration(tmp_path, paths, coupled=True)
-    assert all(s['input']['netcdf']['file_layout'] == 'variables'
-               for s in coupled.input_sources.values())
+    assert all(source['files'] == list(map(str, paths)) for source in coupled.sources.values())
+    assert all('file_layout' not in source['reader'] for source in coupled.sources.values())
 
 
 @pytest.mark.parametrize('value', ['mixed', 1, None])
@@ -231,19 +227,26 @@ def test_netcdf_layout_rejects_invalid_configuration(tmp_path, value):
     from frameit.core.configuration import resolve_schema
 
     with pytest.raises(ValueError, match='file_layout'):
-        resolve_schema({'schema_version': '2.1', 'model': 'arome',
-                        'input': {'pattern': '*.nc', 'netcdf': {'file_layout': value}}})
+        resolve_schema({'schema_version': 3, 'sources': {'atmosphere': {
+            'model': 'arome', 'files': '*.nc', 'reader': {'file_layout': value}}}})
 
 
 def test_variable_shard_wind_companion_can_live_in_another_file(tmp_path):
+    from frameit.core.coupled import bind_sources
+    from frameit.core.runner import FrameitRunner
+
     paths = write_shards(tmp_path, [shard('prmsl', 100000.), shard('u10', 0.), shard('v10', 3.)])
     conf = configuration(tmp_path, paths)
-    result = load(paths, ['u10'], wind_conf=conf)
-    try:
+    raw = conf.yaml_config
+    raw['sources']['atmosphere']['variables'] = {'2d': ['u10']}
+    conf = type(conf).from_mapping_with_model_preset(raw)
+    with FrameitRunner(conf) as runner:
+        bind_sources(conf, resources=runner.resources)
+        groups, _, _ = runner.load_dataset()
+        result, = groups.values()
         np.testing.assert_array_equal(result.u10, np.zeros((2, 3, 3)))
         assert result.u10.attrs['standard_name'] == 'eastward_wind'
-    finally:
-        result.close()
+        assert 'v10' not in result
 
 
 @pytest.mark.parametrize('problem', [None, 'shift', 'missing'])
@@ -356,42 +359,44 @@ def test_runner_reuses_netcdf_metadata_without_reading_fields(tmp_path, monkeypa
     from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
     from xarray.backends.netCDF4_ import NetCDF4ArrayWrapper
 
+    from frameit.core.coupled import bind_sources
     from frameit.core.runner import FrameitRunner
     from frameit.core.settings_class import SimulationConfig
 
     from .test_configuration_v2_1 import dataset, document
-    from .test_croco_netcdf import croco_document, croco_scene
-    from .test_nemo_netcdf import nemo_document, nemo_scene
+    from .test_croco_netcdf import croco_scene
+    from .test_nemo_netcdf import nemo_scene
 
     paths = [tmp_path / f'part{i}.nc' for i in range(2)]
     if model == 'mesonh':
         scene = dataset(tmp_path)
-        raw = document(tmp_path, variables={'fields_2d': {'names': ['MSLP']}})
-        field, group, clock = 'MSLP', 'surface', 'time'
+        raw = document(tmp_path)
+        raw['sources']['atmosphere']['variables'] = {'2d': ['MSLP']}
+        field, clock = 'MSLP', 'time'
     elif model == 'arome':
         scene = shard('prmsl', 100000.)
         raw = configuration(tmp_path, paths).yaml_config
-        raw['variables'] = {'fields_2d': {'names': ['prmsl']}}
-        field, group, clock = 'prmsl', 'surface', 'valid_time'
+        raw['sources']['atmosphere']['variables'] = {'2d': ['prmsl']}
+        raw['sources']['atmosphere']['transforms'] = []
+        field, clock = 'prmsl', 'valid_time'
     elif model == 'nemo':
         scene = nemo_scene().isel(time_counter=slice(0, 2))
-        raw = nemo_document(tmp_path, paths, variables={
-            'deptht': {'names': ['votemper'], 'levels': 'stored'}})
-        field, group, clock = 'votemper', 'deptht', 'time_counter'
+        raw = {'schema_version': 3, 'sources': {'ocean': {
+            'model': 'nemo', 'variables': {'3d': ['votemper']}}}}
+        field, clock = 'votemper', 'time_counter'
     else:
         scene = croco_scene()
-        raw = croco_document(tmp_path, paths, variables={
-            's_rho': {'names': ['temp'], 'levels': 'stored'}})
-        field, group, clock = 'temp', 's_rho', 'time'
+        raw = {'schema_version': 3, 'sources': {'ocean': {
+            'model': 'croco', 'variables': {'3d': ['temp']}}}}
+        field, clock = 'temp', 'time'
     scene['unrequested'] = xr.ones_like(scene[field])
     for i, path in enumerate(paths):
         part = scene.isel({clock: [i]})
         chunks = tuple(min(2, n) for n in part[field].shape)
         part.to_netcdf(path, engine='h5netcdf', encoding={field: {'chunksizes': chunks}})
-    raw['input'].pop('directory', None)
-    raw['input'].pop('pattern', None)
-    raw['input']['files'] = list(map(str, paths))
-    raw['input']['netcdf'] = {'engine': engine, 'file_layout': 'time_series'}
+    source, = raw['sources'].values()
+    source['files'] = list(map(str, paths))
+    source['reader'] = {'engine': engine, 'chunks': {dim: 2 for dim in scene[field].dims}}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     opened, closed = track_netcdf_opens(monkeypatch)
     wrapper = H5NetCDFArrayWrapper if engine == 'h5netcdf' else NetCDF4ArrayWrapper
@@ -404,14 +409,15 @@ def test_runner_reuses_netcdf_metadata_without_reading_fields(tmp_path, monkeypa
     with FrameitRunner(conf) as runner:
         with monkeypatch.context() as guarded:
             guarded.setattr(wrapper, '_getitem', no_physical_read)
+            bind_sources(conf, resources=runner.resources)
             groups, _, files = runner.load_dataset()
         assert Counter(opened) == Counter(paths)
         assert files == paths
-        result = groups[group][field]
+        result, = [ds[field] for ds in groups.values() if field in ds]
         assert hasattr(result.data, 'dask')
         assert all(n <= 2 for chunks in result.chunks for n in chunks)
         np.testing.assert_array_equal(result, scene[field])
-        assert 'unrequested' not in groups[group]
+        assert all('unrequested' not in ds for ds in groups.values())
         assert not closed
     assert set(closed) == set(range(len(opened)))
 
@@ -467,15 +473,17 @@ def test_standalone_preflight_closes_netcdf(tmp_path, monkeypatch):
     paths = write_shards(tmp_path, [shard('prmsl', 100000.), shard('u10', 0.), shard('v10', 3.)])
     conf = configuration(tmp_path, paths)
     opened, closed = track_netcdf_opens(monkeypatch)
-    assert preflight(conf)['track_time_count'] == 2
+    assert len(preflight(conf)['sources']['atmosphere']['selected_times']) == 2
     assert Counter(opened) == Counter(paths)
     assert set(closed) == set(range(len(opened)))
 
 
 @pytest.mark.parametrize('representation', ['native', 'mass_earth'])
 def test_runner_only_prepares_selected_cartesian_branch(tmp_path, representation):
+    from frameit.core.coupled import bind_sources
     from frameit.core.runner import FrameitRunner
     from frameit.core.settings_class import SimulationConfig
+    from frameit.processing.wind_collocation import collocate_mnh_component
 
     from .test_configuration_v2_1 import document
     from .test_wind_collocation import native
@@ -483,21 +491,30 @@ def test_runner_only_prepares_selected_cartesian_branch(tmp_path, representation
     source = native()
     path = tmp_path / 'native.nc'
     source.to_netcdf(path, engine='h5netcdf')
-    raw = document(tmp_path,
-        input={'files': [str(path)], 'wind_pairs': [
-            {'group': 'level', 'u': 'UT', 'v': 'VT', 'reference_frame': 'earth'}]},
-        variables={'level': {'names': ['UT', 'VT'], 'levels': 'stored'},
-                   'level_w': {'names': ['WT'], 'levels': 'stored'}},
-        output={'directory': str(tmp_path / 'out'),
-                'cartesian': {'horizontal_vectors': 'earth_centered' if representation == 'mass_earth' else representation}})
-    with FrameitRunner(SimulationConfig.from_mapping_with_model_preset(raw)) as runner:
+    raw = document(tmp_path, region={}, products={'model_grid': True})
+    raw['sources']['atmosphere'].update(
+        files=[str(path)], wind_pairs=[{'u': 'UT', 'v': 'VT', 'basis': 'earth'}],
+        variables={'3d': ['UT', 'VT', 'WT']})
+    if representation == 'mass_earth':
+        raw['sources']['atmosphere']['transforms'] = [
+            {'fields': ['UT', 'VT'], 'sampling': 'mass', 'basis': 'earth'}]
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    with FrameitRunner(conf) as runner:
+        bind_sources(conf, resources=runner.resources)
         groups, _, _ = runner.load_dataset()
-        assert bool(runner._native_cartesian_groups) == (representation == 'native')
-        np.testing.assert_array_equal(groups['level'].UT[0, :, 1], [[0., 2., 4.]] * 3)
-        np.testing.assert_array_equal(groups['level_w']._frameit_mass_w[0, :, 0, 0], [.5, 2.5, 6.])
+        wind, = [ds for ds in groups.values() if 'UT' in ds]
+        vertical, = [ds for ds in groups.values() if 'WT' in ds]
+        # Explicit downstream collocation does not replace native exports or add hidden W.
+        u = collocate_mnh_component(wind.UT, source, conf)
+        w = collocate_mnh_component(vertical.WT, source, conf, vertical=True)
+        np.testing.assert_array_equal(u[0, :, 1], [[0., 2., 4.]] * 3)
+        np.testing.assert_array_equal(w[0, :, 0, 0], [.5, 2.5, 6.])
+        np.testing.assert_array_equal(vertical.WT, source.WT)
+        assert all('_frameit_mass_w' not in ds for ds in groups.values())
         if representation == 'native':
-            np.testing.assert_array_equal(runner._native_cartesian_groups['level'].UT, source.UT)
-            np.testing.assert_array_equal(runner._native_cartesian_groups['level_w'].WT, source.WT)
+            np.testing.assert_array_equal(wind.UT, source.UT)
+        else:
+            np.testing.assert_array_equal(wind.UT, u)
 
 
 @pytest.mark.parametrize("engine", ["h5netcdf", "netcdf4", "scipy"])

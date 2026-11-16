@@ -4,16 +4,21 @@ Scientific qualification
 Run and retain the evidence
 ----------------------------
 
-FrameIt samples geodesically defined storm-centred target points, rather than
-performing a stereographic map projection. Bilinear interpolation samples scalar
-values and eastward/northward wind components; rotation uses the terminal-forward
-geodesic bearing at each target. Tangential wind is positive clockwise.
+These tests sample geodesically defined storm-centred target points, rather than
+performing a stereographic map projection. They check bilinear sampling of scalar
+values and prepared eastward/northward wind components. Vector rotation uses the
+terminal-forward geodesic bearing at each target; tangential wind is positive
+clockwise.
 
 .. code-block:: bash
 
    python -m frameit.testing.polar_qualification --output ./runs/polar-qualification
    python -m frameit.testing.polar_qualification --example --output ./runs/analytical-vortex
-   frameit run-all-tests --output ./runs/all-tests
+   FRAMEIT_CI_DATA_ROOT=/path/to/ci_dataset frameit run-all-tests --output ./runs/all-tests
+
+``run-all-tests`` also requires the separately supplied, verified
+:doc:`simulation fixture <../user_guide/matrix_testing>`. Set
+``FRAMEIT_CI_DATA_ROOT`` to its absolute directory.
 
 Each output directory must be fresh or empty. The small example exports
 ``analytical-vortex.nc`` and ``example.json`` with errors, radial profiles,
@@ -205,15 +210,16 @@ diagnostic admission or general conservation claim follows from these checks.
 Sampling conventions and units
 ------------------------------------
 
-Radial/tangential winds use the local bearing. Meso-NH components are collocated
-on the native grid. Speed is the norm of sampled components. The origin can lie
-between grid points, and full-ring angle grids are uniform and endpoint-exclusive.
+These vector checks use collocated, prepared eastward/northward components.
+Radial/tangential winds use the local bearing. Speed is the norm of sampled
+components. The origin can lie between grid points, and full-ring angle grids
+are uniform and endpoint-exclusive.
 At zero radius, radial/tangential components are undefined even when east/north
 winds and speed are finite. Coverage and missing-data policies are explicit.
 
-``polar.radial_step_m`` uses metres. Output ``rr`` uses kilometres, ``theta``
-radians and ``theta_deg`` degrees. Requested angular steps are maxima; effective
-steps are uniform ``360/N`` and may differ for nondivisor requests.
+``products.polar.radial_step_km`` and exported ``radius`` use kilometres.
+Exported ``azimuth`` uses radians and ``azimuth_degrees`` uses degrees.
+``products.polar.azimuth_count: N`` requests uniform ``360/N`` degree spacing.
 
 Compare files only after examining centres, Earth model, requested/effective
 angles, masks, collocation and wind reference frames. Different choices describe

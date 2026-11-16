@@ -89,9 +89,10 @@ def request_fa(request):
             )
         except subprocess.TimeoutExpired as exc:
             raise ValueError(f"FA request timed out for {Path(request['path']).name}; "
-                             "review input.fa.timeout_seconds and source availability") from exc
+                             "review sources.<id>.reader.timeout_seconds "
+                             "and source availability") from exc
         except OSError as exc:
-            raise ValueError("Cannot launch the FA helper; check input.fa.python_executable "
+            raise ValueError("Cannot launch the FA helper; check sources.<id>.reader.python_executable "
                              "and install FrameIt with the selected FA extra there") from exc
         diagnostics = (result.stdout + result.stderr).strip()
         response = Path(directory) / "response.json"

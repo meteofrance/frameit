@@ -41,11 +41,131 @@ def create_first_run_input(path: Path) -> Path:
     return path
 
 
+def create_tutorial_inputs(directory: Path, *, translating=False, missing=False) -> dict[str, Path]:
+    """Write a small declared event, not a balanced simulation or producer fixture."""
+    from pyproj import Geod
+
+    from frameit.testing.analytic_vortices import AnalyticVortex
+
+    directory = Path(directory)
+    paths = {name: directory / f"{name}.nc" for name in ("atmosphere", "ocean", "track")}
+    for path in paths.values():
+        if path.exists():
+            raise FileExistsError(path)
+    times = np.array(["2000-01-01T00", "2000-01-01T01", "2000-01-01T02"],
+                     dtype="datetime64[ns]")
+    centres = 60. + (.1 * np.arange(3) if translating else np.zeros(3))
+    provenance = {
+        "source": "Synthetic instructional inputs; not producer data or a physical simulation",
+        "event": "prescribed Gaussian vortex; no dynamical balance or motion subtraction",
+        "V_max_m_s": 40., "R_m": 40000., "p_infinity_Pa": 101000., "delta_p_Pa": 5000.,
+        "centre_longitude_step_degrees": .1 if translating else 0.,
+    }
+    longitude, latitude = 60. + .05 * np.arange(-12, 13), -20. + .05 * np.arange(-12, 13)
+    lon, lat = np.meshgrid(longitude, latitude)
+    u, v, pressure = [], [], []
+    geod = Geod(ellps="WGS84")
+    for centre in centres:
+        model = AnalyticVortex(longitude=float(centre), latitude=-20., tangential_max_ms=40.)
+        fields = model.evaluate(lon, lat)
+        _, _, radius = geod.inv(np.full(lon.shape, centre), np.full(lat.shape, -20.), lon, lat)
+        u.append(fields["u"])
+        v.append(fields["v"])
+        pressure.append(101000. - 5000. * np.exp(-(radius / 40000.)**2))
+    dims = ("time", "latitude", "longitude")
+    wind = {"units": "m s-1", "wind_reference_frame": "earth", "kind": "continuous"}
+    air = xr.Dataset({
+        "u": (dims, np.asarray(u), {**wind, "standard_name": "eastward_wind"}),
+        "v": (dims, np.asarray(v), {**wind, "standard_name": "northward_wind"}),
+        "pressure": (dims, np.asarray(pressure), {
+            "units": "Pa", "standard_name": "air_pressure_at_mean_sea_level",
+            "kind": "continuous"}),
+        "temperature": (("time", "height", "latitude", "longitude"),
+                        np.broadcast_to((300. - .006 * np.array([10., 1000., 3000.]))[
+                            None, :, None, None], (3, 3, 25, 25)),
+                        {"units": "K", "kind": "continuous", "formula": "300 K - (0.006 K/m) z"}),
+        "interface_w": (("time", "interface_height", "latitude", "longitude"),
+                        np.broadcast_to(np.array([0., .5, 2., 4.])[None, :, None, None],
+                                        (3, 4, 25, 25)),
+                        {"units": "m s-1", "kind": "continuous", "formula": "(0.001 s-1) z"}),
+    }, coords={
+        "time": times,
+        "latitude": ("latitude", latitude, {"units": "degrees_north", "standard_name": "latitude"}),
+        "longitude": ("longitude", longitude, {
+            "units": "degrees_east", "standard_name": "longitude"}),
+        "height": ("height", [10., 1000., 3000.], {"units": "m", "axis": "Z", "positive": "up"}),
+        "interface_height": ("interface_height", [0., 500., 2000., 4000.],
+                             {"units": "m", "axis": "Z", "positive": "up"}),
+    }, attrs=provenance)
+    ocean_lon, ocean_lat = np.meshgrid(60. + .1 * np.arange(-6, 7), -20. + .1 * np.arange(-6, 7))
+    depths = np.array([-30., -10., 0.])
+    temperatures = []
+    for centre in centres[[0, 2]]:
+        _, _, radius = geod.inv(
+            np.full(ocean_lon.shape, centre), np.full(ocean_lat.shape, -20.), ocean_lon, ocean_lat)
+        z = depths[:, None, None]
+        temperatures.append(300. + .01 * z - 2. * np.exp(-(radius / 40000.)**2) * np.exp(z / 20.))
+    water = xr.Dataset({
+        "temp": (("time", "s_rho", "eta_rho", "xi_rho"), np.asarray(temperatures), {
+            "units": "K", "kind": "continuous", "temporal_kind": "instantaneous",
+            "long_name": "instructional ocean temperature response",
+            "formula": "300 K + (0.01 K/m) z - (2 K) exp(-(r/40 km)^2) exp(z/20 m)",
+            "ancillary_variables": "mask_rho"}),
+        "h": (("eta_rho", "xi_rho"), np.full((13, 13), 40.), {"units": "m"}),
+        "zeta": (("time", "eta_rho", "xi_rho"), np.zeros((2, 13, 13)), {"units": "m"}),
+        "Cs_rho": ("s_rho", depths / 40., {"units": "1"}),
+        "hc": xr.DataArray(5., attrs={"units": "m"}),
+        "Vtransform": xr.DataArray(2),
+        "mask_rho": (("eta_rho", "xi_rho"), np.ones((13, 13), dtype="uint8"), {
+            "units": "1", "option_0": "land", "option_1": "water"}),
+    }, coords={
+        "time": times[[0, 2]], "eta_rho": np.arange(13), "xi_rho": np.arange(13),
+        "s_rho": ("s_rho", depths / 40., {
+            "units": "1", "axis": "Z", "positive": "up", "Vtransform": "2",
+            "standard_name": "ocean_s_coordinate_g2",
+            "formula_terms": "s: s_rho C: Cs_rho eta: zeta depth: h depth_c: hc"}),
+        "depth": ("s_rho", depths, {"units": "m", "long_name": "height relative to sea surface"}),
+        "lat_rho": (("eta_rho", "xi_rho"), ocean_lat, {
+            "units": "degrees_north", "standard_name": "latitude"}),
+        "lon_rho": (("eta_rho", "xi_rho"), ocean_lon, {
+            "units": "degrees_east", "standard_name": "longitude"}),
+    }, attrs={**provenance, "type": "CROCO history file",
+              "Vtransform": "2", "CPP-options": "MASKING"})
+    if missing:
+        for name in ("u", "v"):
+            air[name][:, 10, 11] = np.nan
+        air["surface_type"] = (("latitude", "longitude"),
+                               np.broadcast_to((np.arange(25) >= 12).astype("uint8"), (25, 25)),
+                               {"units": "1", "kind": "categorical", "flag_values": [0, 1],
+                                "flag_meanings": "water land"})
+        water.mask_rho[0, :] = 0
+        water["temp"] = water.temp.where(water.mask_rho == 1)
+    track = xr.Dataset(coords={
+        "time": times,
+        "latitude": ("time", [-20.] * 3, {"units": "degrees_north", "standard_name": "latitude"}),
+        "longitude": ("time", centres, {"units": "degrees_east", "standard_name": "longitude"}),
+    }, attrs=provenance)
+    for name, scene in (("atmosphere", air), ("ocean", water), ("track", track)):
+        scene.time.attrs.update(standard_name="time", axis="T")
+        with atomic_output(paths[name], overwrite=False) as temporary:
+            scene.to_netcdf(temporary, engine="netcdf4")
+    return paths
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True, help="New instructional NetCDF path (no overwrite)")
+    parser.add_argument("--output", type=Path, required=True,
+                        help="New instructional NetCDF path or tutorial directory (no overwrite)")
+    parser.add_argument("--tutorial", choices=("stationary", "translating", "missing"),
+                        help="Create a labelled atmospheric/ocean tutorial directory instead")
     args = parser.parse_args()
-    print(f"Created instructional input: {create_first_run_input(args.output)}")
+    if args.tutorial:
+        for path in create_tutorial_inputs(
+                args.output, translating=args.tutorial == "translating",
+                missing=args.tutorial == "missing").values():
+            print(f"Created instructional input: {path}")
+    else:
+        print(f"Created instructional input: {create_first_run_input(args.output)}")
 
 
 if __name__ == "__main__":

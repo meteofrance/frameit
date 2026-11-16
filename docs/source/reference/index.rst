@@ -14,5 +14,6 @@ repeating the tutorial.
    tracking
    polar
    illustrations
+   analytical_inputs
    concepts
    ../troubleshooting

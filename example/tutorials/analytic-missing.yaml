@@ -1,0 +1,22 @@
+schema_version: 3
+run: {name: analytic-missing}
+sources:
+  atmosphere:
+    model: arome
+    format: netcdf
+    files: ./missing-data/atmosphere.nc
+    variables:
+      2d: [u, surface_type]
+region:
+  center: {latitude: -20, longitude: 60}
+products:
+  polar:
+    radius_km: 20
+    azimuth_count: 16
+    fields: {atmosphere: [u, surface_type]}
+    field_options:
+      atmosphere:
+        u: {missing_data_policy: strict}
+        surface_type: {interpolation: nearest}
+output: {directory: ./strict-results}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

@@ -745,6 +745,14 @@
           "additionalProperties": {
             "$ref": "#/$defs/derived"
           }
+        },
+        "allow_initial_gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "minItems": 1,
+          "uniqueItems": true
         }
       },
       "additionalProperties": false,
@@ -1197,6 +1205,12 @@
         },
         "sampling": {
           "$ref": "#/$defs/choices_sampling"
+        },
+        "units": {
+          "$ref": "#/$defs/text"
+        },
+        "basis": {
+          "$ref": "#/$defs/choices_transform_basis"
         }
       },
       "additionalProperties": false

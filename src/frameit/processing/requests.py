@@ -445,10 +445,6 @@ def _coordinate_units(descriptor, target, *, inherited=None):
         # Coordinate arithmetic uses binary64; preserve field/storage precision elsewhere.
         values = values.astype("float64") * factor
         attrs = converted.attrs
-        for key in ("valid_min", "valid_max", "valid_range", "actual_range"):
-            if key in attrs:
-                scaled = np.asarray(attrs[key], dtype=float) * factor
-                attrs[key] = scaled.item() if scaled.ndim == 0 else scaled
     if target:
         attrs["units"] = target
         if not source:
@@ -812,18 +808,19 @@ def source_field_declaration(source, field, *, record=None):
     """Match declarations by actual identity, without converting or relabelling data."""
     declaration = source.get("declaration", {})
     name = field["name"]
+    context = f"sources.{source.get('name', '<id>')}.field_metadata"
     declarations = declaration.get("field_metadata", {})
     metadata = declarations.get(name, {})
     if metadata and len({r["field_id"] for r in source["record_inventory"]
                          if r["name"] == name}) > 1:
-        raise ValueError(f"source.field_metadata.{name}: ambiguous native name; "
+        raise ValueError(f"{context}.{name}: ambiguous native name; "
                          "use an explicit vertical-group.field reference")
     groups = source.get("requests", {}).get("groups", {})
     if groups:
         group = native_field_group(source, field, record)
         qualified = declarations.get(f"{group}.{name}", {}) if group in groups else {}
         if metadata and qualified and metadata != qualified:
-            raise ValueError(f"source.field_metadata.{group}.{name}: conflicting declarations")
+            raise ValueError(f"{context}.{group}.{name}: conflicting declarations")
         metadata = qualified or metadata
     return metadata
 
@@ -850,8 +847,14 @@ def source_field_metadata(source, field, *, record=None):
         if sample["name"] == name:
             temporal_names.update(sample.get("temporal_names", [
                 sample["clock"], *sample["locator"].get("coordinate_indexers", {})]))
+    groups = source.get("requests", {}).get("groups", {})
+    if groups:
+        group = native_field_group(source, field, record)
+        if f"{group}.{name}" in declaration.get("field_metadata", {}):
+            name = f"{group}.{name}"
     result = resolve_field_metadata(
-        attrs, metadata, f"source.field_metadata.{name}", temporal_names=temporal_names)
+        attrs, metadata, f"sources.{source.get('name', '<id>')}.field_metadata.{name}",
+        temporal_names=temporal_names)
     if interpreted:
         result["origins"]["units"] = attrs["surfex_units_source"]
     return result
@@ -1082,7 +1085,9 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 active[product, name] = {
                     "method": "polar_input", "inputs": {"field": name},
                     "sampling": request["polar_options"].get(name, {}).get("sampling", "native"),
-                    "basis": "native"}
+                    "basis": request["polar_options"].get(name, {}).get("basis", "native"),
+                    **{key: value for key, value in request["polar_options"].get(name, {}).items()
+                       if key == "units"}}
     native = deepcopy(request)
     native["exports"] = {p: [n for n in names if (p, n) not in active]
                          for p, names in exports.items()}
@@ -1119,7 +1124,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                     f"{loc}: {operation['method']} requires products.polar.fields and "
                     "AROME GRIB/NetCDF or Meso-NH NetCDF, not FA")
         inputs = dict(operation["inputs"])
-        if operation["method"] == "transform" and operation["basis"] == "earth":
+        if operation["method"] in {"transform", "polar_input"} and operation["basis"] == "earth":
             declarations = [p for p in source["declaration"].get("wind_pairs", [])
                             if name in (p["u"], p["v"])]
             evidence = [r for _, r in field_candidates(source, request, name, all_by_name)]
@@ -1132,6 +1137,8 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 raise ValueError(
                     f"{name}: Earth basis requires an unambiguous wind_pairs declaration")
         croco = source["model"] == "croco" and operation["sampling"] == "mass"
+        if source["model"] == "croco" and product == "polar":
+            inputs["mask_rho"] = "mask_rho"
         if croco:
             for mask in ("mask_rho", "mask_u", "mask_v"):
                 if mask == "mask_rho" or any(r["name"] == mask for r in pool):
@@ -1174,6 +1181,14 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                     source, field, record=record)
                 attrs[field_name] = deepcopy(
                     metadata["attributes"] if metadata else field["attributes"])
+                if source["model"] == "nemo" and product == "polar":
+                    from frameit.io.nemo_utils import COMPONENT_STANDARD_NAMES, NATIVE_COMPONENTS
+
+                    if field["name"] in NATIVE_COMPONENTS or (
+                            attrs[field_name].get("standard_name") in COMPONENT_STANDARD_NAMES):
+                        raise ValueError(
+                            "NEMO polar component analysis is unqualified; "
+                            "native extraction remains available")
                 if field.get("native_cube", {}).get("vector_basis"):
                     attrs[field_name]["wind_reference_frame"] = field["native_cube"]["vector_basis"]
                 axes[field_name] = _field_axis(source, field, record, all_by_name)
@@ -1384,6 +1399,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 } if coordinate else None,
             }
             planned["result_units"] = operation.get("units", attrs[anchor].get("units"))
+            output["result_units"] = planned["result_units"]
             output.setdefault("representations", []).append({
                 "time": context[0], "cycle": context[1], "grid_id": grid_id,
                 "units": planned["result_units"], "preparation": planned["preparation"],
@@ -1431,6 +1447,88 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
     return binding
 
 
+def initial_gap_times(source, name, records):
+    """Permit only an explicitly declared whole-field initial absence on a proven grid."""
+    times = source["selected_times"]
+    missing = set(times) - {record["time"] for record in records}
+    if (not times or missing != {min(times)} or not records
+            or name not in source.get("declaration", {}).get("allow_initial_gaps", [])
+            or source.get("format") not in {"grib", "netcdf"}):
+        return set()
+    grids = {record["grid_id"] for record in records}
+    support = [record for record in source["records"]
+               if record["time"] == min(times) and record["grid_id"] in grids]
+    if len(grids) == 1 and not support and source["format"] == "grib":
+        from frameit.core.preflight import _metadata_id
+
+        field = source["fields"][records[0]["field_id"]]
+        axis = _field_axis(source, field, records[0], {field["name"]: list(enumerate(records))})
+        if axis is None:
+            # A surface parameter's GRIB level type is identity, not horizontal geometry.
+            horizontal = {
+                key: _metadata_id("horizontal_", {k: v for k, v in grid.items()
+                                                  if k != "vertical_group"})
+                for key, grid in source["native_grids"].items()}
+            target = horizontal[records[0]["grid_id"]]
+            support = [record for record in source["records"] if record["time"] == min(times)
+                       and horizontal[record["grid_id"]] == target]
+    axes = {tuple(sorted(record.get("native_axes", {}).items())) for record in records}
+    proven_axes = {tuple(sorted(record.get("native_axes", {}).items())) for record in support}
+    if len(grids) != 1 or not axes <= proven_axes:
+        raise ValueError(f"{name}: initial absence requires a proven unchanged native grid")
+    return missing
+
+
+def align_initial_gap(dataset, name, source):
+    """Align declared missing output only; never create physical input records."""
+    gaps = [gap for gap in source.get("allowed_gaps", []) if gap["field"] == name]
+    if not source.get("allowed_gaps"):
+        return dataset
+    if gaps and dataset.time.dims != ("time",):
+        raise ValueError(f"{name}: initial absence requires a one-dimensional output clock")
+    result = dataset
+    if gaps:
+        times = source["selected_times"]
+        missing = set(times) - set(dataset.time.values)
+        if missing != {gap["time"] for gap in gaps}:
+            raise ValueError(f"{name}: output absence differs from its bound initial-gap contract")
+        if "time" not in dataset[name].dims:
+            result = dataset.assign({name: dataset[name].expand_dims(time=dataset.time)})
+        result = _initial_gap_clock(result.reindex(time=times), source)
+        result[name].attrs["frameit_initial_absence"] = str(gaps[0]["time"])
+    # Temporal evidence belongs to a field, not to a missing neighbour's record.
+    names = {key: f"{name}_{key}" for key, value in result.coords.items()
+             if key.startswith("GRIB_") and "time" in value.dims}
+    bounds = result.time.attrs.get("bounds")
+    if bounds in result:
+        owned = f"{name}_time"
+        names[bounds] = f"{name}_{bounds}"
+        result = result.assign_coords({owned: result.time.variable.copy(deep=False)})
+        result[owned].attrs = {**result.time.attrs, "bounds": names[bounds]}
+        result.time.attrs = {key: value for key, value in result.time.attrs.items()
+                             if key != "bounds"}
+    return result.rename(names)
+
+
+def _initial_gap_clock(dataset, source):
+    """Restore only shared clocks from actual records, never interval evidence."""
+    result = dataset
+    times = dataset.time.values
+    # Reference clocks come from actual selected source records, not the absent field.
+    cycles = {time: {r["cycle"] for r in source["records"] if r["time"] == time}
+              for time in times}
+    for coordinate in ("forecast_reference_time", "step"):
+        if coordinate in result and result[coordinate].dims == ("time",):
+            if any(len(values) != 1 or None in values for values in cycles.values()):
+                raise ValueError("Initial absence has ambiguous source reference clocks")
+            references = np.array([next(iter(cycles[time])) for time in times])
+            values = references if coordinate == "forecast_reference_time" else (
+                np.asarray(times) - references)
+            result = result.assign_coords({
+                coordinate: ("time", values, dataset[coordinate].attrs)})
+    return result
+
+
 def bind_requests(source, request, *, representations=None, required_inputs=()):
     """Bind v3 declarations using only a closed, metadata-only record inventory.
 
@@ -1470,6 +1568,10 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
         if name in resolved:
             continue
         candidates = field_candidates(source, request, name, records_by_name)
+        group = source.get("tracker_input_groups", {}).get(name) if name in generated else None
+        if group:
+            candidates = [(i, r) for i, r in candidates
+                          if native_field_group(source, source["fields"][r["field_id"]], r) == group]
         identities = {r["field_id"] for _, r in candidates}
         if not identities:
             raise ValueError(f"{context}: {name} unavailable in selected record inventory; "
@@ -1494,7 +1596,10 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                      for _, r in candidates}
         axes = {entry[2] for entry in available}
         missing = {(time, cycle, axis) for time, cycle in clocks for axis in axes} - available
-        if missing or set(source["selected_times"]) - {r["time"] for _, r in candidates}:
+        allowed = (initial_gap_times(source, name, [r for _, r in candidates])
+                   if name not in method_inputs else set())
+        if ({entry for entry in missing if entry[0] not in allowed}
+                or set(source["selected_times"]) - {r["time"] for _, r in candidates} - allowed):
             raise ValueError(f"{context}: {name} unavailable at selected times/cycles/native axes; "
                              f"missing support {sorted(missing, key=str)}")
         resolved[name] = field_id, field, candidates

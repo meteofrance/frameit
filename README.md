@@ -71,7 +71,7 @@ Set `output.format: zarr` for `.zarr` stores instead of `.nc` files. See
 - **Extraction and tracking:** fixed boxes, prescribed tracks, pressure-wind and
   adaptive pressure-centroid tracking (AROME isobaric and Meso-NH native levels).
   The seeded multi-field vortex tracker is experimental, with scientific
-  qualification pending. UTrack requires its own weights and dependencies.
+  qualification pending. The optional UTrack adapter cannot execute v3 requests.
 - **Coupled inputs:** sources share centres but keep their own grids, masks,
   quantities, clocks and products. Operations needing shared centres require
   an explicit time association. See
@@ -82,8 +82,8 @@ Set `output.format: zarr` for `.zarr` stores instead of `.nc` files. See
   default. Spectral decoding and packed SURFEX reconstruction are unsupported.
   See [FA limits](https://meteofrance.github.io/frameit/user_guide/fa_baseline.html).
 - **Optional polar sampling:** continuous production fields default to bilinear
-  point sampling, without an area-budget conservation guarantee. Categorical
-  data require an explicit appropriate method such as `nearest_s2d`. Shared
+  point sampling, without an area-budget conservation guarantee. Proven categorical
+  fields use nearest-neighbour sampling; unresolved kind fails. Shared
   targets are opt-in (`products.polar.shared_grid: true`); equal target coordinates do
   not imply equal source masks or quantities. Conservative, patch and additional
   vector-transport methods remain experimental.
@@ -113,8 +113,8 @@ an absolute directory). These checks do not validate every real-data regime.
 
 ## Optional HPC / Slurm execution
 
-Use one task on one node per configuration. Use the same `environment.yaml` and
-`frameit_env` as the reference installation; no separate HPC recipe is needed.
+Use one task on one node per configuration. Use the reference installation's
+`environment.yaml` and `frameit_env`.
 Portable launchers and an independent output checker are in `example/slurm/`.
 See [HPC and Slurm](https://meteofrance.github.io/frameit/getting_started/hpc.html)
 for environment setup, resource limits, isolated attempts, cancellation behavior,

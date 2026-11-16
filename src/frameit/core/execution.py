@@ -528,7 +528,8 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
             checkpoint_run(config.output_dir, status, provenance)
         if options.require_complete_tracking and not status["tracking_complete"]:
             raise ValueError(
-                "Tracking is incomplete and execution.require_complete_tracking is true: "
+                "Tracking is incomplete; region.tracker.on_incomplete: error "
+                "or --require-complete-tracking requires a complete trajectory: "
                 + status["tracking_termination_reason"]
             )
         exports = {}

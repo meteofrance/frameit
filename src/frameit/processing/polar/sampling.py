@@ -16,9 +16,9 @@ DEFAULT_MAX_POLAR_POINTS = 2_000_000
 
 def validate_sampling_options(count, step_deg, max_points):
     if isinstance(max_points, (bool, np.bool_)) or not isinstance(max_points, (int, np.integer)):
-        raise ValueError("polar_max_points must be a positive integer")
+        raise ValueError("products.polar.processing.max_target_points must be a positive integer")
     if max_points <= 0:
-        raise ValueError("polar_max_points must be a positive integer")
+        raise ValueError("products.polar.processing.max_target_points must be a positive integer")
     if count is not None:
         if isinstance(count, (bool, np.bool_)) or not isinstance(count, (int, np.integer)):
             raise ValueError("polar_n_theta must be an integer of at least 3")
@@ -30,7 +30,7 @@ def validate_sampling_options(count, step_deg, max_points):
         if not 0 < float(step_deg) <= 120:
             raise ValueError("azimuthal_resolution must be positive and at most 120 degrees")
         if float(step_deg) < 360.0 / max_points:
-            raise ValueError("Angular sampling exceeds polar_max_points")
+            raise ValueError("Angular sampling exceeds products.polar.processing.max_target_points")
         required = math.ceil(360.0 / float(step_deg))
         if count is not None and count != required:
             raise ValueError("polar_n_theta conflicts with the requested azimuthal_resolution")
@@ -41,8 +41,9 @@ def validate_sampling_options(count, step_deg, max_points):
 def check_point_budget(points: int, limit: int) -> None:
     if points > limit:
         raise ValueError(
-            f"Polar target grid requires {points} points, exceeding polar_max_points={limit}. "
-            "Choose coarser sampling or explicitly increase polar_max_points."
+            f"Polar target grid requires {points} points, exceeding "
+            f"products.polar.processing.max_target_points={limit}. "
+            "Choose coarser sampling or explicitly increase that limit."
         )
 
 
@@ -101,7 +102,7 @@ def sampling_axes(conf):
         raise ValueError("radial_resolution is too small to represent in kilometres")
     radial_ratio = radius / radial_km
     if not math.isfinite(radial_ratio) or radial_ratio > max_points:
-        raise ValueError("Radial sampling exceeds polar_max_points")
+        raise ValueError("Radial sampling exceeds products.polar.processing.max_target_points")
     intervals = math.floor(radial_ratio)
     last = intervals * radial_km
     include_endpoint = not math.isclose(last, radius, rel_tol=1e-12, abs_tol=0)
@@ -114,7 +115,8 @@ def sampling_axes(conf):
     else:
         ratio = 2 * math.pi * radial_ratio
         if not math.isfinite(ratio) or ratio > max_points:
-            raise ValueError("Automatic angular sampling exceeds polar_max_points")
+            raise ValueError(
+                "Automatic angular sampling exceeds products.polar.processing.max_target_points")
         count = max(3, math.ceil(ratio))
         source = "automatic_outer_ring_spacing"
     check_point_budget(nr * int(count), max_points)
@@ -195,9 +197,11 @@ def bind_polar_plan(source, request, binding, conf, *, radial_step_km=None):
                 source, field, record=record) or resolve_field_metadata(
                     record.get("observed_attributes", field["attributes"]), {},
                     f"polar.{name}", temporal_names=record.get("temporal_names", [record["clock"]]))
-            job["polar_options"][name] = polar_field_options(
-                metadata, {"sampling": job["sampling"], **request["polar_options"].get(name, {})},
-                conf, f"polar.{name}")
+            if job["method"] != "polar_input" or name == job["inputs"]["field"]:
+                job["polar_options"][name] = polar_field_options(
+                    metadata, {
+                        "sampling": job["sampling"], **request["polar_options"].get(name, {})},
+                    conf, f"polar.{name}")
             job["polar_input_metadata"][name] = {
                 "attributes": {key: metadata["attributes"][key] for key in (
                     "units", "kind", "temporal_kind", "standard_name")

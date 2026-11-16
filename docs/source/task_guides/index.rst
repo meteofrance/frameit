@@ -14,4 +14,5 @@ the settings to adapt and checks for the result.
    polar_sampling
    coupled_inputs
    storage_and_resources
+   analytical_event
    ../getting_started/hpc

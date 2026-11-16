@@ -1,0 +1,52 @@
+schema_version: 3
+run:
+  name: analytic-moving
+sources:
+  atmosphere:
+    model: arome
+    format: netcdf
+    files: ./data/atmosphere.nc
+    time:
+      values: ["2000-01-01T01:00:00", "2000-01-01T02:00:00"]
+    variables:
+      2d: [u, v, pressure]
+      3d:
+        height:
+          names: [temperature]
+          levels: {indices: [1]}  # Retain the singleton 1000 m axis.
+        interface_height:
+          names: [interface_w]
+          levels: {indices: [1, 2]}
+    wind_pairs:
+      - {u: u, v: v, basis: earth}
+    derived:
+      speed: {method: wind_speed, inputs: {u: u, v: v}}
+  ocean:
+    model: croco
+    format: netcdf
+    files: ./data/ocean.nc
+    variables:
+      3d: [temp]
+      levels: {indices: [2, 1, 0]}  # Depths for these indices: 0, -10, -30 m here.
+region:
+  track: {file: ./data/track.nc}
+  sources_coupling_time_association: exact
+products:
+  model_grid:
+    fields:
+      atmosphere: [pressure, height.temperature, interface_height.interface_w]
+      ocean: [temp]
+  polar:
+    radius_km: 20
+    azimuth_count: 16
+    shared_grid: true  # Infer spacing from the coarser prepared source.
+    fields:
+      atmosphere: [u, v, speed]
+      ocean: [temp]
+  track: true
+output:
+  directory: ./results
+resources:
+  cpus: 1
+  scheduler: synchronous
+  synchronous_export: true

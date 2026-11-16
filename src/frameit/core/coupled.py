@@ -943,7 +943,9 @@ def run_native_sources(runner, *, benchmark=False):
         if progress is not None:
             progress.update("preparing tracking inputs", source=name)
         consumer = consumers[name]
-        internal = consumer.ds_tracker["internal"]
+        # Field-specific initial-gap views cannot supply required tracker inputs.
+        internal = {key: value for key, value in consumer.ds_tracker["internal"].items()
+                    if not isinstance(key, tuple)}
         geometry, settings = _region_grid(consumer.conf, plans[name], next(iter(internal)))
         for attr in ("name_lat_dim", "name_lon_dim", "name_latitude", "name_longitude"):
             setattr(consumer.conf, attr, getattr(settings, attr))

@@ -1,7 +1,7 @@
 Adaptive pressure centroid
 ==========================
 
-Select ``tracking.method: pressure_centroid`` to use the adaptive pressure-deficit
+Select ``region.tracker.method: pressure_centroid`` to use the adaptive pressure-deficit
 centroid of Nguyen, Molinari and Thomas (2014), DOI
 ``10.1175/MWR-D-14-00044.1``. Numerical choices and the coupled motion solver
 follow the supplied ``compare_batsirai_centers_v1.4.1.py`` implementation. This
@@ -81,7 +81,7 @@ Native winds are collocated linearly using the actual mass/staggered coordinate
 pairs before height interpolation. Horizontal native coordinates normalize to
 metres; missing coordinate units use the documented MNH metre input contract
 and the affected coordinate names are recorded in track metadata.
-Declare each selected model-level and surface pair with ``input.wind_pairs``.
+Declare each selected model-level and surface pair with source ``wind_pairs``.
 The basis must agree with source metadata. Grid-aligned pairs require an
 explicit rotation method; see :ref:`wind-grid-contract` and
 :ref:`wind-preparation-method` for equations and geometry checks. The tracker
@@ -181,9 +181,9 @@ Configuration defaults
 
 .. code-block:: yaml
 
-   tracking:
-     method: pressure_centroid
-     pressure_centroid:
+   region:
+     tracker:
+       method: pressure_centroid
        convergence: {max_iterations: 15, tolerance_m: 250}
        motion:
          max_iterations: 50
@@ -211,7 +211,7 @@ explicit errors. There is no local-reference or fixed-radius fallback.
 Outputs
 -------
 
-The track NetCDF preserves continuous ``lon`` and ``lat``. Integer ``cx`` and
+The track NetCDF preserves continuous ``longitude`` and ``latitude``. Integer ``cx`` and
 ``cy`` identify the nearest WGS84 native grid cell for Cartesian extraction;
 ``grid_center_offset_m`` records the resulting offset. Kinematics and polar
 origins use continuous centres. Diagnostics include ``r80_km``, ``radius_km``,
@@ -228,14 +228,15 @@ are also included in ``run-provenance.yaml``.
 Troubleshooting reference-ring coverage
 ----------------------------------------
 
-The full 500-km reference ring must have finite pressure interpolated to
-2,000 m ASL, including the horizontal interpolation stencil. An invalid sample
+The full 500-km reference ring needs finite pressure at 2,000 m geopotential
+height for AROME, or 2,000 m altitude ASL for Meso-NH, including the horizontal
+interpolation stencil. An invalid sample
 causes failure, not averaging over a partial ring. The error reports the candidate
 centre and invalid sample count. Check whether the centre belongs to the intended
 disturbance, whether the ring crosses the atmospheric input boundary, and whether
 vertical brackets or masks leave missing pressure at that height. Supply wider
 valid atmospheric coverage or choose another suitable tracker when these
-requirements cannot be met. Increasing ``domain.width_km`` changes the output box,
+requirements cannot be met. Increasing ``region.width_km`` changes the output box,
 not the atmospheric input coverage. The reference radius is not a configuration
 workaround. Motion coupling also requires at least two increasing valid times;
 a single snapshot can test spatial support but cannot validate a full track.

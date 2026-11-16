@@ -450,7 +450,10 @@ def resolve_tracker_support(conf, source):
     headers, inputs, axes = {}, {}, {}
     for name in names:
         identities = {record["field_id"] for record in source["record_inventory"]
-                      if record["name"] == name}
+                      if record["name"] == name and (
+                          name not in {"u", "v", "z"}
+                          or source["fields"][record["field_id"]].get("group") == "isobaricInhPa"
+                          or "isobaricInhPa" in source["fields"][record["field_id"]]["dimensions"])}
         if len(identities) != 1:
             raise ValueError(
                 f"{method}: required input {name} missing or ambiguous in selected metadata")
@@ -461,7 +464,8 @@ def resolve_tracker_support(conf, source):
         from frameit.processing.requests import _field_axis
 
         pool = source["record_inventory"]
-        by_name = {n: [(i, r) for i, r in enumerate(pool) if r["name"] == n] for n in names}
+        by_name = {n: [(i, r) for i, r in enumerate(pool) if r["name"] == n
+                      and (n != name or r["field_id"] in identities)] for n in names}
         axis = _field_axis(source, field, by_name[name][0][1], by_name)
         selector = {}
         if name in {"u", "v", "z"}:
@@ -478,8 +482,17 @@ def resolve_tracker_support(conf, source):
     conf.wind_pairs = []
     for group, components in (("surface", names[1:3]), *(
             [("isobaricInhPa", ("u", "v"))] if method != "wind_pressure" else [])):
-        declarations = [pair for pair in conf.sources[conf.source_name]["wind_pairs"]
-                        if (pair["u"], pair["v"]) == components]
+        from frameit.core.configuration import field_selection
+
+        request = conf.source_requests[conf.source_name]
+        declarations = []
+        for pair in conf.sources[conf.source_name]["wind_pairs"]:
+            selected = [field_selection(request, pair[key])[:2] for key in ("u", "v")]
+            if tuple(item[0] for item in selected) == components and all(
+                    item[1] in {None, group} for item in selected):
+                declarations.append({**pair, "u": components[0], "v": components[1]})
+        if len(declarations) > 1:
+            raise ValueError(f"{method}: ambiguous wind declarations for {group}")
         if declarations:
             pair = dict(declarations[0], group=group, reference_frame=declarations[0]["basis"])
             pair.pop("basis")

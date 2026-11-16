@@ -18,7 +18,8 @@ region:
   # Illustrative full widths in km; inspect available regional coverage.
   width_km: {x: 100, y: 100}
 products:
-  # Polar sampling is disabled; adding currents needs an explicit representation choice.
+  # Polar sampling is unrequested. Native current copies need no analysis transform;
+  # rho/Earth analysis must be explicit.
   model_grid: true
 output:
   directory: ./output

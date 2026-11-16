@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 import dask.array as da
@@ -16,95 +17,123 @@ from frameit.core.execution import ExecutionOptions
 from frameit.core.grid_geometry import inspect_grid
 from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
-from frameit.io.loader import discover_input_files
+from frameit.io.loader import inventory_source_files
 from frameit.processing.derived.wind import polar_wind_components
 from frameit.processing.polar.polar_utils import ensure_theta_rad_dim
 from frameit.utils.units import convert_units
 
 
 def minimal_document():
-    return {"schema_version": "2.1", "model": "arome",
-            "input": {"pattern": "*.nc", "format": "netcdf"},
-            "tracking": {"method": "fixed_box", "fixed_box": {
-                "center": {"latitude": -20., "longitude": 60.}}},
-            "variables": {"fields_2d": {"names": ["instructional_scalar"]}},
-             "output": {"directory": "./products", "overwrite": False}}
+    return {"schema_version": 3,
+            "sources": {"atmosphere": {
+                "model": "arome", "format": "netcdf", "files": "*.nc",
+                "variables": {"2d": ["instructional_scalar"]}}},
+            "region": {"center": {"latitude": -20., "longitude": 60.}},
+            "products": {"model_grid": True},
+            "output": {"directory": "./products", "overwrite": False}}
 
 
 def test_fields_2d_translates_without_renaming_scientific_products(tmp_path):
     raw = minimal_document()
-    raw["variables"] = {"fields_2d": {"names": ["instructional_scalar"]}}
-    raw["polar"] = {"variables": {"fields_2d": {"names": ["instructional_scalar"]}}}
-    raw["input"]["wind_pairs"] = [
-        {"group": "fields_2d", "u": "u10", "v": "v10", "reference_frame": "earth"}]
+    assert raw["schema_version"] == 3
+    raw["products"] = {"model_grid": True, "polar": {"radius_km": 2}}
+    raw["sources"]["atmosphere"]["wind_pairs"] = [
+        {"u": "u10", "v": "v10", "basis": "earth"}]
     runtime = to_runtime(raw, base_dir=tmp_path)
-    assert runtime["requested_variables_user"] == {
-        "surface": {"variables": ["instructional_scalar"],
-                    "level_selection": "stored", "level_domain": "stored"}}
-    assert runtime["polar_variables"] == {"surface": {"variables": ["instructional_scalar"]}}
-    assert runtime["wind_pairs"][0]["group"] == "surface"
-    assert set(runtime["yaml_config"]["variables"]) == {"fields_2d"}
-    assert runtime["yaml_config"]["input"]["wind_pairs"][0]["group"] == "fields_2d"
+    request = runtime["source_requests"]["atmosphere"]
+    assert request["fields"] == {"2d": ["instructional_scalar"], "3d": []}
+    assert request["exports"] == {
+        "model_grid": ["instructional_scalar"], "polar": ["instructional_scalar"]}
+    assert not request["derived"] and not request["internal_inputs"]
+    assert runtime["yaml_config"]["sources"]["atmosphere"]["variables"] == {
+        "2d": ["instructional_scalar"]}
+    assert runtime["yaml_config"]["sources"]["atmosphere"]["wind_pairs"] == [
+        {"u": "u10", "v": "v10", "basis": "earth"}]
     replay = to_runtime(runtime["yaml_config"], base_dir=tmp_path)
-    assert replay["requested_variables_user"] == runtime["requested_variables_user"]
+    assert replay["source_requests"] == runtime["source_requests"]
+
+
+def test_document_helper_emits_native_v3_without_implicit_diagnostics(tmp_path):
+    raw = document(tmp_path)
+    assert raw["schema_version"] == 3
+    source = raw["sources"]["atmosphere"]
+    assert source["files"] == str(tmp_path / "*.nc")
+    assert source["variables"] == {"2d": ["UM10", "VM10", "MSLP"]}
+    assert source["wind_pairs"] == [{"u": "UM10", "v": "VM10", "basis": "earth"}]
+    runtime = to_runtime(raw, base_dir=tmp_path)
+    request = runtime["source_requests"]["atmosphere"]
+    assert request["exports"] == {"model_grid": ["UM10", "VM10", "MSLP"]}
+    assert not request["derived"] and not request["internal_inputs"]
+    assert runtime["yaml_config"]["products"]["track"] is True
+    assert not (tmp_path / "output").exists()
 
 
 @pytest.mark.parametrize("location", ["variables", "polar", "wind_pairs", "source"])
 def test_public_surface_group_is_rejected_actionably(tmp_path, location):
     raw = minimal_document()
-    raw["variables"] = {"fields_2d": {"names": ["instructional_scalar"]}}
+    source = raw["sources"]["atmosphere"]
     if location == "variables":
-        raw["variables"] = {"surface": {"names": ["instructional_scalar"]}}
+        source["variables"] = {"surface": {"names": ["instructional_scalar"]}}
+        error = "sources.atmosphere.variables.surface"
     elif location == "polar":
-        raw["polar"] = {"variables": {"surface": {"names": ["instructional_scalar"]}}}
+        raw["products"]["polar"] = {
+            "radius_km": 2, "fields": {"atmosphere": {"surface": ["instructional_scalar"]}}}
+        error = "products.polar.fields.atmosphere"
     elif location == "wind_pairs":
-        raw["input"]["wind_pairs"] = [
-            {"group": "surface", "u": "u10", "v": "v10", "reference_frame": "earth"}]
+        source["wind_pairs"] = [
+            {"group": "surface", "u": "u10", "v": "v10", "basis": "earth"}]
+        error = r"sources.atmosphere.wind_pairs\[0\].group"
     else:
-        raw["input"] = {"sources": {"atmosphere": {
-            "model": "arome", "input": {"format": "netcdf", "pattern": "*.nc"},
-            "variables": {"surface": {"names": ["instructional_scalar"]}}}}}
-        raw["variables"] = {}
-        raw["tracking"]["source"] = "atmosphere"
-    with pytest.raises(ValueError, match="fields_2d"):
+        raw["sources"] = {"surface": {
+            **source, "variables": {"surface": {"names": ["instructional_scalar"]}}}}
+        error = "sources.surface.variables.surface"
+    with pytest.raises(ValueError, match=error):
         resolve_schema(raw, base_dir=tmp_path)
     assert not (tmp_path / "products").exists()
 
 
 def test_fields_2d_fa_selection_retains_internal_record_group(tmp_path):
     raw = minimal_document()
-    raw["input"].update(format="fa", pattern="*.fa", fa={"profile": "arome_history"})
-    raw["variables"] = {"fields_2d": {"names": ["CLSTEMPERATURE"]}}
+    raw["sources"]["atmosphere"].update(
+        format="fa", files="*.fa", profile="arome_history",
+        variables={"2d": ["CLSTEMPERATURE"]})
     runtime = to_runtime(raw, base_dir=tmp_path)
-    assert set(runtime["requested_variables_user"]) == {"surface"}
-    assert set(runtime["yaml_config"]["variables"]) == {"fields_2d"}
+    request = runtime["source_requests"]["atmosphere"]
+    assert request["fields"] == {"2d": ["CLSTEMPERATURE"], "3d": []}
+    assert request["exports"] == {"model_grid": ["CLSTEMPERATURE"]}
+    assert runtime["yaml_config"]["sources"]["atmosphere"]["profile"] == "arome_history"
+    assert runtime["fa_options"]["profile"] == "arome_history"
 
 
-def test_current_string_schema_preserves_numerical_requests(tmp_path):
+def test_current_schema_preserves_explicit_numerical_requests(tmp_path):
     raw = minimal_document()
-    raw["tracking"] = {"method": "pressure_wind", "pressure_wind": {
-        "search_half_width_km": 75., "refine_half_width_km": 25.}}
-    raw["domain"] = {"width_km": {"x": 4., "y": 6.}}
-    raw["polar"] = {"variables": "extracted"}
-    raw["output"].update(backend="zarr", export={"enabled": False},
-                         cartesian={"horizontal_vectors": "earth_centered"})
+    raw["region"] = {"tracker": {
+        "method": "pressure_wind", "search_width_km": 150., "refine_width_km": 50.},
+        "width_km": {"x": 4., "y": 6.}}
+    raw["products"]["polar"] = {"radius_km": 2}
+    raw["output"]["format"] = "zarr"
+    raw["sources"]["atmosphere"]["transforms"] = [
+        {"fields": ["u10", "v10"], "sampling": "mass", "basis": "earth"}]
     runtime = to_runtime(raw, base_dir=tmp_path)
-    assert runtime["schema_version"] == "2.1"
+    assert runtime["schema_version"] == 3
     assert runtime["tracking_method"] == "wind_pressure"
     assert runtime["wind_pressure_search_half_width_km"] == 75.
     assert runtime["wind_pressure_refine_half_width_km"] == 25.
     assert (runtime["x_boxsize_km"], runtime["y_boxsize_km"]) == (4., 6.)
-    assert runtime["cartesian_horizontal_winds"] == "mass_earth"
-    assert runtime["requested_variables_user"]["surface"]["variables"] == ["instructional_scalar"]
-    assert runtime["requested_variables_user"]["surface"]["level_domain"] == "stored"
-    assert runtime["polar_variables"] == {"surface": {"variables": ["instructional_scalar"]}}
+    request = runtime["source_requests"]["atmosphere"]
+    assert request["fields"] == {"2d": ["instructional_scalar"], "3d": []}
+    assert request["exports"] == {
+        "model_grid": ["instructional_scalar"], "polar": ["instructional_scalar"]}
+    assert request["transforms"] == raw["sources"]["atmosphere"]["transforms"]
+    assert not request["derived"] and not request["internal_inputs"]
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    options = ExecutionOptions.from_config(conf)
+    options = ExecutionOptions.from_config(conf, export_netcdf=False)
     assert options.engine == "zarr" and not options.export_netcdf
     assert conf.wind_pairs == [] and conf.wind_reference_frame is None
 
 
-@pytest.mark.parametrize("version", [None, 1, 2, "1", "2", "2.0", 2.1, True, False, "9", "2.1.0"])
+@pytest.mark.parametrize("version", [
+    None, 1, 2, "1", "2", "2.0", 2.1, True, False, "9", "2.1.0", "2.1", "3", 3.])
 @pytest.mark.parametrize("route", ["resolve", "runtime", "mapping", "presets", "yaml", "yaml_preset"])
 def test_every_public_loader_rejects_retired_versions_before_access(tmp_path, monkeypatch, version, route):
     import subprocess
@@ -131,7 +160,7 @@ def test_every_public_loader_rejects_retired_versions_before_access(tmp_path, mo
              "yaml_preset": lambda: SimulationConfig.from_yaml_with_model_preset(path)}
     with pytest.raises(ValueError, match="schema_version") as error:
         calls[route]()
-    assert '"2.1"' in str(error.value)
+    assert "schema_version: 3" in str(error.value)
     assert 'upgrade' not in str(error.value).lower()
     assert not (tmp_path / "products").exists()
 
@@ -156,12 +185,12 @@ def test_flat_public_documents_cannot_use_runtime_dispatch(tmp_path, route):
 
 @pytest.mark.parametrize("path,value", [
     (("domain", "size_km"), {"x": 4, "y": 4}),
-    (("tracking", "method"), "wind_pressure"),
-    (("tracking", "wind_pressure"), {}),
-    (("input", "wind_reference_frame"), "earth"),
-    (("input", "fa", "backend"), "native"),
+    (("region", "tracker", "method"), "wind_pressure"),
+    (("region", "tracker", "wind_pressure"), {}),
+    (("sources", "atmosphere", "wind_reference_frame"), "earth"),
+    (("sources", "atmosphere", "fa", "backend"), "native"),
     (("polar", "variables"), "all"),
-    (("variables", "fields_2d", "levels"), "all"),
+    (("sources", "atmosphere", "variables", "fields_2d"), {"names": ["T"], "levels": "all"}),
     (("output", "engine"), "zarr"),
     (("output", "format"), "NETCDF4"),
     (("output", "export", "netcdf"), False),
@@ -170,28 +199,41 @@ def test_flat_public_documents_cannot_use_runtime_dispatch(tmp_path, route):
 ])
 def test_retired_keys_and_values_fail_in_current_document(path, value):
     raw = minimal_document()
+    if path[:2] == ("region", "tracker"):
+        raw["region"] = {"tracker": {"method": "pressure_wind"}}
+    if path[:3] == ("sources", "atmosphere", "fa"):
+        raw["sources"]["atmosphere"].update(format="fa", profile="arome_history")
     target = raw
     for key in path[:-1]:
         target = target.setdefault(key, {})
     target[path[-1]] = value
-    with pytest.raises(ValueError, match=path[-1]):
+    rejected = path[0] if path[0] in {"domain", "polar"} else ".".join(path)
+    if path[:2] == ("output", "export"):
+        rejected = "output.export"
+    elif path[:2] == ("output", "cartesian"):
+        rejected = "output.cartesian"
+    with pytest.raises(ValueError, match=rejected):
         resolve_schema(raw)
 
 
-@pytest.mark.parametrize("change", [
-    {"input": {"pattern": "*.nc", "exclude": None}},
-    {"input": {"pattern": "*.nc", "files": []}},
-    {"variables": {"fields_2d": {"names": [""]}}},
-    {"variables": {"fields_2d": {"names": [" "]}}},
-    {"variables": {1: {"names": ["scalar"]}}},
-    {"output": {"backend": "zarr", "netcdf_format": "unused"}},
-    {"input": {"pattern": "*.nc", "netcdf": {"chunks": {1: 2}}}},
-    {"input": {"pattern": "*.nc", 1: "invalid"}},
-    {"polar": {"variables": {"fields_2d": {"names": ["instructional_scalar"], "levels": "stored"}}}},
+@pytest.mark.parametrize("path,value", [
+    (("sources", "atmosphere", "exclude"), None),
+    (("sources", "atmosphere", "files"), []),
+    (("sources", "atmosphere", "variables", "2d"), [""]),
+    (("sources", "atmosphere", "variables", "2d"), [" "]),
+    (("sources", "atmosphere", "variables"), {1: {"names": ["scalar"]}}),
+    (("output",), {"format": "zarr", "writer": {"engine": "netcdf4"}}),
+    (("sources", "atmosphere", "reader", "chunks"), {1: 2}),
+    (("sources", "atmosphere", 1), "invalid"),
+    (("products", "polar"), {
+        "radius_km": 2, "fields": {"atmosphere": ["instructional_scalar"]}, "levels": "stored"}),
 ])
-def test_current_schema_rejects_invalid_dynamic_declarations(change):
+def test_current_schema_rejects_invalid_dynamic_declarations(path, value):
     raw = minimal_document()
-    raw.update(change)
+    target = raw
+    for key in path[:-1]:
+        target = target.setdefault(key, {})
+    target[path[-1]] = value
     with pytest.raises(ValueError):
         resolve_schema(raw)
 
@@ -200,35 +242,38 @@ def test_named_sources_inherit_only_declared_polar_settings_and_replay(tmp_path)
     from frameit.core.configuration import resolved_configuration, source_document
 
     raw = minimal_document()
-    raw.pop("variables")
-    raw["tracking"]["source"] = "atmosphere"
-    raw["input"] = {"time_alignment": "common", "sources": {
-        "atmosphere": {"model": "arome", "input": {"files": ["atmosphere.nc"], "format": "netcdf"},
-                       "variables": {"fields_2d": {"names": ["scalar"]}}},
-        "ocean": {"model": "nemo", "input": {"files": ["ocean.nc"], "format": "netcdf"},
-                  "variables": {"deptht": {"names": ["votemper"], "levels": {"indices": [1, 0]}}},
-                  "polar": {"azimuth_count": 8}}}}
-    raw["polar"] = {"enabled": False, "radial_step_m": 3000.}
+    raw["sources"] = {
+        "atmosphere": {"model": "arome", "files": ["atmosphere.nc"], "format": "netcdf",
+                       "variables": {"2d": ["scalar"]}},
+        "ocean": {"model": "nemo", "files": ["ocean.nc"], "format": "netcdf",
+                  "variables": {"3d": {
+                      "deptht": {"names": ["votemper"], "levels": {"indices": [1, 0]}}}}}}
+    raw["region"]["sources_coupling_time_association"] = "common"
+    # Retain the unresolved inactive, source-local demand rather than enable a different product.
+    raw["sources"]["ocean"]["polar"] = {"azimuth_count": 8}
+    raw["products"]["polar"] = {
+        "enabled": False, "radial_step_km": 3.}
     resolved, _, _ = resolve_schema(raw, base_dir=tmp_path)
     for name in ("atmosphere", "ocean"):
-        source = resolved["input"]["sources"][name]
-        assert source["input"]["files"] == [str(tmp_path / f"{name}.nc")]
-        assert source["polar"]["radial_step_m"] == 3000.
+        source = resolved["sources"][name]
+        assert source["files"] == [str(tmp_path / f"{name}.nc")]
         child = source_document(resolved, name)
-        assert child["schema_version"] == "2.1"
+        assert child["schema_version"] == 3
+        assert child["products"]["polar"]["enabled"] is False
+        assert child["products"]["polar"]["radial_step_km"] == 3.
         resolve_schema(child, base_dir=tmp_path)
-    assert resolved["input"]["sources"]["ocean"]["polar"]["azimuth_count"] == 8
-    assert resolved["input"]["sources"]["atmosphere"]["polar"]["azimuth_count"] is None
+    assert source_document(resolved, "ocean")["products"]["polar"]["azimuth_count"] == 8
+    assert source_document(resolved, "atmosphere")["products"]["polar"]["azimuth_count"] is None
     config = SimulationConfig.from_mapping_with_model_preset(resolved)
     replay = resolved_configuration(config)
     assert resolve_schema(replay)[0] == replay
     declared = SimulationConfig.from_mapping_with_model_preset(raw)
-    assert declared.schema_sources["input.sources.ocean.polar.radial_step_m"] == "yaml"
-    assert declared.schema_sources["input.sources.ocean.polar.azimuth_count"] == "yaml"
-    assert declared.schema_sources["input.sources.atmosphere.polar.azimuth_count"] == "default"
+    assert declared.schema_sources["sources.ocean.polar.radial_step_km"] == "yaml"
+    assert declared.schema_sources["sources.ocean.polar.azimuth_count"] == "yaml"
+    assert declared.schema_sources["sources.atmosphere.polar.azimuth_count"] == "default"
     for key, value in (("time_alignment", "common"), ("sources", {})):
-        bad = yaml.safe_load(yaml.safe_dump(raw))
-        bad["input"]["sources"]["ocean"]["input"][key] = value
+        bad = deepcopy(raw)
+        bad["sources"]["ocean"][key] = value
         with pytest.raises(ValueError, match=key):
             resolve_schema(bad)
 
@@ -238,7 +283,8 @@ def test_effective_record_preserves_unresolved_automatic_spacing(tmp_path):
 
     conf = SimulationConfig.from_mapping_with_model_preset(minimal_document())
     effective = resolved_configuration(conf)
-    assert effective["input"]["grid_spacing_m"] is None
+    assert "grid_spacing_m" not in effective["sources"]["atmosphere"]
+    assert conf.resolution == 0 and conf.infer_grid_geometry
     assert resolve_schema(effective)[0] == effective
 
 
@@ -247,7 +293,7 @@ def test_current_cli_exposes_unambiguous_export_controls_and_no_converter():
     args = parser.parse_args(["run", "--no-export", "--no-export-cartesian"])
     assert not args.export_netcdf and not args.export_cart
     for retired in (["run", "--no-export-netcdf"], ["run", "--no-export-cart"],
-                    ["config", "migrate", "old.yaml"]):
+                     ["run", "--dry-run"], ["config", "migrate", "old.yaml"]):
         with pytest.raises(SystemExit) as result:
             parser.parse_args(retired)
         assert result.value.code == 2
@@ -257,27 +303,31 @@ def test_catalog_emits_current_requests_without_legacy_conversion():
     from frameit.testing.catalog import load_cases
 
     cases = load_cases()
-    assert all(case["config"].get("schema_version") == "2.1" for case in cases)
+    assert all(case["config"].get("schema_version") == 3 for case in cases)
     case = next(case for case in cases if case["id"] == "arome_batsirai_fixed_polar")
     conf = SimulationConfig.from_mapping_with_model_preset(case["config"])
-    assert conf.requests_user()["isobaricInhPa"]["level_values"] == [1000, 850, 400]
-    assert conf.requests_user()["heightAboveGround"]["level_indices"] == [0, 2, 5]
-    assert conf.requests_user()["surface"]["variables"] == ["u10", "v10", "prmsl", "sshf", "slhf"]
-    assert conf.resolution == 2500 and conf.radial_resolution == 2500
-    assert conf.polar_n_theta is None and conf.azimuthal_resolution == 10
+    variables = conf.yaml_config["sources"]["atmosphere"]["variables"]
+    assert variables["3d"]["isobaricInhPa"]["levels"] == {
+        "values": [1000, 850, 400], "units": "hPa"}
+    assert variables["3d"]["heightAboveGround"]["levels"] == {"indices": [0, 2, 5]}
+    assert variables["2d"] == ["u10", "v10", "prmsl", "sshf", "slhf"]
+    assert conf.infer_grid_geometry and conf.resolution == 0 and conf.radial_resolution == 2500
+    assert conf.polar_n_theta == 36 and conf.azimuthal_resolution is None
 
 
 def document(tmp_path, **sections):
     # This synthetic fixture defines UM10/VM10 as Earth-relative components.
-    wind_pairs = [{"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"}]
-    value = {"schema_version": "2.1", "model": "mesonh",
-             "input": {"directory": str(tmp_path), "pattern": "*.nc", "wind_pairs": wind_pairs},
+    value = {"schema_version": 3,
+             "sources": {"atmosphere": {
+                 "model": "mesonh", "format": "netcdf", "files": str(tmp_path / "*.nc"),
+                 "variables": {"2d": ["UM10", "VM10", "MSLP"]},
+                 "wind_pairs": [{"u": "UM10", "v": "VM10", "basis": "earth"}],
+                 "field_metadata": {name: {"kind": "continuous"} for name in (
+                     "UM10", "VM10", "MSLP", "temperature")}}},
              "output": {"directory": str(tmp_path / "output")},
-             "tracking": {"method": "fixed_box", "fixed_box": {
-                 "center": {"latitude": -20., "longitude": 60.}}},
-             "variables": {"fields_2d": {"names": ["UM10", "VM10", "MSLP"]}}}
+             "region": {"center": {"latitude": -20., "longitude": 60.}},
+             "products": {"model_grid": True, "track": True}}
     value.update(sections)
-    value["input"].setdefault("wind_pairs", wind_pairs)
     return value
 
 
@@ -306,44 +356,57 @@ def test_model_starter_loads_runtime_defaults(tmp_path, model):
     path = tmp_path / "frameit.yaml"
     write_template(model, path)
     conf = SimulationConfig.from_yaml(path)
-    assert conf.schema_version == "2.1" and conf.infer_grid_geometry
+    assert conf.schema_version == 3 and conf.infer_grid_geometry
     assert conf.resolution == 0
     assert conf.tracking_method == "wind_pressure"
-    assert conf.data_dir == tmp_path / "data"
-    assert conf.wind_pairs == [{"group": "surface", "u": "u10" if model == "arome" else "UM10",
-                                "v": "v10" if model == "arome" else "VM10",
-                                "reference_frame": "earth"}]
-    assert conf.cartesian_horizontal_winds == "mass_earth"
+    source = conf.yaml_config["sources"]["atmosphere"]
+    assert Path(source["files"]).parent == tmp_path / "data"
+    assert source["wind_pairs"] == [{"u": "u10" if model == "arome" else "UM10",
+                                     "v": "v10" if model == "arome" else "VM10",
+                                     "basis": "earth"}]
+    assert conf.cartesian_horizontal_winds == "native"
     assert conf.cartesian_vertical_velocity == "interfaces"
-    assert conf.polar_vertical_velocity == "mass"
+    assert conf.polar_vertical_velocity == "interfaces"
     with pytest.raises(FileExistsError):
         write_template(model, path)
 
 
-@pytest.mark.parametrize("section", [
-    {"polar": {"radial_step_m": "2500"}}, {"polar": {"enabled": "false"}},
-    {"polar": {"azimuth_count": 64, "azimuth_step_deg": 10}},
-    {"domain": {"width_km": {"x": 500}}}, {"domain": {"width_km": {"x": -1, "y": 50}}},
-    {"output": {"compression": {"level": 10}}}, {"logging": {"levle": "INFO"}},
-    {"input": {"pattern": "*.nc", "files": ["native.nc"]}},
-    {"variables": {"level": {"names": ["UT"], "levels": {"indices": [-1]}}}},
-    {"variables": {"level": {"names": ["UT"], "levels": {"indices": [0], "values": [1]}}}},
-    {"polar": {"enabled": True}}, {"tracking": None},
+@pytest.mark.parametrize("path,value", [
+    (("products", "polar"), {"radius_km": 10, "radial_step_km": "2.5"}),
+    (("products", "polar"), {"radius_km": 10, "shared_grid": "false"}),
+    (("products", "polar"), {"radius_km": 10, "azimuth_count": 64, "azimuth_step_deg": 10}),
+    (("region", "width_km"), {"x": 500}),
+    (("region", "width_km"), {"x": -1, "y": 50}),
+    (("output", "writer", "compression", "level"), 10),
+    (("logging", "levle"), "INFO"),
+    (("sources", "atmosphere", "files"), {"pattern": "*.nc", "files": ["native.nc"]}),
+    (("sources", "atmosphere", "variables"), {
+        "3d": {"level": {"names": ["UT"], "levels": {"indices": [-1]}}}}),
+    (("sources", "atmosphere", "variables"), {
+        "3d": {"level": {"names": ["UT"], "levels": {"indices": [0], "values": [1]}}}}),
+    (("products", "polar"), {}),
+    (("region",), None),
 ])
-def test_schema_rejects_ambiguous_or_invalid_values(tmp_path, section):
+def test_schema_rejects_ambiguous_or_invalid_values(tmp_path, path, value):
+    raw = document(tmp_path)
+    target = raw
+    for key in path[:-1]:
+        target = target.setdefault(key, {})
+    target[path[-1]] = value
     with pytest.raises(ValueError):
-        resolve_schema(document(tmp_path, **section))
+        resolve_schema(raw)
 
 
 def test_yaml_duplicates_unknown_locations_and_legacy_rejection(tmp_path):
     path = tmp_path / "frameit.yaml"
-    path.write_text('schema_version: "2.1"\nmodel: arome\nmodel: mesonh\n')
+    path.write_text('schema_version: 3\nsources: {}\nsources: {}\n')
     with pytest.raises(ValueError, match="Duplicate.*line 3"):
         SimulationConfig.from_yaml(path)
-    path.write_text('schema_version: "2.1"\nmodel: arome\ninput:\n  patten: \'*.nc\'\n')
-    with pytest.raises(ValueError, match="input.patten") as error:
+    path.write_text(
+        "schema_version: 3\nsources:\n  atmosphere:\n    files: '*.nc'\n    patten: '*.nc'\n")
+    with pytest.raises(ValueError, match="sources.atmosphere.patten") as error:
         SimulationConfig.from_yaml(path)
-    assert "line 4" in str(error.value)
+    assert "line 5" in str(error.value)
     path.write_text("atm_model: AROME\nresolution: 2500\n")
     with pytest.raises(ValueError, match="schema_version"):
         SimulationConfig.from_yaml(path)
@@ -353,28 +416,41 @@ def test_inventory_order_exclusion_and_config_relative_paths(tmp_path, monkeypat
     for name in ("a.nc", "b.nc", "000.nc"):
         dataset(tmp_path, name)
     path = tmp_path / "frameit.yaml"
-    raw = document(tmp_path, input={"files": ["b.nc", "a.nc", "000.nc"], "exclude": ["000.nc"]})
+    raw = document(tmp_path)
+    raw["sources"]["atmosphere"].update(
+        files=["b.nc", "a.nc", "000.nc"], exclude=["000.nc"])
     path.write_text(yaml.safe_dump(raw))
     monkeypatch.chdir(tmp_path.parent)
     conf = SimulationConfig.from_yaml(path)
-    assert [p.name for p in discover_input_files(conf)] == ["b.nc", "a.nc"]
-    assert conf.data_dir == tmp_path / "data"  # Default directory need not contain explicit files.
+    entries, excluded, overlaps = inventory_source_files(conf.sources["atmosphere"])
+    assert [Path(entry["path"]).name for entry in entries] == ["b.nc", "a.nc"]
+    assert excluded == [str(tmp_path / "000.nc")] and not overlaps
+    assert all(Path(entry["path"]).parent == tmp_path for entry in entries)
 
 
 def test_preflight_inference_units_defaults_and_no_outputs(tmp_path):
     dataset(tmp_path)
-    raw = document(tmp_path, domain={"width_km": {"x": 20, "y": 20}},
-                   polar={"enabled": True, "azimuth_count": 16})
+    raw = document(tmp_path)
+    raw["region"]["width_km"] = {"x": 20, "y": 20}
+    raw["products"]["polar"] = {"radius_km": 10, "azimuth_count": 16}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan = preflight(conf)
-    assert conf.resolution == 2500 and conf.radial_resolution == 2500
-    assert plan["grid_geometry"]["sources"] == [
+    source = plan["sources"]["atmosphere"]
+    grid, = source["region"]["grids"].values()
+    assert grid["geometry"]["effective_spacing_m"] == 2500
+    assert grid["geometry"]["sources"] == [
         "projected_coordinate:ni", "projected_coordinate:nj"
     ]
-    assert plan["polar_sampling"]["estimated_points_per_time"] == 5 * 16
-    assert plan["box_points"] == [9, 9]
+    polar = source["requests"]["binding"]["polar_plan"]
+    assert polar["radial_step_km"] == 2.5
+    assert len(polar["radius_km"]) * len(polar["azimuth_degrees"]) == 5 * 16
+    assert grid["realised_span_km"] == {"x": 20., "y": 20.}
+    assert [int(grid["realised_span_km"][axis] * 1000 / 2500 + 1)
+            for axis in ("x", "y")] == [9, 9]
     assert not conf.output_dir.exists()
-    assert len(plan["unit_provenance"]) > 0
+    assert {job["name"]: job["result_units"]
+            for job in source["requests"]["binding"]["operation_plans"]} == {
+                "UM10": "m s-1", "VM10": "m s-1", "MSLP": "Pa"}
 
 
 def test_geometry_rejects_anisotropy_and_conflicting_inputs(tmp_path):
@@ -386,7 +462,7 @@ def test_geometry_rejects_anisotropy_and_conflicting_inputs(tmp_path):
     ds = dataset(tmp_path, "second.nc")
     ds = ds.assign_coords(longitude=ds.longitude + .1)
     ds.to_netcdf(tmp_path / "second.nc", engine="h5netcdf")
-    with pytest.raises(ValueError, match="incompatible"):
+    with pytest.raises(ValueError, match="distinct fields.*conflicting fields"):
         preflight(conf)
 
 
@@ -454,6 +530,8 @@ def test_pressure_height_canonical_equivalence():
 
 
 def test_unit_boundary_angle_consistency_and_grid_rotation(tmp_path):
+    from types import SimpleNamespace
+
     from frameit.processing.derived.wind import normalize_winds
 
     ds = xr.Dataset(coords={
@@ -468,11 +546,9 @@ def test_unit_boundary_angle_consistency_and_grid_rotation(tmp_path):
                         "VM10": xr.DataArray(0., attrs={"units": "m/s"})},
                        coords={"grid_rotation": xr.DataArray(90., attrs={"units": "degree"})},
                        attrs={"wind_reference_frame": "grid"})
-    raw = document(tmp_path)
-    raw["input"]["wind_pairs"] = [{"group": "fields_2d", "u": "UM10", "v": "VM10",
-                                    "reference_frame": "grid", "rotation": {
-                                        "method": "coordinate", "coordinate": "grid_rotation"}}]
-    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    conf = SimpleNamespace(wind_pairs=[{
+        "group": "surface", "u": "UM10", "v": "VM10", "reference_frame": "grid",
+        "rotation": {"method": "coordinate", "coordinate": "grid_rotation"}}])
     result = normalize_winds(winds, conf, "surface")
     np.testing.assert_allclose(result.UM10, 0, atol=1e-12)
     np.testing.assert_allclose(result.VM10, 10, atol=1e-12)
@@ -487,9 +563,13 @@ def test_time_dependent_geometry_and_override_contract(tmp_path):
     with pytest.raises(ValueError, match="incompatible"):
         preflight(conf)
     dataset(tmp_path)
-    conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, input={
-        "directory": str(tmp_path), "pattern": "*.nc", "grid_spacing_m": 2600}))
-    assert preflight(conf)["grid_geometry"]["effective_source"] == "input.grid_spacing_m"
+    raw = document(tmp_path)
+    raw["sources"]["atmosphere"]["grid_spacing_m"] = 2600
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    plan = preflight(conf)
+    grid, = plan["sources"]["atmosphere"]["region"]["grids"].values()
+    assert grid["geometry"]["effective_source"] == "input.grid_spacing_m"
+    assert grid["geometry"]["effective_spacing_m"] == 2600
     assert conf.resolution == 2600
 
 
@@ -523,7 +603,7 @@ def test_pressure_wind_direct_call_normalizes_components_before_minimum():
 
 
 def test_prescribed_track_radians_preflight_and_tracking_without_polar(tmp_path):
-    from frameit.core.runner import FrameitRunner
+    from frameit.core.execution import execute_simulation
 
     ds = dataset(tmp_path)
     path = tmp_path / "track.nc"
@@ -531,43 +611,51 @@ def test_prescribed_track_radians_preflight_and_tracking_without_polar(tmp_path)
         "lat": ("time", np.deg2rad([-20., -20.]), {"units": "rad"}),
         "lon": ("time", np.deg2rad([60., 60.]), {"units": "rad"}),
     }, coords={"time": ds.time}).to_netcdf(path, engine="h5netcdf")
-    conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, input={
-        "files": [str(tmp_path / "native.nc")]}, tracking={
-        "method": "prescribed_track", "prescribed_track": {"file": str(path)}},
-        domain={"width_km": {"x": 20, "y": 20}}))
+    raw = document(tmp_path, region={
+        "track": {"file": str(path)}, "width_km": {"x": 20, "y": 20}})
+    raw["sources"]["atmosphere"]["files"] = [str(tmp_path / "native.nc")]
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan = preflight(conf)
-    assert plan["track_time_count"] == 2
-    assert any(r["source_units"] == "rad" for r in plan["unit_provenance"])
-    # Explicit inventories do not require the unused default ./data directory.
-    with FrameitRunner(conf) as runner:
-        runner.run()
-        np.testing.assert_allclose(runner.track.lat, -20.)
-        np.testing.assert_allclose(runner.track.lon, 60.)
+    assert len(plan["sources"]["atmosphere"]["selected_times"]) == 2
+    centres = conf.simulation_parameter["region_centres"]
+    assert centres.lat.attrs["source_units"] == "rad"
+    np.testing.assert_allclose(centres.lat, -20.)
+    np.testing.assert_allclose(centres.lon, 60.)
+    assert not conf.output_dir.exists()
+    result = execute_simulation(conf, ExecutionOptions.from_config(conf, synchronous_export=True))
+    assert not any(item["role"] == "polar" for item in result.products)
+    track = next(item for item in result.products if item["role"] == "track")
+    with xr.open_dataset(track["path"]) as saved:
+        np.testing.assert_allclose(saved.latitude, -20.)
+        np.testing.assert_allclose(saved.longitude, 60.)
     missing = xr.Dataset(coords={"time": ds.time})
     missing.to_netcdf(path, engine="h5netcdf")
-    with pytest.raises(ValueError, match="one-dimensional"):
+    with pytest.raises(ValueError, match="missing or ambiguous"):
         preflight(conf)
 
 
-def test_cli_dry_run_options_and_no_products(tmp_path, capsys):
+def test_cli_validation_options_and_no_products(tmp_path, capsys):
     dataset(tmp_path)
     path = tmp_path / "frameit.yaml"
-    path.write_text(yaml.safe_dump(document(tmp_path)))
+    raw = document(tmp_path)
+    raw["output"]["writer"] = {"compression": {"level": 0}}
+    path.write_text(yaml.safe_dump(raw))
     with pytest.raises(SystemExit) as result:
-        main(["run", str(path), "--dry-run", "--no-export", "--compress-level", "0"])
+        main(["validate", str(path), "--json", "--cpus", "1"])
     assert result.value.code == 0
-    plan = yaml.safe_load(capsys.readouterr().out)
-    assert plan["planned_products"] == []
-    assert plan["configuration"]["output"]["compression"]["level"] == 0
-    assert plan["configuration"]["input"]["format"] == "netcdf"
-    assert plan["setting_sources"]["output.compression.level"] == "execution_override"
+    report = yaml.safe_load(capsys.readouterr().out)
+    plan = report["data"]
+    assert {item["product"] for item in plan["plan"]["products"]} == {"model_grid", "track"}
+    assert plan["configuration"]["output"]["writer"]["compression"]["level"] == 0
+    assert plan["configuration"]["sources"]["atmosphere"]["format"] == "netcdf"
+    assert plan["origins"]["output.writer.compression.level"] == "yaml"
+    assert plan["origins"]["resources.cpus"] == "cli"
     assert not (tmp_path / "output").exists()
 
 
 def test_cli_yaml_precedence_and_optional_config(tmp_path):
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, output={
-        "directory": str(tmp_path / "out"), "export": {"polar": False},
-        "compression": {"level": 4}}))
+        "directory": str(tmp_path / "out"), "writer": {"compression": {"level": 4}}}))
     args = _build_parser().parse_args(["run"])
     assert args.config == Path("frameit.yaml")
     assert args.compress_level is None and args.export_polar is None

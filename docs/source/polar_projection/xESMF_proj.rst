@@ -156,7 +156,6 @@ public filename contract. Polar products typically contain:
   - ``radial_bearing(time, radius, azimuth)`` as the terminal-forward geodesic
     bearing, in radians clockwise from local north,
   - geographic longitude/latitude of target points (time-dependent for moving centres),
-  - optional diagnostics: ``x_km`` and ``y_km`` (Cartesian offsets in km).
   - ``radial_spacing_km(radius)``: distance to the next radius, NaN at the last radius,
   - ``max_azimuthal_spacing_m(time, radius)``: maximum geodesic distance between
     cyclic neighbouring samples. This is a point-to-point distance, not a
@@ -164,7 +163,6 @@ public filename contract. Polar products typically contain:
 
 Metadata includes:
 
-- ``polar_proj_backend = "xesmf"``
 - Per-field ``polar_interpolation``, coverage policy and threshold for scalar/
   native component fields; JSON ``polar_component_options`` for derived winds.
 - Actual preparation, selected source/centre times and native support in provenance.
@@ -208,10 +206,10 @@ This fragment goes inside an existing ``products.polar`` mapping:
      source_halo_points: 1
 
 ``strict`` is the default: every contributing source value must be finite.
-``renormalize`` explicitly enables valid-weight interpolation, provided its
-support fraction reaches ``min_valid_weight_fraction``. All-missing
-stencils and unmapped points remain NaN even if the threshold is zero. The
-threshold applies only to the renormalized policy.
+``renormalize`` enables valid-weight interpolation when its support fraction
+reaches ``min_valid_weight_fraction``. All-missing stencils and unmapped points
+remain NaN. The threshold applies only to renormalization and must be greater
+than zero and no greater than one.
 
 For nonnegative interpolation weights, let :math:`M_j` indicate finite source
 data and :math:`s_i=\sum_jW_{ij}`. Valid-weight support is

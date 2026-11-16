@@ -125,7 +125,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--compress-level",
         type=int,
         default=None,
-        help="NetCDF compression level (0-9). Default: 1.",
+        help="Override output.writer.compression.level for NetCDF/Zarr (0-9).",
     )
     pr.add_argument(
         "--institution",
@@ -259,7 +259,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--utrack-weights",
         type=Path,
         default=None,
-        help="UTrack checkpoint for full-domain runs; UTrack is excluded in CI",
+        help="UTrack checkpoint; v3 execution binding is unavailable, including with weights.",
     )
     pm.add_argument("--log-level", default=None, choices=("DEBUG", "INFO", "WARNING", "ERROR"))
 
@@ -268,8 +268,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pa.add_argument("--output", type=Path, required=True, help="Fresh results directory")
     pa.add_argument("--data-root", type=Path, default=None,
-                    help="Full simulation root; defaults to the bundled CI fixture")
-    pa.add_argument("--utrack-weights", type=Path, default=None)
+                    help="Full-domain matrix inputs; omit for CI mode. Reduced tests use "
+                         "FRAMEIT_CI_DATA_ROOT or the package fixture location.")
+    pa.add_argument(
+        "--utrack-weights", type=Path, default=None,
+        help="UTrack checkpoint; v3 execution binding is unavailable, including with weights.")
     pa.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
 
     return p

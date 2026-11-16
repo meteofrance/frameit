@@ -45,8 +45,10 @@ def require_executable_products(binding, source):
                 or plan["radial_step_km"] * 1000 < spacing.max() * (1 - 1e-12)):
             raise ValueError("Polar native-spacing evidence is missing")
         for job in jobs:
+            sampled = ({job["inputs"]["field"]} if job["method"] == "polar_input"
+                       else set(job["inputs"].values()))
             if (job["input_binding"]["status"] != "bound"
-                    or set(job["polar_options"]) != set(job["inputs"].values())
+                    or set(job["polar_options"]) != sampled
                     or not job["polar_geometry"]
                     or products["polar"][job["name"]].get("execution") != "bound_polar_sampling"):
                 raise ValueError("Polar preparation or interpolation evidence is incomplete")

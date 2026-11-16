@@ -294,7 +294,8 @@ def prepare_source_operation(operation, internal, source, conf):
     for name in operation["input_binding"]["dependencies"]:
         descriptor = operation["input_binding"]["dependencies"][name]
         record = descriptor["records"][0]
-        native = internal[record["grid_id"]]
+        key = (record["grid_id"], name)
+        native = internal[key] if key in internal else internal[record["grid_id"]]
         value = native[name]
         native_view = native
         if "time" in value.dims:
@@ -428,8 +429,17 @@ def execute_source_operations(user, internal, source, binding, conf):
                     if "time" not in ds[coordinate].dims else ds[coordinate]}) for ds in sequence]
         result = (sequence[0] if len(sequence) == 1 else xr.concat(
             sequence, dim="time", data_vars="all", coords="minimal",
-            compat="equals", join="exact", combine_attrs="override"))
+             compat="equals", join="exact", combine_attrs="override"))
+        from frameit.processing.requests import align_initial_gap
+
+        result = align_initial_gap(result, name, source)
         if grid in out:
+            for coordinate in result.coords.keys() & out[grid].coords.keys():
+                native, prepared = out[grid][coordinate], result[coordinate]
+                if native.ndim == 0 and prepared.dims == ("time",):
+                    # Repeated scalar support is equivalent only with identical values/metadata.
+                    if native.broadcast_like(prepared).variable.identical(prepared.variable):
+                        result = result.assign_coords({coordinate: native})
             result = result.reset_coords([
                 name for name in out[grid].data_vars if name in result.coords])
         out[grid] = (xr.merge([out[grid], result], join="exact", compat="identical",

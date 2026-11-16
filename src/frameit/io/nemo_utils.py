@@ -3,17 +3,21 @@
 import numpy as np
 import xarray as xr
 
+NATIVE_COMPONENTS = {"vozocrtx", "vomecrty", "vovecrtz", "sozobrtx", "somebrty",
+                     "sozotaux", "sometauy"}
+COMPONENT_STANDARD_NAMES = {
+    "sea_water_x_velocity", "sea_water_y_velocity", "eastward_sea_water_velocity",
+    "northward_sea_water_velocity", "upward_sea_water_velocity", "surface_downward_x_stress",
+    "surface_downward_y_stress"}
+
 
 def prepare_nemo(ds: xr.Dataset, conf) -> xr.Dataset:
     """Validate stored sampling and retain source-local axes/support unchanged."""
     requested = {name for spec in getattr(conf, "requested_variables_user", {}).values()
                  for name in spec.get("variables", [])}
-    native_components = {"vozocrtx", "vomecrty", "vovecrtz", "sozobrtx", "somebrty",
-                         "sozotaux", "sometauy"}
-    native_components.update(name for name in ds.data_vars if ds[name].attrs.get("standard_name") in {
-        "sea_water_x_velocity", "sea_water_y_velocity", "eastward_sea_water_velocity",
-        "northward_sea_water_velocity", "upward_sea_water_velocity", "surface_downward_x_stress",
-        "surface_downward_y_stress"})
+    native_components = NATIVE_COMPONENTS | {
+        name for name in ds.data_vars
+        if ds[name].attrs.get("standard_name") in COMPONENT_STANDARD_NAMES}
     if requested & {"wind_speed", "vrad", "vtan"}:
         raise ValueError("NEMO wind diagnostics are unsupported; request native ocean quantities")
     if requested & native_components:

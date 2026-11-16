@@ -530,7 +530,14 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     sequence, dim=concat_dim, data_vars="minimal" if static else "all",
                     coords=support_coords or "minimal",
                     compat="equals", join="exact", combine_attrs="override"))
-                by_grid.setdefault(grid_id, []).append(combined)
+                if export_support:
+                    from frameit.processing.requests import align_initial_gap
+
+                    combined = align_initial_gap(combined, name, source)
+                # Keep absent-field read clocks real; only output preparation pads them.
+                key = ((grid_id, name) if not export_support and any(
+                    gap["field"] == name for gap in source.get("allowed_gaps", [])) else grid_id)
+                by_grid.setdefault(key, []).append(combined)
         from frameit.tracking.tracker_core import merge_internal_stencils
 
         return {grid_id: (xr.merge(datasets, join="exact", compat="identical",

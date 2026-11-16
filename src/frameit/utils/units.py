@@ -42,8 +42,16 @@ def convert_units(da, quantity, *, target=None, assumed=None):
     if key not in factors or unit_key(destination) not in factors:
         raise ValueError(f"{da.name}: unsupported {quantity} units {declared!r}")
     factor = factors[key] / factors[unit_key(destination)]
+    limits = da.attrs.keys() & {"valid_min", "valid_max", "valid_range", "actual_range"}
+    if factor != 1 and limits and any(
+            key in metadata for metadata in (da.attrs, da.encoding)
+            for key in ("scale_factor", "add_offset")):
+        raise ValueError(f"{da.name}: packed validity/range metadata requires explicit unpacking")
     result = da.copy(deep=False) if factor == 1 else da * factor
     result.attrs = dict(da.attrs)
+    if factor != 1:
+        for name in limits:
+            result.attrs[name] = np.asarray(da.attrs[name]) * factor
     result.attrs["units"] = destination
     if not declared:
         result.attrs["unit_assumption"] = str(assumed)
@@ -57,6 +65,7 @@ def unit_metadata(da, quantity, **options):
     import xarray as xr
 
     probe = xr.DataArray(0., name=da.name, attrs=dict(da.attrs))
+    probe.encoding = dict(da.encoding)
     return convert_units(probe, quantity, **options).attrs
 
 

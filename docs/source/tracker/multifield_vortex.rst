@@ -1,7 +1,7 @@
 Multi-field vortex tracking
 ============================================================
 
-``tracking.method: multifield_vortex`` selects an **experimental built-in
+``region.tracker.method: multifield_vortex`` selects an **experimental built-in
 native-grid adaptation** of the ``ALL_NO_THICK`` configuration described by
 `Marchok (2021), Important Factors in the Tracking of Tropical Cyclones in
 Operational Models <https://doi.org/10.1175/JAMC-D-20-0175.1>`_. It follows one
@@ -59,7 +59,7 @@ the simulation. Other conventions require a qualified adapter extension.
 Existing MNH backup fields may supply all necessary information without
 ``LTPZH``; a file lacking absolute pressure cannot run this configuration.
 
-Declare wind frames and any rotation with ``input.wind_pairs``. Collocation and
+Declare wind frames and any rotation with source ``wind_pairs``. Collocation and
 rotation precede pressure-level interpolation; physical east/north components
 in m/s are required. No frame is inferred from a filename. Per-file MNH
 preparation normalizes pressure/height/winds before concatenation so units cannot
@@ -77,26 +77,28 @@ Configuration
 
 .. code-block:: yaml
 
-   tracking:
-     method: multifield_vortex
-     multifield_vortex:
+   region:
+     tracker:
+       method: multifield_vortex
        profile: all_no_thick
        seed:
          latitude: -20.0
          longitude: 60.0
-         time: null
          motion_u_m_s: 0.0
          motion_v_m_s: 0.0
-       on_track_loss: stop
+       on_incomplete: keep_prefix
        mnh_gravity_m_s2: 9.80665
 
 The seed position and initial eastward/northward motion must be explicitly
 supplied; the zero motion above is an example, not an estimate from the data.
-``seed.time: null`` declares that the seed applies to the first input timestamp;
+Omit ``seed.time`` to apply the seed to the first selected timestamp;
 a supplied ISO timestamp must match it. Times must be strictly increasing and
 valid. A non-equatorial/nonpolar seed fixes the hemisphere convention; crossing
 the equator terminates tracking. ``mnh_gravity_m_s2`` is required for MNH and is
 unused for AROME. Only ``all_no_thick`` is currently supported.
+
+``on_incomplete: keep_prefix`` explicitly accepts a shortened track and records
+incomplete status. Omit it, or use ``error``, to fail on incomplete tracking.
 
 ``numerics`` controls (defaults):
 
@@ -176,12 +178,12 @@ Track loss and outputs
 
 Malformed/missing required inputs fail explicitly. Dynamic QC or sampling loss
 at the initial time also fails because no accepted track exists. Subsequently,
-``on_track_loss: error`` raises; ``stop`` exports the accepted prefix and records
+``region.tracker.on_incomplete: error`` raises; ``keep_prefix`` exports the accepted prefix and records
 why/when tracking terminated. No positions are filled, extrapolated into output,
 or labelled as detected after termination. Tracking may follow a weakening
 remnant while its criteria remain satisfied; this is not tropical classification.
 
-``lon``, ``lat``, nearest native ``cx``/``cy`` and kinematics retain their normal
+Exported ``longitude``, ``latitude``, nearest native ``cx``/``cy`` and kinematics retain their normal
 ``time`` dimension. ``attempt_time`` includes the final rejected attempt, and
 ``parameter`` names the nine estimates. Additional variables include per-parameter
 longitude, latitude, categorical status and composite weight; accepted parameter
@@ -197,8 +199,10 @@ radii and ``tracking_complete`` (0/1). Termination attributes and
 requested-time coverage. Run provenance retains resolved input requirements and
 tracking summary. The Python execution result additionally exposes
 ``tracking_complete`` and ``tracking_termination_reason``; ``ok`` still describes
-processing/export success under the selected policy. Existing extraction selects
-only accepted times. The ordinary NetCDF writer/encodings are reused.
+processing/export success under the selected policy. Operations needing centres
+use only accepted centre times. Independent uncropped native extraction can
+retain its full selected source clock; the run remains incomplete.
+The ordinary NetCDF writer/encodings are reused.
 
 Method record and qualification gaps
 ------------------------------------
@@ -252,7 +256,7 @@ Known limitations
 * **Extensive inputs and coverage:** required pressure levels, complete circulation
   rings and the 1000-km steering influence region can exceed the extraction box
   by a large margin. Missing support can reject an otherwise plausible centre.
-* **Termination:** later QC failure can produce an accepted prefix under ``stop``.
+* **Termination:** later QC failure can produce an accepted prefix under ``keep_prefix``.
   Check tracking completeness; no missing positions are interpolated or extrapolated.
 * **Regional conventions:** supported stationary grids exclude poles and large
   longitude spans. MNH gravity/height assumptions and masks must match the source.

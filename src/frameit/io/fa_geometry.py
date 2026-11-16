@@ -54,7 +54,7 @@ def admitted_geometry(header, options):
     p, k = _regional_header(header)
     nx, ny = int(header["KNXLON"]), int(header["KNLATI"])
     if nx * ny > options.get("max_points", 20_000_000):
-        raise ValueError("Native FA storage grid exceeds input.fa.max_points; "
+        raise ValueError("Native FA storage grid exceeds sources.<id>.reader.max_points; "
                          "raise the declared resource budget explicitly if appropriate")
     if options["subdomain"] not in {"CI", "C"}:
         raise ValueError("FA subdomain must be CI or C")
@@ -68,7 +68,8 @@ def admitted_geometry(header, options):
     else:
         radius = options.get("earth_radius_m")
         if radius is None:
-            raise ValueError("Projected FA requires an explicit input.fa.earth_radius_m")
+            raise ValueError(
+                "Projected FA requires an explicit sources.<id>.fa.earth_radius_m")
         if not np.isfinite(radius) or radius <= 0:
             raise ValueError("FA earth_radius_m must be finite and positive")
         if not 0 < abs(p[1]) < 1 or int(header["PCODIL"]) == -1:
@@ -124,7 +125,7 @@ def _library_grid(facts, options):
         raise ValueError("Unsupported FA library geometry schema_version")
     shape = facts["native_shape"]
     if shape[0] * shape[1] > options.get("max_points", 20_000_000):
-        raise ValueError("Native FA storage grid exceeds input.fa.max_points")
+        raise ValueError("Native FA storage grid exceeds sources.<id>.reader.max_points")
     if facts["earth_model"]["radius_m"] != options.get("earth_radius_m"):
         raise ValueError("FA library geometry conflicts with the declared Earth model")
     try:

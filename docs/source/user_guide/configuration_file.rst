@@ -191,6 +191,24 @@ Selections restrict scientific reads for extraction and internal calculations,
 including tracking. A method needing unavailable times fails rather than
 expanding the selection.
 
+Missing required records fail by default. A source may explicitly list
+``allow_initial_gaps: [field_name]`` for selected GRIB/NetCDF fields that are
+wholly absent at its first selected time. Later real records must establish the
+field's identity, units and unchanged grid, with that grid independently present
+at the initial time. For a two-dimensional GRIB field, this proves horizontal
+geometry without equating different level types. Layered fields still require
+the native vertical grid and all sample-axis contexts. The clock is retained and
+absent values stay missing.
+This does not permit later gaps, missing levels, ambiguous providers or absent
+tracker/derived-input support. The effective plan records each permitted absence;
+no physical source record or accumulation interval is invented.
+A gap-enabled field without a native time dimension gains an output time axis
+over its real available samples before the absent initial value is added.
+On these sources, native output keeps GRIB temporal evidence in field-prefixed
+coordinates, for example ``u_GRIB_startStep``. Interval fields use a field-specific
+auxiliary time and bounds. Absent interval evidence stays missing rather than
+borrowing another field's interval.
+
 Variables and vertical levels
 -----------------------------
 
@@ -401,6 +419,23 @@ Per-field options live under
 admitted ``sampling: native | mass``. They may target needed internal inputs,
 but do not request exports. Unused or inapplicable options fail.
 Nearest-neighbour does not use partial-stencil renormalization.
+For an exported base field, optional ``units`` converts compatible stored values
+before sampling, for example ``UM10: {units: "m s-1"}``. Omission preserves native
+units. This does not inherit model-grid transforms or change sampling, vector
+basis, masks or another product. Missing or incompatible source units fail.
+Derived winds retain their method-defined m/s units; their inputs cannot use
+this base-output override.
+Optional base-field ``basis: earth`` uses the declared wind pair and rotation
+method. Both components must have compatible real support and be collocated,
+using explicit ``sampling: mass`` where needed. Only the requested component is
+exported; compatible native units remain unchanged unless ``units`` is also set.
+Omitted ``basis`` remains ``native``. This rotates physical vectors; it does not
+subtract the centre's motion.
+
+Scale conversions update ``valid_min``, ``valid_max``, ``valid_range`` and
+``actual_range`` with the values. Packed fields carrying these limits require
+explicitly unpacked, unambiguous metadata before conversion; FrameIt does not
+guess whether those limits describe packed integers or decoded values.
 Wind speed is the magnitude of U/V sampled at polar points, not an interpolation
 of speed calculated earlier. Polar W stays native unless its own option requests
 supported mass-point remapping.

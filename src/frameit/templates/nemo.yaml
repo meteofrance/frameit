@@ -22,4 +22,4 @@ products:
 output:
   directory: ./output
   overwrite: false
-# Adding native components needs declared wind_pairs and separate native grids.
+# Native component copies need no wind pair; their native grids remain separate.

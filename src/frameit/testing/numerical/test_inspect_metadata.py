@@ -94,37 +94,47 @@ def test_netcdf_inspect_keeps_file_context_and_reads_no_field_payloads(
         return opened
 
     monkeypatch.setattr(DatasetResources, "open_netcdf", guarded_open)
-    args = _build_parser().parse_args([
-        "inspect", str(tmp_path), "--model", "mesonh", "--format", "netcdf", "--pattern", "*.nc",
-    ])
+    path = tmp_path / "inspect.yaml"
+    path.write_text(yaml.safe_dump({
+        "schema_version": 3, "sources": {"atmosphere": {
+            "model": "mesonh", "format": "netcdf", "files": str(tmp_path / "*.nc")}}}))
+    args = _build_parser().parse_args(["inspect", str(path), "--json"])
     assert _cmd_inspect(args) == 0
-    report = yaml.safe_load(capsys.readouterr().out)
-    assert report["configuration"]["input"]["wind_pairs"] == []
-    assert report["wind_provenance"] == []
+    report = yaml.safe_load(capsys.readouterr().out)["data"]
+    assert report["configuration"]["sources"]["atmosphere"]["wind_pairs"] == []
     first, second = report["inputs"]
     assert first["path"].endswith("first.nc") and second["path"].endswith("second.nc")
-    assert first["variables"]["UM10"] == "m s-1"
-    fields = {record["name"]: record for record in first["variable_metadata"]}
+    inventory = report["plan"]["sources"]["atmosphere"]
+    source_fields = inventory["fields"]
+    fields = {record["name"]: source_fields[record["field_id"]]
+              for record in inventory["record_inventory"]
+              if record["locator"]["path"] == first["path"]}
     assert set(fields) == set(source.data_vars)
     assert fields["UM10"]["attributes"] == {
         "units": "m s-1", "standard_name": "eastward_wind", "GRIB_uvRelativeToGrid": 0,
     }
-    assert fields["UM10"]["wind_basis"] == "eastward/northward components"
-    assert fields["u"]["wind_basis"] == "unknown"
-    fields = {record["name"]: record for record in second["variable_metadata"]}
-    assert fields["UM10"]["wind_basis"] == "conflicting metadata"
-    assert fields["UM10"]["dataset_attributes"] == {"wind_reference_frame": "grid"}
+    from frameit.processing.wind_reference import inspect_wind_metadata
+
+    assert inspect_wind_metadata(fields["UM10"]["attributes"], {})["wind_basis"] == (
+        "eastward/northward components")
+    assert inspect_wind_metadata(fields["u"]["attributes"], {})["wind_basis"] == "unknown"
     assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in before} == before
-    assert set(tmp_path.iterdir()) == set(before)
+    assert set(tmp_path.iterdir()) == set(before) | {path}
+    dataset_attributes = second.get("dataset_attributes", {})
+    assert dataset_attributes == {"wind_reference_frame": "grid"}
+    fields = {record["name"]: source_fields[record["field_id"]]
+              for record in inventory["record_inventory"]
+              if record["locator"]["path"] == second["path"]}
+    basis = inspect_wind_metadata(fields["UM10"]["attributes"], dataset_attributes)
+    assert basis["wind_basis"] == "conflicting metadata"
 
 
 def test_ordinary_preflight_does_not_add_inspection_metadata(tmp_path):
     dataset(tmp_path)
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh",
-        "input": {"directory": str(tmp_path), "pattern": "native.nc", "format": "netcdf"},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": -20., "longitude": 60.}}},
+        "schema_version": 3, "sources": {"atmosphere": {
+            "model": "mesonh", "files": str(tmp_path / "native.nc"), "format": "netcdf"}},
+        "region": {"center": {"latitude": -20., "longitude": 60.}},
     })
     report = preflight(conf, check_output=False)
     assert all("variable_metadata" not in item for item in report["inputs"])
@@ -166,19 +176,24 @@ def test_grib_inspect_preserves_same_name_in_different_groups_without_payload_re
 
     monkeypatch.setattr(ec, "codes_get_values", forbidden)
     monkeypatch.setattr(ec, "codes_get_array", guarded_array)
-    args = _build_parser().parse_args([
-        "inspect", str(tmp_path), "--model", "arome", "--format", "grib", "--pattern", "*.grib",
-    ])
+    request = tmp_path / "inspect.yaml"
+    request.write_text(yaml.safe_dump({
+        "schema_version": 3, "sources": {"atmosphere": {
+            "model": "arome", "format": "grib", "files": str(path)}}}))
+    args = _build_parser().parse_args(["inspect", str(request), "--json"])
     assert _cmd_inspect(args) == 0
-    report = yaml.safe_load(capsys.readouterr().out)
-    assert report["inputs"][0]["variables"] == {"u": "m s**-1"}
-    records = report["inputs"][0]["variable_metadata"]
-    assert [(r["name"], r["group"], r["attributes"]["GRIB_uvRelativeToGrid"], r["wind_basis"])
+    report = yaml.safe_load(capsys.readouterr().out)["data"]
+    records = list(report["plan"]["sources"]["atmosphere"]["fields"].values())
+    from frameit.processing.wind_reference import inspect_wind_metadata
+
+    assert {r["name"]: r["attributes"]["units"] for r in records} == {"u": "m s**-1"}
+    assert [(r["name"], r["group"], r["attributes"]["GRIB_uvRelativeToGrid"],
+             inspect_wind_metadata(r["attributes"], {})["wind_basis"])
             for r in records] == [
         ("u", "isobaricInhPa", 1, "grid-aligned components"),
         ("u", "hybrid", 0, "eastward/northward components"),
     ]
-    assert list(tmp_path.iterdir()) == [path]
+    assert set(tmp_path.iterdir()) == {path, request}
 
 
 def v3_scene(*, names=("temperature",), hours=(0, 1, 2, 3), model="Meso-NH"):

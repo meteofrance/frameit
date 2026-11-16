@@ -58,7 +58,7 @@ def test_tangent_lambert_asymmetric_ci_and_c_against_equations(latitude):
     central = fa_geometry(h, {**options, "subdomain": "C"})
     np.testing.assert_allclose(central.longitude, ds.longitude[1:-1, 1:-1])
     np.testing.assert_allclose(central.latitude, ds.latitude[1:-1, 1:-1])
-    with pytest.raises(ValueError, match="explicit input.fa.earth_radius_m"):
+    with pytest.raises(ValueError, match=r"explicit sources\.<id>\.fa\.earth_radius_m"):
         admitted_geometry(h, {"subdomain": "CI"})
     with pytest.raises(ValueError, match="conflicts with the declared Earth model"):
         fa_geometry(h, {"subdomain": "CI", "earth_radius_m": 5000000.})

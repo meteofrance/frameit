@@ -506,7 +506,7 @@ def test_independent_binding_errors_are_collected_and_all_clearance_revoked(tmp_
 def test_existing_planning_handlers_share_one_preflight_and_projection(
         tmp_path, monkeypatch, capsys):
     from frameit import cli
-    from frameit.core import reports
+    from frameit.core import coupled, reports
 
     v3_scene().to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
     document = tmp_path / "request.yaml"
@@ -514,25 +514,25 @@ def test_existing_planning_handlers_share_one_preflight_and_projection(
         "files": str(tmp_path / "input.nc"), "variables": {"2d": ["temperature"]},
     }})))
     calls, projections = [], []
-    original_preflight, original_project = preflight.preflight, reports.project_report
+    original_bind, original_project = coupled.bind_sources, reports.project_report
 
-    def observe_preflight(*args, **kwargs):
-        facts = original_preflight(*args, **kwargs)
-        calls.append(facts)
-        return facts
+    def observe_binding(*args, **kwargs):
+        prepared = original_bind(*args, **kwargs)
+        calls.append(prepared[0])
+        return prepared
 
     def observe_projection(result):
         projections.append(result)
         return original_project(result)
 
-    monkeypatch.setattr(preflight, "preflight", observe_preflight)
+    monkeypatch.setattr(coupled, "bind_sources", observe_binding)
     monkeypatch.setattr(reports, "project_report", observe_projection)
     assert cli._cmd_validate(document, json_output=True) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "ok"
     parser = cli._build_parser()
-    assert cli._cmd_run(parser.parse_args(["run", str(document), "--dry-run"])) == 0
-    assert "OK: run" in capsys.readouterr().out
-    assert cli._cmd_config(parser.parse_args(["config", "show", str(document), "--resolved"])) == 0
+    assert cli._cmd_validate(document) == 0
+    assert "OK: validate" in capsys.readouterr().out
+    assert cli._cmd_config(parser.parse_args(["config", "show", str(document), "--effective"])) == 0
     assert "OK: config show --effective" in capsys.readouterr().out
     assert len(calls) == len(projections) == 3
     assert all(result.facts is facts for result, facts in zip(projections, calls, strict=True))
@@ -552,18 +552,21 @@ def test_independent_null_source_and_invalid_source_are_both_reported(tmp_path):
 
 
 def test_existing_execution_facts_can_be_reported_without_reinspection(tmp_path, monkeypatch):
+    from frameit.core.settings_class import SimulationConfig
+
     v3_scene().to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
-    result = collect(request(tmp_path, {"weather": {
+    conf = SimulationConfig.from_mapping_with_model_preset(request(tmp_path, {"weather": {
         "files": str(tmp_path / "input.nc"), "variables": {"2d": ["temperature"]},
     }}))
+    facts = preflight.preflight(conf)
 
     def forbidden(*args, **kwargs):
         pytest.fail("reporting existing facts must not inspect inputs again")
 
     monkeypatch.setattr(preflight, "preflight", forbidden)
     assert callable(getattr(preflight, "preflight_result", None)), "facts wrapper is missing"
-    execution = preflight.preflight_result(result.conf, result.facts, command="run")
-    assert execution.facts is result.facts and execution.conf is result.conf
+    execution = preflight.preflight_result(conf, facts, command="run")
+    assert execution.facts is facts and execution.conf is conf
     report = project(execution)
     assert report["command"] == "run" and report["status"] == "ok"
     assert any(check["status"] == "unfinished-selection" for check in report["deferred_checks"])

@@ -21,7 +21,8 @@ def initialize(destination, radius):
             raise ValueError("This FA backend requires EPyGrAM 2.1.0")
     except PackageNotFoundError as exc:
         raise ValueError("FA requires EPyGrAM: install FrameIt[fa] in the "
-                         "helper environment; input.fa.python_executable can select it") from exc
+                         "helper environment; sources.<id>.reader.python_executable "
+                         "can select it") from exc
     for name, expected in (("falfilfa4py", "1.2.1"), ("ctypesForFortran", "1.3.0"),
                            ("ectrans4py", "1.6.0"), ("netCDF4", "1.7.2")):
         try:
@@ -265,7 +266,8 @@ def geometry_contract(geometry, header, options):
     else:
         radius = options["earth_radius_m"]
         if geometry.geoid != {"a": radius, "b": radius}:
-            raise ValueError("EPyGrAM geoid contradicts explicit input.fa.earth_radius_m")
+            raise ValueError(
+                "EPyGrAM geoid contradicts explicit sources.<id>.fa.earth_radius_m")
         projection = geometry.projection
         if geometry.secant_projection or projection["rotation"].get("degrees") != 0:
             raise ValueError("Only unrotated spherical tangent Lambert FA is qualified")

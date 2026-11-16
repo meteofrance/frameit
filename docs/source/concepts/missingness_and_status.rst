@@ -29,7 +29,7 @@ Run completion is a separate check
 
 Read ``run-status.yaml`` after a normal process exit. ``completed`` records a
 finished requested execution; an accepted shortened track is ``incomplete``.
-Use ``execution.require_complete_tracking: true`` to reject that prefix before
+Keep ``region.tracker.on_incomplete: error`` to reject that prefix before
 export. A missing final status or ``failed`` state is not success, even when
 some products exist.
 

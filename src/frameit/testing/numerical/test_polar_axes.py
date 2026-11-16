@@ -72,11 +72,13 @@ def test_explicit_count_and_serialized_configuration(tmp_path):
     assert copied.polar_n_theta == 64
     assert copied.polar_max_points == 2_000_000
     path = tmp_path / "sampling.yml"
-    raw = {"schema_version": "2.1", "model": "arome", "input": {"pattern": "*.grib"},
-           "tracking": {"method": "pressure_wind"},
-           "variables": {"fields_2d": {"names": ["u10", "v10"]}},
-           "domain": {"width_km": {"x": 200, "y": 200}},
-           "polar": {"enabled": True, "azimuth_count": 64, "radial_step_m": 3000}}
+    raw = {"schema_version": 3,
+           "sources": {"atmosphere": {
+               "model": "arome", "files": "*.grib", "variables": {"2d": ["u10", "v10"]}}},
+           "region": {"tracker": {"method": "pressure_wind"},
+                      "width_km": {"x": 200, "y": 200}},
+           "products": {"polar": {
+               "radius_km": 100, "azimuth_count": 64, "radial_step_km": 3}}}
     path.write_text(yaml.safe_dump(raw))
     assert SimulationConfig.from_yaml(path).polar_n_theta == 64
     grid = configured_grid(polar_n_theta=64)
@@ -103,16 +105,16 @@ def test_invalid_sampling_configuration(options):
 
 
 def test_point_budget_before_mesh_allocation_and_across_times():
-    with pytest.raises(ValueError, match="polar_max_points"):
+    with pytest.raises(ValueError, match="max_target_points"):
         configured_grid(polar_n_theta=36, polar_max_points=1000)
     grid = configured_grid(polar_n_theta=36, polar_max_points=2000)
-    with pytest.raises(ValueError, match="polar_max_points"):
+    with pytest.raises(ValueError, match="max_target_points"):
         grid.build(box(times=2))
-    with pytest.raises(ValueError, match="polar_max_points"):
+    with pytest.raises(ValueError, match="max_target_points"):
         configured_grid(azimuthal_resolution=1e-300)
-    with pytest.raises(ValueError, match="polar_max_points"):
+    with pytest.raises(ValueError, match="max_target_points"):
         configured_grid(radial_resolution=1e-300)
-    with pytest.raises(ValueError, match="polar_max_points"):
+    with pytest.raises(ValueError, match="max_target_points"):
         PolarLonLatGrid(r_km=np.arange(100), theta_deg=np.arange(360),
                        tracking_method="fixed_box", time_dim="time", lon_name="longitude",
                        lat_name="latitude", max_target_points=1000)

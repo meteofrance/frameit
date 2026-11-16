@@ -24,8 +24,9 @@ running. Fixed and prescribed centres need no reference source. Calculated
 tracking requires an atmospheric source. The ocean uses its own geographical
 lookup with the supplied continuous centres.
 
-Complementary T-grid scalar files require ``input.netcdf.file_layout: variables``;
-see :doc:`input_files`. Do not merge shifted U/V geography into a T-grid source
+List complementary T-grid scalar files in the named source's ``files``;
+their layout is discovered automatically. See :doc:`input_files`.
+Do not merge shifted U/V geography into a T-grid source
 merely because dimensions have the same names/shapes. Instantiate only requested
 native contexts. Extraction preserves data meaning rather than
 converting between similarly named quantities:
@@ -34,7 +35,8 @@ converting between similarly named quantities:
 * practical salinity is not converted to absolute salinity;
 * sigma-theta density anomaly is not relabelled as absolute density.
 
-Native level value selection is **exact**, with no atmospheric matching tolerance;
+Native level value selection permits only :ref:`storage/conversion roundoff
+<vertical-level-roundoff>`, not a nearest-level fallback;
 index selection explicitly addresses stored positions. Retained depth labels,
 units, positive direction, bounds and zero-based ``<depth>_source_native_index``
 coordinates describe the native axis, not a newly diagnosed physical-depth
@@ -79,15 +81,13 @@ unrequested companions or interpreting their basis, sign or scaling. Separate
 contexts preserve shifted native sampling even when every file uses ``x/y``.
 ``depthw`` is not relabelled as ``deptht`` merely because their lengths agree.
 
-For any native component selection explicitly declare
-``output.cartesian.horizontal_vectors: native``. This does not turn
-currents/stresses into winds.
+Native component copying needs no transform or wind-pair declaration.
+It does not turn currents/stresses into winds.
 The native ocean path never derives wind speed, radial/tangential winds or
-atmospheric reference-frame metadata. The default ``earth_centered`` selection fails
+atmospheric reference-frame metadata. Explicitly requested analysis fails
 for NEMO components rather than silently returning a different representation.
-For W, retain ``output.cartesian.vertical_velocity: interfaces`` (the default):
-it preserves the native ``depthw`` axis, not a diagnosed mass-level velocity.
-An explicitly requested ``mass`` transformation fails.
+Native W keeps ``depthw``, not a diagnosed mass-level velocity.
+An explicitly requested ``sampling: mass`` transform fails.
 
 Analysed NEMO components, including explicit polar component requests, remain
 unsupported: the admitted files do not establish a qualified angle, mesh,
@@ -160,8 +160,8 @@ means or nearest-time fallback.
 Optional spatial scalar targets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Eligible scalar sources can opt into a shared polar target. Target
-time/radius/azimuth/geography and target identity agree exactly, while native
+Eligible scalar sources can opt into a shared spatial polar target. Radius,
+azimuth and target geography agree at the same associated centre, while native
 depths, source mean bounds, forecast identity and field-local support remain
 different. Component requests remain gated as described above. Continuous
 bilinear point sampling is not area-conservative or a physical-depth section.
@@ -181,11 +181,12 @@ This does not admit every CROCO release, restart/averaged products, other vertic
 transforms or a producer-specific coupling convention. The NEMO-only
 ``preceding_hour`` profile does not apply to CROCO.
 
-Native ``temp/salt`` are selected on ``s_rho``; ``zeta`` belongs to ``fields_2d``.
+Select native ``temp/salt`` under source ``variables.3d`` on ``s_rho`` and
+``zeta`` under ``variables.2d``.
 Fields genuinely stored on ``s_w`` use a separate group. Do not infer the stored
 location of ``w`` or substitute ``omega`` from their names. Fractional sigma values
-are **dimensionless, not metres**; value selection is exact in both preflight and
-loading. Sparse/reordered selections retain
+are **dimensionless, not metres**; value selection permits only the documented
+storage/conversion roundoff, not a nearest-level fallback. Sparse/reordered selections retain
 ``s_rho_source_native_index/s_w_source_native_index``. Native rho geography, source
 axis labels and source dynamic-range metadata survive crops; the output is not
 collocated with an atmospheric grid merely because array sizes agree.
@@ -235,8 +236,29 @@ coordinate labels remain available. Rho dimensions use ``y_rho/x_rho``; see
 :ref:`model-grid-coordinate-names` for each field's geography and original-index
 auxiliaries. Copying ocean currents does not make them winds.
 
-Explicit ``earth_centered`` selects rho/Earth analysis for ``u/v`` on ``s_rho`` and
-``ubar/vbar`` on ``fields_2d``. Selecting either component loads its companion.
+An explicit source transform selects rho/Earth analysis for ``u/v`` on ``s_rho``
+or the barotropic ``ubar/vbar`` pair. Declare the stored pair's grid basis and
+the ``angle`` rotation coordinate. This fragment shows one selected component:
+
+.. code-block:: yaml
+
+   sources:
+     ocean:
+       variables:
+         3d: [u]
+       wind_pairs:
+         - u: u
+           v: v
+           basis: grid
+           rotation: {method: coordinate, coordinate: angle}
+       transforms:
+         - fields: [u]
+           sampling: mass
+           basis: earth
+           units: m s-1
+
+Selecting either analysed component loads its companion without exporting it
+unless requested.
 The method requires regular labelled N-1 midpoint faces, declared velocity units,
 finite rho-point ``angle`` with angular units, and static ``mask_rho`` with
 explicit ``option_0=land`` and ``option_1=water``. These options, not the supplied
@@ -292,19 +314,24 @@ Optional shared point sampling
 ``example/config_file/croco_mesonh.yaml`` demonstrates exact-time named sources,
 different native vertical groups, opt-in SURFEX interpretation and selected
 CROCO rho/Earth currents. Adapt its paths, native indices and illustrative centre
-to the inspected inputs. Set ``horizontal_vectors: native`` for unchanged native
-Cartesian faces. Polar processing is off by default; enabling it uses a
+to the inspected inputs. Omit the ocean's model-grid transforms for unchanged
+native faces. Polar processing is off by default; enabling it uses a
 shared target, separately selected fields, and ordinary optional polar dependencies.
 The fixed or prescribed continuous geographical centres are shared, but each source
 performs its own grid lookup. Common time labels do not imply that ocean and
 atmospheric grids, masks, temperatures or flux definitions are interchangeable.
 
-CROCO polar scalar fields use the declared static water mask, without requiring
-current companions or angle. Selected currents are prepared with the method above
-before spatial sampling, even when Cartesian output remains native. Unselected
+CROCO rho scalar polar fields use the declared static water mask, without requiring
+current companions or angle. Supported current analysis requires explicit
+``products.polar.field_options.ocean.<field>: {sampling: mass, basis: earth}``
+and the pair/rotation declaration above. Those options prepare the pair before
+sampling even when model-grid output remains native. Unsupported native-face
+polar requests fail rather than borrowing rho masks or changing representation.
+Unselected
 native faces do not enter a scalar-only polar crop. No ocean wind diagnostics or
-automatic storm-motion subtraction run. Shared targets have identical time,
-radius, azimuth, longitude, latitude and target identity, but field-local missing
+automatic storm-motion subtraction run. Shared targets have the same radius and
+azimuth, with identical geography at the same associated centre. Native sample
+times, interval bounds and field-local missing
 support remains different. Missing brackets/land remain missing under the declared
 polar coverage policy; this is not conservative area or transport remapping.
 Native binary water masks are used before interpolation, but are not automatically

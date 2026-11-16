@@ -1,5 +1,5 @@
-# Paths are relative to this YAML. Instructional structured-adapter example only:
-# this is NOT an AROME producer file or a physical simulation.
+# Paths are relative to this YAML.
+# Instructional AROME NetCDF layout, not an AROME producer file or physical simulation.
 schema_version: 3
 run:
   name: arome-fixed-scalar

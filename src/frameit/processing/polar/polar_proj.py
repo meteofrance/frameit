@@ -122,21 +122,60 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
     associations = {record["source_time"]: record["coupling_time"]
                     for record in source["region"]["associations"]}
     results, targets, reports = {}, {}, []
-    for job in sorted(binding["operation_plans"], key=lambda job: str(job["context"])):
-        if job["product"] != "polar" or job["context"][0] not in associations:
+    jobs = [(job, job["context"][0], False) for job in binding["operation_plans"]
+            if job["product"] == "polar"]
+    for gap in source.get("allowed_gaps", []):
+        templates = {}
+        for job, _, _ in jobs:
+            if job["name"] == gap["field"]:
+                templates.setdefault(job["context"][2], job)
+        jobs.extend((template, gap["time"], True) for template in templates.values())
+    for job, stamp, absent in sorted(jobs, key=lambda item: str(item[1])):
+        if stamp not in associations:
             continue
-        stamp = job["context"][0]
         if stamp not in targets:
             track = centres.sel(time=[associations[stamp]]).assign_coords(time=[stamp])
             targets[stamp] = grid.build(
                 xr.Dataset(coords={"time": [stamp]}), track=track,
                 track_centres_authoritative=True)
         target = targets[stamp]
-        prepared, _, native_views, _ = prepare_source_operation(job, internal, source, conf)
+        prepared, arrays, native_views, _ = prepare_source_operation(job, internal, source, conf)
+        if job["method"] == "polar_input" and ("units" in job or job["pair"]):
+            from frameit.processing.requests import _operation_units
+
+            name = job["inputs"]["field"]
+            units = job.get("units") or arrays[name].attrs.get("units")
+            prepared[name] = _operation_units(prepared[name], units, model=job["model"])
         from frameit.processing.polar.metadata import preserve_coordinate_dependencies
 
         for native in native_views:
             prepared = preserve_coordinate_dependencies(native, prepared)
+        if source["model"] == "croco":
+            from frameit.io.croco_utils import _static_wet_mask
+
+            mask = arrays["mask_rho"]
+            field = source["fields"][job["input_binding"]["dependencies"]["mask_rho"]["field_id"]]
+            if not field["time_varying"] and "time" in mask.dims:
+                # Assembly adds this sample axis; the admitted native mask is static.
+                mask = mask.squeeze("time", drop=True)
+            support = prepared.assign(mask_rho=mask)
+            support.attrs = {**native_views[0].attrs, **prepared.attrs}
+            wet = _static_wet_mask(support)
+            for name in ([job["inputs"]["field"]] if job["method"] == "polar_input" else
+                         list(dict.fromkeys(job["inputs"].values()))):
+                if not set(wet.dims) <= set(prepared[name].dims):
+                    raise ValueError(
+                        "CROCO polar components require admitted rho sampling; "
+                        "select sampling: mass and basis: earth")
+                prepared[name] = prepared[name].where(wet)
+        if absent:
+            from frameit.processing.requests import _initial_gap_clock
+
+            # Shape/geometry are proven by inventory; no donor physical values are used.
+            coordinates = dict(prepared.coords)
+            prepared = prepared.map(lambda value: xr.full_like(value, np.nan, dtype=float))
+            prepared = prepared.assign_coords(coordinates)
+            prepared = _initial_gap_clock(prepared.reindex(time=[stamp]), source)
         info = job["polar_geometry"]
         rename = {dim: f"{axis}_box" for axis, dim in info["horizontal_dimensions"].items()
                   if dim != f"{axis}_box"}
@@ -157,7 +196,9 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             for dim, size in conf.polar_output_chunks.items() if dim in public_to_native}
         pieces, signatures, footprints, numeric_types = {}, [], [], {}
         paired = job["method"] in {"radial_wind", "tangential_wind"}
-        for name in dict.fromkeys(job["inputs"].values()):
+        sample_names = ([job["inputs"]["field"]] if job["method"] == "polar_input" else
+                        list(dict.fromkeys(job["inputs"].values())))
+        for name in sample_names:
             options = job["polar_options"][name]
             settings.polar_missing_data_policy = options["missing_data_policy"]
             settings.polar_min_valid_weight_fraction = options["min_valid_weight_fraction"]
@@ -273,10 +314,22 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
                 result = result.assign_coords({
                     rotation["name"]: coordinate.expand_dims(time=result.time)})
         result.azimuth_degrees.attrs["units"] = "degrees"
-        result.time.attrs = dict(prepared.time.attrs)
+        clock = prepared.coords.get("time", native_views[0].coords.get("time", target.time))
+        result.time.attrs = dict(clock.attrs)
         result.time.encoding = {
-            key: value for key, value in prepared.time.encoding.items()
+            key: value for key, value in clock.encoding.items()
             if key in {"units", "calendar", "dtype"}}
+        if source["model"] == "croco":
+            # Point-sampled auxiliaries do not establish the native nonlinear depth formula.
+            for axis in ("s_rho", "s_w"):
+                if axis in result.coords:
+                    attributes = dict(result[axis].attrs)
+                    for key in ("formula_terms", "standard_name"):
+                        if key in attributes:
+                            attributes.setdefault(f"source_{key}", attributes.pop(key))
+                    result[axis].attrs = attributes
+            result.attrs["vertical_sampling"] = (
+                "native_sigma_indices_not_constant_physical_depth")
         result.attrs.update(source_id=source.get("name", conf.source_name),
                             time_association=conf.time_alignment)
         if output_formatter is not None:
@@ -298,6 +351,8 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             "source_finite_footprints": footprints,
             "rotation_coordinate": job["rotation_coordinate"],
             "preparation": job["preparation"],
+            **({"source_record_absent": True, "absence_policy": "declared_initial_absence"}
+               if absent else {}),
             **({"method_maturity": "experimental_public_binding",
                 "support_definition": "joint_finite_component_stencil",
                 "vector_basis": "terminal_forward_geodesic", "wind_reference_frame": "earth"}

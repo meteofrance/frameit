@@ -27,7 +27,10 @@ sources:
         indices: [0]             # Original zero-based positions, in explicit list order.
         # Or indices: {start: 0, end: 20, step: 2}, inclusive.
         # Or values: [850, 700], values: {min: 700, max: 850}, or domain: physical.
-        # Optional units: hPa; compatible coordinate conversion, not field conversion.
+      # Optional units: hPa; compatible coordinate conversion, not field conversion.
+    # GRIB/NetCDF only: allow_initial_gaps: [sample_field]
+    # Explicit whole-field absence at the first selected time; no physical fill.
+    # Requires proven unchanged geometry; later gaps and required support still fail.
     field_metadata:              # Describe stored values; do not request conversions.
       sample_field:
         units: K
@@ -103,7 +106,8 @@ region:
     # quality: {minimum_parameters: 2, pressure_rise_pa: 50.0, vt850_min_m_s: 1.5,
     #           max_separation_km: 425.0, max_speed_m_s: 30.866666666666667,
     #           speed_check_interval_hours: 6.0}
-    # Alternative method: utrack; obtained weights/dependencies are required:
+    # UTrack settings are reserved; its v3 execution binding is unavailable.
+    # Obtaining weights/dependencies does not enable execution:
     # weights_file: ./model.ckpt
     # use_gpu: false
     # batch_size: 16
@@ -130,6 +134,8 @@ products:
           interpolation: bilinear # bilinear | nearest; kind needs source evidence.
           missing_data_policy: strict
           # sampling: native | mass, only where admitted.
+          # units: K  # Exported base field only; compatible conversion before sampling.
+          # basis: native  # Or earth for an explicitly declared, collocated wind pair.
     processing:
       chunks: {}                 # Exported polar dimensions; positive integers or -1.
       max_target_points: 2000000 # Geometry guard, not a whole-run memory limit.

@@ -388,8 +388,11 @@ def _netcdf_inventory(path, source, resources):
                 "locator": {"format": "netcdf", "path": str(path), "variable": name,
                             "indexers": indexers,
                             "coordinate_indexers": dict(sample["indexers"])}})
+    from frameit.processing.wind_reference import inspect_wind_metadata
+
     return {"model": model,
             "physical_type": "ocean" if model in {"nemo", "croco"} else "atmosphere",
+            "dataset_attributes": inspect_wind_metadata({}, ds.attrs).get("dataset_attributes", {}),
             "profile": None, "evidence": evidence, "fields": fields,
             "native_grids": grids, "records": records}
 
@@ -763,6 +766,8 @@ def inventory_source(conf, name, *, resources=None):
                             known.extend(
                                 provider for provider in providers if provider not in known)
                 records.extend(info["records"])
+                if info.get("dataset_attributes"):
+                    entry["dataset_attributes"] = info["dataset_attributes"]
                 entry["fields"] = sorted({f["name"] for f in info["fields"].values()
                                           if f["name"] is not None})
                 entry["unmapped_records"] = [r for r in info["records"] if r["name"] is None]
@@ -791,9 +796,12 @@ def inventory_source(conf, name, *, resources=None):
     needed = {field for exports in request["exports"].values() for field in exports
               if field not in request["derived"]}
     needed.update(set(request["internal_inputs"]) - request["derived"].keys())
+    declared_needed = set(needed)
+    strict_inputs = set(request["internal_inputs"]) - request["derived"].keys()
     required = set(needed)
     dependency_resolution = "declared"
     tracker = conf.yaml_config["region"].get("tracker")
+    tracker_groups = {}
     if tracker and physical == "atmosphere":
         from frameit.io.loader import DEFAULT_PRESETS_ROOT, _load_yaml
 
@@ -802,7 +810,13 @@ def inventory_source(conf, name, *, resources=None):
                   / "vars_trackers.yaml")
         if method in {"wind_pressure", "utrack"} or model == "arome":
             requirements = _load_yaml(preset)["requested_variables_by_method"][method]
-            needed.update(n for spec in requirements.values() for n in spec.get("variables", []))
+            tracker_fields = {
+                n for spec in requirements.values() for n in spec.get("variables", [])}
+            if model == "arome":
+                tracker_groups = {n: group for group, spec in requirements.items()
+                                  if group != "surface" for n in spec.get("variables", [])}
+            strict_inputs.update(tracker_fields)
+            needed.update(tracker_fields)
             required.update(needed)
         else:
             # Preserve candidates for method binding, without choosing scientific alternatives.
@@ -822,6 +836,11 @@ def inventory_source(conf, name, *, resources=None):
     for index, record in enumerate(records):
         by_name.setdefault(record["name"], []).append((index, record))
     candidates = {ref: field_candidates(selection_source, request, ref, by_name) for ref in needed}
+    for ref, group in tracker_groups.items():
+        if ref not in declared_needed:
+            candidates[ref] = [(i, r) for i, r in candidates[ref]
+                               if fields[r["field_id"]].get("group") == group
+                               or fmt == "netcdf" and group in fields[r["field_id"]]["dimensions"]]
     by_field_name = {}
     for field_id, field in fields.items():
         by_field_name.setdefault(field["name"], []).append(field_id)
@@ -835,6 +854,7 @@ def inventory_source(conf, name, *, resources=None):
                     needed.add(dep)
                     candidates[dep] = field_candidates(selection_source, request, dep, by_name)
                     pending.append(dep)
+                strict_inputs.add(dep)
     missing = {ref for ref in required if not candidates.get(ref)}
     if missing:
         raise PreflightError([Diagnostic(
@@ -854,7 +874,7 @@ def inventory_source(conf, name, *, resources=None):
     else:
         selected, times = _select_source_records(
             relevant, source.get("time", {}), f"sources.{name}")
-    errors, providers, conflicts = [], {}, []
+    errors, providers, conflicts, allowed_gaps = [], {}, [], []
     required_ids = {ref: {r["field_id"] for _, r in candidates[ref]} for ref in required}
     for field_name in sorted(required):
         matching = [r for r in selected if r["field_id"] in required_ids[field_name]]
@@ -871,7 +891,15 @@ def inventory_source(conf, name, *, resources=None):
                           "use an explicit vertical group; qualification must identify "
                           "exactly one field")
         available = {r["time"] for r in matching}
-        if field_name in required and set(times) - available:
+        from frameit.processing.requests import initial_gap_times
+
+        allowed = (initial_gap_times({
+            **selection_source, "selected_times": times, "records": selected,
+            "declaration": source},
+            field_name, matching) if field_name not in strict_inputs else set())
+        allowed_gaps.extend({"field": field_name, "time": time,
+                             "reason": "declared_initial_absence"} for time in sorted(allowed))
+        if field_name in required and set(times) - available - allowed:
             errors.append(f"sources.{name}: {field_name} unavailable at selected times "
                           f"{sorted(set(times) - available)}; "
                           "dependencies cannot widen the inventory")
@@ -942,7 +970,10 @@ def inventory_source(conf, name, *, resources=None):
                   files=selected_paths, file_inventory=entries, excluded_files=excluded,
                   overlapping_patterns=overlaps, fields=fields, native_grids=grids,
                   records=selected, record_inventory=record_inventory, selected_times=times,
-                  dependency_resolution=dependency_resolution, provider_conflicts=conflicts)
+                  dependency_resolution=dependency_resolution, provider_conflicts=conflicts,
+                  tracker_input_groups=tracker_groups)
+    if allowed_gaps:
+        result["allowed_gaps"] = allowed_gaps
     result["pending_operations"] = [
         operation for operation, pending in (
             ("interpretation", source.get("interpretation")),
@@ -1069,9 +1100,11 @@ def _required_dependencies(conf, execution_options=None):
                          f"the {engine} writer dependency"))
     facts, errors = [], []
     for path, module, installation in selected:
+        repair = ("UTrack v3 execution is unavailable; select another tracker."
+                  if path == "region.tracker" else
+                  f"Install {installation} in the selected environment, or deselect this feature.")
         fact, error = _installed_dependency(
-            path, module, f"Install {installation} in the selected environment, "
-            "or deselect this feature.")
+            path, module, repair)
         facts.append(fact)
         if error:
             errors.append(error)
@@ -1184,6 +1217,8 @@ def describe_model_grid_output(source, binding, product, *, regional=False):
             facts = _output_grid_facts(layout, grid_id, name)
             exported = [facts["dimensions"].get(dim, dim) for dim in dims]
             if (field["time_varying"] or descriptor.get("operation")
+                    or len({r["locator"]["path"] for r in descriptor["records"]}) > 1
+                    or any(gap["field"] == name for gap in source.get("allowed_gaps", []))
                     or source["format"] in {"grib", "fa"}):
                 exported.insert(0, "time")
             previous = product["dimensions"].setdefault(name, exported)
@@ -1514,7 +1549,8 @@ def infer_format(files, declared=None):
                 magic = handle.read(8)
             if magic.startswith((b"GRIB", b"CDF")) or magic == b"\x89HDF\r\n\x1a\n":
                 detected = "grib" if magic.startswith(b"GRIB") else "netcdf"
-                raise ValueError(f"input.format=fa conflicts with detected {detected}: {path}")
+                raise ValueError(
+                    f"Declared source format fa conflicts with detected {detected}: {path}")
         return "fa"
     formats = set()
     for path in files:
@@ -1533,7 +1569,7 @@ def infer_format(files, declared=None):
         raise ValueError("Mixed GRIB/NetCDF inputs are not supported")
     detected = formats.pop()
     if declared and declared not in {detected, "nc" if detected == "netcdf" else "grib2"}:
-        raise ValueError(f"input.format={declared} conflicts with detected {detected}")
+        raise ValueError(f"Declared source format {declared} conflicts with detected {detected}")
     return detected
 
 
@@ -1672,7 +1708,9 @@ def polar_sampling_plan(conf, time_count):
 
     radii, angles, metadata = sampling_axes(conf)
     if time_count * len(radii) * len(angles) > conf.polar_max_points:
-        raise ValueError("Polar geometry across all times exceeds polar.max_points")
+        raise ValueError(
+            "Polar geometry across all times exceeds "
+            "products.polar.processing.max_target_points")
     return {**metadata, "radial_count": len(radii),
             "estimated_points_per_time": len(radii) * len(angles),
             "estimated_time_count": time_count}
@@ -1740,9 +1778,11 @@ def collect_preflight(request, *, command="validate", schema_only=False, check_o
                     conf, check_output=False, execution_options=execution_options,
                     resources=resources)[0]
             else:
-                result.facts = preflight(
+                from frameit.core.coupled import bind_sources
+
+                result.facts = bind_sources(
                     conf, check_output=check_output, execution_options=execution_options,
-                    resources=resources)
+                    resources=resources)[0]
             return preflight_result(conf, result.facts, command=command)
     except (OSError, ValueError, ImportError) as exc:
         result.errors = exception_diagnostics(

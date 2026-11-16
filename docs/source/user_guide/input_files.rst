@@ -88,6 +88,12 @@ remain distinct. Conflicting or unidentified clocks fail. Ordering or assembling
 files does not make interval means equivalent to instantaneous fields, shift
 timestamps or fill missing samples.
 
+An explicit source ``allow_initial_gaps`` list can preserve a wholly absent
+selected field at the first selected time as missing output, without dropping
+that timestamp. The default remains strict. See :doc:`configuration_file` for
+the unchanged-grid and required-support limits; this never fills physical values
+or infers an accumulation interval.
+
 Time selection restricts scientific field reads for extraction, tracking,
 derived inputs and polar processing. Metadata and coordinate reads may establish
 which records are selected. A method needing excluded temporal support fails;
@@ -131,6 +137,10 @@ Wind metadata to check
 Inspect each pair's sampling coordinates, units and vector basis, not only its
 names. Determine the component directions from source metadata first:
 
+NetCDF inspection retains relevant dataset-level wind attributes beside each
+file's variable evidence. Opposing declarations remain visible; inspection does
+not resolve them. Unrelated dataset annotations are not included in this evidence.
+
 * **East/north components:** GRIB ``uvRelativeToGrid=0`` (read as
   ``GRIB_uvRelativeToGrid``), or the CF ``standard_name`` pair
   ``eastward_wind`` / ``northward_wind``. U points east and V points north.
@@ -152,10 +162,11 @@ Copying a native component alone does not require a pair or rotation.
 Without identifying metadata, resolve uncertainty with the producer before
 requesting an operation that needs component directions.
 
-``frameit inspect`` includes a ``variable_metadata`` list for every GRIB/NetCDF
-input, in addition to the existing names/units mapping under ``variables``.
-Each record identifies the field by ``name`` and, for GRIB, its inventory
-``group`` so repeated names on different level types remain separate.
+``frameit inspect frameit.yaml --json`` records field definitions under
+``data.plan.sources.<source>.fields``, keyed by field identity.
+Each definition gives ``name`` and, for GRIB, the native ``group`` so repeated
+names on different level types remain separate. Join ``record_inventory``
+entries to these definitions using ``field_id``.
 Group labels describe native metadata. Use an explicit vertical-group request
 when distinct fields share a name; qualification must still identify one field.
 See :ref:`explicit-vertical-groups` for copyable syntax and references.
@@ -164,28 +175,11 @@ flags and ``wind_reference_frame`` when present. Missing attributes are omitted,
 not filled with assumptions. Relevant dataset-wide evidence is retained
 separately as ``dataset_attributes``.
 
-For example, this excerpt describes a GRIB field whose header declares
-grid-aligned wind components:
-
-.. code-block:: yaml
-
-   variable_metadata:
-     - name: u
-       group: isobaricInhPa
-       attributes:
-         units: m s**-1
-         GRIB_uvRelativeToGrid: 1
-       wind_basis: grid-aligned components
-
-``wind_basis`` explains the available wind-reference metadata:
-
-* ``eastward/northward components`` or ``grid-aligned components`` when the
-  identifying attributes agree;
-* ``unknown`` when no recorded attribute identifies the convention;
-* ``conflicting metadata`` when attributes disagree;
-* ``invalid metadata`` with ``wind_metadata_error`` when an attribute is unusable.
-
-These labels describe wind conventions, not proof that a field is a wind:
+Relevant dataset-level evidence stays on its owning input entry under
+``dataset_attributes``. The report does not manufacture a resolved wind pair or
+direction label from these raw attributes.
+For example, ``GRIB_uvRelativeToGrid: 1`` records a grid-relative convention.
+This is not proof that the field is a wind:
 GRIB grid flags can also occur on scalar messages. Inspection does not select
 wind pairs, rotate components or change the configuration. Inconsistent units
 or wind flags across GRIB records of the same field/group still fail header

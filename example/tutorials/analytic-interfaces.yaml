@@ -1,0 +1,23 @@
+schema_version: 3
+run: {name: analytic-interfaces}
+sources:
+  atmosphere:
+    model: mesonh
+    format: netcdf
+    files: ./interfaces.nc
+    variables:
+      3d: [WT]
+      levels: {indices: [1]}
+region:
+  center: {latitude: -20, longitude: 60}
+products:
+  model_grid: true  # Native index 1: level_w=500 m, W=0.5 m/s.
+  polar:
+    radius_km: 20
+    azimuth_count: 16
+    fields: {atmosphere: [WT]}
+    field_options:
+      atmosphere:
+        WT: {sampling: mass}  # Destination index 1: level=1000 m, W=1 m/s.
+output: {directory: ./interface-results}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

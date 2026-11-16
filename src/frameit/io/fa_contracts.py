@@ -50,7 +50,7 @@ def layout_definition(metadata):
 def check_expected_source(metadata, expected):
     for key, value in expected.items():
         if key not in metadata or metadata[key] != value:
-            raise ValueError(f"input.fa.expected_source.{key}={value!r} conflicts with "
+            raise ValueError(f"sources.<id>.fa.expected_source.{key}={value!r} conflicts with "
                              f"native source value {metadata.get(key)!r}")
 
 

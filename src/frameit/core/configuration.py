@@ -62,7 +62,7 @@ TRACKER_DEFAULTS = {
 V3_KEYS = {
     "source": ("model", "format", "profile", "files", "exclude", "time", "variables",
                "field_metadata", "interpretation", "native_cubes", "fa", "reader",
-               "wind_pairs", "transforms", "derived"),
+                "wind_pairs", "transforms", "derived", "allow_initial_gaps"),
     "time": ("cycle", "start", "end", "values", "stride"),
     "variables": ("2d", "3d", "levels"),
     "vertical_group": ("names", "levels"),
@@ -82,7 +82,7 @@ V3_KEYS = {
     "polar_processing": ("chunks", "max_target_points", "plan_cache", "source_halo_points",
                          "weight_zero_tolerance", "profile"),
     "field_options": ("interpolation", "missing_data_policy",
-                      "min_valid_weight_fraction", "sampling"),
+                       "min_valid_weight_fraction", "sampling", "units", "basis"),
     "writer": ("engine", "unlimited_time", "compression", "chunks", "shards"),
     "compression": ("level", "coordinates"),
     "resources": ("cpus", "scheduler", "compute_workers", "export_workers", "native_threads",
@@ -208,7 +208,7 @@ def configuration_schema():
             ("records", "vertical_position", "sampling"))),
         "wind_pairs": array(ref("wind_pair"), minItems=0),
         "transforms": array(ref("transform"), minItems=0, uniqueItems=False),
-        "derived": mapping(ref("derived"))},
+        "derived": mapping(ref("derived")), "allow_initial_gaps": names},
         ("files",))
     trackers = []
     for method, defaults in TRACKER_DEFAULTS.items():
@@ -260,7 +260,8 @@ def configuration_schema():
     mask = {"missing_data_policy": choice("missing_data_policy"),
             "min_valid_weight_fraction": {**positive, "maximum": 1}}
     defs["field_options"] = obj({
-        **mask, "interpolation": choice("interpolation"), "sampling": choice("sampling")})
+        **mask, "interpolation": choice("interpolation"), "sampling": choice("sampling"),
+        "units": text, "basis": choice("transform_basis")})
     defs["polar"] = obj({
         "fields": fields, "processing": ref("polar_processing"), **mask,
         "radius_km": positive, "radial_step_km": positive,
@@ -974,6 +975,12 @@ def _source(raw, name, base):
     if "levels" in variables:
         variables["levels"] = _levels(variables["levels"], f"{path}.variables.levels")
     source["variables"] = variables
+    if "allow_initial_gaps" in source:
+        _names(source["allow_initial_gaps"], f"{path}.allow_initial_gaps")
+        if not set(source["allow_initial_gaps"]) <= set(names):
+            raise ValueError(f"{path}.allow_initial_gaps must name selected source fields")
+        if fa_declared:
+            raise ValueError(f"{path}.allow_initial_gaps does not admit FA inputs")
     metadata = source.setdefault("field_metadata", {})
     if not isinstance(metadata, dict):
         raise PreflightError([Diagnostic(
@@ -1456,6 +1463,15 @@ def _products(raw, sources, region):
                             {"selected_fields": sorted(needed)}, field,
                             [f"Remove {loc}, or explicitly select this field for the product."])])
                     _keys(values, V3_KEYS["field_options"], loc)
+                    if "units" in values:
+                        _text(values["units"], f"{loc}.units")
+                        if field not in exports or field in sources[name]["derived"]:
+                            raise ValueError(f"{loc}.units requires a selected base field; "
+                                             "derived methods retain their specified units")
+                    if "basis" in values:
+                        _choice(values["basis"], V3_CHOICES["transform_basis"], f"{loc}.basis")
+                        if field not in exports or field in sources[name]["derived"]:
+                            raise ValueError(f"{loc}.basis requires a selected base field")
                     effective = {key: spec[key] for key in
                                  ("missing_data_policy", "min_valid_weight_fraction") if key in spec}
                     if values.get("missing_data_policy") == "strict":
