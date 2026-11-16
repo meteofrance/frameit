@@ -21,6 +21,8 @@ sources:
     variables:
       2d: [sample_field]          # No selectable vertical axis; time is not a spatial axis.
       3d: [sample_cube]           # Retain a vertical axis even for one selected level.
+      # Alternative: 3d: {level: {names: [sample_cube], levels: {indices: [0]}}}
+      # With grouped 3d, omit variables.levels and refer to level.sample_cube.
       levels:
         indices: [0]             # Original zero-based positions, in explicit list order.
         # Or indices: {start: 0, end: 20, step: 2}, inclusive.

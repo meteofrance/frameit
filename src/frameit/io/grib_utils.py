@@ -14,6 +14,7 @@ import numpy as np
 import xarray as xr
 
 from frameit.check.check_functions import drop_time_dupes
+from frameit.core.configuration import field_selection
 from frameit.io.loader import managed_loading, resolve_input_files
 from frameit.processing.derived.wind import normalize_winds
 from frameit.processing.polar.metadata import preserve_coordinate_dependencies
@@ -136,6 +137,7 @@ def _selected_grib(files, binding, source, resources):
         for name, descriptor in descriptors.items():
             if descriptor.get("operation"):
                 continue
+            native_name, native_group, _ = field_selection(source.get("requests", {}), name)
             records_by_grid = {}
             for record in descriptor["records"]:
                 locator = record["locator"]
@@ -143,8 +145,12 @@ def _selected_grib(files, binding, source, resources):
                     raise ValueError(f"{name}: selected locator is outside the admitted GRIB files")
                 native = pool.get(locator_key(locator))
                 if (native is None or descriptor["field_id"] != record["field_id"]
-                        or name != record["name"]
-                        or any(record.get(key) != value for key, value in native.items())):
+                        or any(record.get(key) != value for key, value in native.items())
+                        or record["field_id"] not in source["fields"]
+                        or native_name != record["name"]
+                        or native_group is not None and native_group != source["fields"][
+                            record["field_id"]]["group"]
+                        or source["fields"][descriptor["field_id"]]["name"] != record["name"]):
                     raise ValueError(
                         f"{name}: selected GRIB record is outside the closed inventory")
                 if record["selection_grid_id"] != record["grid_id"]:

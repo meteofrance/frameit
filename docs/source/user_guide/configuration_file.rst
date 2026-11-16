@@ -196,12 +196,21 @@ Variables and vertical levels
 
 Inside each source, ``variables.2d`` lists fields without a selectable vertical
 axis. ``variables.3d`` lists fields with one. Time does not count as a spatial
-axis. Use source field names, not native group names or qualified selectors.
-An ambiguous name or wrong category fails with the affected source and field.
+axis. A flat list uses source names that identify one actual field.
+A wrong category or unresolved identity fails with the affected source and field.
 
 One optional ``variables.levels`` applies to all requested 3D fields and results
 in that source, separately on each product's representation. It does not affect
 2D fields. Omission keeps every level on each field's own grid.
+
+Alternatively, use ``variables.3d.<native-group>: {names: [...], levels: {...}}``.
+Each group has its own optional selector; source-wide ``variables.levels`` is
+then forbidden. Use this form for distinct fields sharing a name, even if you
+want only one, or for independent selections on different axes. References in
+operations, metadata and products use ``<native-group>.<field>``. Grouped exports
+keep that name. Groups must identify fields unambiguously; they do not choose
+between providers. See :ref:`explicit-vertical-groups` for syntax, derived
+selection and shared-destination-axis limits.
 
 Choose exactly one selection strategy:
 

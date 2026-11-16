@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
+from frameit.core.configuration import field_selection
 from frameit.processing.polar.metadata import preserve_coordinate_dependencies
 from frameit.utils.units import UNITS, convert_units, unit_key
 
@@ -736,6 +737,27 @@ def _field_axis(source, field, record, records_by_name):
     return _vertical_axis(field, grid)
 
 
+def native_field_group(source, field, record=None):
+    """Use native identity evidence, not a request label or transformed grid."""
+    if source["format"] == "grib":
+        return field["group"]
+    if field.get("native_cube"):
+        return "level_w" if field["native_cube"]["vertical_position"] == "interface" else "level"
+    grid = source["native_grids"][record["grid_id"] if record else field["grid_id"]]
+    axis = _vertical_axis(field, grid)
+    return axis["dimension"] if axis else None
+
+
+def field_candidates(source, request, reference, records_by_name):
+    """Return original inventory positions, restricted only by explicit native identity."""
+    name, group, _ = field_selection(request, reference)
+    candidates = records_by_name.get(name, [])
+    if group is None:
+        return candidates
+    return [(index, record) for index, record in candidates
+            if native_field_group(source, source["fields"][record["field_id"]], record) == group]
+
+
 def resolve_field_metadata(attributes, declaration, context, *, temporal_names=("time",)):
     """Complete stored-value metadata, never convert values or replace known facts."""
     import re
@@ -786,13 +808,33 @@ def resolve_field_metadata(attributes, declaration, context, *, temporal_names=(
     return {"attributes": attrs, "origins": origins}
 
 
+def source_field_declaration(source, field, *, record=None):
+    """Match declarations by actual identity, without converting or relabelling data."""
+    declaration = source.get("declaration", {})
+    name = field["name"]
+    declarations = declaration.get("field_metadata", {})
+    metadata = declarations.get(name, {})
+    if metadata and len({r["field_id"] for r in source["record_inventory"]
+                         if r["name"] == name}) > 1:
+        raise ValueError(f"source.field_metadata.{name}: ambiguous native name; "
+                         "use an explicit vertical-group.field reference")
+    groups = source.get("requests", {}).get("groups", {})
+    if groups:
+        group = native_field_group(source, field, record)
+        qualified = declarations.get(f"{group}.{name}", {}) if group in groups else {}
+        if metadata and qualified and metadata != qualified:
+            raise ValueError(f"source.field_metadata.{group}.{name}: conflicting declarations")
+        metadata = qualified or metadata
+    return metadata
+
+
 def source_field_metadata(source, field, *, record=None):
     """Resolve only this selected field's declaration and admitted SEA metadata."""
     declaration = source.get("declaration", {})
     name, attrs = field["name"], field["attributes"]
     if record is not None:
         attrs = record.get("observed_attributes", attrs)
-    metadata = declaration.get("field_metadata", {}).get(name, {})
+    metadata = source_field_declaration(source, field, record=record)
     interpreted = False
     if declaration.get("interpretation") == "mesonh_surfex_sea":
         from frameit.io.surfex_utils import SURFEX_FIELDS, surfex_metadata
@@ -1073,7 +1115,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
         if operation["method"] == "transform" and operation["basis"] == "earth":
             declarations = [p for p in source["declaration"].get("wind_pairs", [])
                             if name in (p["u"], p["v"])]
-            evidence = [r for r in pool if r["name"] == name]
+            evidence = [r for _, r in field_candidates(source, request, name, all_by_name)]
             frames = set().union(*(
                 set(_metadata_frames(source["fields"][r["field_id"]]["attributes"], name))
                 for r in evidence))
@@ -1084,8 +1126,18 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                     f"{name}: Earth basis requires an unambiguous wind_pairs declaration")
         croco = source["model"] == "croco" and operation["sampling"] == "mass"
         if croco:
-            if operation["basis"] != "earth" or (
-                    inputs.get("u"), inputs.get("v")) not in {("u", "v"), ("ubar", "vbar")}:
+            for mask in ("mask_rho", "mask_u", "mask_v"):
+                if mask == "mask_rho" or any(r["name"] == mask for r in pool):
+                    inputs[mask] = mask
+        by_name = {n: field_candidates(source, request, n, all_by_name) for n in inputs.values()}
+        for field_name, candidates in by_name.items():
+            if len({r["field_id"] for _, r in candidates}) != 1:
+                raise ValueError(
+                    f"{name}: input {field_name} missing or ambiguous in selected inventory")
+        if croco:
+            native_pair = tuple(source["fields"][by_name[inputs[component]][0][1]["field_id"]][
+                "name"] if component in inputs else None for component in ("u", "v"))
+            if operation["basis"] != "earth" or native_pair not in {("u", "v"), ("ubar", "vbar")}:
                 raise ValueError(
                     "CROCO current transforms require admitted U/V mass/Earth preparation")
             declared = next(p for p in source["declaration"]["wind_pairs"]
@@ -1094,15 +1146,6 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
             if declared["basis"] != "grid" or rotation != {
                     "method": "coordinate", "coordinate": "angle"}:
                 raise ValueError("CROCO native currents require grid basis and rho angle rotation")
-            for mask in ("mask_rho", "mask_u", "mask_v"):
-                if mask == "mask_rho" or any(r["name"] == mask for r in pool):
-                    inputs[mask] = mask
-        by_name = {n: [(i, r) for i, r in enumerate(pool) if r["name"] == n]
-                   for n in inputs.values()}
-        for field_name, candidates in by_name.items():
-            if len({r["field_id"] for _, r in candidates}) != 1:
-                raise ValueError(
-                    f"{name}: input {field_name} missing or ambiguous in selected inventory")
         contexts = {_sample_context(r) for _, r in by_name[next(iter(inputs.values()))]}
         output = {"operation": name, "method": operation["method"], "records": [], "category": None}
         if product == "polar":
@@ -1143,6 +1186,13 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 if operation.get("units") and field_name not in {"mask_rho", "mask_u", "mask_v"}:
                     _operation_units(xr.DataArray(0., attrs=attrs[field_name], name=field_name),
                                      operation["units"], model=source["model"])
+            if operation["method"] == "wind_speed":
+                selectors = [field_selection(request, field_name)[2]
+                             for field_name, axis in axes.items() if axis is not None]
+                if selectors and any(selector != selectors[0] for selector in selectors[1:]):
+                    raise ValueError(
+                        f"{name}: 3d derived inputs prescribe different level selectors; "
+                        "use one common selector in their source groups")
             prepared = dict(probes)
             if croco:
                 from frameit.io.croco_utils import _validate_faces, _velocity
@@ -1156,14 +1206,16 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                         _velocity(xr.DataArray(0., attrs=attrs[component], name=component))
                     except ValueError as error:
                         raise ValueError(f"CROCO current analysis: {error}") from error
-                    prefix = "barotropic_" if "bar" in component else ""
+                    field = source["fields"][records[component][0]["field_id"]]
+                    native_component = field["name"]
+                    prefix = "barotropic_" if native_component in {"ubar", "vbar"} else ""
                     standard = f"{prefix}sea_water_{direction}_velocity"
                     location = "u" if direction == "x" else "v"
                     if attrs[component].get("standard_name") not in {
                             None, standard, f"{standard}_at_{location}_location"}:
                         raise ValueError(f"CROCO {component}: conflicting current quantity")
-                    expected = horizontal | ({"s_rho"} if component in {"u", "v"} else set())
-                    field = source["fields"][records[component][0]["field_id"]]
+                    expected = horizontal | (
+                        {"s_rho"} if native_component in {"u", "v"} else set())
                     if set(probes[component].dims) != expected or not field["time_varying"]:
                         raise ValueError(f"CROCO {component}: incompatible current dimensions")
                 if any(attrs[inputs["u"]].get(key) != attrs[inputs["v"]].get(key)
@@ -1200,7 +1252,8 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                         prepared[field_name] = value.reset_coords(drop=True)
                         continue
                     vertical_w = "level_w" in value.dims
-                    if vertical_w and field_name != getattr(
+                    native_name = source["fields"][records[field_name][0]["field_id"]]["name"]
+                    if vertical_w and native_name != getattr(
                             conf, "velocity_aliases", {}).get("w_velocity", "WT") and (
                             value.attrs.get("standard_name") not in {
                                 "upward_air_velocity", "lagrangian_tendency_of_air_pressure"}):
@@ -1293,7 +1346,8 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
             subrequest = {**native, "fields": {key: [n for n in dict.fromkeys(inputs.values())
                                                    if n in request["fields"][key]]
                                              for key in ("2d", "3d")},
-                          "exports": {}, "internal_inputs": [], "derived": {}, "levels": {}}
+                          "exports": {}, "internal_inputs": list(dict.fromkeys(inputs.values())),
+                          "derived": {}, "levels": {}}
             support = bind_requests(local, subrequest, required_inputs=selectors)
             _merge_operation_dependencies(source, binding, support)
             output["records"].extend(deepcopy(bound_result["records"]))
@@ -1333,6 +1387,30 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
             binding["operation_plans"].append(planned)
             if product == "model_grid":
                 binding["operations"].append(planned)
+    if request.get("groups"):
+        from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
+
+        layout = output_grid_layout({
+            **source, "representation_grids": binding["representation_grids"],
+            "requests": {**request, "binding": binding}})
+        selections = {}
+        for product, fields in binding["products"].items():
+            for name, descriptor in fields.items():
+                for record in descriptor["records"]:
+                    vertical = record.get("vertical")
+                    if vertical is None:
+                        continue
+                    facts = _output_grid_facts(layout, record["selection_grid_id"], name)
+                    axis = facts["dimensions"][vertical["dimension"]]
+                    key = product, axis, _sample_context(record)
+                    coordinates = {k: vertical[k] for k in (
+                        "values", "source_native_indices", "units")}
+                    previous = selections.setdefault(key, (name, coordinates))
+                    if previous[1] != coordinates:
+                        raise ValueError(
+                            f"{product}.{name}: different group level selections target the same "
+                            f"output axis {axis} as {previous[0]}; "
+                            "use matching selections on that destination grid or separate runs")
     if "polar" in exports:
         from frameit.processing.polar.sampling import bind_polar_plan
 
@@ -1375,15 +1453,16 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
     needed = list(dict.fromkeys(
         [name for names in request["exports"].values() for name in names
          if name not in request["derived"]]
-        + [name for name in request["internal_inputs"] if name not in request["derived"]]
-        + list(method_inputs)))
+        + [name for name in request["internal_inputs"] if name not in request["derived"]]))
+    generated = set(method_inputs) - declared.keys() - set(needed)
+    needed = list(dict.fromkeys([*needed, *method_inputs]))
     resolved, pending = {}, list(needed)
     clocks = {(r["time"], r["cycle"]) for r in source["records"]}
     while pending:
         name = pending.pop(0)
         if name in resolved:
             continue
-        candidates = records_by_name.get(name, [])
+        candidates = field_candidates(source, request, name, records_by_name)
         identities = {r["field_id"] for _, r in candidates}
         if not identities:
             raise ValueError(f"{context}: {name} unavailable in selected record inventory; "
@@ -1396,9 +1475,12 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                 for identity in sorted(identities)]
             raise ValueError(f"{context}: distinct fields share requested name {name!r}; "
                              f"conflicting fields {definitions}; "
-                             "qualified selectors are unsupported")
+                              "use an explicit vertical group; qualification must identify "
+                              "exactly one field")
         field_id = next(iter(identities))
-        if any(field_id == value[0] for value in resolved.values()):
+        # Generated method support keeps its native key and independent selector.
+        if any(field_id == value[0] and name not in generated and other not in generated
+               for other, value in resolved.items()):
             raise ValueError(f"{context}: duplicate field request by resolved identity {field_id}")
         field = source["fields"][field_id]
         available = {(r["time"], r["cycle"], tuple(sorted(r.get("native_axes", {}).items())))
@@ -1409,6 +1491,12 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
             raise ValueError(f"{context}: {name} unavailable at selected times/cycles/native axes; "
                              f"missing support {sorted(missing, key=str)}")
         resolved[name] = field_id, field, candidates
+        collisions = [dependency for dependency in field.get("dependencies", {})
+                      if field_selection(request, dependency)[1] is not None]
+        if collisions:
+            raise ValueError(f"{context}: required native support names {collisions} collide "
+                             "with qualified field references; use unambiguous flat requests "
+                             "rather than replacing source support")
         pending.extend(field.get("dependencies", {}))
 
     for name, (_, field, candidates) in resolved.items():
@@ -1457,10 +1545,15 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                 category = "3d" if axis else "2d"
                 descriptor["category"] = category
                 if name in declared and declared[name] != category:
+                    corrected = field["name"] if category == "2d" else name
                     raise ValueError(
                         f"{context}: {source['physical_type']} field {name!r} has category "
-                        f"{category}; use corrected YAML: variables: {{{category}: [{name}]}}")
+                        f"{category}; use corrected YAML: variables: {{{category}: [{corrected}]}}")
                 _coordinate_support(source, field, record)
+                if name != field["name"] and name in source["native_grids"][
+                        record["grid_id"]]["coordinates"]:
+                    raise ValueError(f"{context}: stored field name {name!r} collides "
+                                     "with required native coordinates")
                 native_axes[index] = axis
                 transform = next((t for t in request["transforms"]
                                   if product == "model_grid" and name in t["fields"]), {})
@@ -1485,15 +1578,19 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                                          "preserve the source field category")
                 jobs.append((product, name, index, record, axis, representation, descriptor))
 
-    if "values" in request["levels"] and "units" not in request["levels"]:
-        units = {_unit_identity(axis["descriptor"]["attributes"]["units"])
-                 for product, name, _, _, axis, _, _ in jobs
-                 if axis and axis["descriptor"]
-                 and not (product == "_dependencies" and name in ancillary_names)
-                 and unit_key(axis["descriptor"]["attributes"].get("units"))}
-        if len(units) > 1:
-            raise ValueError(f"{context}: value selection across different known units requires "
-                             "explicit variables.levels.units")
+    selectors = {None: request["levels"], **{
+        group: spec.get("levels", {}) for group, spec in request.get("groups", {}).items()}}
+    for group, selector in selectors.items():
+        if "values" in selector and "units" not in selector:
+            units = {_unit_identity(axis["descriptor"]["attributes"]["units"])
+                     for product, name, _, _, axis, _, _ in jobs
+                     if axis and axis["descriptor"] and field_selection(request, name)[1] == group
+                     and not (product == "_dependencies" and name in ancillary_names)
+                     and unit_key(axis["descriptor"]["attributes"].get("units"))}
+            if len(units) > 1:
+                raise ValueError(
+                    f"{context}: value selection across different known units requires "
+                    "explicit variables.levels.units or group levels.units")
     chosen, required_levels, bound_jobs, vertical_cache = set(), {}, {}, {}
     for product, name, index, record, axis, representation, descriptor in jobs:
         ancillary = product == "_dependencies" and name in ancillary_names and axis is not None
@@ -1503,7 +1600,7 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
             sample = (f" at {record['locator']['path']}, time {record['time']}, "
                       f"cycle {record['cycle']}" if record["locator"]["format"] == "fa" else "")
             selector = (method_selectors[name] if product == "_dependencies"
-                        and name in method_selectors else request["levels"])
+                        and name in method_selectors else field_selection(request, name)[2])
             vertical_cache[key] = _bind_vertical(
                 axis, selector, f"{context}.{product}.{name}{sample}",
                 binding["warnings"]) if axis and not ancillary else None
@@ -1527,7 +1624,7 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
             if record["level"] not in labels:
                 continue
         bound_record = {
-            **deepcopy(record), "selection_grid_id": (
+            **deepcopy(record), "request_reference": name, "selection_grid_id": (
                 representation["grid_id"] if representation else record["grid_id"]),
             "vertical": vertical, "source_positions": support,
         }
@@ -1582,8 +1679,9 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                 if set(needed_positions) - set(other["source_positions"]):
                     positions = list(dict.fromkeys(other["source_positions"] + needed_positions))
                     selector = {"indices": axis["native"][positions].tolist()}
-                    if "units" in request["levels"]:
-                        selector["units"] = request["levels"]["units"]
+                    units = field_selection(request, bound["request_reference"])[2].get("units")
+                    if units:
+                        selector["units"] = units
                     other["vertical"] = _bind_vertical(
                         axis, selector, f"{context}._dependencies.{dependency}",
                         binding["warnings"])
@@ -1591,7 +1689,8 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                     pending_support.append((("_dependencies", other_index), other))
                 _array_vertical_support(
                     parent, bound["source_positions"], axis, other["source_positions"],
-                    request["levels"].get("units"), support_context)
+                    field_selection(request, bound["request_reference"])[2].get("units"),
+                    support_context)
     for name in ancillary_names:
         records = []
         for (product, index), bound in bound_jobs.items():
@@ -1673,10 +1772,12 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                     # Construction checks the original record, declarations and geometry;
                     # native scaling/masks are checked only when this lazy payload executes.
                     fa_selected_array(record, source, options=options)
+                    field = source["fields"][record["field_id"]]
+                    metadata = source_field_declaration(source, field, record=record)
                     descriptor["field_metadata"] = {
-                        "attributes": deepcopy(options["field_metadata"][name]),
+                        "attributes": deepcopy(metadata),
                         "origins": {key: "declaration"
-                                    for key in options["field_metadata"][name]}}
+                                    for key in metadata}}
                     if record.get("vertical") is not None:
                         grid = source["native_grids"][record["grid_id"]]
                         if not grid.get("fa_hybrid_contract"):

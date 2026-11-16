@@ -21,9 +21,9 @@ class PublicationBoundaryTests(unittest.TestCase):
         path = Path(__file__).parent / 'source/tracker/utrack.rst'
         block = path.read_text().split('.. code-block:: yaml\n\n', 1)[1].split('\n\n', 1)[0]
         example = yaml.safe_load(textwrap.dedent(block))
-        self.assertEqual(example['tracking'], {
-            'method': 'utrack', 'utrack': {
-                'weights_file': './model_latest.ckpt', 'use_gpu': False, 'batch_size': 16}})
+        self.assertEqual(example['region']['tracker'], {
+            'method': 'utrack', 'weights_file': './model_latest.ckpt',
+            'use_gpu': False, 'batch_size': 16})
 
     def test_experimental_comparisons_are_development_only(self):
         for name in ('conservative_experiment', 'wind_method_comparison'):

@@ -321,6 +321,8 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
             coords={n: original[n].variable.copy(deep=False) for n in coordinates},
             attrs=dict(original.attrs),
         )
+        if name != variable:
+            dataset[name].attrs["source_variable_name"] = variable
         indexers = {dim: [position] for dim, position in
                     locator["coordinate_indexers"].items() if dim in dataset.dims}
         indexers.update({dim: [position] for dim, position in locator["indexers"].items()

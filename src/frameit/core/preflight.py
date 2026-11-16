@@ -30,7 +30,12 @@ from frameit.io.loader import (
     inventory_source_files,
     resolve_input_files,
 )
-from frameit.processing.requests import bind_requests, normalize_requests, selected_native_indices
+from frameit.processing.requests import (
+    bind_requests,
+    field_candidates,
+    normalize_requests,
+    selected_native_indices,
+)
 from frameit.processing.wind_reference import (
     MESONH_PROJECTION_METADATA,
     inspect_wind_metadata,
@@ -809,39 +814,50 @@ def inventory_source(conf, name, *, resources=None):
             or "polar" in request["exports"]
             or tracker and physical == "atmosphere"):
         dependency_resolution = "pending_method_binding"
+    from frameit.core.configuration import field_selection
+
+    selection_source = {"fields": fields, "native_grids": grids, "format": fmt}
     by_name = {}
+    for index, record in enumerate(records):
+        by_name.setdefault(record["name"], []).append((index, record))
+    candidates = {ref: field_candidates(selection_source, request, ref, by_name) for ref in needed}
+    by_field_name = {}
     for field_id, field in fields.items():
-        by_name.setdefault(field["name"], []).append(field_id)
+        by_field_name.setdefault(field["name"], []).append(field_id)
     pending = list(required)
     while pending:
         field_name = pending.pop()
-        for field_id in by_name.get(field_name, []):
-            for dep in fields[field_id].get("dependencies", {}):
+        for _, record in candidates.get(field_name, []):
+            for dep in fields[record["field_id"]].get("dependencies", {}):
                 if dep not in required:
                     required.add(dep)
                     needed.add(dep)
+                    candidates[dep] = field_candidates(selection_source, request, dep, by_name)
                     pending.append(dep)
-    missing = required - by_name.keys()
+    missing = {ref for ref in required if not candidates.get(ref)}
     if missing:
         raise PreflightError([Diagnostic(
             f"sources.{name}.variables",
             f"required fields/dependencies {sorted(missing)} unavailable in selected files",
             {"required_fields": sorted(required)},
-            {"available_fields": sorted(n for n in by_name if n is not None),
+            {"available_fields": sorted(n for n in by_field_name if n is not None),
              "missing_fields": sorted(missing)},
             [f"Select files containing {', '.join(sorted(missing))}, "
              "or correct the required field names. "
              "Dependencies cannot widen the authored files/time selection."],
             contexts=[{"source": name, "files": [entry["path"] for entry in entries]}])])
-    relevant = [r for r in records if r["name"] in needed]
+    relevant_indices = {i for ref in needed for i, _ in candidates.get(ref, [])}
+    relevant = [r for i, r in enumerate(records) if i in relevant_indices]
     if not relevant and not required and not tracker and not source.get("time"):
         selected, times = [], []
     else:
         selected, times = _select_source_records(
             relevant, source.get("time", {}), f"sources.{name}")
     errors, providers, conflicts = [], {}, []
-    for field_name in sorted(required & by_name.keys()):
-        identities = {r["field_id"] for r in selected if r["name"] == field_name}
+    required_ids = {ref: {r["field_id"] for _, r in candidates[ref]} for ref in required}
+    for field_name in sorted(required):
+        matching = [r for r in selected if r["field_id"] in required_ids[field_name]]
+        identities = {r["field_id"] for r in matching}
         if len(identities) > 1:
             definitions = [
                 {"identity": identity, "dimensions": fields[identity]["dimensions"],
@@ -851,8 +867,9 @@ def inventory_source(conf, name, *, resources=None):
                 for identity in sorted(identities)]
             errors.append(f"sources.{name}: distinct fields share requested name {field_name!r}; "
                           f"conflicting fields {definitions}; "
-                          "qualified selectors are unsupported")
-        available = {r["time"] for r in selected if r["name"] == field_name}
+                          "use an explicit vertical group; qualification must identify "
+                          "exactly one field")
+        available = {r["time"] for r in matching}
         if field_name in required and set(times) - available:
             errors.append(f"sources.{name}: {field_name} unavailable at selected times "
                           f"{sorted(set(times) - available)}; "
@@ -862,14 +879,16 @@ def inventory_source(conf, name, *, resources=None):
                tuple(sorted(record.get("native_axes", {}).items())))
         if key in providers:
             pending_status = None
-            if record["name"] not in required:
+            references = [ref for ref, ids in required_ids.items() if record["field_id"] in ids]
+            if not references:
                 pending_status = ("pending_method_binding"
                                   if dependency_resolution == "pending_method_binding"
                                   else "pending_field_binding")
-            elif (fmt == "grib" and record["name"] in (
-                    set(request["fields"]["3d"])
-                    | set(request["internal_inputs"]) - set(request["fields"]["2d"]))
-                  and request["levels"].keys() & {"indices", "values", "domain"}):
+            elif fmt == "grib" and any(
+                    ref in (set(request["fields"]["3d"])
+                            | set(request["internal_inputs"]) - set(request["fields"]["2d"]))
+                    and field_selection(request, ref)[2].keys() & {"indices", "values", "domain"}
+                    for ref in references):
                 pending_status = "pending_level_binding"
             if pending_status:
                 # Binding must reject any required conflict; neither provider is chosen here.
@@ -943,7 +962,7 @@ def inventory_source(conf, name, *, resources=None):
 
         origins = {}
         for record in selected:
-            if record["name"] not in required:
+            if not any(record["field_id"] in ids for ids in required_ids.values()):
                 continue
             field = fields[record["field_id"]]
             metadata = source_field_metadata(result, field, record=record)
@@ -964,40 +983,58 @@ def inventory_source(conf, name, *, resources=None):
 
 def _available_source_selectors(source):
     """Reuse the binder's axis evidence, without binding or checking scientific values."""
-    from frameit.processing.requests import _field_axis, _vertical_axis
+    from frameit.processing.requests import _field_axis, _vertical_axis, native_field_group
 
     source["available_selectors"], source["selection_pending"] = [], []
     by_name, records_by_name = {}, {}
-    for field in source["fields"].values():
-        by_name.setdefault(field["name"], []).append(field)
+    for field_id, field in source["fields"].items():
+        by_name.setdefault(field["name"], []).append((field_id, field))
     for index, record in enumerate(source["record_inventory"]):
         records_by_name.setdefault(record["name"], []).append((index, record))
     for name, fields in by_name.items():
         if name is None:
             continue
-        if len(fields) != 1 or any(
-                conflict["name"] == name for conflict in source["provider_conflicts"]):
-            source["selection_pending"].append(
-                f"{name}: select unambiguous files/exclude/time.cycle before selecting this field; "
-                "qualified selectors are unsupported.")
-            continue
-        field = fields[0]
-        try:
-            records = records_by_name.get(name, [])
-            if source["format"] == "fa":
-                if field.get("dimensions") is None:
-                    raise ValueError(f"{name}: native shape is unresolved")
-                axis = field.get("native_cube")
-            elif records:
-                axis = _field_axis(source, field, records[0][1], records_by_name)
+        evidenced = []
+        for field_id, field in fields:
+            records = [(i, r) for i, r in records_by_name.get(name, [])
+                       if r["field_id"] == field_id]
+            if source["record_inventory"] and not records:
+                continue
+            try:
+                if source["format"] == "fa":
+                    if field.get("dimensions") is None:
+                        raise ValueError(f"{name}: native shape is unresolved")
+                    axis = field.get("native_cube")
+                elif records:
+                    axis = _field_axis(source, field, records[0][1], records_by_name)
+                else:
+                    axis = _vertical_axis(field, source["native_grids"][field["grid_id"]])
+                group = native_field_group(source, field, records[0][1] if records else None)
+            except ValueError as exc:
+                source["selection_pending"].append(str(exc))
+                continue
+            evidenced.append((field_id, axis, group))
+        for field_id, axis, group in evidenced:
+            conflict = any(c["field_id"] == field_id for c in source["provider_conflicts"])
+            if len(fields) > 1:
+                matching = [entry for entry in evidenced if entry[2] == group]
+                if (axis is None or not group or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", group)
+                        or len(matching) != 1 or conflict):
+                    source["selection_pending"].append(
+                        f"{name}: select unambiguous files/exclude/time.cycle; "
+                        "the native vertical group does not identify one available field.")
+                    continue
+                selector = {"field": f"{group}.{name}",
+                            "variables": {"3d": {group: {"names": [name]}}}}
+            elif conflict:
+                source["selection_pending"].append(
+                    f"{name}: select unambiguous files/exclude/time.cycle "
+                    "before selecting this field.")
+                continue
             else:
-                axis = _vertical_axis(field, source["native_grids"][field["grid_id"]])
-        except ValueError as exc:
-            source["selection_pending"].append(str(exc))
-            continue
-        source["available_selectors"].append({
-            "field": name, "variables": {"3d" if axis is not None else "2d": [name]},
-        })
+                selector = {
+                    "field": name, "variables": {"3d" if axis is not None else "2d": [name]}}
+            source["available_selectors"].append(selector)
     if not source["selected_times"]:
         source["selection_pending"].append("A decoded sample clock is required before execution.")
 

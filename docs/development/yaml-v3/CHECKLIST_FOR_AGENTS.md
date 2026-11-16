@@ -322,19 +322,37 @@ time:
 
 ### C3. Fields and levels
 
+**Maintainer-approved amendment (2026-11-16):** optional native vertical groups
+extend the previous flat-only freeze. See `c3-grouped-requests-design.md` and its
+implementation plan for the reference/output handoff and review requirements.
+Approval covers request expressiveness, not changed scientific selections or
+unrelated core fixes. Implementation/review evidence remains in STATE.
+
 - Use `variables.2d` for horizontal source fields without a selectable vertical axis, and
   `variables.3d` for fields with one. Time is not a spatial axis.
 - Discover native groups and dimensions. A single selected level of a 3D field
   remains a `3d` request and retains a vertical dimension of length one.
 - A wrong category is an error. Show the source type and corrected YAML.
-- Ordinary selectors are source field names. Distinct fields sharing a requested
-  name within one source are unsupported. Identify the conflicting fields; never
-  choose one or offer a qualified selector. Repeated times of one field are allowed.
+- Flat selectors are source field names. Distinct fields sharing a requested
+  name require an explicit native vertical group, even if only one is wanted.
+  Qualification must identify one field; never choose among remaining identities.
+  Unrequested ambiguous names do not block other fields. Repeated times/levels of
+  one field are not name ambiguity.
 - Reject duplicate field requests by resolved identity. Keep name ambiguity separate
   from competing providers of the same record.
-- One optional `variables.levels` applies to every requested 3D field and 3D derived
-  result in that source, on each requested product's representation. No per-field,
-  per-result, or separate polar level overrides exist. It does not affect 2D fields.
+- A flat `variables.3d` list keeps one optional `variables.levels` for every
+  requested 3D field/result in that source, on each product's representation.
+- Alternatively, `variables.3d.<native-group>` has required nonempty `names`
+  and optional local `levels`. Group keys are inspected native identifiers
+  matching `[A-Za-z][A-Za-z0-9_-]*`, not aliases. Grouped mode forbids source-wide
+  `variables.levels`. Raw source names stay in `names`; references elsewhere use
+  `<native-group>.<field>`, including internal inputs and metadata declarations.
+- A grouped 3D derived result uses the common selector of its vertically varying
+  inputs. Different input selectors fail. No per-result or separate polar
+  override exists. No selector affects 2D fields.
+- Different group selections that land on the same destination axis with unequal
+  coordinates/units fail in preflight; use matching selections or separate runs.
+  Do not pad, align or invent an output-axis naming scheme to admit them.
 - Omission keeps all available levels on each field's grid. Their axis lengths may differ.
 - When subsetting, choose exactly one of `indices`, `values`, or `domain: physical`.
   Selection alone never interpolates vertically.
@@ -385,6 +403,17 @@ variables:
     domain: physical
 ```
 
+```yaml
+variables:
+  3d:
+    heightAboveGround:
+      names: [u, v]
+      levels: {indices: [0, 2, 5]}
+    isobaricInhPa:
+      names: [u, v]
+      levels: {values: [1000, 850, 400], units: hPa}
+```
+
 ### C4. Source meaning, transforms, and derived fields
 
 - Native extraction preserves source samples, grids, units, masks, and quantities.
@@ -418,6 +447,7 @@ variables:
 - Native copying of one wind component does not require a pair, basis declaration,
   or unselected companion. Operations that need them use reliable metadata first.
 - When needed, declare `wind_pairs` entries with `u`, `v`, and `basis`, without groups.
+  Grouped source fields use qualified references in `u`/`v`, not another pair key.
   Resolve supported rotation from adapter evidence and report the chosen method.
 - `wind_pairs[].rotation.method` accepts `coordinate`, `geolocation`, or
   `mesonh_projection`. The `coordinate` method uses the `coordinate` setting.
@@ -535,7 +565,7 @@ region:
 - Field products reuse source `variables` and `derived`. Optional `fields` gives
   exact lists by source name. It narrows declared requests; unlisted sources/fields
   are excluded. Reject unknown references. Internal inputs need not be exported.
-- The source's shared level selector applies to every requested representation.
+- The applicable source or native-group selector applies to every requested representation.
 - Polar output reuses the region's centre provider and requires `radius_km`.
   It does not require model-grid export or `region.width_km`.
 - Derive polar input support separately from the exported model-grid crop.
@@ -624,6 +654,9 @@ The fragment needs source declarations and a centre provider.
   use exported dimensions and element counts, not physical resolution.
 - Map each requested field/result to source, relative dataset path, stored name,
   dimensions, units, and representation. Preview planned paths; record actual publications.
+- Grouped base fields always use their `<native-group>.<field>` reference as
+  stored name, even when filtered to one group. Flat fields/results retain their
+  existing names. Keep native IDs/names/locators in provenance; reject collisions.
 - `run-status.yaml` remains authoritative. Distinguish completed, incomplete, failed,
   interrupted, and last-known running attempts. Preserve per-product publication
   limits, including the Zarr replacement visibility gap.
@@ -703,7 +736,8 @@ Centres are `center_latitude(time)` and `center_longitude(time)`.
   `inspect <file>`, `validate <file>`, and `run <file>`.
 - Inspection accepts unfinished source requests. Show available field types, units,
   levels, times, resolved paths, unresolved facts, and copyable valid selectors.
-  Do not offer qualified selectors for unsupported duplicated names.
+  Offer qualified 3D selectors only when native-group evidence identifies one
+  admitted field; within-group ambiguity remains a reported failure.
 - `validate` combines schema, metadata/coordinates, required installed dependencies,
   and a readable plan. `--schema-only` opens no input datasets and states what was
   not checked. Ordinary validation and shared preflight read metadata and needed
@@ -817,12 +851,12 @@ assertion, or mark a failed check as passed. The final full suite remains requir
 | [x] | 07 | 05 | Explicit SEA and FA source interpretation |
 | [x] | 08 | 07 | Explicit transforms and derived requests |
 | [x] | 09 | 06, 08 | Product-driven polar processing |
-| [ ] | 10 | 09 | Complete coordinate and writer contract |
-| [ ] | 11 | 10 | CPU budget and chunk/storage settings |
-| [ ] | 12 | 10 | Early request records and accurate publication status |
-| [ ] | 13 | 11, 12 | Shared preflight, errors, and structured reports |
-| [ ] | 14 | 13 | Integrated execution and honest progress |
-| [ ] | 15 | 14 | CLI, preserved init, capabilities, editor schema |
+| [x] | 10 | 09 | Complete coordinate and writer contract |
+| [x] | 11 | 10 | CPU budget and chunk/storage settings |
+| [x] | 12 | 10 | Early request records and accurate publication status |
+| [x] | 13 | 11, 12 | Shared preflight, errors, and structured reports |
+| [x] | 14 | 13 | Integrated execution and honest progress |
+| [x] | 15 | 14 | CLI, preserved init, capabilities, editor schema |
 | [ ] | 16 | 15 | All config producers and canonical examples use v3 |
 | [ ] | 17 | 16 | Analytical tutorial cases and task pages |
 | [ ] | 18 | 16 | Repeated-case and Slurm-array examples |

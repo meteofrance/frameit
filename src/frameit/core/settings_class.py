@@ -565,9 +565,10 @@ class SimulationConfig:
                 s.update(req.get("variables", []))
             return sorted(s)
         if self.schema_version == 3:
+            from frameit.core.configuration import _declared_fields
+
             return sorted({name for source in self.sources.values()
-                           for name in (*source["variables"].get("2d", []),
-                                        *source["variables"].get("3d", []), *source["derived"])})
+                           for name in _declared_fields(source)})
         return list(self.variables)
 
     def expected_variables_tracker(self) -> list[str]:

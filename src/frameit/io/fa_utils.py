@@ -201,9 +201,10 @@ def fa_selected_array(record, source_plan, *, options, diagnostics_path=None):
     field = source_plan["fields"][record["field_id"]]
     cube = field.get("native_cube")
     declaration = options["field_metadata"].get(record["name"])
-    original_declaration = source_plan.get("declaration", {}).get(
-        "field_metadata", {}).get(record["name"])
-    if original_declaration is not None and declaration != original_declaration:
+    from frameit.processing.requests import source_field_declaration
+
+    original_declaration = source_field_declaration(source_plan, field, record=record)
+    if original_declaration and declaration != original_declaration:
         raise ValueError(f"{context}: FA field requires its original source field_metadata")
     if cube:
         if cube != options["native_cubes"].get(record["name"]):
@@ -330,33 +331,44 @@ def _selected_fa(files, binding, source, conf, resources):
     provenance = []
 
     def groups(descriptors, *, internal=False):
+        from frameit.core.configuration import field_selection
+        from frameit.processing.requests import native_field_group
+
         by_grid, vertical_dims = {}, set()
         for name, descriptor in descriptors.items():
             if descriptor.get("operation"):
                 continue
+            native_name, native_group, _ = field_selection(source.get("requests", {}), name)
             samples = {}
             for record in descriptor["records"]:
+                field = source["fields"].get(record["field_id"])
+                if (field is None or descriptor["field_id"] != record["field_id"]
+                        or native_name != record["name"]
+                        or native_group is not None
+                        and native_group != native_field_group(source, field, record)):
+                    raise ValueError(
+                        f"{name}: selected reference contradicts bound native identity")
                 if Path(record["locator"]["path"]).resolve() not in admitted:
                     raise ValueError(f"{name}: selected locator is outside the admitted FA files")
                 array = fa_selected_array(
                     record, source, options=conf.fa_options,
                     diagnostics_path=str(decoder_log) if decoder_log is not None else None)
                 grid = source["native_grids"][record["grid_id"]]
-                dataset = array.to_dataset()
+                dataset = array.rename(name).to_dataset()
                 cube = source["fields"][record["field_id"]].get("native_cube")
                 if cube:
                     group = record["vertical"]["dimension"]
                     vertical_dims.add(group)
                     dataset = add_cube_coordinates(dataset, {
                         "hybrid_contract": grid["fa_hybrid_contract"],
-                        "native_cubes": {name: {
+                        "native_cubes": {record["name"]: {
                             **cube, "group": group,
                             "levels": array[group].values.tolist(),
                             "source_native_indices": record["vertical"]["source_native_indices"],
                             "records": record["locator"]["records"]}}})
                     dataset[name].attrs.update(
                         ancillary_variables=" ".join(
-                            (*HYBRID_AUXILIARIES, f"{name}_native_record")),
+                            (*HYBRID_AUXILIARIES, f"{record['name']}_native_record")),
                         fa_vertical_position=cube["vertical_position"],
                         fa_sampling_origin="explicit source.native_cubes",
                         fa_physical_coordinates="not computed")

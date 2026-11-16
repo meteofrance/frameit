@@ -138,7 +138,8 @@ scalar request, asking for both products:
 
 Omitted ``products`` requests only model-grid output. An explicit empty mapping
 is invalid. A centre provider alone requests neither a track file nor polar output.
-Source-level shared selectors apply to both products' actual representations.
+The applicable source or vertical-group selector applies to both products'
+actual representations; see :ref:`explicit-vertical-groups`.
 
 Output structure
 ~~~~~~~~~~~~~~~~

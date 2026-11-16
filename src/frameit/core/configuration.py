@@ -65,6 +65,7 @@ V3_KEYS = {
                "wind_pairs", "transforms", "derived"),
     "time": ("cycle", "start", "end", "values", "stride"),
     "variables": ("2d", "3d", "levels"),
+    "vertical_group": ("names", "levels"),
     "levels": ("indices", "values", "domain", "units"),
     "field_metadata": ("units", "kind", "temporal_kind", "allow_unscaled",
                        "long_name", "standard_name"),
@@ -163,7 +164,13 @@ def configuration_schema():
         "values": {"anyOf": [array(number), obj({
             "min": number, "max": number}, ("min", "max"))]},
         "domain": {"const": "physical"}, "units": text})
-    defs["variables"] = obj({"2d": names, "3d": names, "levels": ref("levels")})
+    defs["vertical_group"] = obj({"names": names, "levels": ref("levels")}, ("names",))
+    groups = mapping(ref("vertical_group"), minProperties=1,
+                     propertyNames={"pattern": "^[A-Za-z][A-Za-z0-9_-]*$"})
+    defs["variables"] = obj({
+        "2d": names, "3d": {"anyOf": [names, groups]}, "levels": ref("levels")},
+        **{"not": {"required": ["3d", "levels"],
+                   "properties": {"3d": {"type": "object"}}}})
     defs["field_metadata"] = obj({
         **{key: text for key in ("units", "long_name", "standard_name")},
         "kind": choice("kind"), "temporal_kind": choice("temporal_kind"),
@@ -935,10 +942,29 @@ def _source(raw, name, base):
     if "time" in source:
         source["time"] = _time(source["time"], f"{path}.time")
     variables = _keys(source.get("variables", {}), V3_KEYS["variables"], f"{path}.variables")
-    names = []
     for category in ("2d", "3d"):
         if category in variables:
-            names.extend(_names(variables[category], f"{path}.variables.{category}"))
+            value = variables[category]
+            loc = f"{path}.variables.{category}"
+            if category == "3d" and isinstance(value, dict):
+                if not value:
+                    raise ValueError(f"{loc} must be a nonempty group mapping")
+                if "levels" in variables:
+                    raise ValueError(f"{path}.variables.levels cannot accompany grouped 3d; "
+                                     "put levels inside each group")
+                for group, spec in value.items():
+                    if not isinstance(group, str) or not re.fullmatch(
+                            r"[A-Za-z][A-Za-z0-9_-]*", group):
+                        raise ValueError(f"{loc}: vertical group must be a native axis identifier "
+                                         "containing letters/digits/_/- and starting with a letter")
+                    checked = _keys(spec, V3_KEYS["vertical_group"], f"{loc}.{group}",
+                                    required={"names"})
+                    _names(checked["names"], f"{loc}.{group}.names")
+                    if "levels" in checked:
+                        checked["levels"] = _levels(checked["levels"], f"{loc}.{group}.levels")
+            else:
+                _names(value, loc)
+    names = [field for fields in _variable_fields(variables).values() for field in fields]
     if len(set(names)) != len(names):
         raise ValueError(f"{path}.variables contains duplicate field requests")
     if "levels" in variables:
@@ -1023,13 +1049,20 @@ def _source(raw, name, base):
                 message = message.replace(f"input.fa.{key}", f"{path}.{section}{key}")
             message = message.replace("input.format fa", f"{path}.format: fa")
             raise ValueError(f"{path}: {message}") from exc
-        if variables.get("levels", {}).get("domain") == "physical":
-            raise PreflightError([Diagnostic(
-                f"{path}.variables.levels",
-                f"{path}.variables.levels: FA physical-domain selection is gated",
-                {"selection": ["indices", "values"]}, variables["levels"],
-                [f"Do not use physical-domain selection in {path}.variables.levels for FA."])])
-        for field in variables.get("3d", []):
+        selectors = (
+            [(f"{path}.variables.3d.{group}.levels", spec.get("levels", {}))
+             for group, spec in variables["3d"].items()]
+            if isinstance(variables.get("3d"), dict)
+            else [(f"{path}.variables.levels", variables.get("levels", {}))])
+        for location, levels in selectors:
+            if levels.get("domain") == "physical":
+                raise PreflightError([Diagnostic(
+                    location, f"{location}: FA physical-domain selection is gated",
+                    {"selection": ["indices", "values"]}, levels,
+                    [f"Do not use physical-domain selection in {location} for FA."])])
+        cube_names = ([field for spec in variables["3d"].values() for field in spec["names"]]
+                      if isinstance(variables.get("3d"), dict) else variables.get("3d", []))
+        for field in cube_names:
             if field not in options["native_cubes"]:
                 raise PreflightError([Diagnostic(
                     f"{path}.variables.3d.{field}",
@@ -1114,6 +1147,22 @@ def _fa_runtime_options(source):
     for key in ("profile", "native_cubes", "field_metadata"):
         if key in source:
             options[key] = copy.deepcopy(source[key])
+    groups = source.get("variables", {}).get("3d", {})
+    if isinstance(groups, dict):
+        metadata = {}
+        for reference, declaration in options["field_metadata"].items():
+            name, group, _ = field_selection({"groups": groups}, reference)
+            if group is not None:
+                cube = options["native_cubes"].get(name, {})
+                native_group = ("level_w" if cube.get("vertical_position") == "interface"
+                                else "level" if cube.get("vertical_position") == "mass" else None)
+                if group != native_group:
+                    raise ValueError(f"field_metadata.{reference}: group does not match "
+                                     "the explicit native cube")
+            if name in metadata and metadata[name] != declaration:
+                raise ValueError(f"field_metadata.{reference}: conflicting native declarations")
+            metadata[name] = declaration
+        options["field_metadata"] = metadata
     options.update({key: value for key, value in source.get("reader", {}).items()
                     if key in {"python_executable", "timeout_seconds", "max_points"}})
     return options
@@ -1409,9 +1458,25 @@ def _products(raw, sources, region):
     return products
 
 
+def _variable_fields(variables):
+    fields = {key: list(variables.get(key, [])) for key in ("2d", "3d")}
+    if isinstance(variables.get("3d"), dict):
+        fields["3d"] = [f"{group}.{name}" for group, spec in variables["3d"].items()
+                        for name in spec["names"]]
+    return fields
+
+
+def field_selection(request, reference):
+    """Keep a request key separate from its native field name and local selector."""
+    group, separator, name = reference.partition(".")
+    if separator and group in request.get("groups", {}):
+        return name, group, request["groups"][group].get("levels", {})
+    return reference, None, request.get("levels", {})
+
+
 def _declared_fields(source):
-    return [*source["variables"].get("2d", []), *source["variables"].get("3d", []),
-            *source["derived"]]
+    fields = _variable_fields(source["variables"])
+    return [*fields["2d"], *fields["3d"], *source["derived"]]
 
 
 def _product_fields(spec, sources, name):
@@ -1557,7 +1622,9 @@ def resolve_schema(raw, *, base_dir=None):
         # Cycles are invalid declarations even when a product filters the result out.
         _derived_inputs(source, list(source["derived"]))
         requests[name] = {
-            "fields": {key: copy.deepcopy(source["variables"].get(key, [])) for key in ("2d", "3d")},
+            "fields": copy.deepcopy(_variable_fields(source["variables"])),
+            **({"groups": copy.deepcopy(source["variables"]["3d"])}
+               if isinstance(source["variables"].get("3d"), dict) else {}),
             "levels": copy.deepcopy(source["variables"].get("levels", {})),
             "derived": copy.deepcopy(source["derived"]),
             "exports": exports, "internal_inputs": internal,

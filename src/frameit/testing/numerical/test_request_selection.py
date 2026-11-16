@@ -412,7 +412,7 @@ def test_v3_field_and_level_binding(tmp_path, monkeypatch, case):
             source["fields"]["distinct-field"] = copy.deepcopy(
                 source["fields"][candidates[0]["field_id"]])
             source["record_inventory"].append(duplicate)
-            error = "distinct fields.*T.*qualified selectors are unsupported"
+            error = "distinct fields.*T.*qualification must identify exactly one field"
         elif case == "promoted_missing_time":
             source["record_inventory"] = [
                 r for r in source["record_inventory"] if r["name"] != "T"

@@ -40,7 +40,8 @@ Find the detailed contract
 All-options example
 -------------------
 
-Each source has its own field lists and one shared level selector. ``2d`` means
+Each source has its own field lists and a shared level selector, or explicit
+vertical groups with local selectors (see :ref:`explicit-vertical-groups`). ``2d`` means
 no selectable vertical axis, not necessarily the ground. FA field/cube names
 and annotation keys are user-chosen names. Commented alternatives must replace
 the active choice, not be added beside it.

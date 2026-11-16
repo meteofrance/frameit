@@ -2,8 +2,8 @@ Select fields and vertical levels
 =================================
 
 Inspect field names, dimensions, coordinates and units in the intended stream.
-Use source field names under ``variables.2d`` or ``variables.3d``, not native
-group names. A 2D field has no selectable vertical axis; time does not count as
+Use source field names under ``variables.2d`` or ``variables.3d`` when each name
+identifies one field. A 2D field has no selectable vertical axis; time does not count as
 a spatial axis. A field with one saved vertical level is still 3D.
 
 This complete request selects sea-level pressure and temperature at two existing
@@ -35,11 +35,11 @@ height because a preferred name is absent. Ambiguous field names and wrong
 
 .. _choose-one-level-strategy-per-group:
 
-Choose one level strategy per source
--------------------------------------
+Choose a level strategy
+-----------------------
 
-One ``variables.levels`` applies to every requested 3D field and 3D derived
-result in that source. It does not affect 2D fields or another source.
+With a flat ``3d`` list, one ``variables.levels`` applies to every requested 3D
+field and result in that source. It does not affect 2D fields or another source.
 Selection never calculates new layers. Choose one strategy, or omit it:
 
 * **Keep every saved level:** omit ``levels``. Each field keeps its own grid
@@ -59,6 +59,51 @@ Selection never calculates new layers. Choose one strategy, or omit it:
 Lists preserve their written order. Intervals and omitted selections preserve
 grid order. Duplicate or unavailable levels fail, even when only one requested
 field lacks them. Selecting one level retains a vertical axis of length one.
+
+.. _explicit-vertical-groups:
+
+Separate native vertical groups
+-------------------------------
+
+Use groups when a requested name identifies distinct fields, or different axes
+need different level selections. Qualification is required even when you want
+only one of the fields called ``u``. Repeated times or levels of one field are
+not name ambiguity. Unrequested ambiguous names do not block another field.
+
+This supplementary source fragment selects original height positions and
+existing pressure labels independently:
+
+.. code-block:: yaml
+
+   variables:
+     2d: [prmsl]
+     3d:
+       heightAboveGround:
+         names: [u, v]
+         levels: {indices: [0, 2, 5]}
+       isobaricInhPa:
+         names: [u, v]
+         levels: {values: [1000, 850, 400], units: hPa}
+
+Use native group identifiers from inspection, not aliases. For GRIB these are
+the stored level types; for NetCDF they are selectable vertical dimensions.
+FA cubes use their admitted ``level`` or ``level_w`` dimension.
+A group name starts with a letter and contains letters, digits, ``_`` or ``-``.
+Each group needs a nonempty ``names`` list. Omitted local ``levels`` keeps all
+levels. Do not combine grouped ``3d`` with source-wide ``variables.levels``.
+
+Refer to these fields as ``heightAboveGround.u`` or ``isobaricInhPa.u`` in
+wind pairs, transforms, derived inputs, field metadata, product filters and
+polar field options. Grouped fields keep those names in the output; use
+``ds["heightAboveGround.u"]`` with xarray. A product filter does not disambiguate
+a bare name. Qualification must still identify exactly one actual field;
+competing providers and ambiguity within the same group fail.
+
+A 3D derived result uses the common level selector of its vertically varying
+inputs. Different input selectors fail rather than choosing one. Transforms
+still select on their destination grid. If different group selections land on
+the same output axis with unequal labels or units, use matching selections on
+that grid or separate runs. FrameIt does not pad or align them silently.
 
 Units and representations
 ---------------------------
@@ -110,7 +155,7 @@ copies of your request numbers.
 Selection grid
 ~~~~~~~~~~~~~~~
 
-The shared selector is applied separately on each product's representation.
+The applicable source or group selector is applied separately on each product's representation.
 An explicit transform to mass points selects levels on that destination grid.
 Native W index 5 remains an interface; mass-point W index 5 is a different
 sampling location. A model-grid transform does not also remap polar W.

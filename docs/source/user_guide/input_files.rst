@@ -156,8 +156,9 @@ requesting an operation that needs component directions.
 input, in addition to the existing names/units mapping under ``variables``.
 Each record identifies the field by ``name`` and, for GRIB, its inventory
 ``group`` so repeated names on different level types remain separate.
-Group labels describe native metadata, not qualified selectors. Distinct fields
-sharing a requested name are unsupported; FrameIt reports the conflict.
+Group labels describe native metadata. Use an explicit vertical-group request
+when distinct fields share a name; qualification must still identify one field.
+See :ref:`explicit-vertical-groups` for copyable syntax and references.
 ``attributes`` contains the recorded units, CF ``standard_name``, component
 flags and ``wind_reference_frame`` when present. Missing attributes are omitted,
 not filled with assumptions. Relevant dataset-wide evidence is retained

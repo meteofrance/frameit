@@ -43,8 +43,8 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 12 | done | Task12 worker + lead + independent reviewer | 10,11 | `69e6992`; records/checkpoints approved after I1; frozen handoff below. |
 | 13 | done | Task13 worker + lead + independent reviewer | 11, 12 | `106812d`; shared reports/diagnostics approved after two fix rounds; frozen handoff below. |
 | 14 | done | Task14 worker + lead + independent reviewer | 13 | `bde826b`; owning plan/progress approved, A1 corrected; frozen handoff below. |
-| 15 | done | Task15 worker + lead + independent reviewer | 14 | C9 surface approved after fix1; frozen handoff below, local commit in ledger. |
-| 16 | blocked | lead | 15 | All producers, canonical examples, public guides and tests; direct v3 guidance. |
+| 15 | done | Task15 worker + lead + independent reviewer | 14 | `40f9bcd`; C9 surface approved after fix1, frozen handoff below. |
+| 16 | active | Task16 worker + lead docs | 15 | Direct-v3 producers, callers/checker/benchmark and canonical examples. |
 | 17 | blocked | lead | 16 | Analytical fixtures and task pages; ocean fixture formula approved, not implemented. |
 | 18 | blocked | unassigned | 16 | Repeated-case/Slurm examples and tests. |
 | 19 | blocked | lead | 16, 18 | Full integration, wheel and contract evidence matrix. |
@@ -3631,6 +3631,194 @@ editor/status plus actual suppression and private failure facts; no scientific/
 output/record-schema/dependency/environment change. Local commit precedes16.
 Producer16/tutorial17/HPC18/native-integration19/docs20/human21/Task09Minor3
 retain named gates. No push or merge.
+
+## Task16 active producer/example boundary
+
+Base40f9bcdb4429fe1755aab871c2b7f9d5916af51e; clean tree verified after15commit.
+Fresh sole worker owns testing producers/catalogues/recipes, canonical YAML and
+plot consumers, static reference YAML and affected tests/caller conversion.
+Lead owns README/published prose/STATE/contract/commits. No runtime/reader/
+scientific/writer/ownership/progress changes without a concrete authorized
+boundary. Shared helper signatures and scientific/privacy/safety assertions stay.
+Convert directly to3; no public v2 converter or second planner.
+
+Actual-descriptor checker/per-product source clocks/optional trajectory and the
+two named real execution/checker/one-small-benchmark tests are required.
+Catalogue1/artifact1.0/report-record1/FA/package versions remain distinct.
+Exact first-run/quick-start outputs/independent readbacks and canonical guidance
+must agree. Both Task15newly rejected callers and20changed-root scenarios need
+restoration without weakening their unexecuted scientific/privacy guards.
+The remaining red-suite causes also retain their actual identities/dispositions.
+
+Prior inventory2751nodes:608post-fix1/2143PRE-fix1,2325passed424failed2errors;
+required264IDs=150passed113failed1error. Not a16run or corrected15full.
+Task16 owes focused/caller-covering/exact required then one full after genuine
+freeze and independent task-walkthrough review. No benchmark campaign/download/
+installation/environment repair. Existing PNGsmokes stay inside required
+unfiltered suites only; no standalone plotting/image/screenshot/pixel review.
+Canonical70is prior checked preview until new commands/strictdocs/text-GUI checks.
+Scientific conflicts must be surfaced, not settled by substituting quantities/
+units/bases/masks/times.17tutorials/18HPC/19integration-native/20docs/21human gates
+and independent schema conformance/installed-wheel limits remain.
+task-16-producer-contract.md records the consumer boundary; no16result claimed.
+
+Task16 worker reports a real C3conflict before implementation: existing AROME
+catalogue requests distinct u/v identities on pressure/height/PV grids and
+different per-group level strategies. Frozen C3 forbids ambiguous/qualified
+names and permits one selector per source; C1forbids two atmospheric sources.
+Lead reads128report lines/catalogue/C3 and independently reproduces the three
+intended rejections.12fixture/9payload hashes exact/no output/source edit.
+The244path/3983assertion preservation and2passing guard tests are bounded
+blocker evidence, not implementation or scientific qualification.
+
+No data/fields/levels/cases or guard is silently changed. Maintainer disposition
+is requested: retain C3and explicitly accept unsupported catalogue coverage, or
+authorize a separately designed/reviewed selector-level contract revision.
+Until decided, do not invent an unsupported-case representation, preprocessing
+workaround, qualified selector or false success. AROME adaptation/Task16closure
+and affected later qualification remain blocked.
+
+Ruling: same worker continues independent Meso-NH/synthetic/shared-helper/
+actual-checker/one-small-benchmark and unaffected example/caller units under
+the original safeguards. Do not replace an AROME case with those passing cases.
+No Task16freeze/full/review/completion while the disposition is open; the one
+post-freeze full remains unused. Cost: bounded rework, not changed science/data.
+task-16-independent-work-ruling.md records the temporary scope.
+
+### 2026-11-16 — maintainer-approved C3 revision
+
+The maintainer approved the optional grouped-request approach: “Perfect lets do
+that revised version then”. Keep flat `variables.3d` lists and source-wide
+`variables.levels` for simple requests. Add explicit vertical groups with `names`
+and local `levels` for requests needing field disambiguation or different level
+selections. Grouped requests cannot also set source-wide levels.
+
+Qualification is required whenever a requested name denotes distinct fields in
+the selected inventory, including when only one of them is wanted. Unrequested
+ambiguous names do not matter. Repeated timestamps or levels of one field are
+not name ambiguity. A qualified group must still identify exactly one field.
+This approval changes request expressiveness, not quantities, original catalogue
+levels, clocks, bases, masks, scientific methods or validation standards.
+
+This supersedes the temporary prohibition on designing/implementing that C3
+extension above and in `task-16-independent-work-ruling.md`. It does not authorize
+the three separately reported NetCDF/CROCO fixes, environment changes, fixture
+filtering/relabeling, source splitting or weakened assertions. Task16 remains
+unfinished; its post-freeze full diagnostic is unused.
+
+Before core edits, the lead preserved all29 existing changed files, their hashes
+and the tracked binary diff in the ignored `task-16-c3-approved-baseline/`.
+HEAD remains40f9bcd and the index is untouched. `frameit_env` is Python3.13.18;
+the explicit source import selects this worktree. The lead owns C3 design,
+configuration/binding integration and its tests/docs. A read-only exploration
+agent traces downstream identity propagation; it owns no implementation files.
+No fresh C3 result, freeze, review or completion is claimed.
+
+### C3 implementation candidate and verification
+
+The bounded extension now has39new cases. Fresh final grouped/schema-asset
+acceptance:40passed/35existing backend warnings in26.85s. A current four-scope
+reader/binding command passed143nodes/35warnings in48.63s. The14-module
+covering run returned1190passed/53failed; one new closed-inventory lookup-order
+regression was observed and fixed, then verified by the143-node command.
+Merged evidence covers1243IDs=1191passed/52failed, with no old status changes
+against the available mixed-age/partial inventory. The52old caller failures
+remain real failures, assigned to unfinished Task16 conversion, not waived.
+Exact commands, failure IDs and limitations: `c3-grouped-requests-checks.md`
+and the ignored `task-16-c3-*` evidence. An earlier covering attempt timed out
+at120seconds/58% and has no completed result. No Task16 full was consumed.
+
+All16partial Task16 source/example/test files remain byte-exact against the
+pre-C3 snapshot. Native fixture files were not changed. Only UTrack prose and
+its publication-unit assertion are brought forward from Task16: required checks
+exposed its draft table indentation and old wrapper assertion. Its existing
+v3 execution gate and declaration values are preserved.
+
+Ruling: unequal group selections on the same transformed output axis fail in
+metadata preflight. C7 does not authorize padding, implicit alignment or a new
+axis-alias scheme. Matching selections/separate runs remain necessary for that
+combination; native mixed-axis AROME is unaffected. This is a technical limit,
+not human scientific approval or permission to alter requested levels.
+
+Strict Sphinx04/publication04 and13publication unittests pass. Ruff on the10
+changed Python files is36baseline/35current/zeroNew, not whole-repository clean.
+The editor asset equals the authoritative generator; its SHA-256 is
+`319a6aa028ef68b7517040bea72aeee99a08e923b5cf697231cb156a8450cd24`.
+Live text-only GUI inspection and fresh independent review remain pending.
+No push/merge, environment change, standalone plot/image check, native/HPC/
+installed-wheel/standards-conformance or human acceptance is claimed.
+
+### C3 independent review — fixes required
+
+Reviewer `ses_e1d31d5edffe5NSLDKoqFNOp6A` independently checked the frozen25paths
+at tree7c489ffe607551077ae71e5af47130381faca1ca, all16preserved partial Task16
+files and bounded reproductions. Verdict: **SPEC ISSUES / QUALITY NEEDS FIXES**;
+four Important findings, no Critical or Minor findings. Complete report:
+`.superpowers/sdd/CHECKLIST_FOR_AGENTS/task-16-c3-review-02.md`.
+
+The lead accepts the four verified boundaries for correction: compare actual C7
+vertical-axis identity across horizontal grids; distinguish generated tracker
+support from duplicate authored aliases; resolve native CROCO quantity names at
+the admitted current-preparation boundary; and preserve C9 errors for forbidden
+FA local physical-domain selectors. Each needs a failing regression and scoped
+review closure. No guards, masks, clocks, levels or scientific methods may be
+weakened. The frozen tree/evidence stay intact; no commit or clearance is granted.
+
+A separate read-only diagnosis of the three older NetCDF/CROCO reports is active
+in `ses_e1d2b3c19ffeeCxGc44mDEo44S`. It has no implementation authorization and
+must not be confused with the grouped-path CROCO review finding.
+
+### C3 review fix1 — bounded corrections, closure pending
+
+All four findings have failing regression evidence and a bounded candidate fix.
+FA selector rejection now uses the actual local path/selector, retaining the
+flat diagnostic and the scientific gate. Its2CLI/schema controls plus10existing
+FA admission cases pass. The shared-axis guard reuses C7 exported axis identity,
+including differing horizontal grids;4W controls plus2native/GRIB binding cases
+pass. Generated support may reuse a field identity only when not authored;
+the2tracker controls and unchanged native-centroid execution case pass, with
+duplicate authored aliases still rejected.
+
+Qualified CROCO inputs now pass the same native-name quantity checks and are
+renamed only across the existing current-preparation boundary, then restored.
+The new grouped end-to-end and unchanged flat counterpart both pass, retaining
+selected time/level reads, masks, exact native source bytes, rho rotation and
+ordinary-reader metadata. No interpolation, masking, tolerance or strict merge
+change. Connected verification and the same reviewer's scoped closure remain
+pending; this is not a C3 freeze or a Task16 full-suite result.
+
+The separate diagnosis has arrived:
+`.superpowers/sdd/CHECKLIST_FOR_AGENTS/task-16-three-core-independent-diagnosis.md`.
+It confirms three latent frozen-v3 defects, not scientific acceptance: NetCDF
+record inventory drops existing GRIB_stepType evidence; independently cropped
+CROCO face fields retain perpendicular full-rho support under the same C7 axis;
+and equal transformed/native index values differ in generated long_name metadata.
+Each correction boundary still requires separate authorization. CROCO support
+ownership/representation has a public-schema decision; no support names, crop
+indices or formula links are changed here. The diagnosis's baseline byte checks
+precede the bounded C3 canonical/native preparation change above.
+
+Fresh connected fix1 command:986passed/1509warnings in223.11s, including all46
+grouped cases, all current v3 configuration/CLI/report/operation/polar/output/
+reader modules and named flat-centroid/CROCO scientific guards. This is a named
+subset, not the unused Task16 full diagnostic. Earlier52old failed callers remain
+recorded, not waived. Exact command/result: `c3-grouped-requests-checks.md`.
+
+Strict Sphinx05/publication05/13units pass; seven affected pages refreshed in the
+live GUI at1020/320CSS widths with no page overflow or inaccessible code edge.
+Ruff11Python paths:36baseline/35current/zeroNew. The16partial Task16 files remain
+byte-exact. Excluded core boundaries are verified unchanged; only canonical/native
+preparation in `derived/wind.py` differs. Scoped review closure and local commit
+are still pending.
+
+Lead self-review additionally reproduced an operation-authorship subcase of
+finding2: raw and qualified inputs to one authored calculation were projected
+as generated support. Preserving those input names in the operation subrequest
+restores duplicate-identity rejection without restricting genuine tracker support.
+The986-node result precedes this last tightening; the subsequent affected-path
+command passed251tests/1136warnings in117.10s, including all47grouped cases.
+Fresh Ruff remains36baseline/35current/zeroNew. No new scientific choice or core
+authorization. Scoped review closure remains required.
 
 ## Task 01 evidence
 

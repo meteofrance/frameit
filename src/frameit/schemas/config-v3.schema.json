@@ -359,6 +359,26 @@
       },
       "additionalProperties": false
     },
+    "vertical_group": {
+      "type": "object",
+      "properties": {
+        "names": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "levels": {
+          "$ref": "#/$defs/levels"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "names"
+      ]
+    },
     "variables": {
       "type": "object",
       "properties": {
@@ -371,18 +391,43 @@
           "uniqueItems": true
         },
         "3d": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/text"
-          },
-          "minItems": 1,
-          "uniqueItems": true
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/text"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/vertical_group"
+              },
+              "minProperties": 1,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+              }
+            }
+          ]
         },
         "levels": {
           "$ref": "#/$defs/levels"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "3d",
+          "levels"
+        ],
+        "properties": {
+          "3d": {
+            "type": "object"
+          }
+        }
+      }
     },
     "field_metadata": {
       "type": "object",

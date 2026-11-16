@@ -388,6 +388,13 @@ Typical structure:
 - Coordinates describe the actual source sampling locations and vertical labels
 - Data variables depend on the YAML request (see :doc:`configuration_file`)
 
+Flat requests retain source field names. Explicitly grouped fields use
+``<native-group>.<field>``, such as ``heightAboveGround.u`` and
+``isobaricInhPa.u``, even when a product selects only one group. Derived results
+retain their declared names. Colliding names fail instead of overwriting another
+field. Read dotted names with ``ds["heightAboveGround.u"]``; the binding in run
+provenance retains the native field name, identity and selected records.
+
 Read each field's own coordinates; equal names alone do not establish equivalent
 sampling or physics.
 

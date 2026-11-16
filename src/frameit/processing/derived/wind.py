@@ -336,9 +336,15 @@ def prepare_source_operation(operation, internal, source, conf):
         settings = copy(conf)
         settings.cartesian_horizontal_winds = "mass_earth"
         settings.compute_polar_proj = False
+        # Current preparation validates native quantities, not request aliases.
+        native_names = {
+            operation["inputs"][component]: source["fields"][operation["input_binding"][
+                "dependencies"][operation["inputs"][component]]["field_id"]]["name"]
+            for component in ("u", "v")}
         settings.requested_variables_user = {"current": {
-            "variables": [operation["inputs"]["u"], operation["inputs"]["v"]]}}
-        prepared = prepare_croco_currents(prepared, settings)
+            "variables": list(native_names.values())}}
+        prepared = prepare_croco_currents(prepared.rename(native_names), settings).rename(
+            {native: reference for reference, native in native_names.items()})
     if operation["pair"]:
         settings = copy(conf)
         settings.wind_pairs = [operation["pair"]]
