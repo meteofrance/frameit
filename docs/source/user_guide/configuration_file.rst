@@ -301,12 +301,30 @@ physical quantity; pressure vertical velocity remains pressure vertical velocity
 These transforms govern model-grid exports, not tracking or polar preparation.
 
 Source ``derived`` maps an output name to an admitted ``method`` and explicit
-``inputs``. The current method is ``wind_speed`` with named ``u`` and ``v``
-inputs; selecting U/V alone does not request it.
+``inputs: {u: <source reference>, v: <source reference>}``. Inputs must be distinct
+actual source fields; use qualified references for ambiguous native groups.
+``wind_speed`` calculates horizontal speed. The experimental ``radial_wind``
+and ``tangential_wind`` methods calculate outward and clockwise components,
+respectively, on polar targets only.
 Required inputs are loaded internally and exported only if requested.
 Output-name collisions fail. Only results needed by requested products or another
 requested operation are calculated. Each method retains its own preparation,
 vertical grid and documented limits.
+
+Radial/tangential requests admit AROME GRIB/NetCDF and Meso-NH NetCDF atmospheric
+winds, not FA or ocean currents. Both inputs must be continuous, share a prepared
+grid and have matching effective interpolation, sampling and strict missing-data
+settings. Set preparation options on the inputs, not the result alias.
+Renormalization is rejected, not replaced with strict sampling.
+``model_grid: true`` includes every declared result, so combined runs must filter
+model-grid fields explicitly and select these methods only in
+``products.polar.fields``. Excluded definitions remain inactive.
+Active component aliases must not collide with polar coordinates or selected
+fields' quality variables, including ``radial_bearing`` and ``geometry_mapped``.
+Choose another alias if metadata validation reports a generated-name collision.
+See :doc:`../task_guides/scalars_and_vectors` for syntax and
+:ref:`explicit-polar-wind-methods` for signs, reference frame, origin and validation
+limits.
 
 Regions and tracks
 -------------------

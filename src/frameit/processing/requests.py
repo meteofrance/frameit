@@ -1107,10 +1107,17 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
     for i, record in enumerate(pool):
         all_by_name.setdefault(record["name"], []).append((i, record))
     for (product, name), operation in active.items():
-        if operation["method"] == "wind_speed" and any(r["name"] == name for r in pool):
-            raise ValueError(f"derived.{name}: result name collides with a source field")
-        if operation["method"] == "wind_speed" and source["physical_type"] != "atmosphere":
-            raise ValueError(f"derived.{name}: wind_speed does not admit ocean current diagnostics")
+        wind = operation["method"] in {"wind_speed", "radial_wind", "tangential_wind"}
+        loc = f"sources.{source['name']}.derived.{name}" if wind else name
+        if wind and any(r["name"] == name for r in pool):
+            raise ValueError(f"{loc}: result name collides with a source field")
+        if wind and source["physical_type"] != "atmosphere":
+            raise ValueError(f"{loc}: {operation['method']} admits atmospheric winds only")
+        if operation["method"] in {"radial_wind", "tangential_wind"}:
+            if product != "polar" or source["format"] not in {"grib", "netcdf"}:
+                raise ValueError(
+                    f"{loc}: {operation['method']} requires products.polar.fields and "
+                    "AROME GRIB/NetCDF or Meso-NH NetCDF, not FA")
         inputs = dict(operation["inputs"])
         if operation["method"] == "transform" and operation["basis"] == "earth":
             declarations = [p for p in source["declaration"].get("wind_pairs", [])
@@ -1133,7 +1140,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
         for field_name, candidates in by_name.items():
             if len({r["field_id"] for _, r in candidates}) != 1:
                 raise ValueError(
-                    f"{name}: input {field_name} missing or ambiguous in selected inventory")
+                    f"{loc}: input {field_name} missing or ambiguous in selected inventory")
         if croco:
             native_pair = tuple(source["fields"][by_name[inputs[component]][0][1]["field_id"]][
                 "name"] if component in inputs else None for component in ("u", "v"))
@@ -1186,7 +1193,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 if operation.get("units") and field_name not in {"mask_rho", "mask_u", "mask_v"}:
                     _operation_units(xr.DataArray(0., attrs=attrs[field_name], name=field_name),
                                      operation["units"], model=source["model"])
-            if operation["method"] == "wind_speed":
+            if wind:
                 selectors = [field_selection(request, field_name)[2]
                              for field_name, axis in axes.items() if axis is not None]
                 if selectors and any(selector != selectors[0] for selector in selectors[1:]):

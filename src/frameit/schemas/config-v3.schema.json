@@ -189,7 +189,9 @@
     },
     "choices_derived": {
       "enum": [
-        "wind_speed"
+        "wind_speed",
+        "radial_wind",
+        "tangential_wind"
       ]
     },
     "choices_association": {

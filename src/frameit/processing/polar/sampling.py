@@ -151,6 +151,35 @@ def bind_polar_plan(source, request, binding, conf, *, radial_step_km=None):
         return
     require_polar_backend()
     jobs = [job for job in binding["operation_plans"] if job["product"] == "polar"]
+    components = [job for job in jobs if job["method"] in {"radial_wind", "tangential_wind"}]
+    if components:
+        from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
+
+        layout = output_grid_layout({
+            **source, "representation_grids": binding["representation_grids"],
+            "requests": {**request, "binding": binding}})
+        selected = set(binding["products"]["polar"])
+        suffixes = ("geometry_mapped", "support_fraction", "interpolation_status",
+                    "valid", "ring_coverage", "full_ring_valid")
+        reserved = {
+            "geometry_mapped", "time", "rr", "rr_km", "theta", "theta_deg", "radius",
+            "azimuth", "azimuth_degrees", "latitude", "longitude", "radial_bearing",
+            "center_lat", "center_lon", "center_time", "center_latitude", "center_longitude",
+            "radial_spacing_km", "max_azimuthal_spacing_m",
+        } | {f"{name}_{suffix}" for name in selected for suffix in suffixes}
+        for job in components:
+            facts = _output_grid_facts(layout, job["grid_id"], job["name"])
+            spatial = set(facts["horizontal"]) | set(facts["geography"])
+            names = {native: target for native, target in {
+                **facts["dimensions"], **facts["coordinates"]}.items() if native not in spatial}
+            generated = reserved | set(names) | set(names.values()) | {
+                f"{name}_source_native_index" for native, target in facts["dimensions"].items()
+                if native not in spatial for name in (native, target)}
+            if job["name"] in generated or selected.intersection(
+                    f"{job['name']}_{suffix}" for suffix in suffixes):
+                raise ValueError(
+                    f"sources.{source['name']}.derived.{job['name']}: alias collides with "
+                    "generated polar coordinates or quality variables; choose another output alias")
     spacing = []
     for job in jobs:
         job["polar_geometry"] = polar_source_geometry(job, conf)
@@ -175,6 +204,20 @@ def bind_polar_plan(source, request, binding, conf, *, radial_step_km=None):
                     if key in metadata["attributes"]},
                 "origins": metadata["origins"],
             }
+        if job["method"] in {"radial_wind", "tangential_wind"}:
+            loc = f"sources.{source['name']}.derived.{job['name']}"
+            u, v = (job["polar_options"][job["inputs"][key]] for key in ("u", "v"))
+            if any(options["kind"] != "continuous" for options in (u, v)):
+                raise ValueError(f"{loc}: polar wind components require continuous inputs")
+            if any(options["missing_data_policy"] != "strict" for options in (u, v)):
+                raise ValueError(f"{loc}: polar wind components require strict shared stencils")
+            different = [key for key in (
+                "kind", "interpolation", "missing_data_policy",
+                "min_valid_weight_fraction", "sampling")
+                if u[key] != v[key]]
+            if different:
+                raise ValueError(
+                    f"{loc}: paired polar inputs require matching effective {', '.join(different)}")
     if conf.polar_source_halo_points < 1:
         raise ValueError(
             "Polar source halo is insufficient: at least one native neighbour is required")

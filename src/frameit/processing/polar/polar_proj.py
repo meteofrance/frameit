@@ -97,7 +97,7 @@ def verify_polar_target(dataset, plan, conf, source, centres):
 def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache=None,
                          output_formatter=None):
     """Execute only declared v3 results on each source's associated native sample clock."""
-    from frameit.processing.derived.wind import prepare_source_operation
+    from frameit.processing.derived.wind import polar_wind_components, prepare_source_operation
     from frameit.processing.polar.contracts import require_executable_products
 
     require_executable_products(binding, source)
@@ -156,6 +156,7 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             public_to_native[dim]: size
             for dim, size in conf.polar_output_chunks.items() if dim in public_to_native}
         pieces, signatures, footprints, numeric_types = {}, [], [], {}
+        paired = job["method"] in {"radial_wind", "tangential_wind"}
         for name in dict.fromkeys(job["inputs"].values()):
             options = job["polar_options"][name]
             settings.polar_missing_data_policy = options["missing_data_policy"]
@@ -171,13 +172,36 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             numeric_types[name] = {
                 "prepared_dtype": prepared_dtype, "evaluation_dtype": str(value.dtype),
                 "conversion": "integer_to_float64_for_continuous_bilinear" if promote else "none"}
+            if paired:
+                prepared = sample_source
+                continue
             piece, weights, footprint = _sample_piece(
                 sample_source, [name], (), target.isel(time=0, drop=True),
                 settings, options["interpolation"], cache, geometry_cache)
             pieces[name] = piece
             signatures.append(weights.signature)
             footprints.append(footprint)
-        if job["method"] == "wind_speed":
+        if paired:
+            u, v = (job["inputs"][component] for component in ("u", "v"))
+            piece, weights, footprint = _sample_piece(
+                prepared, [u, v], (u, v), target.isel(time=0, drop=True),
+                settings, options["interpolation"], cache, geometry_cache)
+            pieces[u] = piece
+            signatures.append(weights.signature)
+            footprints.append(footprint)
+            if ("radial_bearing" not in target
+                    or target.radial_bearing.dims != ("time", "rr", "theta_deg")):
+                raise ValueError(f"{job['name']}: missing or misaligned terminal-forward bearing")
+            bearing = target.radial_bearing
+            if not np.isfinite(bearing.where(bearing.rr != 0, 0).values).all():
+                raise ValueError(
+                    f"{job['name']}: nonfinite positive-radius terminal-forward bearing")
+            value = polar_wind_components(piece[u], piece[v], bearing)[
+                0 if job["method"] == "radial_wind" else 1]
+            support = piece[f"{u}_support_fraction"]
+            status = xr.where(piece.rr == 0, 4, piece[f"{u}_interpolation_status"])
+            mapped = piece.geometry_mapped
+        elif job["method"] == "wind_speed":
             u, v = (job["inputs"][component] for component in ("u", "v"))
             value = np.hypot(pieces[u][u], pieces[v][v]).assign_attrs(
                 units="m s-1", long_name="horizontal wind speed",
@@ -226,10 +250,13 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             polar_weight_zero_tolerance=conf.polar_weight_zero_tolerance,
             polar_numeric_types=json.dumps(numeric_types, sort_keys=True))
         options = job["polar_options"]
-        if job["method"] == "wind_speed":
+        if job["method"] == "wind_speed" or paired:
             result[job["name"]].attrs["polar_component_options"] = json.dumps(
                 options, sort_keys=True)
-            result[job["name"]].attrs["polar_support_definition"] = "minimum_component_support"
+            result[job["name"]].attrs["polar_support_definition"] = (
+                "joint_finite_component_stencil" if paired else "minimum_component_support")
+            if paired:
+                result[job["name"]].attrs["frameit_method_maturity"] = "experimental_public_binding"
         else:
             effective = options[job["inputs"]["field"]]
             result[job["name"]].attrs.update(
@@ -271,6 +298,10 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             "source_finite_footprints": footprints,
             "rotation_coordinate": job["rotation_coordinate"],
             "preparation": job["preparation"],
+            **({"method_maturity": "experimental_public_binding",
+                "support_definition": "joint_finite_component_stencil",
+                "vector_basis": "terminal_forward_geodesic", "wind_reference_frame": "earth"}
+               if paired else {}),
         })
     datasets = []
     for sequence in results.values():

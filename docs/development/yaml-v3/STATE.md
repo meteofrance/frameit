@@ -4129,6 +4129,77 @@ review the implementation plan before inline execution. No runtime, schema asset
 new regression module, numerical run, installation/environment change or Task16
 post-freeze full occurred. Docs: no user-facing impact from these internal records.
 
+### Explicit polar wind components — approved implementation increment
+
+The maintainer approved `task-16-polar-components-plan.md` after local design/
+plan commit `f889907990186b271f1cb633c8bba6ea853b5d3a`. Its historical pending-
+approval wording is superseded by that answer. Execution remains inline, with
+one fresh bounded implementation review before the local commit.
+
+The implementation adds `radial_wind` and `tangential_wind` as explicitly selected
+scalar aliases. Active model-grid/FA/ocean requests fail; unused definitions stay
+inert. Metadata binding reuses actual atmospheric input preparation and C3 guards,
+then requires continuous inputs with matching effective strict pair options
+(not identical metadata-origin provenance). Runtime uses one retained paired
+sampler and the unchanged terminal-bearing rotation helper, with joint support,
+Earth-relative outward/clockwise conventions and origin NaN/status4.
+Existing speed's independent sampling and renormalization remain unchanged.
+The public binding is experimental, not scientific qualification or stable
+promotion. No new numerical formula, source interpretation, dependency or writer.
+
+TDD evidence: structural RED24unsupported-method failures; corrected option
+RED8missing guards/22existing passes; runtime RED24missing-dispatch failures
+plus5bearing/speed/GRIB cases. Task1's exact metadata lane passed461cases.
+Task2's exact component/wind/coverage/polar lane passed284cases, including
+independent endpoint/sign/joint-weight oracles, selected reads and ordinary
+NetCDF/sharded-Zarr readers. The new synthetic GRIB constants were made binary-
+exact after independent ecCodes decoding identified packing error; no old
+fixture, selected level/time or numerical tolerance changed.
+
+The five named canonical pages/reference describe syntax, admission, signs,
+origin, quality/provenance and experimental limits. Strict docs01 found an
+accidental caption indent; corrected docs02 built and passed publication plus
+13publication units. Live GUI rendered-text checks at1280px and320px frame
+viewports covered all four affected HTML pages; no root horizontal overflow.
+The preview remains available; no screenshot/image/plot check or human visual/
+scientific acceptance is claimed. Final connected verification and fresh
+implementation review are the pre-commit gate.
+
+The named final connected lane passed1030tests (344.46s); XML/full output are
+retained. This includes the actual optional backends and original CROCO portable
+example check, not Task16's post-freeze full or whole-branch acceptance.
+Ruff is279baseline/279current/zero new; diff-check and authoritative schema/
+copied reference checks pass. Existing NumPy/backend and fixture time-bounds
+warnings remain visible, with no environment repair or waiver. The fresh bounded
+implementation review is next, before staging or local commit.
+
+The fresh bounded implementation review found one Important data-integrity issue
+and no Critical/Minor findings: an active `geometry_mapped` component alias could
+be overwritten by the global quality flag; `radial_bearing` failed late.
+The fix rejects active new-method aliases colliding with generated polar
+coordinates/quality names during metadata binding, including actual retained
+native/public vertical coordinates and native-index names. Existing output layout
+metadata is reused; numerical helpers, writers and old fields are unchanged.
+Focused regressions observed57missing-check failures before the fix, then62passes
+with payload guards, including unused-name and valid-suffix controls.
+The approved connected lane is rerunning after this single fix pass. No routine
+second review or whole Task16 full is authorized or inferred.
+
+Final post-review connected02 passed1090tests/zero failures or skips in347.83s,
+including all57collision regressions and retained controls. Ruff remains
+279baseline/279current/zero new. Strict docs03, publication and13units pass;
+the updated configuration section was rechecked live at1280/320px and the other
+three affected HTML pages/reference are byte-exact to inspected docs02.
+The single Important finding is closed by RED→GREEN and the green connected
+suite; no second reviewer or scientific sign-off is claimed. Final staging is
+limited to the12core-increment paths; resume producer/caller conversion after
+the local commit and25-path postcommit preservation proof.
+
+All25earlier dirty paths/copies remain byte-exact and excluded from this core
+increment. No install/repair, production/HPC, benchmark campaign, push/merge or
+Task16 post-freeze full. Whole Task16 producer/caller conversion, its retained
+legacy failures and all wider qualification/human gates remain open.
+
 ## Task 01 evidence
 
 Root cause: CLI removed all paths below `~/.local`, including the selected

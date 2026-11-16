@@ -74,6 +74,11 @@ sources:
     #   - {fields: [WT], sampling: mass}
     # derived:
     #   speed: {method: wind_speed, inputs: {u: UT, v: VT}}
+    #   vrad: {method: radial_wind, inputs: {u: UT, v: VT}}
+    #   vtan: {method: tangential_wind, inputs: {u: UT, v: VT}}
+    # radial_wind/tangential_wind: experimental non-FA atmosphere only, not this FA example.
+    # Select aliases only in products.polar.fields; explicitly filter model_grid fields.
+    # Both inputs need continuous kind, matching prepared grid/options and strict joint masks.
 region:
   tracker:
     method: pressure_wind

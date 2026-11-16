@@ -121,12 +121,56 @@ Definitions excluded from all requested products and dependencies do not execute
    different choices. Storm-centred polar positions do not subtract storm motion
    from the winds.
 
+Request a polar wind component
+-------------------------------
+
+For the inspected UM10/VM10 pair above, add continuous-kind evidence under
+``sources.atmosphere`` and replace its ``derived`` and the top-level
+``region``/``products`` blocks as follows. Adapt the illustrative centre to your
+input. ``vrad`` and ``vtan`` are user-chosen aliases:
+
+.. code-block:: yaml
+
+   sources:
+     atmosphere:
+       field_metadata:
+         UM10: {kind: continuous}
+         VM10: {kind: continuous}
+       derived:
+         speed: {method: wind_speed, inputs: {u: UM10, v: VM10}}
+         vrad: {method: radial_wind, inputs: {u: UM10, v: VM10}}
+         vtan: {method: tangential_wind, inputs: {u: UM10, v: VM10}}
+   region:
+     center: {latitude: -20, longitude: 60}
+   products:
+     model_grid:
+       fields: {atmosphere: [speed]}
+     polar:
+       radius_km: 2.5
+       azimuth_count: 8
+       missing_data_policy: strict
+       fields: {atmosphere: [vrad]}
+
+Only ``vrad`` is exported to the polar dataset; ``vtan`` stays inactive.
+Add it to ``products.polar.fields.atmosphere`` to request it too.
+``model_grid: true`` would also select the polar-only declarations and fail;
+combined runs must filter their model-grid fields explicitly.
+
+These methods are experimental and admit AROME GRIB/NetCDF or Meso-NH NetCDF
+atmospheric winds, not FA or ocean currents. Both inputs need matching effective
+interpolation/sampling settings and strict joint finite-source stencils;
+renormalization is rejected. Radial is outward, tangential clockwise in both
+hemispheres. Both are Earth-relative, use endpoint bearing rather than launch
+angle, and are NaN/status4 at the origin. Moving the centre does not subtract
+storm motion or change requested base/speed fields.
+See :ref:`explicit-polar-wind-methods` for equations and qualification limits.
+
 Check the result
 ----------------
 
 Check metadata with ``frameit validate frameit.yaml`` and review
 ``frameit config show frameit.yaml --effective`` before running. Reopen the
-source-qualified model-grid output with an ordinary
+source-qualified model-grid or polar output with an ordinary
 reader. Check each field's values, dimensions, native indices, coordinates,
 units, basis and recorded method. Internal-only companions must not appear as
 extra physical outputs.

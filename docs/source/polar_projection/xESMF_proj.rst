@@ -166,7 +166,7 @@ Metadata includes:
 
 - ``polar_proj_backend = "xesmf"``
 - Per-field ``polar_interpolation``, coverage policy and threshold for scalar/
-  component fields; JSON ``polar_component_options`` for derived speed.
+  native component fields; JSON ``polar_component_options`` for derived winds.
 - Actual preparation, selected source/centre times and native support in provenance.
 - ``n_theta``, ``theta_closed=False``, ``theta_topology="uniform_periodic"``,
   requested/effective sampling settings and ``radial_spacing_uniform``.
@@ -229,8 +229,12 @@ zero-weight tolerance are removed before both weighting and stencil-validity
 checks. Small row-sum roundoff is normalized. Public speed requests apply each
 component's declared method/coverage policy, then take magnitude. Both sampled
 components must be valid. Reported speed support is the minimum component support,
-not a joint-stencil fraction. The retained low-level vector API can instead
-apply a joint finite-data mask and denominator.
+not a joint-stencil fraction. Explicit radial/tangential methods instead require
+strict sampling with a joint finite U/V mask. A U hole and a V hole in different
+contributors both reduce their joint support; it is not the minimum of separate
+support fractions. Renormalization remains available for speed and other admitted
+fields, but is not admitted for these experimental component methods.
+The retained low-level vector API can apply its own declared joint-mask policy.
 
 Partial-stencil support within ``2 * n * eps64`` of a renormalization threshold
 is re-summed with Python's accurate ``math.fsum`` before the ordinary
@@ -290,8 +294,8 @@ Status values are encoded with CF ``flag_values`` and ``flag_meanings``:
    * - 4
      - Undefined radial/tangential component at zero radius
 
-Status4 belongs to the retained numerical radial/tangential method; public U/V
-selection does not request it. Scalar speed can be valid at zero radius.
+Status4 marks requested radial/tangential results at the origin; public U/V
+selection alone does not request them. Scalar speed can be valid at zero radius.
 Per-field geometry flags remain available when invalidity causes overlap.
 For public speed, validity requires both sampled components; internal component
 fields and their quality arrays are not exported unless requested separately.
@@ -369,15 +373,29 @@ and needs resampling before ordinary Fourier analysis.
 That low-level helper uses its retained ``theta`` naming; it is not needed to
 open a public endpoint-exclusive product.
 
+.. _explicit-polar-wind-methods:
+
 Derived wind components
 ~~~~~~~~~~~~~~~~~~~~~~~
-The numerical radial/tangential method uses collocated eastward/northward
-components on the polar grid. Selecting U/V alone does not request these
-additional quantities. The current public source ``derived`` catalogue admits
-``wind_speed``, not a radial/tangential method.
+Select ``radial_wind`` or ``tangential_wind`` through source ``derived``, with
+explicit ``u``/``v`` source references and a user-chosen output alias.
+The public binding is **experimental**, polar-only, and admits atmospheric AROME
+GRIB/NetCDF or Meso-NH NetCDF, not FA or ocean currents.
+See :doc:`../task_guides/scalars_and_vectors` for a request.
+Selecting U/V alone does not request either component; selecting one component
+does not export its sibling, speed or internal-only inputs.
 
-- ``vrad``: radial wind component, positive **outward** from the storm centre.
-- ``vtan``: tangential wind component, positive for **clockwise** rotation.
+Inputs require continuous-kind evidence, compatible velocity units, time support,
+levels, basis and rotation metadata. Existing preparation collocates admitted
+native grids, converts to m s-1 and rotates to physical east/north. Both inputs
+must then share the same grid, interpolation and sampling settings. A single
+paired stencil uses the joint finite U/V mask before the retained dot-product
+operation. Only strict missing-data policy is admitted; no fallback or motion
+subtraction is applied.
+
+- ``radial_wind``: positive **outward** from the centre.
+- ``tangential_wind``: positive **clockwise in both hemispheres**, not automatically
+  cyclonic. ``vrad`` and ``vtan`` are example aliases, not reserved output names.
 
 The components are derived from the **local terminal-forward bearing**
 ``radial_bearing`` (denoted :math:`\alpha` below), not from the launch
@@ -389,9 +407,20 @@ azimuth :math:`\theta`. These angles generally differ on a curved Earth:
 
    v_\mathrm{tan} = u \cos\alpha - v \sin\alpha
 
-For this numerical method, at zero radius the radial
-direction is undefined: ``vrad``, ``vtan`` and ``radial_bearing`` are NaN,
-while scalar values and horizontal speed remain available.
+At zero radius the direction is undefined: both requested components and
+``radial_bearing`` are NaN. Component status is4, validity and ring eligibility
+are zero; joint support and geometric mapping evidence are retained separately.
+Scalar values and horizontal speed can remain valid. Missing or misaligned
+positive-radius bearing fails rather than using launch angle.
+
+Results record ``wind_reference_frame="earth"``,
+``vector_basis="terminal_forward_geodesic"``,
+``origin_policy="undefined_at_zero_radius"`` and
+``polar_support_definition="joint_finite_component_stencil"``.
+They have outward/clockwise long names, not eastward/northward standard names.
+``frameit_method_maturity="experimental_public_binding"`` distinguishes this
+interface from stable scientific qualification. The binding reuses the retained
+equations and geometry; it adds explicit selection and strict admission limits.
 
 The numerical vector method and public derived speed use collocated
 eastward/northward components (U positive eastward, V positive northward).
@@ -426,6 +455,13 @@ qualification limits.
 
 Numerical verification
 ~~~~~~~~~~~~~~~~~~~~~~
+``python -m pytest src/frameit/testing/numerical/test_v3_polar_components.py``
+checks public selection, joint masks, cardinal signs, endpoint bearings in both
+hemispheres across the dateline, fixed/moving centres, selected NetCDF/GRIB reads,
+units/rotation, and ordinary NetCDF/sharded-Zarr readback. Cardinal dot products
+use a binary64 absolute tolerance of 1e-12 m/s; synthetic public readbacks use
+2e-10 m/s. These compact numerical checks are not real-producer qualification.
+
 ``python -m pytest src/frameit/testing/numerical/test_polar_wind.py src/frameit/testing/numerical/test_wind_collocation.py``
 checks Karney's published geodesic example, endpoint-bearing radial leakage,
 cardinal signs, origin handling, continuous centres, wind frame/unit conversion,
@@ -443,6 +479,10 @@ source geometry, CF auxiliary/bounds retention through loading and extraction,
 weight-based missing-data oracles, joint vector masks, partial-ring eligibility,
 lazy/eager equivalence and NetCDF validity metadata with the actual backend.
 
+The references above and :ref:`wind-preparation-method` describe the retained
+geometry/preparation conventions. Publication and community-use evidence for
+stable promotion of this public binding remain unresolved; passing numerical
+tests is not scientific sign-off or validation for every dataset or regime.
 
 Known limitations and caveats
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

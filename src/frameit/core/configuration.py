@@ -102,7 +102,7 @@ V3_CHOICES = {
     "wind_basis": ("earth", "grid"),
     "sampling": ("native", "mass"),
     "transform_basis": ("native", "earth"),
-    "derived": ("wind_speed",),
+    "derived": ("wind_speed", "radial_wind", "tangential_wind"),
     "association": ("exact", "common", "preceding_hour"),
     "tracker": tuple(TRACKER_DEFAULTS),
     "on_incomplete": ("error", "keep_prefix"),
@@ -380,9 +380,13 @@ def capabilities():
             "polar": {"dependencies": dependencies["polar"],
                       "interpolation": list(V3_CHOICES["interpolation"]),
                       "maturity": "implemented point sampling",
-                      "limits": ["No area-budget conservation guarantee; missing-data policy "
-                                 "is explicit. "
-                                 "Experimental comparison methods are not public v3 selectors."]},
+                       "limits": ["No area-budget conservation guarantee; missing-data policy "
+                                  "is explicit. "
+                                  "Experimental comparison methods are not public v3 selectors.",
+                                  "radial_wind/tangential_wind: experimental polar-only "
+                                  "atmospheric "
+                                  "binding, strict shared stencils; AROME GRIB/NetCDF and Meso-NH "
+                                  "NetCDF only, no FA or ocean variants."]},
             "track": {"dependencies": [], "limits": ["Requires a declared center/track/tracker."]},
         },
         "derived": list(V3_CHOICES["derived"]), "dependencies": dependencies,
@@ -1370,6 +1374,20 @@ def _products(raw, sources, region):
                         f"{path}.fields.{name}: unknown field/result; declare it in sources",
                         {"declared_fields": available}, names,
                         [f"Select declared fields/results in {path}.fields.{name}."])])
+        for name, source in sources.items():
+            for field in _product_fields(spec, sources, name):
+                method = source["derived"].get(field, {}).get("method")
+                if method not in {"radial_wind", "tangential_wind"}:
+                    continue
+                loc = f"sources.{name}.derived.{field}"
+                if product != "polar":
+                    raise ValueError(
+                        f"{path}.fields.{name}: {field} ({method}) is polar-only; "
+                        "select it only in products.polar.fields and filter model_grid fields")
+                if source.get("model") in {"nemo", "croco"}:
+                    raise ValueError(f"{loc}: {method} admits atmospheric winds only")
+                if source.get("format") == "fa":
+                    raise ValueError(f"{loc}: {method} does not admit FA inputs")
         processing = spec.get("processing", {})
         processing_keys = V3_KEYS["polar_processing"] if product == "polar" else {"chunks"}
         _keys(processing, processing_keys, f"{path}.processing")

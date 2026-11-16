@@ -668,6 +668,18 @@ Requested speed is magnitude after component sampling. Its JSON
 ``polar_component_options`` records actual input methods/policies; support is
 the minimum component support and validity requires both sampled components.
 Other sampled fields record their own interpolation, policy and threshold.
+
+Explicit ``radial_wind`` and ``tangential_wind`` results use the selected aliases;
+neither the sibling component nor internal U/V is implicitly exported.
+Their ``polar_component_options`` records matching strict input settings and
+``polar_support_definition="joint_finite_component_stencil"`` identifies joint
+finite U/V support, unlike speed's minimum separate support.
+The experimental binding is marked
+``frameit_method_maturity="experimental_public_binding"``.
+Values are in m s-1, Earth-relative, with
+``vector_basis="terminal_forward_geodesic"``: radial is outward and tangential
+clockwise in both hemispheres. At zero radius they are NaN/status4; geometry and
+support evidence remain separate from undefined direction.
 See :doc:`../polar_projection/xESMF_proj` for flags, coverage equations,
 spacing rules, numerical-API naming and origin conventions.
 
