@@ -429,6 +429,9 @@ def execute_source_operations(user, internal, source, binding, conf):
         result = (sequence[0] if len(sequence) == 1 else xr.concat(
             sequence, dim="time", data_vars="all", coords="minimal",
             compat="equals", join="exact", combine_attrs="override"))
+        if grid in out:
+            result = result.reset_coords([
+                name for name in out[grid].data_vars if name in result.coords])
         out[grid] = (xr.merge([out[grid], result], join="exact", compat="identical",
                               combine_attrs="override") if grid in out else result)
     return out

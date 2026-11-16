@@ -181,7 +181,7 @@ def _output_grid_facts(layout, grid_id, field=None):
     return matches[0]
 
 
-def output_grid_layout(source):
+def output_grid_layout(source, *, regional=False):
     """Resolve names from the complete inventory, never the selected field order."""
     from frameit.core.preflight import _metadata_id
 
@@ -325,8 +325,90 @@ def output_grid_layout(source):
                 "index": f"{target if target != base else native}_source_native_index",
             }
             for native, base in layout["horizontal"].items()
-            for target in [layout["dimensions"][native]]}
+             for target in [layout["dimensions"][native]]}
+    if regional and source["model"] == "croco":
+        _croco_support_layout(source, grids, layouts)
     return layouts
+
+
+def _croco_support_layout(source, grids, layouts):
+    """Give independently cropped faces their own unchanged rho support views."""
+    fields = list(source["fields"].values())
+    metadata = {}
+    for grid in source["native_grids"].values():
+        for name, coordinate in grid["coordinates"].items():
+            metadata.setdefault(name, []).append(coordinate)
+    for source_field in fields:
+        metadata.setdefault(source_field["name"], []).append(source_field)
+    for grid_id, facts in layouts.items():
+        if facts["suffix"] not in {"_u", "_v"}:
+            continue
+        inherited = "eta_rho" if facts["suffix"] == "_u" else "xi_rho"
+        if inherited not in facts["horizontal"]:
+            continue
+        owner = facts["horizontal_identity"]
+        base = facts["horizontal"][inherited]
+        facts["dimensions"][inherited] = f"{base}_{owner}"
+        facts["original_coordinates"][inherited] = {
+            "coordinate": f"{base}_{owner}_source_coordinate",
+            "index": f"{base}_{owner}_source_native_index"}
+        coordinates = grids[grid_id]["coordinates"]
+        sigma = {name for name, coord in coordinates.items()
+                 if coord["attributes"].get("formula_terms")}
+        if not sigma:
+            continue
+        pending = [*sigma, "eta_rho", "xi_rho", "lat_rho", "lon_rho"]
+        support = set()
+        while pending:
+            name = pending.pop()
+            if name in support:
+                continue
+            support.add(name)
+            definitions = [coordinates[name]] if name in coordinates else metadata.get(name, [])
+            for definition in definitions:
+                attrs = definition["attributes"]
+                for key in ("formula_terms", "cell_measures"):
+                    pending.extend(str(attrs.get(key, "")).split()[1::2])
+                for key in ("coordinates", "ancillary_variables"):
+                    pending.extend(str(attrs.get(key, "")).split())
+                if attrs.get("bounds"):
+                    pending.append(attrs["bounds"])
+        support.update(f"{name}_source_native_index" for name in ("eta_rho", "xi_rho", *sigma))
+        dimensions = {native: f"{public}_support_{owner}" for native, public in (
+            ("eta_rho", "y_rho"), ("xi_rho", "x_rho"),
+            *((name, facts["dimensions"][name]) for name in sorted(sigma)))}
+        for name in sorted(support):
+            definitions = [coordinates[name]] if name in coordinates else metadata.get(name, [])
+            for value in definitions:
+                for dim in value["dimensions"]:
+                    dimensions.setdefault(dim, facts["dimensions"].get(dim, dim))
+        views = {}
+        for name in sorted(support):
+            if name in {"eta_rho", "xi_rho"}:
+                target = f"{dimensions[name]}_source_coordinate"
+            elif name.endswith("_source_native_index"):
+                axis = name.removesuffix("_source_native_index")
+                target = f"{dimensions[axis]}_source_native_index"
+            else:
+                base = facts["coordinates"].get(name, {
+                    "lat_rho": "latitude_rho", "lon_rho": "longitude_rho"}.get(name, name))
+                target = f"{base}_support_{owner}"
+            origins = {key for key, grid in source["native_grids"].items()
+                       if name in grid["coordinates"]}
+            origins.update(grid for field in fields if field["name"] == name
+                           for grid in field.get("grid_ids", [field["grid_id"]]))
+            views[name] = {
+                "owner": owner, "native_name": name, "native_grid_ids": sorted(origins),
+                "stored_name": target, "dimensions": dict(dimensions)}
+            if name in facts["coordinates"]:
+                facts["coordinates"][name] = target
+        for name in sigma:
+            facts["dimensions"][name] = dimensions[name]
+            tokens = coordinates[name]["attributes"]["formula_terms"].split()
+            views[name]["formula_terms"] = " ".join(
+                views.get(token, {}).get("stored_name", token) if i % 2 else token
+                for i, token in enumerate(tokens))
+        facts["support_views"] = views
 
 
 def _rename_coordinate_links(dataset, names):
@@ -353,10 +435,101 @@ def _rename_coordinate_links(dataset, names):
                             r"[^\s:]+", lambda m: names.get(m[0], m[0]), mapping[key])
 
 
+def _output_coordinate_record(layout):
+    return {
+        identity: {
+            **{key: value[key] for key in (
+                "native_grid_id", "dimensions", "geography", "original_coordinates")},
+            **({"support_views": value["support_views"]} if "support_views" in value else {}),
+        } for identity, value in layout.items()}
+
+
+def _format_croco_support(dataset, grid_id, source, layout, field):
+    facts = _output_grid_facts(layout, grid_id, field)
+    views = facts["support_views"]
+    if any(view["owner"] != facts["horizontal_identity"] for view in views.values()):
+        raise ValueError(f"{grid_id}: unresolved support owner")
+    names = {name: info["stored_name"] for name, info in views.items()}
+    if len(set(names.values())) != len(names):
+        raise ValueError(f"{grid_id}: output support coordinate collision")
+    support_dimensions = next(iter(views.values()))["dimensions"]
+    actual = {}
+    for native in support_dimensions:
+        if native in dataset.dims:
+            actual[native] = native
+        elif f"{native}_source_native_index" in dataset:
+            dims = [dim for dim in dataset[f"{native}_source_native_index"].dims if dim != "time"]
+            if len(dims) != 1:
+                raise ValueError(f"{grid_id}: ambiguous native support axis {native}")
+            actual[native] = dims[0]
+    primary_names = set(facts["dimensions"]) | {
+        f"{name}_source_native_index" for name in facts["dimensions"]}
+    kept = {name: value.copy(deep=False) for name, value in dataset.variables.items()
+            if name not in views or name in primary_names}
+    primary = xr.Dataset(
+        {name: value for name, value in kept.items() if name in dataset.data_vars},
+        coords={name: value for name, value in kept.items() if name in dataset.coords},
+        attrs=dataset.attrs)
+    _rename_coordinate_links(primary, names)
+    plain_layout = dict(layout)
+    plain_layout_key = next(key for key, value in layout.items() if value is facts)
+    plain_layout[plain_layout_key] = {key: value for key, value in facts.items()
+                                    if key != "support_views"}
+    primary = format_model_grid(primary, grid_id, source, plain_layout, field=field)
+    owned = {}
+    for name, info in views.items():
+        if name in dataset:
+            value = dataset[name].variable
+        elif name.endswith("_source_native_index"):
+            native = name.removesuffix("_source_native_index")
+            if native not in actual:
+                continue
+            dim = actual[native]
+            value = xr.Variable(dim, np.arange(dataset.sizes[dim]), {
+                "units": "1", "long_name": f"zero-based native source {native} index"})
+        else:
+            continue
+        dimensions = {actual[native]: target for native, target in info["dimensions"].items()
+                      if native in actual}
+        owned[info["stored_name"]] = xr.Variable(
+            tuple(dimensions.get(dim, dim) for dim in value.dims),
+            value.data, value.attrs, encoding=value.encoding)
+    if "time" in dataset:
+        owned["time"] = dataset.time.variable.copy(deep=False)
+    support = xr.Dataset(coords=owned)
+    _rename_coordinate_links(support, names)
+    for native in ("eta_rho", "xi_rho"):
+        target = support_dimensions[native]
+        if target in support.dims:
+            support = support.assign_coords({
+                target: (target, np.arange(support.sizes[target]), {
+                    "units": "1", "long_name": "local zero-based array position"})})
+    result = xr.merge(
+        [primary, support], join="exact", compat="identical", combine_attrs="override")
+    for name, variable in result.variables.items():
+        references = []
+        for metadata in (variable.attrs, variable.encoding):
+            for key in ("formula_terms", "cell_measures"):
+                if metadata.get(key):
+                    references.extend(str(metadata[key]).split()[1::2])
+            for key in ("coordinates", "ancillary_variables"):
+                if metadata.get(key):
+                    references.extend(str(metadata[key]).split())
+            if metadata.get("bounds"):
+                references.append(metadata["bounds"])
+        missing = set(references) - result.variables.keys()
+        if missing:
+            raise ValueError(f"{grid_id}: {name} references missing support {sorted(missing)}")
+    result.attrs["frameit_output_coordinates"] = _output_coordinate_record(layout)
+    return result
+
+
 def format_model_grid(dataset, grid_id, source, layout, *, field=None):
     """Qualify an already selected/cropped grid without changing its samples."""
     ds = dataset.copy(deep=False)
     facts = _output_grid_facts(layout, grid_id, field)
+    if facts.get("support_views"):
+        return _format_croco_support(ds, grid_id, source, layout, field)
     dimensions, horizontal = dict(facts["dimensions"]), dict(facts["horizontal"])
     geography = dict(facts["geography"])
     # Formula support can live on another admitted native grid (e.g. CROCO rho
@@ -451,10 +624,7 @@ def format_model_grid(dataset, grid_id, source, layout, *, field=None):
         if target in ds.dims:
             ds = ds.assign_coords({target: (target, np.arange(ds.sizes[target]), {
                 "units": "1", "long_name": "local zero-based array position"})})
-    ds.attrs["frameit_output_coordinates"] = {
-        identity: {key: value[key] for key in (
-            "native_grid_id", "dimensions", "geography", "original_coordinates")}
-        for identity, value in layout.items()}
+    ds.attrs["frameit_output_coordinates"] = _output_coordinate_record(layout)
     for name in ds.data_vars:
         links = str(ds[name].encoding.get(
             "coordinates", ds[name].attrs.pop("coordinates", ""))).split()

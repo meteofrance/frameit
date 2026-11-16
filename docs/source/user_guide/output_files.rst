@@ -430,6 +430,7 @@ interpolate a field, rotate a vector or convert units.
 **CROCO V**
     Dimensions ``y_v, x_rho``; geography ``latitude_v, longitude_v``.
 
+Regional native CROCO faces use the qualified rho/sigma names described below.
 These names apply to admitted grids; they do not add support for another adapter or
 grid. Each field references its own geography. Geographic positions include time
 when they move. Distinct grids and vertical axes remain separate in one dataset;
@@ -473,6 +474,52 @@ Moving-grid identity follows the complete inventoried coordinate trajectory,
 not just the horizontal shape. Independent trajectories can share a snapshot.
 Coordinate provenance includes ``native_grid_id`` for each exported coordinate
 set, including separate output views of a shared native snapshot.
+
+.. _croco-owned-support:
+
+Regional CROCO support views
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A cropped native U or V field can require rho-grid sigma support larger than its
+own field window. These are different views, not arrays to align or trim to the
+same shape. They remain in the same source/product dataset with separate names:
+
+* U's inherited rho axis is ``y_rho_<owner>``; V's is ``x_rho_<owner>``.
+  The native face axes retain ``x_u`` and ``y_v`` unless another inventoried grid
+  already requires qualification.
+* Each face's sigma coordinate and full formula support use
+  ``<base>_support_<owner>``, for example ``s_rho_support_<owner>``,
+  ``h_support_<owner>`` and ``zeta_support_<owner>``. Rho support axes are
+  ``y_rho_support_<owner>`` and ``x_rho_support_<owner>``.
+* Each view retains its source-coordinate and zero-based source-index auxiliaries.
+  Declared crop-edge padding has missing support and missing source indices,
+  not repeated edge samples. Valid physical zeroes remain zeroes.
+
+These names apply only when both crop widths are positive. A centre without
+``width_km`` retains full-domain names. Distinct inventoried sigma definitions
+retain their existing vertical-identity qualifier before ``_support_<owner>``.
+Bounds and nested ancillary arrays follow their owning support view.
+
+``<owner>`` is the full inventoried horizontal-view identity, including the
+coordinate trajectory when applicable. Names do not depend on the selected field
+order, aliases or product filtering. The dataset's
+``frameit_output_coordinates_json`` attribute records the owning view, native
+identities, stored support names, dimension mappings and sigma formula links.
+Some inventoried views may not be exported; follow names actually present in the
+dataset. An explicitly requested ``zeta`` remains a data variable on its rho view;
+the face-specific copies are support coordinates.
+
+The sigma labels stay dimensionless. Their formula references retain the original
+rho-grid bathymetry and surface elevation; they do not supply physical depths at
+U/V face locations or imply a face-depth interpolation. Support arrays can remain
+much larger than the field crop and can add storage. Uncropped naming, canonical
+rho-grid axes, rho/Earth target axes and polar naming are unchanged.
+
+This regional output-schema correction can require downstream scripts to use
+the qualified names and formula links. Explicit processing and writer chunk/shard
+keys must use the actual exported dimensions, including support-only dimensions;
+unknown dimension keys fail. Storage format, compression and numerical precision
+are unchanged. No YAML syntax, level-selection rule or scientific method changed.
 
 .. _wind-grid-contract:
 

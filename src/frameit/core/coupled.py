@@ -847,7 +847,9 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                 from frameit.core.preflight import describe_model_grid_output
 
                 name = product["source"]
-                describe_model_grid_output(plans[name], bindings[name], product)
+                describe_model_grid_output(
+                    plans[name], bindings[name], product,
+                    regional=bool(conf.x_boxsize_km and conf.y_boxsize_km))
             if product["product"] != "polar":
                 continue
             binding = children[product["source"]].source_requests[product["source"]]["binding"]
@@ -987,7 +989,8 @@ def run_native_sources(runner, *, benchmark=False):
                 if progress is not None:
                     progress.update("preparing lazy model-grid product", source=name)
                 fields = child.source_requests[name]["exports"]["model_grid"]
-                layout = layouts[name]
+                layout = output_grid_layout(
+                    plans[name], regional=bool(child.x_boxsize_km and child.y_boxsize_km))
                 sequences = {}
                 for grid_id, ds in consumer.ds_user.items():
                     ds = ds.reset_coords([field for field in fields if field in ds.coords])
@@ -1090,16 +1093,56 @@ def _regional_dataset(dataset, grid_id, conf, source, centres):
             for dim in (settings.name_lat_dim, settings.name_lon_dim)
             if f"{dim}_source_native_index" not in dataset})
         field_attrs = {name: dict(value.attrs) for name, value in dataset.data_vars.items()}
+        coordinate_attrs = ({name: dict(value.attrs) for name, value in dataset.coords.items()}
+                            if source["model"] == "croco" else {})
         time_encoding = {name: {key: value.encoding[key] for key in ("units", "calendar", "dtype")
                                if key in value.encoding}
                          for name, value in dataset.coords.items() if value.dtype.kind == "M"}
+        support_fields = []
+        if source["model"] == "croco":
+            from frameit.processing.polar.metadata import coordinate_dependency_names
+
+            horizontal = {settings.name_lat_dim, settings.name_lon_dim}
+            support_fields = [
+                name for name in sorted(coordinate_dependency_names(dataset, dataset.data_vars))
+                if name in dataset.coords and set(dataset[name].dims) & horizontal
+                and set(dataset[name].dims) - horizontal - {"time"}]
+            dataset = dataset.reset_coords(support_fields)
         track, cropped = extract_data(
             settings, {grid_id: dataset}, geometry, track, native_winds=True)
         dataset = cropped[grid_id]
+        if support_fields:
+            dataset = dataset.set_coords(support_fields)
         for name, attrs in field_attrs.items():
             dataset[name].attrs = attrs
+        for name, attrs in coordinate_attrs.items():
+            if name in dataset:
+                dataset[name].attrs = attrs
         for name, encoding in time_encoding.items():
             dataset[name].encoding = encoding
+        if source["model"] == "croco":
+            # Separate native views share offset meaning, not extractor-specific hints.
+            for axis, native in (("x", settings.name_lon_dim), ("y", settings.name_lat_dim)):
+                for suffix, units, label in (
+                        ("", "1", "grid-point"), ("_km", "km", "distance")):
+                    name = f"{axis}_box{suffix}"
+                    if name in dataset:
+                        dataset[name].attrs = {
+                            "units": units,
+                            "long_name": f"{axis} {label} offset from extraction centre"}
+                index = f"{native}_source_native_index"
+                if index in dataset:
+                    local, = (dim for dim in dataset[index].dims if dim != "time")
+                    positions = (track[f"i{axis}_min"].values[:, None]
+                                 + np.arange(dataset.sizes[local])[None, :])
+                    valid = xr.DataArray(
+                        (positions >= 0) & (positions < geometry.sizes[native]),
+                        dims=("time", local),
+                        coords={"time": dataset.time.variable, local: dataset[local].variable})
+                    if not bool(valid.all()):
+                        dataset = dataset.assign_coords({
+                            name: dataset[name].where(valid).variable for name in coordinate_attrs
+                            if name in dataset.coords and local in dataset[name].dims})
         nx, ny = geometry.sizes[settings.name_lon_dim], geometry.sizes[settings.name_lat_dim]
         covered_x = track.ix_max_domain - track.ix_min_domain + 1
         covered_y = track.iy_max_domain - track.iy_min_domain + 1

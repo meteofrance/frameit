@@ -3957,6 +3957,125 @@ definitions; the approved design and25prior paths remain unchanged. Diff and
 publication-boundary checks pass. No new test module or runtime implementation
 was created; only the plan and this record are included in the local commit.
 
+### CROCO implementation plan approved — inline execution active
+
+The maintainer approved plan990f29b95348270058e49a3762c9d6303a1fd16d for inline
+implementation, with one fresh independent review before the focused local
+implementation commit. No repeated routine approval rounds or per-step commits.
+The accepted design remainsf8e9c87; its numerical/mask/time/level/crop safeguards
+and the25prior dirty-path preservation requirements are binding.
+
+The existing linked workspace/environment are verified; all25prior files were
+freshly copied with manifest/status/binary diff into the new plan-owned workspace
+`.superpowers/sdd/task-16-croco-support-plan/`. Its `progress.md` records exact
+task steps, interface checks and any rulings. Skill `task-start` cannot parse
+the approved `Task1/Task2` headings (exit3), so exact briefs were extracted without
+modifying the approved plan. No installations, source changes or full diagnostic
+were performed during setup. Earlier evidence and the retained preview remain.
+
+Inline Task1 bound roles: new tests first failed8cases at the observed index/zeta
+role merges, with3genuine-conflict controls passing. The reader now retains an
+actual source coordinate and its attributes before generating any missing native
+index; the executor matches only actual user-field roles before the unchanged
+strict merge. Fresh task completion30passed/68warnings in35.11s, including real
+NetCDF/Zarr supplied-index/co-export round trips. No commit yet; Task2 regional
+layout, connected verification/docs and final independent review remain pending.
+
+### CROCO implementation verified — independent review pending
+
+Inline Task2 now carries independently cropped CROCO face support in owner-qualified
+rho/sigma/formula namespaces, retaining the original support extents and arrays.
+Preflight, processing/writer applicable dimensions and runtime use the same
+regional map. Default/C3/polar/uncropped layouts and exact/identical guards remain.
+Required cross-grid support survives field filtering; authored CROCO coordinate
+metadata survives extraction, and padded support/source coordinates follow the
+already declared crop mask instead of exposing clipped repeated source samples.
+No current calculation, field samples, crop window, level/clock or physical-depth
+method changed. Canonical output guidance documents naming, larger footprints,
+formula meaning, storage keys and downstream schema adaptation.
+
+The initial overbroad coordinate-role promotion broke two Meso-NH controls; it
+was narrowed to the actual bound native-index coordinate. The resulting reader/
+metadata/grouped-W lane passed94cases. All earlier failures and fixture setup
+errors remain in the plan-specific ledger/logs, not relabelled as passes.
+
+Final approved connected command (the exact named lane in the implementation
+plan, with its declared environment/fixture prefix and new JUnit output):
+**481passed,2026warnings,281.30s**, zero failures/errors/skips. Three formatting
+wraps followed; the final Task2 rerun then passed**38cases,143warnings,60.42s**:
+36new cases plus both original portable CROCO cases, whose scientific assertions
+and fixtures were unchanged. Fresh ordinary NetCDF/Zarr reader processes check
+nonconstant fixed/moving/edge samples, zeroes/NaNs, selected sigma order, complete
+formula targets, authored source indices, metadata and actual chunks/shards.
+The mixed polar/model-grid case checks planning, not broader polar qualification.
+
+Strict Sphinx build/publication check and13publication units passed. Live
+text-only GUI inspection at1020px/320px found no page overflow or unreachable
+code blocks; preview is retained. Baseline-relative Ruff is19baseline/19current/
+0new findings, not zero historical debt. `git diff --check` passed.
+All25pre-existing dirty paths and their baseline copies were checked against the
+original SHA256 manifest and match exactly; the real index was empty.
+
+Exact commands/results, bounded rulings, preserved evidence and machine-local
+preview/server/restart details are in the ignored plan workspace's `progress.md`,
+`checks-and-handover.md`, `connected-01.xml/.txt`,
+`task-2-tests.log` and `ruff-02-and-preservation.json`.
+The next gate is one fresh independent review of a frozen task-only tree, then
+a focused local commit; implementation is not committed yet. No push/merge,
+installation, environment repair, standalone screenshot/image/plot check or
+Task16 post-freeze full diagnostic occurred. Whole Task16/caller conversion,
+broader producer/native/HPC, installed-wheel and human acceptance gates stay open.
+
+### CROCO review01 — five Important findings, bounded fix pass
+
+The one fresh reviewer rejected frozen treea7ed7d97 with five Important findings
+(no Critical/Minor): partial auxiliary-grid planning crash; owner aliases leaking
+into centre-only uncropped output; distinct sigma identities collapsing; valid
+rho-geography bounds missing from closure/resources; and present, already-bound
+nested ancillary arrays missing from the product. Original review/diff/hashes
+remain in the plan-owned workspace. This is not an independent approval.
+
+All five reproduced before production fixes:11failed/1passed/3.19s. Focused
+corrections now pass:6cases for partial-grid/actual crop-active callers;8for
+distinct sigma definitions plus original level copies;2for positive geographic
+bounds and nv chunks/shards;8for lazy nested ancillary closure plus unchanged
+genuine missing/owner/collision failures. One bounds attempt still failed because
+rho metadata is absent from the face grid; its failed log is preserved. The fix
+walks existing complete-inventory metadata, not arbitrary first-file payloads.
+Other model support roles and all scientific calculations remain unchanged.
+
+The approved connected fix lane is running; no green-suite/commit claim yet.
+Post-fix Ruff is19baseline/19current/0new after correcting one introduced loop
+variable shadow. All25preserved paths/copies remain byte-exact. Strict Sphinx02,
+publication02 and13publication units pass; the corrected canonical text passed
+live1020px/320px text checks without overflow/unreachable code. Preview retained.
+The named CROCO C3 check proves matching/pre-alias identity, not an authored
+unequal per-field selector; those fields share one group selector. Existing
+generic transformed/native C3 positive/negative controls remain in the connected
+lane, and requests.py/default layout are unchanged. This coverage limit is
+recorded rather than inventing a new scientific profile or request protocol.
+No repeated reviewer, full Task16 diagnostic, environment or image check.
+
+### CROCO review fix pass verified — local commit ready
+
+All five Important findings now have observed RED→GREEN regressions and the
+approved connected fix lane passes**492cases,2026warnings,296.41s**, zero
+failures/errors/skips. After the lint-only local-variable rename, the final new
+module plus both unchanged original portable CROCO cases passes**49cases,
+143warnings,74.91s** (47new+2original). No production/test/published-source
+edits followed. Strict docs/publication02,13units and live1020/320px text checks
+passed; preview remains available. Ruff remains19baseline/19current/0new;
+diff-check and all25preserved file/copy hashes pass.
+
+The original review remains a failed verdict on its initial tree; it is not
+rewritten as independent approval of the final tree. The lead closed the findings
+with focused regressions and a green connected suite, without a second reviewer,
+as required by the approved inline workflow. No Minor findings were reported.
+Only the eight task paths will be staged for the focused local commit. No push,
+merge, worktree/evidence deletion, environment repair, standalone image/plot run
+or post-freeze Task16 full. Whole Task16/legacy conversion and all previously
+named qualification/human gates remain open; resume producer/caller work next.
+
 ## Task 01 evidence
 
 Root cause: CLI removed all paths below `~/.local`, including the selected

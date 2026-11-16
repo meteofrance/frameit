@@ -1151,14 +1151,15 @@ def _publish_source_binding(conf, name, binding):
         n: list(s["files"]) for n, s in plan["sources"].items()})
     for product in plan["products"]:
         if product["source"] == name and product["product"] == "model_grid":
-            describe_model_grid_output(source, binding, product)
+            describe_model_grid_output(
+                source, binding, product, regional=bool(conf.x_boxsize_km and conf.y_boxsize_km))
 
 
-def describe_model_grid_output(source, binding, product):
+def describe_model_grid_output(source, binding, product, *, regional=False):
     """Preview the same exported axis names used by dataset assembly."""
     from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
 
-    layout = output_grid_layout(source)
+    layout = output_grid_layout(source, regional=regional)
     product.update(stored_names={}, dimensions={}, units={})
     for name in product["fields"]:
         descriptor = binding["products"]["model_grid"][name]
@@ -1285,13 +1286,17 @@ def describe_v3_resources(conf, sources, execution_options=None):
 
             source = sources[item["source"]]
             binding = source["requests"]["binding"]
-            layout = output_grid_layout(source)
+            layout = output_grid_layout(
+                source, regional=(item["product"] == "model_grid"
+                                  and bool(conf.x_boxsize_km and conf.y_boxsize_km)))
             for descriptor in binding["products"][item["product"]].values():
                 for record in descriptor["records"]:
+                    facts = _output_grid_facts(layout, record["selection_grid_id"],
+                                               descriptor.get("operation") or record["name"])
+                    dims.update(target for view in facts.get("support_views", {}).values()
+                                for target in view["dimensions"].values())
                     vertical = record.get("vertical")
                     if vertical:
-                        facts = _output_grid_facts(layout, record["selection_grid_id"],
-                                                   descriptor.get("operation") or record["name"])
                         dims.update(facts["dimensions"].get(dim, dim)
                                     for coord in vertical["coordinates"].values()
                                     for dim in coord["dimensions"])

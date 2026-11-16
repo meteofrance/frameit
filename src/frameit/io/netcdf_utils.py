@@ -332,9 +332,15 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
             dim = vertical["dimension"]
             indexers[dim] = record["source_positions"]
             index = f"{dim}_source_native_index"
+            if variable == index and variable in original.coords:
+                dataset = dataset.set_coords(name)
             if model in {"NEMO", "CROCO"} and index not in dataset:
-                dataset = dataset.assign_coords({index: (dim, np.arange(original.sizes[dim]), {
-                    "units": "1", "long_name": f"zero-based native source {dim} index"})})
+                if index in original.coords:
+                    dataset = dataset.assign_coords({
+                        index: original[index].variable.copy(deep=False)})
+                else:
+                    dataset = dataset.assign_coords({index: (dim, np.arange(original.sizes[dim]), {
+                        "units": "1", "long_name": f"zero-based native source {dim} index"})})
         dataset = dataset.isel(indexers)
         samples_by_record[key] = dataset
         return dataset
@@ -342,8 +348,26 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
     def formula_support(dataset, record):
         """Only already-bound ordinary-reader support can accompany a product."""
         field = source["fields"][record["field_id"]]
-        for name, role in field.get("dependencies", {}).items():
-            if role not in {"coordinates", "formula_terms", "cell_measures"} or name in dataset:
+        dependencies = dict(field.get("dependencies", {}))
+        roles = {"coordinates", "formula_terms", "cell_measures"}
+        if model == "CROCO":
+            roles.add("ancillary_variables")
+            pending, visited = list(dependencies), set()
+            while pending:
+                name = pending.pop()
+                if name in visited:
+                    continue
+                visited.add(name)
+                descriptor = binding["dependencies"].get(name)
+                if descriptor is None:
+                    continue
+                support_field = source["fields"][descriptor["field_id"]]
+                for child, role in support_field.get("dependencies", {}).items():
+                    if child not in dependencies:
+                        dependencies[child] = role
+                        pending.append(child)
+        for name, role in dependencies.items():
+            if role not in roles or name in dataset:
                 continue
             descriptor = binding["dependencies"].get(name)
             records = [] if descriptor is None else [
