@@ -1,33 +1,31 @@
 # Illustration inputs only: adapt this directory to the two BATSIRAI diagnostic files.
-schema_version: "2.1"
-model: mesonh
+schema_version: 3
 run:
   name: batsirai-fixed
-input:
-  directory: ./data/BATSIRAI-10mins
-  pattern: '*dg.nc'
-  format: netcdf
-  wind_pairs:
-    # The files describe Earth-relative zonal/meridian 10-m winds in m s-1.
-    - {group: fields_2d, u: UM10, v: VM10, reference_frame: earth}
-tracking:
-  method: fixed_box
-  fixed_box:
-    # First-time MSLP minimum in these files; held fixed for the comparison.
-    center: {latitude: -16.342215392786485, longitude: 62.15487544109405}
-domain:
+sources:
+  atmosphere:
+    model: mesonh
+    files: './data/BATSIRAI-10mins/*dg.nc'
+    format: netcdf
+    wind_pairs:
+      # The files describe Earth-relative zonal/meridian 10-m winds in m s-1.
+      - {u: UM10, v: VM10, basis: earth}
+    variables:
+      2d: [UM10]
+    field_metadata:
+      UM10: {kind: continuous}
+region:
+  # First-time MSLP minimum in these files; held fixed for the comparison.
+  center: {latitude: -16.342215392786485, longitude: 62.15487544109405}
   width_km: {x: 500, y: 500}
-variables:
-  fields_2d:
-    names: [UM10]
-polar:
-  enabled: true
-  radial_step_m: 6000
-  azimuth_count: 180
+products:
+  model_grid: true
+  track: true
+  polar: {radius_km: 250, radial_step_km: 6, azimuth_count: 180}
 output:
   directory: ./batsirai-fixed
   overwrite: false
+resources:
   synchronous_export: true
-execution:
-  dask_scheduler: synchronous
+  scheduler: synchronous
   native_threads: 1

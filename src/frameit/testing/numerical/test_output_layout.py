@@ -33,13 +33,13 @@ def test_direct_export_uses_products_directory(tmp_path):
 def test_full_arome_requests_do_not_inherit_vertical_velocity():
     cases = load_cases(mode="full")
     for case in cases:
-        requests = case["config"]["variables"]
+        requests = case["config"]["sources"]["atmosphere"]["variables"].get("3d", {})
         if case["dataset_id"].startswith("AROME/"):
             assert all("w" not in spec["names"] for spec in requests.values())
         elif "level_w" in requests:
             assert "WT" in requests["level_w"]["names"]
     w_only = next(case for case in load_cases() if case["id"] == "mnh_chido_w_only_polar")
-    assert w_only["config"]["polar"]["variables"] == {"level_w": {"names": ["WT"]}}
+    assert w_only["config"]["products"]["polar"]["fields"] == {"atmosphere": ["level_w.WT"]}
 
 
 def test_grib_cache_is_local_distinct_and_reused(tmp_path):

@@ -28,21 +28,24 @@ def test_batsirai_plot_cli_reads_time_dependent_cartesian_coordinates(tmp_path):
     for name in ("batsirai-fixed", "batsirai-moving"):
         products = tmp_path / name / "products"
         products.mkdir(parents=True)
-        track = xr.Dataset({key: ("time", values) for key, values in {
-            "lat": [-20., -20.], "lon": [60., 60.], "ix_min": [1, 1],
-            "ix_max": [3, 3], "iy_min": [1, 1], "iy_max": [3, 3]}.items()},
+        track = xr.Dataset({key: ("time", values, {"units": units}) for key, values, units in (
+            ("latitude", [-20., -20.], "degrees_north"),
+            ("longitude", [60., 60.], "degrees_east"))},
                            coords={"time": times})
         track.to_netcdf(products / f"{name}.track.nc", engine="netcdf4")
     cart = source.isel(y=slice(1, 4), x=slice(1, 4)).assign_coords(
         latitude=(("time", "y", "x"), np.broadcast_to(lat[1:4, 1:4], (2, 3, 3))),
         longitude=(("time", "y", "x"), np.broadcast_to(lon[1:4, 1:4], (2, 3, 3))))
     products = tmp_path / "batsirai-fixed/products"
-    cart.to_netcdf(products / "batsirai-fixed.cart.surface.nc", engine="netcdf4")
-    polar = xr.Dataset({"UM10": (("time", "rr", "theta"),
+    cart = cart.assign_coords(y=np.arange(3), x=np.arange(3))
+    for name in ("batsirai-fixed", "batsirai-moving"):
+        cart.to_netcdf(tmp_path / name / "products" / f"{name}.atmosphere.model_grid.nc",
+                       engine="netcdf4")
+    polar = xr.Dataset({"UM10": (("time", "radius", "azimuth"),
                                np.broadcast_to(wind[:, 2:3, 2:3], (2, 3, 8)), {"units": "m s-1"})},
-                       coords={"time": times, "rr": [0., 2., 4.],
-                               "theta": np.arange(8) * np.pi / 4})
-    polar.to_netcdf(products / "batsirai-fixed.polar.surface.nc", engine="netcdf4")
+                       coords={"time": times, "radius": [0., 2., 4.],
+                               "azimuth": np.arange(8) * np.pi / 4})
+    polar.to_netcdf(products / "batsirai-fixed.atmosphere.polar.nc", engine="netcdf4")
     script = Path(__file__).parents[1] / "example/plots/batsirai_wind.py"
     args = [sys.executable, str(script), str(data), str(tmp_path / "batsirai-fixed"),
             str(tmp_path / "batsirai-moving"), str(tmp_path / "figures")]
@@ -74,9 +77,10 @@ def test_first_run_plot_cli_reads_only_the_selected_time(tmp_path):
         crop = ds.isel(latitude=slice(6, 11), longitude=slice(6, 11)).rename(
             {"valid_time": "time"})
         lat, lon = np.meshgrid(crop.latitude, crop.longitude, indexing="ij")
-        crop = crop.rename({"latitude": "y_box", "longitude": "x_box"}).assign_coords(
-            latitude=(("time", "y_box", "x_box"), np.broadcast_to(lat, (2, 5, 5))),
-            longitude=(("time", "y_box", "x_box"), np.broadcast_to(lon, (2, 5, 5))))
+        crop = crop.rename({"latitude": "y", "longitude": "x"}).assign_coords(
+            y=np.arange(5), x=np.arange(5),
+            latitude=(("time", "y", "x"), np.broadcast_to(lat, (2, 5, 5))),
+            longitude=(("time", "y", "x"), np.broadcast_to(lon, (2, 5, 5))))
         crop.to_netcdf(product, engine="netcdf4")
     before = source.read_bytes(), product.read_bytes()
     script = Path(__file__).parents[1] / "example/plots/first_run.py"

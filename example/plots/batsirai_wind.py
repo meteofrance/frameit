@@ -60,34 +60,46 @@ def main(data, fixed, moving, output):
     for run, name, title in ((fixed, "batsirai-fixed.png", "Fixed native crop"),
                               (moving, "batsirai-tracking.png", "Pressure–wind track and final crop")):
         prefix = "batsirai-fixed" if run == fixed else "batsirai-moving"
-        with xr.open_dataset(run / "products" / f"{prefix}.track.nc", engine="netcdf4") as track:
+        with xr.open_dataset(run / "products" / f"{prefix}.track.nc", engine="netcdf4") as track, \
+             xr.open_dataset(run / "products" / f"{prefix}.atmosphere.model_grid.nc",
+                             engine="netcdf4") as crop:
+            np.testing.assert_array_equal(track.time.values, times)
+            np.testing.assert_array_equal(crop.time.values, times)
+            crop = crop.isel(time=-1)
             fig, ax, path = draw(name, longitude[1:-1, 1:-1], latitude[1:-1, 1:-1], full, title)
             if run == moving:
-                ax.plot(track.lon, track.lat, "o-", color="#021633", markerfacecolor="white",
-                        linewidth=1.5, markersize=5, label="Tracking centres")
+                ax.plot(track.longitude, track.latitude, "o-", color="#021633",
+                         markerfacecolor="white",
+                         linewidth=1.5, markersize=5, label="Tracking centres")
             else:
-                ax.plot(track.lon[0], track.lat[0], "o", color="#021633", label="Fixed centre")
-            j0, j1 = (int(track[n].isel(time=-1)) for n in ("iy_min", "iy_max"))
-            i0, i1 = (int(track[n].isel(time=-1)) for n in ("ix_min", "ix_max"))
-            corners = [(j0, i0), (j0, i1), (j1, i1), (j1, i0), (j0, i0)]
-            ax.plot([longitude[j, i] for j, i in corners], [latitude[j, i] for j, i in corners],
-                    color="#ad3200", linewidth=1.7, label="Native crop")
-            for limits, coordinates in ((ax.set_xlim, longitude), (ax.set_ylim, latitude)):
-                edges = [coordinates[j, i] for j, i in corners]
+                ax.plot(track.longitude[0], track.latitude[0], "o", color="#021633",
+                         label="Fixed centre")
+            ny, nx = crop.latitude.shape
+            corners = [(0, 0), (0, nx - 1), (ny - 1, nx - 1), (ny - 1, 0), (0, 0)]
+            ax.plot([float(crop.longitude[j, i]) for j, i in corners],
+                    [float(crop.latitude[j, i]) for j, i in corners],
+                     color="#ad3200", linewidth=1.7, label="Native crop")
+            for limits, coordinates in ((ax.set_xlim, crop.longitude),
+                                        (ax.set_ylim, crop.latitude)):
+                edges = [float(coordinates[j, i]) for j, i in corners]
                 padding = (max(edges) - min(edges)) / 4
                 limits(min(edges) - padding, max(edges) + padding)
             ax.legend(loc="upper left", fontsize=9)
             fig.savefig(path, dpi=180)
             plt.close(fig)
-    for role, name, title in (("cart", "batsirai-cartesian.png", "Zonal wind — native points"),
-                               ("polar", "batsirai-polar.png", "Zonal wind — polar points")):
-        with xr.open_dataset(fixed / "products" / f"batsirai-fixed.{role}.surface.nc", engine="netcdf4") as ds:
+    for role, name, title in (
+        ("model_grid", "batsirai-cartesian.png", "Zonal wind — native points"),
+        ("polar", "batsirai-polar.png", "Zonal wind — polar points"),
+    ):
+        with xr.open_dataset(fixed / "products" / f"batsirai-fixed.atmosphere.{role}.nc",
+                             engine="netcdf4") as ds:
             if ds.UM10.attrs.get("units") != "m s-1":
                 raise ValueError("Exported UM10 must retain m s-1")
             np.testing.assert_array_equal(ds.time.values, times)
             snapshot = ds.isel(time=-1)
             values = snapshot.UM10.values
-            x, y = (ds.theta.values, ds.rr.values) if role == "polar" else (snapshot.longitude, snapshot.latitude)
+            x, y = ((ds.azimuth.values, ds.radius.values) if role == "polar"
+                    else (snapshot.longitude, snapshot.latitude))
             fig, _, path = draw(name, x, y, values, title, polar=role == "polar")
             fig.savefig(path, dpi=180)
             plt.close(fig)

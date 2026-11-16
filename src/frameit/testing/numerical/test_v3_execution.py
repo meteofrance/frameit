@@ -630,3 +630,138 @@ assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
 """, product["path"], sources[product["source"] or "weather"]["files"],
                         case, product["role"]], check=True, capture_output=True, text=True)
     assert {path: _digest(path) for path in originals} == originals
+
+
+def test_benchmark_small_case(tmp_path):
+    """One existing, unambiguous MNH surface case uses the real bounded workers."""
+    import multiprocessing
+
+    from frameit.testing.artifacts import read_json
+    from frameit.testing.catalog import load_cases
+    from frameit.testing.datasets import ci_dataset_root
+    from frameit.testing.polar_benchmark import _benchmark_worker, _compare_outputs
+
+    root = ci_dataset_root()
+    case, = load_cases(patterns=("mnh_chido_surface_polar",))
+    assert case["config"]["schema_version"] == 3
+    case["config"]["resources"] = {
+        "cpus": 1, "scheduler": "synchronous", "synchronous_export": True}
+    inputs = sorted((root / "MNH/CHIDO").glob("*.nc"))
+    before = {path: _digest(path) for path in inputs}
+    variants = []
+    for capacity in (2, 0):
+        output = tmp_path / f"capacity-{capacity}"
+        completion = output / "result.json"
+        process = multiprocessing.get_context("spawn").Process(
+            target=_benchmark_worker, args=(case, root, output, "ci", capacity, completion))
+        process.start()
+        process.join(60)
+        if process.is_alive():
+            process.terminate()
+            process.join(10)
+            pytest.fail("Small benchmark exceeded its 60-second worker limit")
+        assert process.exitcode == 0
+        record = read_json(completion)
+        assert record["ok"], (record, (output / "logs/worker.log").read_text())
+        assert record["case"] == "mnh_chido_surface_polar"
+        assert record["target_motion"] == "case tracker"
+        assert record["cache_size"] == capacity
+        assert {p["role"] for p in record["result"]["products"]} == {
+            "track", "model_grid", "polar"}
+        subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1]) as out:
+    assert out.attrs['product_type'] == 'polar'
+    assert out.radius.attrs['units'] == 'km' and out.azimuth.attrs['units'] == 'rad'
+    np.testing.assert_array_equal(out.radius, np.arange(0., 61., 3.))
+    np.testing.assert_array_equal(out.azimuth_degrees, np.arange(0., 360., 10.))
+    assert out.time.size == 3
+    for name, units in {'UM10':'m s-1', 'VM10':'m s-1', 'MSLP':'hPa',
+                        'LE':None, 'H':None}.items():
+        assert name in out and out[name].dims == ('time', 'radius', 'azimuth')
+        assert out[name].attrs.get('units') == units
+assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
+""", next(p["path"] for p in record["result"]["products"] if p["role"] == "polar")],
+                       check=True, capture_output=True, text=True)
+        variants.append(record)
+    assert _compare_outputs(*variants) == 0.
+    assert {path: _digest(path) for path in inputs} == before
+
+
+@pytest.mark.parametrize("role", ["model_grid", "polar"])
+@pytest.mark.parametrize("export_track", [False, True])
+def test_matrix_checks_actual_outputs(tmp_path, role, export_track):
+    """The real checker must accept C7 products without intersecting source clocks."""
+    from copy import deepcopy
+
+    from frameit.core.configuration import to_runtime
+    from frameit.testing.catalog import time_strings
+    from frameit.testing.checks import check_products
+    from frameit.testing.numerical.test_v3_polar import scene
+
+    atmosphere, ocean = scene(), scene(hours=(0, 2)).rename(
+        time="time_counter", nj="y", ni="x", latitude="nav_lat", longitude="nav_lon")
+    atmosphere.to_netcdf(tmp_path / "atmosphere.nc")
+    ocean.to_netcdf(tmp_path / "ocean.nc")
+    originals = {path: _digest(path) for path in tmp_path.glob("*.nc")}
+    raw = {
+        "schema_version": 3, "run": {"name": "matrix"},
+        "sources": {
+            "atmosphere": {"model": "mesonh", "files": str(tmp_path / "atmosphere.nc"),
+                           "variables": {"2d": ["q"]}},
+            "ocean": {"model": "nemo", "files": str(tmp_path / "ocean.nc"),
+                      "variables": {"2d": ["q"]}},
+        },
+        "region": {"center": {"latitude": -20., "longitude": 60.}},
+        "products": {role: True if role == "model_grid" else {
+            "radius_km": 2.5, "azimuth_count": 8}},
+        "output": {"directory": str(tmp_path / "out")},
+        "resources": {"cpus": 1, "scheduler": "synchronous", "synchronous_export": True},
+    }
+    if export_track:
+        raw["products"]["track"] = True
+    clocks = {"atmosphere": time_strings(atmosphere.time.values),
+              "ocean": time_strings(ocean.time_counter.values)}
+    contracts = []
+    for source, horizontal in (("atmosphere", ["y", "x"]), ("ocean", ["y_t", "x_t"])):
+        dims = ["time", *("radius", "azimuth")] if role == "polar" else ["time", *horizontal]
+        contracts.append({
+            "role": role, "source": source, "variables": ["q"], "times": clocks[source],
+            "dimensions": {"q": dims}, "units": {"q": "K"},
+        })
+    if export_track:
+        contracts.append({
+            "role": "track", "source": None, "variables": ["latitude", "longitude"],
+            "times": clocks["atmosphere"], "latitude": [-20.] * 3, "longitude": [60.] * 3,
+        })
+    case = {"config": raw, "expected": {"products": contracts, "source_times": clocks}}
+    result = execute_simulation(SimulationConfig(**to_runtime(raw, base_dir=tmp_path)))
+    assert result.ok and len(result.products) == 2 + export_track
+    checked = check_products(case, result.products)
+    assert checked["ok"], checked["reason"]
+    assert checked["reference_validation"] == "not_performed"
+    assert {item["source"] for item in checked["products"] if item["role"] != "track"} == {
+        "atmosphere", "ocean"}
+    for product in result.products:
+        with xr.open_dataset(product["path"]) as data:
+            if product["role"] != "track":
+                np.testing.assert_allclose(data.q, 7., rtol=0, atol=1e-10)
+                assert data.q.attrs["units"] == "K"
+    wrong_clock = deepcopy(case)
+    wrong_clock["expected"]["products"][1]["times"] = clocks["atmosphere"]
+    rejected = check_products(wrong_clock, result.products)
+    assert not rejected["ok"] and any(
+        check["name"] == "exact-times" and not check["ok"] for check in rejected["checks"])
+    duplicate = check_products(case, result.products + result.products[:1])
+    assert not duplicate["ok"] and "Duplicate" in duplicate["reason"]
+    wrong_dimensions = deepcopy(case)
+    wrong_dimensions["expected"]["products"][0]["dimensions"]["q"] = ["time", "old_y", "old_x"]
+    rejected = check_products(wrong_dimensions, result.products)
+    assert not rejected["ok"] and any(
+        check["name"] == "field-dimensions" and not check["ok"] for check in rejected["checks"])
+    unsupported = deepcopy(result.products)
+    unsupported[0]["encoding"]["format"] = "zarr3"
+    rejected = check_products(case, unsupported)
+    assert not rejected["ok"] and "supports NetCDF only" in rejected["reason"]
+    assert rejected["reference_validation"] == "not_performed"
+    assert {path: _digest(path) for path in originals} == originals

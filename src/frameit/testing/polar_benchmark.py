@@ -47,7 +47,8 @@ def _benchmark_worker(case, root, output, mode, cache_size, completion):
             if resolved["preflight"] != "READY":
                 raise ValueError(f"Benchmark case unavailable: {resolved['reason']}")
             config = copy.deepcopy(resolved["config"])
-            config["polar"].update(plan_cache={"entries": cache_size}, profile=True)
+            config["products"]["polar"].setdefault("processing", {}).update(
+                plan_cache={"entries": cache_size}, profile=True)
             target_motion = "case tracker"
             if mode == "ci" and case["id"] == "arome_batsirai_prescribed_polar":
                 import numpy as np
@@ -56,19 +57,25 @@ def _benchmark_worker(case, root, output, mode, cache_size, completion):
                 # Small continuous motion inside the same frozen extraction
                 # cell exercises moving target weights without enlarging the CI domain.
                 times = np.array(resolved["expected"]["times"], dtype="datetime64[ns]")
-                point = config["tracking"]["fixed_box"]["center"]
+                point = resolved["expected"]["center"]
                 latitude, longitude = point["latitude"], point["longitude"]
                 track = xr.Dataset(
-                    {"lon": ("time", longitude + np.linspace(-.001, .001, len(times))),
-                     "lat": ("time", np.full(len(times), latitude))}, coords={"time": times},
+                    {"longitude": ("time", longitude + np.linspace(-.001, .001, len(times)),
+                                   {"standard_name": "longitude", "units": "degrees_east"}),
+                     "latitude": ("time", np.full(len(times), latitude),
+                                  {"standard_name": "latitude", "units": "degrees_north"})},
+                    coords={"time": ("time", times, {"standard_name": "time"})},
                 )
                 track_path = output / "continuous-origin.nc"
-                track.to_netcdf(track_path)
-                config["tracking"]["prescribed_track"] = {"file": str(track_path)}
+                track.to_netcdf(track_path, encoding={"time": {
+                    "units": "seconds since 1970-01-01", "calendar": "proleptic_gregorian"}})
+                config["region"].pop("center", None)
+                config["region"]["track"] = {"file": str(track_path)}
                 target_motion = "continuous longitude +/-0.001 degree within the fixed CI cell"
+            conf = SimulationConfig.from_mapping_with_model_preset(config)
             result = execute_simulation(
-                SimulationConfig.from_mapping_with_model_preset(config),
-                ExecutionOptions(benchmark=True, synchronous_export=True, log_level="WARNING"),
+                conf, ExecutionOptions.from_config(
+                    conf, benchmark=True, synchronous_export=True, log_level="WARNING"),
                 input_files=tuple(Path(path) for path in resolved["input_files"]),
             )
             checks = check_products(resolved, result.products)
@@ -91,7 +98,7 @@ def _compare_outputs(first, second):
     import xarray as xr
 
     def products(record):
-        return {(p["role"], p["group"]): p["path"] for p in record["result"]["products"]
+        return {(p["source"], p["role"]): p["path"] for p in record["result"]["products"]
                 if p["role"] == "polar"}
 
     a, b = products(first), products(second)

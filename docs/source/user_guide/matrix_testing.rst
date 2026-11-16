@@ -106,8 +106,8 @@ precedence over the environment setting where those arguments are available.
 The default runs every packaged numerical test, the independent analytical
 scientific qualification, and the full CI matrix using the selected reduced
 fixture, which must be present and valid. ``--data-root`` selects the full-domain
-matrix instead; optional
-UTrack cases accept ``--utrack-weights``. All services run even if one fails.
+matrix instead. UTrack's v3 execution binding is unavailable; supplying
+``--utrack-weights`` does not enable it. All services run even if one fails.
 The output directory must be fresh and must not overlap the input data.
 
 ``all-tests.json`` combines exit codes, environment information, suite wall times,
@@ -158,8 +158,9 @@ execution starts. Worker output is forwarded live to the terminal and retained i
 ``cases/<case-id>/logs/frameit.log``. During execution, 30 seconds without worker
 output triggers an elapsed-time heartbeat with the log path; this is a progress
 indicator, not an execution timeout.
-``--log-level`` follows the ordinary CLI convention. Use ``--utrack-weights`` for
-full-domain UTrack. UTrack is always excluded in CI, including when a checkpoint
+``--log-level`` follows the ordinary CLI convention. UTrack cannot execute v3
+requests even with weights; see :doc:`../tracker/utrack`.
+It is also excluded in CI, including when a checkpoint
 is supplied: the cropped fixture does not guarantee its search context or margins.
 
 CI coverage
@@ -186,20 +187,26 @@ The core full-domain profile covers BATSIRAI fixed-centre polar and Cartesian
 extraction, BELNA moving pressure/wind tracking, CHIDO fixed and moving tracking,
 and an optional external CHIDO prescribed track. The full profile adds BATSIRAI
 moving tracking, BELNA fixed tracking, long CHIDO_02 and CHIDO_03 sequences,
-the 2-km CHIDO_MXX20 sequence, and optional UTrack.
+the 2-km CHIDO_MXX20 sequence. Packaged UTrack declarations remain unavailable
+until their selected-input execution binding is implemented.
 
 Results and coverage
 --------------------
 
 ``PASS`` means that execution and product-contract checks passed. Checks include
-the expected product groups, variables, time and level coordinates, finite centre
-positions, box geometry, and required derived wind diagnostics. Missing values
+the expected source/products, requested fields/results, their source-specific
+time and level coordinates, and applicable centre/box geometry. Exported tracks
+are checked only when requested; they do not replace a source's time contract.
+Expected times and physical levels come from the separate input inventory, while
+the processing plan supplies public coordinate names. Native crop indices are
+checked for completeness, including moving crops; centre indices are compared
+with independent expectations where available. Missing values
 are interpreted according to the scenario rather than a universal finite-everywhere
 rule. This command does not compare values to a reference simulation.
 
 Polar product checks additionally require a uniform, endpoint-exclusive angular
-cycle, radian angles, kilometre radii, consistent degree coordinates and an
-explicit open-grid marker. Numerical accuracy and Fourier behaviour are checked
+cycle, radian angles, kilometre radii and consistent degree coordinates.
+Numerical accuracy and Fourier behaviour are checked
 separately by ``test_polar_axes.py`` and ``test_polar_periodic_diagnostics.py``
 in the packaged numerical suite described below.
 
@@ -248,8 +255,8 @@ Artifacts
 Each run writes an immutable ``plan.json``, per-case ``result.json`` checkpoints,
 an atomic aggregate ``run.json``, and a derived ``summary.tsv``. Generated YAML
 configurations can be rerun with ``frameit run``; resolved configurations document
-the effective settings. Product descriptors distinguish track, Cartesian and polar
-roles and their data groups.
+the effective settings. Product descriptors identify the source and
+``model_grid`` or ``polar`` product, or a separately requested trajectory.
 
 The run records selected, required, optional, excluded, passed, skipped and failed
 case IDs; source completeness; checks; worker status; logs; input inventories; and

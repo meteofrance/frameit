@@ -12,7 +12,8 @@ def check_products(case, products):
 
     A PASS establishes contract compliance, not numerical equivalence. No
     universal finite-everywhere or wind-sign threshold is applied to fields.
-    Only small coordinates and track variables are read into memory.
+    Coordinates, tracks and bounded field slabs are read. This checker currently
+    supports NetCDF products only; Zarr descriptors fail explicitly, not silently.
     """
     import numpy as np
     from netCDF4 import Dataset, num2date
@@ -25,15 +26,15 @@ def check_products(case, products):
 
     by_key = {}
     for product in products:
-        role, group = product.get("role"), product.get("group")
-        key = role, group
-        if role not in {"track", "cart", "polar"}:
+        role, source = product.get("role"), product.get("source")
+        key = role, source
+        if role not in {"track", "model_grid", "polar"}:
             record("descriptor-role", False, f"Unknown product role: {role}")
             continue
         if key in by_key:
             record("descriptor-uniqueness", False, f"Duplicate product descriptor: {key}")
         by_key[key] = product
-    if not case["config"].get("polar", {}).get("enabled", False):
+    if "polar" not in case["config"].get("products", {}):
         record(
             "polar-disabled",
             not any(k[0] == "polar" for k in by_key),
@@ -43,16 +44,34 @@ def check_products(case, products):
     if not contracts:
         record("expected-contract", False, "Resolved case lacks expected product contracts")
     for contract in contracts:
-        key = contract["role"], contract.get("group")
+        key = contract["role"], contract.get("source")
         if key not in by_key:
-            record("product-present", False, f"Missing product: {key}", role=key[0], group=key[1])
+            record("product-present", False, f"Missing product: {key}", role=key[0], source=key[1])
             continue
         descriptor = by_key[key]
         path = Path(descriptor["path"])
+        if path.suffix != ".nc" or descriptor.get("encoding", {}).get("format") == "zarr3":
+            record("product-format", False, "check_products supports NetCDF only",
+                   role=key[0], source=key[1])
+            continue
+        clock = contract.get("times", expected.get("source_times", {}).get(key[1]))
+        if clock is None:
+            record("expected-clock", False, f"No expected clock declared for {key}")
+            continue
+        product_expected = {**expected, **contract, "times": clock}
         try:
             with Dataset(path) as dataset:
-                detail = dict(role=key[0], group=key[1], path=str(path))
+                detail = dict(role=key[0], source=key[1], path=str(path))
                 record("product-readable", True, **detail)
+                run = case["config"].get("run", {}).get("name", "analysis")
+                filename = (f"{run}.track.nc" if key[0] == "track"
+                            else f"{run}.{key[1]}.{key[0]}.nc")
+                record("product-name", path.name == filename,
+                       f"Expected C7 filename {filename}, got {path.name}", **detail)
+                record("product-identity",
+                       getattr(dataset, "product_type", None) == key[0]
+                       and (key[0] == "track" or getattr(dataset, "source_id", None) == key[1]),
+                       "Stored source/product identity disagrees with the descriptor", **detail)
                 metadata = dict(
                     detail,
                     dimensions={k: len(v) for k, v in dataset.dimensions.items()},
@@ -74,12 +93,16 @@ def check_products(case, products):
                     }
                     record(
                         "exact-times",
-                        dates == expected["times"],
-                        f"Actual times {dates} differ from expected {expected['times']}",
+                        dates == clock,
+                        f"Actual times {dates} differ from expected {clock}",
                         **detail,
                     )
                 missing = set(contract["variables"]) - set(dataset.variables)
                 record("variables", not missing, f"Missing variables: {sorted(missing)}", **detail)
+                for name, units in contract.get("units", {}).items():
+                    if name in dataset.variables:
+                        record("field-units", getattr(dataset[name], "units", None) == units,
+                               f"{name}: units differ from {units!r}", **detail)
                 for coordinate, values in contract.get("levels", {}).items():
                     if coordinate not in dataset.variables:
                         record(
@@ -105,31 +128,31 @@ def check_products(case, products):
                         **detail,
                     )
                 if key[0] == "track":
-                    _check_track(dataset, expected, metadata, record, detail)
+                    _check_track(dataset, product_expected, metadata, record, detail)
                 else:
-                    _check_field_samples(dataset, contract, expected, metadata, record, detail)
+                    _check_field_samples(
+                        dataset, contract, product_expected, metadata, record, detail)
                 if key[0] == "polar":
                     ok = (
-                        {"rr", "theta"} <= set(dataset.dimensions)
-                        and "theta_deg" in dataset.variables
-                        and dataset["theta_deg"].dimensions == ("theta",)
+                        {"radius", "azimuth"} <= set(dataset.dimensions)
+                        and "azimuth_degrees" in dataset.variables
+                        and dataset["azimuth_degrees"].dimensions == ("azimuth",)
                     )
                     record(
                         "polar-grid",
                         ok,
-                        "Polar product lacks rr/theta dimensions or theta_deg(theta)",
+                        "Polar product lacks radius/azimuth or azimuth_degrees(azimuth)",
                         **detail,
                     )
                     if ok:
-                        theta = np.asarray(dataset["theta"][:], dtype=float)
+                        theta = np.asarray(dataset["azimuth"][:], dtype=float)
                         expected_theta = np.arange(theta.size) * (2 * np.pi / theta.size)
                         periodic = (
                             theta.size >= 3 and np.all(np.isfinite(theta))
                             and np.allclose(theta, expected_theta, rtol=0, atol=1e-12)
-                            and getattr(dataset, "theta_closed", None) == 0
-                            and getattr(dataset["theta"], "units", None) == "rad"
-                            and getattr(dataset["rr"], "units", None) == "km"
-                            and np.allclose(dataset["theta_deg"][:], np.rad2deg(theta),
+                            and getattr(dataset["azimuth"], "units", None) == "rad"
+                            and getattr(dataset["radius"], "units", None) == "km"
+                            and np.allclose(dataset["azimuth_degrees"][:], np.rad2deg(theta),
                                             rtol=0, atol=1e-10)
                         )
                         record(
@@ -140,9 +163,9 @@ def check_products(case, products):
                         _check_polar_quality(dataset, contract, record, detail)
         except Exception as exc:
             record(
-                "product-readable", False, f"Cannot check {path}: {exc}", role=key[0], group=key[1]
+                "product-readable", False, f"Cannot check {path}: {exc}", role=key[0], source=key[1]
             )
-    required_keys = {(c["role"], c.get("group")) for c in contracts}
+    required_keys = {(c["role"], c.get("source")) for c in contracts}
     extras = set(by_key) - required_keys
     record(
         "product-contract",
@@ -163,8 +186,8 @@ def _check_polar_quality(dataset, contract, record, detail):
     geometry = dataset.variables.get("geometry_mapped")
     record(
         "polar-mapping-coverage",
-        geometry is not None and geometry.dimensions == ("time", "rr", "theta"),
-        "Polar product lacks geometry_mapped(time, rr, theta)", **detail,
+        geometry is not None and geometry.dimensions == ("time", "radius", "azimuth"),
+        "Polar product lacks geometry_mapped(time, radius, azimuth)", **detail,
     )
     for name in contract["variables"]:
         if name not in dataset.variables:
@@ -177,7 +200,7 @@ def _check_polar_quality(dataset, contract, record, detail):
                 quality is not None and quality.dimensions == field.dimensions,
                 f"{name} lacks aligned {suffix}", **detail,
             )
-        expected = tuple(dim for dim in field.dimensions if dim != "theta")
+        expected = tuple(dim for dim in field.dimensions if dim != "azimuth")
         for suffix in ("ring_coverage", "full_ring_valid"):
             quality = dataset.variables.get(f"{name}_{suffix}")
             record(
@@ -205,7 +228,7 @@ def _check_polar_quality_values(dataset, name, field, record, detail):
         valid = np.asarray(dataset[f"{name}_valid"][selection]) == 1
         support = np.asarray(dataset[f"{name}_support_fraction"][selection])
         status = np.asarray(dataset[f"{name}_interpolation_status"][selection])
-        angular_axis = [d for d in field.dimensions if d != "time"].index("theta")
+        angular_axis = [d for d in field.dimensions if d != "time"].index("azimuth")
         ring = dataset[f"{name}_ring_coverage"]
         ring_selection = [slice(None)] * ring.ndim
         ring_selection[ring.dimensions.index("time")] = index
@@ -241,6 +264,19 @@ def _check_polar_vector_speed(dataset, record, detail):
 def _check_track(dataset, expected, metadata, record, detail):
     import numpy as np
 
+    for name, units in (("latitude", "degrees_north"), ("longitude", "degrees_east")):
+        variable = dataset.variables.get(name)
+        if variable is None:
+            record("finite-centres", False, f"Track lacks {name}(time)", **detail)
+            continue
+        values = np.ma.asarray(variable[:])
+        finite = (variable.dimensions == ("time",)
+                  and not np.ma.getmaskarray(values).any() and np.isfinite(values).all()
+                  and getattr(variable, "units", None) == units)
+        record("finite-centres", finite, f"Invalid track {name} or units", **detail)
+        if name in expected:
+            record("expected-centres", finite and np.array_equal(values, expected[name]),
+                   f"Track {name} differs from declared centres", **detail)
     axes = {}
     for name in ("cx", "cy"):
         if name not in dataset.variables:
@@ -272,7 +308,7 @@ def _check_track(dataset, expected, metadata, record, detail):
             (axes["cy"] >= 0) & (axes["cy"] < ny)
         )
         record("centre-domain", ok, "Track centre is outside the input domain", **detail)
-    if expected.get("complete_boxes", True):
+    if expected.get("complete_boxes", False):
         if "valid_box" not in dataset.variables:
             record("complete-boxes", False, "Track lacks valid_box", **detail)
         else:
@@ -296,21 +332,40 @@ def _check_field_samples(dataset, contract, expected, metadata, record, detail):
     """
     import numpy as np
 
+    for name, axis in contract.get("native_index_coordinates", {}).items():
+        coordinate = dataset.variables.get(name)
+        if coordinate is None:
+            record("complete-boxes", False, f"Missing native index coordinate {name}", **detail)
+            continue
+        indices = np.ma.asarray(coordinate[:])
+        complete = (indices.ndim in (1, 2) and not np.ma.getmaskarray(indices).any()
+                    and np.isfinite(indices).all())
+        record("complete-boxes", complete, f"{name}: incomplete native crop indices", **detail)
+        if "native_centres" in contract:
+            wanted = [centre[axis] for centre in contract["native_centres"]]
+            observed = indices[..., indices.shape[-1] // 2].reshape(-1)
+            record("expected-centres", complete and (
+                np.array_equal(observed, wanted)
+                or observed.size == 1 and all(observed[0] == value for value in wanted)),
+                f"{name}: crop differs from independent expected centre indices {wanted}", **detail)
     allowed = {
         (gap["group"], gap["variable"], time)
         for gap in expected.get("allowed_gaps", [])
         for time in gap["times"]
     }
+    allowed.update(
+        (None, gap["field"], time) for gap in expected.get("allowed_gaps", [])
+        if gap.get("source") == contract.get("source")
+        for time in gap["times"] if "field" in gap)
     for name in contract["variables"]:
         if name not in dataset.variables:
             continue
         variable = dataset[name]
-        horizontal = {"rr", "theta"} if contract["role"] == "polar" else {"y_box", "x_box"}
-        required_dims = horizontal | {"time"} | set(contract.get("levels", {}))
+        required_dims = contract.get("dimensions", {}).get(name)
         record(
             "field-dimensions",
-            required_dims <= set(variable.dimensions),
-            f"{name} dimensions {variable.dimensions} lack required {sorted(required_dims)}",
+            required_dims is not None and tuple(required_dims) == variable.dimensions,
+            f"{name} dimensions {variable.dimensions} differ from expected {required_dims}",
             **detail,
         )
         if "time" not in variable.dimensions:

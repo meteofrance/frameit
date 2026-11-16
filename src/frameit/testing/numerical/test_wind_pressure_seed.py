@@ -73,9 +73,9 @@ def test_invalid_seed(update):
 def test_schema_maps_seed_to_tracker():
     seed = {'latitude': -5.8, 'longitude': 50., 'search_radius_km': 100}
     conf = SimulationConfig.from_mapping_with_model_preset({
-        'schema_version': '2.1', 'model': 'arome',
-        'input': {'pattern': '*.grib', 'format': 'grib'},
-        'tracking': {'method': 'pressure_wind', 'pressure_wind': {'initial_guess': seed}}})
+        'schema_version': 3,
+        'sources': {'atmosphere': {'model': 'arome', 'files': '*.grib', 'format': 'grib'}},
+        'region': {'tracker': {'method': 'pressure_wind', 'initial_guess': seed}}})
     conf.resolution = 2500
     assert PressureWindTracker.from_config(conf).initial_guess == seed
 

@@ -1,34 +1,49 @@
 # Adapt paths and selections to the actual model files. Paths are YAML-relative.
-schema_version: "2.1"
-model: arome
+schema_version: 3
 run: {name: BATSIRAI, description: AROME Batsirai analysis}
-input:
-  directory: ./data/AROME/BATSIRAI
-  pattern: "arome_BATSIRAI_20220201+???0P.grib"
-  wind_pairs:
-    - {group: heightAboveGround, u: u, v: v, reference_frame: earth}
-    - {group: isobaricInhPa, u: u, v: v, reference_frame: earth}
-    - {group: fields_2d, u: u10, v: v10, reference_frame: earth}
-tracking:
-  method: fixed_box
-  fixed_box:
-    center: {latitude: -18, longitude: 58}
-domain:
+sources:
+  atmosphere:
+    model: arome
+    format: grib
+    files: "./data/AROME/BATSIRAI/arome_BATSIRAI_20220201+???0P.grib"
+    wind_pairs:
+      - {u: heightAboveGround.u, v: heightAboveGround.v, basis: earth}
+      - {u: isobaricInhPa.u, v: isobaricInhPa.v, basis: earth}
+      - {u: u10, v: v10, basis: earth}
+    variables:
+      2d: [u10, v10, prmsl, sshf, slhf]
+      3d:
+        heightAboveGround:
+          names: [u, v, t, r, tke]
+          levels: {indices: [0, 2, 5]}
+        isobaricInhPa:
+          names: [u, v]
+          levels: {values: [1000, 850, 400], units: hPa}
+    # Only the declared initial absences remain missing; later gaps still fail.
+    allow_initial_gaps: [heightAboveGround.tke, sshf, slhf]
+    transforms:
+      - fields: [heightAboveGround.u, heightAboveGround.v, isobaricInhPa.u, isobaricInhPa.v, u10, v10]
+        sampling: native
+        basis: earth
+    field_metadata:
+      heightAboveGround.u: {kind: continuous}
+      heightAboveGround.v: {kind: continuous}
+      heightAboveGround.t: {kind: continuous}
+      heightAboveGround.r: {kind: continuous}
+      heightAboveGround.tke: {kind: continuous}
+      isobaricInhPa.u: {kind: continuous}
+      isobaricInhPa.v: {kind: continuous}
+      u10: {kind: continuous}
+      v10: {kind: continuous}
+      prmsl: {kind: continuous}
+      sshf: {kind: continuous}
+      slhf: {kind: continuous}
+region:
+  center: {latitude: -18, longitude: 58}
   width_km: {x: 500, y: 500}  # Full widths in km
-variables:
-  heightAboveGround:
-    names: [u, v, t, r, tke]
-    levels: {indices: [0, 2, 5]}
-  isobaricInhPa:
-    names: [u, v]
-    levels: {values: [1000, 850, 400]}  # Native hPa
-  fields_2d:
-    names: [u10, v10, prmsl, sshf, slhf]
-polar:
-  enabled: true
-  variables: extracted
-  azimuth_step_deg: 10
+products:
+  model_grid: true
+  track: true
+  polar: {radius_km: 250, azimuth_count: 36}
 output:
-  cartesian: {horizontal_vectors: earth_centered, vertical_velocity: interfaces}
-  polar: {vertical_velocity: mass}
   directory: ./output/BATSIRAI
