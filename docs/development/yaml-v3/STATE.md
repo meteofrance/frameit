@@ -3893,6 +3893,36 @@ Final precommit module18passed/69warnings in13.85s; strict Sphinx/publication02/
 All five production/test/canonical paths remain exactly reviewed, all25previous
 paths preserved, and diff check passes. Commit scope remains the original8paths.
 
+### CROCO option1 — bounded design authorized, implementation not authorized
+
+Metadata fixes were committed locally as63431908c64bc72fd6e8beaa6ee2a2a93fce7f8c,
+tree407369fc21da1a8fad71ecf47effd61be03ed43a. Postcommit checks confirmed the
+exact8paths, empty index and all25previous dirty paths unchanged; no push/merge.
+
+The maintainer answered “Approved” to option1 **for a bounded design**: retain
+separately owned support views rather than trim support to minimal windows.
+This authorizes writing/checking the design, not implementation or scientific
+approval. Proposed details and acceptance are in `task-16-croco-support-design.md`;
+inherited primary rho-axis and sigma/formula qualifications are disclosed schema
+choices requiring approval of that document. A fresh builder check precedes
+handover; no source, fixture, canonical page or environment changes are authorized.
+The original CROCO support/layout and provided-index loading gates remain open.
+Python3.13.18/worktree import and all25preserved paths were freshly checked;
+the baseline is retained in `task-16-croco-design-baseline.json`.
+
+The fresh builder check of treedcc559a657729440503750b572d33b45d4901ad2 returned
+“0ranked questions — nothing important left.” It verified the exact two-path
+design-only scope and all25preserved paths, with no material proposal outside
+the selected approach/safeguards. This is not approval of the detailed schema,
+implementation clearance or runtime/scientific acceptance. No runtime checks ran.
+The lead freshly verified the candidate hashes/diff, base HEAD, empty index and
+all25preserved paths before recording closure here; the design itself remains
+exactly reviewed. `git diff --check` and the publication-boundary check against
+the retained metadata02build passed. No Sphinx rebuild/GUI or runtime suite is
+needed for this internal-only proposal; the existing preview remains available.
+Docs: no user-facing impact because only an unpublished proposed design and this
+internal status record change. Detailed design approval remains the next gate.
+
 ## Task 01 evidence
 
 Root cause: CLI removed all paths below `~/.local`, including the selected
