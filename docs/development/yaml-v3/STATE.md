@@ -44,12 +44,312 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 13 | done | Task13 worker + lead + independent reviewer | 11, 12 | `106812d`; shared reports/diagnostics approved after two fix rounds; frozen handoff below. |
 | 14 | done | Task14 worker + lead + independent reviewer | 13 | `bde826b`; owning plan/progress approved, A1 corrected; frozen handoff below. |
 | 15 | done | Task15 worker + lead + independent reviewer | 14 | `40f9bcd`; C9 surface approved after fix1, frozen handoff below. |
-| 16 | active | Task16 worker + lead docs | 15 | Direct-v3 producers, callers/checker/benchmark and canonical examples. |
-| 17 | blocked | lead | 16 | Analytical fixtures and task pages; ocean fixture formula approved, not implemented. |
-| 18 | blocked | unassigned | 16 | Repeated-case/Slurm examples and tests. |
-| 19 | blocked | lead | 16, 18 | Full integration, wheel and contract evidence matrix. |
-| 20 | blocked | lead + fresh reviewers | 17, 19 | Two complete independent documentation passes with path coverage. |
+| 16 | blocked | lead inline | 15 | Reviewed direct-v3 increments committed; preserved scientific and caller contracts still fail below. No freeze. |
+| 17 | partial | lead + fresh bounded reviewer | 16 | Approved analytical tasks verified: exact required53 pass; new plotting evidence remains restricted. |
+| 18 | done, local evidence | lead + fresh bounded reviewer | 16 | `bd882c2`; final exact122 has58 passes; all six findings closed. No real-cluster claim. |
+| 19 | blocked | lead | 16, 18 | Permitted package checks pass; integration failures and forbidden installed/full checks remain explicit. |
+| 20 | wording gates verified | lead + fresh reviewers | 17, 19 | `2095dd8`; both full passes and technical closure; strict09/publication/live text pass. Restricted acceptance remains separate. |
 | 21 | blocked | lead + fresh reviewers + human | 20 | Whole-branch reviews and actual human usability acceptance. |
+
+### Current Task16 continuation from `6abe753`
+
+Latest autonomous continuation (no task completion or freeze implied):
+
+**Current evidence (16 November; overrides the historical notes below):**
+
+**Final permitted handover, 17 November — supersedes earlier active/pending
+statements below:**
+
+| Local commit | Reviewed increment |
+|---|---|
+| `95c0f31` | Scientific boundaries, explicit initial missingness and analytical tasks |
+| `5f82964` | Fourteen direct-v3 caller modules; five preservation findings closed |
+| `6426e40` | Producers/canonical assets and independent clock/level/crop contracts; I1–I4 closed |
+| `d82ef1f` | Eight downstream FA modules, CROCO/HPC/Zarr callers; false reader coverage exposed |
+| `bd882c2` | Repeated-case loop, Slurm array and independent NetCDF checker; six findings closed |
+| `2095dd8` | Both full documentation passes and technical shortening closure |
+
+- Final exact Task17 command121: **53 passed**,479 warnings,101.12s.
+  Final exact Task18 command122: **58 passed**,317 warnings,62.57s.
+  No skipped/error cases in either XML. These are bounded suites, not a full
+  branch run; PNG smokes ran only within required unfiltered suites.
+- Producer regression111 has10 passes; connected112 has21 passes,165 warnings,
+  58.24s, including actual checker products, unchanged MNH replay and the
+  required small benchmark. Fresh producer review I1–I4 is closed.
+- Latest complete CROCO-vector/Zarr modules120: **54 passed/five failed**,
+  156 warnings,7.94s. CROCO is24/4 and Zarr30/1. The false-green reader case119
+  was corrected: binding is outside the reader rejection context, so unavailable
+  binding is visibly red, not recovered reader coverage. Fresh downstream I1 is
+  closed. All six actual Zarr bad-size cases pass without obsolete-key errors.
+- Request-selection114 remains147 passes/two retained rejection conflicts.
+  Restored preservation selection104 remains3 passes/five explicit contract
+  failures. Historical worker lanes/87-node inventory101 are not a current
+  combined run. Eight downstream FA conversions retain historical16/9 and8/3
+  bounded worker outcomes; those failures are not waived.
+- Original first-run and scientific fixtures/helpers retain15 complete ASTs
+  against `6abe753` (117). Worker/reviewer checks also preserve scientific
+  oracles, tolerances, shared signatures and native/analysis selections.
+- Strict Sphinx123 and publication125 pass for iteration09. Publication units124
+  pass13 tests; release126 passes2 tests/two subtests. Scoped producer Ruff127,
+  shell syntax and diff checks pass. Runtime129 confirms Python3.13 and this
+  checkout; package check130 reports no broken requirements.
+- Iterations08/09's checker explanation was independently confirmed and read
+  live at1280/320px, document widths1261/301. An obsolete documentary open-grid
+  marker requirement was removed; no runtime check was changed. Earlier26-page
+  live text coverage and subsequent06/07 checks remain valid for unchanged
+  paragraphs. The live preview remains available; owned process/tab/restart
+  details are in the ignored session handover, not committed machine state.
+
+**Remaining gates and exact next action:**
+
+1. Resolve the preserved scientific requests without replacing them: original
+   AROME2.5km versus native2.766872308879716km guard, and MNH physical W interface
+   values `[0,20,50]` versus their corresponding mass-target labels `[5,25,65]`.
+   Producer I5 remains blocked, not scientific approval or a numerical waiver.
+2. Give explicit disposition to retained caller contracts before freezing:
+   `strict` equal timelines,2600m override, inactive source-local polar settings,
+   native/no-rotation rejection, unitless tracks, duplicate physical sources,
+   native-face geography/units, polar `source_i` merges, missing native track/
+   provenance, partial-publication expectations and CROCO static-support guards.
+   Latest120's five named failures and all historical node inventories are
+   retained; later reader/shutdown assertions behind these failures are unverified.
+3. Only after those decisions/repairs and reviewed tests, establish a real
+   source/test/asset freeze and use Task16's single reserved full diagnostic.
+   It remains unused. No whole-repository green result is claimed.
+4. Task17's new plotting evidence is restricted. Task19's installed-wheel and
+   whole-branch qualification remain unavailable; wheel40/archive42 are stale
+   historical build-only evidence. No installation/environment repair, production
+   run, download, benchmark campaign or real cluster job was performed.
+5. Task21's separate fresh whole-branch and final full-documentation reviews are
+   not dispatched against this knowingly incomplete, unfrozen branch. Actual
+   human usability observations/acceptance are absent. Obtain those gates after
+   the blockers are resolved; no subagent review substitutes for them.
+
+All reviewed implementation increments are committed locally. This internal
+evidence/state commit closes the permitted handover. Nothing was pushed or merged.
+Both documentation passes are covered and their blocking findings closed;44
+nonblocking recommendation groups plus optional subparts remain deferred, not
+implemented. No method, formula, selection, source byte or tolerance was changed
+to manufacture acceptance.
+
+**Earlier continuation evidence (historical where superseded above):**
+
+- The unconditional native binder experiment failed
+  `scientific-connected-58` (14 failed/1147 passed). It was replaced by binding
+  at public `collect_preflight()` for validate/effective views, preserving native
+  internal discovery. Public invalid category/units/writer/tracker checks:
+  RED60 eight failures → GREEN61, 420 passed/two fixture-dependent skips.
+- `review-connected-current-95`: **1227 passed**, 2306 warnings, 268.42s,
+  across thirteen connected modules with the approved fixture. This supersedes
+  lane72's 1207 passes/12 diagnostic-location regressions. The internal
+  `input.format` tag is retained for actual-source/file remapping; public
+  recovery text uses current controls. This is not a whole-repository run.
+- Exact Task17 four-file suite96: **53 passed**, 479 warnings, 106.70s.
+  Exact Task18 two-file suite91: **58 passed**, 317 warnings, 60.61s.
+  Required suites alone ran the two PNG smokes; no generated image was opened.
+  Installed-wheel, production, cluster and human acceptance remain unavailable.
+- Added consumed missing/category/strict-versus-renormalized tasks and an explicit
+  Meso-NH W-remapping recipe. Two new public-run/reader tests pass (71), retaining
+  the original formulas and source bytes. A static categorical input exposed a
+  missing-clock-metadata access; polar output now uses that input view's actual
+  clock when its static field has no time dimension. Valid partial support uses
+  status0 under the declared policy, not status3 (insufficient support).
+- Both canonical AROME centroid/multifield examples now bind against all five
+  unchanged BATSIRAI files, with scientific-payload guards (RED67 → GREEN70).
+  Only method-generated pressure dependencies use the method's established
+  isobaric group. Unqualified user requests remain ambiguous.
+- The MNH replay `ZTOP` conflict was reproduced independently as scalar support
+  versus an identical time-broadcast scalar. Exact value-and-attribute equality
+  now permits sharing the native scalar coordinate; conflicts remain errors.
+  Compact regression and the unchanged MNH YAML/mapping replay both pass (76).
+  The small benchmark now passes in lane80 (311 connected passes); its static
+  field preview now matches the reader's per-file time axis. Single-file static
+  fields remain static unless an explicit initial-gap output requires time.
+- Fresh bounded scientific review found two further Important cases:
+  timeless gap-enabled output remained finite, and CROCO static masks acquired
+  an assembly time axis. RED92 reproduced both. GREEN93/94 verify missing
+  output and one/two-file finite-land masking. Only the affected output gains
+  time; only an admitted native static mask loses its assembly singleton.
+  Dynamic/changing masks still fail. Independent closure rechecked seven tests
+  plus lazy/zero and ordinary-output probes; both findings are closed.
+- All six batch-review findings are closed. RED86 reproduced between-case
+  cancellation changing a completed receipt from0 to143; GREEN87 verifies the
+  receipt guard and cleared attempt ownership, including byte/mtime preservation.
+- Fourteen caller modules now use direct-v3 requests. Worker results:
+  ocean101 pass/40 fail; FA57/20; tracker65/7; grid18/11. These failures are not
+  hidden or waived. Complete fixture/helper AST comparison85 preserves12
+  originals; worker proofs preserve signatures and numerical values/tolerances.
+  A fresh caller review and six downstream FA conversions remain active.
+  The original AROME2.5km versus2.766872km spacing guard remains unwaived.
+- Both documentation passes have complete coverage: Pass2 read57 journey/
+  example/template files,33 scientific/reference pages,17 help invocations and24
+  error/report families. All4 journey Important plus13 Minor edits, all4 science
+  Important and all11 CLI/cross-page Important edits were applied. Optional
+  science27 grouped/CLI22 Minor recommendations were dispositioned explicitly.
+  The independent technical check promoted three clauses: the product-only
+  filename prefix, CROCO native-copy optionality and the qualification page's
+  prepared-vector scope. All three were corrected and independently closed.
+  Forty-four nonblocking groups plus optional subparts remain deferred, not
+  implemented; two overlapping CLI Minors were already addressed.
+- Strict Sphinx/publication iteration07 passes. Iteration05's26 affected text
+  pages were inspected live at1280/320px (document1261/301, short indexes1276
+  desktop). Iteration06's static-gap explanation and iteration07's affected
+  output/qualification/first-run text were checked at both widths. Narrow
+  navigation opens by its focusable button and closes with Enter. No screenshot/
+  image or human acceptance. The CROCO change is a template comment, not data.
+- Exact Task16 nine-file98: **313 passed/four failed**,512 warnings,two
+  passing subtests,168.29s. One failure remains the unwaived AROME spacing
+  request; three were template-comment wording regressions, repaired without
+  changing the assertion. All74 template tests then pass (99 and102).
+- Staged-only source snapshot103, without an install or unstaged caller changes:
+  **63 passed**,242 warnings,72.38s. Its tree and exact command are recorded
+  privately. Scoped Ruff97 and `git diff --check` pass. The reserved full
+  diagnostic has not been used. No source/test/asset freeze, Task16/19/21
+  completion, push or merge is claimed.
+
+**Historical continuation evidence (superseded where stated above):**
+
+- All eight bounded-review findings have assertion-based regressions. The latest
+  connected lane `review-connected-26` passed **1153 tests**, 1827 warnings,
+  203.67s. Defaults remain strict/native; initial absent records are not physical
+  dependency records. Unit limits convert with values, and bound product units
+  agree with the requested representation. Polar base Earth preparation is
+  explicit and uses existing companion/rotation guards.
+- The exact nine-file Task16 suite `task16-required-46` is **307 passed,
+  3 failed**, 414 warnings, two passing subtests, 121.32s. Failures remain the
+  original AROME replay, MNH replay and small benchmark: requested 2.5km versus
+  the current 2.766872km spacing guard, conflicting `ZTOP` support, and checker
+  dimensions respectively. No physical request, source fixture or tolerance was
+  changed to avoid them.
+- A targeted fourteen-module caller inventory, **not** the reserved full
+  diagnostic, is **231 passed/237 failed**, 2474 warnings. Of the failures,
+  227 stop at the retired-schema rejection; nine access retired `input` controls
+  in generated requests; one old CLI diagnostic assertion needs its actual
+  error path restored. Per-node messages are retained in
+  `remaining-callers-causes-44.json`. Those callers are still unconverted.
+- Task17 now generates stationary, translating and missing/category instructional
+  atmosphere/ocean/track inputs. The approved ocean formula is unchanged.
+  Independent formula, determinism, mask, source-byte and ordinary-reader checks
+  pass. The complete required four-file suite `task17-required-37` is
+  **46 passed**, 381 warnings, 75.44s; both existing PNG smokes ran only inside
+  that unfiltered suite and no generated image was opened.
+- Task18 adds a serial complete-case loop and a Slurm array delegating to the
+  existing launcher. The independent NetCDF checker uses recorded source clocks,
+  dimensions and units, with exported-track linkage conditional on the product.
+  Required two-file suite `task18-required-green-43` is **53 passed**,
+  242 warnings, 46.07s. This is local process/shim evidence, not cluster evidence.
+- A no-index/no-dependency/no-isolation wheel **build**, not installation,
+  succeeded. Its schema, eight templates and tutorial generator match the
+  current source archive. `pip check` reports no broken requirements. Building
+  regenerated checkout distribution metadata: the CLI correctly reports the
+  distribution version `2.0.0rc2+hotfix1`, distinct from the module fallback.
+  The CLI identity test now checks that existing metadata-first contract and
+  retains its selected-module-path assertion; no package version or environment
+  was changed to make it pass.
+- Strict Sphinx/publication and thirteen publication-unit checks pass for
+  `yaml-v3-tutorials-02`. The analytical task, formula reference and HPC text were
+  inspected live at1280/320px; root widths1261/301, code blocks scroll internally.
+  No screenshots or new standalone plotting checks. Preview process/URL details
+  remain in the private handover, not committed machine state.
+- Fresh read-only reviewers are checking Task17/18 code, every published page
+  in disjoint sets, and CLI/cross-page consistency. Pass2, closure and final
+  whole-branch review are not yet claimed. New changes remain uncommitted while
+  their bounded reviews run.
+
+Task19's current evidence/limits are in `task-19-evidence.md`. Task16's genuine
+freeze, one full diagnostic and cause/history audit are still pending; installed
+wheel execution, real HPC/producer qualification and actual human acceptance
+remain unavailable under the existing restrictions.
+
+**Autonomous continuation:** the maintainer requested no further questions and
+progress through Tasks17–21. The bounded repairs are implemented but not committed
+or accepted: explicit initial-gap and polar-unit controls plus per-file wind
+inspection evidence. Design and inline plan are in
+`task-16-boundary-repairs-design.md` and `task-16-boundary-repairs-plan.md`.
+The former frozen-core hash proof is historical, before this authorization.
+
+The repair lane passed12tests; its connected11-module lane passed1136tests,
+1820warnings in191.53s, without failures/skips. Strict boundaries01 Sphinx,
+publication and13publication units pass; live configuration/input paragraphs
+were inspected at1280/320px (root1265/305). No image was opened. A fresh bounded
+read-only reviewer is checking these changes while the lead converts disjoint
+catalogue/example callers. No new implementation commit or review acceptance.
+
+Direct catalogue conversion now retains grouped levels, named initial absences
+and explicit diagnostics; four K-test YAMLs and two illustration YAMLs are
+converted with original source paths, fields, indices, centres and sampling
+counts retained. Four of five focused declaration/schema checks pass; the final
+illustration-schema failure was subsequently converted, not yet rechecked.
+Real-path catalogue tests exposed a too-restrictive full-grid-ID absence proof
+for2D GRIB fluxes and the need for explicit polar Earth-basis preparation of
+MNH base components. These are with the reviewer, not silently substituted.
+The existing model-grid plan-unit mismatch is also recorded for repair.
+
+Task16 is not frozen: its single full diagnostic, cause/history audit, task
+review and local commit remain pending. Tasks17–21 are not declared complete.
+Previous installation/cluster/image restrictions remain in force, and actual
+human usability acceptance cannot be supplied by an agent.
+
+Earlier checkpoint:
+
+The reviewed experimental polar-component increment is committed locally as
+`6abe753339fbd37d68488612bc44eb538eb8f481`; it is not whole-Task16 acceptance.
+Inline caller conversion now uses direct v3 declarations, source/grid-owned
+geometry, actual role/source product descriptors and current validation reports.
+The three shared helper signatures and the complete `dataset()` fixture remain
+unchanged. No compatibility parser or frozen-core change is part of this work.
+
+The compact local lifecycle/Zarr/launcher/independent-checker lane passes32cases,
+including altered-centre rejection. These are local process shims, not an HPC
+qualification. The NetCDF assembly caller lane passes16cases; the wider
+configuration/assembly/three-inspection lane reported215passes and2failures
+before one inspection mapping correction. Failed and passing logs/XML remain
+separate under `task-16-resume-6abe753` in the ignored main workspace.
+
+Scientific/output boundaries remain held rather than silently adapted:
+
+- The original five-time AROME catalogue expects initial missing records for
+  `heightAboveGround.tke`, `sshf` and `slhf`. Mixed-clock binding fails; the
+  four-time field-only positive controls are not equivalent preservation.
+- The original km/h integration fixture expects polar `UM10` in m s-1.
+  Current explicit transforms apply to model-grid exports, not polar base fields;
+  the latter retains km/h while derived speed is10m/s. The original units
+  assertion remains failing; do not change the fixture, quantity or assertion.
+- Current NetCDF inspection omits the second file's dataset-level
+  `wind_reference_frame: grid` evidence, despite opposing variable evidence.
+  The converted metadata-only regression reaches that missing-context assertion
+  with payload guards and source-byte/mtime checks intact. The read-only probe
+  records the actual report; no core repair or new report contract is approved.
+
+The final converted-caller lane passed107tests/111warnings in21.91s. The exact
+required nine-file suite (`required-callers-04.*`) reports293passes/6failures,
+302warnings and2passing subtests in72.19s. Failures remain in the catalogue
+schema assertion, km/h polar-base integration, both frozen-matrix replay cases,
+and the all-example/current-source convention checks. They are not waived.
+The earlier167pass/107fail/1error baseline and all intermediate failures remain
+retained. Both PNG smokes ran only within the unfiltered required suite; no
+image was opened.
+
+Five further examples now emit direct v3: AROME centroid/multi-field and the
+three atmosphere/SURFEX scalar configurations. Their quantity/order/level,
+source-path, FA profile/geometry/scaling/reader and sampling declarations were
+checked against the committed originals; parser success is not producer
+qualification. The four K-test configurations and remaining catalogue/consumers
+are not yet migrated. The offline tracker-preset regression uses the numerical
+constructor for its2500m/40-cell check and verifies that the public factory
+rejects unresolved support; it does not fabricate metadata binding.
+
+Strict Sphinx/publication/13publication units pass for
+`build/docs-preview/yaml-v3-task16-callers-01`. The updated HPC checker/policy
+paragraphs were inspected as live rendered text at1280px/320px without root
+overflow; the GUI preview remains available. Scoped caller Ruff is17baseline/
+13current/zero new. All82frozen core/reader/writer/scientific/template paths,
+helper signatures and the complete `dataset()` AST remain exact.
+
+This is not Task16's single full diagnostic. There is no source/test/asset freeze,
+completed Task16 review or new implementation commit. Core repairs/expression
+extensions need separate approval. No installs/repairs, standalone image/plot/
+screenshot checks, production/cluster runs, push or merge.
 
 Shared orchestration (`configuration.py`, `settings_class.py`, `preflight.py`,
 `runner.py`, `execution.py`, `coupled.py`, `cli.py`) is lead-owned except an
