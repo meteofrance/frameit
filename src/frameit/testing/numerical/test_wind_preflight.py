@@ -11,8 +11,8 @@ from dask import delayed
 
 from frameit.core.configuration import to_runtime
 from frameit.core.preflight import (
+    collect_preflight,
     inspect_wind_pairs,
-    preflight,
     selected_level_records,
     wind_dependencies,
 )
@@ -20,6 +20,7 @@ from frameit.core.settings_class import SimulationConfig
 from frameit.testing.catalog import load_cases
 from frameit.testing.numerical.test_pressure_centroid_mnh import native_vortex
 from frameit.tracking.pressure_centroid_inputs import prepare_mnh_inputs
+from frameit.tracking.tracker_core import resolve_tracker_support
 
 
 def settings(frame="earth", rotation=None):
@@ -132,29 +133,34 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
     for name, standard in (("UT_ZM", "x_wind"), ("VT_ZM", "y_wind")):
         source[name].attrs.update(standard_name=standard, wind_reference_frame="grid")
     source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
-    pair = {"group": "level", "u": "UT_ZM", "v": "VT_ZM", "reference_frame": frame}
+    pair = {"u": "UT_ZM", "v": "VT_ZM", "basis": frame}
     if frame == "grid":
         pair["rotation"] = {"method": "mesonh_projection", "BETA": 0, "RPK": 0, "LON0": 54.2}
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh",
-        "input": {"directory": str(tmp_path), "pattern": "native.nc", "wind_pairs": [pair]},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": -20., "longitude": 60.}}},
-        "domain": {"width_km": {"x": 2000, "y": 2000}},
-        "variables": {"level": {"names": ["UT_ZM", "VT_ZM"], "levels": "stored"}},
-        "polar": {"enabled": False},
-        "output": {"directory": str(tmp_path / "output"), "cartesian": {
-            "horizontal_vectors": representation}},
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": str(tmp_path / "native.nc"), "wind_pairs": [pair],
+            "variables": {"3d": ["UT_ZM", "VT_ZM"]},
+            **({"transforms": [{"fields": ["UT_ZM", "VT_ZM"],
+                                "sampling": "mass", "basis": "earth"}]}
+               if representation == "earth_centered" else {}),
+        }},
+        "region": {"center": {"latitude": -20., "longitude": 60.},
+                   "width_km": {"x": 2000, "y": 2000}},
+        "products": {"model_grid": True},
+        "output": {"directory": str(tmp_path / "output")},
     })
     result = execute_simulation(conf, ExecutionOptions(synchronous_export=True))
     assert result.ok
-    path = next(p["path"] for p in result.products if p["role"] == "cart")
+    path = next(p["path"] for p in result.products
+                if p["role"] == "model_grid" and p["source"] == "atmosphere")
     with xr.open_dataset(path, engine="h5netcdf") as reopened:
         for name in ("UT_ZM", "VT_ZM"):
+            # C7 uses zero-based crop positions: old offsets -4:4 are positions 2:10.
             np.testing.assert_allclose(
-                reopened[name].sel(x_box=slice(-4, 4), y_box=slice(-4, 4)), source[name]
+                reopened[name].isel(x=slice(2, 11), y=slice(2, 11)), source[name]
             )
-            assert reopened[name].sel(x_box=-6).isnull().all()
+            assert reopened[name].isel(x=0).isnull().all()
             if frame == "earth":
                 assert "missing" in reopened[name].attrs["wind_reference_frame_override"]
                 assert reopened[name].attrs["source_standard_name"] == source[name].attrs["standard_name"]
@@ -183,21 +189,28 @@ def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(t
     source.to_netcdf(path, engine="h5netcdf")
     tracking = {"method": method}
     if method == "multifield_vortex":
-        tracking[method] = {"seed": {"latitude": -20., "longitude": 60.,
-                                     "motion_u_m_s": 0., "motion_v_m_s": 0.},
-                            "mnh_gravity_m_s2": 9.80665}
+        tracking.update(seed={"latitude": -20., "longitude": 60.,
+                              "motion_u_m_s": 0., "motion_v_m_s": 0.},
+                        mnh_gravity_m_s2=9.80665)
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh", "tracking": tracking,
-        "input": {"files": [str(path)], "wind_pairs": [
-            {"group": "level", "u": "UT_ZM", "v": "VT_ZM", "reference_frame": "grid",
-             "rotation": {"method": "mesonh_projection", "BETA": 90}},
-            {"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"},
-        ]}, "variables": {"fields_2d": {"names": ["MSLP"]}},
-        "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "out")},
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": [str(path)], "wind_pairs": [
+                {"u": "UT_ZM", "v": "VT_ZM", "basis": "grid",
+                 "rotation": {"method": "mesonh_projection", "BETA": 90}},
+                {"u": "UM10", "v": "VM10", "basis": "earth"},
+            ], "variables": {"2d": ["MSLP"]},
+        }},
+        "region": {"tracker": tracking},
+        "products": {"model_grid": True, "track": True},
+        "output": {"directory": str(tmp_path / "out")},
     })
+    report = collect_preflight(conf)
+    assert not report.errors, report.errors
+    resolve_tracker_support(conf, report.facts["sources"]["atmosphere"])
     with DatasetResources() as resources:
         _, trackers = concat_nc2ds_by_vert_coord(
-            [path], conf.requests_user(), conf.requests_tracker(), method,
+            [path], {"surface": {"variables": ["MSLP"]}}, {method: {}}, method,
             wind_conf=conf, resources=resources,
         )
         prepared = trackers[method]["native"]
@@ -220,17 +233,19 @@ def projection_shards(tmp_path, *, frame="earth", repeated=True, source_frame="e
         path = tmp_path / f"part{index}.nc"
         source[names].to_netcdf(path, engine="h5netcdf")
         paths.append(path)
-    pair = {"group": "level", "u": "UT_ZM", "v": "VT_ZM", "reference_frame": frame}
+    pair = {"u": "UT_ZM", "v": "VT_ZM", "basis": frame}
     if frame == "grid":
         pair["rotation"] = {"method": "mesonh_projection", "BETA": 0}
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh",
-        "input": {"files": list(map(str, paths)), "wind_pairs": [pair],
-                  "netcdf": {"file_layout": "variables"}},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": -20., "longitude": 60.}}},
-        "variables": {"level": {"names": ["UT_ZM", "VT_ZM"], "levels": "stored"}},
-        "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "out")},
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": list(map(str, paths)), "wind_pairs": [pair],
+            "variables": {"3d": ["UT_ZM", "VT_ZM"]},
+            "transforms": [{"fields": ["UT_ZM", "VT_ZM"], "sampling": "mass", "basis": "earth"}],
+        }},
+        "region": {"center": {"latitude": -20., "longitude": 60.}},
+        "products": {"model_grid": True},
+        "output": {"directory": str(tmp_path / "out")},
     })
     return source, paths, conf
 
@@ -241,10 +256,11 @@ def test_projection_headers_are_checked_metadata_in_variable_shards(tmp_path, fr
     from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
 
     source, paths, conf = projection_shards(tmp_path, frame=frame, source_frame=frame)
-    preflight(conf)
+    report = collect_preflight(conf)
+    assert not report.errors, report.errors
     with DatasetResources() as resources:
         groups, _ = concat_nc2ds_by_vert_coord(
-            paths, conf.requests_user(), {}, wind_conf=conf,
+            paths, {"level": {"variables": ["UT_ZM", "VT_ZM"]}}, {}, wind_conf=conf,
             file_layout="variables", resources=resources,
         )
         np.testing.assert_allclose(groups["level"].UT_ZM, source.UT_ZM)
@@ -252,8 +268,9 @@ def test_projection_headers_are_checked_metadata_in_variable_shards(tmp_path, fr
 
 def test_variable_shard_preflight_keeps_complete_projection_conflicts_fatal(tmp_path):
     _, _, conf = projection_shards(tmp_path, repeated=False, source_frame="grid")
-    with pytest.raises(ValueError, match="Conflicting"):
-        preflight(conf)
+    report = collect_preflight(conf)
+    assert report.errors
+    assert "Conflicting" in str(report.errors)
 
 
 def test_scalar_shards_do_not_validate_unused_wind_projection(tmp_path):
@@ -269,17 +286,19 @@ def test_scalar_shards_do_not_validate_unused_wind_projection(tmp_path):
         )
         paths.append(path)
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh",
-        "input": {"files": list(map(str, paths)), "netcdf": {"file_layout": "variables"}},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": -20., "longitude": 60.}}},
-        "variables": {"fields_2d": {"names": ["MSLP"]}},
-        "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "out")},
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": list(map(str, paths)), "variables": {"2d": ["MSLP"]},
+        }},
+        "region": {"center": {"latitude": -20., "longitude": 60.}},
+        "products": {"model_grid": True},
+        "output": {"directory": str(tmp_path / "out")},
     })
-    preflight(conf)
+    report = collect_preflight(conf)
+    assert not report.errors, report.errors
     with DatasetResources() as resources:
         groups, _ = concat_nc2ds_by_vert_coord(
-            paths, conf.requests_user(), {}, wind_conf=conf,
+            paths, {"surface": {"variables": ["MSLP"]}}, {}, wind_conf=conf,
             file_layout="variables", resources=resources,
         )
         np.testing.assert_allclose(groups["surface"].MSLP, source.MSLP)
@@ -313,23 +332,30 @@ def test_arome_vertical_quantities_have_no_horizontal_frame_requirement(tmp_path
     path = tmp_path / "vertical.nc"
     source.to_netcdf(path, engine="h5netcdf")
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "arome",
-        "input": {"directory": str(tmp_path), "pattern": "vertical.nc"},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": -20.01, "longitude": 60.01}}},
-        "variables": {"heightAboveGround": {"names": [name], "levels": "stored"}},
-        "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "output")},
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "arome", "files": str(tmp_path / "vertical.nc"),
+            "variables": {"3d": [name]},
+        }},
+        "region": {"center": {"latitude": -20.01, "longitude": 60.01}},
+        "products": {"model_grid": True},
+        "output": {"directory": str(tmp_path / "output")},
     })
     assert conf.velocity_aliases["w_velocity"] == "wz"
-    plan = preflight(conf)
-    assert plan["wind_provenance"] == []
-    record = next(r for r in plan["unit_provenance"] if r["variable"] == name)
-    assert record["calculation_units"] == units
+    report = collect_preflight(conf)
+    assert not report.errors, report.errors
+    selected = report.facts["sources"]["atmosphere"]
+    binding = selected["field_binding"]
+    assert binding["operation_plans"] == []
+    field = binding["products"]["model_grid"][name]["field_id"]
+    record = selected["fields"][field]["attributes"]
+    assert record["units"] == units
     if name == "w":
         source[name].attrs["units"] = "m s-1"
         source.to_netcdf(path, engine="h5netcdf")
-        with pytest.raises(ValueError, match="pressure velocity"):
-            preflight(conf)
+        report = collect_preflight(conf)
+        assert report.errors
+        assert "pressure velocity" in str(report.errors)
 
 
 @pytest.mark.parametrize("method", ["coordinate", "geolocation"])
@@ -377,22 +403,26 @@ def test_catalog_preserves_source_and_output_conventions(tmp_path):
     for case in load_cases():
         raw = deepcopy(case["config"])
         # This checks declarations only; source-dependent levels bind at inventory.
-        raw["variables"] = {}
-        raw["polar"].update(enabled=False, variables="extracted")
         # Normally bound from the frozen fixture's centre_grid/track at resolution.
-        raw["tracking"]["fixed_box"]["center"] = {"latitude": -10.3, "longitude": 55.}
-        if raw["tracking"]["method"] == "prescribed_track":
-            raw["tracking"]["prescribed_track"] = {"file": "fixture-track.nc"}
-        if raw["tracking"]["method"] == "utrack":
-            raw["tracking"]["utrack"] = {"weights_file": "fixture-weights.pt"}
+        if "center" in raw["region"]:
+            raw["region"]["center"] = {"latitude": -10.3, "longitude": 55.}
+        if case["tracker"] == "prescribed_track":
+            raw["region"].pop("center", None)
+            raw["region"]["track"] = {"file": "fixture-track.nc"}
+        if case["tracker"] == "utrack":
+            raw["region"]["tracker"]["weights_file"] = "fixture-weights.pt"
         runtime = to_runtime(raw, base_dir=tmp_path)
-        expected = deepcopy(raw["input"]["wind_pairs"])
-        assert expected[-1]["group"] == "fields_2d"
-        expected[-1]["group"] = "surface"
-        assert runtime["wind_pairs"] == expected
-        assert runtime["cartesian_horizontal_winds"] == "mass_earth"
+        source = raw["sources"]["atmosphere"]
+        expected = deepcopy(source["wind_pairs"])
+        assert expected[-1]["basis"] == "earth"
+        assert runtime["yaml_config"]["sources"]["atmosphere"]["wind_pairs"] == expected
+        assert all(transform["basis"] == "earth" and transform["sampling"] == (
+            "native" if source["model"] == "arome" else "mass")
+            for transform in source.get("transforms", []))
         assert runtime["cartesian_vertical_velocity"] == "interfaces"
-        assert runtime["polar_vertical_velocity"] == "mass"
+        for field, options in runtime["source_requests"]["atmosphere"]["polar_options"].items():
+            if field == "level_w.WT":
+                assert options["sampling"] == "mass"
 
 
 def test_explicit_centroid_preflight_and_export(tmp_path):
@@ -401,25 +431,29 @@ def test_explicit_centroid_preflight_and_export(tmp_path):
     source, _ = native_vortex()
     source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh",
-        "input": {"directory": str(tmp_path), "pattern": "native.nc", "wind_pairs": [
-            {"group": "level", "u": "UT_ZM", "v": "VT_ZM", "reference_frame": "earth"},
-            {"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"},
-        ]},
-        "tracking": {"method": "pressure_centroid"},
-        "domain": {"width_km": {"x": 100, "y": 100}},
-        "variables": {"fields_2d": {"names": ["MSLP"]}},
-        "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "output")},
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": str(tmp_path / "native.nc"), "wind_pairs": [
+                {"u": "UT_ZM", "v": "VT_ZM", "basis": "earth"},
+                {"u": "UM10", "v": "VM10", "basis": "earth"},
+            ], "variables": {"2d": ["MSLP"]},
+        }},
+        "region": {"tracker": {"method": "pressure_centroid"},
+                   "width_km": {"x": 100, "y": 100}},
+        "products": {"model_grid": True, "track": True},
+        "output": {"directory": str(tmp_path / "output")},
     })
-    plan = preflight(conf)
-    assert len(plan["wind_provenance"]) == 2
-    assert plan["tracking_inputs"]["wind_reference_frames"]["UT_ZM"] == "earth"
+    report = collect_preflight(conf)
+    assert not report.errors, report.errors
+    resolve_tracker_support(conf, report.facts["sources"]["atmosphere"])
+    assert len(conf.wind_pairs) == 2
+    assert next(p for p in conf.wind_pairs if p["u"] == "UT_ZM")["reference_frame"] == "earth"
     result = execute_simulation(conf, ExecutionOptions(synchronous_export=True))
     assert result.ok
     path = next(p["path"] for p in result.products if p["role"] == "track")
     with xr.open_dataset(path, engine="h5netcdf") as reopened:
         assert reopened.sizes["time"] == 2
-        np.testing.assert_allclose(reopened.lon, 60., atol=.01)
+        np.testing.assert_allclose(reopened.longitude, 60., atol=.01)
         assert reopened.attrs["pressure_centroid_native_wind_reference"] == "earth"
 
 

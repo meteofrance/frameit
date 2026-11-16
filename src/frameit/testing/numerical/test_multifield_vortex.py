@@ -11,7 +11,7 @@ from pyproj import CRS, Transformer
 
 from frameit.core.configuration import resolve_schema
 from frameit.core.execution import ExecutionOptions, execute_simulation
-from frameit.core.preflight import preflight
+from frameit.core.preflight import collect_preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.loader import DatasetResources
 from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
@@ -28,24 +28,30 @@ from frameit.tracking.multifield_vortex import (
 )
 from frameit.tracking.MultifieldVortex_Tracker import MultifieldVortexTracker
 from frameit.tracking.pressure_centroid import G0, GEOD
+from frameit.tracking.tracker_core import resolve_tracker_support
 
 
 def document(tmp_path, model="mesonh", latitude=-20.):
-    pairs = ([dict(group="fields_2d", u="UM10", v="VM10", reference_frame="earth"),
-              dict(group="level", u="UT_ZM", v="VT_ZM", reference_frame="earth")]
+    pairs = ([dict(u="UM10", v="VM10", basis="earth"),
+              dict(u="UT_ZM", v="VT_ZM", basis="earth")]
              if model == "mesonh" else [
-                 dict(group="fields_2d", u="u10", v="v10", reference_frame="earth"),
-                 dict(group="isobaricInhPa", u="u", v="v", reference_frame="earth")])
+                 dict(u="u10", v="v10", basis="earth"),
+                 dict(u="u", v="v", basis="earth")])
     return {
-        "schema_version": "2.1", "model": model,
-        "input": {"directory": str(tmp_path), "pattern": "native*.nc", "wind_pairs": pairs},
-        "tracking": {"method": "multifield_vortex", "multifield_vortex": {
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": model, "files": str(tmp_path / "native*.nc"), "wind_pairs": pairs,
+            "variables": {"2d": ["MSLP" if model == "mesonh" else "prmsl"]},
+        }},
+        "region": {"tracker": {
+            "method": "multifield_vortex",
+            # The track-loss fixture explicitly retains its accepted prefix.
+            "on_incomplete": "keep_prefix",
             "seed": {"latitude": latitude, "longitude": 60.,
                      "motion_u_m_s": 0., "motion_v_m_s": 0.},
-            "mnh_gravity_m_s2": G0 if model == "mesonh" else None,
-        }},
-        "variables": {"fields_2d": {"names": ["MSLP" if model == "mesonh" else "prmsl"]}},
-        "domain": {"width_km": {"x": 150, "y": 150}},
+            **({"mnh_gravity_m_s2": G0} if model == "mesonh" else {}),
+        }, "width_km": {"x": 150, "y": 150}},
+        "products": {"model_grid": True, "track": True},
         "output": {"directory": str(tmp_path / "output")},
     }
 
@@ -248,23 +254,31 @@ def test_arome_grib_pipeline_and_variable_specific_time_coverage(tmp_path):
     path = tmp_path / "native.grib"
     write_grib(path, source)
     raw = document(tmp_path, "arome")
-    raw["input"]["pattern"] = "*.grib"
+    raw["sources"]["atmosphere"]["files"] = str(tmp_path / "*.grib")
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    preview = preflight(conf)
-    assert preview["tracking_inputs"]["required_pressure_levels_hpa"] == [850, 700, 500]
+    preview = collect_preflight(conf)
+    assert not preview.errors, preview.errors
+    support = preview.facts["sources"]["atmosphere"]["tracker_support"]
+    assert support["inputs"]["u"]["values"] == [850, 700, 500]
+    assert support["inputs"]["u"]["units"] == "hPa"
     result = execute_simulation(conf, ExecutionOptions(synchronous_export=True))
     assert result.ok and result.tracking_complete
     # A shared isobaric coordinate must not hide a missing u message at one time.
     write_grib(path, source, omit=("u", 500., 1))
-    with pytest.raises(ValueError, match="missing u at 500 hPa, time=2024-01-01T06"):
-        preflight(SimulationConfig.from_mapping_with_model_preset(raw))
+    preview = collect_preflight(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert preview.errors
+    assert "u unavailable levels [500] at selected time 2024-01-01T06" in str(preview.errors)
 
 
 @pytest.mark.parametrize("model", ["arome", "mesonh"])
 @pytest.mark.parametrize("latitude", [-20., 20.])
 def test_seeded_analytic_vortex_on_both_models(tmp_path, model, latitude):
     source, centers = vortex(model=model, latitude=latitude, moving=True)
+    source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, model, latitude))
+    preview = collect_preflight(conf)
+    assert not preview.errors, preview.errors
+    resolve_tracker_support(conf, preview.facts["sources"]["atmosphere"])
     conf.resolution = 32500
     result = MultifieldVortexTracker(conf)({"multifield_vortex": {"all": source}})
     assert result.sizes["time"] == 2 and result.sizes["parameter"] == len(PARAMETERS)
@@ -280,7 +294,11 @@ def test_seeded_analytic_vortex_on_both_models(tmp_path, model, latitude):
 
 def test_mnh_native_height_convention_and_missing_fields(tmp_path):
     source, _ = vortex()
+    source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path))
+    preview = collect_preflight(conf)
+    assert not preview.errors, preview.errors
+    resolve_tracker_support(conf, preview.facts["sources"]["atmosphere"])
     prepared = canonical_inputs(source.chunk({"time": 1}), conf)
     record = next(iter_fields(prepared, conf))
     expected = 8000 * np.log(1000 / 850) - 120
@@ -298,8 +316,16 @@ def test_track_loss_prefix_error_and_independent_netcdf_reader(tmp_path, monkeyp
     source["MSLP"][1] = 101000.
     source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path))
-    preview = preflight(conf)
-    assert preview["tracking_inputs"]["seed_has_full_steering_footprint"]
+    preview = collect_preflight(conf)
+    assert not preview.errors, preview.errors
+    selected = preview.facts["sources"]["atmosphere"]
+    resolve_tracker_support(conf, selected)
+    geometry = next(iter(selected["region"]["grids"].values()))["geometry"]
+    conf.resolution = geometry["effective_spacing_m"]
+    # V3 reports source geometry; retain the original 1000-km steering-disk check.
+    grid = VortexGrid(source.longitude.values, source.latitude.values,
+                      conf.resolution, VortexOptions())
+    assert grid.disk_supported((60., -20.), 1000.)
     assert not conf.output_dir.exists()
     import builtins
 
@@ -333,7 +359,11 @@ def test_track_loss_prefix_error_and_independent_netcdf_reader(tmp_path, monkeyp
 
 def test_structural_quality_checks_and_mask_support(tmp_path):
     source, _ = vortex()
+    source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path))
+    preview = collect_preflight(conf)
+    assert not preview.errors, preview.errors
+    resolve_tracker_support(conf, preview.facts["sources"]["atmosphere"])
     prepared = canonical_inputs(source, conf)
     fields = next(iter_fields(prepared, conf))
     center = (60., -20.)
@@ -361,10 +391,12 @@ def test_mnh_per_file_pressure_and_height_units_are_normalized(tmp_path):
     other["ALT"] = (other.ALT / 1000).assign_attrs(units="km", standard_name="altitude")
     other.to_netcdf(tmp_path / "native1.nc", engine="h5netcdf")
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path))
-    preflight(conf)
+    preview = collect_preflight(conf)
+    assert not preview.errors, preview.errors
+    resolve_tracker_support(conf, preview.facts["sources"]["atmosphere"])
     with DatasetResources() as resources:
         _, tree = concat_nc2ds_by_vert_coord(
-            sorted(tmp_path.glob("native*.nc")), {}, conf.requests_tracker(),
+            sorted(tmp_path.glob("native*.nc")), {}, {"multifield_vortex": {}},
             method="multifield_vortex", wind_conf=conf, resources=resources)
         loaded = tree["multifield_vortex"]["native"]
         np.testing.assert_allclose(loaded.pressure[0], loaded.pressure[1], rtol=1e-14)
@@ -379,7 +411,7 @@ def test_explicit_seed_configuration(tmp_path, model):
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, model))
     assert conf.tracking_method == "multifield_vortex"
     raw = document(tmp_path, model)
-    raw["tracking"]["multifield_vortex"]["seed"].pop("motion_u_m_s")
+    raw["region"]["tracker"]["seed"].pop("motion_u_m_s")
     with pytest.raises(ValueError, match="motion_u_m_s"):
         resolve_schema(raw)
 
@@ -387,10 +419,14 @@ def test_explicit_seed_configuration(tmp_path, model):
 @pytest.mark.parametrize("invalid", ["scalar_time", "multiple_realizations"])
 def test_ambiguous_time_or_realization_fails_before_tracking(tmp_path, invalid):
     source, _ = vortex(model="arome", n=9)
+    source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
+    conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, "arome"))
+    preview = collect_preflight(conf)
+    assert not preview.errors, preview.errors
+    resolve_tracker_support(conf, preview.facts["sources"]["atmosphere"])
     if invalid == "scalar_time":
         source = source.isel(time=0, drop=True)
     else:
         source = source.expand_dims(realization=[0, 1])
-    conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, "arome"))
     with pytest.raises(ValueError, match=r"time\(time\)|one realization"):
         MultifieldVortexTracker(conf)({"multifield_vortex": {"all": source}})

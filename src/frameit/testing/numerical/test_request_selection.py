@@ -1,6 +1,7 @@
 """Explicit source declarations and native-axis selection contracts."""
 
 import copy
+import re
 
 import numpy as np
 import pytest
@@ -11,10 +12,11 @@ from frameit.processing.requests import build_group_ds, normalize_requests, sele
 
 
 def schema():
-    return {"schema_version": "2.1", "model": "mesonh", "input": {"pattern": "*.nc"},
-            "tracking": {"method": "fixed_box", "fixed_box": {
-                "center": {"latitude": 0, "longitude": 0}}},
-            "variables": {"level": {"names": ["T"], "levels": "physical"}}}
+    return {"schema_version": 3,
+            "sources": {"atmosphere": {"model": "mesonh", "files": "*.nc",
+                                      "variables": {"3d": {"level": {
+                                          "names": ["T"], "levels": {"domain": "physical"}}}}}},
+            "region": {"center": {"latitude": 0, "longitude": 0}}}
 
 
 def native_dataset():
@@ -120,43 +122,45 @@ def test_physical_filter_does_not_renumber_explicit_indices():
                                          ("physical", "physical")])
 def test_schema_level_domain_and_no_implicit_wind_declaration(levels, domain):
     raw = schema()
-    raw["variables"]["level"]["levels"] = levels
+    raw["sources"]["atmosphere"]["variables"]["3d"]["level"]["levels"] = (
+        {"domain": "physical"} if levels == "physical" else {})
     runtime = to_runtime(raw)
     assert runtime["wind_reference_frame"] is None
     assert runtime["wind_pairs"] == []
-    normalized = normalize_requests(runtime["requested_variables_user"])
-    assert normalized["level"]["level_domain"] == domain
+    selected = runtime["source_requests"]["atmosphere"]["groups"]["level"]["levels"]
+    assert selected.get("domain", "stored") == domain
 
 
 @pytest.mark.parametrize("pair", [
-    None, {}, {"group": "surface", "u": "U", "v": "V", "reference_frame": "auto"},
-    {"group": "surface", "u": "U", "v": "V", "reference_frame": "earth", "extra": 1},
-    {"group": "surface", "u": "U", "v": "U", "reference_frame": "earth"},
-    {"group": "surface", "u": 1, "v": "V", "reference_frame": "earth"},
-    {"group": "surface", "u": "U", "v": "V", "reference_frame": "grid"},
-    {"group": "surface", "u": "U", "v": "V", "reference_frame": "grid",
-     "rotation": {"method": "auto"}},
-    {"group": "surface", "u": "U", "v": "V", "reference_frame": "grid",
-     "rotation": {"method": "coordinate"}},
-    {"group": "surface", "u": "U", "v": "V", "reference_frame": "grid",
+    None, {}, {"u": "U", "v": "V", "basis": "auto"},
+    {"u": "U", "v": "V", "basis": "earth", "extra": 1},
+    {"u": "U", "v": "U", "basis": "earth"},
+    {"u": 1, "v": "V", "basis": "earth"},
+    {"u": "U", "v": "V", "basis": "grid"},
+    {"u": "U", "v": "V", "basis": "grid",
+      "rotation": {"method": "auto"}},
+    {"u": "U", "v": "V", "basis": "grid",
+      "rotation": {"method": "coordinate"}},
+    {"u": "U", "v": "V", "basis": "grid",
      "rotation": {"method": "geolocation", "extra": True}},
 ])
 def test_strict_wind_pair_declarations(pair):
     raw = schema()
-    raw["input"]["wind_pairs"] = [pair]
+    raw["sources"]["atmosphere"]["wind_pairs"] = [pair]
     with pytest.raises(ValueError, match="wind_pairs"):
         resolve_schema(raw)
 
 
 def test_duplicate_pair_components_fail_but_different_groups_are_distinct():
     raw = schema()
-    pair = {"group": "fields_2d", "u": "U", "v": "V", "reference_frame": "earth"}
-    raw["input"]["wind_pairs"] = [pair, copy.deepcopy(pair)]
+    pair = {"u": "U", "v": "V", "basis": "earth"}
+    source = raw["sources"]["atmosphere"]
+    source["wind_pairs"] = [pair, copy.deepcopy(pair)]
     with pytest.raises(ValueError, match="duplicate"):
         resolve_schema(raw)
-    raw["input"]["wind_pairs"][1]["group"] = "level"
-    assert to_runtime(raw)["wind_pairs"] == [
-        {**pair, "group": "surface"}, {**pair, "group": "level"}]
+    source["wind_pairs"][1].update(u="level.U", v="level.V")
+    assert to_runtime(raw)["yaml_config"]["sources"]["atmosphere"]["wind_pairs"] == [
+        pair, {**pair, "u": "level.U", "v": "level.V"}]
 
 
 @pytest.mark.parametrize("method", ["coordinate", "geolocation", "mesonh_projection"])
@@ -165,18 +169,21 @@ def test_explicit_grid_rotation_roundtrip(method):
     rotation = {"method": method}
     if method == "coordinate":
         rotation["coordinate"] = "grid_angle"
-    raw["input"]["wind_pairs"] = [{"group": "level", "u": "UT", "v": "VT",
-                                    "reference_frame": "grid", "rotation": rotation}]
-    assert to_runtime(raw)["wind_pairs"] == raw["input"]["wind_pairs"]
+    source = raw["sources"]["atmosphere"]
+    source["wind_pairs"] = [{"u": "UT", "v": "VT", "basis": "grid", "rotation": rotation}]
+    assert (to_runtime(raw)["yaml_config"]["sources"]["atmosphere"]["wind_pairs"]
+            == source["wind_pairs"])
 
 
 def test_mesonh_projection_yaml_parameters_roundtrip():
     raw = schema()
-    raw["input"]["wind_pairs"] = [{
-        "group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
+    source = raw["sources"]["atmosphere"]
+    source["wind_pairs"] = [{
+        "u": "UT", "v": "VT", "basis": "grid",
         "rotation": {"method": "mesonh_projection", "BETA": 0, "RPK": 0, "LON0": 54.2},
     }]
-    assert to_runtime(raw)["wind_pairs"] == raw["input"]["wind_pairs"]
+    assert (to_runtime(raw)["yaml_config"]["sources"]["atmosphere"]["wind_pairs"]
+            == source["wind_pairs"])
 
 
 @pytest.mark.parametrize("parameter,value", [
@@ -186,8 +193,8 @@ def test_mesonh_projection_yaml_parameters_roundtrip():
 ])
 def test_invalid_mesonh_projection_yaml_parameters(parameter, value):
     raw = schema()
-    raw["input"]["wind_pairs"] = [{
-        "group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
+    raw["sources"]["atmosphere"]["wind_pairs"] = [{
+        "u": "UT", "v": "VT", "basis": "grid",
         "rotation": {"method": "mesonh_projection", parameter: value},
     }]
     with pytest.raises(ValueError, match=parameter):
@@ -197,9 +204,11 @@ def test_invalid_mesonh_projection_yaml_parameters(parameter, value):
 @pytest.mark.parametrize("method", ["coordinate", "geolocation"])
 def test_projection_parameters_require_projection_method(method):
     raw = schema()
-    raw["input"]["wind_pairs"] = [{
-        "group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
-        "rotation": {"method": method, "coordinate": "angle", "BETA": 0},
+    raw["sources"]["atmosphere"]["wind_pairs"] = [{
+        "u": "UT", "v": "VT", "basis": "grid",
+        "rotation": {"method": method,
+                     **({"coordinate": "angle"} if method == "coordinate" else {}),
+                     "BETA": 0},
     }]
     with pytest.raises(ValueError, match="BETA"):
         resolve_schema(raw)
@@ -211,24 +220,37 @@ def test_projection_parameters_require_projection_method(method):
 ])
 def test_invalid_output_selectors(section, key, value):
     raw = schema()
-    raw["output"] = {section: {key: value}}
-    with pytest.raises(ValueError, match=f"output.{section}.{key}"):
+    source = raw["sources"]["atmosphere"]
+    fields = ["UT", "VT"] if key == "horizontal_vectors" else ["WT"]
+    source["variables"] = {"3d": fields}
+    if section == "cartesian":
+        source["transforms"] = [{"fields": fields, "sampling": value}]
+        path = "sources.atmosphere.transforms[0].sampling"
+    else:
+        raw["products"] = {"polar": {
+            "radius_km": 10, "field_options": {"atmosphere": {"WT": {"sampling": value}}}}}
+        path = "products.polar.field_options.atmosphere.WT.sampling"
+    with pytest.raises(ValueError, match=re.escape(path)):
         resolve_schema(raw)
 
 
 def test_output_selections_are_preserved():
     raw = schema()
-    raw["output"] = {"cartesian": {"horizontal_vectors": "native", "vertical_velocity": "mass"},
-                     "polar": {"vertical_velocity": "interfaces"}}
+    source = raw["sources"]["atmosphere"]
+    source["variables"] = {"3d": ["WT"]}
+    source["transforms"] = [{"fields": ["WT"], "sampling": "mass"}]
+    raw["products"] = {"model_grid": True, "polar": {"radius_km": 10,
+        "field_options": {"atmosphere": {"WT": {"sampling": "native"}}}}}
     runtime = to_runtime(raw)
     assert runtime["cartesian_horizontal_winds"] == "native"
-    assert runtime["cartesian_vertical_velocity"] == "mass"
-    assert runtime["polar_vertical_velocity"] == "interfaces"
+    selected = runtime["source_requests"]["atmosphere"]
+    assert selected["transforms"] == [{"fields": ["WT"], "sampling": "mass"}]
+    assert selected["polar_options"]["WT"]["sampling"] == "native"
 
 
 def test_no_auto_global_frame():
     raw = schema()
-    raw["input"]["wind_reference_frame"] = "auto"
+    raw["sources"]["atmosphere"]["wind_reference_frame"] = "auto"
     with pytest.raises(ValueError, match="wind_reference_frame"):
         resolve_schema(raw)
 

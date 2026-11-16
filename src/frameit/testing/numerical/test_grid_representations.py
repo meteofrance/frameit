@@ -9,7 +9,9 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from frameit.core.coupled import bind_sources
 from frameit.core.execution import ExecutionOptions, execute_simulation
+from frameit.core.runner import FrameitRunner
 from frameit.core.settings_class import SimulationConfig
 from frameit.testing.datasets import ci_dataset_root
 
@@ -24,20 +26,22 @@ def test_real_mnh_native_faces_match_source_file(tmp_path):
         expected_v = source.VT.isel(time=0, level=[1, 3, 5],
                                     nj_v=slice(34, 38), ni_v=slice(36, 39)).values
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh",
-        "input": {"files": [str(path)], "wind_pairs": [
-            {"group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
-             "rotation": {"method": "geolocation"}}]},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": latitude, "longitude": longitude}}},
-        "domain": {"width_km": {"x": 6, "y": 6}},
-        "variables": {"level": {"names": ["UT", "VT"], "levels": {"indices": [1, 3, 5]}}},
-        "output": {"directory": str(tmp_path / "real-native"),
-                   "cartesian": {"horizontal_vectors": "native"}},
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": [str(path)],
+            "wind_pairs": [{"u": "UT", "v": "VT", "basis": "grid",
+                            "rotation": {"method": "geolocation"}}],
+            "variables": {"3d": ["UT", "VT"], "levels": {"indices": [1, 3, 5]}},
+        }},
+        "region": {"center": {"latitude": latitude, "longitude": longitude},
+                   "width_km": {"x": 6, "y": 6}},
+        "products": {"model_grid": True},
+        "output": {"directory": str(tmp_path / "real-native")},
     })
     result = execute_simulation(
         conf, ExecutionOptions.from_config(conf, synchronous_export=True))
-    product = next(p for p in result.products if p["role"] == "cart")
+    product = next(p for p in result.products
+                   if p["role"] == "model_grid" and p["source"] == "atmosphere")
     with xr.open_dataset(product["path"], engine="netcdf4") as saved:
         np.testing.assert_array_equal(saved.UT[0], expected_u)
         np.testing.assert_array_equal(saved.VT[0], expected_v)
@@ -101,24 +105,22 @@ def native_scene(hour=0, units="m/s"):
 
 
 def test_sparse_w_only_keeps_selected_mass_targets(tmp_path):
-    from frameit.io.loader import DatasetResources
-    from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
-    from frameit.processing.wind_collocation import select_vertical_velocity
-
     path = tmp_path / "native.nc"
     native_scene().to_netcdf(path, engine="netcdf4")
     conf = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh",
-        "input": {"files": [str(path)]},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": -20., "longitude": 60.}}},
-        "variables": {"level_w": {"names": ["WT"], "levels": {"indices": [1, 2]}}},
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": [str(path)],
+            "variables": {"3d": ["WT"], "levels": {"indices": [1, 2]}},
+            "transforms": [{"fields": ["WT"], "sampling": "mass", "units": "m s-1"}],
+        }},
+        "region": {"center": {"latitude": -20., "longitude": 60.}},
+        "products": {"model_grid": True},
+        "output": {"directory": str(tmp_path / "output"), "writer": {"engine": "netcdf4"}},
     })
-    with DatasetResources() as resources:
-        groups, _ = concat_nc2ds_by_vert_coord(
-            [path], conf.requests_user(), {}, wind_conf=conf, resources=resources,
-            engine="netcdf4")
-        mass = select_vertical_velocity(groups, conf, "mass")["level"]
+    result = execute_simulation(
+        conf, ExecutionOptions.from_config(conf, synchronous_export=True))
+    with xr.open_dataset(result.products[0]["path"], engine="netcdf4") as mass:
         np.testing.assert_array_equal(mass.level, [5., 15.])
         np.testing.assert_allclose(mass.WT[:, :, 0, 0], [[85., 115.]])
 
@@ -131,27 +133,45 @@ def native_files(tmp_path):
 
 def run_export(directory, horizontal="native", vertical="interfaces", *,
                polar=False, polar_vertical="mass", label="run"):
+    transforms = [
+        {"fields": ["UT", "VT"], "units": "m s-1",
+         **({"sampling": "mass", "basis": "earth"} if horizontal == "mass_earth" else {})},
+        {"fields": ["WT"], "units": "m s-1",
+         **({"sampling": "mass"} if vertical == "mass" else {})},
+        {"fields": ["UM10", "VM10"], "basis": "earth", "units": "m s-1"},
+    ]
+    products = {"model_grid": True, "track": True}
+    if polar:
+        products["polar"] = {
+            # The original 2-km full box implied a 1-km polar radius.
+            "radius_km": 1, "radial_step_km": 1, "azimuth_count": 8,
+            "field_options": {"atmosphere": {
+                "UT": {"sampling": "mass", "basis": "earth", "units": "m s-1"},
+                "VT": {"sampling": "mass", "basis": "earth", "units": "m s-1"},
+                "WT": {"sampling": "mass" if polar_vertical == "mass" else "native",
+                       "units": "m s-1"},
+                "UM10": {"basis": "earth", "units": "m s-1"},
+                "VM10": {"basis": "earth", "units": "m s-1"},
+            }},
+        }
     config = SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh", "run": {"name": label},
-        "input": {"directory": str(directory), "pattern": "native*.nc", "wind_pairs": [
-            {"group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
-             "rotation": {"method": "coordinate", "coordinate": "angle"}},
-            {"group": "fields_2d", "u": "UM10", "v": "VM10", "reference_frame": "earth"},
-        ]},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": -20., "longitude": 60.}}},
-        "domain": {"width_km": {"x": 2, "y": 2}},
-        "variables": {
-            "level": {"names": ["UT", "VT", "THT"], "levels": "physical"},
-            "level_w": {"names": ["WT", "Q"], "levels": "physical"},
-            "fields_2d": {"names": ["UM10", "VM10", "MSLP"]},
-        },
-        "polar": {"enabled": polar, "variables": "extracted", "radial_step_m": 1000,
-                  "azimuth_count": 8},
-        "output": {"directory": str(directory / label), "backend": "netcdf4",
-                   "cartesian": {"horizontal_vectors": "earth_centered" if horizontal == "mass_earth" else horizontal,
-                                 "vertical_velocity": vertical},
-                   "polar": {"vertical_velocity": polar_vertical}},
+        "schema_version": 3, "run": {"name": label},
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": str(directory / "native*.nc"), "wind_pairs": [
+                {"u": "UT", "v": "VT", "basis": "grid",
+                 "rotation": {"method": "coordinate", "coordinate": "angle"}},
+                {"u": "UM10", "v": "VM10", "basis": "earth"},
+            ],
+            "variables": {"3d": ["UT", "VT", "THT", "WT", "Q"],
+                          "2d": ["UM10", "VM10", "MSLP"], "levels": {"domain": "physical"}},
+            "transforms": transforms,
+            **({"field_metadata": {name: {"kind": "continuous"} for name in (
+                "UT", "VT", "THT", "WT", "Q", "UM10", "VM10", "MSLP")}} if polar else {}),
+        }},
+        "region": {"center": {"latitude": -20., "longitude": 60.},
+                   "width_km": {"x": 2, "y": 2}},
+        "products": products,
+        "output": {"directory": str(directory / label), "writer": {"engine": "netcdf4"}},
     })
     result = execute_simulation(
         config, ExecutionOptions.from_config(config, synchronous_export=True))
@@ -159,40 +179,43 @@ def run_export(directory, horizontal="native", vertical="interfaces", *,
     assert result.n_files == len(list(directory.glob("native*.nc")))
     snapshots = {}
     for product in result.products:
-        key = product["role"], product["group"]
+        key = product["role"], product["source"]
         assert key not in snapshots, f"Duplicate exported descriptor: {key}"
         # Ordinary CF decoding, after execute_simulation has closed its resources.
         with xr.open_dataset(product["path"], engine="netcdf4") as reopened:
             snapshots[key] = reopened.load()
         assert not any(name.startswith("_frameit") for name in snapshots[key].variables)
     assert ("track", None) in snapshots
-    for group in ("level", "level_w", "surface"):
-        assert ("cart", group) in snapshots
-        if polar:
-            assert ("polar", group) in snapshots
+    fields = {"UT", "VT", "THT", "WT", "Q", "UM10", "VM10", "MSLP"}
+    assert ("model_grid", "atmosphere") in snapshots
+    assert fields <= set(snapshots["model_grid", "atmosphere"].data_vars)
+    if polar:
+        assert ("polar", "atmosphere") in snapshots
+        assert fields <= set(snapshots["polar", "atmosphere"].data_vars)
     return snapshots
 
 
 def assert_vertical(products, role, location):
-    mass = products[role, "level"]
-    interfaces = products[role, "level_w"]
-    np.testing.assert_array_equal(mass.level, [5., 15.])
-    np.testing.assert_array_equal(interfaces.level_w, [0., 10., 20.])
+    dataset = products[role, "atmosphere"]
+    np.testing.assert_array_equal(dataset.level, [5., 15.])
+    np.testing.assert_array_equal(dataset.level_w, [0., 10., 20.])
     # Q is not W: selecting mass W must never move/drop unrelated interface data.
-    assert "level_w" in interfaces.Q.dims
-    expected_q = xr.broadcast(1000 + 2 * interfaces.level_w, interfaces.Q)[0]
-    np.testing.assert_allclose(interfaces.Q, expected_q.transpose(*interfaces.Q.dims))
+    assert "level_w" in dataset.Q.dims
+    expected_q = xr.broadcast(1000 + 2 * dataset.level_w, dataset.Q)[0]
+    np.testing.assert_allclose(dataset.Q, expected_q.transpose(*dataset.Q.dims))
     if location == "mass":
-        assert "WT" not in interfaces
-        assert "level" in mass.WT.dims and "level_w" not in mass.WT.dims
+        assert "WT" not in {name for name, value in dataset.data_vars.items()
+                            if "level_w" in value.dims}
+        assert "level" in dataset.WT.dims and "level_w" not in dataset.WT.dims
         # Interpolation at z=5 and z=15 gives 85 and 115, respectively.
-        w = mass.WT
-        expected = 70 + 3 * mass.level
+        w = dataset.WT
+        expected = 70 + 3 * dataset.level
     else:
-        assert "WT" not in mass
-        assert "level_w" in interfaces.WT.dims and "level" not in interfaces.WT.dims
-        w = interfaces.WT
-        expected = 70 + 3 * interfaces.level_w
+        assert "WT" not in {name for name, value in dataset.data_vars.items()
+                            if "level" in value.dims}
+        assert "level_w" in dataset.WT.dims and "level" not in dataset.WT.dims
+        w = dataset.WT
+        expected = 70 + 3 * dataset.level_w
     truth = xr.broadcast(expected, w)[0].transpose(*w.dims)
     np.testing.assert_allclose(w, truth, atol=1e-10)
     assert w.attrs["standard_name"] == "upward_air_velocity"
@@ -203,14 +226,14 @@ def assert_vertical(products, role, location):
 @pytest.mark.parametrize("vertical", ["interfaces", "mass"])
 def test_cartesian_grid_choices_reopen_with_physical_samples(native_files, horizontal, vertical):
     products = run_export(native_files, horizontal, vertical)
-    ds = products["cart", "level"]
-    assert_vertical(products, "cart", vertical)
+    ds = products["model_grid", "atmosphere"]
+    assert_vertical(products, "model_grid", vertical)
     np.testing.assert_allclose(ds.THT, 300)
     if horizontal == "native":
-        assert ds.UT.dims == ("time", "level", "y_u_box", "x_u_box")
-        assert ds.VT.dims == ("time", "level", "y_v_box", "x_v_box")
-        assert ds.sizes["x_u_box"] == ds.sizes["x_box"] + 1
-        assert ds.sizes["y_v_box"] == ds.sizes["y_box"] + 1
+        assert ds.UT.dims == ("time", "level", "y", "x_u")
+        assert ds.VT.dims == ("time", "level", "y_v", "x")
+        assert ds.sizes["x_u"] == ds.sizes["x"] + 1
+        assert ds.sizes["y_v"] == ds.sizes["y"] + 1
         assert {"latitude_u", "longitude_u"} <= set(ds.UT.coords)
         assert {"latitude_v", "longitude_v"} <= set(ds.VT.coords)
         # The exported geography locates the actual unrotated native samples.
@@ -223,16 +246,18 @@ def test_cartesian_grid_choices_reopen_with_physical_samples(native_files, horiz
             assert ds[name].attrs["standard_name"] == standard
             assert ds[name].attrs["grid_position"] == position
     else:
-        assert ds.UT.dims == ds.VT.dims == ("time", "level", "y_box", "x_box")
+        assert ds.UT.dims == ds.VT.dims == ("time", "level", "y", "x")
         np.testing.assert_allclose(ds.UT, 0, atol=1e-12)
-        truth = 10 + (ds.latitude + 20) * 111000 / 1000
+        latitude = next(ds[name] for name in ds.VT.encoding["coordinates"].split()
+                        if name.startswith("latitude"))
+        truth = 10 + (latitude + 20) * 111000 / 1000
         truth = xr.broadcast(truth, ds.VT)[0].transpose(*ds.VT.dims)
         np.testing.assert_allclose(ds.VT, truth, atol=1e-9)
         for name, standard in (("UT", "eastward_wind"), ("VT", "northward_wind")):
             assert ds[name].attrs["standard_name"] == standard
             assert ds[name].attrs["wind_reference_frame"] == "earth"
             assert ds[name].attrs["grid"] == 1
-    surface = products["cart", "surface"]
+    surface = products["model_grid", "atmosphere"]
     np.testing.assert_allclose(surface.UM10, 3)
     np.testing.assert_allclose(surface.VM10, 4)
     np.testing.assert_allclose(surface.MSLP, 100000)
@@ -254,15 +279,16 @@ def test_cartesian_choice_does_not_change_real_polar_or_tracking(native_files, p
     earth = run_export(native_files, "mass_earth", "mass", polar=True,
                        polar_vertical=polar_vertical, label="earth")
     xr.testing.assert_allclose(native["track", None], earth["track", None])
-    for group in ("level", "level_w", "surface"):
-        xr.testing.assert_allclose(native["polar", group], earth["polar", group])
+    xr.testing.assert_allclose(native["polar", "atmosphere"], earth["polar", "atmosphere"])
     for products in (native, earth):
         assert_vertical(products, "polar", polar_vertical)
-        ds = products["polar", "level"]
+        ds = products["polar", "atmosphere"]
         np.testing.assert_allclose(ds.UT, 0, atol=1e-12)
         # At the repeated polar origin the mass-grid wind is exactly (0, 10).
-        np.testing.assert_allclose(ds.VT.isel(rr=0), 10, atol=1e-9)
-        truth = 10 + (ds.latitude + 20) * 111000 / 1000
+        np.testing.assert_allclose(ds.VT.isel(radius=0), 10, atol=1e-9)
+        latitude = next(ds[name] for name in ds.VT.encoding["coordinates"].split()
+                        if name.startswith("latitude"))
+        truth = 10 + (latitude + 20) * 111000 / 1000
         truth = xr.broadcast(truth, ds.VT)[0].transpose(*ds.VT.dims)
         # ESMF bilinear weights use spherical cells, not an affine latitude
         # plane. Allow the cell-curvature scale: (1000 m / Earth radius) times
@@ -272,8 +298,8 @@ def test_cartesian_choice_does_not_change_real_polar_or_tracking(native_files, p
         assert ds.UT.attrs["standard_name"] == "eastward_wind"
         assert ds.VT.attrs["standard_name"] == "northward_wind"
         assert ds.VT.attrs["wind_reference_frame"] == "earth"
-        np.testing.assert_allclose(products["polar", "surface"].UM10, 3, atol=1e-10)
-        np.testing.assert_allclose(products["polar", "surface"].VM10, 4, atol=1e-10)
+        np.testing.assert_allclose(products["polar", "atmosphere"].UM10, 3, atol=1e-10)
+        np.testing.assert_allclose(products["polar", "atmosphere"].VM10, 4, atol=1e-10)
 
 
 @pytest.mark.parametrize("horizontal", ["native", "mass_earth"])
@@ -281,22 +307,21 @@ def test_each_file_normalizes_velocity_units_before_concatenation(native_files, 
     native_scene(hour=1, units="km/h").to_netcdf(
         native_files / "native1.nc", engine="netcdf4")
     products = run_export(native_files, horizontal, "mass")
-    assert_vertical(products, "cart", "mass")
-    for group, names in (("level", ("UT", "VT", "WT")),
-                         ("surface", ("UM10", "VM10"))):
-        ds = products["cart", group]
+    assert_vertical(products, "model_grid", "mass")
+    for names in (("UT", "VT", "WT"), ("UM10", "VM10")):
+        ds = products["model_grid", "atmosphere"]
         assert ds.sizes["time"] == 2
         for name in names:
             assert ds[name].attrs["units"] == "m s-1"
             xr.testing.assert_allclose(ds[name].isel(time=0, drop=True),
                                        ds[name].isel(time=1, drop=True))
-    ds = products["cart", "level"]
+    ds = products["model_grid", "atmosphere"]
     if horizontal == "native":
-        np.testing.assert_allclose(ds.UT.isel(x_u_box=0), 8.5, atol=1e-10)
+        np.testing.assert_allclose(ds.UT.isel(x_u=0), 8.5, atol=1e-10)
     else:
-        np.testing.assert_allclose(ds.VT.isel(x_box=1), 10, atol=1e-10)
-    np.testing.assert_allclose(products["cart", "surface"].UM10, 3)
-    np.testing.assert_allclose(products["cart", "surface"].VM10, 4)
+        np.testing.assert_allclose(ds.VT.isel(x=1), 10, atol=1e-10)
+    np.testing.assert_allclose(products["model_grid", "atmosphere"].UM10, 3)
+    np.testing.assert_allclose(products["model_grid", "atmosphere"].VM10, 4)
 
 
 def test_native_face_geography_normalizes_each_file_before_concat(native_files):
@@ -308,7 +333,7 @@ def test_native_face_geography_normalizes_each_file_before_concat(native_files):
         })
     second.to_netcdf(native_files / "native1.nc", engine="netcdf4")
     products = run_export(native_files, "native", "interfaces")
-    ds = products["cart", "level"]
+    ds = products["model_grid", "atmosphere"]
     for name in face_geography:
         assert ds[name].sizes["time"] == 2
         assert ds[name].attrs["units"] == (
@@ -319,63 +344,74 @@ def test_native_face_geography_normalizes_each_file_before_concat(native_files):
     x_faces = np.array([-1500., -500., 500., 1500.])
     y_mass = np.array([-1000., 0., 1000.])
     for time in (0, 1):
-        np.testing.assert_allclose(ds.latitude_u.isel(time=time, y_u_box=1),
+        np.testing.assert_allclose(ds.latitude_u.isel(time=time, y=1),
                                    -20 + x_faces / 111000, rtol=0, atol=1e-12)
-        np.testing.assert_allclose(ds.longitude_u.isel(time=time, x_u_box=1),
+        np.testing.assert_allclose(ds.longitude_u.isel(time=time, x_u=1),
                                    60 - y_mass / (111000 * np.cos(np.deg2rad(20))),
                                    rtol=0, atol=1e-12)
-        np.testing.assert_allclose(ds.UT.isel(time=time, level=0, y_u_box=1),
+        np.testing.assert_allclose(ds.UT.isel(time=time, level=0, y=1),
                                    10 + x_faces / 1000, rtol=0, atol=1e-12)
 
 
 def loader_config(path, variables, pairs):
     return SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh",
-        "input": {"files": [str(path)], "wind_pairs": pairs},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": -20., "longitude": 60.}}},
-        "variables": variables,
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": [str(path)], "wind_pairs": pairs,
+            "variables": variables,
+        }},
+        "region": {"center": {"latitude": -20., "longitude": 60.}},
+        "products": {"model_grid": True},
+        "output": {"directory": str(path.parent / "output"), "writer": {"engine": "netcdf4"}},
     })
 
 
 def test_secondary_declared_pair_normalizes_without_primary_alias_fields(tmp_path):
-    from frameit.io.loader import DatasetResources
-    from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
-
     path = tmp_path / "secondary.nc"
     source = native_scene(units="km/h").rename({"UT": "U2", "VT": "V2"})
     source.to_netcdf(path, engine="netcdf4")
     pairs = [
-        {"group": "level", "u": u, "v": v, "reference_frame": "grid",
+        {"u": u, "v": v, "basis": "grid",
          "rotation": {"method": "coordinate", "coordinate": "angle"}}
         for u, v in (("UT", "VT"), ("U2", "V2"))
     ]
-    conf = loader_config(path, {"level": {"names": ["U2", "V2"], "levels": "physical"}},
+    conf = loader_config(path, {"3d": ["U2", "V2"], "levels": {"domain": "physical"}},
                          pairs)
     conf.velocity_aliases.update(u_velocity="UT", v_velocity="VT")
-    native = {}
-    with DatasetResources() as resources:
-        groups, _ = concat_nc2ds_by_vert_coord(
-            [path], conf.requests_user(), {}, wind_conf=conf, resources=resources,
-            native_output_groups=native, engine="netcdf4")
-        analysis, faces = groups["level"].load(), native["level"].load()
-    assert "UT" not in analysis and "VT" not in analysis
-    assert "UT" not in faces and "VT" not in faces
-    np.testing.assert_array_equal(faces.level, [5., 15.])
-    np.testing.assert_allclose(faces.U2.isel(time=0, level=0, nj_u=4),
+    raw, snapshots = conf.yaml_config, {}
+    for representation in ("native", "mass_earth"):
+        raw["sources"]["atmosphere"]["transforms"] = [
+            {"fields": ["U2", "V2"], "units": "m s-1",
+             **({"sampling": "mass", "basis": "earth"}
+                if representation == "mass_earth" else {})}]
+        _, children, _ = bind_sources(SimulationConfig.from_mapping_with_model_preset(raw))
+        with FrameitRunner(children["atmosphere"]) as runner:
+            groups, _, _ = runner.load_dataset()
+            snapshots[representation] = {grid: ds.load() for grid, ds in groups.items()}
+    analysis, faces = snapshots["mass_earth"], snapshots["native"]
+    assert all("UT" not in ds and "VT" not in ds for ds in analysis.values())
+    assert all("UT" not in ds and "VT" not in ds for ds in faces.values())
+    face_u = next(ds.U2 for ds in faces.values() if "U2" in ds)
+    face_v = next(ds.V2 for ds in faces.values() if "V2" in ds)
+    mass_u = next(ds.U2 for ds in analysis.values() if "U2" in ds)
+    mass_v = next(ds.V2 for ds in analysis.values() if "V2" in ds)
+    np.testing.assert_array_equal(face_u.level, [5., 15.])
+    np.testing.assert_allclose(face_u.isel(time=0, level=0, nj_u=4),
                                10 + np.arange(-4.5, 5), rtol=0, atol=1e-12)
-    np.testing.assert_allclose(faces.V2, 0, rtol=0, atol=1e-12)
-    np.testing.assert_allclose(analysis.U2, 0, rtol=0, atol=1e-12)
-    np.testing.assert_allclose(analysis.V2.isel(time=0, level=0, nj=4),
+    np.testing.assert_allclose(face_v, 0, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(mass_u, 0, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(mass_v.isel(time=0, level=0, nj=4),
                                10 + np.arange(-4., 5), rtol=0, atol=1e-12)
     for name, standard in (("U2", "x_wind"), ("V2", "y_wind")):
-        assert faces[name].attrs["units"] == "m s-1"
-        assert faces[name].attrs["wind_reference_frame"] == "grid"
-        assert faces[name].attrs["standard_name"] == standard
-        assert analysis[name].attrs["units"] == "m s-1"
-        assert analysis[name].attrs["wind_reference_frame"] == "earth"
-    assert analysis.U2.attrs["standard_name"] == "eastward_wind"
-    assert analysis.V2.attrs["standard_name"] == "northward_wind"
+        native_field = next(ds[name] for ds in faces.values() if name in ds)
+        mass_field = next(ds[name] for ds in analysis.values() if name in ds)
+        assert native_field.attrs["units"] == "m s-1"
+        assert native_field.attrs["wind_reference_frame"] == "grid"
+        assert native_field.attrs["standard_name"] == standard
+        assert mass_field.attrs["units"] == "m s-1"
+        assert mass_field.attrs["wind_reference_frame"] == "earth"
+    assert mass_u.attrs["standard_name"] == "eastward_wind"
+    assert mass_v.attrs["standard_name"] == "northward_wind"
 
 
 @pytest.fixture
@@ -389,51 +425,55 @@ def mixed_horizontal_file(tmp_path):
 
 
 def test_mixed_horizontal_coordinate_units_preserve_physical_faces(mixed_horizontal_file):
-    from frameit.io.loader import DatasetResources
-    from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
-
     path = mixed_horizontal_file
-    conf = loader_config(path, {"level": {"names": ["UT", "VT"], "levels": "physical"}},
-                         [{"group": "level", "u": "UT", "v": "VT", "reference_frame": "grid",
-                           "rotation": {"method": "coordinate", "coordinate": "angle"}}])
-    native = {}
-    with DatasetResources() as resources:
-        groups, _ = concat_nc2ds_by_vert_coord(
-            [path], conf.requests_user(), {}, wind_conf=conf, resources=resources,
-            native_output_groups=native, engine="netcdf4")
-        analysis, faces = groups["level"].load(), native["level"].load()
+    conf = loader_config(path, {"3d": ["UT", "VT"], "levels": {"domain": "physical"}},
+                         [{"u": "UT", "v": "VT", "basis": "grid",
+                            "rotation": {"method": "coordinate", "coordinate": "angle"}}])
+    raw, snapshots = conf.yaml_config, {}
+    for representation in ("native", "mass_earth"):
+        raw["sources"]["atmosphere"]["transforms"] = [
+            {"fields": ["UT", "VT"], "units": "m s-1",
+             **({"sampling": "mass", "basis": "earth"}
+                if representation == "mass_earth" else {})}]
+        _, children, _ = bind_sources(SimulationConfig.from_mapping_with_model_preset(raw))
+        with FrameitRunner(children["atmosphere"]) as runner:
+            groups, _, _ = runner.load_dataset()
+            snapshots[representation] = {grid: ds.load() for grid, ds in groups.items()}
+    analysis, faces = snapshots["mass_earth"], snapshots["native"]
+    face_u = next(ds.UT for ds in faces.values() if "UT" in ds)
+    face_v = next(ds.VT for ds in faces.values() if "VT" in ds)
+    mass_u = next(ds.UT for ds in analysis.values() if "UT" in ds)
+    mass_v = next(ds.VT for ds in analysis.values() if "VT" in ds)
     expected_faces = np.arange(-4.5, 5) * 1000
     for name in ("ni", "nj"):
-        np.testing.assert_array_equal(analysis[name], np.arange(-4., 5) * 1000)
-    np.testing.assert_allclose(faces.UT.isel(time=0, level=0, nj_u=4),
+        np.testing.assert_array_equal(mass_u[name], np.arange(-4., 5) * 1000)
+    np.testing.assert_allclose(face_u.isel(time=0, level=0, nj_u=4),
                                10 + expected_faces / 1000, rtol=0, atol=1e-12)
-    np.testing.assert_allclose(analysis.UT, 0, rtol=0, atol=1e-12)
-    np.testing.assert_allclose(analysis.VT.isel(time=0, level=0, nj=4),
+    np.testing.assert_allclose(mass_u, 0, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(mass_v.isel(time=0, level=0, nj=4),
                                10 + np.arange(-4., 5), rtol=0, atol=1e-12)
-    units = {name: faces[name].attrs.get("units") for name in ("ni_u", "nj_v")}
+    coordinates = {"ni_u": face_u.ni_u, "nj_v": face_v.nj_v}
+    units = {name: coordinate.attrs.get("units") for name, coordinate in coordinates.items()}
     assert units == {"ni_u": "m", "nj_v": "m"}, units
     for name in ("ni_u", "nj_v"):
-        np.testing.assert_allclose(faces[name], expected_faces, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(coordinates[name], expected_faces, rtol=0, atol=1e-12)
 
 
 def test_native_crop_preserves_faces_with_mixed_horizontal_units(mixed_horizontal_file):
     # Exercise native cropping/export as well as the pre-crop loader arrays.
-    ds = run_export(mixed_horizontal_file.parent, "native", "interfaces")["cart", "level"]
-    np.testing.assert_allclose(ds.UT.isel(time=0, level=0, y_u_box=1),
+    ds = run_export(mixed_horizontal_file.parent, "native", "interfaces")[
+        "model_grid", "atmosphere"]
+    np.testing.assert_allclose(ds.UT.isel(time=0, level=0, y=1),
                                [8.5, 9.5, 10.5, 11.5], rtol=0, atol=1e-12)
-    np.testing.assert_allclose(ds.latitude_u.isel(time=0, y_u_box=1),
+    np.testing.assert_allclose(ds.latitude_u.isel(time=0, y=1),
                                -20 + np.array([-1500., -500., 500., 1500.]) / 111000,
                                rtol=0, atol=1e-12)
-    np.testing.assert_allclose(ds.longitude_v.isel(time=0, x_v_box=1),
+    np.testing.assert_allclose(ds.longitude_v.isel(time=0, x=1),
                                60 - np.array([-1500., -500., 500., 1500.]) /
                                (111000 * np.cos(np.deg2rad(20))), rtol=0, atol=1e-12)
 
 
 def test_w_interpolation_uses_physical_coordinates_with_km_interfaces(tmp_path):
-    from frameit.io.loader import DatasetResources
-    from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
-    from frameit.processing.wind_collocation import select_vertical_velocity
-
     source = native_scene()
     # Leave the independently evaluated W values unchanged: W = 70 + 3*z_metres.
     # Only its coordinate representation changes, not the sampled physical field.
@@ -441,28 +481,28 @@ def test_w_interpolation_uses_physical_coordinates_with_km_interfaces(tmp_path):
     source = source.assign_coords(level_w=(source.level_w / 1000).assign_attrs(attrs))
     path = tmp_path / "native.nc"
     source.to_netcdf(path, engine="netcdf4")
-    conf = loader_config(path, {
-        "level": {"names": ["THT"], "levels": "physical"},
-        "level_w": {"names": ["WT"], "levels": "physical"},
-    }, [])
-    native = {}
-    with DatasetResources() as resources:
-        groups, _ = concat_nc2ds_by_vert_coord(
-            [path], conf.requests_user(), {}, wind_conf=conf, resources=resources,
-            native_output_groups=native, engine="netcdf4")
-        for loaded in (groups, native):
-            mass = select_vertical_velocity(loaded, conf, "mass")["level"].load()
-            np.testing.assert_array_equal(mass.level, [5., 15.])
-            assert mass.level.attrs["units"] == "m"
-            assert mass.WT.dims == ("time", "level", "nj", "ni")
-            truth = xr.broadcast(xr.DataArray([85., 115.], dims="level",
-                                              coords={"level": [5., 15.]}), mass.WT)[0]
-            np.testing.assert_allclose(mass.WT, truth.transpose(*mass.WT.dims),
-                                       rtol=0, atol=1e-12)
-            assert mass.WT.attrs["units"] == "m s-1"
-            interfaces = select_vertical_velocity(loaded, conf, "interfaces")["level_w"]
-            np.testing.assert_allclose(interfaces.WT.isel(time=0, nj=4, ni=4),
-                                        [70., 100., 130.], rtol=0, atol=1e-12)
+    conf = loader_config(path, {"3d": ["THT", "WT"], "levels": {"domain": "physical"}}, [])
+    raw, snapshots = conf.yaml_config, {}
+    for representation in ("native", "mass"):
+        raw["sources"]["atmosphere"]["transforms"] = [
+            {"fields": ["WT"], "units": "m s-1",
+             **({"sampling": "mass"} if representation == "mass" else {})}]
+        _, children, _ = bind_sources(SimulationConfig.from_mapping_with_model_preset(raw))
+        with FrameitRunner(children["atmosphere"]) as runner:
+            groups, _, _ = runner.load_dataset()
+            snapshots[representation] = next(ds.load() for ds in groups.values() if "WT" in ds)
+    mass = snapshots["mass"]
+    np.testing.assert_array_equal(mass.level, [5., 15.])
+    assert mass.level.attrs["units"] == "m"
+    assert mass.WT.dims == ("time", "level", "nj", "ni")
+    truth = xr.broadcast(xr.DataArray([85., 115.], dims="level",
+                                      coords={"level": [5., 15.]}), mass.WT)[0]
+    np.testing.assert_allclose(mass.WT, truth.transpose(*mass.WT.dims),
+                               rtol=0, atol=1e-12)
+    assert mass.WT.attrs["units"] == "m s-1"
+    interfaces = snapshots["native"]
+    np.testing.assert_allclose(interfaces.WT.isel(time=0, nj=4, ni=4),
+                                [70., 100., 130.], rtol=0, atol=1e-12)
 
 
 @pytest.mark.parametrize("case", [

@@ -155,27 +155,28 @@ def coupled_document(directory, *, synchronous=True):
     for name, spacing, value in (("atmosphere", 1000., 280.), ("surface", 2000., 300.),
                                   ("auxiliary", 3000., 290.)):
         path = netcdf_source(directory, name, spacing, value, masked=name == "surface")
-        sources[name] = {"model": "mesonh", "input": {"files": [str(path)], "format": "netcdf"},
-                         "variables": {"fields_2d": {"names": ["temperature"]}}}
+        sources[name] = {"model": "mesonh", "files": [str(path)], "format": "netcdf",
+                         "variables": {"2d": ["temperature"]},
+                         "field_metadata": {"temperature": {"kind": "continuous"}}}
     track = directory / "track.nc"
     moving_track().rename(lon="longitude", lat="latitude").to_netcdf(track)
-    return {"schema_version": "2.1", "model": "mesonh", "run": {"name": "shared"},
-            "input": {"sources": sources}, "domain": {"width_km": {"x": 8, "y": 8}},
-            "tracking": {"source": "atmosphere", "method": "prescribed_track",
-                         "prescribed_track": {"file": str(track)}},
-            "polar": {"enabled": True, "shared_target": True},
-            "output": {"directory": str(directory / "run"), "overwrite": False,
-                       "synchronous_export": synchronous, "max_workers": 1}}
+    return {"schema_version": 3, "run": {"name": "shared"}, "sources": sources,
+            "region": {"track": {"file": str(track)}, "width_km": {"x": 8, "y": 8},
+                       "sources_coupling_time_association": "common"},
+            "products": {"model_grid": True, "track": True,
+                         "polar": {"radius_km": 4., "shared_grid": True}},
+            "resources": {"synchronous_export": synchronous, "export_workers": 1},
+            "output": {"directory": str(directory / "run"), "overwrite": False}}
 
 
 def test_shared_target_schema_is_additive_and_global(tmp_path):
     document = coupled_document(tmp_path)
-    document["polar"]["shared_target"] = "true"
-    with pytest.raises(ValueError, match="shared_target must be a YAML boolean"):
+    document["products"]["polar"]["shared_grid"] = "true"
+    with pytest.raises(ValueError, match="shared_grid: must be a YAML boolean"):
         resolve_schema(document)
-    document["polar"]["shared_target"] = True
-    document["input"]["sources"]["surface"]["polar"] = {"shared_target": False}
-    with pytest.raises(ValueError, match="coupled-run setting"):
+    document["products"]["polar"]["shared_grid"] = True
+    document["sources"]["surface"]["polar"] = {"shared_grid": False}
+    with pytest.raises(ValueError, match="sources.surface.polar.*[Uu]nknown|[Uu]nknown.*polar"):
         resolve_schema(document)
 
 
@@ -197,7 +198,7 @@ def test_three_products_share_moving_target_but_not_masks(tmp_path, synchronous,
     assert result.ok
     products = {p["source"]: p["path"] for p in result.products if p["role"] == "polar"}
     assert set(products) == {"atmosphere", "surface", "auxiliary"}
-    assert all(f".polar.{name}.surface.nc" in str(path) for name, path in products.items())
+    assert all(f".{name}.polar.nc" in str(path) for name, path in products.items())
     check = subprocess.run([sys.executable, "-c", """
 import sys, json, numpy as np, xarray as xr
 paths = json.loads(sys.argv[1])
@@ -205,18 +206,18 @@ datasets = {name: xr.open_dataset(path) for name, path in paths.items()}
 try:
     a = datasets['atmosphere']
     for name, data in datasets.items():
-        coordinates = ('time', 'rr', 'theta', 'longitude', 'latitude', 'center_lon', 'center_lat')
+        coordinates = ('time', 'radius', 'azimuth', 'longitude', 'latitude', 'center_longitude', 'center_latitude')
         for coordinate in coordinates:
             np.testing.assert_array_equal(data[coordinate], a[coordinate])
         assert data.attrs['common_polar_target_id'] == a.attrs['common_polar_target_id']
         assert data.attrs['source_id'] == name
-    np.testing.assert_array_equal(a.center_lon, [60.,60.003])
-    np.testing.assert_array_equal(a.center_lat, [-20.,-19.997])
-    np.testing.assert_allclose(a.temperature.isel(rr=0), [[280.]*9,[281.]*9], atol=1.e-9)
-    np.testing.assert_allclose(datasets['auxiliary'].temperature.isel(rr=0),
+    np.testing.assert_array_equal(a.center_longitude, [60.,60.003])
+    np.testing.assert_array_equal(a.center_latitude, [-20.,-19.997])
+    np.testing.assert_allclose(a.temperature.isel(radius=0), [[280.]*9,[281.]*9], atol=1.e-9)
+    np.testing.assert_allclose(datasets['auxiliary'].temperature.isel(radius=0),
                                [[290.]*9,[291.]*9], atol=1.e-9)
-    assert np.isnan(datasets['surface'].temperature.isel(time=0,rr=0)).all()
-    assert np.isfinite(a.temperature.isel(time=0,rr=0)).all()
+    assert np.isnan(datasets['surface'].temperature.isel(time=0,radius=0)).all()
+    assert np.isfinite(a.temperature.isel(time=0,radius=0)).all()
 finally:
     for d in datasets.values(): d.close()
 assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
@@ -230,12 +231,12 @@ assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
     assert status["common_polar_target"] == contract
     restored = SimulationConfig.from_yaml(conf.output_dir / "resolved-config.yaml")
     assert restored.polar_shared_target is True
-    assert restored.input_sources["surface"]["polar"]["radial_step_m"] == 3000.
+    assert restored.yaml_config["products"]["polar"]["radial_step_km"] == 3.
 
 
 def test_disabled_shared_target_keeps_base_processing_optional(tmp_path, monkeypatch):
     document = coupled_document(tmp_path)
-    document["polar"]["enabled"] = False
+    document["products"].pop("polar")
 
     def forbidden(*args, **kwargs):
         raise AssertionError("Disabled polar processing must not create target arrays")
@@ -247,21 +248,19 @@ def test_disabled_shared_target_keeps_base_processing_optional(tmp_path, monkeyp
 
 def test_mismatched_actual_targets_fail_before_product_publication(tmp_path, monkeypatch):
     pytest.importorskip("xesmf")
-    from frameit.core.runner import FrameitRunner
+    from frameit.processing.polar import polar_proj
 
-    original = FrameitRunner.process_loaded
+    original = polar_proj.execute_source_polar
 
-    def inconsistent(self, *args, **kwargs):
-        result = original(self, *args, **kwargs)
-        if self.conf.simulation_parameter.get("coupled_source_id") == "surface":
-            self.dict_polar_user = {
-                name: data.assign_coords(longitude=data.longitude + .001)
-                for name, data in self.dict_polar_user.items()}
-        return result
+    def inconsistent(internal, source, binding, conf, centres, **kwargs):
+        data, report = original(internal, source, binding, conf, centres, **kwargs)
+        if conf.source_name == "surface":
+            data = data.assign_coords(longitude=data.longitude + .001)
+        return data, report
 
-    monkeypatch.setattr(FrameitRunner, "process_loaded", inconsistent)
+    monkeypatch.setattr(polar_proj, "execute_source_polar", inconsistent)
     conf = SimulationConfig.from_mapping_with_model_preset(coupled_document(tmp_path))
-    with pytest.raises(ValueError, match="Shared polar target mismatch for source surface"):
+    with pytest.raises(ValueError, match="Shared polar target mismatch for surface: longitude"):
         execute_simulation(conf)
     status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
     assert status["state"] == "failed" and status["products"] == []
@@ -271,9 +270,9 @@ def test_mismatched_actual_targets_fail_before_product_publication(tmp_path, mon
 def test_shared_target_keeps_atmospheric_vertical_groups_separate(tmp_path):
     pytest.importorskip("xesmf")
     document = coupled_document(tmp_path)
-    document["input"]["sources"].pop("auxiliary")
-    atmosphere = document["input"]["sources"]["atmosphere"]
-    with xr.open_dataset(atmosphere["input"]["files"][0]) as original:
+    document["sources"].pop("auxiliary")
+    atmosphere = document["sources"]["atmosphere"]
+    with xr.open_dataset(atmosphere["files"][0]) as original:
         source = original.load()
     source = source.assign_coords(level=("level", [1, 2], {"units": "1",
                                       "long_name": "synthetic stored level index"}))
@@ -282,19 +281,20 @@ def test_shared_target_keeps_atmospheric_vertical_groups_separate(tmp_path):
             "time", "level", "nj", "ni").assign_attrs(units="K")
     path = tmp_path / "atmosphere-levels.nc"
     source.to_netcdf(path)
-    atmosphere["input"]["files"] = [str(path)]
-    atmosphere["variables"]["level"] = {
-        "names": ["column_temperature"], "levels": {"indices": [0, 1]}}
+    atmosphere["files"] = [str(path)]
+    atmosphere["variables"].update({"3d": ["column_temperature"],
+                                    "levels": {"indices": [0, 1]}})
+    atmosphere["field_metadata"]["column_temperature"] = {"kind": "continuous"}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(document))
     assert result.ok
     paths = [p["path"] for p in result.products if p["role"] == "polar"]
-    assert len(paths) == 3 and any(".atmosphere.level.nc" in str(p) for p in paths)
-    with xr.open_dataset(next(p for p in paths if ".atmosphere.level.nc" in str(p))) as column:
+    assert len(paths) == 2 and any(".atmosphere.polar.nc" in str(p) for p in paths)
+    with xr.open_dataset(next(p for p in paths if ".atmosphere.polar.nc" in str(p))) as column:
         np.testing.assert_array_equal(column.level, [1, 2])
         assert column.level.attrs["units"] == "1"
-        np.testing.assert_allclose(column.column_temperature.isel(rr=0, theta=0),
+        np.testing.assert_allclose(column.column_temperature.isel(radius=0, azimuth=0),
                                    [[280., 290.], [281., 291.]], atol=1.e-9)
-        with xr.open_dataset(next(p for p in paths if ".surface.surface.nc" in str(p))) as surface:
+        with xr.open_dataset(next(p for p in paths if ".surface.polar.nc" in str(p))) as surface:
             assert column.attrs["common_polar_target_id"] == surface.attrs["common_polar_target_id"]
             np.testing.assert_array_equal(column.latitude, surface.latitude)
 
@@ -304,8 +304,8 @@ def test_shared_target_keeps_atmospheric_vertical_groups_separate(tmp_path):
 def test_dense_fa_surface_moving_polar_values_masks_and_readonly_inputs(tmp_path, shared):
     pytest.importorskip("xesmf")
     document = coupled_document(tmp_path)
-    document["input"]["sources"].pop("auxiliary")
-    document["polar"].update(shared_target=shared, radial_step_m=2000., azimuth_count=8)
+    document["sources"].pop("auxiliary")
+    document["products"]["polar"].update(shared_grid=shared, radial_step_km=2., azimuth_count=8)
     temperature = np.full((13, 15), 300.)
     temperature[6, 7] = np.nan
     files = fa_files(tmp_path, (0, 1), profile="surfex_history", nx=15, ny=13, surface_fields=[
@@ -315,13 +315,13 @@ def test_dense_fa_surface_moving_polar_values_masks_and_readonly_inputs(tmp_path
     before = [path.read_bytes() for path in files]
     for path in files:
         path.chmod(0o444)
-    document["input"]["sources"]["surface"] = {
-        "model": "arome", "input": {"files": [str(p) for p in files], "format": "fa", "fa": {
-            "profile": "surfex_history", "field_metadata": {
-                "SFX.SST": {"units": "K", "kind": "continuous", "temporal_kind": "instantaneous"},
-                "SFX.WG1P1": {"units": "m3 m-3", "kind": "continuous",
-                              "temporal_kind": "instantaneous"}}}},
-        "variables": {"fields_2d": {"names": ["SFX.SST", "SFX.WG1P1"]}}}
+    document["sources"]["surface"] = {
+        "model": "arome", "files": [str(p) for p in files], "format": "fa",
+        "profile": "surfex_history", "field_metadata": {
+            "SFX.SST": {"units": "K", "kind": "continuous", "temporal_kind": "instantaneous"},
+            "SFX.WG1P1": {"units": "m3 m-3", "kind": "continuous",
+                          "temporal_kind": "instantaneous"}},
+        "variables": {"2d": ["SFX.SST", "SFX.WG1P1"]}}
     conf = SimulationConfig.from_mapping_with_model_preset(document)
     result = execute_simulation(conf)
     assert result.ok and [p.read_bytes() for p in files] == before
@@ -330,11 +330,11 @@ def test_dense_fa_surface_moving_polar_values_masks_and_readonly_inputs(tmp_path
 import sys, json, xarray as xr, numpy as np
 p = json.loads(sys.argv[1])
 with xr.open_dataset(p['atmosphere']) as a, xr.open_dataset(p['surface']) as s:
-    for name in ('time','rr','theta','longitude','latitude'):
+    for name in ('time','radius','azimuth','longitude','latitude'):
         np.testing.assert_array_equal(a[name], s[name])
-    np.testing.assert_array_equal(s.center_lon, [60.,60.003])
-    assert np.isnan(s['SFX.SST'].isel(time=0,rr=0)).all()
-    np.testing.assert_array_equal(s['SFX.WG1P1'].isel(rr=0), np.zeros((2,8)))
+    np.testing.assert_array_equal(s.center_longitude, [60.,60.003])
+    assert np.isnan(s['SFX.SST'].isel(time=0,radius=0)).all()
+    np.testing.assert_array_equal(s['SFX.WG1P1'].isel(radius=0), np.zeros((2,8)))
     assert s['SFX.SST'].attrs['surfex_support_mask'] == 'SEA'
     assert s['SFX.WG1P1'].attrs['surfex_support_mask'] == 'NATURE'
     assert 'level' not in s.dims
@@ -350,30 +350,35 @@ def test_primary_pair_shared_target_geometry_budgets_and_fresh_exports(
     tmp_path, synchronous, monkeypatch,
 ):
     pytest.importorskip("xesmf")
-    from frameit.core import coupled, grid_geometry
+    from frameit.core import grid_geometry
     from frameit.io import fa_utils
     from frameit.processing.polar import sampling
 
     raw = primary_pair_document(tmp_path, synchronous=synchronous)
-    raw["polar"]["enabled"] = True
-    originals = {Path(path): Path(path).read_bytes() for source in raw["input"]["sources"].values()
-                 for path in source["input"]["files"]}
+    raw["products"]["polar"] = {"radius_km": 4., "shared_grid": True,
+        "fields": {"atmosphere": ["prmsl", "t", "r", "z"], "surface": ["SFX.T2M", "SFX.SST"]},
+        "processing": {"max_target_points": 60}}
+    originals = {Path(path): Path(path).read_bytes() for source in raw["sources"].values()
+                 for path in source["files"]}
     events, reads = [], []
     original_geometry = grid_geometry.resolve_geometry
-    original_target = coupled._shared_polar_target
+    original_target = sampling.resolve_polar_sampling
     original_budget = sampling.check_point_budget
     original_read = fa_utils.request_fa
 
     def geometry(*args, **kwargs):
         result = original_geometry(*args, **kwargs)
-        events.append(("geometry", result["shape"]))
+        event = ("geometry", result["shape"])
+        if event not in events:
+            events.append(event)
         return result
 
-    def target(conf, children, *args):
-        assert {tuple(child.grid_geometry["shape"]) for child in children.values()} == {
+    def target(source, binding, conf, *, radial_step_km=None):
+        assert {tuple(shape) for operation, shape in events if operation == "geometry"} == {
             (13, 15), (9, 11)}
-        events.append(("shared", None))
-        return original_target(conf, children, *args)
+        if ("shared", None) not in events:
+            events.append(("shared", None))
+        return original_target(source, binding, conf, radial_step_km=radial_step_km)
 
     def budget(points, maximum):
         events.append(("budget", points))
@@ -383,30 +388,33 @@ def test_primary_pair_shared_target_geometry_budgets_and_fresh_exports(
         reads.append(request["fields"])
         return original_read(request)
 
-    # preflight binds resolve_geometry directly; the budget is also used by config validation.
-    monkeypatch.setattr("frameit.core.preflight.resolve_geometry", geometry)
-    monkeypatch.setattr(coupled, "_shared_polar_target", target)
+    # V3 resolves source geometry before final shared sampling; config also checks point guards.
+    monkeypatch.setattr(grid_geometry, "resolve_geometry", geometry)
+    monkeypatch.setattr(sampling, "resolve_polar_sampling", target)
     monkeypatch.setattr(sampling, "check_point_budget", budget)
     monkeypatch.setattr(fa_utils, "request_fa", read)
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan = preflight(conf)
-    assert events[:3] == [("geometry", [13, 15]), ("geometry", [9, 11]), ("shared", None)]
+    assert [event for event in events if event[0] != "budget"][:3] == [
+        ("geometry", [13, 15]), ("geometry", [9, 11]), ("shared", None)]
     # Option/one-frame guards also check 9/27 points; the full allocation is 54.
     budgets = [points for operation, points in events if operation == "budget"]
     assert max(budgets) == 54 and budgets.count(54) == 2
-    assert all(p["polar_sampling"]["estimated_time_count"] *
-               p["polar_sampling"]["estimated_points_per_time"] == 54
+    assert all(len(p["requests"]["binding"]["polar_plan"]["source_times"]) *
+               len(p["requests"]["binding"]["polar_plan"]["radius_km"]) *
+               len(p["requests"]["binding"]["polar_plan"]["azimuth_degrees"]) == 54
                for p in plan["sources"].values())
     assert not reads and not conf.output_dir.exists()
     contract = plan["common_polar_target"]
-    assert contract["radial_step_m"] == 3000. and contract["azimuth_count"] == 9
-    assert contract["radial_step_origin"] == "coarsest_participating_native_grid"
+    assert contract["radial_step_km"] == 3. and len(contract["azimuth_degrees"]) == 9
+    assert contract["radial_step_origin"] == "coarsest_native_grid"
     result = execute_simulation(conf)
     assert result.ok
-    carts = {p["group"]: p["path"] for p in result.products if p["role"] == "cart"}
+    carts = {p["source"]: p["path"] for p in result.products if p["role"] == "model_grid"}
     carts["track"] = next(p["path"] for p in result.products if p["role"] == "track")
-    polars = {p["group"]: p["path"] for p in result.products if p["role"] == "polar"}
-    assert set(polars) == {"atmosphere.surface", "atmosphere.isobaricInhPa", "surfex.surface"}
+    carts["provenance"] = str(conf.output_dir / "run-provenance.yaml")
+    polars = {p["source"]: p["path"] for p in result.products if p["role"] == "polar"}
+    assert set(polars) == {"atmosphere", "surface"}
     check = subprocess.run([sys.executable, "-c", PRIMARY_NATIVE_CHECK + """
 polars = json.loads(sys.argv[2])
 def selected_with_quality(data, names):
@@ -416,37 +424,37 @@ def selected_with_quality(data, names):
     for name in names:
         assert data[name+'_interpolation_status'].dtype == np.uint8
         assert 'flag_meanings' in data[name+'_interpolation_status'].attrs
-with xr.open_dataset(polars['atmosphere.surface'], engine='netcdf4') as a:
+with xr.open_dataset(polars['atmosphere'], engine='netcdf4') as a:
     for group, path in polars.items():
         with xr.open_dataset(path, engine='netcdf4') as data:
-            for name in ('time','rr','theta','longitude','latitude','center_lon','center_lat'):
+            for name in ('time','radius','azimuth','longitude','latitude','center_longitude','center_latitude'):
                 np.testing.assert_array_equal(data[name], a[name])
             assert data.attrs['common_polar_target_id'] == a.attrs['common_polar_target_id']
-    np.testing.assert_array_equal(a.center_lon, [50.,50.015])
-    np.testing.assert_array_equal(a.center_lat, [-20.,-19.988])
+    np.testing.assert_array_equal(a.center_longitude, [50.,50.015])
+    np.testing.assert_array_equal(a.center_latitude, [-20.,-19.988])
     # Independent affine GRIB truth at both continuous (not snapped) centres.
     j = (np.array([-20.,-19.988])+20.054)/.009
     i = (np.array([50.,50.015])-49.932968)/.009576
     expected = 100000.+100*np.array([1,2])+10*j+i
     # Ordinary exports retain the established float32 field encoding.
-    np.testing.assert_array_equal(a.prmsl.isel(rr=0),
+    np.testing.assert_array_equal(a.prmsl.isel(radius=0),
                                   np.broadcast_to(expected.astype('float32')[:,None],(2,9)))
-    selected_with_quality(a, ['prmsl'])
-with xr.open_dataset(polars['surfex.surface'], engine='netcdf4') as s:
+    selected_with_quality(a, ['prmsl', 't', 'r', 'z'])
+with xr.open_dataset(polars['surface'], engine='netcdf4') as s:
     selected_with_quality(s, ['SFX.T2M','SFX.SST'])
-    assert np.isnan(s['SFX.SST'].isel(time=0,rr=0)).all()
-    np.testing.assert_allclose(s['SFX.SST'].isel(time=1,rr=0),302.,rtol=0,atol=1.e-9)
-    np.testing.assert_allclose(s['SFX.T2M'].isel(rr=0),[[281.]*9,[282.]*9],rtol=0,atol=1.e-9)
-with xr.open_dataset(polars['atmosphere.isobaricInhPa'], engine='netcdf4') as pressure:
-    np.testing.assert_array_equal(pressure.isobaricInhPa,[850.])
-    selected_with_quality(pressure, ['t','r','z'])
+    assert np.isnan(s['SFX.SST'].isel(time=0,radius=0)).all()
+    np.testing.assert_allclose(s['SFX.SST'].isel(time=1,radius=0),302.,rtol=0,atol=1.e-9)
+    np.testing.assert_allclose(s['SFX.T2M'].isel(radius=0),[[281.]*9,[282.]*9],rtol=0,atol=1.e-9)
+with xr.open_dataset(polars['atmosphere'], engine='netcdf4') as pressure:
+    np.testing.assert_array_equal(pressure.pressure,[850.])
+    selected_with_quality(pressure, ['prmsl','t','r','z'])
 assert not {'frameit','epygram','falfilfa4py','eccodes','cfgrib'} & sys.modules.keys()
 """, json.dumps(carts), json.dumps(polars)], capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
     provenance, status = assert_primary_pair_provenance(conf)
     assert status["common_polar_target"] == provenance["common_polar_target"]
     assert status["common_polar_target"]["verification"] == (
-        "exact_time_radius_azimuth_longitude_latitude")
+        "exact_coordinates_at_associated_centres")
     assert all(path.read_bytes() == before for path, before in originals.items())
 
 
@@ -457,15 +465,17 @@ def test_primary_pair_planning_guards_precede_payload_and_target_allocation(
 ):
     pytest.importorskip("xesmf")
     raw = primary_pair_document(tmp_path)
-    raw["polar"]["enabled"] = True
+    raw["products"]["polar"] = {"radius_km": 4., "shared_grid": True,
+        "fields": {"atmosphere": ["prmsl", "t", "r", "z"], "surface": ["SFX.T2M", "SFX.SST"]},
+        "processing": {"max_target_points": 60}}
     if failure == "target_budget":
-        raw["polar"]["max_points"] = 53
+        raw["products"]["polar"]["processing"]["max_target_points"] = 53
         message = "requires 54 points"
     elif failure == "finer":
-        raw["polar"]["radial_step_m"] = 1000.
+        raw["products"]["polar"]["radial_step_km"] = 1.
         message = "finer than a participating native grid"
     else:
-        raw["input"]["sources"]["surfex"]["input"]["fa"]["max_points"] = 98
+        raw["sources"]["surface"]["reader"]["max_points"] = 98
         message = "resource budget"
 
     def forbidden(*args, **kwargs):

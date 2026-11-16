@@ -9,6 +9,8 @@ import pytest
 import xarray as xr
 import yaml
 
+from frameit.core.coupled import bind_sources
+from frameit.core.preflight import bind_source, inventory_source
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.loader import DatasetResources
 from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
@@ -43,15 +45,16 @@ def surfex_conf():
 
 
 def surfex_document(directory, paths):
-    return {"schema_version": "2.1", "model": "mesonh", "run": {"name": "sea-support"},
-            "input": {"format": "netcdf", "files": list(map(str, paths)),
-                      "netcdf": {"surfex_fields": ["SST", "SSS", "H_SEA"]}},
-            "variables": {"fields_2d": {"names": ["SST", "SSS", "H_SEA", "PRES", "FRAC_SEA"]}},
-            "tracking": {"method": "fixed_box", "fixed_box": {"center": {"latitude": -20., "longitude": 60.}}},
-            "domain": {"width_km": {"x": 4., "y": 4.}},
-            "execution": {"native_threads": 1, "dask_workers": 1},
-            "output": {"directory": str(directory/"out"), "overwrite": False,
-                       "synchronous_export": True, "max_workers": 1}}
+    return {"schema_version": 3, "run": {"name": "sea-support"},
+            "sources": {"atmosphere": {
+                "model": "mesonh", "format": "netcdf", "files": list(map(str, paths)),
+                "interpretation": "mesonh_surfex_sea",
+                "variables": {"2d": ["SST", "SSS", "H_SEA", "PRES", "FRAC_SEA"]}}},
+            "region": {"center": {"latitude": -20., "longitude": 60.},
+                       "width_km": {"x": 4., "y": 4.}},
+            "resources": {"native_threads": 1, "compute_workers": 1,
+                          "synchronous_export": True, "export_workers": 1},
+            "output": {"directory": str(directory/"out"), "overwrite": False}}
 
 
 def test_surfex_sea_support_preserves_fraction_and_valid_zero():
@@ -152,31 +155,33 @@ def test_surfex_marker_rule_never_reinterprets_croco_water_mask():
 @pytest.mark.parametrize("problem", ["unknown", "model", "format", "layout", "duplicates", "not_list"])
 def test_surfex_schema_keeps_interpretation_explicit_and_bounded(tmp_path, problem):
     raw = surfex_document(tmp_path, [tmp_path/"snapshot.nc"])
+    source = raw["sources"]["atmosphere"]
     if problem == "unknown":
-        raw["input"]["netcdf"]["surfex_fields"] = ["PRES"]
+        # V3 cannot explicitly request SEA interpretation of an ineligible field.
+        source["variables"]["2d"] = ["PRES"]
     elif problem == "model":
-        raw["model"] = "arome"
+        source["model"] = "arome"
     elif problem == "format":
-        raw["input"]["format"] = "grib"
+        source["format"] = "grib"
     elif problem == "layout":
-        raw["input"]["netcdf"]["file_layout"] = "variables"
+        source["reader"] = {"file_layout": "variables"}
     elif problem == "duplicates":
-        raw["input"]["netcdf"]["surfex_fields"] = ["SST", "SST"]
+        source["variables"]["2d"] = ["SST", "SST"]
     else:
-        raw["input"]["netcdf"]["surfex_fields"] = "SST"
-    with pytest.raises(ValueError, match="surfex_fields|SURFEX"):
+        source["variables"]["2d"] = "SST"
+    with pytest.raises(ValueError, match="interpretation|file_layout|variables"):
         SimulationConfig.from_mapping_with_model_preset(raw)
 
 
 def test_surfex_python_configuration_cannot_silently_select_other_model(tmp_path):
     conf = SimulationConfig.from_mapping_with_model_preset(surfex_document(tmp_path, [tmp_path/"snapshot.nc"]))
-    conf.atm_model = "CROCO"
-    with pytest.raises(ValueError, match="surfex_fields"):
-        conf.__post_init__()
+    conf.sources["atmosphere"]["model"] = "croco"
+    with pytest.raises(ValueError, match="surfex_fields|interpretation"):
+        SimulationConfig.from_mapping_with_model_preset(
+            {**conf.yaml_config, "sources": conf.sources})
 
 
 def test_surfex_preflight_reads_support_but_never_thermal_payload(tmp_path, monkeypatch):
-    from frameit.core.preflight import preflight
     from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
 
     path = tmp_path/"snapshot.nc"
@@ -192,14 +197,20 @@ def test_surfex_preflight_reads_support_but_never_thermal_payload(tmp_path, monk
         return original(self, key)
 
     monkeypatch.setattr(H5NetCDFArrayWrapper, "__getitem__", metadata_only)
-    preflight(conf, check_output=False)
+    with DatasetResources() as resources:
+        _, children, sources = bind_sources(conf, check_output=False, resources=resources)
+        assert "FRAC_SEA" not in reads  # Metadata preflight never reads support values.
+        child = children["atmosphere"]
+        # Selected numerical preparation checks support while thermal arrays stay lazy.
+        concat_nc2ds_by_vert_coord(
+            [path], {}, {}, wind_conf=child, resources=resources,
+            selected_records=child.source_requests["atmosphere"]["binding"],
+            source_plan=sources["atmosphere"])
     assert "FRAC_SEA" in reads
 
 
 @pytest.mark.parametrize("change", ["units", "statistic", "quantity", "support"])
 def test_surfex_snapshots_reject_incompatible_scientific_metadata(tmp_path, change):
-    from frameit.core.preflight import preflight
-
     paths = []
     for index in (0, 1):
         ds = surfex_scene(index)
@@ -216,16 +227,15 @@ def test_surfex_snapshots_reject_incompatible_scientific_metadata(tmp_path, chan
         ds.to_netcdf(path)
         paths.append(path)
     conf = SimulationConfig.from_mapping_with_model_preset(surfex_document(tmp_path, paths))
-    with pytest.raises(ValueError, match="SURFEX.*metadata"):
-        preflight(conf, check_output=False)
-    with DatasetResources() as resources, pytest.raises(ValueError, match="SURFEX.*metadata"):
-        concat_nc2ds_by_vert_coord(paths, conf.requests_user(), conf.requests_tracker(),
-                                   method="fixed_box", wind_conf=conf, resources=resources)
+    with pytest.raises(ValueError, match="SURFEX.*metadata|distinct fields|contradict"):
+        bind_sources(conf, check_output=False)
+    with DatasetResources() as resources, pytest.raises(
+            ValueError, match="SURFEX.*metadata|distinct fields|contradict"):
+        inventory_source(conf, "atmosphere", resources=resources)
+        bind_source(conf, "atmosphere")
 
 
 def test_surfex_equivalent_snapshot_unit_spellings_remain_compatible(tmp_path):
-    from frameit.core.preflight import preflight
-
     paths = []
     for index in (0, 1):
         ds = surfex_scene(index)
@@ -236,12 +246,16 @@ def test_surfex_equivalent_snapshot_unit_spellings_remain_compatible(tmp_path):
         ds.to_netcdf(path)
         paths.append(path)
     conf = SimulationConfig.from_mapping_with_model_preset(surfex_document(tmp_path, paths))
-    preflight(conf, check_output=False)
     with DatasetResources() as resources:
-        user, _ = concat_nc2ds_by_vert_coord(paths, conf.requests_user(), conf.requests_tracker(),
-                                             method="fixed_box", wind_conf=conf, resources=resources)
-        np.testing.assert_array_equal(user["surface"].SST[:, 3, 3], [300., 301.])
-        assert user["surface"].SST.attrs["units"] == "K"
+        _, children, sources = bind_sources(conf, check_output=False, resources=resources)
+        child = children["atmosphere"]
+        user, _ = concat_nc2ds_by_vert_coord(
+            paths, {}, {}, wind_conf=child, resources=resources,
+            selected_records=child.source_requests["atmosphere"]["binding"],
+            source_plan=sources["atmosphere"])
+        native, = user.values()
+        np.testing.assert_array_equal(native.SST[:, 3, 3], [300., 301.])
+        assert native.SST.attrs["units"] == "K"
 
 
 @pytest.mark.parametrize("coupled", [False, True])
@@ -255,19 +269,24 @@ def test_surfex_snapshots_export_and_replay_preserve_source_values_and_policy(tm
         paths.append(path)
     raw = surfex_document(tmp_path, paths)
     if coupled:
-        source = {"model": "mesonh", "input": raw["input"], "variables": raw.pop("variables")}
-        raw["input"] = {"sources": {"mnh": source}}
-        raw["tracking"]["source"] = "mnh"
+        # V3 uses the same source container with implicit or explicit product fields.
+        raw["products"] = {"model_grid": {"fields": {
+            "atmosphere": raw["sources"]["atmosphere"]["variables"]["2d"]}}}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     standalone = SimulationConfig.from_mapping_with_model_preset(surfex_document(tmp_path, paths))
     with DatasetResources() as resources:
-        user, _ = concat_nc2ds_by_vert_coord(paths, standalone.requests_user(), standalone.requests_tracker(),
-                                             method="fixed_box", wind_conf=standalone, resources=resources)
-        assert hasattr(user["surface"].SST.data, "dask")
-        np.testing.assert_array_equal(user["surface"].SST[:, 3, 3], [300., 301.])
+        _, children, sources = bind_sources(standalone, resources=resources)
+        child = children["atmosphere"]
+        user, _ = concat_nc2ds_by_vert_coord(
+            paths, {}, {}, wind_conf=child, resources=resources,
+            selected_records=child.source_requests["atmosphere"]["binding"],
+            source_plan=sources["atmosphere"])
+        native, = user.values()
+        assert hasattr(native.SST.data, "dask")
+        np.testing.assert_array_equal(native.SST[:, 3, 3], [300., 301.])
     result = execute_simulation(conf)
     assert result.ok, result
-    product = next(p["path"] for p in result.products if p["role"] == "cart")
+    product = next(p["path"] for p in result.products if p["role"] == "model_grid")
     subprocess.run([sys.executable, "-c", """
 import sys, numpy as np, xarray as xr
 with xr.open_dataset(sys.argv[1]) as out:
@@ -282,10 +301,11 @@ with xr.open_dataset(sys.argv[1]) as out:
 assert 'frameit' not in sys.modules
 """, product], check=True)
     replay = SimulationConfig.from_yaml_with_model_preset(conf.output_dir/"resolved-config.yaml")
-    assert (replay.input_sources["mnh"]["input"]["netcdf"]["surfex_fields"] if coupled
-            else replay.netcdf_surfex_fields) == ["SST", "SSS", "H_SEA"]
+    assert replay.sources["atmosphere"]["interpretation"] == "mesonh_surfex_sea"
+    assert replay.sources["atmosphere"]["variables"]["2d"] == [
+        "SST", "SSS", "H_SEA", "PRES", "FRAC_SEA"]
     provenance = yaml.safe_load((conf.output_dir/"run-provenance.yaml").read_text())
-    records = provenance["sources"]["mnh"]["surfex_provenance"] if coupled else provenance["surfex_provenance"]
+    records = provenance["sources"]["atmosphere"]["interpretation"]["metadata_records"]
     assert {record["field"] for record in records} >= {"SST", "SSS", "H_SEA"}
 
 
@@ -296,13 +316,16 @@ def test_surfex_optional_polar_preserves_central_valid_zero_and_units(tmp_path):
     path = tmp_path/"snapshot.nc"
     surfex_scene().to_netcdf(path)
     raw = surfex_document(tmp_path, [path])
-    raw["polar"] = {"enabled": True, "azimuth_count": 8,
-                    "variables": {"fields_2d": {"names": ["SST", "SSS"]}}}
+    raw["products"] = {"model_grid": True, "polar": {
+        "radius_km": 2., "azimuth_count": 8,
+        "fields": {"atmosphere": ["SST", "SSS"]}}}
+    raw["sources"]["atmosphere"]["field_metadata"] = {
+        name: {"kind": "continuous"} for name in ("SST", "SSS")}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     product = next(p["path"] for p in result.products if p["role"] == "polar")
     with xr.open_dataset(product) as out:
-        np.testing.assert_allclose(out.SST.isel(rr=0), 300., rtol=0, atol=1e-10)
-        np.testing.assert_allclose(out.SSS.isel(rr=0), 0., rtol=0, atol=1e-10)
+        np.testing.assert_allclose(out.SST.isel(radius=0), 300., rtol=0, atol=1e-10)
+        np.testing.assert_allclose(out.SSS.isel(radius=0), 0., rtol=0, atol=1e-10)
         assert out.SST.attrs["units"] == "K"
         assert "cell_methods" not in out.SST.attrs

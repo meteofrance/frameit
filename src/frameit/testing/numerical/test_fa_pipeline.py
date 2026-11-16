@@ -16,9 +16,9 @@ import xarray as xr
 import yaml
 
 from frameit.core.configuration import resolve_schema, resolved_configuration
-from frameit.core.coupled import align_source_times
+from frameit.core.coupled import align_source_times, bind_sources
 from frameit.core.execution import ExecutionOptions, execute_simulation
-from frameit.core.preflight import preflight
+from frameit.core.preflight import collect_preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.testing.numerical.test_fa_cubes import EPYTHON
 from frameit.testing.numerical.test_fa_cubes import NATIVE as EPYGRAM
@@ -44,34 +44,33 @@ def atmospheric_file(directory):
 
 def document(directory, atmosphere, surface_files, *, synchronous=True):
     return {
-        "schema_version": "2.1", "model": "mesonh", "run": {"name": "coupled"},
-        "input": {"sources": {
-            "atmosphere": {"model": "mesonh", "input": {"files": [str(atmosphere)],
-                            "format": "netcdf", "netcdf": {"engine": "netcdf4"}},
-                           "variables": {"fields_2d": {"names": ["temperature"]}}},
-            "surfex": {"model": "arome", "input": {
+        "schema_version": 3, "run": {"name": "coupled"},
+        "sources": {
+            "atmosphere": {"model": "mesonh", "files": [str(atmosphere)],
+                           "format": "netcdf", "reader": {"engine": "netcdf4"},
+                           "field_metadata": {"temperature": {"kind": "continuous"}},
+                           "variables": {"2d": ["temperature"]}},
+            "surface": {"model": "arome",
                 "files": [str(path) for path in surface_files], "format": "fa",
-                "fa": {"profile": "surfex_history", "field_metadata": {
+                "profile": "surfex_history", "field_metadata": {
                     "SFX.T2M": {"units": "K", "kind": "continuous",
-                                "temporal_kind": "instantaneous", "allow_unscaled": True}}}},
-                "variables": {"fields_2d": {"names": ["SFX.T2M"]}}},
-        }},
-        "tracking": {"source": "atmosphere", "method": "fixed_box", "fixed_box": {
-            "center": {"latitude": -20., "longitude": 60.}}},
-        "domain": {"width_km": {"x": 4., "y": 4.}},
-        "output": {"directory": str(directory / "run"), "synchronous_export": synchronous,
-                   "max_workers": 1},
+                                 "temporal_kind": "instantaneous", "allow_unscaled": True}},
+                "variables": {"2d": ["SFX.T2M"]}},
+        },
+        "region": {"center": {"latitude": -20., "longitude": 60.},
+                   "width_km": {"x": 4., "y": 4.},
+                   "sources_coupling_time_association": "common"},
+        "products": {"model_grid": True, "track": True},
+        "resources": {"synchronous_export": synchronous, "export_workers": 1},
+        "output": {"directory": str(directory / "run")},
     }
 
 
 def single_fa_document(directory, files):
     coupled = document(directory, directory / "unused.nc", files)
-    source = coupled["input"]["sources"]["surfex"]
-    return {"schema_version": "2.1", "model": "arome", "input": source["input"],
-            "variables": source["variables"], "domain": coupled["domain"],
-            "tracking": {"method": "fixed_box", "fixed_box": {
-                "center": {"latitude": -20., "longitude": 60.}}},
-            "output": coupled["output"]}
+    return {"schema_version": 3, "sources": {"surface": coupled["sources"]["surface"]},
+            "region": coupled["region"], "products": coupled["products"],
+            "resources": coupled["resources"], "output": coupled["output"]}
 
 
 def test_common_and_strict_policy_complete_skip_report(caplog):
@@ -94,25 +93,25 @@ def test_common_and_strict_policy_complete_skip_report(caplog):
 def test_coupled_schema_defaults_paths_and_bad_options(tmp_path):
     raw = document(tmp_path, tmp_path / "atmosphere.nc", [tmp_path / "surface.fa"])
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    assert conf.time_alignment == "common" and conf.tracking_source == "atmosphere"
-    assert conf.file_type == "coupled"
+    assert conf.time_alignment == "common" and conf.tracking_source is None
+    assert set(conf.sources) == {"atmosphere", "surface"}
     SimulationConfig.from_mapping_with_model_preset(resolved_configuration(conf))
-    for section, key, value in (("input", "time_alignment", "nearest"),
-                                ("tracking", "source", "missing")):
+    for section, key, value in (("region", "sources_coupling_time_association", "nearest"),
+                                ("region", "source", "missing")):
         bad = copy.deepcopy(raw)
         bad[section][key] = value
         with pytest.raises(ValueError):
             resolve_schema(bad)
     bad = copy.deepcopy(raw)
-    bad["input"]["pattern"] = "*.nc"
-    with pytest.raises(ValueError, match="inside each source.input"):
+    bad["pattern"] = "*.nc"
+    with pytest.raises(ValueError, match="Unknown key configuration.pattern"):
         resolve_schema(bad)
     bad = copy.deepcopy(raw)
-    bad["variables"] = {"fields_2d": {"names": ["ambiguous"]}}
-    with pytest.raises(ValueError, match="belong to each source"):
+    bad["variables"] = {"2d": ["ambiguous"]}
+    with pytest.raises(ValueError, match="Unknown key configuration.variables"):
         resolve_schema(bad)
     bad = copy.deepcopy(raw)
-    definition = bad["input"]["sources"]["surfex"]["input"]["fa"]["field_metadata"]["SFX.T2M"]
+    definition = bad["sources"]["surface"]["field_metadata"]["SFX.T2M"]
     definition["temporal_kind"] = "accumulated"
     with pytest.raises(ValueError, match="no accumulation interval is inferred"):
         resolve_schema(bad)
@@ -126,17 +125,19 @@ def test_coupled_netcdf_sources_do_not_need_fa_backend(tmp_path, monkeypatch):
             time=original.time.values + np.timedelta64(1, "h"))
         shifted.to_netcdf(surface, engine="netcdf4")
     raw = document(tmp_path, atmosphere, [])
-    raw["input"]["sources"]["surfex"] = {
-        "model": "mesonh", "input": {"files": [str(surface)], "format": "netcdf"},
-        "variables": {"fields_2d": {"names": ["surface_temp"]}}}
+    raw["sources"]["surface"] = {
+        "model": "mesonh", "files": [str(surface)], "format": "netcdf",
+        "variables": {"2d": ["surface_temp"]}}
 
     def forbidden(*args, **kwargs):
         raise AssertionError("NetCDF coupling must not initialize native FA")
 
     monkeypatch.setattr("frameit.io.fa_backend.request_fa", forbidden)
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    preview = preflight(conf, execution_options=ExecutionOptions.from_config(
+    checked = collect_preflight(conf, execution_options=ExecutionOptions.from_config(
         conf, export_netcdf=False))
+    assert not checked.errors, checked.errors
+    preview = checked.facts
     assert preview["planned_products"] == []
     result = execute_simulation(conf)
     assert result.ok and len(result.products) == 3
@@ -149,7 +150,8 @@ def test_fa_only_multi_time_prescribed_track_is_exact_and_lazy(tmp_path, monkeyp
     track = tmp_path / "track.nc"
     xr.Dataset({"latitude": ("time", [-20.]), "longitude": ("time", [60.])}, coords={
         "time": [np.datetime64("2026-01-01T01:00", "ns")]}).to_netcdf(track, engine="netcdf4")
-    raw["tracking"] = {"method": "prescribed_track", "prescribed_track": {"file": str(track)}}
+    raw["region"].pop("center")
+    raw["region"]["track"] = {"file": str(track)}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     from frameit.io import fa_utils
 
@@ -161,12 +163,13 @@ def test_fa_only_multi_time_prescribed_track_is_exact_and_lazy(tmp_path, monkeyp
         return original(request)
 
     monkeypatch.setattr(fa_utils, "request_fa", counted)
-    preflight(conf)
+    checked = collect_preflight(conf)
+    assert not checked.errors, checked.errors
     assert not read_keys
     result = execute_simulation(conf)
     assert result.ok and read_keys
     assert all("001.fa" in path for path, _ in read_keys)  # No unused time decoded.
-    product = next(p["path"] for p in result.products if p["role"] == "cart")
+    product = next(p["path"] for p in result.products if p["role"] == "model_grid")
     with xr.open_dataset(product, engine="netcdf4") as data:
         assert data.time.size == 1
         assert data["SFX.T2M"].shape == (1, 5, 5)
@@ -206,17 +209,16 @@ def test_grib_and_fa_share_one_run_without_native_runtime_collision(tmp_path):
         ec.codes_release(handle)
     files = fa_files(tmp_path, (1,), profile="surfex_history")
     raw = document(tmp_path, path, files)
-    raw["model"] = "arome"
-    raw["input"]["sources"]["atmosphere"] = {
-        "model": "arome", "input": {"files": [str(path)], "format": "grib"},
-        "variables": {"heightAboveGround": {"names": ["t2m"], "levels": {"values": [2]}}}}
+    raw["sources"]["atmosphere"] = {
+        "model": "arome", "files": [str(path)], "format": "grib",
+        "variables": {"3d": ["t2m"], "levels": {"values": [2]}}}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok
-    products = {p.get("source"): p["path"] for p in result.products if p["role"] == "cart"}
+    products = {p.get("source"): p["path"] for p in result.products if p["role"] == "model_grid"}
     with xr.open_dataset(products["atmosphere"], engine="netcdf4") as data:
         np.testing.assert_array_equal(data.t2m[0, 0],
                                       [[278., 279., 280.], [280., 281., 282.], [282., 283., 284.]])
-    with xr.open_dataset(products["surfex"], engine="netcdf4") as data:
+    with xr.open_dataset(products["surface"], engine="netcdf4") as data:
         assert data["SFX.T2M"].shape == (1, 5, 5)
     assert "falfilfa4py" not in sys.modules
     provenance = yaml.safe_load((tmp_path / "run" / "run-provenance.yaml").read_text())
@@ -229,18 +231,19 @@ def test_coupled_common_polar_target_and_scalar_truth(tmp_path):
     atmosphere = atmospheric_file(tmp_path)
     files = fa_files(tmp_path, (1,), profile="surfex_history")
     raw = document(tmp_path, atmosphere, files)
-    raw["polar"] = {"enabled": True, "radial_step_m": 2000., "azimuth_count": 8}
+    raw["products"]["polar"] = {
+        "radius_km": 2., "radial_step_km": 2., "azimuth_count": 8, "shared_grid": True}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     products = {p.get("source"): p["path"] for p in result.products if p["role"] == "polar"}
     with xr.open_dataset(products["atmosphere"], engine="netcdf4") as a, xr.open_dataset(
-        products["surfex"], engine="netcdf4"
+        products["surface"], engine="netcdf4"
     ) as s:
-        np.testing.assert_array_equal(a.rr, s.rr)
-        np.testing.assert_array_equal(a.theta, s.theta)
+        np.testing.assert_array_equal(a.radius, s.radius)
+        np.testing.assert_array_equal(a.azimuth, s.azimuth)
         np.testing.assert_allclose(a.longitude, s.longitude, rtol=0, atol=1.e-12)
         np.testing.assert_allclose(a.latitude, s.latitude, rtol=0, atol=1.e-12)
-        np.testing.assert_allclose(a.temperature.isel(rr=0), 281., atol=1.e-8)
-        np.testing.assert_allclose(s["SFX.T2M"].isel(rr=0), 314.5, atol=1.e-8)
+        np.testing.assert_allclose(a.temperature.isel(radius=0), 281., atol=1.e-8)
+        np.testing.assert_allclose(s["SFX.T2M"].isel(radius=0), 314.5, atol=1.e-8)
 
 
 @pytest.mark.skipif(not NATIVE, reason="optional falfilfa4py wheel not installed")
@@ -249,16 +252,17 @@ def test_netcdf_fa_two_grids_time_intersection_independent_reopening(tmp_path, s
     atmosphere = atmospheric_file(tmp_path)
     surface = fa_files(tmp_path, (1, 2), profile="surfex_history")
     raw = document(tmp_path, atmosphere, surface, synchronous=synchronous)
-    raw["input"]["sources"]["surfex"]["input"]["fa"]["expected_source"] = {
-        "PROGRAM": "AROME", "MASDEV": 47, "VERSION": 8, "BUG": 1, "BUGFIX": 0}
+    raw["sources"]["surface"]["fa"] = {"expected_source": {
+        "PROGRAM": "AROME", "MASDEV": 47, "VERSION": 8, "BUG": 1, "BUGFIX": 0}}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    plan = preflight(conf)
-    assert plan["track_time_count"] == 1
+    checked = collect_preflight(conf)
+    assert not checked.errors, checked.errors
+    assert len(conf.simulation_parameter["region_alignment"]["selected_times"]) == 1
     assert not conf.output_dir.exists()
     result = execute_simulation(conf)
-    assert result.ok and result.n_files == 2  # The non-common FA file was not processed.
-    products = {p.get("source"): p["path"] for p in result.products if p["role"] == "cart"}
-    assert set(products) == {"atmosphere", "surfex"}
+    assert result.ok
+    products = {p.get("source"): p["path"] for p in result.products if p["role"] == "model_grid"}
+    assert set(products) == {"atmosphere", "surface"}
     # Use a fresh ordinary-reader process with no FrameIt or FA imports.
     check = subprocess.run([sys.executable, "-c", """
 import json, sys, xarray as xr, numpy as np
@@ -267,54 +271,57 @@ with xr.open_dataset(products['atmosphere'], engine='netcdf4') as a:
     assert a.temperature.shape == (1, 3, 3)
     expected = [[278.,279.,280.],[280.,281.,282.],[282.,283.,284.]]
     np.testing.assert_array_equal(a.temperature[0], expected)
-with xr.open_dataset(products['surfex'], engine='netcdf4') as s:
+    np.testing.assert_array_equal(a.ni_source_native_index[:, a.sizes['x']//2], [3])
+with xr.open_dataset(products['surface'], engine='netcdf4') as s:
     assert s['SFX.T2M'].shape == (1,5,5)
     np.testing.assert_array_equal(s['SFX.T2M'][0],280.5+10*np.arange(1,6)[:,None]+np.arange(2,7))
     assert s['SFX.T2M'].attrs['units'] == 'K'
-    assert s.attrs['source_id'] == 'surfex'
+    assert s.attrs['source_id'] == 'surface'
     assert s['SFX.T2M'].attrs['source_variable_name'] == 'SFX.T2M'
     descriptor = json.loads(s['SFX.T2M'].attrs['fa_field_descriptor'])
     assert descriptor['schema_version'] == 1
     assert descriptor['native']['shape'] == [7,9]
-    assert descriptor['units'] == {'value':'K','origin':'explicit_input.fa.field_metadata'}
+    assert descriptor['units'] == {'value':'K','origin':'explicit_source.field_metadata'}
     assert descriptor['mask']['undefined'] == 'not_read'  # decode facts are in the run manifest
 assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
 """, json.dumps(products)], capture_output=True, text=True)
     assert check.returncode == 0, check.stdout + check.stderr
-    with xr.open_dataset(next(p["path"] for p in result.products if p["role"] == "track"),
-                         engine="netcdf4") as track:
-        np.testing.assert_array_equal(track.cx, [3])
-        np.testing.assert_array_equal(track.atmosphere_cx, [3])
-        np.testing.assert_array_equal(track.surfex_cx, [4])
-        np.testing.assert_array_equal(track.surfex_cy, [3])
-        assert track.attrs["time_alignment_skipped_count"] == 2
+    # Native centre indices now belong to each source's regional provenance.
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
     status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
+    atmosphere_grid, = provenance["sources"]["atmosphere"]["region"]["grids"].values()
+    surface_grid, = provenance["sources"]["surface"]["region"]["grids"].values()
+    np.testing.assert_array_equal(atmosphere_grid["native_x_indices"], [3])
+    np.testing.assert_array_equal(surface_grid["native_x_indices"], [4])
+    np.testing.assert_array_equal(surface_grid["native_y_indices"], [3])
+    assert sum(len(s["skipped_times"])
+               for s in provenance["time_alignment"]["sources"].values()) == 2
     assert status["state"] == "completed"
     assert provenance["time_alignment"] == status["time_alignment"]
     assert provenance["time_alignment"]["sources"]["atmosphere"]["skipped_times"] == [
         "2026-01-01T00:00:00.000000000"]
-    assert provenance["time_alignment"]["sources"]["surfex"]["skipped_times"] == [
+    assert provenance["time_alignment"]["sources"]["surface"]["skipped_times"] == [
         "2026-01-01T02:00:00.000000000"]
-    assert provenance["sources"]["surfex"]["fa_decoder"]["decode_requests"] > 0
-    versions = provenance["sources"]["surfex"]["fa_decoder"]["backend_versions"]
+    assert provenance["sources"]["surface"]["fa_decoder"]["decode_requests"] > 0
+    versions = provenance["sources"]["surface"]["fa_decoder"]["backend_versions"]
     # Provenance must identify the installed distribution actually used.
     assert versions["falfilfa4py"] == version("falfilfa4py")
-    source = provenance["sources"]["surfex"]
+    source = provenance["sources"]["surface"]
     assert source["fa_inputs"][0]["field_descriptors"]["SFX.T2M"]["schema_version"] == 1
     observed = next(iter(source["fa_decoder"]["field_observations"].values()))["SFX.T2M"]
     assert observed["mask"]["undefined"]["present"] is False
     # Packing-0 native fixtures do not exercise the missing GRIB-scaling warning.
     assert observed["scaling"]["status"] == "not_exposed"
     assert observed["scaling"]["fallback"] is None
-    assert observed["units"]["origin"] == "explicit_input.fa.field_metadata"
+    assert observed["units"]["origin"] == "explicit_source.field_metadata"
     restored = SimulationConfig.from_yaml(conf.output_dir / "resolved-config.yaml")
-    assert resolved_configuration(restored)["input"]["sources"]["surfex"]["input"]["fa"][
+    assert resolved_configuration(restored)["sources"]["surface"]["fa"][
         "expected_source"]["MASDEV"] == 47
+    assert result.ok and result.n_files == 2  # The non-common FA file was not processed.
     strict = copy.deepcopy(raw)
-    strict["input"]["time_alignment"] = "strict"
+    strict["region"]["sources_coupling_time_association"] = "strict"
     with pytest.raises(ValueError, match="Strict source time alignment"):
-        preflight(SimulationConfig.from_mapping_with_model_preset(strict))
+        bind_sources(SimulationConfig.from_mapping_with_model_preset(strict))
 
 
 def primary_pair_document(directory, *, synchronous=True, cycles=None, surface_overrides=None):
@@ -399,34 +406,32 @@ def primary_pair_document(directory, *, synchronous=True, cycles=None, surface_o
                                      dtype="datetime64[ns]")}).to_netcdf(track)
     track.chmod(0o444)
     return {
-        "schema_version": "2.1", "model": "arome", "run": {"name": "primary-pair"},
-        "input": {"sources": {
-            "atmosphere": {"model": "arome", "input": {
+        "schema_version": 3, "run": {"name": "primary-pair"},
+        "sources": {
+            "atmosphere": {"model": "arome",
                 "files": atmosphere, "format": "grib", "wind_pairs": [
-                    {"group": "fields_2d", "u": "u10", "v": "v10", "reference_frame": "earth"},
-                    {"group": "isobaricInhPa", "u": "u", "v": "v", "reference_frame": "earth"}]},
-                           "polar": {"variables": {"fields_2d": {"names": ["prmsl"]},
-                                                    "isobaricInhPa": {"names": ["t", "r", "z"]}}},
-                           "variables": {"fields_2d": {"names": ["prmsl", "u10", "v10"]},
-                                         "isobaricInhPa": {"names": ["u", "v", "t", "r", "z"],
-                                                           "levels": {"values": [850]}}}},
-            "surfex": {"model": "arome", "input": {"files": surface, "format": "fa", "fa": {
-                "backend": "epygram", "python_executable": EPYTHON, "profile": "surfex_history",
-                "earth_radius_m": 6371229., "max_points": 99,
+                    {"u": "u10", "v": "v10", "basis": "earth"},
+                    {"u": "u", "v": "v", "basis": "earth"}],
+                "field_metadata": {name: {"kind": "continuous"} for name in ("prmsl", "t", "r", "z")},
+                "variables": {"2d": ["prmsl", "u10", "v10"],
+                              "3d": ["u", "v", "t", "r", "z"],
+                              "levels": {"values": [850]}}},
+            "surface": {"model": "arome", "files": surface, "format": "fa",
+                "profile": "surfex_history",
+                "reader": {"python_executable": EPYTHON, "max_points": 99},
+                "fa": {"earth_radius_m": 6371229.,
                 "expected_source": {"PROGRAM": "AROME", "MASDEV": 47, "VERSION": 8,
-                                    "BUG": 1, "BUGFIX": 0},
+                                    "BUG": 1, "BUGFIX": 0}},
                 "field_metadata": {name: {"units": "K", "kind": "continuous",
-                                          "temporal_kind": "instantaneous", "allow_unscaled": False}
-                                   for name in ("SFX.T2M", "SFX.SST")}}},
-                "variables": {"fields_2d": {"names": ["SFX.T2M", "SFX.SST"]}}},
-        }},
-        "tracking": {"source": "atmosphere", "method": "prescribed_track",
-                     "prescribed_track": {"file": str(track)}},
-        "domain": {"width_km": {"x": 8., "y": 8.}},
-        "polar": {"enabled": False, "shared_target": True, "max_points": 60},
-        "output": {"directory": str(directory / "run"), "overwrite": False,
-                   "synchronous_export": synchronous, "max_workers": 1,
-                   "cartesian": {"horizontal_vectors": "native"}},
+                                           "temporal_kind": "instantaneous", "allow_unscaled": False}
+                                   for name in ("SFX.T2M", "SFX.SST")},
+                "variables": {"2d": ["SFX.T2M", "SFX.SST"]}},
+        },
+        "region": {"track": {"file": str(track)}, "width_km": {"x": 8., "y": 8.},
+                   "sources_coupling_time_association": "common"},
+        "products": {"model_grid": True, "track": True},
+        "resources": {"synchronous_export": synchronous, "export_workers": 1},
+        "output": {"directory": str(directory / "run"), "overwrite": False},
     }
 
 
@@ -438,13 +443,17 @@ def assert_primary_pair_provenance(conf):
     assert alignment["policy"] == "common"
     assert alignment["selected_times"] == [f"2026-01-01T0{hour}:00:00.000000000" for hour in (1, 2)]
     for name, skipped, missing, filename in (("atmosphere", 0, 3, "atmosphere-0.grib"),
-                                              ("surfex", 3, 0, "surface-3.fa")):
+                                              ("surface", 3, 0, "surface-3.fa")):
         assert alignment["sources"][name] == {
             "available_count": 3, "selected_count": 2,
             "skipped_times": [f"2026-01-01T0{skipped}:00:00.000000000"],
             "missing_times": [f"2026-01-01T0{missing}:00:00.000000000"],
-            "skipped_files": [filename]}
-    source = provenance["sources"]["surfex"]
+            "skipped_files": [filename],
+            "associations": [{
+                "source_time": f"2026-01-01T0{hour}:00:00.000000000",
+                "coupling_time": f"2026-01-01T0{hour}:00:00.000000000",
+                "offset_seconds": 0.} for hour in (1, 2)]}
+    source = provenance["sources"]["surface"]
     decoder = source["fa_decoder"]
     assert decoder["decode_requests"] > 0
     assert decoder["backend_versions"]["FA_backend"] == "epygram"
@@ -463,52 +472,61 @@ def assert_primary_pair_provenance(conf):
             assert descriptor["mask"]["undefined"]["origin"] == "EPyGrAM_returned_mask"
     assert decoder["field_observations"]["surface-1.fa"]["SFX.SST"]["mask"]["nonfinite_count"] == 1
     assert decoder["field_observations"]["surface-2.fa"]["SFX.SST"]["mask"]["nonfinite_count"] == 0
-    assert len(source["fa_inputs"]) == 2
+    assert len({record["source_id"] for record in source["fa_inputs"]}) == 2
     restored = SimulationConfig.from_yaml(conf.output_dir / "resolved-config.yaml")
-    settings = restored.input_sources["surfex"]["input"]["fa"]
-    assert settings["backend"] == "epygram" and settings["python_executable"] == EPYTHON
+    settings = restored.sources["surface"]
+    assert decoder["backend_versions"]["FA_backend"] == "epygram" and (
+        settings["reader"]["python_executable"] == EPYTHON)
     assert all(not declaration["allow_unscaled"]
                for declaration in settings["field_metadata"].values())
-    assert provenance["sources"]["atmosphere"]["grid_geometry"]["shape"] == [13, 15]
-    assert source["grid_geometry"]["shape"] == [9, 11]
+    assert {tuple(grid["geometry"]["shape"]) for grid in
+            provenance["sources"]["atmosphere"]["region"]["grids"].values()} == {(13, 15)}
+    assert {tuple(grid["geometry"]["shape"])
+            for grid in source["region"]["grids"].values()} == {(9, 11)}
     assert not {"epygram", "falfilfa4py", "ectrans4py"} & sys.modules.keys()
     return provenance, status
 
 
 # This program deliberately imports only ordinary readers and independent equations.
 PRIMARY_NATIVE_CHECK = """
-import sys, json, numpy as np, xarray as xr
+import sys, json, numpy as np, xarray as xr, yaml
 p = json.loads(sys.argv[1])
 times = np.array(['2026-01-01T01:00','2026-01-01T02:00'], dtype='datetime64[ns]')
 with xr.open_dataset(p['track'], engine='netcdf4') as track:
     np.testing.assert_array_equal(track.time, times)
-    np.testing.assert_array_equal(track.lon, [50., 50.015])
-    np.testing.assert_array_equal(track.lat, [-20., -19.988])
-    np.testing.assert_array_equal(track.atmosphere_cx, [7,9])
-    np.testing.assert_array_equal(track.atmosphere_cy, [6,7])
-    np.testing.assert_array_equal(track.surfex_cx, [5,6])
-    np.testing.assert_array_equal(track.surfex_cy, [4,4])
-    assert track.attrs['time_alignment_skipped_count'] == 2
-    for name in ('atmosphere.surface','atmosphere.isobaricInhPa','surfex.surface'):
-        with xr.open_dataset(p[name], engine='netcdf4') as data:
+    np.testing.assert_array_equal(track.longitude, [50., 50.015])
+    np.testing.assert_array_equal(track.latitude, [-20., -19.988])
+    provenance = yaml.safe_load(open(p['provenance']))
+    atmosphere_grids = list(provenance['sources']['atmosphere']['region']['grids'].values())
+    surface_grids = list(provenance['sources']['surface']['region']['grids'].values())
+    assert atmosphere_grids and surface_grids
+    for grid in atmosphere_grids:
+        np.testing.assert_array_equal(grid['native_x_indices'], [7,9])
+        np.testing.assert_array_equal(grid['native_y_indices'], [6,7])
+    for grid in surface_grids:
+        np.testing.assert_array_equal(grid['native_x_indices'], [5,6])
+        np.testing.assert_array_equal(grid['native_y_indices'], [4,4])
+    assert sum(len(s['skipped_times']) for s in
+               provenance['time_alignment']['sources'].values()) == 2
+    for name in ('atmosphere.surface','atmosphere.isobaricInhPa','surface.surface'):
+        with xr.open_dataset(p[name.split('.')[0]], engine='netcdf4') as data:
             np.testing.assert_array_equal(data.time, times)
             assert data.attrs['source_id'] == name.split('.')[0]
-            assert data.attrs['source_group'] == name.split('.')[1]
+            assert data.attrs['product_type'] == 'model_grid'
             for t,hour in enumerate((1,2)):
-                prefix = name.split('.')[0] + '_'
                 j, i = np.meshgrid(
-                    np.arange(int(track[prefix+'iy_min'][t]), int(track[prefix+'iy_max'][t])+1),
-                    np.arange(int(track[prefix+'ix_min'][t]), int(track[prefix+'ix_max'][t])+1),
+                    data.y_source_native_index[t],
+                    data.x_source_native_index[t],
                     indexing='ij')
                 if name == 'atmosphere.surface':
-                    assert set(data.data_vars) == {'prmsl','u10','v10'}
+                    assert set(data.data_vars) == {'prmsl','u10','v10','u','v','t','r','z'}
                     np.testing.assert_array_equal(data.prmsl[t],100000.+100*hour+10*j+i)
                     np.testing.assert_array_equal(data.u10[t],np.zeros_like(j))
                     np.testing.assert_array_equal(data.v10[t],np.full_like(j,4+hour))
                     assert data.prmsl.attrs['units'] == 'Pa'
                 elif name == 'atmosphere.isobaricInhPa':
-                    assert set(data.data_vars) == {'u','v','t','r','z'}
-                    np.testing.assert_array_equal(data.isobaricInhPa,[850.])
+                    assert set(data.data_vars) == {'prmsl','u10','v10','u','v','t','r','z'}
+                    np.testing.assert_array_equal(data.pressure,[850.])
                     for var,base in (('u',3.),('v',4.),('t',260.),('r',60.),('z',50000.)):
                         expected = base+8.5+hour+2*j+i
                         if var == 'r': expected[(j==4)&(i==5)] = np.nan
@@ -539,8 +557,8 @@ def test_primary_grib_epygram_surfex_native_exports(tmp_path, synchronous, monke
     from frameit.processing.polar.polar_grid import PolarLonLatGrid
 
     raw = primary_pair_document(tmp_path, synchronous=synchronous)
-    originals = {Path(path): Path(path).read_bytes() for source in raw["input"]["sources"].values()
-                 for path in source["input"]["files"]}
+    originals = {Path(path): Path(path).read_bytes() for source in raw["sources"].values()
+                 for path in source["files"]}
 
     def forbidden(*args, **kwargs):
         raise AssertionError("disabled polar processing must not build a target")
@@ -558,19 +576,24 @@ def test_primary_grib_epygram_surfex_native_exports(tmp_path, synchronous, monke
     monkeypatch.setattr(fa_utils, "request_fa", counted)
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with caplog.at_level(logging.WARNING):
-        plan = preflight(conf)
+        checked = collect_preflight(conf)
+    assert not checked.errors, checked.errors
+    plan = checked.facts
     assert not reads and not conf.output_dir.exists()
-    assert plan["track_time_count"] == 2 and "common_polar_target" not in plan
-    assert "Source atmosphere" in caplog.text and "Source surfex" in caplog.text
+    assert len(conf.simulation_parameter["region_alignment"]["selected_times"]) == 2 and (
+        plan.get("common_polar_target") is None)
+    assert "Source atmosphere" in caplog.text and "Source surface" in caplog.text
     result = execute_simulation(conf)
-    assert result.ok and result.n_files == 4
+    assert result.ok
     # Spawned exports are observed in the decoder log, not a parent-process mock.
-    paths = {p["group"]: p["path"] for p in result.products if p["role"] == "cart"}
+    paths = {p["source"]: p["path"] for p in result.products if p["role"] == "model_grid"}
     paths["track"] = str(conf.output_dir / "products/primary-pair.track.nc")
+    paths["provenance"] = str(conf.output_dir / "run-provenance.yaml")
     check = subprocess.run([sys.executable, "-c", PRIMARY_NATIVE_CHECK, json.dumps(paths)],
                            capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
     assert_primary_pair_provenance(conf)
+    assert result.ok and result.n_files == 4
     assert all(path.read_bytes() == before for path, before in originals.items())
     assert not list(conf.output_dir.rglob("*.partial"))
 
@@ -583,20 +606,20 @@ def test_primary_pair_rejects_time_cycle_clock_and_source_conflicts(tmp_path, fa
             {2: 1} if failure == "mixed_cycles" else None),
         surface_overrides={2: {"state_hours": 9}} if failure == "clock" else None)
     if failure == "strict":
-        raw["input"]["time_alignment"] = "strict"
+        raw["region"]["sources_coupling_time_association"] = "strict"
         message = "Strict source time alignment"
     elif failure == "cycle":
         message = "Coupled forecast cycles disagree"
     elif failure == "mixed_cycles":
-        message = "Source atmosphere: select one forecast cycle"
+        message = "Source atmosphere: select one forecast cycle|time.cycle"
     elif failure == "clock":
         message = "DTCUR conflicts"
     else:
-        raw["input"]["sources"]["surfex"]["input"]["fa"]["expected_source"]["BUG"] = 2
+        raw["sources"]["surface"]["fa"]["expected_source"]["BUG"] = 2
         message = "expected_source.BUG"
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match=message):
-        preflight(conf)
+        bind_sources(conf)
     assert not conf.output_dir.exists()
 
 
@@ -606,33 +629,38 @@ def test_primary_pair_rejects_time_cycle_clock_and_source_conflicts(tmp_path, fa
 def test_automatic_coupling_preserves_centres_and_scaling_guard(tmp_path, packing, nt):
     raw = primary_pair_document(tmp_path, surface_overrides={1: {"packing": packing}})
     suffixes = tuple(f"-{hour}" for hour in range(1, nt + 1))
-    for source in raw["input"]["sources"].values():
-        source["input"]["files"] = [path for path in source["input"]["files"]
-                                    if Path(path).stem.endswith(suffixes)]
-    raw["tracking"] = {"source": "atmosphere", "method": "pressure_wind"}
-    raw["execution"] = {"require_complete_tracking": True}
+    for source in raw["sources"].values():
+        source["files"] = [path for path in source["files"] if Path(path).stem.endswith(suffixes)]
+    raw["region"].pop("track")
+    raw["region"]["tracker"] = {"method": "pressure_wind", "on_incomplete": "error"}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    assert preflight(conf)["track_time_count"] == nt
+    checked = collect_preflight(conf)
+    assert not checked.errors, checked.errors
+    assert len(conf.simulation_parameter["region_alignment"]["selected_times"]) == nt
     result = execute_simulation(conf)
     assert result.ok
     with xr.open_dataset(conf.output_dir / "products/primary-pair.track.nc") as track:
-        np.testing.assert_allclose(track.lon, np.full(nt, 49.932968), rtol=0, atol=1.e-6)
-        np.testing.assert_allclose(track.lat, np.full(nt, -20.054), rtol=0, atol=1.e-6)
-        np.testing.assert_array_equal(track.atmosphere_cx, np.zeros(nt))
-        np.testing.assert_array_equal(track.atmosphere_cy, np.zeros(nt))
-        assert "surfex_cx" in track and "surfex_cy" in track
+        np.testing.assert_allclose(track.longitude, np.full(nt, 49.932968), rtol=0, atol=1.e-6)
+        np.testing.assert_allclose(track.latitude, np.full(nt, -20.054), rtol=0, atol=1.e-6)
+        np.testing.assert_array_equal(track.cx, np.zeros(nt))
+        np.testing.assert_array_equal(track.cy, np.zeros(nt))
+        provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+        grids = provenance["sources"]["surface"]["region"]["grids"]
+        assert grids and all("native_x_indices" in grid and "native_y_indices" in grid
+                             for grid in grids.values())
         for name in ("heading_deg", "dist", "speed"):
             if nt == 1:
                 assert np.isnan(track[name]).all()
             else:
                 assert np.isfinite(track[name]).all()
-    product = next(p["path"] for p in result.products if p.get("source") == "surfex")
+    product = next(p["path"] for p in result.products if p.get("source") == "surface")
     with xr.open_dataset(product) as data:
         assert data.sizes["time"] == nt
-        np.testing.assert_allclose(data["SFX.T2M"].sel(x_box=0, y_box=0), np.arange(nt) + 281.)
+        np.testing.assert_allclose(data["SFX.T2M"].isel(
+            x=data.sizes["x"] // 2, y=data.sizes["y"] // 2), np.arange(nt) + 281.)
     if packing == 120:
         provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
-        fields = provenance["sources"]["surfex"]["fa_decoder"]["field_observations"]["surface-1.fa"]
+        fields = provenance["sources"]["surface"]["fa_decoder"]["field_observations"]["surface-1.fa"]
         for field in fields.values():
             assert field["scaling"]["status"] == "encoded"
             assert field["scaling"]["divisor"] == 1.
@@ -645,17 +673,19 @@ def test_primary_pair_cannot_bypass_missing_surface_scaling(tmp_path):
     raw = primary_pair_document(tmp_path, surface_overrides={
         1: {"packing": 120, "omit_scaling_section": True}})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    assert preflight(conf)["track_time_count"] == 2  # Metadata does not decode a payload.
+    checked = collect_preflight(conf)
+    assert not checked.errors, checked.errors
+    assert len(conf.simulation_parameter["region_alignment"]["selected_times"]) == 2
     with pytest.raises(ValueError, match="unresolved native scaling metadata"):
         execute_simulation(conf)
     status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
     assert status["state"] == "failed"
-    observations = provenance["sources"]["surfex"]["fa_decoder"]["field_observations"]
+    observations = provenance["sources"]["surface"]["fa_decoder"]["field_observations"]
     missing = [d["scaling"] for d in observations["surface-1.fa"].values()]
     assert any(s["status"] == "missing" for s in missing)
     assert all(s["fallback"] is None for s in missing)
-    assert not (conf.output_dir / "products/primary-pair.cart.surfex.surface.nc").exists()
+    assert not (conf.output_dir / "products/primary-pair.surface.model_grid.nc").exists()
 
 
 def test_exact_common_exclusions_remain_complete_beyond_warning_preview(caplog):

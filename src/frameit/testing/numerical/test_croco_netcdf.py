@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import xarray as xr
+import yaml
 
 from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
@@ -48,17 +49,18 @@ def croco_scene():
 
 
 def croco_document(directory, paths, *, variables=None):
-    return {"schema_version": "2.1", "model": "croco", "run": {"name": "native-sigma"},
-            "input": {"format": "netcdf", "files": list(map(str, paths))},
-            "variables": variables or {"s_rho": {"names": ["temp", "salt"], "levels": {"indices": [1, 0]}},
-                                       "s_w": {"names": ["tracer_w"], "levels": {"indices": [2, 0]}},
-                                       "fields_2d": {"names": ["zeta"]}},
-            "tracking": {"method": "fixed_box", "fixed_box": {"center": {"latitude": -20., "longitude": 60.}}},
-            "domain": {"width_km": {"x": 2., "y": 2.}},
-            "execution": {"native_threads": 1, "dask_workers": 1},
-            "output": {"directory": str(directory/"out"), "overwrite": False,
-                       "synchronous_export": True, "max_workers": 1,
-                       "cartesian": {"horizontal_vectors": "native"}}}
+    return {"schema_version": 3, "run": {"name": "native-sigma"},
+            "sources": {"ocean": {"model": "croco", "format": "netcdf",
+                "files": list(map(str, paths)),
+                "variables": variables or {"3d": {
+                    "s_rho": {"names": ["temp", "salt"], "levels": {"indices": [1, 0]}},
+                    "s_w": {"names": ["tracer_w"], "levels": {"indices": [2, 0]}}},
+                    "2d": ["zeta"]}}},
+            "region": {"center": {"latitude": -20., "longitude": 60.},
+                       "width_km": {"x": 2., "y": 2.}},
+            "resources": {"native_threads": 1, "compute_workers": 1,
+                          "synchronous_export": True, "export_workers": 1},
+            "output": {"directory": str(directory/"out"), "overwrite": False}}
 
 
 def test_croco_scalar_sigma_roundtrip(tmp_path, monkeypatch):
@@ -78,21 +80,22 @@ def test_croco_scalar_sigma_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr(builtins, "__import__", core_only)
     result = execute_simulation(conf)
     assert result.ok, result
-    products = {p["group"]: p["path"] for p in result.products if p["role"] == "cart"}
-    assert set(products) == {"s_rho", "s_w", "surface"}
+    products = {p["source"]: p["path"] for p in result.products if p["role"] == "model_grid"}
+    assert set(products) == {"ocean"}
     subprocess.run([sys.executable, "-c", """
 import sys, xarray as xr, numpy as np
-with xr.open_dataset(sys.argv[1]) as out,xr.open_dataset(sys.argv[4]) as src:
+with xr.open_dataset(sys.argv[1]) as out,xr.open_dataset(sys.argv[2]) as src:
     np.testing.assert_array_equal(out.s_rho,[-.5,-.9])
     np.testing.assert_array_equal(out.s_rho_source_native_index,[1,0])
     np.testing.assert_array_equal(out.Cs_rho,[-.25,-.8])
     assert out.s_rho.attrs['standard_name']=='ocean_s_coordinate_g2'
     assert 'units' not in out.s_rho.attrs
-    assert 's_w' not in out.dims
+    assert 's_w' not in out['s_rho.temp'].dims
     for t in (0,1):
-        window=src.isel(time=t,s_rho=[1,0],eta_rho=out.eta_rho[t].values.astype(int),xi_rho=out.xi_rho[t].values.astype(int))
+        window=src.isel(time=t,s_rho=[1,0],eta_rho=out.eta_rho_source_native_index[t].values.astype(int),xi_rho=out.xi_rho_source_native_index[t].values.astype(int))
         for name in ['temp','salt','h','zeta','lat_rho','lon_rho']:
-            np.testing.assert_array_equal(out[name][t],window[name])
+            stored={'temp':'s_rho.temp','salt':'s_rho.salt','lat_rho':'latitude_rho','lon_rho':'longitude_rho'}.get(name,name)
+            np.testing.assert_array_equal(out[stored][t],window[name])
     np.testing.assert_array_equal(out.time,src.time)
     np.testing.assert_array_equal(out.scrum_time,src.scrum_time)
     assert out.time.encoding['calendar']=='gregorian'
@@ -101,17 +104,17 @@ with xr.open_dataset(sys.argv[1]) as out,xr.open_dataset(sys.argv[4]) as src:
     s=(out.hc*out.s_rho+out.h*out.Cs_rho)/(out.hc+out.h)
     z=out.zeta+(out.zeta+out.h)*s
     np.testing.assert_allclose(z.isel(time=0,s_rho=0),-5.3,rtol=0,atol=1e-12)
-with xr.open_dataset(sys.argv[2]) as out:
+with xr.open_dataset(sys.argv[1]) as out:
     np.testing.assert_array_equal(out.s_w,[-.2,-1.])
     np.testing.assert_array_equal(out.Cs_w,[-.2,-1.])
     np.testing.assert_array_equal(out.s_w_source_native_index,[2,0])
-    assert 's_rho' not in out.dims
+    assert 's_rho' not in out['s_w.tracer_w'].dims
     for term in out.s_w.attrs['formula_terms'].split()[1::2]: assert term in out
-with xr.open_dataset(sys.argv[3]) as out:
-    assert 's_rho' not in out.dims and 's_w' not in out.dims
+with xr.open_dataset(sys.argv[1]) as out:
+    assert 's_rho' not in out.zeta.dims and 's_w' not in out.zeta.dims
     np.testing.assert_array_equal(out.zeta[:,0,0],[1.,2.])
 assert 'frameit' not in sys.modules
-""", products["s_rho"], products["s_w"], products["surface"], str(path)], check=True)
+""", products["ocean"], str(path)], check=True)
 
 
 @pytest.mark.parametrize("problem", ["transform", "conflicting_transform", "formula", "missing_dependency", "clock", "calendar", "family", "curve_range", "positive", "critical_depth"])
@@ -144,17 +147,23 @@ def test_croco_rejects_unresolved_native_definitions(problem):
         prepare_croco(ds, SimpleNamespace())
 
 
-@pytest.mark.parametrize("selection", [{"s_rho": {"names": ["temp"], "levels": {"values": [-.50001]}}},
-                                       {"s_rho": {"names": ["missing"], "levels": "stored"}},
-                                       {"fields_2d": {"names": ["temp"]}}])
+@pytest.mark.parametrize("selection", [
+    ({"3d": ["temp"], "levels": {"values": [-.50001]}},
+     {"s_rho": {"variables": ["temp"], "level_selection": "values", "level_values": [-.50001]}}),
+    ({"3d": ["missing"]}, {"s_rho": {"variables": ["missing"]}}),
+    ({"2d": ["temp"]}, {"surface": {"variables": ["temp"]}}),
+])
 def test_croco_invalid_selection_fails_preflight_and_direct_loader(tmp_path, selection):
+    from frameit.core.coupled import bind_sources
+
     path = tmp_path/"ocean.nc"
     croco_scene().to_netcdf(path)
-    conf = SimulationConfig.from_mapping_with_model_preset(croco_document(tmp_path, [path], variables=selection))
+    variables, native_requests = selection
+    conf = SimulationConfig.from_mapping_with_model_preset(croco_document(tmp_path, [path], variables=variables))
     with pytest.raises(ValueError, match="level|temp|missing|surface"):
-        preflight(conf)
+        bind_sources(conf)
     with DatasetResources() as resources, pytest.raises(ValueError, match="level|temp|missing|surface"):
-        concat_nc2ds_by_vert_coord([path], conf.requests_user(), conf.requests_tracker(),
+        concat_nc2ds_by_vert_coord([path], native_requests, {},
                                    method=conf.tracking_method, wind_conf=conf, resources=resources)
 
 
@@ -169,11 +178,14 @@ def test_croco_init_inspect_replay_and_atmospheric_tracker_rejection(tmp_path):
     replay = SimulationConfig.from_mapping_with_model_preset(resolved_configuration(conf))
     assert replay.atm_model == "CROCO" and replay.name_latitude == "lat_rho"
     write_template("croco", tmp_path/"croco.yaml")
-    subprocess.run([sys.executable, "-m", "frameit", "inspect", str(tmp_path), "--model", "croco",
-                    "--format", "netcdf", "--pattern", "ocean.nc"], check=True, capture_output=True, text=True)
-    raw["tracking"]["method"] = "wind_pressure"
-    with pytest.raises(ValueError, match="CROCO|croco|fixed_box"):
-        SimulationConfig.from_mapping_with_model_preset(raw)
+    request = tmp_path / "request.yaml"
+    request.write_text(yaml.safe_dump(raw))
+    subprocess.run([sys.executable, "-m", "frameit", "inspect", str(request)],
+                   check=True, capture_output=True, text=True)
+    raw["region"] = {"tracker": {"method": "pressure_wind"},
+                     "width_km": {"x": 2., "y": 2.}}
+    with pytest.raises(ValueError, match="atmospheric source"):
+        preflight(SimulationConfig.from_mapping_with_model_preset(raw))
 
 
 def test_croco_selected_loading_stays_lazy_and_snapshots_preserve_state(tmp_path):
@@ -184,7 +196,10 @@ def test_croco_selected_loading_stays_lazy_and_snapshots_preserve_state(tmp_path
         paths.append(path)
     conf = SimulationConfig.from_mapping_with_model_preset(croco_document(tmp_path, paths))
     with DatasetResources() as resources:
-        groups, _ = concat_nc2ds_by_vert_coord(paths, conf.requests_user(), conf.requests_tracker(),
+        groups, _ = concat_nc2ds_by_vert_coord(paths, {
+            "s_rho": {"variables": ["temp", "salt"], "level_indices": [1, 0]},
+            "s_w": {"variables": ["tracer_w"], "level_indices": [2, 0]},
+            "surface": {"variables": ["zeta"]}}, {},
                                               method="fixed_box", wind_conf=conf, resources=resources)
         assert hasattr(groups["s_rho"].temp.data, "dask")
         assert groups["s_rho"].sizes["s_rho"] == 2
@@ -193,6 +208,8 @@ def test_croco_selected_loading_stays_lazy_and_snapshots_preserve_state(tmp_path
 
 @pytest.mark.parametrize("change", ["units", "standard_name", "curve", "critical_depth"])
 def test_croco_time_series_rejects_changing_scientific_definitions(tmp_path, change):
+    from frameit.core.coupled import bind_sources
+
     paths = []
     for index in (0, 1):
         ds = croco_scene().isel(time=[index])
@@ -209,10 +226,13 @@ def test_croco_time_series_rejects_changing_scientific_definitions(tmp_path, cha
         ds.to_netcdf(path)
         paths.append(path)
     conf = SimulationConfig.from_mapping_with_model_preset(croco_document(tmp_path, paths))
-    with pytest.raises(ValueError, match="CROCO|metadata|definitions"):
-        preflight(conf)
+    with pytest.raises(ValueError, match="CROCO|metadata|definitions|distinct fields share requested name"):
+        bind_sources(conf)
     with DatasetResources() as resources, pytest.raises(ValueError, match="CROCO|metadata|definitions"):
-        concat_nc2ds_by_vert_coord(paths, conf.requests_user(), conf.requests_tracker(), method="fixed_box",
+        concat_nc2ds_by_vert_coord(paths, {
+            "s_rho": {"variables": ["temp", "salt"], "level_indices": [1, 0]},
+            "s_w": {"variables": ["tracer_w"], "level_indices": [2, 0]},
+            "surface": {"variables": ["zeta"]}}, {}, method="fixed_box",
                                    wind_conf=conf, resources=resources)
 
 
@@ -221,7 +241,7 @@ def test_croco_unlabelled_faces_do_not_silently_use_scalar_path(tmp_path):
     ds = croco_scene()
     raw = croco_document(tmp_path, [path])
     ds["u"] = (("time", "s_rho", "eta_rho", "xi_u"), np.ones((2,3,7,6)), {"units": "meter second-1"})
-    raw["variables"] = {"s_rho": {"names": ["u"], "levels": "stored"}}
+    raw["sources"]["ocean"]["variables"] = {"3d": ["u"]}
     ds.to_netcdf(path)
-    with pytest.raises(ValueError, match="CROCO.*(?:qualified|labelled)"):
+    with pytest.raises(ValueError, match="CROCO.*(?:qualified|labelled)|Regional latitude is missing"):
         preflight(SimulationConfig.from_mapping_with_model_preset(raw))

@@ -11,9 +11,8 @@ import pytest
 import xarray as xr
 import yaml
 
-from frameit.core.coupled import prepare_sources
+from frameit.core.coupled import bind_sources
 from frameit.core.execution import execute_simulation
-from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.processing.polar.polar_grid import PolarLonLatGrid
 from frameit.testing.numerical.test_fa_geometry import spherical_lambert
@@ -37,29 +36,32 @@ def arome_netcdf_document(directory, *, surface_spacing_m=3000.):
                                                   {"units": "degrees_east"})})
         path = directory / f"{name}.nc"
         source.to_netcdf(path)
-        sources[name] = {"model": "arome", "input": {"format": "netcdf", "files": [str(path)],
-                                                     "grid_spacing_m": spacing},
-                         "variables": {"fields_2d": {"names": ["temperature"]}}}
-    return {"schema_version": "2.1", "model": "arome", "run": {"name": "arome-budget"},
-            "input": {"sources": sources}, "domain": {"width_km": {"x": 8., "y": 8.}},
-            "tracking": {"source": "atmosphere", "method": "fixed_box", "fixed_box": {
-                "center": {"latitude": -20., "longitude": 60.}}},
-            "polar": {"enabled": True, "shared_target": True, "max_points": 60},
-            "output": {"directory": str(directory / "out"), "overwrite": False,
-                       "synchronous_export": True, "max_workers": 1}}
+        sources[name] = {"model": "arome", "format": "netcdf", "files": [str(path)],
+                         "field_metadata": {"temperature": {"kind": "continuous"}},
+                         "variables": {"2d": ["temperature"]}}
+    return {"schema_version": 3, "run": {"name": "arome-budget"},
+            "sources": sources,
+            "region": {"center": {"latitude": -20., "longitude": 60.},
+                       "width_km": {"x": 8., "y": 8.},
+                       "sources_coupling_time_association": "common"},
+            "products": {"model_grid": True, "track": True, "polar": {
+                "radius_km": 4., "shared_grid": True, "processing": {"max_target_points": 60}}},
+            "resources": {"synchronous_export": True, "export_workers": 1},
+            "output": {"directory": str(directory / "out"), "overwrite": False}}
 
 
 def test_effective_target_budget_precedes_unused_native_targets_and_replays(tmp_path):
     pytest.importorskip("xesmf")
     raw = arome_netcdf_document(tmp_path)
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    plan, children, _ = prepare_sources(conf)
-    assert plan["common_polar_target"]["radial_step_m"] == 3000.
-    assert plan["common_polar_target"]["azimuth_count"] == 9
+    plan, children, _ = bind_sources(conf)
+    assert plan["common_polar_target"]["radial_step_km"] == 3.
+    assert len(plan["common_polar_target"]["azimuth_degrees"]) == 9
     for name, child in children.items():
         assert "_defer_polar_sampling" not in child.simulation_parameter
-        sampling = plan["sources"][name]["polar_sampling"]
-        assert sampling["estimated_points_per_time"] * sampling["estimated_time_count"] == 54
+        sampling = plan["sources"][name]["requests"]["binding"]["polar_plan"]
+        assert len(sampling["radius_km"]) * len(sampling["azimuth_degrees"]) * len(
+            sampling["source_times"]) == 54
     assert not conf.output_dir.exists()
     result = execute_simulation(conf)
     assert result.ok
@@ -69,15 +71,26 @@ def test_effective_target_budget_precedes_unused_native_targets_and_replays(tmp_
     assert "_defer_polar_sampling" not in json.dumps(resolved)
     resolved["output"]["directory"] = str(tmp_path / "replay")
     replay = SimulationConfig.from_mapping_with_model_preset(resolved)
-    assert execute_simulation(replay).ok
+    replay_result = execute_simulation(replay)
+    assert replay_result.ok
     replay_contract = yaml.safe_load((replay.output_dir / "run-status.yaml").read_text())[
         "common_polar_target"]
-    assert replay_contract["target_signature"] == contract["target_signature"]
+    assert (replay_contract["radius_km"], replay_contract["azimuth_degrees"]) == (
+        contract["radius_km"], contract["azimuth_degrees"])
+    original = {item["source"]: item["path"] for item in result.products
+                if item["role"] == "polar"}
+    for item in replay_result.products:
+        if item["role"] == "polar":
+            with xr.open_dataset(original[item["source"]]) as before, xr.open_dataset(
+                    item["path"]) as after:
+                for name in ("time", "radius", "azimuth", "latitude", "longitude",
+                             "center_time", "center_latitude", "center_longitude"):
+                    np.testing.assert_array_equal(before[name], after[name])
 
 
 def test_arome_base_processing_needs_neither_fa_nor_polar_dependencies(tmp_path, monkeypatch):
     raw = arome_netcdf_document(tmp_path)
-    raw["polar"]["enabled"] = False
+    raw["products"].pop("polar")
 
     def forbidden(*args, **kwargs):
         raise AssertionError("Disabled AROME base processing must not initialize "
@@ -87,11 +100,13 @@ def test_arome_base_processing_needs_neither_fa_nor_polar_dependencies(tmp_path,
     monkeypatch.setattr(PolarLonLatGrid, "build", forbidden)
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok and not any(item["role"] == "polar" for item in result.products)
-    cartesian = {item["source"]: item["path"] for item in result.products if item["role"] == "cart"}
+    cartesian = {item["source"]: item["path"] for item in result.products
+                 if item["role"] == "model_grid"}
     assert set(cartesian) == {"atmosphere", "surface"}
     for path in cartesian.values():
         with xr.open_dataset(path) as data:
-            np.testing.assert_allclose(data.temperature.sel(x_box=0, y_box=0), [280., 281.])
+            np.testing.assert_allclose(data.temperature.isel(
+                x=data.sizes["x"] // 2, y=data.sizes["y"] // 2), [280., 281.])
     assert "falfilfa4py" not in sys.modules
 
 
@@ -100,70 +115,73 @@ def test_target_deferral_preserves_real_budgets_and_grid_guards(tmp_path, failur
     pytest.importorskip("xesmf")
     raw = arome_netcdf_document(tmp_path)
     if failure == "time_budget":
-        raw["polar"]["max_points"] = 53
+        raw["products"]["polar"]["processing"]["max_target_points"] = 53
         message = "requires 54 points"
     elif failure == "finer":
-        raw["polar"]["radial_step_m"] = 1000.
+        raw["products"]["polar"]["radial_step_km"] = 1.
         message = "finer than a participating native grid"
     else:
-        original = raw["input"]["sources"]["surface"]["input"]["files"][0]
+        original = raw["sources"]["surface"]["files"][0]
         with xr.open_dataset(original) as source:
             data = source.load()
         latitude = (-20. + 2 * (data.latitude + 20.)).assign_attrs(data.latitude.attrs)
         path = tmp_path / "anisotropic.nc"
         data.assign_coords(latitude=latitude).to_netcdf(path)
-        raw["input"]["sources"]["surface"]["input"]["files"] = [str(path)]
+        raw["sources"]["surface"]["files"] = [str(path)]
         message = "Anisotropic grid"
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match=message):
-        preflight(conf)
+        bind_sources(conf)
     assert not conf.output_dir.exists()
 
 
 def test_independent_targets_keep_their_original_budget_validation(tmp_path):
     pytest.importorskip("xesmf")
     raw = arome_netcdf_document(tmp_path)
-    raw["polar"]["shared_target"] = False
+    raw["products"]["polar"]["shared_grid"] = False
     with pytest.raises(ValueError, match="requires 130 points"):
-        preflight(SimulationConfig.from_mapping_with_model_preset(raw))
+        bind_sources(SimulationConfig.from_mapping_with_model_preset(raw))
 
 
 def test_common_target_time_budget_uses_selected_labels_not_unused_file_times(tmp_path):
     pytest.importorskip("xesmf")
     raw = arome_netcdf_document(tmp_path)
-    entry = raw["input"]["sources"]["surface"]["input"]
+    entry = raw["sources"]["surface"]
     with xr.open_dataset(entry["files"][0]) as source:
         one_time = source.isel(valid_time=[0]).load()
     path = tmp_path / "one-surface-time.nc"
     one_time.to_netcdf(path)
     entry["files"] = [str(path)]
-    raw["polar"]["max_points"] = 30  # one 27-point target fits; two would not
-    plan = preflight(SimulationConfig.from_mapping_with_model_preset(raw))
-    assert plan["sources"]["atmosphere"]["polar_sampling"]["estimated_time_count"] == 1
-    assert plan["sources"]["atmosphere"]["polar_sampling"]["estimated_points_per_time"] == 27
-    assert plan["time_alignment"]["sources"]["atmosphere"]["skipped_times"] == [
+    raw["products"]["polar"]["processing"]["max_target_points"] = 30
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    plan, _, _ = bind_sources(conf)
+    sampling = plan["sources"]["atmosphere"]["requests"]["binding"]["polar_plan"]
+    assert len(sampling["source_times"]) == 1
+    assert len(sampling["radius_km"]) * len(sampling["azimuth_degrees"]) == 27
+    assert conf.simulation_parameter["time_alignment"]["sources"]["atmosphere"]["skipped_times"] == [
         "2026-01-01T01:00:00.000000000"]
 
 
 def test_disabled_source_never_allocates_an_unused_target(tmp_path):
     pytest.importorskip("xesmf")
     raw = arome_netcdf_document(tmp_path, surface_spacing_m=500.)
-    raw["input"]["sources"]["surface"]["variables"] = {}
-    raw["input"]["sources"]["surface"]["polar"] = {"enabled": False}
-    raw["domain"]["width_km"] = {"x": 4., "y": 4.}
-    raw["polar"]["max_points"] = 100
+    raw["sources"]["surface"]["variables"] = {}
+    raw["products"]["polar"]["fields"] = {"atmosphere": ["temperature"]}
+    raw["region"]["width_km"] = {"x": 4., "y": 4.}
+    raw["products"]["polar"]["radius_km"] = 2.
+    raw["products"]["polar"]["processing"]["max_target_points"] = 100
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    plan = preflight(conf)
+    plan, _, _ = bind_sources(conf)
     assert plan["common_polar_target"]["participants"] == ["atmosphere"]
-    assert plan["common_polar_target"]["radial_step_m"] == 1000.
-    assert "polar_sampling" not in plan["sources"]["surface"]
+    assert plan["common_polar_target"]["radial_step_km"] == 1.
+    assert "polar_plan" not in plan["sources"]["surface"]["requests"]["binding"]
     assert execute_simulation(conf).ok
 
 
 def test_arome_netcdf_source_time_is_canonical_across_multiple_files(tmp_path):
     pytest.importorskip("xesmf")
     raw = arome_netcdf_document(tmp_path)
-    entry = raw["input"]["sources"]["atmosphere"]["input"]
+    entry = raw["sources"]["atmosphere"]
     with xr.open_dataset(entry["files"][0]) as source:
         data = source.load()
     paths = []
@@ -179,20 +197,22 @@ def test_arome_netcdf_source_time_is_canonical_across_multiple_files(tmp_path):
     with xr.open_dataset(product) as output:
         assert "valid_time" not in output.dims
         np.testing.assert_array_equal(output.time, data.valid_time)
-        np.testing.assert_allclose(output.temperature.isel(rr=0, theta=0), [280., 281.], atol=1.e-9)
+        np.testing.assert_allclose(output.temperature.isel(radius=0, azimuth=0),
+                                   [280., 281.], atol=1.e-9)
 
 
 def test_arome_netcdf_ambiguous_time_names_fail_without_guessing(tmp_path):
     pytest.importorskip("xesmf")
     raw = arome_netcdf_document(tmp_path)
-    entry = raw["input"]["sources"]["atmosphere"]["input"]
+    entry = raw["sources"]["atmosphere"]
     with xr.open_dataset(entry["files"][0]) as source:
         data = source.load().assign_coords(time=np.datetime64("2025-12-31", "ns"))
     path = tmp_path / "ambiguous-time.nc"
     data.to_netcdf(path)
     entry["files"] = [str(path)]
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    with pytest.raises(ValueError, match="conflicts with configured dimension"):
+    with pytest.raises(ValueError, match=(
+            "conflicts with configured dimension|conflicting or unidentified sample/forecast clocks")):
         execute_simulation(conf)
     status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
     assert status["state"] == "failed" and status["products"] == []
@@ -222,33 +242,38 @@ def test_arome_fa_and_surfex_fa_share_the_effective_target_on_distinct_grids(tmp
         ("atmosphere", atmosphere, "arome_history", "CLSTEMPERATURE"),
         ("surface", surface, "surfex_history", "SFX.T2M"),
     ):
-        sources[name] = {"model": "arome", "input": {
-            "format": "fa", "files": [str(path) for path in files], "fa": {
-                "profile": profile, "earth_radius_m": 6371229., "field_metadata": {
+        sources[name] = {"model": "arome",
+            "format": "fa", "files": [str(path) for path in files],
+            "profile": profile, "fa": {"earth_radius_m": 6371229.},
+            "field_metadata": {
                     field: {"units": "K", "kind": "continuous",
-                            "temporal_kind": "instantaneous"}}}},
-            "variables": {"fields_2d": {"names": [field]}}}
-    raw = {"schema_version": "2.1", "model": "arome", "run": {"name": "arome-sfx"},
-           "input": {"sources": sources}, "domain": {"width_km": {"x": 8., "y": 8.}},
-           "tracking": {"source": "atmosphere", "method": "prescribed_track",
-                        "prescribed_track": {"file": str(track)}},
-           "polar": {"enabled": True, "shared_target": True, "max_points": 60},
-           "output": {"directory": str(tmp_path / "out"), "overwrite": False,
-                      "synchronous_export": True, "max_workers": 1}}
+                            "temporal_kind": "instantaneous"}},
+            "variables": {"2d": [field]}}
+    raw = {"schema_version": 3, "run": {"name": "arome-sfx"},
+           "sources": sources,
+           "region": {"track": {"file": str(track)}, "width_km": {"x": 8., "y": 8.},
+                      "sources_coupling_time_association": "common"},
+           "products": {"model_grid": True, "track": True, "polar": {
+               "radius_km": 4., "shared_grid": True, "processing": {"max_target_points": 60}}},
+           "resources": {"synchronous_export": True, "export_workers": 1},
+           "output": {"directory": str(tmp_path / "out"), "overwrite": False}}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    plan = preflight(conf)
-    assert plan["common_polar_target"]["radial_step_m"] == 3000.
+    plan, _, _ = bind_sources(conf)
+    assert plan["common_polar_target"]["radial_step_km"] == 3.
     result = execute_simulation(conf)
     assert result.ok
     paths = {item["source"]: item["path"] for item in result.products if item["role"] == "polar"}
     paths["track"] = next(item["path"] for item in result.products if item["role"] == "track")
+    paths["provenance"] = str(conf.output_dir / "run-provenance.yaml")
     check = subprocess.run([sys.executable, "-c", """
-import sys, json, xarray as xr, numpy as np
+import sys, json, xarray as xr, numpy as np, yaml
 p = json.loads(sys.argv[1])
+provenance = yaml.safe_load(open(p['provenance']))
 with xr.open_dataset(p['atmosphere']) as a, xr.open_dataset(p['surface']) as s:
-    for name in ('time','rr','theta','longitude','latitude','center_lon','center_lat'):
+    for name in ('time','radius','azimuth','longitude','latitude',
+                 'center_longitude','center_latitude'):
         np.testing.assert_array_equal(a[name], s[name])
-    assert a.attrs['common_polar_target_id'] == s.attrs['common_polar_target_id']
+    assert provenance['common_polar_target']['verification'] == 'exact_coordinates_at_associated_centres'
     descriptor = json.loads(a.CLSTEMPERATURE.attrs['fa_field_descriptor'])
     sampling = descriptor['sampling']
     assert sampling['native_vertical_header'] == {
@@ -256,11 +281,13 @@ with xr.open_dataset(p['atmosphere']) as a, xr.open_dataset(p['surface']) as s:
     assert sampling['physical_location'] is None
     assert sampling['vertical_interpretation'].startswith('unqualified;')
     assert 'level' not in a.dims
-    np.testing.assert_allclose(a.CLSTEMPERATURE.isel(rr=0), [[280.]*9,[280.5]*9], atol=1.e-9)
-    np.testing.assert_allclose(s['SFX.T2M'].isel(rr=0), [[300.]*9,[300.5]*9], atol=1.e-9)
+    np.testing.assert_allclose(a.CLSTEMPERATURE.isel(radius=0), [[280.]*9,[280.5]*9], atol=1.e-9)
+    np.testing.assert_allclose(s['SFX.T2M'].isel(radius=0), [[300.]*9,[300.5]*9], atol=1.e-9)
 with xr.open_dataset(p['track']) as t:
-    assert int(t.atmosphere_cx[0]) == 7 and int(t.surface_cx[0]) == 5
-    assert int(t.atmosphere_cy[0]) == 6 and int(t.surface_cy[0]) == 4
+    atmosphere, = provenance['sources']['atmosphere']['region']['grids'].values()
+    surface, = provenance['sources']['surface']['region']['grids'].values()
+    assert int(atmosphere['native_x_indices'][0]) == 7 and int(surface['native_x_indices'][0]) == 5
+    assert int(atmosphere['native_y_indices'][0]) == 6 and int(surface['native_y_indices'][0]) == 4
 assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
 """, json.dumps(paths)], capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
@@ -272,5 +299,6 @@ assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
             "KNIVER": 1, "PREFER": 101325., "PAHYBR": [0., 0.], "PBHYBR": [0., 1.]}
         assert sampling["physical_location"] is None
     restored = SimulationConfig.from_yaml(conf.output_dir / "resolved-config.yaml")
-    assert restored.input_sources["surface"]["model"] == "arome"
-    assert restored.input_sources["surface"]["polar"]["radial_step_m"] == 3000.
+    assert restored.sources["surface"]["model"] == "arome"
+    replay_plan, _, _ = bind_sources(restored, check_output=False)
+    assert replay_plan["common_polar_target"]["radial_step_km"] == 3.

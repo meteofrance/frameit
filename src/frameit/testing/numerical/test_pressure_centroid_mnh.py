@@ -10,9 +10,8 @@ import pytest
 import xarray as xr
 from pyproj import CRS, Transformer
 
-from frameit.cli import main
 from frameit.core.execution import ExecutionOptions, execute_simulation
-from frameit.core.preflight import preflight
+from frameit.core.preflight import collect_preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.loader import DatasetResources
 from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
@@ -25,6 +24,7 @@ from frameit.tracking.pressure_centroid_inputs import (
     resolve_mnh_fields,
 )
 from frameit.tracking.PressureCentroid_Tracker import PressureCentroidTracker
+from frameit.tracking.tracker_core import resolve_tracker_support
 
 
 def native_vortex(*, moving=False, n=141):
@@ -82,14 +82,17 @@ def wind_settings(*, grid_native=False):
 
 def config(tmp_path):
     return SimulationConfig.from_mapping_with_model_preset({
-        "schema_version": "2.1", "model": "mesonh",
-        "input": {"directory": str(tmp_path), "pattern": "native*.nc",
-                  "wind_pairs": [{**p, "group": "fields_2d" if p["group"] == "surface"
-                                  else p["group"]} for p in wind_settings().wind_pairs]},
-        "tracking": {"method": "pressure_centroid"},
-        "domain": {"width_km": {"x": 100, "y": 100}},
-        "variables": {"fields_2d": {"names": ["MSLP"]}},
-        "polar": {"enabled": False}, "output": {"directory": str(tmp_path / "output")},
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": str(tmp_path / "native*.nc"),
+            "wind_pairs": [{"u": "UT_ZM", "v": "VT_ZM", "basis": "earth"},
+                           {"u": "UM10", "v": "VM10", "basis": "earth"}],
+            "variables": {"2d": ["MSLP"]},
+        }},
+        "region": {"tracker": {"method": "pressure_centroid"},
+                   "width_km": {"x": 100, "y": 100}},
+        "products": {"model_grid": True, "track": True},
+        "output": {"directory": str(tmp_path / "output")},
     })
 
 
@@ -182,8 +185,9 @@ def test_missing_inputs_give_mnh_recipe_and_file_time(tmp_path):
                  "LTPZH=.TRUE.", "LWIND_ZM=.TRUE.", "frameit validate"):
         assert text in message
     broken.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
-    with pytest.raises(ValueError, match="LTPZH"):
-        preflight(config(tmp_path))
+    report = collect_preflight(config(tmp_path))
+    assert report.errors
+    assert "LTPZH" in str(report.errors)
     assert not (tmp_path / "output").exists()
 
 
@@ -253,19 +257,25 @@ def test_loader_preserves_tracker_levels_and_checks_later_files(tmp_path):
     for k in range(2):
         source.isel(time=[k]).to_netcdf(tmp_path / f"native{k}.nc", engine="h5netcdf")
     conf = config(tmp_path)
+    report = collect_preflight(conf)
+    assert not report.errors, report.errors
+    resolve_tracker_support(conf, report.facts["sources"]["atmosphere"])
     with DatasetResources() as resources:
         user, tracker = concat_nc2ds_by_vert_coord(
             sorted(tmp_path.glob("native*.nc")),
             {"level": {"variables": ["UT_ZM"], "level_selection": "indices", "level_indices": [0]}},
-            conf.requests_tracker(), method="pressure_centroid", wind_conf=conf,
+            {"pressure_centroid": {}}, method="pressure_centroid", wind_conf=conf,
             resources=resources,
         )
         assert user["level"].sizes["level"] == 1
         assert tracker["pressure_centroid"]["native"].sizes["level"] == 2
         assert "ALT" in tracker["pressure_centroid"]["native"]
     source.isel(time=[1]).drop_vars("PABST").to_netcdf(tmp_path / "native1.nc", engine="h5netcdf")
-    with pytest.raises(ValueError, match="native1.nc.*time=2024-01-01T01"):
-        preflight(conf)
+    report = collect_preflight(conf)
+    assert report.errors
+    # C9 keeps the selected files in diagnostic contexts, separate from the time.
+    assert "native1.nc" in str(report.errors)
+    assert "time=2024-01-01T01" in str(report.errors)
 
 
 @pytest.mark.parametrize("moving", [False, True])
@@ -289,9 +299,12 @@ def test_mnh_end_to_end_output_reopens_without_frameit(tmp_path):
     source, _ = native_vortex()
     source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
     conf = config(tmp_path)
-    plan = preflight(conf)
-    assert plan["tracking_inputs"]["pressure"] == "PABST"
-    assert plan["tracking_inputs"]["winds"] == ["UT_ZM", "VT_ZM"]
+    report = collect_preflight(conf)
+    assert not report.errors, report.errors
+    resolve_tracker_support(conf, report.facts["sources"]["atmosphere"])
+    inputs = conf.simulation_parameter["pressure_centroid_inputs"]
+    assert inputs["pressure"] == "PABST"
+    assert inputs["winds"] == ["UT_ZM", "VT_ZM"]
     assert not conf.output_dir.exists()
     result = execute_simulation(conf, ExecutionOptions(synchronous_export=True))
     assert result.ok
@@ -303,7 +316,7 @@ def test_mnh_end_to_end_output_reopens_without_frameit(tmp_path):
         assert reopened.attrs["pressure_centroid_height_reference"] == (
             "altitude_above_mean_sea_level")
         assert reopened.attrs["pressure_centroid_area_weighting"] == "WGS84_quadrilateral_nodal"
-        np.testing.assert_allclose(reopened.lon, 60, atol=.01)
+        np.testing.assert_allclose(reopened.longitude, 60, atol=.01)
     assert "PABST" in (conf.output_dir / "run-provenance.yaml").read_text()
     subprocess.run([
         sys.executable, "-B", "-c",
@@ -311,12 +324,12 @@ def test_mnh_end_to_end_output_reopens_without_frameit(tmp_path):
         "ds = xr.open_dataset(sys.argv[1], engine='h5netcdf'); "
         "assert ds.sizes['time'] == 2; "
         "assert ds.environment_hpa.attrs['units'] == 'hPa'; "
-        "assert abs(float(ds.lon.mean()) - 60) < .01; "
+        "assert abs(float(ds.longitude.mean()) - 60) < .01; "
         "assert 'frameit' not in sys.modules; ds.close()", str(track),
     ], check=True, capture_output=True, text=True)
 
 
-def test_cli_schema_and_mnh_diagnostic_failure(tmp_path, caplog):
+def test_cli_schema_and_mnh_diagnostic_failure(tmp_path):
     from frameit.core.configuration import write_template
 
     path = write_template("mesonh", tmp_path / "frameit.yaml", tracking="pressure_centroid")
@@ -325,13 +338,17 @@ def test_cli_schema_and_mnh_diagnostic_failure(tmp_path, caplog):
     import yaml
 
     document = yaml.safe_load(path.read_text())
-    document["input"] = {"directory": ".", "pattern": "native*.nc"}
+    document["sources"]["atmosphere"]["files"] = "native*.nc"
     path.write_text(yaml.safe_dump(document))
-    for args in (["validate", str(path)], ["run", str(path), "--dry-run"]):
-        with pytest.raises(SystemExit) as exit_code:
-            main(args)
-        assert exit_code.value.code == 1
-        assert "LTPZH=.TRUE." in caplog.text
+    for args in (["validate", str(path)], ["run", str(path)]):
+        result = subprocess.run(
+            [sys.executable, "-B", "-m", "frameit", *args],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 1
+        # Validation reports go to stdout; run failures are logged to stderr.
+        diagnostic = result.stdout if args[0] == "validate" else result.stderr
+        assert "LTPZH=.TRUE." in diagnostic
     assert not (tmp_path / "output").exists()
 
 
@@ -374,10 +391,14 @@ def test_formula_dependencies_survive_loading(tmp_path):
     path = tmp_path / "native.nc"
     source.to_netcdf(path, engine="h5netcdf")
     conf = config(tmp_path)
-    assert preflight(conf)["tracking_inputs"]["height"] == ["level", "ZTOP", "ZS"]
+    report = collect_preflight(conf)
+    assert not report.errors, report.errors
+    resolve_tracker_support(conf, report.facts["sources"]["atmosphere"])
+    assert conf.simulation_parameter["pressure_centroid_inputs"]["height"] == [
+        "level", "ZTOP", "ZS"]
     with DatasetResources() as resources:
         _, tree = concat_nc2ds_by_vert_coord(
-            [path], {}, conf.requests_tracker(), method="pressure_centroid", wind_conf=conf,
+            [path], {}, {"pressure_centroid": {}}, method="pressure_centroid", wind_conf=conf,
             resources=resources,
         )
         prepared = prepare_mnh_inputs(tree["pressure_centroid"]["native"], wind_settings())

@@ -9,17 +9,17 @@ import pytest
 import xarray as xr
 import yaml
 
-from frameit.core.coupled import prepare_sources
+from frameit.core.coupled import bind_sources, prepare_sources
 from frameit.core.configuration import write_template
 from frameit.core.execution import execute_simulation
-from frameit.core.preflight import preflight
+from frameit.core.preflight import collect_preflight, preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.testing.numerical.test_nemo_netcdf import component_scene, nemo_scene
 from frameit.testing.numerical.test_pressure_centroid import vortex
 
 
 def generated_tracker_document(directory, method):
-    """Adapt only paths, output/resources and box size, keeping generated declarations."""
+    """Keep generated scientific declarations; request the track read by this test."""
     path = write_template("arome", directory / "frameit.yaml", coupling="nemo", tracking=method)
     raw = yaml.safe_load(path.read_text())
     ocean = nemo_scene().isel(time_counter=slice(0, 2))
@@ -43,11 +43,13 @@ def generated_tracker_document(directory, method):
                "longitude": ("longitude", lon[0], {"units": "degrees_east"}),
                "isobaricInhPa": ("isobaricInhPa", [900., 700.], {"units": "hPa"})})
     atmosphere.to_netcdf(directory / "atmosphere.nc", engine="h5netcdf")
-    for name, source in raw["input"]["sources"].items():
-        source["input"].update(directory=str(directory), pattern=f"{name}.nc")
-    raw["domain"]["width_km"] = {"x": 2., "y": 2.}
-    raw["execution"] = {"native_threads": 1, "dask_workers": 1}
-    raw["output"].update(directory=str(directory / "out"), synchronous_export=True, max_workers=1)
+    for name, source in raw["sources"].items():
+        source["files"] = str(directory / f"{name}.nc")
+    raw["region"]["width_km"] = {"x": 2., "y": 2.}
+    raw["resources"] = {"native_threads": 1, "compute_workers": 1,
+                        "synchronous_export": True, "export_workers": 1}
+    raw["output"]["directory"] = str(directory / "out")
+    raw["products"]["track"] = True
     return raw
 
 
@@ -57,24 +59,29 @@ def test_generated_arome_nemo_tracker_runs(tmp_path, method):
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     track = next(p["path"] for p in result.products if p["role"] == "track")
-    ocean = next(p["path"] for p in result.products if p["role"] == "cart" and p["source"] == "ocean")
+    ocean = next(p["path"] for p in result.products if p["role"] == "model_grid" and p["source"] == "ocean")
     subprocess.run([sys.executable, "-c", """
-import sys, numpy as np, xarray as xr
+import sys, numpy as np, xarray as xr, yaml
 with xr.open_dataset(sys.argv[1]) as track:
-    np.testing.assert_allclose(track.lon, 60., atol=.01)
-    np.testing.assert_allclose(track.lat, -20., atol=.01)
+    np.testing.assert_allclose(track.longitude, 60., atol=.01)
+    np.testing.assert_allclose(track.latitude, -20., atol=.01)
     assert track.sizes['time'] == 2
-    assert not np.array_equal(track.atmosphere_cx, track.ocean_cx)
+    sources = yaml.safe_load(open(sys.argv[4]))['sources']
+    atmosphere = next(grid for grid in sources['atmosphere']['region']['grids'].values()
+                      if 'native_x_indices' in grid)
+    ocean = next(grid for grid in sources['ocean']['region']['grids'].values()
+                 if 'native_x_indices' in grid)
+    assert not np.array_equal(atmosphere['native_x_indices'], ocean['native_x_indices'])
 with xr.open_dataset(sys.argv[2]) as out, xr.open_dataset(sys.argv[3]) as source:
     for t in (0, 1):
         expected = source.votemper.isel(time_counter=t, deptht=[0],
-            y=out.y[t].values.astype(int), x=out.x[t].values.astype(int))
+            y=out.y_source_native_index[t].values.astype(int), x=out.x_source_native_index[t].values.astype(int))
         np.testing.assert_array_equal(out.votemper[t], expected)
     assert out.votemper.attrs['cell_methods'] == source.votemper.attrs['cell_methods']
     assert out.deptht.attrs['positive'] == 'down'
     assert not any(name in out for name in ('u10', 'v10', 'wind_speed'))
 assert 'frameit' not in sys.modules
-""", track, ocean, str(tmp_path / "ocean.nc")], check=True)
+""", track, ocean, str(tmp_path / "ocean.nc"), str(tmp_path / "out/run-provenance.yaml")], check=True)
 
 
 @pytest.mark.parametrize("problem,message", [
@@ -94,7 +101,7 @@ def test_generated_arome_nemo_centroid_rejects_invalid_inputs(tmp_path, problem,
         source = source.isel(time_counter=[0])
     source.to_netcdf(path, engine="h5netcdf", mode="w")
     with pytest.raises(ValueError, match=message):
-        prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
+        bind_sources(SimulationConfig.from_mapping_with_model_preset(raw))
     assert not (tmp_path / "out").exists()
 
 
@@ -116,10 +123,10 @@ def coupled_document(directory, *, moving=False, exact=True, scalar_polar=False)
         path = directory / f"{name}.nc"
         ds.to_netcdf(path)
         atmosphere.append(str(path))
-    sources["arome"] = {"model": "arome", "input": {"format": "netcdf", "files": atmosphere,
-        "netcdf": {"file_layout": "variables"}, "wind_pairs": [
-            {"group": "fields_2d", "u": "u10", "v": "v10", "reference_frame": "earth"}]},
-        "variables": {"fields_2d": {"names": ["prmsl", "u10", "v10"]}}}
+    sources["atmosphere"] = {"model": "arome", "format": "netcdf", "files": atmosphere,
+        "wind_pairs": [{"u": "u10", "v": "v10", "basis": "earth"}],
+        "variables": {"2d": ["prmsl", "u10", "v10"]}}
+    ocean_files = []
     for source, depth, field, dx, dy in (("nemo_t", "deptht", "votemper", 0., 0.),
                                        ("nemo_u", "depthu", "vozocrtx", .006, 0.),
                                        ("nemo_v", "depthv", "vomecrty", 0., .006),
@@ -130,29 +137,31 @@ def coupled_document(directory, *, moving=False, exact=True, scalar_polar=False)
             ds.votemper.values[0, :, 3, 3] = np.nan
         path = directory / f"{source}.nc"
         ds.to_netcdf(path)
-        sources[source] = {"model": "nemo", "input": {"format": "netcdf", "files": [str(path)]},
-                           "variables": {depth: {"names": [field], "levels": "stored"}}}
-    raw = {"schema_version": "2.1", "model": "arome", "run": {"name": "coupled-ocean"},
-           "input": {"sources": sources}, "domain": {"width_km": {"x": 2., "y": 2.}},
-           "tracking": {"source": "arome", "method": "fixed_box", "fixed_box": {
-               "center": {"latitude": -20., "longitude": 60.}}},
-           "execution": {"native_threads": 1, "dask_workers": 1},
-           "output": {"directory": str(directory / "out"), "overwrite": False,
-                      "synchronous_export": True, "max_workers": 1,
-                       "cartesian": {"horizontal_vectors": "native"}}}
+        ocean_files.append(str(path))
+    sources["ocean"] = {"model": "nemo", "format": "netcdf", "files": ocean_files,
+        "variables": {"3d": ["votemper", "vozocrtx", "vomecrty", "vovecrtz"]}}
+    raw = {"schema_version": 3, "run": {"name": "coupled-ocean"},
+           "sources": sources,
+           "region": {"center": {"latitude": -20., "longitude": 60.},
+                      "width_km": {"x": 2., "y": 2.},
+                      "sources_coupling_time_association": "common"},
+           "products": {"model_grid": True, "track": True},
+           "resources": {"native_threads": 1, "compute_workers": 1,
+                         "synchronous_export": True, "export_workers": 1},
+           "output": {"directory": str(directory / "out"), "overwrite": False}}
     if moving:
         track = directory / "track.nc"
         xr.Dataset({"latitude": ("time", [-20., -19.99]),
                     "longitude": ("time", [60., 60. + .01/np.cos(np.deg2rad(20.))])},
                    coords={"time": times}).to_netcdf(track)
-        raw["tracking"] = {"source": "arome", "method": "prescribed_track", "prescribed_track": {"file": str(track)}}
+        raw["region"].pop("center")
+        raw["region"]["track"] = {"file": str(track)}
     if scalar_polar:
-        raw["domain"]["width_km"] = {"x": 4., "y": 4.}
-        raw["polar"] = {"enabled": True, "shared_target": True, "azimuth_count": 8}
-        for source in sources:
-            sources[source]["polar"] = {"enabled": source in {"arome", "nemo_t"}}
-        sources["arome"]["polar"]["variables"] = {"fields_2d": {"names": ["prmsl"]}}
-        sources["nemo_t"]["polar"]["variables"] = {"deptht": {"names": ["votemper"]}}
+        raw["region"]["width_km"] = {"x": 4., "y": 4.}
+        raw["products"]["polar"] = {"radius_km": 2., "shared_grid": True, "azimuth_count": 8,
+            "fields": {"atmosphere": ["prmsl"], "ocean": ["votemper"]}}
+        sources["atmosphere"]["field_metadata"] = {"prmsl": {"kind": "continuous"}}
+        sources["ocean"]["field_metadata"] = {"votemper": {"kind": "continuous"}}
     return raw
 
 
@@ -162,7 +171,7 @@ def test_nemo_arome_exact_track_maps_each_grid_independently(tmp_path, moving, s
     import builtins
 
     raw = coupled_document(tmp_path, moving=moving)
-    raw["output"]["synchronous_export"] = synchronous
+    raw["resources"]["synchronous_export"] = synchronous
     original = builtins.__import__
 
     def base_only(name, *args, **kwargs):
@@ -173,33 +182,38 @@ def test_nemo_arome_exact_track_maps_each_grid_independently(tmp_path, moving, s
     monkeypatch.setattr(builtins, "__import__", base_only)
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
-    products = {p["source"]: p["path"] for p in result.products if p["role"] == "cart"}
-    assert set(products) == {"arome", "nemo_t", "nemo_u", "nemo_v", "nemo_w"}
+    products = {p["source"]: p["path"] for p in result.products if p["role"] == "model_grid"}
+    assert set(products) == {"atmosphere", "ocean"}
     subprocess.run([sys.executable, "-c", """
 import json, sys, xarray as xr, numpy as np
 from pathlib import Path
 paths, moving = json.loads(sys.argv[1]), sys.argv[2] == 'True'
 datasets = {name: xr.open_dataset(path) for name,path in paths.items()}
 try:
-    a = datasets['arome']
+    a = datasets['atmosphere']
     assert a.forecast_reference_time.values == np.datetime64('2024-12-11')
     for name, data in datasets.items():
         np.testing.assert_array_equal(data.time, a.time)
         assert data.attrs['source_id'] == name
     for name, x0, y0 in [('nemo_t',2,2),('nemo_u',1,2),('nemo_v',2,1),('nemo_w',2,2)]:
-        data = datasets[name]
-        np.testing.assert_array_equal(data.x[0], np.arange(x0,x0+3))
-        np.testing.assert_array_equal(data.y[0], np.arange(y0,y0+3))
-        np.testing.assert_array_equal(data.x[1], np.arange(x0,x0+3) + int(moving))
-        np.testing.assert_array_equal(data.y[1], np.arange(y0,y0+3) + int(moving))
+        data = datasets['ocean']
+        field = {'nemo_t':'votemper','nemo_u':'vozocrtx','nemo_v':'vomecrty','nemo_w':'vovecrtz'}[name]
+        yd, xd = data[field].dims[-2:]
+        x = next(value for key,value in data[field].coords.items()
+                 if key.endswith('_source_native_index') and value.dims == ('time',xd))
+        y = next(value for key,value in data[field].coords.items()
+                 if key.endswith('_source_native_index') and value.dims == ('time',yd))
+        np.testing.assert_array_equal(x[0], np.arange(x0,x0+3))
+        np.testing.assert_array_equal(y[0], np.arange(y0,y0+3))
+        np.testing.assert_array_equal(x[1], np.arange(x0,x0+3) + int(moving))
+        np.testing.assert_array_equal(y[1], np.arange(y0,y0+3) + int(moving))
         assert data.time.attrs['bounds'] in data
         assert 'time_centered_bounds' in data
         assert 'horizontal_wind_representation' not in data.attrs
-        field = {'nemo_t':'votemper','nemo_u':'vozocrtx','nemo_v':'vomecrty','nemo_w':'vovecrtz'}[name]
         with xr.open_dataset(Path(sys.argv[3])/f'{name}.nc') as source:
             for t in (0,1):
-                expected = source[field].isel(time_counter=t,y=data.y[t].values.astype(int),
-                                               x=data.x[t].values.astype(int))
+                expected = source[field].isel(time_counter=t,y=y[t].values.astype(int),
+                                               x=x[t].values.astype(int))
                 np.testing.assert_array_equal(data[field][t],expected)
 finally:
     for data in datasets.values(): data.close()
@@ -207,7 +221,7 @@ assert 'frameit' not in sys.modules
 """, json.dumps(products), str(moving), str(tmp_path)], check=True)
     provenance = yaml.safe_load((tmp_path / "out/run-provenance.yaml").read_text())
     assert provenance["time_alignment"]["policy"] == "common"
-    assert provenance["sources"]["nemo_u"]["model"] == "NEMO"
+    assert provenance["sources"]["ocean"]["model"] == "nemo"
 
 
 def test_real_layout_half_hour_means_have_no_exact_overlap(tmp_path):
@@ -225,21 +239,24 @@ def test_nemo_arome_common_exclusions_and_strict_mismatch(tmp_path, strict):
         subset = source.isel(time_counter=[0]).load()
     short = tmp_path / "short.nc"
     subset.to_netcdf(short)
-    raw["input"]["sources"]["nemo_t"]["input"]["files"] = [str(short)]
+    raw["sources"]["ocean"]["files"][0] = str(short)
     if strict:
-        raw["input"]["time_alignment"] = "strict"
+        # V3 has no equal-timeline policy; do not silently substitute its different exact policy.
+        raw["region"]["sources_coupling_time_association"] = "strict"
         with pytest.raises(ValueError, match="Strict source time alignment"):
             prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
     else:
-        plan, _, _ = prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
-        assert len(plan["time_alignment"]["selected_times"]) == 1
-        assert len(plan["time_alignment"]["sources"]["arome"]["skipped_times"]) == 1
+        conf = SimulationConfig.from_mapping_with_model_preset(raw)
+        prepare_sources(conf)
+        alignment = conf.simulation_parameter["time_alignment"]
+        assert len(alignment["selected_times"]) == 1
+        assert len(alignment["sources"]["atmosphere"]["skipped_times"]) == 1
 
 
 def test_nemo_arome_outside_grid_fails_without_edge_substitution(tmp_path):
     raw = coupled_document(tmp_path)
-    raw["tracking"]["fixed_box"]["center"] = {"latitude": -20.031, "longitude": 60.}
-    with pytest.raises(ValueError, match="outside a selected source grid"):
+    raw["region"]["center"] = {"latitude": -20.031, "longitude": 60.}
+    with pytest.raises(ValueError, match="outside a selected source grid|outside"):
         execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     status = yaml.safe_load((tmp_path / "out/run-status.yaml").read_text())
     assert status["state"] == "failed"
@@ -264,28 +281,28 @@ def test_nemo_arome_shared_scalar_targets_preserve_source_times_and_masks(tmp_pa
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     products = {p["source"]: p["path"] for p in result.products if p["role"] == "polar"}
-    assert set(products) == {"arome", "nemo_t"}
+    assert set(products) == {"atmosphere", "ocean"}
     subprocess.run([sys.executable, "-c", """
 import json, sys, xarray as xr, numpy as np
 paths = json.loads(sys.argv[1])
-with xr.open_dataset(paths['arome']) as a, xr.open_dataset(paths['nemo_t']) as n:
-    for name in ['time','rr','theta','center_lon','center_lat']:
+with xr.open_dataset(paths['atmosphere']) as a, xr.open_dataset(paths['ocean']) as n:
+    for name in ['time','radius','azimuth','center_longitude','center_latitude']:
         np.testing.assert_array_equal(a[name],n[name])
-    np.testing.assert_array_equal(a.longitude,n.nav_lon)
-    np.testing.assert_array_equal(a.latitude,n.nav_lat)
+    np.testing.assert_array_equal(a.longitude,n.longitude)
+    np.testing.assert_array_equal(a.latitude,n.latitude)
     assert a.attrs['common_polar_target_id'] == n.attrs['common_polar_target_id']
     assert n.time.attrs['bounds'] in n and 'time_centered_bounds' in n
     assert n.votemper.attrs['cell_methods'] == 'time: mean (interval: 240 s)'
     assert np.isfinite(a.prmsl).all()
-    assert np.isnan(n.votemper.isel(time=0,rr=0)).all()
+    assert np.isnan(n.votemper.isel(time=0,radius=0)).all()
 assert 'frameit' not in sys.modules
 """, json.dumps(products)], check=True)
 
 
 def test_nemo_arome_shared_target_budget_fails_before_outputs(tmp_path):
     raw = coupled_document(tmp_path, scalar_polar=True)
-    raw["polar"]["max_points"] = 1
-    with pytest.raises(ValueError, match="polar.max_points"):
+    raw["products"]["polar"]["processing"] = {"max_target_points": 1}
+    with pytest.raises(ValueError, match="requires .* points|max_target_points"):
         preflight(SimulationConfig.from_mapping_with_model_preset(raw))
     assert not (tmp_path / "out").exists()
 
@@ -297,7 +314,7 @@ def test_nemo_arome_forecast_cycle_identity_is_not_the_sample_clock(tmp_path):
     changed.time.attrs["standard_name"] = "forecast_reference_time"
     path = tmp_path / "different-cycle.nc"
     changed.to_netcdf(path)
-    raw["input"]["sources"]["arome"]["input"]["files"][1] = str(path)
+    raw["sources"]["atmosphere"]["files"][1] = str(path)
     with pytest.raises(ValueError, match="forecast cycle"):
         prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
 
@@ -309,15 +326,15 @@ def test_nemo_arome_prescribed_track_coverage_remains_exact(tmp_path, strict):
         short = source.isel(time=[0]).load()
     path = tmp_path / "short-track.nc"
     short.to_netcdf(path)
-    raw["tracking"]["prescribed_track"]["file"] = str(path)
-    raw["input"]["time_alignment"] = "strict" if strict else "common"
+    raw["region"]["track"]["file"] = str(path)
+    raw["region"]["sources_coupling_time_association"] = "strict" if strict else "common"
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     if strict:
         with pytest.raises(ValueError, match="track lacks strict source times"):
             prepare_sources(conf)
     else:
-        plan, _, _ = prepare_sources(conf)
-        assert len(plan["time_alignment"]["selected_times"]) == 1
+        prepare_sources(conf)
+        assert len(conf.simulation_parameter["region_alignment"]["selected_times"]) == 1
 
 
 def test_nemo_arome_interrupted_export_and_overwrite_protection(tmp_path, monkeypatch):
@@ -327,7 +344,7 @@ def test_nemo_arome_interrupted_export_and_overwrite_protection(tmp_path, monkey
     original = netcdf_export.write_dataset_netcdf
 
     def interrupted(ds, path, **kwargs):
-        if ".cart.nemo_u." in str(path):
+        if ".ocean.model_grid." in str(path):
             raise OSError("synthetic interrupted ocean export")
         return original(ds, path, **kwargs)
 
@@ -337,12 +354,12 @@ def test_nemo_arome_interrupted_export_and_overwrite_protection(tmp_path, monkey
         execute_simulation(conf)
     status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
     assert status["state"] == "failed"
-    complete = conf.output_dir / "products/coupled-ocean.cart.nemo_t.deptht.nc"
+    complete = conf.output_dir / "products/coupled-ocean.atmosphere.model_grid.nc"
     assert complete.exists()
     with xr.open_dataset(complete) as out:
         assert out.sizes["time"] == 2
     assert not list(conf.output_dir.rglob("*.tmp"))
-    assert not (conf.output_dir / "products/coupled-ocean.cart.nemo_u.depthu.nc").exists()
+    assert not (conf.output_dir / "products/coupled-ocean.ocean.model_grid.nc").exists()
     before = complete.read_bytes()
     monkeypatch.setattr(netcdf_export, "write_dataset_netcdf", original)
     with pytest.raises(FileExistsError):
@@ -353,20 +370,33 @@ def test_nemo_arome_interrupted_export_and_overwrite_protection(tmp_path, monkey
 def test_nemo_products_zarr_roundtrip(tmp_path):
     pytest.importorskip("zarr")
     raw = coupled_document(tmp_path, moving=True)
-    raw["output"].update(backend="zarr",
-        zarr_chunk_size={"time": 1, "deptht": 1, "depthu": 1, "depthv": 1, "depthw": 1, "x_box": 2, "y_box": 2},
-        zarr_shard_size={"time": 2, "deptht": 2, "depthu": 2, "depthv": 2, "depthw": 2, "x_box": 4, "y_box": 4})
+    raw["output"]["format"] = "zarr"
+    preview = collect_preflight(raw, check_output=False)
+    assert not preview.errors, "\n".join(error.message for error in preview.errors)
+    horizontal = {dimension for product in preview.facts["products"]
+                  if product["product"] == "model_grid"
+                  for dimensions in product["dimensions"].values() for dimension in dimensions[-2:]}
+    raw["output"]["writer"] = {
+        "chunks": {"time": 1, "deptht": 1, "depthu": 1, "depthv": 1, "depthw": 1,
+                   **dict.fromkeys(horizontal, 2)},
+        "shards": {"time": 2, "deptht": 2, "depthu": 2, "depthv": 2, "depthw": 2,
+                   **dict.fromkeys(horizontal, 4)}}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
-    products = {p["source"]: p["path"] for p in result.products if p["role"] == "cart"}
+    products = {p["source"]: p["path"] for p in result.products if p["role"] == "model_grid"}
     subprocess.run([sys.executable, "-c", """
 import json,sys,xarray as xr,numpy as np,zarr
 from pathlib import Path
 paths=json.loads(sys.argv[1]); root=Path(sys.argv[2])
 for source,field,depth in [('nemo_t','votemper','deptht'),('nemo_u','vozocrtx','depthu'),('nemo_v','vomecrty','depthv'),('nemo_w','vovecrtz','depthw')]:
-    with xr.open_zarr(paths[source],consolidated=False) as out,xr.open_dataset(root/f'{source}.nc') as src:
+    with xr.open_zarr(paths['ocean'],consolidated=False) as out,xr.open_dataset(root/f'{source}.nc') as src:
+        yd,xd=out[field].dims[-2:]
+        x=next(value for key,value in out[field].coords.items()
+               if key.endswith('_source_native_index') and value.dims==('time',xd))
+        y=next(value for key,value in out[field].coords.items()
+               if key.endswith('_source_native_index') and value.dims==('time',yd))
         for t in (0,1):
-            expected=src[field].isel(time_counter=t,y=out.y[t].values.astype(int),x=out.x[t].values.astype(int))
+            expected=src[field].isel(time_counter=t,y=y[t].values.astype(int),x=x[t].values.astype(int))
             np.testing.assert_array_equal(out[field][t],expected)
         np.testing.assert_array_equal(out.time,src.time_counter)
         np.testing.assert_array_equal(out[depth],src[depth])
@@ -375,11 +405,11 @@ for source,field,depth in [('nemo_t','votemper','deptht'),('nemo_u','vozocrtx','
             np.testing.assert_array_equal(out[bounds],src[bounds])
         for attr in ['units','standard_name','long_name','cell_methods']:
             assert out[field].attrs.get(attr)==src[field].attrs.get(attr)
-        assert out.attrs['source_id']==source
+        assert out.attrs['source_id']=='ocean'
         assert 'horizontal_wind_representation' not in out.attrs
-        array=zarr.open_group(paths[source],mode='r')[field]
+        array=zarr.open_group(paths['ocean'],mode='r')[field]
         assert array.chunks==(1,1,2,2) and array.shards==(2,2,4,4)
-with xr.open_zarr(paths['arome'],consolidated=False) as a:
+with xr.open_zarr(paths['atmosphere'],consolidated=False) as a:
     assert a.forecast_reference_time.values==np.datetime64('2024-12-11')
 assert 'frameit' not in sys.modules
 """, json.dumps(products), str(tmp_path)], check=True)
@@ -399,7 +429,7 @@ def preceding_inventory():
 
 def preceding_document(directory, *, moving=False, scalar_polar=False):
     raw = coupled_document(directory, scalar_polar=scalar_polar)
-    raw["input"]["time_alignment"] = "preceding_hour"
+    raw["region"]["sources_coupling_time_association"] = "preceding_hour"
     times = np.array(["2024-12-11T00", "2024-12-11T01", "2024-12-11T02"], dtype="datetime64[ns]")
     for name in ("prmsl", "u10", "v10"):
         path = directory / f"{name}.nc"
@@ -412,8 +442,8 @@ def preceding_document(directory, *, moving=False, scalar_polar=False):
         xr.Dataset({"latitude": ("time", [-20., -20., -19.99]),
                     "longitude": ("time", [60., 60., 60. + .01/np.cos(np.deg2rad(20.))])},
                    coords={"time": times}).to_netcdf(track)
-        raw["tracking"] = {"source": "arome", "method": "prescribed_track",
-                           "prescribed_track": {"file": str(track)}}
+        raw["region"].pop("center")
+        raw["region"]["track"] = {"file": str(track)}
     return raw
 
 
@@ -424,7 +454,10 @@ def test_preceding_hour_coupled_native_copies_and_replay(tmp_path, moving, synch
     if engine == "zarr":
         pytest.importorskip("zarr")
     raw = preceding_document(tmp_path, moving=moving)
-    raw["output"].update(synchronous_export=synchronous, backend=engine)
+    raw["resources"]["synchronous_export"] = synchronous
+    raw["output"]["format"] = "zarr" if engine == "zarr" else "netcdf"
+    if engine != "zarr":
+        raw["output"]["writer"] = {"engine": engine}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     result = execute_simulation(conf)
     assert result.ok, result
@@ -432,8 +465,8 @@ def test_preceding_hour_coupled_native_copies_and_replay(tmp_path, moving, synch
                for path in (conf.output_dir / "logs").glob("*.log"))
     alignment = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())["time_alignment"]
     assert alignment["omitted_pairings"] == [{"coupling_time": "2024-12-11T00:00:00.000000000",
-                                            "missing_sources": ["nemo_t", "nemo_u", "nemo_v", "nemo_w"]}]
-    products = {p["source"]: p["path"] for p in result.products if p["role"] == "cart"}
+                                            "missing_sources": ["ocean"]}]
+    products = {p["source"]: p["path"] for p in result.products if p["role"] == "model_grid"}
     subprocess.run([sys.executable, "-c", """
 import json, sys, numpy as np, xarray as xr
 from pathlib import Path
@@ -443,35 +476,40 @@ native = np.array(['2024-12-11T00:30','2024-12-11T01:30'],dtype='datetime64[ns]'
 for name,path in products.items():
     with (xr.open_zarr(path,consolidated=False) if engine == 'zarr' else xr.open_dataset(path)) as out:
         np.testing.assert_array_equal(out.time,target)
-        if name == 'arome':
+        if name == 'atmosphere':
             assert out.forecast_reference_time.values == np.datetime64('2024-12-11')
             continue
         np.testing.assert_array_equal(out.source_time,native)
         np.testing.assert_array_equal(out.time_centered,native)
         assert 'coupling' in out.time.attrs['long_name']
         assert out.source_time.attrs['bounds'] == out.time.attrs['bounds']
-        field = {'nemo_t':'votemper','nemo_u':'vozocrtx','nemo_v':'vomecrty','nemo_w':'vovecrtz'}[name]
-        with xr.open_dataset(root/f'{name}.nc') as src:
-            for t in (0,1):
-                expected = src[field].isel(time_counter=t,y=out.y[t].values.astype(int),x=out.x[t].values.astype(int))
-                np.testing.assert_array_equal(out[field][t],expected)
-            for bound in ['time_counter_bounds','time_centered_bounds']:
-                np.testing.assert_array_equal(out[bound],src[bound])
-            assert out[field].attrs['cell_methods'] == src[field].attrs['cell_methods']
+        for source,field in [('nemo_t','votemper'),('nemo_u','vozocrtx'),('nemo_v','vomecrty'),('nemo_w','vovecrtz')]:
+            yd,xd=out[field].dims[-2:]
+            x=next(value for key,value in out[field].coords.items()
+                   if key.endswith('_source_native_index') and value.dims==('time',xd))
+            y=next(value for key,value in out[field].coords.items()
+                   if key.endswith('_source_native_index') and value.dims==('time',yd))
+            with xr.open_dataset(root/f'{source}.nc') as src:
+                for t in (0,1):
+                    expected = src[field].isel(time_counter=t,y=y[t].values.astype(int),x=x[t].values.astype(int))
+                    np.testing.assert_array_equal(out[field][t],expected)
+                for bound in ['time_counter_bounds','time_centered_bounds']:
+                    np.testing.assert_array_equal(out[bound],src[bound])
+                assert out[field].attrs['cell_methods'] == src[field].attrs['cell_methods']
         assert 'no temporal interpolation' in out.attrs['temporal_association_description']
 assert 'frameit' not in sys.modules
 """, json.dumps(products), str(tmp_path), engine], check=True)
     replay = SimulationConfig.from_yaml_with_model_preset(conf.output_dir / "resolved-config.yaml")
     assert replay.time_alignment == "preceding_hour"
-    replay_plan, _, _ = prepare_sources(replay, check_output=False)
-    assert replay_plan["time_alignment"] == alignment
+    prepare_sources(replay, check_output=False)
+    assert replay.simulation_parameter["time_alignment"] == alignment
 
 
 @pytest.mark.parametrize("problem", ["mean", "instant", "bounds", "format"])
 def test_preceding_hour_inventory_validates_raw_selected_field_metadata(tmp_path, problem):
     raw = preceding_document(tmp_path)
     if problem == "format":
-        raw["input"]["sources"]["arome"]["input"]["format"] = "grib"
+        raw["sources"]["atmosphere"]["format"] = "grib"
     else:
         path = tmp_path / ("u10.nc" if problem == "instant" else "nemo_t.nc")
         with xr.open_dataset(path) as source:
@@ -483,7 +521,7 @@ def test_preceding_hour_inventory_validates_raw_selected_field_metadata(tmp_path
         else:
             ds = ds.drop_vars(["time_counter_bounds", "time_centered_bounds"])
         ds.to_netcdf(path)
-    with pytest.raises(ValueError, match="instant|mean|bounds|NetCDF|input.format"):
+    with pytest.raises(ValueError, match="instant|mean|bounds|NetCDF|format"):
         prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
     assert not (tmp_path / "out").exists()
 
@@ -491,14 +529,16 @@ def test_preceding_hour_inventory_validates_raw_selected_field_metadata(tmp_path
 @pytest.mark.parametrize("shared", [False, True])
 def test_preceding_hour_polar_budget_counts_selected_pairs(tmp_path, shared):
     raw = preceding_document(tmp_path, scalar_polar=True)
-    raw["polar"].update(shared_target=shared, max_points=48, radial_step_m=1200.)
-    plan, _, _ = prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
-    assert plan["track_time_count"] == 2
-    for name in ("arome", "nemo_t"):
-        assert plan["sources"][name]["polar_sampling"]["estimated_time_count"] == 2
-    raw["polar"]["max_points"] = 47
-    with pytest.raises(ValueError, match="polar.max_points"):
-        prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
+    raw["products"]["polar"].update(shared_grid=shared, processing={"max_target_points": 48},
+                                   radial_step_km=1.2)
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    plan, _, _ = bind_sources(conf)
+    assert len(conf.simulation_parameter["region_alignment"]["selected_times"]) == 2
+    for name in ("atmosphere", "ocean"):
+        assert len(plan["sources"][name]["requests"]["binding"]["polar_plan"]["source_times"]) == 2
+    raw["products"]["polar"]["processing"]["max_target_points"] = 47
+    with pytest.raises(ValueError, match="requires .* points|max_target_points"):
+        bind_sources(SimulationConfig.from_mapping_with_model_preset(raw))
     assert not (tmp_path / "out").exists()
 
 
@@ -514,8 +554,8 @@ def test_preceding_hour_scalar_polar_keeps_native_clock_and_bounds(tmp_path):
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     products = {p["source"]: p["path"] for p in result.products if p["role"] == "polar"}
-    with xr.open_dataset(products["arome"]) as a, xr.open_dataset(products["nemo_t"]) as n:
-        for name in ("time", "rr", "theta", "center_lon", "center_lat"):
+    with xr.open_dataset(products["atmosphere"]) as a, xr.open_dataset(products["ocean"]) as n:
+        for name in ("time", "radius", "azimuth", "center_longitude", "center_latitude"):
             np.testing.assert_array_equal(a[name], n[name])
         np.testing.assert_array_equal(n.source_time, np.array([
             "2024-12-11T00:30", "2024-12-11T01:30"], dtype="datetime64[ns]"))
@@ -526,7 +566,7 @@ def test_preceding_hour_scalar_polar_keeps_native_clock_and_bounds(tmp_path):
         assert n.source_time.encoding["calendar"] == "gregorian"
         assert n.time_centered.encoding["calendar"] == "gregorian"
         assert n.time.encoding["calendar"] == "gregorian"
-        assert np.isnan(n.votemper.isel(time=0, rr=0)).all()
+        assert np.isnan(n.votemper.isel(time=0, radius=0)).all()
 
 
 def test_preceding_hour_file_selection_uses_native_not_reference_times(tmp_path):
@@ -537,10 +577,13 @@ def test_preceding_hour_file_selection_uses_native_not_reference_times(tmp_path)
             path = tmp_path / f"part-{index}.nc"
             source.isel(time_counter=[index]).to_netcdf(path)
             paths.append(str(path))
-    raw["input"]["sources"]["nemo_t"]["input"]["files"] = paths
-    plan, children, _ = prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
-    assert children["nemo_t"].input_files == paths
-    assert len(plan["time_alignment"]["selected_times"]) == 2
+    raw["sources"]["ocean"]["files"][:1] = paths
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    _, children, _ = prepare_sources(conf)
+    selected = children["ocean"].input_files
+    assert [path for path in selected if path in paths] == paths
+    assert set(selected) == set(paths + [str(tmp_path / f"nemo_{grid}.nc") for grid in ("u", "v", "w")])
+    assert len(conf.simulation_parameter["region_alignment"]["selected_times"]) == 2
 
 
 def test_preceding_hour_polar_fractional_packed_depths_are_not_rounded(tmp_path):
@@ -555,7 +598,7 @@ def test_preceding_hour_polar_fractional_packed_depths_are_not_rounded(tmp_path)
     ds.to_netcdf(path)
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
-    product = next(p["path"] for p in result.products if p["role"] == "polar" and p["source"] == "nemo_t")
+    product = next(p["path"] for p in result.products if p["role"] == "polar" and p["source"] == "ocean")
     subprocess.run([sys.executable, "-c", """
 import sys, xarray as xr, numpy as np
 with xr.open_dataset(sys.argv[1]) as out:
@@ -576,7 +619,7 @@ def test_preceding_hour_duplicate_physical_records_fail_instead_of_deduplicating
         ds.votemper.attrs["cell_methods"] = "time: mean (interval: 240 s)"
         ds.votemper.attrs["units"] = "degC"
         ds.to_netcdf(other)
-        raw["input"]["sources"]["nemo_t"]["input"]["files"].append(str(other))
+        raw["sources"]["ocean"]["files"].append(str(other))
     else:
         duplicate = ds.isel(time_counter=[0, 0, 1])
         duplicate.votemper.values[1] += 100.
@@ -593,12 +636,12 @@ def test_preceding_hour_complementary_providers_can_repeat_clock_metadata(tmp_pa
         extra = source.load().rename({"votemper": "other_temperature"})
     other = tmp_path / "complement.nc"
     extra.to_netcdf(other)
-    spec = raw["input"]["sources"]["nemo_t"]
-    spec["input"]["files"].append(str(other))
-    spec["input"]["netcdf"] = {"file_layout": "variables"}
-    spec["variables"]["deptht"]["names"].append("other_temperature")
-    plan, _, _ = prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
-    assert len(plan["time_alignment"]["selected_times"]) == 2
+    spec = raw["sources"]["ocean"]
+    spec["files"].append(str(other))
+    spec["variables"]["3d"].append("other_temperature")
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    prepare_sources(conf)
+    assert len(conf.simulation_parameter["region_alignment"]["selected_times"]) == 2
 
 
 def test_preceding_hour_selects_bounds_not_nearest_and_warns(caplog):

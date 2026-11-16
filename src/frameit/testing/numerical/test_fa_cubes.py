@@ -17,8 +17,9 @@ import xarray as xr
 import yaml
 
 from frameit.core.configuration import resolved_configuration
+from frameit.core.coupled import bind_sources
 from frameit.core.execution import execute_simulation
-from frameit.core.preflight import preflight
+from frameit.core.preflight import bind_source, collect_preflight, inventory_source
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.fa_backend import request_fa
 from frameit.io.fa_cubes import cube_layouts, hybrid_contract
@@ -35,24 +36,27 @@ DECLARATION = {"units": "K", "kind": "continuous", "temporal_kind": "instantaneo
 
 def document(directory, files, *, latitude=-20., synchronous=True):
     return {
-        "schema_version": "2.1", "model": "arome", "run": {"name": "native-cubes"},
-        "input": {"format": "fa", "files": [str(p) for p in files], "fa": {
-            "backend": "epygram", "python_executable": EPYTHON, "profile": "arome_history",
-            "earth_radius_m": 6371229., "field_metadata": {
-                "temperature": DECLARATION,
-                "w_if": {**DECLARATION, "units": "m s-1"}},
+        "schema_version": 3, "run": {"name": "native-cubes"},
+        "sources": {"atmosphere": {
+            "model": "arome", "format": "fa", "files": [str(p) for p in files],
+            "profile": "arome_history",
+            "reader": {"python_executable": EPYTHON} if EPYTHON is not None else {},
+            "fa": {"earth_radius_m": 6371229.},
+            "field_metadata": {
+                "level.temperature": DECLARATION,
+                "level_w.w_if": {**DECLARATION, "units": "m s-1"}},
             "native_cubes": {
                 "temperature": {"records": [f"S{k:03d}TEMPERATURE" for k in (1, 2, 3)],
                                 "vertical_position": "mass", "sampling": "center"},
                 "w_if": {"records": [f"S{k:03d}VERTIC.VELOC" for k in range(1, 5)],
-                         "vertical_position": "interface", "sampling": "center"}}}},
-        "variables": {"level": {"names": ["temperature"], "levels": {"indices": [2, 0]}},
-                      "level_w": {"names": ["w_if"], "levels": {"indices": [3, 0]}}},
-        "tracking": {"method": "fixed_box", "fixed_box": {
-            "center": {"latitude": latitude, "longitude": 50.}}},
-        "domain": {"width_km": {"x": 6., "y": 4.}},
-        "output": {"directory": str(directory / "run"), "synchronous_export": synchronous,
-                   "max_workers": 1},
+                         "vertical_position": "interface", "sampling": "center"}},
+            "variables": {"3d": {
+                "level": {"names": ["temperature"], "levels": {"indices": [2, 0]}},
+                "level_w": {"names": ["w_if"], "levels": {"indices": [3, 0]}}}}}},
+        "region": {"center": {"latitude": latitude, "longitude": 50.},
+                   "width_km": {"x": 6., "y": 4.}},
+        "resources": {"synchronous_export": synchronous, "export_workers": 1},
+        "output": {"directory": str(directory / "run")},
     }
 
 
@@ -101,32 +105,31 @@ def fixtures(directory, *, hours=(0,), latitude=-20., winds=False, second_refere
 
 def test_explicit_cube_schema_replay_and_admission_failures(tmp_path):
     raw = document(tmp_path, [tmp_path / "unopened.fa"])
-    raw["input"]["grid_spacing_m"] = 1000.
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     restored = SimulationConfig.from_mapping_with_model_preset(resolved_configuration(conf))
     assert restored.fa_options == conf.fa_options
     assert conf.fa_options["python_executable"] == EPYTHON  # Preserve venv symlinks.
     for key, value, message in (
-        ("backend", "other", "input.fa.backend must be epygram"),
-        ("python_executable", "", "interpreter path"),
+        ("backend", "other", "backend"),
+        ("python_executable", "", "nonempty string"),
     ):
         bad = copy.deepcopy(raw)
-        bad["input"]["fa"][key] = value
+        bad["sources"]["atmosphere"]["fa" if key == "backend" else "reader"][key] = value
         with pytest.raises(ValueError, match=message):
             SimulationConfig.from_mapping_with_model_preset(bad)
     for key, value, message in (
         ("sampling", "u_face", "center sampling"),
         ("component_scaling", "map_scaled", "scaling is gated"),
-        ("vertical_position", "pressure", "mass or interface"),
+        ("vertical_position", "pressure", "mass or interface|group does not match"),
         ("records", ["S*TEMPERATURE"], "invalid or repeated"),
     ):
         bad = copy.deepcopy(raw)
-        bad["input"]["fa"]["native_cubes"]["temperature"][key] = value
+        bad["sources"]["atmosphere"]["native_cubes"]["temperature"][key] = value
         with pytest.raises(ValueError, match=message):
             SimulationConfig.from_mapping_with_model_preset(bad)
     bad = copy.deepcopy(raw)
-    bad["variables"]["level"]["levels"] = "physical"
-    with pytest.raises(ValueError, match="physical-coordinate selection is gated"):
+    bad["sources"]["atmosphere"]["variables"]["3d"]["level"]["levels"] = {"domain": "physical"}
+    with pytest.raises(ValueError, match="FA physical-domain selection is gated"):
         SimulationConfig.from_mapping_with_model_preset(bad)
     assert not (tmp_path / "unopened.fa").exists()
 
@@ -190,18 +193,23 @@ def test_native_cube_export_indices_coefficients_masks_and_sparse_decodes(
     paths = fixtures(tmp_path, hours=(0, 1))
     before = [p.read_bytes() for p in paths]
     raw = document(tmp_path, paths, synchronous=synchronous)
-    raw["input"]["fa"]["backend"] = backend
+    assert backend == "epygram"  # The admitted public FA backend is not a selector.
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    preview = preflight(conf)
+    checked = collect_preflight(conf)
+    assert not checked.errors, checked.errors
+    preview = checked.facts
     assert not conf.output_dir.exists()
-    assert preview["selected_levels"][0]["source_native_indices"] == [2, 0]
-    assert preview["fa_inputs"][0]["hybrid_contract"]["a_pa"] == [0., 10000., 20000., 0.]
+    source = preview["sources"]["atmosphere"]
+    selected = source["requests"]["binding"]["products"]["model_grid"]["level.temperature"]
+    assert selected["records"][0]["vertical"]["source_native_indices"] == [2, 0]
+    grid = source["native_grids"][selected["records"][0]["grid_id"]]
+    assert grid["fa_hybrid_contract"]["a_pa"] == [0., 10000., 20000., 0.]
     result = execute_simulation(conf)
     assert result.ok, result.error
-    products = {p["group"]: p["path"] for p in result.products if p["role"] == "cart"}
-    assert set(products) == {"level", "level_w"}
+    products = {p["role"]: p["path"] for p in result.products if p["role"] == "model_grid"}
+    assert set(products) == {"model_grid"}
     j, i = np.indices((7, 9))
-    with Dataset(products["level"]) as data:
+    with Dataset(products["model_grid"]) as data:
         assert data.variables["level"][:].tolist() == [3, 1]
         assert data.variables["level_source_native_index"][:].tolist() == [2, 0]
         assert data.variables["level"].units == "1"
@@ -213,34 +221,35 @@ def test_native_cube_export_indices_coefficients_masks_and_sparse_decodes(
         expected = np.stack([280. + 10 * k + 10 * j + i for k in (3, 1)])
         expected[:, 1, 1] = np.nan
         expected[:, 2, 2] = 0.
-        np.testing.assert_allclose(data.variables["temperature"][0].filled(np.nan),
+        np.testing.assert_allclose(data.variables["level.temperature"][0].filled(np.nan),
                                    expected[:, 1:6, 1:8], rtol=0, atol=0, equal_nan=True)
         assert not {"pressure", "height", "altitude", "surface_pressure"} & data.variables.keys()
-    with Dataset(products["level_w"]) as data:
+    with Dataset(products["model_grid"]) as data:
         assert data.variables["level_w"][:].tolist() == [4, 1]
         assert data.variables["level_w_source_native_index"][:].tolist() == [3, 0]
         assert data.dimensions["fa_hybrid_interface"].size == 4
-        assert "level" not in data.dimensions
+        assert "level" not in data.variables["level_w.w_if"].dimensions
     reader = subprocess.run([sys.executable, "-c", """
 import json, sys, numpy as np
 from netCDF4 import Dataset
 products = json.loads(sys.argv[1])
-with Dataset(products['level']) as ds:
+with Dataset(products['model_grid']) as ds:
     assert ds.variables['level'][:].tolist() == [3, 1]
     assert ds.variables['fa_hybrid_a'].units == 'Pa'
     np.testing.assert_array_equal(ds.variables['fa_hybrid_a'][:], [0, 10000, 20000, 0])
-    values = ds.variables['temperature'][0].filled(np.nan)
+    values = ds.variables['level.temperature'][0].filled(np.nan)
     assert np.isnan(values[0, 0, 0]) and values[0, 1, 1] == 0
-with Dataset(products['level_w']) as ds:
+with Dataset(products['model_grid']) as ds:
     assert ds.variables['level_w'][:].tolist() == [4, 1]
     assert ds.dimensions['fa_hybrid_interface'].size == 4
 assert not {'frameit', 'epygram', 'falfilfa4py'} & sys.modules.keys()
 """, json.dumps(products)], capture_output=True, text=True, timeout=30)
     assert reader.returncode == 0, reader.stdout + reader.stderr
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
-    assert provenance["fa_inputs"][0]["backend_versions"]["EPyGrAM"] == "2.1.0"
-    assert provenance["fa_inputs"][0]["backend"] == "epygram"
-    assert provenance["fa_inputs"][0]["requested_backend"] == backend
+    decoder = provenance["sources"]["atmosphere"]["fa_decoder"]
+    assert decoder["backend_versions"]["EPyGrAM"] == "2.1.0"
+    assert decoder["backend_versions"]["FA_backend"] == "epygram"
+    assert conf.fa_options["backend"] == backend
     logs = [json.loads(line) for log in (conf.output_dir / "logs").glob("fa-decoder-*.jsonl")
             for line in log.read_text().splitlines()]
     decoded = {name for record in logs for name in record["fields"]}
@@ -256,43 +265,54 @@ assert not {'frameit', 'epygram', 'falfilfa4py'} & sys.modules.keys()
 def test_source_vertical_conflicts_and_unavailable_labels_fail(tmp_path):
     paths = fixtures(tmp_path, hours=(0, 1), second_reference=101325.)
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path, paths))
-    with pytest.raises(ValueError, match="incompatible native vertical"):
-        preflight(conf)
-    with pytest.raises(ValueError, match="incompatible native vertical"):
-        concat_fa2ds_by_vert_coord(paths, conf.requests_user(), {}, wind_conf=conf)
+    with pytest.raises(ValueError, match="incompatible native vertical|distinct fields"):
+        bind_sources(conf)
+    # A selected numerical reader cannot admit a vertically ambiguous binding.
+    with pytest.raises(ValueError, match="incompatible native vertical|distinct fields"):
+        inventory_source(conf, "atmosphere")
+        bind_source(conf, "atmosphere")
     raw = document(tmp_path, paths[:1])
-    raw["variables"]["level"]["levels"] = {"values": [850]}
-    with pytest.raises(ValueError, match="no pressure matching"):
-        preflight(SimulationConfig.from_mapping_with_model_preset(raw))
+    raw["sources"]["atmosphere"]["variables"]["3d"]["level"]["levels"] = {"values": [850]}
+    with pytest.raises(ValueError, match="unavailable|no pressure matching"):
+        bind_sources(SimulationConfig.from_mapping_with_model_preset(raw))
 
 
 @NATIVE
 @pytest.mark.parametrize("latitude", [-20., 20.])
 def test_native_and_analysis_winds_basis_masks_neighbours_and_idempotence(tmp_path, latitude):
-    from frameit.processing.derived.wind import normalize_winds
+    from frameit.io.loader import DatasetResources
+    from frameit.processing.derived.wind import normalize_winds, prepare_source_operation
 
     paths = fixtures(tmp_path, latitude=latitude, winds=True)
     raw = document(tmp_path, paths, latitude=latitude)
-    raw["variables"] = {"level": {"names": ["u"], "levels": {"indices": [2]}}}
-    raw["input"]["wind_pairs"] = [{"group": "level", "u": "u", "v": "v",
-                                   "reference_frame": "grid",
-                                   "rotation": {"method": "geolocation"}}]
+    source = raw["sources"]["atmosphere"]
+    source["variables"] = {"3d": ["u"], "levels": {"indices": [2]}}
+    source["field_metadata"] = {
+        "temperature": DECLARATION, "w_if": {**DECLARATION, "units": "m s-1"}}
+    source["wind_pairs"] = [{"u": "u", "v": "v", "basis": "grid",
+                             "rotation": {"method": "geolocation"}}]
+    # FA cubes are already collocated at their declared native sampling points.
+    source["transforms"] = [{"fields": ["u"], "basis": "earth"}]
     for variable, component in (("u", "U"), ("v", "V")):
-        raw["input"]["fa"]["field_metadata"][variable] = {**DECLARATION, "units": "m s-1"}
-        raw["input"]["fa"]["native_cubes"][variable] = {
+        source["field_metadata"][variable] = {**DECLARATION, "units": "m s-1"}
+        source["native_cubes"][variable] = {
             "records": [f"S{k:03d}WIND.{component}.PHYS" for k in (1, 2, 3)],
             "vertical_position": "mass", "sampling": "center", "vector_basis": "grid",
             "component_scaling": "physical_velocity"}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    from frameit.core.preflight import wind_dependencies
-
-    expanded, _ = wind_dependencies(conf, conf.requests_user())
-    native = {}
-    groups, _ = concat_fa2ds_by_vert_coord(paths, expanded, {}, wind_conf=conf,
-                                         native_output_groups=native)
-    assert set(groups["level"].data_vars) == {"u", "v"}  # required companion, selected level only
-    assert groups["level"].level.values.tolist() == [3]
-    analyzed = normalize_winds(groups["level"], conf, "level").compute()
+    with DatasetResources() as resources:
+        _, children, sources = bind_sources(conf, resources=resources)
+        child = children["atmosphere"]
+        binding = child.source_requests["atmosphere"]["binding"]
+        _, internal = concat_fa2ds_by_vert_coord(
+            paths, {}, {}, wind_conf=child, resources=resources,
+            selected_records=binding, source_plan=sources["atmosphere"])
+        native, = internal["internal"].values()
+        assert set(native.data_vars) == {"u", "v"}  # required companion, selected level only
+        assert native.level.values.tolist() == [3]
+        operation, = binding["operations"]
+        analyzed = prepare_source_operation(
+            operation, internal["internal"], sources["atmosphere"], child)[0].compute()
     # Finite-neighbour WGS84 geolocation differs slightly from exact spherical
     # convergence. At 1-km spacing/8-km extent, 5e-4 m/s bounds one-sided direction
     # and ellipsoid effects for this 5-m/s vector; it is not a production error bound.
@@ -301,13 +321,14 @@ def test_native_and_analysis_winds_basis_masks_neighbours_and_idempotence(tmp_pa
         assert np.isnan(values[0, 0, 1, 1])
         assert np.count_nonzero(np.isfinite(values)) == 62
         np.testing.assert_allclose(values[np.isfinite(values)], truth, rtol=0, atol=5.e-4)
-    xr.testing.assert_identical(normalize_winds(analyzed, conf, "level"), analyzed)
-    assert native["level"].u.attrs["wind_reference_frame"] == "grid"
-    assert "frameit_wind_prepared" not in native["level"].u.attrs
-    raw["variables"]["level"]["names"] = ["u", "v"]
-    raw["output"]["cartesian"] = {"horizontal_vectors": "native"}
+    child.wind_pairs = [operation["pair"]]
+    xr.testing.assert_identical(normalize_winds(analyzed, child, "operation"), analyzed)
+    assert native.u.attrs["wind_reference_frame"] == "grid"
+    assert "frameit_wind_prepared" not in native.u.attrs
+    source["variables"]["3d"] = ["u", "v"]
+    source.pop("transforms")
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
-    product = next(p["path"] for p in result.products if p["role"] == "cart")
+    product = next(p["path"] for p in result.products if p["role"] == "model_grid")
     with xr.open_dataset(product, engine="netcdf4") as data:
         assert "wind_speed" not in data
         assert data.u.attrs["wind_reference_frame"] == "grid"
@@ -315,22 +336,25 @@ def test_native_and_analysis_winds_basis_masks_neighbours_and_idempotence(tmp_pa
         assert data.level.values.tolist() == [3]
     if latitude > 0:
         speed = copy.deepcopy(raw)
-        speed["variables"]["level"]["names"] = ["wind_speed"]
+        speed["sources"]["atmosphere"]["variables"].pop("3d")
+        speed["sources"]["atmosphere"]["derived"] = {
+            "wind_speed": {"method": "wind_speed", "inputs": {"u": "u", "v": "v"}}}
         speed["output"]["directory"] = str(tmp_path / "selected-speed")
         result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(speed))
-        product = next(p["path"] for p in result.products if p["role"] == "cart")
+        product = next(p["path"] for p in result.products if p["role"] == "model_grid")
         with xr.open_dataset(product, engine="netcdf4") as data:
             assert not {"u", "v"} & set(data.data_vars)
             values = data.wind_speed.values
             assert np.isfinite(values).any()
             np.testing.assert_allclose(values[np.isfinite(values)], 5., rtol=0, atol=1.e-12)
-    raw["input"]["fa"]["native_cubes"]["u"]["vector_basis"] = "earth"
-    with pytest.raises(ValueError, match="wind basis/scaling must match"):
-        preflight(SimulationConfig.from_mapping_with_model_preset(raw))
-    raw["input"]["fa"]["native_cubes"]["u"]["vector_basis"] = "grid"
-    raw["input"]["fa"]["field_metadata"]["u"]["units"] = "K"
+    source["transforms"] = [{"fields": ["u"], "basis": "earth"}]
+    source["native_cubes"]["u"]["vector_basis"] = "earth"
+    with pytest.raises(ValueError, match="wind basis/scaling must match|Conflicting wind reference"):
+        bind_sources(SimulationConfig.from_mapping_with_model_preset(raw))
+    source["native_cubes"]["u"]["vector_basis"] = "grid"
+    source["field_metadata"]["u"]["units"] = "K"
     with pytest.raises(ValueError, match="velocity|units"):
-        preflight(SimulationConfig.from_mapping_with_model_preset(raw))
+        bind_sources(SimulationConfig.from_mapping_with_model_preset(raw))
 
 
 @NATIVE
@@ -343,16 +367,38 @@ def test_private_epygram_configuration_and_metadata_only_cli(tmp_path, monkeypat
     (home / ".epygram" / "userconfig.py").write_text("raise RuntimeError('private config used')")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("GRIB_DEFINITION_PATH", "/invalid-parent-only")
-    args = _build_parser().parse_args([
-        "inspect", str(tmp_path), "--model", "arome", "--format", "fa", "--pattern", "cube-*.fa",
-        "--fa-profile", "arome_history", "--fa-backend", "epygram", "--fa-python", EPYTHON,
-        "--fa-fields", "S003TEMPERATURE"])
+    request = tmp_path / "inspect.yaml"
+    request.write_text(yaml.safe_dump({
+        "schema_version": 3, "sources": {"atmosphere": {
+            "model": "arome", "format": "fa", "profile": "arome_history",
+            "files": str(tmp_path / "cube-*.fa"),
+            "reader": {"python_executable": EPYTHON},
+            "fa": {"earth_radius_m": 6371229.},
+            "variables": {"2d": ["S003TEMPERATURE"]},
+        }},
+    }))
+    before = {path: path.read_bytes() for path in paths}
+    original, calls = subprocess.run, []
+
+    def observed(argv, **kwargs):
+        if "frameit.io.fa_worker" in argv:
+            calls.append((argv, json.loads(kwargs["input"])))
+        return original(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", observed)
+    args = _build_parser().parse_args(["inspect", str(request), "--json"])
     assert _cmd_inspect(args) == 0
     report = yaml.safe_load(capsys.readouterr().out)
-    metadata = report["inputs"][0]["field_descriptors"]["S003TEMPERATURE"]
+    source = report["data"]["plan"]["sources"]["atmosphere"]
+    metadata = next(field["native_descriptor"] for field in source["fields"].values()
+                    if field["name"] == "S003TEMPERATURE")
     assert metadata["sampling"]["epygram"]["levels"] == [3]
     assert metadata["mask"]["undefined"] == "not_read"
-    assert report["inputs"][0]["backend_versions"]["EPyGrAM"] == "2.1.0"
+    assert source["metadata_origins"]["model"]["evidence"][0]["backend_versions"][
+        "EPyGrAM"] == "2.1.0"
+    assert calls and all(call["operation"] == "inspect" for _, call in calls)
+    assert all(os.path.samefile(argv[0], EPYTHON) for argv, _ in calls)
+    assert {path: path.read_bytes() for path in paths} == before
     assert os.environ["HOME"] == str(home) and paths[0].exists()
 
 
@@ -363,22 +409,26 @@ def test_polar_cube_keeps_native_full_and_interface_axes(tmp_path):
     # oracle. The independent native-export cases above separately retain zeros.
     paths = fixtures(tmp_path, zero_cell=False)
     raw = document(tmp_path, paths)
-    raw["polar"] = {"enabled": True, "radial_step_m": 1000., "azimuth_count": 8}
+    raw["products"] = {"model_grid": True, "polar": {
+        "radius_km": 2., "radial_step_km": 1., "azimuth_count": 8}}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    preview = preflight(conf)
-    assert any(path.endswith(".polar.level_w.nc") for path in preview["planned_products"])
+    checked = collect_preflight(conf)
+    assert not checked.errors, checked.errors
+    preview = checked.facts
+    assert any(path.endswith(".atmosphere.polar.nc") for path in preview["planned_products"])
     result = execute_simulation(conf)
-    products = {p["group"]: p["path"] for p in result.products if p["role"] == "polar"}
-    assert set(products) == {"level", "level_w"}
-    with xr.open_dataset(products["level"], engine="netcdf4") as data:
+    products = {p["role"]: p["path"] for p in result.products if p["role"] == "polar"}
+    assert set(products) == {"polar"}
+    with xr.open_dataset(products["polar"], engine="netcdf4") as data:
         assert data.level.values.tolist() == [3, 1]
         assert data.fa_hybrid_a.attrs["units"] == "Pa"
-        difference = (data.temperature.isel(level=0) - data.temperature.isel(level=1)).values
+        difference = (data["level.temperature"].isel(level=0)
+                      - data["level.temperature"].isel(level=1)).values
         assert np.isfinite(difference).all()
         np.testing.assert_allclose(difference[np.isfinite(difference)], 20., rtol=0, atol=1.e-12)
-    with xr.open_dataset(products["level_w"], engine="netcdf4") as data:
+    with xr.open_dataset(products["polar"], engine="netcdf4") as data:
         assert data.level_w.values.tolist() == [4, 1]
-        assert data.w_if.attrs["fa_vertical_position"] == "interface"
+        assert data["level_w.w_if"].attrs["fa_vertical_position"] == "interface"
         assert data.fa_hybrid_interface.values.tolist() == [1, 2, 3, 4]
 
 

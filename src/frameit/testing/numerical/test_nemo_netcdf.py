@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import xarray as xr
+import yaml
 
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.loader import DatasetResources
@@ -42,15 +43,15 @@ def nemo_scene(*, depth="deptht", field="votemper", shift_x=0., shift_y=0.):
 
 
 def nemo_document(tmp_path, paths, *, variables=None):
-    return {"schema_version": "2.1", "model": "nemo", "run": {"name": "native-ocean"},
-            "input": {"format": "netcdf", "files": list(map(str, paths)),
-                      "netcdf": {"file_layout": "variables"}},
-            "variables": variables or {"deptht": {"names": ["votemper"], "levels": {"indices": [0, 1]}}},
-            "tracking": {"method": "fixed_box", "fixed_box": {"center": {"latitude": -20., "longitude": 60.}}},
-            "domain": {"width_km": {"x": 2., "y": 2.}},
-            "execution": {"dask_workers": 1, "native_threads": 1},
-            "output": {"directory": str(tmp_path / "out"), "overwrite": False,
-                       "synchronous_export": True, "max_workers": 1}}
+    return {"schema_version": 3, "run": {"name": "native-ocean"},
+            "sources": {"ocean": {"model": "nemo", "format": "netcdf",
+                "files": list(map(str, paths)),
+                "variables": variables or {"3d": ["votemper"], "levels": {"indices": [0, 1]}}}},
+            "region": {"center": {"latitude": -20., "longitude": 60.},
+                       "width_km": {"x": 2., "y": 2.}},
+            "resources": {"compute_workers": 1, "native_threads": 1,
+                          "synchronous_export": True, "export_workers": 1},
+            "output": {"directory": str(tmp_path / "out"), "overwrite": False}}
 
 
 def test_nemo_scalar_native_roundtrip(tmp_path, monkeypatch):
@@ -63,8 +64,8 @@ def test_nemo_scalar_native_roundtrip(tmp_path, monkeypatch):
     source.vodensity.attrs = {"units": "kg/m3", "long_name": "sigma-theta density anomaly"}
     path = tmp_path / "ocean.nc"
     source.to_netcdf(path)
-    raw = nemo_document(tmp_path, [path], variables={"deptht": {"names": ["votemper", "vodensity"],
-                                                             "levels": {"indices": [1, 0]}}})
+    raw = nemo_document(tmp_path, [path], variables={"3d": ["votemper", "vodensity"],
+                                                   "levels": {"indices": [1, 0]}})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     original_import = builtins.__import__
 
@@ -76,7 +77,7 @@ def test_nemo_scalar_native_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr(builtins, "__import__", core_only)
     result = execute_simulation(conf)
     assert result.ok, result
-    product = next(p["path"] for p in result.products if p["role"] == "cart")
+    product = next(p["path"] for p in result.products if p["role"] == "model_grid")
     # Ordinary reader in a fresh process: no FrameIt import or fixture helpers.
     subprocess.run([sys.executable, "-c", """
 import netCDF4 as nc
@@ -117,17 +118,19 @@ def test_nemo_rejects_conflicting_native_definitions(problem):
 
 @pytest.mark.parametrize("selection", ["surface", "close_value"])
 def test_nemo_native_requests_fail_in_preflight_and_loader(tmp_path, selection):
-    from frameit.core.preflight import preflight
+    from frameit.core.coupled import bind_sources
 
     path = tmp_path / "ocean.nc"
     nemo_scene().to_netcdf(path)
-    variables = {"fields_2d": {"names": ["votemper"]}} if selection == "surface" else {
-        "deptht": {"names": ["votemper"], "levels": {"values": [1.001]}}}
+    variables = {"2d": ["votemper"]} if selection == "surface" else {
+        "3d": ["votemper"], "levels": {"values": [1.001]}}
+    native_requests = {"surface": {"variables": ["votemper"]}} if selection == "surface" else {
+        "deptht": {"variables": ["votemper"], "level_selection": "values", "level_values": [1.001]}}
     conf = SimulationConfig.from_mapping_with_model_preset(nemo_document(tmp_path, [path], variables=variables))
+    with pytest.raises(ValueError, match="surface|deptht|level|unavailable|category"):
+        bind_sources(conf)
     with pytest.raises(ValueError, match="surface|deptht|level|unavailable"):
-        preflight(conf)
-    with pytest.raises(ValueError, match="surface|deptht|level|unavailable"):
-        concat_nc2ds_by_vert_coord([path], conf.requested_variables_user, {},
+        concat_nc2ds_by_vert_coord([path], native_requests, {},
                                   concat_dimension="time_counter", wind_conf=conf, float_tol=.5)
 
 
@@ -139,9 +142,9 @@ def test_nemo_missingness_is_per_field_and_zero_is_valid(tmp_path):
     ds["unrequested"] = ds.votemper * 100
     ds.to_netcdf(path, encoding={"votemper": {"_FillValue": 1e20}})
     conf = SimulationConfig.from_mapping_with_model_preset(nemo_document(tmp_path, [path], variables={
-        "deptht": {"names": ["votemper", "vosaline"], "levels": "stored"}}))
+        "3d": ["votemper", "vosaline"]}))
     with DatasetResources() as resources:
-        groups, _ = concat_nc2ds_by_vert_coord([path], conf.requested_variables_user, {},
+        groups, _ = concat_nc2ds_by_vert_coord([path], {"deptht": {"variables": ["votemper", "vosaline"]}}, {},
             concat_dimension="time_counter", wind_conf=conf, resources=resources)
         result = groups["deptht"]
         assert "unrequested" not in result
@@ -164,27 +167,28 @@ def test_nemo_init_inspect_replay_and_atmospheric_tracker_rejection(tmp_path):
     template = tmp_path / "nemo.yaml"
     write_template("nemo", template)
     assert SimulationConfig.from_yaml_with_model_preset(template).tracking_method == "fixed_box"
-    result = subprocess.run([sys.executable, "-m", "frameit", "inspect", str(tmp_path),
-                             "--model", "nemo", "--format", "netcdf", "--pattern", "ocean.nc"],
-                            capture_output=True, text=True)
+    request = tmp_path / "request.yaml"
+    request.write_text(yaml.safe_dump(nemo_document(tmp_path, [path])))
+    result = subprocess.run([sys.executable, "-m", "frameit", "inspect", str(request)],
+                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     raw = nemo_document(tmp_path, [path])
-    raw["tracking"] = {"method": "wind_pressure"}
-    with pytest.raises(ValueError, match="NEMO|nemo|fixed_box"):
-        SimulationConfig.from_mapping_with_model_preset(raw)
+    raw["region"] = {"tracker": {"method": "pressure_wind"},
+                     "width_km": {"x": 2., "y": 2.}}
+    with pytest.raises(ValueError, match="atmospheric source"):
+        preflight(SimulationConfig.from_mapping_with_model_preset(raw))
 
 
 def test_nemo_scalar_shards_reject_equal_shape_different_geography(tmp_path):
-    from frameit.core.preflight import preflight
+    from frameit.core.coupled import bind_sources
 
     paths = [tmp_path / "temperature.nc", tmp_path / "salinity.nc"]
     nemo_scene().to_netcdf(paths[0])
     nemo_scene(field="vosaline", shift_x=.005).to_netcdf(paths[1])
-    raw = nemo_document(tmp_path, paths, variables={"deptht": {"names": ["votemper", "vosaline"],
-                                                             "levels": "stored"}})
+    raw = nemo_document(tmp_path, paths, variables={"3d": ["votemper", "vosaline"]})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match="coordinate|geography"):
-        preflight(conf)
+        bind_sources(conf)
 
 
 def test_nemo_detected_non_netcdf_fails_before_optional_reader(tmp_path, monkeypatch):
@@ -193,14 +197,14 @@ def test_nemo_detected_non_netcdf_fails_before_optional_reader(tmp_path, monkeyp
     path = tmp_path / "wrong-format.grib"
     path.write_bytes(b"GRIB" + bytes(16))
     raw = nemo_document(tmp_path, [path])
-    raw["input"]["format"] = None
+    raw["sources"]["ocean"].pop("format")
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
 
     def forbidden(*args):
         raise AssertionError("NEMO must reject GRIB before entering its optional decoder")
 
     monkeypatch.setattr(module, "_grib_metadata", forbidden)
-    with pytest.raises(ValueError, match="NEMO.*NetCDF"):
+    with pytest.raises(ValueError, match="NEMO.*NetCDF|nemo.*NetCDF|format"):
         module.preflight(conf)
 
 
@@ -223,17 +227,17 @@ def test_nemo_equal_dimension_names_keep_independent_geography(tmp_path):
         source = nemo_scene() if depth == "deptht" else component_scene(depth, field, shift_x=dx, shift_y=dy)
         path = tmp_path / f"{depth}.nc"
         source.to_netcdf(path)
-        raw = nemo_document(tmp_path, [path], variables={depth: {"names": [field], "levels": {"indices": [1, 0]}}})
-        raw["output"].update(directory=str(tmp_path / depth), cartesian={"horizontal_vectors": "native"})
+        raw = nemo_document(tmp_path, [path], variables={"3d": [field], "levels": {"indices": [1, 0]}})
+        raw["output"]["directory"] = str(tmp_path / depth)
         result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
         assert result.ok, result
-        product = next(p["path"] for p in result.products if p["role"] == "cart")
+        product = next(p["path"] for p in result.products if p["role"] == "model_grid")
         with xr.open_dataset(product) as out:
-            np.testing.assert_array_equal(out.x[0], np.arange(x0, x0+3))
-            np.testing.assert_array_equal(out.y[0], np.arange(y0, y0+3))
+            np.testing.assert_array_equal(out.x_source_native_index[0], np.arange(x0, x0+3))
+            np.testing.assert_array_equal(out.y_source_native_index[0], np.arange(y0, y0+3))
             np.testing.assert_array_equal(out[field], source[field].values[:, [1, 0], y0:y0+3, x0:x0+3])
-            np.testing.assert_array_equal(out.nav_lon[0], source.nav_lon[y0:y0+3, x0:x0+3])
-            np.testing.assert_array_equal(out.nav_lat[0], source.nav_lat[y0:y0+3, x0:x0+3])
+            np.testing.assert_array_equal(out.longitude_t[0], source.nav_lon[y0:y0+3, x0:x0+3])
+            np.testing.assert_array_equal(out.latitude_t[0], source.nav_lat[y0:y0+3, x0:x0+3])
             np.testing.assert_array_equal(out[f"{depth}_bounds"], [[2., 4.], [0., 2.]])
             np.testing.assert_array_equal(out[depth], [2., 0.] if depth == "depthw" else [3., 1.])
         subprocess.run([sys.executable, "-c", """
@@ -247,8 +251,8 @@ with nc.Dataset(path) as out, nc.Dataset(source_path) as source:
     expected = source[field][:, [1,0], y0:y0+3, x0:x0+3]
     np.testing.assert_array_equal(np.ma.getmaskarray(actual), np.ma.getmaskarray(expected))
     np.testing.assert_array_equal(actual.compressed(), expected.compressed())
-    np.testing.assert_array_equal(out['nav_lat'][0], source['nav_lat'][y0:y0+3, x0:x0+3])
-    np.testing.assert_array_equal(out['nav_lon'][0], source['nav_lon'][y0:y0+3, x0:x0+3])
+    np.testing.assert_array_equal(out['latitude_t'][0], source['nav_lat'][y0:y0+3, x0:x0+3])
+    np.testing.assert_array_equal(out['longitude_t'][0], source['nav_lon'][y0:y0+3, x0:x0+3])
     np.testing.assert_array_equal(out[depth][:], source[depth][[1,0]])
     assert np.any(actual == 0.)
     assert out[field].units == source[field].units
@@ -256,13 +260,12 @@ with nc.Dataset(path) as out, nc.Dataset(source_path) as source:
 """, str(product), str(path), field, depth, str(x0), str(y0)], check=True)
     # A T/U source cannot be assembled as complementary fields on one grid.
     raw = nemo_document(
-        tmp_path, [tmp_path / "deptht.nc", tmp_path / "depthu.nc"], variables={
-            "deptht": {"names": ["votemper"], "levels": "stored"},
-            "depthu": {"names": ["vozocrtx"], "levels": "stored"}})
-    raw["output"]["cartesian"] = {"horizontal_vectors": "native"}
+        tmp_path, [tmp_path / "deptht.nc", tmp_path / "depthu.nc"],
+        variables={"3d": ["votemper", "vozocrtx"]})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match="coordinate|geography"):
-        concat_nc2ds_by_vert_coord(conf.input_files, conf.requested_variables_user, {},
+        concat_nc2ds_by_vert_coord(raw["sources"]["ocean"]["files"], {
+            "deptht": {"variables": ["votemper"]}, "depthu": {"variables": ["vozocrtx"]}}, {},
                                   concat_dimension="time_counter", wind_conf=conf, file_layout="variables")
 
 
@@ -286,55 +289,59 @@ def test_nemo_native_components_never_call_wind_preparation(tmp_path, monkeypatc
     path = tmp_path / "components.nc"
     ds.to_netcdf(path)
     raw = nemo_document(tmp_path, [path], variables={
-        "depthu": {"names": ["vozocrtx"], "levels": "stored"}, "fields_2d": {"names": ["sozotaux"]}})
-    raw["output"]["cartesian"] = {"horizontal_vectors": "native"}
+        "3d": ["vozocrtx"], "2d": ["sozotaux"]})
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     for product in result.products:
-        if product["role"] != "cart":
+        if product["role"] != "model_grid":
             continue
         with xr.open_dataset(product["path"]) as out:
             assert "horizontal_wind_representation" not in out.attrs
             assert "vertical_velocity_representation" not in out.attrs
             assert not {"wind_speed", "vrad", "vtan"} & set(out.variables)
-            name = "vozocrtx" if product["group"] == "depthu" else "sozotaux"
-            assert out[name].attrs["units"] == ds[name].attrs["units"]
-            assert out[name].attrs["standard_name"] == ds[name].attrs["standard_name"]
+            for name in ("vozocrtx", "sozotaux"):
+                assert out[name].attrs["units"] == ds[name].attrs["units"]
+                assert out[name].attrs["standard_name"] == ds[name].attrs["standard_name"]
 
 
 @pytest.mark.parametrize("analysis", ["mass_earth", "polar"])
 def test_unqualified_nemo_vector_analysis_fails_actionably(tmp_path, analysis):
-    from frameit.core.preflight import preflight
+    from frameit.core.coupled import bind_sources
 
     path = tmp_path / "current.nc"
     component_scene("depthu", "vozocrtx").to_netcdf(path)
-    raw = nemo_document(tmp_path, [path], variables={"depthu": {"names": ["vozocrtx"], "levels": "stored"}})
-    raw["output"]["cartesian"] = {"horizontal_vectors": "native" if analysis == "polar" else "earth_centered"}
+    raw = nemo_document(tmp_path, [path], variables={"3d": ["vozocrtx"]})
     if analysis == "polar":
-        raw["polar"] = {"enabled": True}
+        raw["products"] = {"model_grid": True, "polar": {"radius_km": 1.}}
+    else:
+        raw["sources"]["ocean"]["transforms"] = [
+            {"fields": ["vozocrtx"], "sampling": "mass", "basis": "earth"}]
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    with pytest.raises(ValueError, match="NEMO.*native|NEMO.*analysis|NEMO.*polar"):
-        preflight(conf)
+    with pytest.raises(ValueError, match="NEMO.*native|NEMO.*analysis|NEMO.*polar|wind_pairs|unsupported"):
+        bind_sources(conf)
+    conf.cartesian_horizontal_winds = "native" if analysis == "polar" else "mass_earth"
+    conf.requested_variables_user = {"depthu": {"variables": ["vozocrtx"]}}
+    conf.polar_variables = conf.requested_variables_user if analysis == "polar" else {}
     with pytest.raises(ValueError, match="NEMO.*native|NEMO.*analysis|NEMO.*polar"):
         concat_nc2ds_by_vert_coord([path], conf.requested_variables_user, {},
                                   concat_dimension="time_counter", wind_conf=conf)
 
 
 def test_nemo_vertical_mass_analysis_is_not_a_native_copy(tmp_path):
-    from frameit.core.preflight import preflight
+    from frameit.core.coupled import bind_sources
 
     path = tmp_path / "vertical.nc"
     component_scene("depthw", "vovecrtz").to_netcdf(path)
-    raw = nemo_document(tmp_path, [path], variables={"depthw": {"names": ["vovecrtz"], "levels": "stored"}})
-    raw["output"]["cartesian"] = {"horizontal_vectors": "native", "vertical_velocity": "mass"}
-    with pytest.raises(ValueError, match="NEMO.*depthw|NEMO.*native"):
-        preflight(SimulationConfig.from_mapping_with_model_preset(raw))
+    raw = nemo_document(tmp_path, [path], variables={"3d": ["vovecrtz"]})
+    raw["sources"]["ocean"]["transforms"] = [{"fields": ["vovecrtz"], "sampling": "mass"}]
+    with pytest.raises(ValueError, match="NEMO.*depthw|NEMO.*native|vovecrtz.*mass sampling is unsupported"):
+        bind_sources(SimulationConfig.from_mapping_with_model_preset(raw))
 
 
 @pytest.mark.parametrize("attribute", ["units", "standard_name", "long_name", "cell_methods",
                                        "depth_units", "positive"])
 def test_nemo_time_series_rejects_changes_in_scientific_meaning(tmp_path, attribute):
-    from frameit.core.preflight import preflight
+    from frameit.core.coupled import bind_sources
 
     first = nemo_scene().isel(time_counter=[0])
     second = nemo_scene().isel(time_counter=[1])
@@ -351,12 +358,12 @@ def test_nemo_time_series_rejects_changes_in_scientific_meaning(tmp_path, attrib
     first.to_netcdf(paths[0])
     second.to_netcdf(paths[1])
     raw = nemo_document(tmp_path, paths)
-    raw["input"]["netcdf"]["file_layout"] = "time_series"
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    with pytest.raises(ValueError, match="NEMO.*metadata|NEMO.*units|NEMO.*meaning|distinct fields share requested name"):
+        bind_sources(conf)
     with pytest.raises(ValueError, match="NEMO.*metadata|NEMO.*units|NEMO.*meaning"):
-        preflight(conf)
-    with pytest.raises(ValueError, match="NEMO.*metadata|NEMO.*units|NEMO.*meaning"):
-        concat_nc2ds_by_vert_coord(paths, conf.requested_variables_user, {},
+        concat_nc2ds_by_vert_coord(paths, {
+            "deptht": {"variables": ["votemper"], "level_indices": [0, 1]}}, {},
                                   concat_dimension="time_counter", wind_conf=conf)
 
 
@@ -370,11 +377,11 @@ def test_nemo_time_series_validates_original_data_variable_clock(tmp_path, confl
     path = tmp_path / "clock.nc"
     ds.to_netcdf(path)
     raw = nemo_document(tmp_path, [path])
-    raw["input"]["netcdf"]["file_layout"] = "time_series"
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
 
     def load():
-        return concat_nc2ds_by_vert_coord([path], conf.requested_variables_user, {},
+        return concat_nc2ds_by_vert_coord([path], {
+            "deptht": {"variables": ["votemper"], "level_indices": [0, 1]}}, {},
                                           concat_dimension="time_counter", wind_conf=conf)
 
     if conflict:
