@@ -4076,6 +4076,59 @@ merge, worktree/evidence deletion, environment repair, standalone image/plot run
 or post-freeze Task16 full. Whole Task16/legacy conversion and all previously
 named qualification/human gates remain open; resume producer/caller work next.
 
+### Explicit polar wind components — bounded design in progress
+
+The CROCO increment was committed locally as
+`9931f5859dbc9db3b57443c167f8b71943728c7a`; its final eight-path tree and all25
+earlier dirty files/copies were post-commit verified. No push/merge occurred.
+Task16 resumption found another expression boundary: its retained catalogue
+expects `vrad`/`vtan`, but current v3 derived choices admit only `wind_speed`.
+An assertion-based schema/producer probe confirms the gap without dataset reads
+or output products; its final lint is clean. No producer fields were dropped.
+
+The maintainer answered yes to drafting a bounded design reusing the existing
+radial/tangential calculations. This is design authorization, not implementation
+or scientific sign-off. `task-16-polar-components-design.md` proposes two scalar
+source-derived methods with explicit aliases, polar-only strict shared U/V
+stencils, unchanged outward/clockwise signs and Earth-relative motion convention,
+undefined origin and existing quality metadata. Initial FA/ocean and
+renormalized-vector admission remain out of scope; current speed is unchanged.
+The strict shared-mask boundary matters because existing v3 speed samples input
+components separately, unlike the retained numerical paired-vector path.
+
+Only the new internal design and this state are claimed; all25pre-existing dirty
+paths remain protected. A fresh builder/design check and static/preservation
+verification precede the local design-only commit. Detailed design approval and
+an implementation plan remain required before code. Whole Task16/full, broader
+qualification and human acceptance gates stay open; its one full remains unused.
+Docs: no user-facing impact because no published page, runtime/schema, defaults,
+outputs or installation behavior changes in this internal design increment.
+
+The maintainer then approved the written polar-component design in this session.
+That selects the proposed scalar methods, strict shared-mask/polar-only/
+non-FA atmospheric admission and retained scientific conventions; it does not
+certify validity or approve code. The implementation plan is now
+`task-16-polar-components-plan.md`, preserving inline execution and one fresh
+bounded final review before the implementation commit. Two TDD milestones cover
+metadata/active admission, then real paired execution/quality/reader invariance
+and canonical docs. Plan review remains required before code. A fresh
+design/plan builder check precedes their local documentation-only handoff.
+
+The fresh read-only builder/design-plan check of tree
+`4ee076b1251109dfa19319c3b0a2d6956065d5cb` returned **nothing important left**,
+no blocking findings, ready for human plan review. It verified the referenced
+current interfaces and exactly three frozen documentation paths. No new
+scientific choice arose; no implementation or scientific approval was inferred.
+The lead freshly verified frozen hashes, all25prior paths, unchanged HEAD/empty
+index and working/frozen diff-check. Publication boundary against the unchanged
+existing CROCO02 artifact passed, not a new build/visual acceptance.
+
+Design and plan content stay unchanged after review; only this closure record
+is appended for the focused local documentation commit. The user must still
+review the implementation plan before inline execution. No runtime, schema asset,
+new regression module, numerical run, installation/environment change or Task16
+post-freeze full occurred. Docs: no user-facing impact from these internal records.
+
 ## Task 01 evidence
 
 Root cause: CLI removed all paths below `~/.local`, including the selected
