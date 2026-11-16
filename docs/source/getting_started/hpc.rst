@@ -35,8 +35,7 @@ For a conda installation its content resembles:
    conda activate frameit_env
 
 Export its absolute path as ``FRAMEIT_ENV_SCRIPT`` before submission; launchers
-source it in their noninteractive shell. Keep the environment and checkout
-accessible on compute nodes.
+source it in their noninteractive shell.
 
 1. Run the compact batch qualification
 ------------------------------------------------------------
@@ -135,12 +134,20 @@ Independently reopen every listed product, supplying the known time count:
    python "$REPO/example/slurm/check_run.py" /path/to/attempt/run \
      --expected-times N --report "$RESULTS/pilot-check.json"
 
-The checker imports xarray/NetCDF, not FrameIt. It requires a completed manifest,
-full tracking, no lock, matching file sizes, readable values, matching time
-coordinates, and valid track-file links. It reports dimensions, units, versions
-and timing. It fully loads products: use compact qualification cases. NaNs are
+The checker imports xarray/NetCDF, not FrameIt. It checks compact NetCDF cases
+against each source's recorded clock and product dimensions/units.
+Zarr is not supported by this checker. It requires a completed manifest, full tracking, no lock,
+matching file sizes and readable values. Product identity uses role and source;
+centre times follow recorded associations. When a trajectory is exported,
+products carrying centres must link to its corresponding samples. It reports
+dimensions, units, versions and timing. It fully loads products: use compact
+qualification cases. NaNs are
 retained, not treated as an automatic failure; evaluate the declared coverage
 and missing-data policy separately.
+An exported trajectory is optional. ``--expected-times`` checks its count when
+present; otherwise it checks each field product's count. Omit this single count
+for independently timed sources with different counts; recorded source clocks
+are still checked.
 
 For a concurrency regression reference, run the same case in the same
 allocation/environment with ``--synchronous-export`` and a fresh
@@ -179,8 +186,9 @@ Running checkpoints retain observed complete publications separately from planne
 products. ``updated_at`` records a checkpoint, not proof that the process is alive.
 
 Without strict tracking, an accepted shortened trajectory can exit zero but is
-marked ``incomplete``. ``execution.require_complete_tracking: true`` or the
-matching CLI flag fails before export. This does not redefine prescribed-track
+marked ``incomplete``. Keep ``region.tracker.on_incomplete: error`` for tracked
+batch runs, or require completion through ``--require-complete-tracking``.
+The strict policy fails before export. This does not redefine prescribed-track
 intersections, NaN padding, or tracker fallbacks; still check expected times
 and scientifically permitted coverage.
 
@@ -202,6 +210,43 @@ Use fresh attempts for retries. Never automatically steal ``.frameit-run.lock``;
 confirm its owner has stopped before manual removal. ``overwrite: true`` keeps
 its existing sequential-rerun meaning and may leave older unlisted products;
 use the current manifest inventory.
+
+Repeat complete cases
+---------------------
+
+Keep one complete YAML per scientific case, including its tracking timeline.
+For a local serial loop, with an existing output parent:
+
+.. code-block:: bash
+
+   mkdir -p "$RESULTS/attempts"
+   bash "$REPO/example/repeat_cases.sh" "$RESULTS/attempts" \
+     /absolute/path/case-a.yaml /absolute/path/case-b.yaml
+
+Each attempt has a unique directory, private ``work/``, ``run/`` records when
+execution reaches that stage, and an ``exit-code`` receipt. The loop continues
+after an ordinary failed case and returns nonzero if any case failed. Retrying a
+YAML creates another attempt and preserves earlier outputs. Interrupted runs
+stop the loop rather than starting the next case.
+
+For the equivalent Slurm array, put one absolute YAML path per line in
+``cases.txt``. Paths may contain spaces; filenames containing newlines are not
+supported. This two-case example caps concurrent tasks at two:
+
+.. code-block:: bash
+
+   printf '%s\n' /absolute/path/case-a.yaml /absolute/path/case-b.yaml > cases.txt
+   sbatch --wait --array=0-1%2 --account=ACCOUNT --partition=PARTITION \
+     --output="$RESULTS/array-%A_%a.out" \
+     "$REPO/example/slurm/array.sbatch" "$PWD/cases.txt" "$RESULTS/attempts" \
+     "$REPO/example/slurm/frameit.sbatch"
+
+The explicit final argument identifies the launcher even when Slurm runs a
+spool copy of the array script. The array delegates each complete case to it and inherits its
+allocation-aware resource handling, fresh-attempt naming and no-overwrite
+policy. Collect every array element's exit status, not only the submission
+command's status. Local launcher tests exercise the shell/process boundary;
+actual scheduling, accounting and filesystem behavior require a site pilot.
 
 Keep the run records
 ------------------------------------------------------------
