@@ -395,8 +395,13 @@ def execute_source_operations(user, internal, source, binding, conf):
             dataset = dataset.assign_coords({
                 n: xr.Variable(c["dimensions"], c["values"], c["attributes"])
                 for n, c in vertical["coordinates"].items()})
-            dataset = dataset.assign_coords({f"{vertical['dimension']}_source_native_index": (
-                vertical["dimension"], vertical["source_native_indices"], {"units": "1"})})
+            dim = vertical["dimension"]
+            index = f"{dim}_source_native_index"
+            attrs = dict(dataset[index].attrs) if index in dataset else {"units": "1"}
+            if index not in dataset and source["model"] in {"nemo", "croco"}:
+                attrs["long_name"] = f"zero-based native source {dim} index"
+            dataset = dataset.assign_coords({
+                index: (dim, vertical["source_native_indices"], attrs)})
         dataset = dataset.drop_vars(
             [n for n in dataset.coords if n in {"BETA", "RPK", "LON0", "CARTESIAN"}],
             errors="ignore")

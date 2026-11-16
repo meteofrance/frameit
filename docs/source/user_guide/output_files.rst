@@ -441,6 +441,10 @@ NEMO depth axes retain their own ``deptht/depthu/depthv/depthw`` identity, and
 CROCO sigma retains ``s_rho/s_w``. Labels, bounds, formula dependencies and
 singleton selections remain. Hybrid/sigma/model labels do not become fixed
 pressure, height or depth.
+Vertical native-index auxiliaries retain original zero-based source positions,
+not renumbered selection positions. Transforms preserve an existing index
+coordinate's metadata; generated NEMO/CROCO indices use the same description as
+native extraction.
 NetCDF may omit a bounds variable's redundant units attribute; those bounds use
 the units of the coordinate declaring them.
 

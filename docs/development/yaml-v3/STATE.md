@@ -3820,6 +3820,79 @@ command passed251tests/1136warnings in117.10s, including all47grouped cases.
 Fresh Ruff remains36baseline/35current/zeroNew. No new scientific choice or core
 authorization. Scoped review closure remains required.
 
+### Maintainer decision — two metadata repairs approved
+
+C3 was committed locally as9847bd618c3cd937ca447ec9d4c47afa73b88b5b, exactly
+approved tree963560dd0e3d1d595b257dc782001de570520869. Its original independent
+review plus fix1closure are complete:4addressed/0open/0parked/0new. Final
+precommit48passed; Sphinx06/publication06/13units passed and affected HTML was
+byte-exact to the retained live-reviewed05pages. No push/merge.
+
+After requesting a plain explanation and explicitly pausing, the maintainer
+answered “Yes” to fixing (1) lost NetCDF instantaneous evidence and (2) mismatched
+generated native-index metadata, then presenting (3) a CROCO support-layout
+proposal before implementing it. This supersedes the earlier no-authorization
+ruling for those two metadata boundaries only. It does not approve cropping,
+support naming, changed samples/methods, relaxed time guards or non-strict merges.
+The previously chosen inline/review-before-commit workflow remains; no repeated
+routine approval round is needed for these explicitly described repairs.
+
+Current HEAD9847bd6/index empty; all25pre-existing dirty paths and binary diff
+saved in `task-16-metadata-approved-baseline/`. Python3.13.18/worktree import
+freshly confirmed. Exact bounded plan: `task-16-metadata-fixes-plan.md`.
+The third issue remains proposal-only. Task16's post-freeze full is still unused.
+
+### Approved metadata candidate — verification before review
+
+The time repair is one observed metadata key in NetCDF inventory. The index
+repair preserves actual index attributes and matches the existing NEMO/CROCO
+generated description. No time guard, source selection, current preparation,
+mask, strict merge or cropping implementation changed. New regressions were
+watched fail first; final module18passed/69warnings. Four round trips use
+ordinary NetCDF/Zarr readers; provided-index attributes also have two real
+executor-boundary checks, not a claimed source-file round trip.
+
+Initial wider index cases exposed additional support-role conflicts after the
+metadata error: explicit `zeta` co-export and input-provided index ownership.
+These remain proposal-only and retained in raw evidence. The isolated new cases
+do not replace or weaken the original portable tests.
+
+Current connected command:429passed/2failed/2026warnings in226.12s. Only the
+original portable CROCO `[native]` (crop `y_rho`) and `[mass_earth]` (now `zeta`
+coordinate/data-role mismatch) fail. Their numerical/mask/W/sigma assertions
+remain unchanged and unreached. The original portable NEMO example now passes.
+This is not Task16 completion or its unused post-freeze full diagnostic.
+Exact commands and limits: `task-16-metadata-fixes-checks.md`.
+
+Strict Sphinx01/publication01/13publication units pass; two affected pages checked
+live at1020/320CSS widths. Ruff3Python paths:6baseline/6current/zeroNew.
+Independent review and local commit are pending. No installation, native repair,
+standalone image/plot/screenshot, production run, push or merge.
+
+### Metadata review closed — bounded local commit handoff
+
+Fresh independent review of treec70c011e656ab8e95b6033397b9f0ad7e6ad785b:
+SPEC PASS / QUALITY APPROVE, zero findings. The reviewer independently verified
+the eight-path patch/hashes, empty index and all25preserved paths;43targeted tests
+passed/296warnings in27.26s, plus36actual-executor controls and a NEMO ordinary-reader
+round trip. It did not repeat full/connected, docs, lint or GUI checks. Its retained
+report is `task-16-metadata-review-01.md`.
+
+The lead freshly checked the reviewed bytes/base/index and preservation before
+recording closure. Subsequent edits only update review status in this internal
+STATE, plan and checks record; production, regressions and canonical prose stay
+exactly reviewed. The resulting local commit will be reported in the handover.
+No push/merge or CROCO layout implementation is authorized. The two original
+CROCO failures and supplied-index loading role conflict remain real unpassed gates.
+Prepared alternatives preserve all field samples and strict merges in one
+source/product dataset: retain distinct owned support views (recommended), or
+trim support to minimal native windows with additional boundary/index verification.
+The maintainer must choose before a layout design/implementation is undertaken.
+Final precommit module18passed/69warnings in13.85s; strict Sphinx/publication02/
+13units passed. The two rebuilt HTML pages are byte-exact to retained live01.
+All five production/test/canonical paths remain exactly reviewed, all25previous
+paths preserved, and diff check passes. Commit scope remains the original8paths.
+
 ## Task 01 evidence
 
 Root cause: CLI removed all paths below `~/.local`, including the selected

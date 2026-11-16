@@ -33,6 +33,10 @@ their clocks need not overlap. A crop or another operation needing centres uses
   apply to CROCO. Missing partners remove the whole pairing with a recorded
   warning; malformed required metadata fails.
 
+For NetCDF fields, existing ``cell_methods="time: point"`` or
+``GRIB_stepType="instant"`` provides evidence of instantaneous sampling.
+Contradictory averaging metadata still fails; missing evidence is not inferred.
+
 Regional crops keep the native sample label in ``time`` and the associated
 centre time in ``center_time(time)``. Interval bounds keep their native meaning.
 An interval-end centre is not the native mean's

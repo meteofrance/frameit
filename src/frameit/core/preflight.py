@@ -382,7 +382,8 @@ def _netcdf_inventory(path, source, resources):
                 **({"observed_attributes": deepcopy(var.attrs)} if interpreted else {}),
                 "field_id": field_id, "name": name, "grid_id": grid_id, "level": None,
                 "temporal_metadata": {k: var.attrs[k] for k in (
-                    "cell_methods", "online_operation", "interval_operation", "interval_write")
+                    "cell_methods", "GRIB_stepType", "online_operation",
+                    "interval_operation", "interval_write")
                     if k in var.attrs},
                 "locator": {"format": "netcdf", "path": str(path), "variable": name,
                             "indexers": indexers,
