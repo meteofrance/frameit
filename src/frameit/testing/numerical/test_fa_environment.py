@@ -38,13 +38,13 @@ conf = SimulationConfig.from_mapping_with_model_preset(raw)
 assert SimulationConfig.from_mapping_with_model_preset(
     source_document(conf.yaml_config, 'surface')).fa_options['python_executable'] is None
 result = execute_simulation(conf)
-assert result.ok and len(result.products) == 7
+assert result.ok and len(result.products) == 5
 assert interpreters and set(interpreters) == {sys.executable}, interpreters
 status = yaml.safe_load((conf.output_dir / 'run-status.yaml').read_text())
 provenance = yaml.safe_load((conf.output_dir / 'run-provenance.yaml').read_text())
 assert status['state'] == 'completed'
 assert (provenance['common_polar_target']['verification'] ==
-        'exact_time_radius_azimuth_longitude_latitude')
+        'exact_coordinates_at_associated_centres')
 decoder = provenance['sources']['surface']['fa_decoder']
 assert decoder['backend_versions']['FA_backend'] == 'epygram'
 assert decoder['backend_versions']['FA_python'] == sys.version.split()[0]

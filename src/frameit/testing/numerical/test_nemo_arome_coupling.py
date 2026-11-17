@@ -151,8 +151,9 @@ def coupled_document(directory, *, moving=False, exact=True, scalar_polar=False)
            "output": {"directory": str(directory / "out"), "overwrite": False}}
     if moving:
         track = directory / "track.nc"
-        xr.Dataset({"latitude": ("time", [-20., -19.99]),
-                    "longitude": ("time", [60., 60. + .01/np.cos(np.deg2rad(20.))])},
+        xr.Dataset({"latitude": ("time", [-20., -19.99], {"units": "degrees_north"}),
+                    "longitude": ("time", [60., 60. + .01/np.cos(np.deg2rad(20.))],
+                                  {"units": "degrees_east"})},
                    coords={"time": times}).to_netcdf(track)
         raw["region"].pop("center")
         raw["region"]["track"] = {"file": str(track)}
@@ -232,7 +233,7 @@ def test_real_layout_half_hour_means_have_no_exact_overlap(tmp_path):
 
 
 @pytest.mark.parametrize("strict", [False, True])
-def test_nemo_arome_common_exclusions_and_strict_mismatch(tmp_path, strict):
+def test_nemo_arome_missing_records_and_retired_policy_fail_before_alignment(tmp_path, strict):
     raw = coupled_document(tmp_path)
     path = tmp_path / "nemo_t.nc"
     with xr.open_dataset(path) as source:
@@ -243,14 +244,13 @@ def test_nemo_arome_common_exclusions_and_strict_mismatch(tmp_path, strict):
     if strict:
         # V3 has no equal-timeline policy; do not silently substitute its different exact policy.
         raw["region"]["sources_coupling_time_association"] = "strict"
-        with pytest.raises(ValueError, match="Strict source time alignment"):
+        with pytest.raises(ValueError, match="region.sources_coupling_time_association"):
             prepare_sources(SimulationConfig.from_mapping_with_model_preset(raw))
     else:
         conf = SimulationConfig.from_mapping_with_model_preset(raw)
-        prepare_sources(conf)
-        alignment = conf.simulation_parameter["time_alignment"]
-        assert len(alignment["selected_times"]) == 1
-        assert len(alignment["sources"]["atmosphere"]["skipped_times"]) == 1
+        with pytest.raises(ValueError, match="votemper unavailable at selected times"):
+            prepare_sources(conf)
+    assert not (tmp_path / "out").exists()
 
 
 def test_nemo_arome_outside_grid_fails_without_edge_substitution(tmp_path):
@@ -258,9 +258,7 @@ def test_nemo_arome_outside_grid_fails_without_edge_substitution(tmp_path):
     raw["region"]["center"] = {"latitude": -20.031, "longitude": 60.}
     with pytest.raises(ValueError, match="outside a selected source grid|outside"):
         execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
-    status = yaml.safe_load((tmp_path / "out/run-status.yaml").read_text())
-    assert status["state"] == "failed"
-    assert status["products"] == []
+    assert not (tmp_path / "out").exists()
 
 
 def test_nemo_arome_shared_scalar_targets_preserve_source_times_and_masks(tmp_path, monkeypatch):
@@ -290,13 +288,15 @@ with xr.open_dataset(paths['atmosphere']) as a, xr.open_dataset(paths['ocean']) 
         np.testing.assert_array_equal(a[name],n[name])
     np.testing.assert_array_equal(a.longitude,n.longitude)
     np.testing.assert_array_equal(a.latitude,n.latitude)
-    assert a.attrs['common_polar_target_id'] == n.attrs['common_polar_target_id']
     assert n.time.attrs['bounds'] in n and 'time_centered_bounds' in n
     assert n.votemper.attrs['cell_methods'] == 'time: mean (interval: 240 s)'
     assert np.isfinite(a.prmsl).all()
     assert np.isnan(n.votemper.isel(time=0,radius=0)).all()
 assert 'frameit' not in sys.modules
 """, json.dumps(products)], check=True)
+    provenance = yaml.safe_load((tmp_path / "out/run-provenance.yaml").read_text())
+    assert provenance["common_polar_target"]["verification"] == (
+        "exact_coordinates_at_associated_centres")
 
 
 def test_nemo_arome_shared_target_budget_fails_before_outputs(tmp_path):
@@ -328,11 +328,11 @@ def test_nemo_arome_prescribed_track_coverage_remains_exact(tmp_path, strict):
     short.to_netcdf(path)
     raw["region"]["track"]["file"] = str(path)
     raw["region"]["sources_coupling_time_association"] = "strict" if strict else "common"
-    conf = SimulationConfig.from_mapping_with_model_preset(raw)
     if strict:
-        with pytest.raises(ValueError, match="track lacks strict source times"):
-            prepare_sources(conf)
+        with pytest.raises(ValueError, match="region.sources_coupling_time_association"):
+            SimulationConfig.from_mapping_with_model_preset(raw)
     else:
+        conf = SimulationConfig.from_mapping_with_model_preset(raw)
         prepare_sources(conf)
         assert len(conf.simulation_parameter["region_alignment"]["selected_times"]) == 1
 
@@ -439,8 +439,9 @@ def preceding_document(directory, *, moving=False, scalar_polar=False):
         ds.to_netcdf(path)
     if moving:
         track = directory / "track.nc"
-        xr.Dataset({"latitude": ("time", [-20., -20., -19.99]),
-                    "longitude": ("time", [60., 60., 60. + .01/np.cos(np.deg2rad(20.))])},
+        xr.Dataset({"latitude": ("time", [-20., -20., -19.99], {"units": "degrees_north"}),
+                    "longitude": ("time", [60., 60., 60. + .01/np.cos(np.deg2rad(20.))],
+                                  {"units": "degrees_east"})},
                    coords={"time": times}).to_netcdf(track)
         raw["region"].pop("center")
         raw["region"]["track"] = {"file": str(track)}
@@ -450,7 +451,8 @@ def preceding_document(directory, *, moving=False, scalar_polar=False):
 @pytest.mark.parametrize("moving,synchronous,engine", [
     (False, True, "h5netcdf"), (True, True, "h5netcdf"),
     (False, False, "h5netcdf"), (True, False, "h5netcdf"), (True, True, "zarr")])
-def test_preceding_hour_coupled_native_copies_and_replay(tmp_path, moving, synchronous, engine):
+def test_preceding_hour_coupled_native_copies_and_replay(
+        tmp_path, moving, synchronous, engine, capfd):
     if engine == "zarr":
         pytest.importorskip("zarr")
     raw = preceding_document(tmp_path, moving=moving)
@@ -461,8 +463,7 @@ def test_preceding_hour_coupled_native_copies_and_replay(tmp_path, moving, synch
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     result = execute_simulation(conf)
     assert result.ok, result
-    assert any("WARNING | preceding_hour omits" in path.read_text()
-               for path in (conf.output_dir / "logs").glob("*.log"))
+    assert "preceding_hour omits" in capfd.readouterr().err
     alignment = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())["time_alignment"]
     assert alignment["omitted_pairings"] == [{"coupling_time": "2024-12-11T00:00:00.000000000",
                                             "missing_sources": ["ocean"]}]
@@ -475,14 +476,14 @@ target = np.array(['2024-12-11T01','2024-12-11T02'],dtype='datetime64[ns]')
 native = np.array(['2024-12-11T00:30','2024-12-11T01:30'],dtype='datetime64[ns]')
 for name,path in products.items():
     with (xr.open_zarr(path,consolidated=False) if engine == 'zarr' else xr.open_dataset(path)) as out:
-        np.testing.assert_array_equal(out.time,target)
         if name == 'atmosphere':
+            np.testing.assert_array_equal(out.time,target)
             assert out.forecast_reference_time.values == np.datetime64('2024-12-11')
             continue
-        np.testing.assert_array_equal(out.source_time,native)
+        np.testing.assert_array_equal(out.time,native)
+        np.testing.assert_array_equal(out.center_time,target)
         np.testing.assert_array_equal(out.time_centered,native)
-        assert 'coupling' in out.time.attrs['long_name']
-        assert out.source_time.attrs['bounds'] == out.time.attrs['bounds']
+        assert out.time.attrs['bounds'] == 'time_counter_bounds'
         for source,field in [('nemo_t','votemper'),('nemo_u','vozocrtx'),('nemo_v','vomecrty'),('nemo_w','vovecrtz')]:
             yd,xd=out[field].dims[-2:]
             x=next(value for key,value in out[field].coords.items()
@@ -496,7 +497,7 @@ for name,path in products.items():
                 for bound in ['time_counter_bounds','time_centered_bounds']:
                     np.testing.assert_array_equal(out[bound],src[bound])
                 assert out[field].attrs['cell_methods'] == src[field].attrs['cell_methods']
-        assert 'no temporal interpolation' in out.attrs['temporal_association_description']
+        assert out.attrs['time_association'] == 'preceding_hour'
 assert 'frameit' not in sys.modules
 """, json.dumps(products), str(tmp_path), engine], check=True)
     replay = SimulationConfig.from_yaml_with_model_preset(conf.output_dir / "resolved-config.yaml")
@@ -545,25 +546,25 @@ def test_preceding_hour_polar_budget_counts_selected_pairs(tmp_path, shared):
 def test_preceding_hour_scalar_polar_keeps_native_clock_and_bounds(tmp_path):
     pytest.importorskip("xesmf")
     raw = preceding_document(tmp_path, moving=True, scalar_polar=True)
-    path = tmp_path / "nemo_t.nc"
-    with xr.open_dataset(path) as source:
-        ds = source.load()
-    for name in ("time_counter", "time_centered", "time_counter_bounds", "time_centered_bounds"):
-        ds[name].encoding.update(calendar="gregorian", units="seconds since 1800-01-01")
-    ds.to_netcdf(path)
+    for path in raw["sources"]["ocean"]["files"]:
+        with xr.open_dataset(path) as source:
+            ds = source.load()
+        for name in ("time_counter", "time_centered",
+                     "time_counter_bounds", "time_centered_bounds"):
+            ds[name].encoding.update(calendar="gregorian", units="seconds since 1800-01-01")
+        ds.to_netcdf(path)
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     products = {p["source"]: p["path"] for p in result.products if p["role"] == "polar"}
     with xr.open_dataset(products["atmosphere"]) as a, xr.open_dataset(products["ocean"]) as n:
-        for name in ("time", "radius", "azimuth", "center_longitude", "center_latitude"):
+        for name in ("radius", "azimuth", "center_time", "center_longitude", "center_latitude"):
             np.testing.assert_array_equal(a[name], n[name])
-        np.testing.assert_array_equal(n.source_time, np.array([
+        np.testing.assert_array_equal(n.time, np.array([
             "2024-12-11T00:30", "2024-12-11T01:30"], dtype="datetime64[ns]"))
-        np.testing.assert_array_equal(n.time_centered, n.source_time)
-        assert n.source_time.attrs["bounds"] in n
+        np.testing.assert_array_equal(n.center_time, a.time)
+        np.testing.assert_array_equal(n.time_centered, n.time)
         assert n.time.attrs["bounds"] in n
         assert n.votemper.attrs["cell_methods"] == "time: mean (interval: 240 s)"
-        assert n.source_time.encoding["calendar"] == "gregorian"
         assert n.time_centered.encoding["calendar"] == "gregorian"
         assert n.time.encoding["calendar"] == "gregorian"
         assert np.isnan(n.votemper.isel(time=0, radius=0)).all()

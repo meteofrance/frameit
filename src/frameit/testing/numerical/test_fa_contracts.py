@@ -125,23 +125,27 @@ def test_raw_vertical_header_survives_without_coordinate_or_field_assumptions():
     assert json.loads(json.dumps(resolved, allow_nan=False)) == resolved
 
 
-@pytest.mark.parametrize("group, levels", [
-    ("level", "stored"), ("fields_2d", "physical"), ("fields_2d", {"indices": [0]}),
-    ("fields_2d", {"values": [850]}),
+@pytest.mark.parametrize("category, levels, message", [
+    ("3d", {}, "requires an explicit FA native cube"),
+    ("2d", {"domain": "physical"}, "FA physical-domain selection is gated"),
+    ("2d", {"indices": [0]}, None),
+    ("2d", {"values": [850]}, None),
 ])
-def test_native_atmospheric_cubes_and_vertical_selectors_remain_gated(tmp_path, group, levels):
+def test_fa_schema_distinguishes_cubes_domains_and_2d_selectors(
+        tmp_path, category, levels, message):
     path = tmp_path / "unopened.fa"
     raw = single_fa_document(tmp_path, [path])
     source = raw["sources"]["surface"]
     source.update(profile="arome_history", field_metadata={"CLSTEMPERATURE": DECLARATION})
-    source["variables"] = {"3d" if group == "level" else "2d": ["CLSTEMPERATURE"]}
-    if levels != "stored":
-        source["variables"]["levels"] = {"domain": "physical"} if levels == "physical" else levels
-    # The historical blanket rejection remains a contract conflict, not a new gate.
-    message = ("FA 2-D records must be selected in variables.fields_2d" if group == "level"
-               else "variables.fields_2d.levels cannot select a vertical axis")
-    with pytest.raises(ValueError, match=message):
-        SimulationConfig.from_mapping_with_model_preset(raw)
+    source["variables"] = {category: ["CLSTEMPERATURE"], "levels": levels}
+    if message:
+        with pytest.raises(ValueError, match=message):
+            SimulationConfig.from_mapping_with_model_preset(raw)
+    else:
+        conf = SimulationConfig.from_mapping_with_model_preset(raw)
+        assert resolved_configuration(conf)["sources"]["surface"]["variables"] == (
+            source["variables"])
+        assert conf.fa_options["native_cubes"] == {}
     assert not path.exists() and not (tmp_path / "run").exists()
 
 

@@ -279,8 +279,9 @@ def test_coupled_preview_and_execution(tmp_path):
     assert {p["source"] for p in cart} == {"atmosphere", "surface"}
     for product in cart:
         with xr.open_zarr(product["path"], consolidated=False) as saved:
-            np.testing.assert_allclose(saved.temperature.isel(
-                x=saved.sizes["x"] // 2, y=saved.sizes["y"] // 2), [280., 281.])
+            field = saved.temperature
+            np.testing.assert_allclose(field.isel({
+                dim: field.sizes[dim] // 2 for dim in field.dims[-2:]}), [280., 281.])
 
 
 def test_missing_optional_dependency_fails_before_processing(tmp_path, monkeypatch):

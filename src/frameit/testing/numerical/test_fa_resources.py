@@ -175,7 +175,24 @@ else:
     with pytest.raises((ValueError, RuntimeError), match="Invalid native array transfer"):
         execute_simulation(conf)
     status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
-    assert status["state"] == "failed" and not status.get("products")
+    assert status["state"] == "failed" and status["pending"] == ["publication"]
+    products = status["products"]
+    keys = {(p["source"], p["product"]) for p in products}
+    assert ("atmosphere", "model_grid") in keys
+    assert keys <= {("atmosphere", "model_grid"), (None, "track")}
+    paths = [conf.output_dir / p["path"] for p in products]
+    assert set(paths) == set((conf.output_dir / "products").glob("*.nc"))
+    assert all(path.stat().st_size == p["size_bytes"]
+               for path, p in zip(paths, products, strict=True))
+    subprocess.run([sys.executable, "-c", """
+import json, sys, numpy as np, xarray as xr
+for path in json.loads(sys.argv[1]):
+    with xr.open_dataset(path) as out:
+        out.load()
+        np.testing.assert_array_equal(out.time, np.array(
+            ['2026-01-01T01:00', '2026-01-01T02:00'], dtype='datetime64[ns]'))
+assert 'frameit' not in sys.modules
+""", json.dumps([str(path) for path in paths])], check=True, capture_output=True, text=True)
     assert not (conf.output_dir / "products/primary-pair.surface.model_grid.nc").exists()
     assert not (conf.output_dir / ".frameit-run.lock").exists()
     assert not list(conf.output_dir.rglob("*.partial"))

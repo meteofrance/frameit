@@ -179,16 +179,41 @@ def test_nemo_init_inspect_replay_and_atmospheric_tracker_rejection(tmp_path):
         preflight(SimulationConfig.from_mapping_with_model_preset(raw))
 
 
-def test_nemo_scalar_shards_reject_equal_shape_different_geography(tmp_path):
+def test_nemo_scalar_shards_keep_equal_shape_different_geography(tmp_path):
     from frameit.core.coupled import bind_sources
+    from frameit.core.execution import execute_simulation
 
     paths = [tmp_path / "temperature.nc", tmp_path / "salinity.nc"]
     nemo_scene().to_netcdf(paths[0])
     nemo_scene(field="vosaline", shift_x=.005).to_netcdf(paths[1])
     raw = nemo_document(tmp_path, paths, variables={"3d": ["votemper", "vosaline"]})
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    with pytest.raises(ValueError, match="coordinate|geography"):
-        bind_sources(conf)
+    bind_sources(conf)
+    assert not conf.output_dir.exists()
+    result = execute_simulation(conf)
+    subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1]) as out:
+    assert out.votemper.dims[-2:] != out.vosaline.dims[-2:]
+    for field, path in zip(('votemper','vosaline'), sys.argv[2:], strict=True):
+        value = out[field]
+        yd, xd = value.dims[-2:]
+        x = next(c for n,c in value.coords.items() if
+                 n.endswith('_source_native_index') and c.dims == ('time',xd))
+        y = next(c for n,c in value.coords.items() if
+                 n.endswith('_source_native_index') and c.dims == ('time',yd))
+        longitude = next(c for c in value.coords.values()
+                         if c.attrs.get('standard_name') == 'longitude')
+        with xr.open_dataset(path) as source:
+            np.testing.assert_array_equal(out.time, source.time_counter)
+            assert value.attrs['units'] == source[field].attrs['units']
+            for t in range(3):
+                indexers = dict(y=y[t].values.astype(int),x=x[t].values.astype(int))
+                np.testing.assert_array_equal(value[t], source[field].isel(
+                    time_counter=t, **indexers))
+                np.testing.assert_array_equal(longitude[t], source.nav_lon.isel(**indexers))
+assert 'frameit' not in sys.modules
+""", result.products[0]["path"], *map(str, paths)], check=True, capture_output=True, text=True)
 
 
 def test_nemo_detected_non_netcdf_fails_before_optional_reader(tmp_path, monkeypatch):

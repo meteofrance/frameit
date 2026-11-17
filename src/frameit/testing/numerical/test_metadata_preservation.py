@@ -185,7 +185,8 @@ def test_operation_result_preserves_supplied_native_index_attributes(indices):
             "vertical": {"dimension": "s_rho", "source_native_indices": indices}}]}}},
     }
     source = {"model": "croco", "format": "netcdf", "declaration": {},
-              "fields": {"u": {"name": "u", "attributes": {"units": "m s-1"}}}}
+              "fields": {"u": {"name": "u", "attributes": {"units": "m s-1"},
+                               "time_varying": True}}}
     result = execute_source_operations(
         {"rho": selected.drop_vars("u")}, {"rho": native}, source,
         {"operations": [operation]}, None)

@@ -149,13 +149,14 @@ def test_same_shape_different_library_grids_cannot_share_a_source_sequence(tmp_p
     raw["sources"]["surface"]["fa"] = {"earth_radius_m": 6371229.}
     raw["region"]["center"] = {"latitude": -30., "longitude": 50.}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    with pytest.raises(ValueError, match="incompatible horizontal geometry"):
+    with pytest.raises(ValueError, match="distinct fields share requested name") as caught:
         _, children, sources = bind_sources(conf)
         child = children["surface"]
         concat_fa2ds_by_vert_coord(
             paths, {}, {}, wind_conf=child,
             selected_records=child.source_requests["surface"]["binding"],
             source_plan=sources["surface"])
+    assert all(str(path) in str(caught.value) for path in paths)
     with pytest.raises(ValueError, match="[Gg]eometr|[Gg]rid"):
         preflight(conf)
     assert not conf.output_dir.exists()

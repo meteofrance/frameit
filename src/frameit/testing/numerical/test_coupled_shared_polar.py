@@ -91,7 +91,8 @@ def test_common_sampling_conflicts_fail_without_payload_or_native_dependencies(c
 
 
 def moving_track():
-    return xr.Dataset({"lon": ("time", [60., 60.003]), "lat": ("time", [-20., -19.997])},
+    return xr.Dataset({"lon": ("time", [60., 60.003], {"units": "degrees_east"}),
+                       "lat": ("time", [-20., -19.997], {"units": "degrees_north"})},
                       coords={"time": np.array(["2026-01-01", "2026-01-01T01:00"],
                                                dtype="datetime64[ns]")})
 
@@ -143,8 +144,11 @@ def netcdf_source(directory, name, spacing, value, *, masked=False):
     ds = xr.Dataset({"temperature": (("time", "nj", "ni"), values, {"units": "K"})},
                     coords={"time": moving_track().time, "ni": ("ni", x, {"units": "m"}),
                             "nj": ("nj", y, {"units": "m"}),
-                            "longitude": (("nj", "ni"), lon, {"units": "degrees_east"}),
-                            "latitude": (("nj", "ni"), lat, {"units": "degrees_north"})})
+                             "longitude": (("nj", "ni"), lon, {"units": "degrees_east"}),
+                             "latitude": (("nj", "ni"), lat, {"units": "degrees_north"})})
+    if name == "surface":
+        ds = ds.rename(time="time_counter", nj="y", ni="x",
+                       latitude="nav_lat", longitude="nav_lon")
     path = directory / f"{name}.nc"
     ds.to_netcdf(path, engine="netcdf4")
     return path
@@ -152,10 +156,10 @@ def netcdf_source(directory, name, spacing, value, *, masked=False):
 
 def coupled_document(directory, *, synchronous=True):
     sources = {}
-    for name, spacing, value in (("atmosphere", 1000., 280.), ("surface", 2000., 300.),
-                                  ("auxiliary", 3000., 290.)):
+    for name, spacing, value in (("atmosphere", 1000., 280.), ("surface", 3000., 300.)):
         path = netcdf_source(directory, name, spacing, value, masked=name == "surface")
-        sources[name] = {"model": "mesonh", "files": [str(path)], "format": "netcdf",
+        sources[name] = {"model": "mesonh" if name == "atmosphere" else "nemo",
+                         "files": [str(path)], "format": "netcdf",
                          "variables": {"2d": ["temperature"]},
                          "field_metadata": {"temperature": {"kind": "continuous"}}}
     track = directory / "track.nc"
@@ -181,7 +185,7 @@ def test_shared_target_schema_is_additive_and_global(tmp_path):
 
 
 @pytest.mark.parametrize("synchronous", [True, False])
-def test_three_products_share_moving_target_but_not_masks(tmp_path, synchronous, monkeypatch):
+def test_two_physical_sources_share_moving_target_but_not_masks(tmp_path, synchronous, monkeypatch):
     pytest.importorskip("xesmf")
     document = coupled_document(tmp_path, synchronous=synchronous)
 
@@ -191,13 +195,13 @@ def test_three_products_share_moving_target_but_not_masks(tmp_path, synchronous,
     monkeypatch.setattr("frameit.io.fa_backend.request_fa", no_fa)
     conf = SimulationConfig.from_mapping_with_model_preset(document)
     plan = preflight(conf)
-    assert plan["common_polar_target"]["radial_step_m"] == 3000.
-    assert plan["common_polar_target"]["radial_step_origin"] == "coarsest_participating_native_grid"
+    assert plan["common_polar_target"]["radial_step_km"] == 3.
+    assert plan["common_polar_target"]["radial_step_origin"] == "coarsest_native_grid"
     assert not conf.output_dir.exists()
     result = execute_simulation(conf)
     assert result.ok
     products = {p["source"]: p["path"] for p in result.products if p["role"] == "polar"}
-    assert set(products) == {"atmosphere", "surface", "auxiliary"}
+    assert set(products) == {"atmosphere", "surface"}
     assert all(f".{name}.polar.nc" in str(path) for name, path in products.items())
     check = subprocess.run([sys.executable, "-c", """
 import sys, json, numpy as np, xarray as xr
@@ -209,13 +213,12 @@ try:
         coordinates = ('time', 'radius', 'azimuth', 'longitude', 'latitude', 'center_longitude', 'center_latitude')
         for coordinate in coordinates:
             np.testing.assert_array_equal(data[coordinate], a[coordinate])
-        assert data.attrs['common_polar_target_id'] == a.attrs['common_polar_target_id']
         assert data.attrs['source_id'] == name
     np.testing.assert_array_equal(a.center_longitude, [60.,60.003])
     np.testing.assert_array_equal(a.center_latitude, [-20.,-19.997])
     np.testing.assert_allclose(a.temperature.isel(radius=0), [[280.]*9,[281.]*9], atol=1.e-9)
-    np.testing.assert_allclose(datasets['auxiliary'].temperature.isel(radius=0),
-                               [[290.]*9,[291.]*9], atol=1.e-9)
+    np.testing.assert_allclose(datasets['surface'].temperature.isel(time=1,radius=0),
+                               [301.]*9, atol=1.e-9)
     assert np.isnan(datasets['surface'].temperature.isel(time=0,radius=0)).all()
     assert np.isfinite(a.temperature.isel(time=0,radius=0)).all()
 finally:
@@ -226,12 +229,14 @@ assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
     status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
     contract = provenance["common_polar_target"]
-    assert contract["verification"] == "exact_time_radius_azimuth_longitude_latitude"
-    assert contract["radial_step_origin"] == "coarsest_participating_native_grid"
-    assert status["common_polar_target"] == contract
+    assert contract["verification"] == "exact_coordinates_at_associated_centres"
+    assert contract["radial_step_origin"] == "coarsest_native_grid"
+    assert status["state"] == provenance["state"] == "completed"
     restored = SimulationConfig.from_yaml(conf.output_dir / "resolved-config.yaml")
     assert restored.polar_shared_target is True
-    assert restored.yaml_config["products"]["polar"]["radial_step_km"] == 3.
+    replayed = preflight(restored, check_output=False)["common_polar_target"]
+    assert replayed["radial_step_km"] == contract["radial_step_km"] == 3.
+    assert replayed["azimuth_degrees"] == contract["azimuth_degrees"]
 
 
 def test_disabled_shared_target_keeps_base_processing_optional(tmp_path, monkeypatch):
@@ -270,7 +275,6 @@ def test_mismatched_actual_targets_fail_before_product_publication(tmp_path, mon
 def test_shared_target_keeps_atmospheric_vertical_groups_separate(tmp_path):
     pytest.importorskip("xesmf")
     document = coupled_document(tmp_path)
-    document["sources"].pop("auxiliary")
     atmosphere = document["sources"]["atmosphere"]
     with xr.open_dataset(atmosphere["files"][0]) as original:
         source = original.load()
@@ -295,7 +299,7 @@ def test_shared_target_keeps_atmospheric_vertical_groups_separate(tmp_path):
         np.testing.assert_allclose(column.column_temperature.isel(radius=0, azimuth=0),
                                    [[280., 290.], [281., 291.]], atol=1.e-9)
         with xr.open_dataset(next(p for p in paths if ".surface.polar.nc" in str(p))) as surface:
-            assert column.attrs["common_polar_target_id"] == surface.attrs["common_polar_target_id"]
+            np.testing.assert_array_equal(column.longitude, surface.longitude)
             np.testing.assert_array_equal(column.latitude, surface.latitude)
 
 
@@ -304,7 +308,6 @@ def test_shared_target_keeps_atmospheric_vertical_groups_separate(tmp_path):
 def test_dense_fa_surface_moving_polar_values_masks_and_readonly_inputs(tmp_path, shared):
     pytest.importorskip("xesmf")
     document = coupled_document(tmp_path)
-    document["sources"].pop("auxiliary")
     document["products"]["polar"].update(shared_grid=shared, radial_step_km=2., azimuth_count=8)
     temperature = np.full((13, 15), 300.)
     temperature[6, 7] = np.nan
@@ -429,7 +432,6 @@ with xr.open_dataset(polars['atmosphere'], engine='netcdf4') as a:
         with xr.open_dataset(path, engine='netcdf4') as data:
             for name in ('time','radius','azimuth','longitude','latitude','center_longitude','center_latitude'):
                 np.testing.assert_array_equal(data[name], a[name])
-            assert data.attrs['common_polar_target_id'] == a.attrs['common_polar_target_id']
     np.testing.assert_array_equal(a.center_longitude, [50.,50.015])
     np.testing.assert_array_equal(a.center_latitude, [-20.,-19.988])
     # Independent affine GRIB truth at both continuous (not snapped) centres.
@@ -452,8 +454,7 @@ assert not {'frameit','epygram','falfilfa4py','eccodes','cfgrib'} & sys.modules.
 """, json.dumps(carts), json.dumps(polars)], capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
     provenance, status = assert_primary_pair_provenance(conf)
-    assert status["common_polar_target"] == provenance["common_polar_target"]
-    assert status["common_polar_target"]["verification"] == (
+    assert provenance["common_polar_target"]["verification"] == (
         "exact_coordinates_at_associated_centres")
     assert all(path.read_bytes() == before for path, before in originals.items())
 

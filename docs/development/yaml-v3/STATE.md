@@ -47,9 +47,52 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 16 | partial, required checks pass | lead inline | 15 | Current required suite and bounded connected checks pass; broader qualification/freeze remains separate. |
 | 17 | partial | lead + fresh bounded reviewer | 16 | Generated-NetCDF task tutorials and nine analytical SVGs now verified; broader qualification remains separate. |
 | 18 | done, local evidence | lead + fresh bounded reviewer | 16 | `bd882c2`; final exact122 has58 passes; all six findings closed. No real-cluster claim. |
-| 19 | blocked | lead | 16, 18 | Installed/full-branch qualification remains unavailable; no inferred pass. |
+| 19 | blocked | lead | 16, 18 | Installed qualification unavailable; authorized full pytest is red (26 failures), not a qualification pass. |
 | 20 | wording gates verified | lead + fresh reviewers | 17, 19 | `2095dd8`; both full passes and technical closure; strict09/publication/live text pass. Restricted acceptance remains separate. |
 | 21 | reviews closed; acceptance blocked | lead + fresh reviewers + human | 20 | Both independent review seats verified their fixes; Task19 qualification and actual human usability observations remain open. |
+
+### 17 November — full-suite stale-test audit
+
+The maintainer authorized an unfiltered full pytest audit after session
+compaction. Only fifteen test modules changed; production behavior, public
+configuration/output schemas, dependencies and collection rules are unchanged.
+No skips or xfails were added.
+
+- Full starting baseline: **3128 passed, 81 failed**, zero skips, four passing
+  subtests, 9646 warnings, 1424.71 s.
+- Final unfiltered suite: **3184 passed, 26 failed**, zero skips, four passing
+  subtests, 9711 warnings, 1474.33 s. Collection is 3210 ordinary tests, one more
+  positive consistent-unit numerical case. All final failing node IDs were
+  already failing in the baseline; repaired metadata exposes some later defects.
+- Proven obsolete gates, coupling layouts, track declarations, selector/encoding/
+  clock assumptions and partial mocks were reworked while retaining numerical,
+  failure, optionality and ordinary-reader checks. Native scientific fixture
+  payloads and analytical tolerances were not rewritten.
+- The retained failures cover native Meso-NH geography (8), FA `source_i` merges
+  (7), named CROCO current provenance (2), documented FA track fields (2),
+  unmapped-GRIB provenance (1), status alignment (4) and centroid admission (2).
+  The status compatibility question remains unresolved, not silently retired.
+- One fresh read-only review found an Important lost assertion: the ocean guide
+  still promises named-source `current_provenance`. It was restored, and both
+  current-enabled cases remain explicit failures in the final suite. No
+  production repair or scientific waiver is inferred.
+- All fifteen frozen test files match after the final run; all nine approved
+  fixture checksums pass. Dependency consistency and whitespace checks pass.
+  Ruff: 90 baseline / 76 current diagnostics, zero introduced.
+- Separate publication units pass 16 tests / 40 subtests. PNG smokes ran only
+  inside unfiltered suites; their images were not opened.
+
+The complete failure inventory, exact commands, classifications and limitations
+are in [the full-suite audit record](2026-11-17-full-suite-audit.md).
+The suite is not green and later assertions behind retained failures remain
+unverified. This supplies actual full-pytest evidence, not installed-package,
+scientific, merge/release or human qualification.
+
+Docs: no user-facing impact because this change affects tests and unpublished
+development evidence only. Public pages/assets and the existing live preview are
+unchanged; no new Sphinx build or visual review was needed. No installation,
+environment repair, production/HPC run, benchmark/full-diagnostic campaign, push
+or merge was performed.
 
 ### 17 November — six-failure disposition and tutorial polish
 

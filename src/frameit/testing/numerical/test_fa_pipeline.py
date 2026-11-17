@@ -123,10 +123,13 @@ def test_coupled_netcdf_sources_do_not_need_fa_backend(tmp_path, monkeypatch):
     with xr.open_dataset(atmosphere, engine="netcdf4") as original:
         shifted = original.rename(temperature="surface_temp").load().assign_coords(
             time=original.time.values + np.timedelta64(1, "h"))
+        shifted = shifted.rename(time="time_counter", nj="y", ni="x",
+                                 latitude="nav_lat", longitude="nav_lon")
+        shifted.surface_temp.encoding["coordinates"] = "nav_lat nav_lon"
         shifted.to_netcdf(surface, engine="netcdf4")
     raw = document(tmp_path, atmosphere, [])
     raw["sources"]["surface"] = {
-        "model": "mesonh", "files": [str(surface)], "format": "netcdf",
+        "model": "nemo", "files": [str(surface)], "format": "netcdf",
         "variables": {"2d": ["surface_temp"]}}
 
     def forbidden(*args, **kwargs):
@@ -138,7 +141,8 @@ def test_coupled_netcdf_sources_do_not_need_fa_backend(tmp_path, monkeypatch):
         conf, export_netcdf=False))
     assert not checked.errors, checked.errors
     preview = checked.facts
-    assert preview["planned_products"] == []
+    assert len(preview["planned_products"]) == 3
+    assert not conf.output_dir.exists()
     result = execute_simulation(conf)
     assert result.ok and len(result.products) == 3
 
@@ -148,7 +152,8 @@ def test_fa_only_multi_time_prescribed_track_is_exact_and_lazy(tmp_path, monkeyp
     files = fa_files(tmp_path, (2, 0, 1), profile="surfex_history")
     raw = single_fa_document(tmp_path, files)
     track = tmp_path / "track.nc"
-    xr.Dataset({"latitude": ("time", [-20.]), "longitude": ("time", [60.])}, coords={
+    xr.Dataset({"latitude": ("time", [-20.], {"units": "degrees_north"}),
+                "longitude": ("time", [60.], {"units": "degrees_east"})}, coords={
         "time": [np.datetime64("2026-01-01T01:00", "ns")]}).to_netcdf(track, engine="netcdf4")
     raw["region"].pop("center")
     raw["region"]["track"] = {"file": str(track)}
@@ -159,7 +164,7 @@ def test_fa_only_multi_time_prescribed_track_is_exact_and_lazy(tmp_path, monkeyp
     read_keys = []
 
     def counted(request):
-        read_keys.append((request["path"], request["key"]))
+        read_keys.append((request["path"], request["fields"]))
         return original(request)
 
     monkeypatch.setattr(fa_utils, "request_fa", counted)

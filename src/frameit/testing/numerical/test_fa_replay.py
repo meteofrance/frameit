@@ -53,33 +53,14 @@ def test_current_yaml_all_settings_and_resolved_replay(tmp_path, coupled, backen
     assert raw == original and not (tmp_path / "surface.fa").exists()
 
 
-def test_init_and_inspect_use_maintained_default(
-    tmp_path, monkeypatch, capsys,
-):
-    from frameit.cli import _build_parser, _cmd_inspect
-
+def test_init_is_backend_free_and_explicit_fa_uses_maintained_default(tmp_path):
     path = write_template("arome", tmp_path / "init.yaml")
-    assert SimulationConfig.from_yaml(path).fa_options["backend"] == "epygram"
+    assert SimulationConfig.from_yaml(path).fa_options == {}
     source = tmp_path / "unopened.fa"
-    source.touch()
-    calls = []
-
-    def inspect(path, profile, fields, **options):
-        calls.append(options)
-        return {"backend_versions": {"FA_backend": "epygram",
-                                     "FA_backend_requested": options["backend"]}}
-
-    monkeypatch.setattr("frameit.io.fa_backend.inspect_fa", inspect)
-    for backend in (None, "epygram"):
-        request = single_fa_document(tmp_path, [source])
-        path.write_text(yaml.safe_dump(request))
-        args = _build_parser().parse_args(["inspect", str(path), "--json"])
-        assert _cmd_inspect(args) == 0
-        report = yaml.safe_load(capsys.readouterr().out)["data"]["plan"]["sources"]["surface"][
-            "metadata_origins"]["model"]["evidence"][0]
-        assert report["backend_versions"]["FA_backend"] == "epygram"
-        assert calls[-1]["backend"] == (backend or "epygram")
-        assert not calls[-1]["validate_selection"]
+    request = single_fa_document(tmp_path, [source])
+    assert SimulationConfig.from_mapping_with_model_preset(request).fa_options["backend"] == (
+        "epygram")
+    assert not source.exists()
     request["sources"]["surface"]["format"] = "netcdf"
     request["sources"]["surface"]["reader"] = {"python_executable": sys.executable}
     path.write_text(yaml.safe_dump(request))

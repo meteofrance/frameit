@@ -157,8 +157,7 @@ def test_surfex_schema_keeps_interpretation_explicit_and_bounded(tmp_path, probl
     raw = surfex_document(tmp_path, [tmp_path/"snapshot.nc"])
     source = raw["sources"]["atmosphere"]
     if problem == "unknown":
-        # V3 cannot explicitly request SEA interpretation of an ineligible field.
-        source["variables"]["2d"] = ["PRES"]
+        source["interpretation"] = "unknown"
     elif problem == "model":
         source["model"] = "arome"
     elif problem == "format":

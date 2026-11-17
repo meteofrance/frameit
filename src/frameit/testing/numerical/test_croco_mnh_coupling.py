@@ -134,7 +134,8 @@ def coupled_document(directory, *, moving=False, polar=False, currents=False):
            "output": {"directory": str(directory/"out"), "overwrite": False}}
     if moving:
         track = directory/"track.nc"
-        xr.Dataset({"latitude": ("time", [-20., -19.9905]), "longitude": ("time", [60., 60.0095])},
+        xr.Dataset({"latitude": ("time", [-20., -19.9905], {"units": "degrees_north"}),
+                    "longitude": ("time", [60., 60.0095], {"units": "degrees_east"})},
                    coords={"time": ocean.time}).to_netcdf(track)
         raw["region"].pop("center")
         raw["region"]["track"] = {"file": str(track)}
@@ -198,7 +199,6 @@ def test_croco_mnh_shared_polar_keeps_sigma_support_and_current_identity(tmp_pat
             np.testing.assert_array_equal(ocean[name], mnh[name])
         np.testing.assert_array_equal(ocean.longitude, mnh.longitude)
         np.testing.assert_array_equal(ocean.latitude, mnh.latitude)
-        assert ocean.attrs["common_polar_target_id"] == mnh.attrs["common_polar_target_id"]
         np.testing.assert_array_equal(ocean.s_rho_source_native_index, [1, 0])
         assert "formula_terms" not in ocean.s_rho.attrs
         assert "standard_name" not in ocean.s_rho.attrs
@@ -220,8 +220,17 @@ def test_croco_mnh_shared_polar_keeps_sigma_support_and_current_identity(tmp_pat
         assert "formula_terms" in native.s_rho.attrs
         assert native.u.attrs["units"] == "meter second-1"
     provenance = yaml.safe_load((tmp_path/"out"/"run-provenance.yaml").read_text())
-    assert provenance["common_polar_target"]
+    assert provenance["common_polar_target"]["verification"] == (
+        "exact_coordinates_at_associated_centres")
     if currents:
+        records = [record for record in provenance["sources"]["ocean"]["polar"]["records"]
+                   if record["field"] in {"u", "v"}]
+        assert len(records) == 4
+        assert all(record["preparation"] == "croco_midpoint_both_valid_then_rho_angle"
+                   and record["rotation_coordinate"]["name"] == "angle" for record in records)
+        for record in records:
+            assert record["rotation_coordinate"]["attributes"]["units"] == "radians"
+            np.testing.assert_array_equal(record["rotation_coordinate"]["values"], np.pi / 2)
         assert provenance["sources"]["ocean"]["current_provenance"]
 
 
@@ -255,6 +264,7 @@ def test_croco_scalar_polar_masks_water_support_without_current_dependencies(tmp
 def test_croco_polar_does_not_publish_interpolated_binary_mask_auxiliary(tmp_path, standard):
     pytest.importorskip("xesmf")
     raw = coupled_document(tmp_path, polar=True, currents=True)
+    raw["sources"]["ocean"]["variables"]["2d"] = ["mask_rho"]
     path = raw["sources"]["ocean"]["files"][0]
     with xr.open_dataset(path) as header:
         ds = header.load()
@@ -287,11 +297,11 @@ def test_croco_mnh_unequal_times_preserve_exact_alignment_policy(tmp_path, align
     raw = coupled_document(tmp_path)
     raw["sources"]["atmosphere"]["files"] = raw["sources"]["atmosphere"]["files"][:1]
     raw["region"]["sources_coupling_time_association"] = alignment
-    conf = SimulationConfig.from_mapping_with_model_preset(raw)
     if alignment == "strict":
-        with pytest.raises(ValueError, match="strict|timestamp|time"):
-            bind_sources(conf, check_output=False)
+        with pytest.raises(ValueError, match="region.sources_coupling_time_association"):
+            SimulationConfig.from_mapping_with_model_preset(raw)
     else:
+        conf = SimulationConfig.from_mapping_with_model_preset(raw)
         preflight(conf, check_output=False)
         assert len(conf.simulation_parameter["region_alignment"]["selected_times"]) == 1
 

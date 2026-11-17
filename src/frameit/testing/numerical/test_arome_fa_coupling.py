@@ -20,7 +20,7 @@ from frameit.testing.numerical.test_fa_io import NATIVE, fa_files
 
 
 def arome_netcdf_document(directory, *, surface_spacing_m=3000.):
-    """Compact AROME-schema NetCDF sources for the no-native planning regression."""
+    """Synthetic AROME/NEMO scalars for backend-free two-physical-source planning."""
     times = np.array(["2026-01-01", "2026-01-01T01:00"], dtype="datetime64[ns]")
     sources = {}
     for name, spacing in (("atmosphere", 1000.), ("surface", surface_spacing_m)):
@@ -33,10 +33,18 @@ def arome_netcdf_document(directory, *, surface_spacing_m=3000.):
                             coords={"valid_time": times,
                                     "latitude": ("latitude", latitude, {"units": "degrees_north"}),
                                     "longitude": ("longitude", longitude,
-                                                  {"units": "degrees_east"})})
+                                                   {"units": "degrees_east"})})
+        if name == "surface":
+            lon, lat = np.meshgrid(longitude, latitude)
+            source = source.rename(valid_time="time_counter", latitude="y", longitude="x")
+            source = source.assign_coords(
+                y=np.arange(13), x=np.arange(15),
+                nav_lat=(("y", "x"), lat, {"units": "degrees_north"}),
+                nav_lon=(("y", "x"), lon, {"units": "degrees_east"}))
         path = directory / f"{name}.nc"
         source.to_netcdf(path)
-        sources[name] = {"model": "arome", "format": "netcdf", "files": [str(path)],
+        sources[name] = {"model": "arome" if name == "atmosphere" else "nemo",
+                         "format": "netcdf", "files": [str(path)],
                          "field_metadata": {"temperature": {"kind": "continuous"}},
                          "variables": {"2d": ["temperature"]}}
     return {"schema_version": 3, "run": {"name": "arome-budget"},
@@ -52,10 +60,16 @@ def arome_netcdf_document(directory, *, surface_spacing_m=3000.):
 
 def test_effective_target_budget_precedes_unused_native_targets_and_replays(tmp_path):
     pytest.importorskip("xesmf")
+    from pyproj import Geod
+
     raw = arome_netcdf_document(tmp_path)
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan, children, _ = bind_sources(conf)
-    assert plan["common_polar_target"]["radial_step_km"] == 3.
+    # NEMO's angular grid uses WGS84 geography, not the AROME nominal metre step.
+    lon_step = np.rad2deg(3000. / (6371229. * np.cos(np.deg2rad(20.))))
+    expected_km = Geod(ellps="WGS84").inv(60., -20., 60. + lon_step, -20.)[2] / 1000
+    np.testing.assert_allclose(plan["common_polar_target"]["radial_step_km"], expected_km,
+                               rtol=1e-12, atol=0)
     assert len(plan["common_polar_target"]["azimuth_degrees"]) == 9
     for name, child in children.items():
         assert "_defer_polar_sampling" not in child.simulation_parameter
@@ -73,7 +87,7 @@ def test_effective_target_budget_precedes_unused_native_targets_and_replays(tmp_
     replay = SimulationConfig.from_mapping_with_model_preset(resolved)
     replay_result = execute_simulation(replay)
     assert replay_result.ok
-    replay_contract = yaml.safe_load((replay.output_dir / "run-status.yaml").read_text())[
+    replay_contract = yaml.safe_load((replay.output_dir / "run-provenance.yaml").read_text())[
         "common_polar_target"]
     assert (replay_contract["radius_km"], replay_contract["azimuth_degrees"]) == (
         contract["radius_km"], contract["azimuth_degrees"])
@@ -105,8 +119,9 @@ def test_arome_base_processing_needs_neither_fa_nor_polar_dependencies(tmp_path,
     assert set(cartesian) == {"atmosphere", "surface"}
     for path in cartesian.values():
         with xr.open_dataset(path) as data:
-            np.testing.assert_allclose(data.temperature.isel(
-                x=data.sizes["x"] // 2, y=data.sizes["y"] // 2), [280., 281.])
+            field = data.temperature
+            np.testing.assert_allclose(field.isel({
+                dim: field.sizes[dim] // 2 for dim in field.dims[-2:]}), [280., 281.])
     assert "falfilfa4py" not in sys.modules
 
 
@@ -124,9 +139,9 @@ def test_target_deferral_preserves_real_budgets_and_grid_guards(tmp_path, failur
         original = raw["sources"]["surface"]["files"][0]
         with xr.open_dataset(original) as source:
             data = source.load()
-        latitude = (-20. + 2 * (data.latitude + 20.)).assign_attrs(data.latitude.attrs)
+        latitude = (-20. + 2 * (data.nav_lat + 20.)).assign_attrs(data.nav_lat.attrs)
         path = tmp_path / "anisotropic.nc"
-        data.assign_coords(latitude=latitude).to_netcdf(path)
+        data.assign_coords(nav_lat=latitude).to_netcdf(path)
         raw["sources"]["surface"]["files"] = [str(path)]
         message = "Anisotropic grid"
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
@@ -148,7 +163,7 @@ def test_common_target_time_budget_uses_selected_labels_not_unused_file_times(tm
     raw = arome_netcdf_document(tmp_path)
     entry = raw["sources"]["surface"]
     with xr.open_dataset(entry["files"][0]) as source:
-        one_time = source.isel(valid_time=[0]).load()
+        one_time = source.isel(time_counter=[0]).load()
     path = tmp_path / "one-surface-time.nc"
     one_time.to_netcdf(path)
     entry["files"] = [str(path)]
@@ -164,8 +179,10 @@ def test_common_target_time_budget_uses_selected_labels_not_unused_file_times(tm
 
 def test_disabled_source_never_allocates_an_unused_target(tmp_path):
     pytest.importorskip("xesmf")
+    from pyproj import Geod
+
     raw = arome_netcdf_document(tmp_path, surface_spacing_m=500.)
-    raw["sources"]["surface"]["variables"] = {}
+    raw["products"]["model_grid"] = {"fields": {"atmosphere": ["temperature"]}}
     raw["products"]["polar"]["fields"] = {"atmosphere": ["temperature"]}
     raw["region"]["width_km"] = {"x": 4., "y": 4.}
     raw["products"]["polar"]["radius_km"] = 2.
@@ -173,7 +190,10 @@ def test_disabled_source_never_allocates_an_unused_target(tmp_path):
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     plan, _, _ = bind_sources(conf)
     assert plan["common_polar_target"]["participants"] == ["atmosphere"]
-    assert plan["common_polar_target"]["radial_step_km"] == 1.
+    lon_step = np.rad2deg(1000. / (6371229. * np.cos(np.deg2rad(20.))))
+    expected_km = Geod(ellps="WGS84").inv(60., -20., 60. + lon_step, -20.)[2] / 1000
+    np.testing.assert_allclose(plan["common_polar_target"]["radial_step_km"], expected_km,
+                               rtol=1e-12, atol=0)
     assert "polar_plan" not in plan["sources"]["surface"]["requests"]["binding"]
     assert execute_simulation(conf).ok
 
@@ -214,8 +234,7 @@ def test_arome_netcdf_ambiguous_time_names_fail_without_guessing(tmp_path):
     with pytest.raises(ValueError, match=(
             "conflicts with configured dimension|conflicting or unidentified sample/forecast clocks")):
         execute_simulation(conf)
-    status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
-    assert status["state"] == "failed" and status["products"] == []
+    assert not conf.output_dir.exists()
 
 
 @pytest.mark.skipif(not NATIVE, reason="optional falfilfa4py wheel not installed")
@@ -235,7 +254,8 @@ def test_arome_fa_and_surfex_fa_share_the_effective_target_on_distinct_grids(tmp
     times = np.array(["2026-01-01", "2026-01-01T01:00"], dtype="datetime64[ns]")
     longitude, latitude = spherical_lambert(np.array([0., 400.]), np.array([0., 300.]), 6371229.)
     track = tmp_path / "track.nc"
-    xr.Dataset({"longitude": ("time", longitude), "latitude": ("time", latitude)},
+    xr.Dataset({"longitude": ("time", longitude, {"units": "degrees_east"}),
+                "latitude": ("time", latitude, {"units": "degrees_north"})},
                coords={"time": times}).to_netcdf(track)
     sources = {}
     for name, files, profile, field in (

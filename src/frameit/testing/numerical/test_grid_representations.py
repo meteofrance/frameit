@@ -303,10 +303,22 @@ def test_cartesian_choice_does_not_change_real_polar_or_tracking(native_files, p
 
 
 @pytest.mark.parametrize("horizontal", ["native", "mass_earth"])
-def test_each_file_normalizes_velocity_units_before_concatenation(native_files, horizontal):
+def test_inconsistent_velocity_units_fail_before_concatenation(native_files, horizontal):
     native_scene(hour=1, units="km/h").to_netcdf(
         native_files / "native1.nc", engine="netcdf4")
-    products = run_export(native_files, horizontal, "mass")
+    originals = {path: path.read_bytes() for path in native_files.glob("native*.nc")}
+    with pytest.raises(ValueError, match="distinct fields share requested name") as caught:
+        run_export(native_files, horizontal, "mass")
+    assert all(name in str(caught.value) for name in ("native0.nc", "native1.nc", "km/h", "m/s"))
+    assert not (native_files / "run").exists()
+    assert all(path.read_bytes() == before for path, before in originals.items())
+
+
+def test_consistent_velocity_units_convert_without_changing_physical_samples(native_files):
+    for hour in (0, 1):
+        native_scene(hour=hour, units="km/h").to_netcdf(
+            native_files / f"native{hour}.nc", engine="netcdf4")
+    products = run_export(native_files, "mass_earth", "mass")
     assert_vertical(products, "model_grid", "mass")
     for names in (("UT", "VT", "WT"), ("UM10", "VM10")):
         ds = products["model_grid", "atmosphere"]
@@ -316,15 +328,13 @@ def test_each_file_normalizes_velocity_units_before_concatenation(native_files, 
             xr.testing.assert_allclose(ds[name].isel(time=0, drop=True),
                                        ds[name].isel(time=1, drop=True))
     ds = products["model_grid", "atmosphere"]
-    if horizontal == "native":
-        np.testing.assert_allclose(ds.UT.isel(x_u=0), 8.5, atol=1e-10)
-    else:
-        np.testing.assert_allclose(ds.VT.isel(x=1), 10, atol=1e-10)
+    np.testing.assert_allclose(ds.UT, 0, atol=1e-12)
+    np.testing.assert_allclose(ds.VT.isel(x=1), 10, atol=1e-10)
     np.testing.assert_allclose(products["model_grid", "atmosphere"].UM10, 3)
     np.testing.assert_allclose(products["model_grid", "atmosphere"].VM10, 4)
 
 
-def test_native_face_geography_normalizes_each_file_before_concat(native_files):
+def test_inconsistent_native_face_geography_units_fail_before_concat(native_files):
     second = native_scene(hour=1)
     face_geography = ("latitude_u", "longitude_u", "latitude_v", "longitude_v")
     for name in face_geography:
@@ -332,25 +342,13 @@ def test_native_face_geography_normalizes_each_file_before_concat(native_files):
             name: np.deg2rad(second[name]).assign_attrs(units="rad"),
         })
     second.to_netcdf(native_files / "native1.nc", engine="netcdf4")
-    products = run_export(native_files, "native", "interfaces")
-    ds = products["model_grid", "atmosphere"]
-    for name in face_geography:
-        assert ds[name].sizes["time"] == 2
-        assert ds[name].attrs["units"] == (
-            "degrees_north" if name.startswith("latitude") else "degrees_east")
-        xr.testing.assert_allclose(ds[name].isel(time=0, drop=True),
-                                   ds[name].isel(time=1, drop=True))
-    # Check the actual crop locations, not only agreement of the two files.
-    x_faces = np.array([-1500., -500., 500., 1500.])
-    y_mass = np.array([-1000., 0., 1000.])
-    for time in (0, 1):
-        np.testing.assert_allclose(ds.latitude_u.isel(time=time, y=1),
-                                   -20 + x_faces / 111000, rtol=0, atol=1e-12)
-        np.testing.assert_allclose(ds.longitude_u.isel(time=time, x_u=1),
-                                   60 - y_mass / (111000 * np.cos(np.deg2rad(20))),
-                                   rtol=0, atol=1e-12)
-        np.testing.assert_allclose(ds.UT.isel(time=time, level=0, y=1),
-                                   10 + x_faces / 1000, rtol=0, atol=1e-12)
+    originals = {path: path.read_bytes() for path in native_files.glob("native*.nc")}
+    with pytest.raises(ValueError, match="distinct fields share requested name") as caught:
+        run_export(native_files, "native", "interfaces")
+    assert all(name in str(caught.value) for name in (
+        *face_geography, "native0.nc", "native1.nc", "degrees_north", "rad"))
+    assert not (native_files / "run").exists()
+    assert all(path.read_bytes() == before for path, before in originals.items())
 
 
 def loader_config(path, variables, pairs):
