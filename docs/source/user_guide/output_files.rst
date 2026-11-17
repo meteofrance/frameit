@@ -92,10 +92,12 @@ distinct; missing values are never filled with zero.
 ``sources.<id>.fa_decoder.payload_reads`` identifies actual read calls by source
 basename and native field. Decoder JSONL logs retain individual requests and
 scaling observations; see :doc:`fa_contracts` for descriptor meanings and limits.
+The input inventory and ``fa_inputs`` can include lazy native views later
+excluded by centre association; their presence does not establish a payload read.
 
-Projected FA tracking adds selected-grid latitude/longitude and source-CRS
-snapping offsets to the track, source-prefixed in coupled products. Continuous
-``latitude``/``longitude`` remain requested centres; see
+Projected FA lookup records native indices, selected-grid latitude/longitude and
+source-CRS snapping offsets in each source's per-grid region provenance.
+The reusable track's ``latitude``/``longitude`` remain continuous centres; see
 :doc:`FA geometry and centres <fa_geometry>` for conventions.
 With ``products.polar.shared_grid: true``, source-qualified products use common
 radius/azimuth controls and verified geography at their associated centres.
@@ -137,6 +139,11 @@ Keep these four records with the data:
   versions and selected Slurm metadata. ``planned_products`` is intent;
   ``products`` lists observed complete publications; ``pending`` lists unresolved
   processing, publication or cleanup.
+
+When centre association is used, status ``time_alignment`` mirrors the provenance
+record, including excluded times. Unmapped GRIB headers remain inspectable under
+``sources.<id>.unmapped_grib_records`` in provenance, with native attributes and
+record locators; they are not given invented physical-field aliases.
 
 Status ``layouts`` records reader/product chunks, dimensions and uncompressed
 array sizes; published descriptors record reopened storage layouts. Estimates
@@ -346,8 +353,11 @@ SIMU.track.nc
 This file contains fixed or moving centres and the selected method's diagnostics:
 
 - Coordinates: ``time``
-- Data variables: native indices such as ``cx``/``cy``, latitude/longitude,
-  kinematics such as ``heading_deg``/``speed`` and method-specific diagnostics.
+- Data variables: ``latitude``/``longitude`` and the selected method's diagnostics,
+  which can include kinematics such as ``heading_deg``/``speed``.
+
+Native grid indices and FA snapping offsets belong to per-grid region provenance,
+not to a universal index system in this geographical trajectory.
 
 For a single-time automatic track, ``latitude`` and ``longitude`` still identify the centre
 used by every coupled source. ``heading_deg``, ``dist`` and ``speed`` are NaN:
@@ -627,6 +637,10 @@ Different source grids, clocks, masks and vertical axes remain distinct.
 - ``radial_bearing`` is the local terminal-forward geodesic bearing, not a
   requested radial/tangential diagnostic. Offset/spacing coordinates describe
   target geometry, not a new source grid or area cell.
+
+Horizontally sampled auxiliary coordinates carry their target time; a moving
+target can sample different values from static native support. Untouched
+leading/scalar metadata does not acquire a time axis merely for assembly.
 
 Each requested field has ``<field>_geometry_mapped``, support fraction,
 interpolation status, validity, ring coverage and full-ring eligibility arrays.

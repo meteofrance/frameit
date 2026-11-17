@@ -108,6 +108,10 @@ retain library zones/CRS, origin translation and declared versus unresolved fact
 Cropped field products distinguish requested ``center_latitude``/
 ``center_longitude`` from ``grid_selected_latitude``/``grid_selected_longitude``.
 Per-source region provenance records native indices, realised extents and coverage.
+For projected FA, ``sources.<id>.region.grids.<grid>.grid_lookup`` also records
+the lookup method, offset/tie conventions and selected geography/snapping offsets.
+Its ``variables`` entries carry ``values`` and ``units``; arrays follow that
+source's ``region.associations`` order (or the individual grid record's source time).
 These locations and indices belong to that source's grid; they cannot be reused
 on a shifted surface or atmospheric grid.
 

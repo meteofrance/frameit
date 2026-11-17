@@ -60,6 +60,8 @@ with xr.open_dataset(sys.argv[1]) as track:
     np.testing.assert_allclose(track.latitude, -20., atol=.01)
     assert track.sizes['time'] == 2
     sources = yaml.safe_load(open(sys.argv[4]))['sources']
+    assert sources['atmosphere']['tracker_support']['operation_time_count'] == 2
+    assert sources['atmosphere']['tracker_support']['selected_time_count'] == 2
     atmosphere = next(grid for grid in sources['atmosphere']['region']['grids'].values()
                       if 'native_x_indices' in grid)
     ocean = next(grid for grid in sources['ocean']['region']['grids'].values()
@@ -231,7 +233,19 @@ def test_croco_mnh_shared_polar_keeps_sigma_support_and_current_identity(tmp_pat
         for record in records:
             assert record["rotation_coordinate"]["attributes"]["units"] == "radians"
             np.testing.assert_array_equal(record["rotation_coordinate"]["values"], np.pi / 2)
-        assert provenance["sources"]["ocean"]["current_provenance"]
+        current_records = provenance["sources"]["ocean"]["current_provenance"]
+        assert current_records
+        for record in current_records:
+            assert record["method"] == "both_valid_midpoint_then_rho_angle_rotation"
+            assert record["source_mask_standard_name"] == "land_binary_mask"
+            assert record["source_units"] == {"u": "meter second-1", "v": "meter second-1"}
+            assert record["source_id"] == "ocean"
+            assert record["source_files"] == {"u": "croco.nc", "v": "croco.nc"}
+            assert "option_0=land option_1=water" in record["support"]
+            assert record["boundary_policy"] == "missing bracket remains missing; no extrapolation"
+            assert record["track_motion_subtracted"] is False
+    else:
+        assert not provenance["sources"]["ocean"]["current_provenance"]
 
 
 @pytest.mark.parametrize("integration", [False, True])

@@ -9,7 +9,6 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import xarray as xr
-import yaml
 
 from frameit.core.coupled import _mapped_track
 from frameit.core.execution import execute_simulation
@@ -227,21 +226,32 @@ def test_native_projected_extraction_and_ordinary_reader_provenance(tmp_path):
     assert result.ok and path.read_bytes() == before
     products = {p["role"]: p["path"] for p in result.products}
     check = subprocess.run([sys.executable, "-c", """
-import sys, json, numpy as np, xarray as xr
+import sys, json, numpy as np, xarray as xr, yaml
 p = json.loads(sys.argv[1])
 with xr.open_dataset(p['track']) as t:
-    assert int(t.cx[0]) == 5 and int(t.cy[0]) == 3
-    np.testing.assert_allclose(t.grid_snap_dx_m, 499.99, atol=1.e-5)
-    np.testing.assert_allclose(t.grid_snap_dy_m, 100., atol=1.e-5)
-    assert t.attrs['tracking_grid_lookup'] == 'fa_source_crs_native_axes_v1'
+    np.testing.assert_array_equal(t.latitude, json.loads(sys.argv[3])['latitude'])
+    np.testing.assert_array_equal(t.longitude, json.loads(sys.argv[3])['longitude'])
+    assert t.latitude.attrs['units'] == 'degrees_north'
+    assert t.longitude.attrs['units'] == 'degrees_east'
+with open(sys.argv[2]) as stream:
+    provenance = yaml.safe_load(stream)
+grid, = provenance['sources']['surface']['region']['grids'].values()
+assert grid['native_x_indices'] == [5] and grid['native_y_indices'] == [3]
+mapping = grid['grid_lookup']
+assert mapping['method'] == 'fa_source_crs_native_axes_v1'
+np.testing.assert_allclose(mapping['variables']['grid_snap_dx_m']['values'], 499.99, atol=1.e-5)
+np.testing.assert_allclose(mapping['variables']['grid_snap_dy_m']['values'], 100., atol=1.e-5)
+assert mapping['variables']['grid_snap_dx_m']['units'] == 'm'
+assert mapping['variables']['grid_snap_dy_m']['units'] == 'm'
 with xr.open_dataset(p['model_grid']) as d:
     np.testing.assert_array_equal(d.CLSTEMPERATURE[0],
         280. + 10*np.arange(1,6)[:,None] + np.arange(3,8))
 assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
-""", json.dumps(products)], capture_output=True, text=True, timeout=30)
+""", json.dumps(products), str(conf.output_dir / "run-provenance.yaml"),
+        json.dumps({"latitude": centre.lat.values.tolist(),
+                    "longitude": centre.lon.values.tolist()})],
+        capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
-    provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
-    assert provenance["tracking_summary"]["tracking_grid_lookup"] == NATIVE_LOOKUP
 
 
 @pytest.mark.skipif(not NATIVE, reason="optional falfilfa4py wheel not installed")
@@ -269,16 +279,23 @@ def test_coupled_projected_source_retains_offsets_and_own_indices(tmp_path):
     assert result.ok
     track = next(p["path"] for p in result.products if p["role"] == "track")
     check = subprocess.run([sys.executable, "-c", """
-import sys, xarray as xr, numpy as np
+import sys, xarray as xr, numpy as np, yaml, json
 with xr.open_dataset(sys.argv[1]) as t:
-    assert int(t.atmosphere_cx[0]) == 3 and int(t.surface_cx[0]) == 5
-    assert t.surface_grid_snap_dx_m.attrs['units'] == 'm'
-    np.testing.assert_allclose(t.surface_grid_snap_dx_m, 499.99, atol=1.e-5)
-    assert t.surface_grid_selected_latitude.attrs['source_id'] == 'surface'
+    np.testing.assert_array_equal(t.latitude, json.loads(sys.argv[3])['latitude'])
+    np.testing.assert_array_equal(t.longitude, json.loads(sys.argv[3])['longitude'])
+with open(sys.argv[2]) as stream:
+    sources = yaml.safe_load(stream)['sources']
+atmosphere, = sources['atmosphere']['region']['grids'].values()
+surface, = sources['surface']['region']['grids'].values()
+assert atmosphere['native_x_indices'] == [3] and surface['native_x_indices'] == [5]
+mapping = surface['grid_lookup']
+assert mapping['method'] == 'fa_source_crs_native_axes_v1'
+assert mapping['variables']['grid_snap_dx_m']['units'] == 'm'
+np.testing.assert_allclose(mapping['variables']['grid_snap_dx_m']['values'], 499.99, atol=1.e-5)
+assert mapping['variables']['grid_selected_latitude']['units'] == 'degrees_north'
 assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
-""", str(track)], capture_output=True, text=True, timeout=30)
+""", str(track), str(conf.output_dir / "run-provenance.yaml"),
+        json.dumps({"latitude": centre.lat.values.tolist(),
+                    "longitude": centre.lon.values.tolist()})],
+        capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
-    provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
-    mapping = provenance["sources"]["surface"]["grid_lookup"]
-    assert mapping["method"] == NATIVE_LOOKUP
-    assert mapping["offsets"][0] == "track.surface_grid_snap_dx_m"

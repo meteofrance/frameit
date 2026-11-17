@@ -67,6 +67,8 @@ with xr.open_dataset(sys.argv[1]) as track:
     np.testing.assert_allclose(track.latitude, -20., atol=.01)
     assert track.sizes['time'] == 2
     sources = yaml.safe_load(open(sys.argv[4]))['sources']
+    assert sources['atmosphere']['tracker_support']['operation_time_count'] == 2
+    assert sources['atmosphere']['tracker_support']['selected_time_count'] == 2
     atmosphere = next(grid for grid in sources['atmosphere']['region']['grids'].values()
                       if 'native_x_indices' in grid)
     ocean = next(grid for grid in sources['ocean']['region']['grids'].values()

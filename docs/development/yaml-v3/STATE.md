@@ -47,9 +47,42 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 16 | partial, required checks pass | lead inline | 15 | Current required suite and bounded connected checks pass; broader qualification/freeze remains separate. |
 | 17 | partial | lead + fresh bounded reviewer | 16 | Generated-NetCDF task tutorials and nine analytical SVGs now verified; broader qualification remains separate. |
 | 18 | done, local evidence | lead + fresh bounded reviewer | 16 | `bd882c2`; final exact122 has58 passes; all six findings closed. No real-cluster claim. |
-| 19 | blocked | lead | 16, 18 | Installed qualification unavailable; authorized full pytest is red (26 failures), not a qualification pass. |
+| 19 | blocked | lead | 16, 18 | Installed qualification unavailable; unfiltered pytest is green (3213 passes), not installed/scientific qualification. |
 | 20 | wording gates verified | lead + fresh reviewers | 17, 19 | `2095dd8`; both full passes and technical closure; strict09/publication/live text pass. Restricted acceptance remains separate. |
 | 21 | reviews closed; acceptance blocked | lead + fresh reviewers + human | 20 | Both independent review seats verified their fixes; Task19 qualification and actual human usability observations remain open. |
+
+### 17 November — retained runtime repairs and local integration authorization
+
+The maintainer authorized repair of the 26 retained failures, chose geographic FA
+trajectories with per-grid mapping provenance, then authorized local commit/merge
+into `develop` after a green full suite. Screenshots are explicitly unavailable;
+no pixel/human acceptance is inferred.
+
+- Final unfiltered feature verification: **3213 passed, zero failures/skips,
+  four passing subtests**, 9756 warnings, 1531.65 s. The three extra ordinary
+  cases cover separate U/V geography rejection, sampled auxiliary time and
+  native model-grid/mass-polar optionality. No skips/xfails were introduced.
+- Shared repairs cover native face geography, moving polar auxiliaries, actual
+  current/unknown-GRIB provenance, status association and centroid operation-time
+  admission. Exact numerical truths, masks, units, clocks and source-read-only
+  checks remain; later stale assertions follow the documented current contracts.
+- One fresh bounded read-only review found one Important compatibility defect:
+  optional polar preparation replaced native-grid descriptors and separated
+  collocated model-grid axes. Native-sampling preparation now keeps inventory
+  identity; genuine remaps still retain destination records, including an
+  existing native mass grid. Native-only/polar-enabled identity and the original
+  independent reader both pass. The existing mass/rotation regression is intact.
+- All 18 frozen source/test/public-doc inputs match after the green run. All nine
+  approved fixture checksums pass before/after. Strict Sphinx/publication and
+  rendered 1000/320px layout checks pass; no PNG smoke image was opened.
+- The local repair commit and authorized `develop` fast-forward are next.
+  The merged result still needs its full unfiltered verification. No push,
+  installed-package qualification, reserved full-diagnostic campaign,
+  production/HPC run, benchmark or scientific/release acceptance is claimed.
+
+Evidence, exact commands, contracts and limits:
+[runtime repairs](2026-11-17-runtime-repairs.md) and
+[implementation plan](2026-11-17-runtime-repairs-plan.md).
 
 ### 17 November — full-suite stale-test audit
 
@@ -84,8 +117,9 @@ No skips or xfails were added.
 
 The complete failure inventory, exact commands, classifications and limitations
 are in [the full-suite audit record](2026-11-17-full-suite-audit.md).
-The suite is not green and later assertions behind retained failures remain
-unverified. This supplies actual full-pytest evidence, not installed-package,
+At that audit cutoff the suite was not green and later assertions behind retained
+failures were unverified; the runtime follow-up above supersedes that status.
+The audit supplies actual full-pytest evidence, not installed-package,
 scientific, merge/release or human qualification.
 
 Docs: no user-facing impact because this change affects tests and unpublished

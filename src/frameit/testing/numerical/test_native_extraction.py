@@ -12,6 +12,7 @@ from frameit.processing.polar.metadata import (
     coordinate_dependency_names,
     point_attributes,
     preserve_coordinate_dependencies,
+    restore_auxiliaries,
 )
 from frameit.tracking.tracker_core import make_tracking_dataset
 from frameit.tracking.Utrack_Tracker import _common_input_grid
@@ -232,3 +233,29 @@ def test_metadata_dependencies_preserved_without_restoring_horizontal_bounds():
     assert "c_grid_dynamic_range" not in attrs
     assert attrs["source_c_grid_dynamic_range"] == "1:5"
     assert "grid_mapping" not in attrs
+
+
+def test_sampled_horizontal_auxiliaries_retain_each_target_time():
+    altitude = xr.DataArray([100., 200.], dims="level", coords={"level": [1, 2]},
+                            attrs={"units": "m"})
+    pieces = []
+    for time, index in ((0, 1.5), (1, 2.5)):
+        result = xr.Dataset(
+            {"q": (("time", "level", "rr", "theta"), np.ones((1, 2, 1, 1)))},
+            coords={"time": [time], "level": [1, 2], "rr": [0.], "theta": [0.]})
+        transformed = {
+            "source_i": xr.DataArray([[index]], dims=("rr", "theta"), attrs={"units": "1"}),
+            "height": xr.DataArray([[[100. + index]], [[200. + index]]],
+                                   dims=("level", "rr", "theta"), attrs={"units": "m"}),
+        }
+        piece = restore_auxiliaries(result, {"altitude": altitude}, transformed)
+        assert piece.source_i.dims == ("time", "rr", "theta")
+        pieces.append(piece)
+    combined = xr.combine_by_coords(
+        pieces, coords="minimal", compat="equals", join="exact", combine_attrs="override")
+    np.testing.assert_array_equal(combined.source_i[:, 0, 0], [1.5, 2.5])
+    np.testing.assert_array_equal(combined.height[:, :, 0, 0], [[101.5, 201.5], [102.5, 202.5]])
+    assert combined.source_i.attrs["coordinate_interpolation"] == "sampled_from_source_grid"
+    assert combined.height.attrs["units"] == "m"
+    xr.testing.assert_identical(
+        combined.altitude.reset_coords(drop=True), altitude.rename("altitude"))

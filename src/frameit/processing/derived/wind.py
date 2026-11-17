@@ -336,7 +336,7 @@ def prepare_source_operation(operation, internal, source, conf):
         n: c for n, c in geometry.coords.items() if set(c.dims) <= set(prepared.dims)})
     prepared.attrs = dict(geometry.attrs)
     if operation["preparation"] == "croco_midpoint_both_valid_then_rho_angle":
-        from frameit.io.croco_utils import prepare_croco_currents
+        from frameit.io.croco_utils import _record_current_provenance, prepare_croco_currents
 
         settings = copy(conf)
         settings.cartesian_horizontal_winds = "mass_earth"
@@ -348,8 +348,14 @@ def prepare_source_operation(operation, internal, source, conf):
             for component in ("u", "v")}
         settings.requested_variables_user = {"current": {
             "variables": list(native_names.values())}}
-        prepared = prepare_croco_currents(prepared.rename(native_names), settings).rename(
+        native = prepared.rename(native_names)
+        prepared = prepare_croco_currents(native, settings).rename(
             {native: reference for reference, native in native_names.items()})
+        _record_current_provenance(
+            native, settings, [tuple(native_names[operation["inputs"][key]] for key in ("u", "v"))],
+            source_paths={
+                native_names[name]: operation["input_binding"]["dependencies"][name][
+                    "records"][0]["locator"]["path"] for name in native_names})
     if operation["pair"]:
         settings = copy(conf)
         settings.wind_pairs = [operation["pair"]]

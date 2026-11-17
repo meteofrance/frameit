@@ -358,11 +358,18 @@ def test_primary_pair_shared_target_geometry_budgets_and_fresh_exports(
     from frameit.processing.polar import sampling
 
     raw = primary_pair_document(tmp_path, synchronous=synchronous)
+    originals = {Path(path): Path(path).read_bytes() for source in raw["sources"].values()
+                 for path in source["files"]}
+    base_conf = SimulationConfig.from_mapping_with_model_preset({
+        **raw, "output": {**raw["output"], "directory": str(tmp_path / "native-only")}})
+    base_result = execute_simulation(base_conf)
+    base_path = next(p["path"] for p in base_result.products
+                     if p["role"] == "model_grid" and p["source"] == "atmosphere")
+    with xr.open_dataset(base_path) as original:
+        native = original.load()
     raw["products"]["polar"] = {"radius_km": 4., "shared_grid": True,
         "fields": {"atmosphere": ["prmsl", "t", "r", "z"], "surface": ["SFX.T2M", "SFX.SST"]},
         "processing": {"max_target_points": 60}}
-    originals = {Path(path): Path(path).read_bytes() for source in raw["sources"].values()
-                 for path in source["files"]}
     events, reads = [], []
     original_geometry = grid_geometry.resolve_geometry
     original_target = sampling.resolve_polar_sampling
@@ -414,6 +421,11 @@ def test_primary_pair_shared_target_geometry_budgets_and_fresh_exports(
     result = execute_simulation(conf)
     assert result.ok
     carts = {p["source"]: p["path"] for p in result.products if p["role"] == "model_grid"}
+    with xr.open_dataset(carts["atmosphere"]) as sampled:
+        for name in native.data_vars:
+            xr.testing.assert_identical(sampled[name], native[name])
+        assert sampled.prmsl.dims == sampled.u10.dims == ("time", "y", "x")
+        assert (sampled.prmsl + sampled.u10).dims == ("time", "y", "x")
     carts["track"] = next(p["path"] for p in result.products if p["role"] == "track")
     carts["provenance"] = str(conf.output_dir / "run-provenance.yaml")
     polars = {p["source"]: p["path"] for p in result.products if p["role"] == "polar"}
@@ -421,10 +433,12 @@ def test_primary_pair_shared_target_geometry_budgets_and_fresh_exports(
     check = subprocess.run([sys.executable, "-c", PRIMARY_NATIVE_CHECK + """
 polars = json.loads(sys.argv[2])
 def selected_with_quality(data, names):
-    suffixes = ('','_support_fraction','_interpolation_status','_valid',
+    suffixes = ('','_geometry_mapped','_support_fraction','_interpolation_status','_valid',
                 '_ring_coverage','_full_ring_valid')
     assert set(data.data_vars) == {n+s for n in names for s in suffixes} | {'geometry_mapped'}
     for name in names:
+        assert data[name+'_geometry_mapped'].attrs['frameit_role'] == 'interpolation_quality'
+        np.testing.assert_array_equal(data[name+'_geometry_mapped'], 1)
         assert data[name+'_interpolation_status'].dtype == np.uint8
         assert 'flag_meanings' in data[name+'_interpolation_status'].attrs
 with xr.open_dataset(polars['atmosphere'], engine='netcdf4') as a:
@@ -438,8 +452,8 @@ with xr.open_dataset(polars['atmosphere'], engine='netcdf4') as a:
     j = (np.array([-20.,-19.988])+20.054)/.009
     i = (np.array([50.,50.015])-49.932968)/.009576
     expected = 100000.+100*np.array([1,2])+10*j+i
-    # Ordinary exports retain the established float32 field encoding.
-    np.testing.assert_array_equal(a.prmsl.isel(radius=0),
+    # Keep the float32-rounded oracle without requiring reduced-precision exports.
+    np.testing.assert_array_equal(a.prmsl.isel(radius=0).astype('float32'),
                                   np.broadcast_to(expected.astype('float32')[:,None],(2,9)))
     selected_with_quality(a, ['prmsl', 't', 'r', 'z'])
 with xr.open_dataset(polars['surface'], engine='netcdf4') as s:

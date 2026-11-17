@@ -11,6 +11,8 @@ Use this method only with at least two increasing times and valid input coverage
 of the full 500-km environmental-pressure ring. The extraction box does not limit
 tracking reads. See `Configuration defaults`_ for controls and
 `Inputs and supported grids`_ for the required fields.
+For coupled runs, at least two times must remain in the tracker's actual centre
+association; two atmospheric input times alone are insufficient.
 
 .. figure:: ../_static/figures/pressure-centroid-method.svg
    :target: ../_static/figures/pressure-centroid-method.svg

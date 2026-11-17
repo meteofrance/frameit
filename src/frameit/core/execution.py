@@ -513,7 +513,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
         status["tracking_termination_reason"] = track_attrs.get(
             "tracking_termination_reason", ""
         )
-        if config.input_sources:
+        if "time_alignment" in config.simulation_parameter:
             status["time_alignment"] = config.simulation_parameter["time_alignment"]
             if config.simulation_parameter.get("common_polar_target") is not None:
                 status["common_polar_target"] = config.simulation_parameter[

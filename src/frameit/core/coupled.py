@@ -291,8 +291,10 @@ def _region_grid(conf, source, grid_id, *, record=None, prepared_grid=None):
         geometry.isel({dim: sorted(indices) for dim, indices in temporal.items()}))
     settings = copy(conf)
     for kind, conventional in (
-            ("latitude", {"latitude", "nav_lat", "lat_rho", "lat_u", "lat_v"}),
-            ("longitude", {"longitude", "nav_lon", "lon_rho", "lon_u", "lon_v"})):
+            ("latitude", {"latitude", "nav_lat", "lat_rho", "lat_u", "lat_v",
+                          "latitude_u", "latitude_v"}),
+            ("longitude", {"longitude", "nav_lon", "lon_rho", "lon_u", "lon_v",
+                           "longitude_u", "longitude_v"})):
         candidates = [name for name in geometry.coords if
                       geometry[name].attrs.get("standard_name") == kind or name in conventional]
         if len(candidates) != 1:
@@ -322,12 +324,21 @@ def _region_grid(conf, source, grid_id, *, record=None, prepared_grid=None):
 def _region_facts(track, geometry, settings):
     """Requested/realised native geometry, using the same box rounding as extraction."""
     from frameit.processing.extraction import center2box
+    from frameit.tracking.geographic import SNAP_VARIABLES
 
     facts = {
         "requested_latitude": track.lat.values.tolist(),
         "requested_longitude": track.lon.values.tolist(),
         "native_x_indices": track.cx.values.tolist(), "native_y_indices": track.cy.values.tolist(),
         "orientation": "native source x/y; no basis rotation"}
+    if "tracking_grid_lookup" in track.attrs:
+        facts["grid_lookup"] = {
+            "method": track.attrs["tracking_grid_lookup"],
+            "offset_convention": track.attrs["tracking_snap_convention"],
+            "tie_convention": track.attrs["tracking_grid_ties"],
+            "variables": {name: {"values": track[name].values.tolist(),
+                                  "units": track[name].attrs["units"]}
+                          for name in SNAP_VARIABLES}}
     if settings.x_boxsize_km and settings.y_boxsize_km:
         box = center2box(track, settings.x_boxsize_km, settings.y_boxsize_km,
                          settings.resolution, geometry.sizes[settings.name_lon_dim],
@@ -431,6 +442,16 @@ def _prepare_v3_regions(conf, children, plans):
                     record[key] = np.datetime64(record[key], "ns")
     else:
         alignment = align_source_times(inventories, conf.time_alignment, track_times)
+    if "tracker" in region:
+        support = plans[atmosphere]["tracker_support"]
+        count = len({record["source_time"]
+                     for record in alignment["sources"][atmosphere]["associations"]})
+        support["operation_time_count"] = count
+        if support["method"] == "pressure_centroid" and count < 2:
+            raise ValueError(
+                "pressure_centroid requires at least two associated operation times; "
+                f"region.sources_coupling_time_association={conf.time_alignment!r} "
+                f"retains {count} for source {atmosphere!r}")
     conf.add_parameter("time_alignment", _association_report(alignment))
     conf.add_parameter("region_alignment", alignment)
     if "center" in region:
@@ -1061,6 +1082,12 @@ def run_native_sources(runner, *, benchmark=False):
     runner.conf.add_parameter("source_provenance", {
         name: {"model": source["model"], "format": source["format"],
                "fa_inputs": children[name].simulation_parameter.get("fa_inputs", []),
+               "current_provenance": children[name].simulation_parameter.get(
+                   "current_provenance", []),
+               "unmapped_grib_records": _association_report([
+                   {**record, "attributes": source["fields"][record["field_id"]]["attributes"]}
+                   for entry in source["file_inventory"] if entry["path"] in source["files"]
+                   for record in entry.get("unmapped_records", [])]),
                "field_metadata": source["metadata_origins"].get("field_metadata", {}),
                "interpretation": source.get("interpretation"),
                 "region": _association_report(source.get("region")),

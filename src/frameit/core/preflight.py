@@ -225,6 +225,7 @@ def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None):
     for name, coord in ds.variables.items():
         geographic = (coord.attrs.get("standard_name") in {"latitude", "longitude"}
                       or name in {"latitude", "longitude", "nav_lat", "nav_lon",
+                                  "latitude_u", "longitude_u", "latitude_v", "longitude_v",
                                   "lat_rho", "lon_rho", "lat_u", "lon_u", "lat_v", "lon_v"})
         if geographic and set(coord.dims) - temporal_dims <= set(spatial):
             names.add(name)
@@ -297,7 +298,8 @@ def _netcdf_inventory(path, source, resources):
     for name, value in ds.variables.items():
         if value.attrs.get("standard_name") in {"latitude", "longitude"} or name in {
                 "latitude", "longitude", "nav_lat", "nav_lon", "lat_rho", "lon_rho",
-                "lat_u", "lon_u", "lat_v", "lon_v"}:
+                "lat_u", "lon_u", "lat_v", "lon_v",
+                "latitude_u", "longitude_u", "latitude_v", "longitude_v"}:
             metadata.add(name)
         if value.attrs.get("bounds"):
             metadata.add(value.attrs["bounds"])
@@ -894,6 +896,10 @@ def inventory_source(conf, name, *, resources=None):
                  {"identity": identity, "dimensions": fields[identity]["dimensions"],
                   "group": fields[identity].get("group"), "grids": fields[identity]["grid_ids"],
                   "attributes": fields[identity]["attributes"],
+                  "coordinate_attributes": {
+                      grid_id: {key: coordinate["attributes"]
+                                for key, coordinate in grids[grid_id]["coordinates"].items()}
+                      for grid_id in fields[identity]["grid_ids"]},
                   "dataset_attributes": fields[identity].get("dataset_attributes", {}),
                  "providers": sorted({r["locator"]["path"] for r in selected
                                       if r["field_id"] == identity})}

@@ -150,6 +150,8 @@ def restore_auxiliaries(result: xr.Dataset, leading, transformed):
         result = result.assign_coords({name: clean})
     for name, coord in transformed.items():
         clean = xr.DataArray(coord.variable)
+        if "time" in result.dims and "time" not in clean.dims:
+            clean = clean.expand_dims(time=result.time)
         clean.attrs = point_attributes(coord.attrs, available, retain_bounds=True)
         clean.attrs["coordinate_interpolation"] = "sampled_from_source_grid"
         result = result.assign_coords({name: clean})

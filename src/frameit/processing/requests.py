@@ -1383,7 +1383,9 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
             support = bind_requests(local, subrequest, required_inputs=selectors)
             _merge_operation_dependencies(source, binding, support)
             output["records"].extend(deepcopy(bound_result["records"]))
-            binding["representation_grids"][grid_id] = destination
+            # Native sampling keeps inventory identity; remapping retains its destination record.
+            if operation["sampling"] != "native":
+                binding["representation_grids"][grid_id] = destination
             planned = {
                 **deepcopy(operation), "name": name, "product": product,
                 **({"wind_reference_frame_override": override} if override else {}),

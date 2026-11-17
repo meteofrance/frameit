@@ -299,7 +299,9 @@ current definitions in m/s; downstream scripts must use the selected representat
 rather than assume native staggering from ``u/v`` names. Ordinary-reader attributes
 identify the current frame, method and support; ``current_provenance`` records the
 source units, static-mask authority, method and boundary policy, inside the named
-source for coupled runs. Native and analysis branches remain separate and attach
+source for named-source runs. Applied current operations also identify their
+native component input basenames in ``source_files``. Scalar-only processing
+does not create current-analysis records. Native and analysis branches remain separate and attach
 no wind-speed, radial/tangential-wind or wind-representation metadata. Stress
 analysis remains separately gated; native stress copies do not establish its sign,
 basis or physical definition. No optional FA/GRIB/polar stack is needed for

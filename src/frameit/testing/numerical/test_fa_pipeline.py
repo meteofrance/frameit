@@ -227,7 +227,12 @@ def test_grib_and_fa_share_one_run_without_native_runtime_collision(tmp_path):
         assert data["SFX.T2M"].shape == (1, 5, 5)
     assert "falfilfa4py" not in sys.modules
     provenance = yaml.safe_load((tmp_path / "run" / "run-provenance.yaml").read_text())
-    assert provenance["sources"]["atmosphere"]["unmapped_grib_records"]
+    unmapped, = provenance["sources"]["atmosphere"]["unmapped_grib_records"]
+    assert unmapped["name"] is None
+    assert unmapped["attributes"]["GRIB_paramId"] == 0
+    assert unmapped["locator"]["message_index"] == 1
+    assert unmapped["locator"]["path"] == str(path)
+    assert unmapped["time"] == "2026-01-01T01:00:00.000000000"
 
 
 @pytest.mark.skipif(not NATIVE, reason="optional falfilfa4py wheel not installed")
@@ -303,10 +308,11 @@ assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
                for s in provenance["time_alignment"]["sources"].values()) == 2
     assert status["state"] == "completed"
     assert provenance["time_alignment"] == status["time_alignment"]
-    assert provenance["time_alignment"]["sources"]["atmosphere"]["skipped_times"] == [
-        "2026-01-01T00:00:00.000000000"]
-    assert provenance["time_alignment"]["sources"]["surface"]["skipped_times"] == [
-        "2026-01-01T02:00:00.000000000"]
+    for name, skipped in (("atmosphere", "2026-01-01T00:00:00"),
+                          ("surface", "2026-01-01T02:00:00")):
+        np.testing.assert_array_equal(np.array(
+            provenance["time_alignment"]["sources"][name]["skipped_times"],
+            dtype="datetime64[ns]"), [np.datetime64(skipped, "ns")])
     assert provenance["sources"]["surface"]["fa_decoder"]["decode_requests"] > 0
     versions = provenance["sources"]["surface"]["fa_decoder"]["backend_versions"]
     # Provenance must identify the installed distribution actually used.
@@ -322,7 +328,10 @@ assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
     restored = SimulationConfig.from_yaml(conf.output_dir / "resolved-config.yaml")
     assert resolved_configuration(restored)["sources"]["surface"]["fa"][
         "expected_source"]["MASDEV"] == 47
-    assert result.ok and result.n_files == 2  # The non-common FA file was not processed.
+    assert result.ok and result.n_files == 3
+    assert set(source["fa_decoder"]["payload_reads"]) == {"native-001.fa"}
+    assert {record["source_id"] for record in source["fa_inputs"]} == {
+        "native-001.fa", "native-002.fa"}
     strict = copy.deepcopy(raw)
     strict["region"]["sources_coupling_time_association"] = "strict"
     with pytest.raises(ValueError, match="sources_coupling_time_association"):
@@ -446,10 +455,12 @@ def assert_primary_pair_provenance(conf):
     alignment = provenance["time_alignment"]
     assert status["state"] == "completed" and alignment == status["time_alignment"]
     assert alignment["policy"] == "common"
-    assert alignment["selected_times"] == [f"2026-01-01T0{hour}:00:00.000000000" for hour in (1, 2)]
+    np.testing.assert_array_equal(
+        np.array(alignment["selected_times"], dtype="datetime64[ns]"),
+        [np.datetime64(f"2026-01-01T0{hour}:00:00", "ns") for hour in (1, 2)])
     for name, skipped, missing, filename in (("atmosphere", 0, 3, "atmosphere-0.grib"),
                                               ("surface", 3, 0, "surface-3.fa")):
-        assert alignment["sources"][name] == {
+        expected = {
             "available_count": 3, "selected_count": 2,
             "skipped_times": [f"2026-01-01T0{skipped}:00:00.000000000"],
             "missing_times": [f"2026-01-01T0{missing}:00:00.000000000"],
@@ -458,6 +469,14 @@ def assert_primary_pair_provenance(conf):
                 "source_time": f"2026-01-01T0{hour}:00:00.000000000",
                 "coupling_time": f"2026-01-01T0{hour}:00:00.000000000",
                 "offset_seconds": 0.} for hour in (1, 2)]}
+        actual = copy.deepcopy(alignment["sources"][name])
+        for report in (actual, expected):
+            for key in ("skipped_times", "missing_times"):
+                report[key] = [np.datetime64(value) for value in report[key]]
+            for association in report["associations"]:
+                for key in ("source_time", "coupling_time"):
+                    association[key] = np.datetime64(association[key])
+        assert actual == expected
     source = provenance["sources"]["surface"]
     decoder = source["fa_decoder"]
     assert decoder["decode_requests"] > 0
@@ -477,7 +496,8 @@ def assert_primary_pair_provenance(conf):
             assert descriptor["mask"]["undefined"]["origin"] == "EPyGrAM_returned_mask"
     assert decoder["field_observations"]["surface-1.fa"]["SFX.SST"]["mask"]["nonfinite_count"] == 1
     assert decoder["field_observations"]["surface-2.fa"]["SFX.SST"]["mask"]["nonfinite_count"] == 0
-    assert len({record["source_id"] for record in source["fa_inputs"]}) == 2
+    assert {record["source_id"] for record in source["fa_inputs"]} == {
+        "surface-1.fa", "surface-2.fa", "surface-3.fa"}
     restored = SimulationConfig.from_yaml(conf.output_dir / "resolved-config.yaml")
     settings = restored.sources["surface"]
     assert decoder["backend_versions"]["FA_backend"] == "epygram" and (
@@ -598,7 +618,7 @@ def test_primary_grib_epygram_surfex_native_exports(tmp_path, synchronous, monke
                            capture_output=True, text=True, timeout=30)
     assert check.returncode == 0, check.stdout + check.stderr
     assert_primary_pair_provenance(conf)
-    assert result.ok and result.n_files == 4
+    assert result.ok and result.n_files == 6
     assert all(path.read_bytes() == before for path, before in originals.items())
     assert not list(conf.output_dir.rglob("*.partial"))
 

@@ -16,15 +16,26 @@ from frameit.core.settings_class import SimulationConfig
 from frameit.testing.datasets import ci_dataset_root
 
 
+def three_point_native_window(source, suffix, latitude, longitude):
+    # Independent squared-degree lookup on this face's own source geography.
+    distance = ((source[f"latitude{suffix}"] - latitude)**2
+                + (source[f"longitude{suffix}"] - longitude)**2)
+    j, i = np.unravel_index(np.argmin(distance.values), distance.shape)
+    return source.isel({f"nj{suffix}": slice(j - 1, j + 2),
+                        f"ni{suffix}": slice(i - 1, i + 2)})
+
+
 def test_real_mnh_native_faces_match_source_file(tmp_path):
     path = ci_dataset_root() / "MNH/CHIDO/3CH09.1.MXX30.011diag.nc"
     with xr.open_dataset(path, engine="netcdf4") as source:
         latitude = float(source.latitude[35, 37])
         longitude = float(source.longitude[35, 37])
-        expected_u = source.UT.isel(time=0, level=[1, 3, 5],
-                                    nj_u=slice(34, 37), ni_u=slice(36, 40)).values
-        expected_v = source.VT.isel(time=0, level=[1, 3, 5],
-                                    nj_v=slice(34, 38), ni_v=slice(36, 39)).values
+        expected_u = three_point_native_window(source, "_u", latitude, longitude).UT.isel(
+            time=0, level=[1, 3, 5]).values
+        expected_v = three_point_native_window(source, "_v", latitude, longitude).VT.isel(
+            time=0, level=[1, 3, 5]).values
+        expected_metadata = {name: {key: source[name].attrs.get(key) for key in (
+            "units", "standard_name", "grid", "wind_reference_frame")} for name in ("UT", "VT")}
     conf = SimulationConfig.from_mapping_with_model_preset({
         "schema_version": 3,
         "sources": {"atmosphere": {
@@ -45,7 +56,8 @@ def test_real_mnh_native_faces_match_source_file(tmp_path):
     with xr.open_dataset(product["path"], engine="netcdf4") as saved:
         np.testing.assert_array_equal(saved.UT[0], expected_u)
         np.testing.assert_array_equal(saved.VT[0], expected_v)
-        assert saved.UT.attrs["wind_reference_frame"] == "grid"
+        for name, attributes in expected_metadata.items():
+            assert {key: saved[name].attrs.get(key) for key in attributes} == attributes
         assert "latitude_u" in saved.coords and "latitude_v" in saved.coords
 
 
@@ -222,6 +234,19 @@ def assert_vertical(products, role, location):
     assert w.attrs["units"] == "m s-1"
 
 
+def test_polar_mass_preparation_does_not_rename_native_model_grid(native_files):
+    native = run_export(native_files, "native", "interfaces", label="base")
+    with_polar = run_export(
+        native_files, "native", "interfaces", polar=True, label="with-polar")
+    for name in ("UT", "VT", "THT", "WT", "Q", "UM10", "VM10", "MSLP"):
+        base, sampled = (products["model_grid", "atmosphere"][name]
+                         for products in (native, with_polar))
+        xr.testing.assert_equal(sampled, base)
+        for key in ("units", "standard_name", "grid", "wind_reference_frame",
+                    "frameit_sampling", "frameit_basis"):
+            assert sampled.attrs.get(key) == base.attrs.get(key)
+
+
 @pytest.mark.parametrize("horizontal", ["native", "mass_earth"])
 @pytest.mark.parametrize("vertical", ["interfaces", "mass"])
 def test_cartesian_grid_choices_reopen_with_physical_samples(native_files, horizontal, vertical):
@@ -232,8 +257,7 @@ def test_cartesian_grid_choices_reopen_with_physical_samples(native_files, horiz
     if horizontal == "native":
         assert ds.UT.dims == ("time", "level", "y", "x_u")
         assert ds.VT.dims == ("time", "level", "y_v", "x")
-        assert ds.sizes["x_u"] == ds.sizes["x"] + 1
-        assert ds.sizes["y_v"] == ds.sizes["y"] + 1
+        assert ds.sizes["x_u"] == ds.sizes["y_v"] == 3
         assert {"latitude_u", "longitude_u"} <= set(ds.UT.coords)
         assert {"latitude_v", "longitude_v"} <= set(ds.VT.coords)
         # The exported geography locates the actual unrotated native samples.
@@ -241,10 +265,10 @@ def test_cartesian_grid_choices_reopen_with_physical_samples(native_files, horiz
         truth = xr.broadcast(truth, ds.UT)[0].transpose(*ds.UT.dims)
         np.testing.assert_allclose(ds.UT, truth, atol=1e-9)
         np.testing.assert_allclose(ds.VT, 0)
-        for name, standard, position in (("UT", "x_wind", "x_face"),
-                                          ("VT", "y_wind", "y_face")):
+        for name, standard in (("UT", "x_wind"), ("VT", "y_wind")):
             assert ds[name].attrs["standard_name"] == standard
-            assert ds[name].attrs["grid_position"] == position
+            assert ds[name].attrs["frameit_sampling"] == "native"
+            assert ds[name].attrs["frameit_basis"] == "native"
     else:
         assert ds.UT.dims == ds.VT.dims == ("time", "level", "y", "x")
         np.testing.assert_allclose(ds.UT, 0, atol=1e-12)
@@ -266,7 +290,7 @@ def test_cartesian_grid_choices_reopen_with_physical_samples(native_files, horiz
         for name, field in (("UT", ds.UT), ("VT", ds.VT),
                             ("UM10", surface.UM10), ("VM10", surface.VM10))
     }
-    frame = "grid" if horizontal == "native" else "earth"
+    frame = None if horizontal == "native" else "earth"
     assert metadata == {"UT": ("m s-1", frame), "VT": ("m s-1", frame),
                         "UM10": ("m s-1", "earth"), "VM10": ("m s-1", "earth")}, metadata
 
@@ -334,9 +358,10 @@ def test_consistent_velocity_units_convert_without_changing_physical_samples(nat
     np.testing.assert_allclose(products["model_grid", "atmosphere"].VM10, 4)
 
 
-def test_inconsistent_native_face_geography_units_fail_before_concat(native_files):
+@pytest.mark.parametrize("suffix", ["_u", "_v"])
+def test_inconsistent_native_face_geography_units_fail_before_concat(native_files, suffix):
     second = native_scene(hour=1)
-    face_geography = ("latitude_u", "longitude_u", "latitude_v", "longitude_v")
+    face_geography = (f"latitude{suffix}", f"longitude{suffix}")
     for name in face_geography:
         second = second.assign_coords({
             name: np.deg2rad(second[name]).assign_attrs(units="rad"),
@@ -346,7 +371,7 @@ def test_inconsistent_native_face_geography_units_fail_before_concat(native_file
     with pytest.raises(ValueError, match="distinct fields share requested name") as caught:
         run_export(native_files, "native", "interfaces")
     assert all(name in str(caught.value) for name in (
-        *face_geography, "native0.nc", "native1.nc", "degrees_north", "rad"))
+        *face_geography, "native0.nc", "native1.nc", "degrees_north", "rad")), str(caught.value)
     assert not (native_files / "run").exists()
     assert all(path.read_bytes() == before for path, before in originals.items())
 
@@ -404,7 +429,10 @@ def test_secondary_declared_pair_normalizes_without_primary_alias_fields(tmp_pat
         native_field = next(ds[name] for ds in faces.values() if name in ds)
         mass_field = next(ds[name] for ds in analysis.values() if name in ds)
         assert native_field.attrs["units"] == "m s-1"
-        assert native_field.attrs["wind_reference_frame"] == "grid"
+        assert native_field.attrs.get("wind_reference_frame") == source[name].attrs.get(
+            "wind_reference_frame")
+        assert native_field.attrs["frameit_sampling"] == "native"
+        assert native_field.attrs["frameit_basis"] == "native"
         assert native_field.attrs["standard_name"] == standard
         assert mass_field.attrs["units"] == "m s-1"
         assert mass_field.attrs["wind_reference_frame"] == "earth"
@@ -452,23 +480,23 @@ def test_mixed_horizontal_coordinate_units_preserve_physical_faces(mixed_horizon
                                10 + np.arange(-4., 5), rtol=0, atol=1e-12)
     coordinates = {"ni_u": face_u.ni_u, "nj_v": face_v.nj_v}
     units = {name: coordinate.attrs.get("units") for name, coordinate in coordinates.items()}
-    assert units == {"ni_u": "m", "nj_v": "m"}, units
+    assert units == {"ni_u": "km", "nj_v": "km"}, units
     for name in ("ni_u", "nj_v"):
-        np.testing.assert_allclose(coordinates[name], expected_faces, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(coordinates[name], expected_faces / 1000, rtol=0, atol=1e-12)
 
 
 def test_native_crop_preserves_faces_with_mixed_horizontal_units(mixed_horizontal_file):
     # Exercise native cropping/export as well as the pre-crop loader arrays.
     ds = run_export(mixed_horizontal_file.parent, "native", "interfaces")[
         "model_grid", "atmosphere"]
-    np.testing.assert_allclose(ds.UT.isel(time=0, level=0, y=1),
-                               [8.5, 9.5, 10.5, 11.5], rtol=0, atol=1e-12)
-    np.testing.assert_allclose(ds.latitude_u.isel(time=0, y=1),
-                               -20 + np.array([-1500., -500., 500., 1500.]) / 111000,
-                               rtol=0, atol=1e-12)
-    np.testing.assert_allclose(ds.longitude_v.isel(time=0, x=1),
-                               60 - np.array([-1500., -500., 500., 1500.]) /
-                               (111000 * np.cos(np.deg2rad(20))), rtol=0, atol=1e-12)
+    with xr.open_dataset(mixed_horizontal_file) as source:
+        for name, suffix in (("UT", "_u"), ("VT", "_v")):
+            expected = three_point_native_window(source, suffix, -20., 60.)
+            np.testing.assert_allclose(ds[name][0], expected[name].isel(time=0, level=[1, 2]),
+                                       rtol=0, atol=1e-12)
+            for kind in ("latitude", "longitude"):
+                np.testing.assert_array_equal(ds[f"{kind}{suffix}"][0],
+                                              expected[f"{kind}{suffix}"])
 
 
 def test_w_interpolation_uses_physical_coordinates_with_km_interfaces(tmp_path):

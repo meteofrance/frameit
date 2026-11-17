@@ -107,6 +107,30 @@ def _validate_current_inputs(ds, pairs):
     _validate_face_masks(ds)
 
 
+def _record_current_provenance(ds, conf, pairs, *, source_paths=None):
+    params = getattr(conf, "simulation_parameter", None)
+    if not pairs or params is None:
+        return
+    records = params.setdefault("current_provenance", [])
+    for pair in pairs:
+        record = {"source_id": Path(ds.encoding.get("source", "in_memory")).name,
+                  "components": list(pair), "method": "both_valid_midpoint_then_rho_angle_rotation",
+                  "producer_reference": "CROCO 2.1.0 cpl_prism_put.F/setup_grid1.F",
+                  "support": ("static MASKING; mask_rho option_0=land option_1=water; "
+                              "joint finite vector"),
+                  "source_mask_standard_name": ds.mask_rho.attrs.get("standard_name"),
+                  "reference_frame": "earth", "units": "m s-1",
+                  "source_units": {name: ds[name].attrs["units"] for name in pair},
+                  "boundary_policy": "missing bracket remains missing; no extrapolation",
+                  "vertical_policy": "same native sigma index; no physical-depth interpolation",
+                  "track_motion_subtracted": False}
+        if source_paths is not None:
+            record.update(source_id=conf.source_name,
+                          source_files={name: Path(source_paths[name]).name for name in pair})
+        if record not in records:
+            records.append(record)
+
+
 def prepare_croco_currents(ds, conf):
     """Both-valid midpoint collocation, then joint-mask rho/Earth rotation."""
     from frameit.processing.wind_collocation import interpolate_staggered
@@ -376,22 +400,7 @@ def prepare_croco(ds: xr.Dataset, conf, *, native_axes=None) -> xr.Dataset:
             ancillary = str(result[name].attrs.get("ancillary_variables", "")).split()
             ancillary.extend(key for key in ("angle", "mask_rho", "mask_u", "mask_v") if key in ds)
             result[name].attrs = dict(result[name].attrs, ancillary_variables=" ".join(dict.fromkeys(ancillary)))
-    params = getattr(conf, "simulation_parameter", None)
-    if pairs and params is not None:
-        records = params.setdefault("current_provenance", [])
-        for pair in pairs:
-            record = {"source_id": Path(ds.encoding.get("source", "in_memory")).name,
-                      "components": list(pair), "method": "both_valid_midpoint_then_rho_angle_rotation",
-                      "producer_reference": "CROCO 2.1.0 cpl_prism_put.F/setup_grid1.F",
-                      "support": "static MASKING; mask_rho option_0=land option_1=water; joint finite vector",
-                      "source_mask_standard_name": ds.mask_rho.attrs.get("standard_name"),
-                      "reference_frame": "earth", "units": "m s-1",
-                      "source_units": {name: ds[name].attrs["units"] for name in pair},
-                      "boundary_policy": "missing bracket remains missing; no extrapolation",
-                      "vertical_policy": "same native sigma index; no physical-depth interpolation",
-                      "track_motion_subtracted": False}
-            if record not in records:
-                records.append(record)
+    _record_current_provenance(ds, conf, pairs)
     if getattr(conf, "compute_polar_proj", False):
         if any(name in ds and set(ds[name].dims) & {"xi_u", "eta_v"}
                and name not in {"u", "v", "ubar", "vbar"} for name in polar):
