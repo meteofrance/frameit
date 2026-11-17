@@ -150,7 +150,8 @@ def test_croco_native_nminus1_faces_keep_locations(tmp_path, representation):
             assert all(terms[role] in out for role in ("depth:", "depth_c:", "C:", "eta:"))
         if representation == "native":
             assert "x_u" in out.u.dims and "y_v" in out.v.dims
-            np.testing.assert_allclose(out.xi_u_source_coordinate.isel(time=0), [1.5, 2.5, 3.5, 4.5])
+            # V3 centres the window on this face grid's geography, independently of rho.
+            np.testing.assert_allclose(out.xi_u_source_coordinate.isel(time=0), [2.5, 3.5, 4.5])
             np.testing.assert_allclose(out.u, 2.)
             np.testing.assert_allclose(out.v, 4.)
             assert "latitude_u" in out and "longitude_v" in out
@@ -256,8 +257,13 @@ def test_croco_analysis_sequence_rejects_changed_support_or_companion_metadata(t
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     with pytest.raises(ValueError, match="CROCO|input v missing or ambiguous in selected inventory"):
         bind_sources(conf, check_output=False)
+    with xr.open_dataset(paths[1]) as changed:
+        incompatible = changed.load()
+    vector_scene().isel(time=[1]).to_netcdf(paths[1])
+    _, children, plans = bind_sources(conf, check_output=False)
+    # Exercise a real reader after valid binding, not a second binding rejection.
+    incompatible.to_netcdf(paths[1])
     with DatasetResources() as resources:
-        _, children, plans = bind_sources(conf, check_output=False, resources=resources)
         child = children["ocean"]
         with pytest.raises(ValueError, match="CROCO"):
             concat_nc2ds_by_vert_coord(paths, {}, {}, method="fixed_box", wind_conf=child,

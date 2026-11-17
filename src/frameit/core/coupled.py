@@ -778,7 +778,7 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                     "Source binding requires its selected method dependencies."))
                 continue
             try:
-                binding = bindings[name] = bind_source(child, name)
+                binding = bindings[name] = bind_source(child, name, resources=resources)
                 if preparation_prerequisites:
                     deferred.append(blocked_check(
                         f"sources.{name}.execution", preparation_prerequisites,
@@ -820,15 +820,16 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
         participants = {name: child for name, child in children.items()
                         if "polar" in bindings[name]["products"]}
         if conf.polar_shared_target and participants:
-            from frameit.processing.polar.sampling import resolve_polar_sampling
+            from frameit.processing.polar.sampling import (
+                require_supported_radial_step,
+                resolve_polar_sampling,
+            )
 
             spacing = max(max(bindings[name]["polar_plan"]["native_spacing_m"])
                           for name in participants) / 1000
             requested = conf.yaml_config["products"]["polar"].get("radial_step_km")
             step = requested if requested is not None else spacing
-            if step < spacing * (1 - 1e-12):
-                raise ValueError(
-                    "Shared polar radial_step_km is finer than a participating native grid")
+            require_supported_radial_step(step, spacing, shared=True)
             for name, child in participants.items():
                 resolve_polar_sampling(plans[name], bindings[name], child, radial_step_km=step)
             for name, child in participants.items():
@@ -944,9 +945,20 @@ def run_native_sources(runner, *, benchmark=False):
             progress.update("preparing tracking inputs", source=name)
         consumer = consumers[name]
         # Field-specific initial-gap views cannot supply required tracker inputs.
-        internal = {key: value for key, value in consumer.ds_tracker["internal"].items()
-                    if not isinstance(key, tuple)}
-        geometry, settings = _region_grid(consumer.conf, plans[name], next(iter(internal)))
+        gaps = {gap["field"] for gap in plans[name].get("allowed_gaps", [])}
+        groups = {}
+        for key, value in consumer.ds_tracker["internal"].items():
+            if isinstance(key, tuple):
+                if key[1] in gaps:
+                    continue
+                key = (key[0], "surface")
+            groups.setdefault(key, []).append(value)
+        internal = {key: xr.merge(values, join="exact", compat="identical",
+                                  combine_attrs="override") for key, values in groups.items()}
+        first_grid = next(iter(internal))
+        geometry, settings = _region_grid(
+            consumer.conf, plans[name],
+            first_grid[0] if isinstance(first_grid, tuple) else first_grid)
         for attr in ("name_lat_dim", "name_lon_dim", "name_latitude", "name_longitude"):
             setattr(consumer.conf, attr, getattr(settings, attr))
         consumer.conf.resolution = settings.resolution

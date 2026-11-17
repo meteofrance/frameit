@@ -51,7 +51,68 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 20 | wording gates verified | lead + fresh reviewers | 17, 19 | `2095dd8`; both full passes and technical closure; strict09/publication/live text pass. Restricted acceptance remains separate. |
 | 21 | blocked | lead + fresh reviewers + human | 20 | Whole-branch reviews and actual human usability acceptance. |
 
-### Current Task16 continuation from `6abe753`
+### 17 November — bounded spacing/W/CROCO repair continuation
+
+This section supersedes older statements that the W value-selection defect or
+the decision about sub-native radial spacing is still unresolved. It does not
+close Task16 or establish a freeze.
+
+- The maintainer explicitly requires sub-native radial sampling to fail
+  input-aware YAML validation, with unsupported-yet wording and the minimum for
+  the selected files. Local/shared checks now share that diagnostic; copying
+  its unrounded minimum succeeds. Schema-only validation still opens no files.
+  The original AROME2.5km catalogue is unchanged and intentionally rejected,
+  with minimum2.766872308879716km for those selected inputs.
+- Grouped native W values now carry their original native indices through the
+  existing mass-target mapping, retaining requested units and independent W
+  bracket reads. Native `[0,20,50]` and mass `[5,25,65]` labels are preserved.
+  The unchanged MNH physical-value catalogue executes and passes `check_products`;
+  transformed product previews now retain their destination horizontal axes.
+- CROCO operation preparation restores only proven native-static assembly mask
+  singletons. Selected support validation preserves native owners/read levels,
+  excludes physical payloads, reuses caller resources, rejects invalid formula/
+  dynamic face-mask support, and pins angles to the bound rotation geometry.
+  Native-only copies do not acquire current-analysis requirements.
+- CROCO's independent-native-geography crop contract is unchanged. Only the old
+  four-face test expectation is corrected: centre `(3,3)` and native U indices
+  `[2,3,4]` give `[2.5,3.5,4.5]`. Both edited test modules' complete fixture/helper
+  ASTs match `ba15fdc`; source fixtures, clocks, current values and tolerances
+  were not rewritten.
+- The separate supported-spacing AROME replay exposed a GRIB internal scalar
+  height/axis merge defect. Field-local surface views now retain scalar heights;
+  tracker preparation rejoins compatible surfaces before existing pair
+  normalization, without admitting genuinely declared initial-gap inputs.
+- Full six-module support17 passes235 tests. Fresh review findings were
+  reproduced by ten RED20 cases and closed by4/4/2 GREEN21/22/23 cases. GRIB19
+  passes33 tests; connected24's two tracker regressions (1400 passes) have
+  GREEN34 end-to-end closure; the complete combined result is recorded below.
+- Last complete required Task16 run25: **314 passed/three failed**,512 warnings,
+  two passing subtests,211.00s. The remaining failures are removed source-local
+  `polar`, the explicit2600m `grid_spacing_m` override, and AROME polar merging
+  instantaneous versus interval clock metadata. The last is a real remaining
+  output defect, not a spacing rejection; no time bounds were discarded.
+  Fresh eight-node preservation31 remains3 passes/five failures and retains
+  `strict` association/native rejection disagreements as well as those two keys.
+- Strict Sphinx26/publication28 and13 source-aware publication units30 pass.
+  The affected five pages were read live at1280/320px. Preview details remain
+  private; no generated image or screenshot was opened. Runtime36 confirms
+  Python3.13.18 and this checkout.
+
+**Final bounded verification:** complete18-module closure35 has **1402 passed**,
+3549 warnings,424.44s, without failed/error/skipped cases; all26 new regression
+cases pass. Fresh bounded review independently closes I1/I2/M3, the replacement
+support helper and the late GRIB consumer addition, with no open scoped finding.
+Ruff comparison39 has zero introduced findings (67 existing against70 at the
+base); diff whitespace checks pass. The three remaining required Task16 failures
+were confirmed again after the tracker closure in37. The branch's remaining
+qualification gates are not closed by these bounded results.
+
+See [the bounded plan and evidence](task-16-final-repairs-plan.md).
+Task16's reserved full diagnostic remains unused. Other retained caller
+contracts, restricted plotting/installed/full qualification, final whole-branch
+reviews and actual human acceptance remain open. No push or merge is authorized.
+
+### Historical Task16 continuation from `6abe753`
 
 Latest autonomous continuation (no task completion or freeze implied):
 

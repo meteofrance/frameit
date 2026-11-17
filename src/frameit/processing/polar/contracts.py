@@ -219,7 +219,8 @@ def geographic_degrees(coordinate):
         result = np.rad2deg(coordinate)
         result.attrs = {**coordinate.attrs, "units": "degree"}
         return result
-    if units not in {"degree", "degrees", "degrees_east", "degrees_north"}:
+    if units not in {"degree", "degrees", "degree_east", "degree_north",
+                      "degrees_east", "degrees_north"}:
         raise ValueError("Geographic coordinates must be angular degrees or radians")
     return coordinate
 

@@ -277,12 +277,14 @@ def _selected_grib(files, binding, source, resources):
                     from frameit.processing.requests import align_initial_gap
 
                     dataset = align_initial_gap(dataset, name, source)
-                key = ((grid_id, name) if internal and any(
-                    gap["field"] == name for gap in source.get("allowed_gaps", [])) else grid_id)
+                # A scalar surface height must not align onto another field's height axis.
+                key = ((grid_id, name) if internal and (vertical is None or any(
+                    gap["field"] == name for gap in source.get("allowed_gaps", []))) else grid_id)
                 by_grid.setdefault(key, []).append(dataset)
         from frameit.tracking.tracker_core import merge_internal_stencils
 
-        return {grid_id: (merge_internal_stencils(datasets, vertical_dims) if internal else
+        return {grid_id: (merge_internal_stencils(
+                         datasets, vertical_dims.intersection(datasets[0].dims)) if internal else
                          xr.merge(datasets, join="exact", compat="identical",
                                   combine_attrs="override"))
                 for grid_id, datasets in by_grid.items()}

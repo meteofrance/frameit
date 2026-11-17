@@ -64,6 +64,13 @@ def _static_wet_mask(ds):
     return mask == 1
 
 
+def _validate_face_masks(ds):
+    for suffix, dims in (("u", {"eta_rho", "xi_u"}), ("v", {"eta_v", "xi_rho"})):
+        name = f"mask_{suffix}"
+        if name in ds and (set(ds[name].dims) != dims or not np.isin(ds[name].values, [0, 1]).all()):
+            raise ValueError(f"CROCO {name}: requires binary native face support")
+
+
 def _validate_current_inputs(ds, pairs):
     if not pairs:
         return
@@ -97,10 +104,7 @@ def _validate_current_inputs(ds, pairs):
             location = "u" if axis == "x" else "v"
             if ds[name].attrs.get("standard_name") not in {None, standard, f"{standard}_at_{location}_location"}:
                 raise ValueError(f"CROCO {name}: quantity metadata contradicts native grid-relative current identity")
-    for suffix, dims in (("u", {"eta_rho", "xi_u"}), ("v", {"eta_v", "xi_rho"})):
-        name = f"mask_{suffix}"
-        if name in ds and (set(ds[name].dims) != dims or not np.isin(ds[name].values, [0, 1]).all()):
-            raise ValueError(f"CROCO {name}: requires binary native face support")
+    _validate_face_masks(ds)
 
 
 def prepare_croco_currents(ds, conf):
@@ -163,6 +167,16 @@ def prepare_croco_currents(ds, conf):
     return result
 
 
+def _sigma_formula_terms(ds, axis):
+    tokens = str(ds[axis].attrs.get("formula_terms", "")).split()
+    terms = dict(zip((token.rstrip(":") for token in tokens[::2]), tokens[1::2], strict=False))
+    if (len(tokens) != 10 or any(not token.endswith(":") for token in tokens[::2])
+            or set(terms) != {"s", "C", "eta", "depth", "depth_c"}
+            or terms["s"] != axis or any(name not in ds for name in terms.values())):
+        raise ValueError(f"CROCO {axis} has missing or invalid formula dependencies")
+    return terms
+
+
 def validate_croco_coefficients(datasets, variables=None):
     """A history sequence must not inherit one file's different sigma definition."""
     reference = {}
@@ -172,8 +186,7 @@ def validate_croco_coefficients(datasets, variables=None):
         for axis in ("s_rho", "s_w"):
             if axis not in ds:
                 continue
-            tokens = ds[axis].attrs["formula_terms"].split()
-            terms = dict(zip((token.rstrip(":") for token in tokens[::2]), tokens[1::2]))
+            terms = _sigma_formula_terms(ds, axis)
             for name in (axis, terms["C"], terms["depth_c"]):
                 values = ds[name].values
                 if name in reference and not np.array_equal(values, reference[name]):
@@ -186,6 +199,86 @@ def validate_croco_coefficients(datasets, variables=None):
             if name in reference and not np.array_equal(values, reference[name]):
                 raise ValueError(f"CROCO {name}: static current geometry/support changes across files")
             reference[name] = values
+
+
+def validate_bound_support(source, binding, *, engine, resources=None):
+    """Check selected formula/static support without loading scientific fields."""
+    from contextlib import nullcontext
+
+    from frameit.io.loader import DatasetResources
+    from frameit.processing.polar.metadata import coordinate_dependency_names
+
+    selected = {}
+    for descriptors in (*binding["products"].values(), binding["dependencies"]):
+        for descriptor in descriptors.values():
+            if descriptor.get("operation"):
+                continue
+            for record in descriptor["records"]:
+                vertical = record.get("vertical")
+                if vertical is None or vertical["dimension"] not in {"s_rho", "s_w"}:
+                    continue
+                samples = selected.setdefault(record["field_id"], {})
+                name, positions = samples.setdefault(
+                    record["locator"]["path"], (record["locator"]["variable"], {}))
+                positions.setdefault(vertical["dimension"], set()).update(
+                    record["source_positions"])
+    support, angles = set(), []
+    for operation in binding.get("operation_plans", []):
+        support.update(name for name in operation["inputs"].values()
+                       if name in {"mask_rho", "mask_u", "mask_v"})
+        if operation["preparation"] == "croco_midpoint_both_valid_then_rho_angle":
+            support.add("angle")
+            coordinate = operation["geometry"]["coordinates"]["angle"]
+            angles.append((
+                {record["locator"]["path"] for record in operation["input_binding"]["records"]},
+                xr.Variable(coordinate["dimensions"], coordinate["values"],
+                            coordinate["attributes"])))
+
+    with (DatasetResources() if resources is None else nullcontext(resources)) as registry:
+        for paths, expected in angles:
+            found = False
+            for path in paths:
+                original = registry.open_netcdf(path, engine=engine, chunks=None)
+                if "angle" not in original:
+                    continue
+                found = True
+                if not original.angle.variable.identical(expected):
+                    raise ValueError(
+                        "CROCO angle differs from bound operation geometry; revalidate the inputs")
+            if not found:
+                raise ValueError("CROCO angle is missing from bound inputs; revalidate the inputs")
+
+        def snapshots(samples):
+            for path, (name, positions) in samples.items():
+                original = registry.open_netcdf(path, engine=engine, chunks=None)
+                retained = original[[name]]
+                dependencies = coordinate_dependency_names(
+                    original, retained.data_vars, coordinates=retained.coords)
+                snapshot = original[sorted(({name} | dependencies) & set(original.variables))]
+                yield snapshot.isel({dim: sorted(indices) for dim, indices in positions.items()})
+
+        # Different native field owners may legitimately carry distinct sigma definitions.
+        for samples in selected.values():
+            if len(samples) > 1:
+                validate_croco_coefficients(snapshots(samples), ())
+            else:
+                snapshot = next(snapshots(samples))
+                for axis in {"s_rho", "s_w"} & snapshot.sizes.keys():
+                    _sigma_formula_terms(snapshot, axis)
+
+        def static_snapshots():
+            paths = dict.fromkeys(record["locator"]["path"] for record in binding["records"])
+            for path in paths if support else ():
+                original = registry.open_netcdf(path, engine=engine, chunks=None)
+                snapshot = original[sorted(support & set(original.variables))]
+                if "mask_rho" in snapshot:
+                    _static_wet_mask(snapshot)
+                _validate_face_masks(snapshot)
+                if "angle" in snapshot and snapshot.angle.dims != ("eta_rho", "xi_rho"):
+                    raise ValueError("CROCO current analysis requires static rho-point angle")
+                yield snapshot
+
+        validate_croco_coefficients(static_snapshots(), support)
 
 
 def prepare_croco(ds: xr.Dataset, conf, *, native_axes=None) -> xr.Dataset:
@@ -234,12 +327,7 @@ def prepare_croco(ds: xr.Dataset, conf, *, native_axes=None) -> xr.Dataset:
             allowed.add("ocean_s_coordinate_g2_at_w_location")
         if standard not in allowed or ds[axis].attrs.get("positive") != "up":
             raise ValueError(f"CROCO {axis} requires the Vtransform=2 formula definition")
-        tokens = str(ds[axis].attrs.get("formula_terms", "")).split()
-        terms = dict(zip((token.rstrip(":") for token in tokens[::2]), tokens[1::2]))
-        if (len(tokens) != 10 or any(not token.endswith(":") for token in tokens[::2])
-                or set(terms) != {"s", "C", "eta", "depth", "depth_c"}
-                or terms["s"] != axis or any(name not in ds for name in terms.values())):
-            raise ValueError(f"CROCO {axis} has missing or invalid formula dependencies")
+        terms = _sigma_formula_terms(ds, axis)
         curve, eta, depth, critical = (ds[terms[key]] for key in ("C", "eta", "depth", "depth_c"))
         if (curve.dims != (axis,) or eta.dims != ("time", "eta_rho", "xi_rho")
                 or depth.dims != ("eta_rho", "xi_rho") or critical.ndim):

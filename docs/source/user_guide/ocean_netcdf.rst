@@ -194,7 +194,14 @@ collocated with an atmospheric grid merely because array sizes agree.
 Selected scientific definitions must agree across successive files, including
 quantity/units, coordinate formula metadata, sigma labels, stretching curves and
 critical depth. Different declarations fail rather than inheriting the first
-file's interpretation. State such as ``zeta`` remains time-dependent. The source
+file's interpretation. Input-aware validation checks selected sigma formula
+metadata and compares selected stretching curves and critical depths within
+each native field's time-series files. Distinct native grids keep their own
+definitions. Current/polar requests also check their required static
+mask/angle support; native copies do not acquire these analysis requirements.
+These checks read coordinate and declared static-support arrays, not current,
+temperature, salinity or sea-level payloads.
+State such as ``zeta`` remains time-dependent. The source
 clock's encoded epoch/calendar is authoritative; ``scrum_time.time_origin`` does
 not override it. No temperature, salinity or density conversion is performed.
 Decoded missing cells and valid zeroes retain their native meaning; native copies
@@ -284,6 +291,11 @@ conservation, smoothing or track-motion subtraction. Declared velocity and angle
 units are converted explicitly to m/s and radians; native exports are not converted.
 Different static angle/mask arrays or scientific companion definitions across
 snapshots fail instead of inheriting the first file's interpretation.
+An assembly-added singleton time axis does not make a proven native-static mask
+dynamic. Current preparation restores that mask's native shape; genuinely
+time-dependent masks remain unsupported. The selected reader checks static
+support again before use. A required angle that differs from the bound rotation
+geometry fails with a request to revalidate; it is not silently refreshed.
 
 The producer reference is the official `CROCO v2.1.0 source release
 <https://doi.org/10.5281/zenodo.15064113>`_: ``OCEAN/setup_grid1.F`` defines the

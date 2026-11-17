@@ -1336,6 +1336,19 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 "transforms": [{"fields": [anchor], "sampling": operation["sampling"]}],
                 "polar_options": {anchor: {"sampling": operation["sampling"]}},
             }
+            _, group, selector = field_selection(native, anchor)
+            if (source["model"] == "mesonh" and operation["sampling"] == "mass"
+                    and group == "level_w" and anchor_axis is not None
+                    and axis is not None and axis["dimension"] != anchor_axis["dimension"]
+                    and "values" in selector):
+                native_levels = _bind_vertical(
+                    anchor_axis, selector, f"{loc}: native {group}", binding["warnings"])
+                mass_selector = {**selector, "indices": native_levels["source_native_indices"]}
+                del mass_selector["values"]
+                # Qualified interface values retain the established native-index mass mapping.
+                result_request["groups"] = {
+                    **native["groups"], group: {
+                        **native["groups"][group], "levels": mass_selector}}
             result_binding = bind_requests(
                 local, result_request, representations={
                     product: {anchor: {records[anchor][0]["grid_id"]: representation}}})

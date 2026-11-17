@@ -53,8 +53,9 @@ frameit config show frameit.yaml --effective
 frameit run frameit.yaml
 ```
 
-Inspection and validation check metadata and coordinates; values are read during
-execution. See [Quick start](https://meteofrance.github.io/frameit/getting_started/quick_start.html) for CLI tips.
+Inspection checks metadata and coordinates. Input-aware validation may also read
+required static support; requested field values are read during execution. See
+[Quick start](https://meteofrance.github.io/frameit/getting_started/quick_start.html) for CLI tips.
 
 4. Review `run-status.yaml` under `output.directory`, then open the listed NetCDF
    products with xarray or another ordinary reader. `resolved-config.yaml` records

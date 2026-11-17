@@ -39,7 +39,9 @@ ocean and separately supplied surface streams. One source of each type is allowe
 
 Review native field names, units, levels, timestamps, cycles and coordinates.
 Metadata inspection may read needed coordinates, but not scientific field
-payloads. It does not prove decode-time scaling or scientific suitability.
+payloads. Input-aware validation may also read declared static analysis support,
+such as CROCO masks and rotation angles. It does not prove decode-time scaling
+or scientific suitability.
 See :doc:`configuration_file` and :doc:`../task_guides/field_selection`.
 
 File inventory and ambiguity

@@ -71,6 +71,14 @@ def test_frozen_matrix_yaml_and_mapping_requests_match(tmp_path, model):
         c for c in load_cases() if c["dataset_id"].startswith(f"{model}/") and c["polar"]
         and c["tracker"] == ("fixed_box" if model == "AROME" else "wind_pressure")
     )
+    if model == "AROME":
+        rejected = resolve_case(case, root, tmp_path / "unsupported")
+        assert case["config"]["products"]["polar"]["radial_step_km"] == 2.5
+        assert rejected["preflight"] == "INVALID_INPUT"
+        assert "not supported yet" in rejected["reason"]
+        assert "minimum supported radial_step_km=" in rejected["reason"]
+        # Replay a separate supported-native variant; the original 2.5-km request stays rejected.
+        case["config"]["products"]["polar"].pop("radial_step_km")
     case = resolve_case(case, root, tmp_path / "mapping")
     assert case["preflight"] == "READY", case["reason"]
     # Both replay paths use the same explicit source conventions. This is a

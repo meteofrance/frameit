@@ -286,6 +286,14 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
     layout = source.setdefault("reader_layout", input_chunk_plan(source, chunks))
     admitted = {Path(path).resolve() for path in files}
     model = {"mesonh": "MNH"}.get(source["model"], source["model"].upper())
+    if model == "CROCO":
+        from frameit.io.croco_utils import validate_bound_support
+
+        if any(record["locator"]["format"] != "netcdf"
+               or Path(record["locator"]["path"]).resolve() not in admitted
+               for record in binding["records"]):
+            raise ValueError("CROCO selected locator is outside the admitted NetCDF files")
+        validate_bound_support(source, binding, engine=engine, resources=resources)
     native_conf = SimpleNamespace(
         atm_model=model, cartesian_horizontal_winds="native",
         cartesian_vertical_velocity="interfaces", compute_polar_proj=False,

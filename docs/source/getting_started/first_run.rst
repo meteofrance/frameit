@@ -89,7 +89,8 @@ Without a filename, these commands read ``frameit.yaml``.
 * ``config show --effective`` shows settings and planned products without writing them.
 
 Check that the preview selects the intended work. Validation reads metadata and
-coordinates; field values are read during execution.
+needed coordinate/static-support arrays; requested field values are read during
+execution.
 
 .. figure:: ../_static/figures/processing-products.svg
    :width: 440px

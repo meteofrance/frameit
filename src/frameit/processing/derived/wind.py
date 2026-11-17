@@ -313,6 +313,10 @@ def prepare_source_operation(operation, internal, source, conf):
             native_view = native_view.isel({dim: [original.index(i) for i in
                                                   vertical["source_native_indices"]]})
         field = source["fields"][record["field_id"]]
+        if (source["model"] == "croco" and not field["time_varying"]
+                and field["name"] in {"mask_rho", "mask_u", "mask_v"} and "time" in value.dims):
+            # Selected-file assembly can add time to a proven native-static mask.
+            value = value.squeeze("time", drop=True)
         metadata = record.get("field_metadata") or source_field_metadata(
             source, field, record=record) or descriptor.get("field_metadata")
         attrs = {**value.attrs, **(

@@ -115,6 +115,11 @@ create missing source support. Check collocation, basis and units separately;
 storm-centred positions do not imply motion-relative velocity. See
 :doc:`task_guides/polar_sampling` and :ref:`wind-grid-contract`.
 
+If validation reports a radial step below native spacing, finer sampling is not
+supported yet. Set ``products.polar.radial_step_km`` to at least the reported
+minimum for those input files, or omit it to use native spacing. A shared target
+uses the coarsest participating grid. ``--schema-only`` cannot check file spacing.
+
 Memory, export or retry problems
 --------------------------------
 

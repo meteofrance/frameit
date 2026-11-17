@@ -1123,8 +1123,8 @@ def _required_dependencies(conf, execution_options=None):
     return facts, errors
 
 
-def bind_source(conf, name, *, representations=None, required_inputs=()):
-    """Explicit post-inventory v3 binding; no discovery, scientific reads or execution."""
+def bind_source(conf, name, *, representations=None, required_inputs=(), resources=None):
+    """Bind inventoried inputs using coordinate/static support, not scientific field payloads."""
     source = conf.simulation_parameter["request_plan"]["sources"][name]
     request = conf.source_requests[name]
     # A failed rebind must never retain executable clearance from an earlier selection.
@@ -1142,8 +1142,12 @@ def bind_source(conf, name, *, representations=None, required_inputs=()):
     binding = (bind_requests({**source, "name": name}, request,
                              representations=representations, required_inputs=required_inputs)
                if representations is not None else
-               bind_source_operations(
-                   {**source, "name": name}, request, conf, required_inputs=required_inputs))
+                bind_source_operations(
+                    {**source, "name": name}, request, conf, required_inputs=required_inputs))
+    if source["model"] == "croco" and source["format"] == "netcdf":
+        from frameit.io.croco_utils import validate_bound_support
+
+        validate_bound_support(source, binding, engine=conf.netcdf_engine, resources=resources)
     source["field_binding"] = binding
     source["representation_grids"] = deepcopy(binding.get("representation_grids", {}))
     source["metadata_origins"]["field_metadata"] = {
@@ -1203,7 +1207,8 @@ def describe_model_grid_output(source, binding, product, *, regional=False):
             vertical = record.get("vertical")
             field = source["fields"][record["field_id"]]
             # FA summaries can include an excluded record with unknown shape.
-            dims = (list(grid["dimensions"]) if source["format"] == "fa" else
+            dims = (list(grid["dimensions"]) if source["format"] == "fa"
+                    or descriptor.get("operation") else
                     [dim for dim in field["dimensions"]
                      if dim in grid["dimensions"] or dim in record.get("native_axes", {})])
             if vertical and vertical["dimension"] not in dims:

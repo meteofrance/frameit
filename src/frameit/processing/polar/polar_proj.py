@@ -153,12 +153,7 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
         if source["model"] == "croco":
             from frameit.io.croco_utils import _static_wet_mask
 
-            mask = arrays["mask_rho"]
-            field = source["fields"][job["input_binding"]["dependencies"]["mask_rho"]["field_id"]]
-            if not field["time_varying"] and "time" in mask.dims:
-                # Assembly adds this sample axis; the admitted native mask is static.
-                mask = mask.squeeze("time", drop=True)
-            support = prepared.assign(mask_rho=mask)
+            support = prepared.assign(mask_rho=arrays["mask_rho"])
             support.attrs = {**native_views[0].attrs, **prepared.attrs}
             wet = _static_wet_mask(support)
             for name in ([job["inputs"]["field"]] if job["method"] == "polar_input" else

@@ -42,8 +42,9 @@ Check the same request before running it:
    frameit validate frameit.yaml --schema-only --json
 
 Schema-only checks the controls without opening inputs. Ordinary validation
-inspects metadata, needed coordinates and required dependencies; it does not
-validate scientific field values. Execution-dependent checks remain deferred.
+inspects metadata, needed coordinates and required dependencies, including
+declared static analysis support. It does not validate requested scientific
+field values. Execution-dependent checks remain deferred.
 
 The JSON report has ``report_version: 1``, ``command``, ``status``, ``data``,
 ``warnings``, ``errors`` and ``deferred_checks``. Standard output contains one
@@ -230,6 +231,13 @@ keep that name. Groups must identify fields unambiguously; they do not choose
 between providers. See :ref:`explicit-vertical-groups` for syntax, derived
 selection and shared-destination-axis limits.
 
+For grouped Meso-NH W, ``level_w`` values identify native interfaces. Explicit
+``sampling: mass`` carries their original indices to the corresponding mass
+targets, using the same mapping as index selection. Required W brackets are
+read separately; native output keeps the selected interface labels. This is
+not nearest-level matching or a declaration that interface and mass heights
+are equal. Flat source-wide selectors still apply to each product's representation.
+
 Choose exactly one selection strategy:
 
 * ``indices``: original zero-based, nonnegative positions. Use a list or an
@@ -398,6 +406,11 @@ Changing only the crop must not change polar sampling.
 See :doc:`../task_guides/polar_sampling` for a complete instructional request.
 
 Optional ``radial_step_km`` defaults to native source spacing and cannot be finer.
+Input-aware ``frameit validate`` rejects a smaller step as not supported yet and
+reports a minimum usable value for the selected files. Use at least that value,
+or omit the setting to use native spacing. Schema-only validation cannot determine
+this file-dependent minimum. For a shared target, the minimum is set by the
+coarsest participating grid.
 ``azimuth_count`` is the only angular control. Omission chooses a count from
 outer-ring native spacing. Rings run clockwise from north without a duplicate
 endpoint. The exact outer radius is included; the final interval may be shorter.

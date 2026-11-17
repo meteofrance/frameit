@@ -231,6 +231,18 @@ def bind_polar_plan(source, request, binding, conf, *, radial_step_km=None):
     return resolve_polar_sampling(source, binding, conf, radial_step_km=radial_step_km)
 
 
+def require_supported_radial_step(step, minimum_km, *, shared=False):
+    """Report a round-trip-safe minimum for the actual selected input geometry."""
+    if step < minimum_km * (1 - 1e-12):
+        reference = "a participating native grid" if shared else "supported native spacing"
+        raise ValueError(
+            f"products.polar.radial_step_km={step} is finer than {reference} "
+            f"({minimum_km!r} km); finer radial sampling is not supported yet. "
+            f"For these input files, minimum supported radial_step_km={minimum_km!r} km. "
+            "Use at least this value, or omit products.polar.radial_step_km "
+            "to use the supported native spacing.")
+
+
 def resolve_polar_sampling(source, binding, conf, *, radial_step_km=None):
     """Resolve only the final target; never rebuild preparation/read bindings."""
     spacing = binding["polar_plan"]["native_spacing_m"]
@@ -238,10 +250,7 @@ def resolve_polar_sampling(source, binding, conf, *, radial_step_km=None):
     requested = conf.yaml_config["products"]["polar"].get("radial_step_km")
     step = radial_step_km if radial_step_km is not None else (
         requested if requested is not None else native / 1000)
-    if step * 1000 < native * (1 - 1e-12):
-        raise ValueError(
-            f"products.polar.radial_step_km={step} is finer than supported native spacing "
-            f"{native / 1000} km; evidence: {spacing} metres")
+    require_supported_radial_step(step, native / 1000)
     settings = copy(conf)
     settings.radial_resolution = step * 1000
     radii, angles, metadata = sampling_axes(settings)
