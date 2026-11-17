@@ -144,7 +144,7 @@ The previously existing mass-transform regression remains unchanged.
 Latest Ruff comparison: 90 baseline / 88 current diagnostics, zero introduced;
 this is not a clean-repository lint claim.
 
-## Documentation impact and integration gate
+## Documentation impact and local integration
 
 Commands, configuration keys/defaults and installation dependencies are unchanged.
 Processing restores declared native-grid, sampling-clock and tracker-admission
@@ -153,10 +153,38 @@ for sampled horizontal auxiliaries; native model-grid naming is stable across
 optional polar processing. Canonical output, FA geometry, ocean and centroid
 guidance is updated. No figures or template commands needed changes.
 
-The maintainer authorized a local commit followed by merging into `develop` after
-the green feature suite. Commit and local integration are the next operations;
-the merged result must pass the same unfiltered suite before final handover.
-This is not permission to push, release or claim scientific/human qualification.
+After the green feature suite, repairs were committed as
+`22853eafab85ab5647de67f877baab8c052e1ab6`
+(`fix: restore v3 regional processing contracts`). Exactly 21 task-related files
+were committed: the 18 tested source/test/public-doc inputs and three unpublished
+development records.
+
+The maintainer-authorized local `develop` integration was a fast-forward from
+`8c2d4bb4a6318c49b60ea85a979a3f8f13bef6b4` to that repair commit in the
+existing clean `develop` worktree. The preserved feature worktree and preview
+were not removed, and no other branch was switched. Nothing was pushed.
+
+The post-merge unfiltered suite ran from clean `develop`, with Python 3.13.18
+importing that worktree's own source and the same approved read-only fixture:
+**3213 passed, four passing subtests, zero failures/errors/skips, 9756 warnings,
+1535.03 s**. Its log and XML are
+`/tmp/opencode/frameit-develop-full-20261117.{log,xml}`.
+The XML contains 3217 cases, matching the green feature run's complete case set;
+all 26 original retained failure nodes pass. Afterward, all 18 frozen inputs
+still match, all nine fixture checksums pass, and both worktrees are clean.
+
+Reproduce that command from the `develop` worktree after setting
+`APPROVED_FIXTURE` to the shared fixture recorded in the session handover:
+
+```bash
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 FRAMEIT_CI_DATA_ROOT="$APPROVED_FIXTURE" OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 MPLBACKEND=Agg TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env python -B -m pytest -q --junitxml=/tmp/opencode/frameit-develop-full-20261117.xml > /tmp/opencode/frameit-develop-full-20261117.log 2>&1
+```
+
+The final evidence-only commit updates this record, its plan and `STATE.md`;
+tested runtime, tests and public documentation remain unchanged.
+Docs: no user-facing impact because only unpublished integration evidence changes;
+commands, configuration/defaults, processing, outputs, installation and their
+documented limitations are unchanged by that closing commit.
 
 ## Limits and resource boundaries
 
@@ -170,7 +198,7 @@ not committed machine state.
 Existing NumPy binary-size and netCDF4/xarray deprecation/future warnings remain;
 no environment repair was attempted. These engineering checks do not establish
 general real-producer or scientific validity, installed-package qualification or
-merge/release readiness.
+release readiness. Local integration is verified, not scientific qualification.
 
 The maintainer subsequently authorized local commit/merge into `develop` after a
 green full suite, with a full verification on the merged result. Screenshots are

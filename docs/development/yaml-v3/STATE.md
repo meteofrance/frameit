@@ -51,7 +51,7 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 20 | wording gates verified | lead + fresh reviewers | 17, 19 | `2095dd8`; both full passes and technical closure; strict09/publication/live text pass. Restricted acceptance remains separate. |
 | 21 | reviews closed; acceptance blocked | lead + fresh reviewers + human | 20 | Both independent review seats verified their fixes; Task19 qualification and actual human usability observations remain open. |
 
-### 17 November — retained runtime repairs and local integration authorization
+### 17 November — retained runtime repairs and verified local integration
 
 The maintainer authorized repair of the 26 retained failures, chose geographic FA
 trajectories with per-grid mapping provenance, then authorized local commit/merge
@@ -75,8 +75,17 @@ no pixel/human acceptance is inferred.
 - All 18 frozen source/test/public-doc inputs match after the green run. All nine
   approved fixture checksums pass before/after. Strict Sphinx/publication and
   rendered 1000/320px layout checks pass; no PNG smoke image was opened.
-- The local repair commit and authorized `develop` fast-forward are next.
-  The merged result still needs its full unfiltered verification. No push,
+- Repairs are committed as `22853eafab85ab5647de67f877baab8c052e1ab6`.
+  The existing clean local `develop` worktree was fast-forwarded from
+  `8c2d4bb4a6318c49b60ea85a979a3f8f13bef6b4` to that commit.
+- Post-merge unfiltered verification from `develop`'s own source tree:
+  **3213 passed, four passing subtests, zero failures/errors/skips**,
+  9756 warnings, 1535.03 s. The complete XML case set matches the green feature
+  run, including all 26 retained regressions. All 18 frozen inputs and nine
+  fixture checksums still match; both worktrees were clean after the run.
+- The closing commit changes only these unpublished integration records.
+  Docs: no user-facing impact because runtime, tests and public documentation are
+  unchanged. Worktrees and the preview remain available. No push,
   installed-package qualification, reserved full-diagnostic campaign,
   production/HPC run, benchmark or scientific/release acceptance is claimed.
 

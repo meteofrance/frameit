@@ -148,7 +148,14 @@ selected geography, offsets and units; no new universal trajectory index fields.
   `python -B -m pytest -q --junitxml=...`; inspect all failures/counts/warnings.
 - [x] Review diff/status, whitespace and introduced lint diagnostics; record
   exact evidence, compatibility limits and preview ownership in development notes.
-- [ ] Make focused local commits after a green full suite.
-- [ ] Merge into local `develop` in its existing clean worktree; verify the
+- [x] Make focused local commits after a green full suite.
+- [x] Merge into local `develop` in its existing clean worktree; verify the
   merged result with the unfiltered full suite. Do not push or delete host-owned
   worktrees/branches. Report resulting commits and verification.
+
+Repair commit: `22853eafab85ab5647de67f877baab8c052e1ab6`. Local `develop`
+was fast-forwarded to it. Both unfiltered suites passed: **3213 tests and four
+subtests**, zero failures/errors/skips. All 18 frozen source/test/public-doc files
+and all nine approved fixture checksums match after post-merge verification.
+Final integration evidence is in `2026-11-17-runtime-repairs.md`; the closing
+commit changes only these unpublished development records. Nothing was pushed.
