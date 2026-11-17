@@ -44,14 +44,74 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 13 | done | Task13 worker + lead + independent reviewer | 11, 12 | `106812d`; shared reports/diagnostics approved after two fix rounds; frozen handoff below. |
 | 14 | done | Task14 worker + lead + independent reviewer | 13 | `bde826b`; owning plan/progress approved, A1 corrected; frozen handoff below. |
 | 15 | done | Task15 worker + lead + independent reviewer | 14 | `40f9bcd`; C9 surface approved after fix1, frozen handoff below. |
-| 16 | blocked | lead inline | 15 | Reviewed direct-v3 increments committed; preserved scientific and caller contracts still fail below. No freeze. |
+| 16 | partial, required checks pass | lead inline | 15 | Current required suite and bounded connected checks pass; broader qualification/freeze remains separate. |
 | 17 | partial | lead + fresh bounded reviewer | 16 | Approved analytical tasks verified: exact required53 pass; new plotting evidence remains restricted. |
 | 18 | done, local evidence | lead + fresh bounded reviewer | 16 | `bd882c2`; final exact122 has58 passes; all six findings closed. No real-cluster claim. |
-| 19 | blocked | lead | 16, 18 | Permitted package checks pass; integration failures and forbidden installed/full checks remain explicit. |
+| 19 | blocked | lead | 16, 18 | Installed/full-branch qualification remains unavailable; no inferred pass. |
 | 20 | wording gates verified | lead + fresh reviewers | 17, 19 | `2095dd8`; both full passes and technical closure; strict09/publication/live text pass. Restricted acceptance remains separate. |
 | 21 | blocked | lead + fresh reviewers + human | 20 | Whole-branch reviews and actual human usability acceptance. |
 
-### 17 November — bounded spacing/W/CROCO repair continuation
+### 17 November — deprecated-test check and polar temporal metadata
+
+This section supersedes the earlier three required-suite failures and five
+retained strict/native expectation failures. The maintainer requested checking
+whether those tests were obsolete before treating them as missing features.
+
+| Previously failing expectation | Finding and current coverage |
+|---|---|
+| Source-local polar inheritance and disabled product settings | Obsolete under C6; test actual top-level product projection/replay and reject retired keys |
+| Source `grid_spacing_m: 2600` override | Obsolete YAML control; retain moving-grid rejection and test rejection of the retired override |
+| Public coupling association `strict` | Obsolete under C5; test schema rejection, not a later coupling error |
+| Grid-basis native request must declare a rotation | Incorrect under C4; positively test native declarations without inventing a rotation |
+| Transform sampling `native` is invalid | Incorrect under C4; test both admitted native/mass choices and reject unsupported `interfaces` |
+
+Only public YAML expectations were retired. The direct strict alignment helper
+and the Python tracker's metre-spacing API remain valid and retain their tests.
+The FA multi-cycle fixture is unchanged: its hour0/cycle0 and hours1/2/cycle1
+must fail the C2 source-cycle check before coupling.
+
+The AROME replay failure was a real, small metadata defect. Model-grid output
+already qualified temporal evidence by field for sources with initial absences;
+multi-field polar output bypassed that code and put accumulation bounds on the
+shared clock. Extracting the existing qualification tail and calling it from
+that polar path fixes the merge without dropping bounds or relaxing equality.
+Single-field polar time-bounds links and no-gap ocean clocks remain unchanged.
+No numerical method, physical values, units, defaults or YAML controls changed.
+
+- Minimal real-GRIB regression RED03 reproduces the actual `time`-attribute merge
+  error; GREEN04 passes. Ordinary-reader subprocesses check both product roles,
+  actual values, initial NaNs, exact bounds/statistical metadata and source bytes.
+- Final exact required Task16 command12: **320 passed**,512 warnings, two passing
+  subtests,247.66s. Actual AROME and MNH YAML/mapping replays pass.
+- Final connected command13: **487 passed**,1734 warnings,181.87s. The existing
+  single-field bounds test is preserved, not reclassified as obsolete.
+- Final focused command17: **375 passed**,707 warnings,73.02s, including full
+  changed configuration/selection/repair modules and valid internal-helper/FA
+  binding checks. These suites overlap; do not sum them as unique coverage.
+- Fresh bounded review confirms the contract classification and temporal repair.
+  Its assertion-boundary finding is closed: direct helper and public schema
+  expectations are distinct. All four edited modules' fixture/helper ASTs match
+  `848262a`; existing numerical fixtures/tolerances were not rewritten.
+- Final source check18 confirms Python3.13.18/current checkout and zero introduced
+  Ruff findings (seven existing before and after); diff whitespace checks pass.
+- Strict Sphinx14/publication15 and13 publication units10 pass. The changed
+  configuration paragraph was read live at1280/320px in iteration12. Preview
+  ownership/restart details remain private; no screenshots or generated images
+  were opened.
+
+Commands/logs and the review are retained in the ignored
+`.superpowers/sdd/CHECKLIST_FOR_AGENTS/task-16-deprecation-848262a/` workspace.
+The required command is the exact nine-file command under Task16 in
+`CHECKLIST_FOR_AGENTS.md`, run with source `PYTHONPATH`, the existing Python3.13
+environment and the approved compact CI fixture.
+
+This closes the currently reported required-suite failures, not every historical
+worker inventory or the whole branch. No source/test/asset freeze or reserved
+full diagnostic was used. Installed/full qualification, restricted plotting,
+final whole-branch reviews and actual human acceptance remain separate gates.
+Nothing is pushed or merged.
+
+### Historical 17 November — bounded spacing/W/CROCO repair continuation
 
 This section supersedes older statements that the W value-selection defect or
 the decision about sub-native radial spacing is still unresolved. It does not

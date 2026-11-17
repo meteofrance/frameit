@@ -342,3 +342,56 @@ def test_croco_required_dynamic_face_mask_fails_validation(tmp_path, suffix, dim
     report = collect_preflight(raw, check_output=False)
     assert report.errors
     assert any(f"CROCO mask_{suffix}" in error.message for error in report.errors)
+
+
+def test_initial_gap_polar_keeps_interval_metadata_field_owned(tmp_path):
+    import subprocess
+    import sys
+
+    from .test_v3_grib_reads import write_messages
+
+    path = write_messages(tmp_path / "input.grib", [
+        *({"hour": hour, "missing": False} for hour in (0, 1, 2)),
+        *({"hour": hour, "interval": True, "missing": False} for hour in (1, 2)),
+    ])
+    before = path.read_bytes()
+    conf = SimulationConfig.from_mapping_with_model_preset({
+        "schema_version": 3, "sources": {"atmosphere": {
+            "model": "arome", "files": str(path),
+            "variables": {"3d": ["u", "avg_u"], "levels": {"indices": [0]}},
+            "allow_initial_gaps": ["avg_u"],
+            "field_metadata": {name: {"kind": "continuous"} for name in ("u", "avg_u")},
+        }},
+        "region": {"center": {"latitude": -19.5, "longitude": 61.}},
+        "products": {"model_grid": True, "polar": {"radius_km": 5., "azimuth_count": 4}},
+        "output": {"directory": str(tmp_path / "out")},
+        "resources": {"cpus": 1, "scheduler": "synchronous", "synchronous_export": True},
+    })
+    result = execute_simulation(conf)
+    assert {product["role"] for product in result.products} == {"model_grid", "polar"}
+    for product in result.products:
+        checked = subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+with xr.open_dataset(sys.argv[1]) as out:
+    times = np.array(['2026-01-01T00', '2026-01-01T01', '2026-01-01T02'], dtype='datetime64[ns]')
+    np.testing.assert_array_equal(out.time, times)
+    assert 'bounds' not in out.time.attrs
+    np.testing.assert_array_equal(out.avg_u_time, times)
+    assert out.avg_u_time.attrs['bounds'] == 'avg_u_time_bounds'
+    assert np.isnat(out.avg_u_time_bounds[0]).all()
+    np.testing.assert_array_equal(out.avg_u_time_bounds[1:], np.array([
+        ['2026-01-01T00', '2026-01-01T01'], ['2026-01-01T01', '2026-01-01T02']],
+        dtype='datetime64[ns]'))
+    np.testing.assert_array_equal(out.avg_u_GRIB_stepType[1:], ['avg', 'avg'])
+    np.testing.assert_array_equal(out.avg_u_GRIB_startStep[1:], [0, 1])
+    assert np.isnan(out.avg_u.isel(time=0)).all()
+    if sys.argv[2] == 'polar':
+        u, mean = (out[name].isel(radius=0, azimuth=0) for name in ('u', 'avg_u'))
+        assert np.isfinite(u).all()
+        np.testing.assert_array_equal(mean[1:], u[1:])
+    else:
+        np.testing.assert_array_equal(out.u.isel(pressure=0, y=0, x=1), [851,1851,2851])
+assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
+""", product["path"], product["role"]], capture_output=True, text=True)
+        assert checked.returncode == 0, checked.stderr
+    assert path.read_bytes() == before

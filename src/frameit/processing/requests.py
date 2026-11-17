@@ -1509,7 +1509,11 @@ def align_initial_gap(dataset, name, source):
             result = dataset.assign({name: dataset[name].expand_dims(time=dataset.time)})
         result = _initial_gap_clock(result.reindex(time=times), source)
         result[name].attrs["frameit_initial_absence"] = str(gaps[0]["time"])
-    # Temporal evidence belongs to a field, not to a missing neighbour's record.
+    return qualify_field_time(result, name)
+
+
+def qualify_field_time(result, name):
+    """Keep interval and GRIB evidence on its owning field's coordinates."""
     names = {key: f"{name}_{key}" for key, value in result.coords.items()
              if key.startswith("GRIB_") and "time" in value.dims}
     bounds = result.time.attrs.get("bounds")

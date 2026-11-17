@@ -227,6 +227,9 @@ def test_retired_keys_and_values_fail_in_current_document(path, value):
     (("sources", "atmosphere", 1), "invalid"),
     (("products", "polar"), {
         "radius_km": 2, "fields": {"atmosphere": ["instructional_scalar"]}, "levels": "stored"}),
+    (("sources", "atmosphere", "polar"), {"azimuth_count": 8}),
+    (("products", "polar"), {"radius_km": 2, "enabled": False}),
+    (("region", "sources_coupling_time_association"), "strict"),
 ])
 def test_current_schema_rejects_invalid_dynamic_declarations(path, value):
     raw = minimal_document()
@@ -238,7 +241,7 @@ def test_current_schema_rejects_invalid_dynamic_declarations(path, value):
         resolve_schema(raw)
 
 
-def test_named_sources_inherit_only_declared_polar_settings_and_replay(tmp_path):
+def test_named_sources_project_requested_products_and_replay(tmp_path):
     from frameit.core.configuration import resolved_configuration, source_document
 
     raw = minimal_document()
@@ -249,28 +252,28 @@ def test_named_sources_inherit_only_declared_polar_settings_and_replay(tmp_path)
                   "variables": {"3d": {
                       "deptht": {"names": ["votemper"], "levels": {"indices": [1, 0]}}}}}}
     raw["region"]["sources_coupling_time_association"] = "common"
-    # Retain the unresolved inactive, source-local demand rather than enable a different product.
-    raw["sources"]["ocean"]["polar"] = {"azimuth_count": 8}
     raw["products"]["polar"] = {
-        "enabled": False, "radial_step_km": 3.}
+        "radius_km": 5., "radial_step_km": 3., "azimuth_count": 8,
+        "fields": {"ocean": ["deptht.votemper"]}}
     resolved, _, _ = resolve_schema(raw, base_dir=tmp_path)
     for name in ("atmosphere", "ocean"):
         source = resolved["sources"][name]
         assert source["files"] == [str(tmp_path / f"{name}.nc")]
         child = source_document(resolved, name)
         assert child["schema_version"] == 3
-        assert child["products"]["polar"]["enabled"] is False
-        assert child["products"]["polar"]["radial_step_km"] == 3.
+        assert child["sources"][name]["variables"] == source["variables"]
+        if name == "ocean":
+            assert child["products"]["polar"]["radial_step_km"] == 3.
+            assert child["products"]["polar"]["azimuth_count"] == 8
+        else:
+            assert "polar" not in child["products"]
         resolve_schema(child, base_dir=tmp_path)
-    assert source_document(resolved, "ocean")["products"]["polar"]["azimuth_count"] == 8
-    assert source_document(resolved, "atmosphere")["products"]["polar"]["azimuth_count"] is None
     config = SimulationConfig.from_mapping_with_model_preset(resolved)
     replay = resolved_configuration(config)
     assert resolve_schema(replay)[0] == replay
     declared = SimulationConfig.from_mapping_with_model_preset(raw)
-    assert declared.schema_sources["sources.ocean.polar.radial_step_km"] == "yaml"
-    assert declared.schema_sources["sources.ocean.polar.azimuth_count"] == "yaml"
-    assert declared.schema_sources["sources.atmosphere.polar.azimuth_count"] == "default"
+    assert declared.schema_sources["products.polar.radial_step_km"] == "yaml"
+    assert declared.schema_sources["products.polar.azimuth_count"] == "yaml"
     for key, value in (("time_alignment", "common"), ("sources", {})):
         bad = deepcopy(raw)
         bad["sources"]["ocean"][key] = value
@@ -554,7 +557,7 @@ def test_unit_boundary_angle_consistency_and_grid_rotation(tmp_path):
     np.testing.assert_allclose(result.VM10, 10, atol=1e-12)
 
 
-def test_time_dependent_geometry_and_override_contract(tmp_path):
+def test_time_dependent_geometry_and_retired_override_contract(tmp_path):
     ds = dataset(tmp_path)
     changing = ds.assign_coords(longitude=ds.longitude.expand_dims(time=ds.time).copy())
     changing["longitude"][1] = changing.longitude[1] + .01
@@ -565,12 +568,8 @@ def test_time_dependent_geometry_and_override_contract(tmp_path):
     dataset(tmp_path)
     raw = document(tmp_path)
     raw["sources"]["atmosphere"]["grid_spacing_m"] = 2600
-    conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    plan = preflight(conf)
-    grid, = plan["sources"]["atmosphere"]["region"]["grids"].values()
-    assert grid["geometry"]["effective_source"] == "input.grid_spacing_m"
-    assert grid["geometry"]["effective_spacing_m"] == 2600
-    assert conf.resolution == 2600
+    with pytest.raises(ValueError, match=r"sources\.atmosphere\.grid_spacing_m"):
+        SimulationConfig.from_mapping_with_model_preset(raw)
 
 
 def test_spacing_argument_deprecation_preserves_metres():

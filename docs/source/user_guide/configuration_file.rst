@@ -205,10 +205,12 @@ tracker/derived-input support. The effective plan records each permitted absence
 no physical source record or accumulation interval is invented.
 A gap-enabled field without a native time dimension gains an output time axis
 over its real available samples before the absent initial value is added.
-On these sources, native output keeps GRIB temporal evidence in field-prefixed
+On these sources, model-grid output keeps GRIB temporal evidence in field-prefixed
 coordinates, for example ``u_GRIB_startStep``. Interval fields use a field-specific
 auxiliary time and bounds. Absent interval evidence stays missing rather than
-borrowing another field's interval.
+borrowing another field's interval. Multi-field polar output uses the same
+field-owned convention: shared ``time`` does not inherit one field's bounds.
+Single-field polar output retains its native time-bounds link.
 
 Variables and vertical levels
 -----------------------------

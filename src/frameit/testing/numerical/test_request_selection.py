@@ -136,7 +136,6 @@ def test_schema_level_domain_and_no_implicit_wind_declaration(levels, domain):
     {"u": "U", "v": "V", "basis": "earth", "extra": 1},
     {"u": "U", "v": "U", "basis": "earth"},
     {"u": 1, "v": "V", "basis": "earth"},
-    {"u": "U", "v": "V", "basis": "grid"},
     {"u": "U", "v": "V", "basis": "grid",
       "rotation": {"method": "auto"}},
     {"u": "U", "v": "V", "basis": "grid",
@@ -149,6 +148,15 @@ def test_strict_wind_pair_declarations(pair):
     raw["sources"]["atmosphere"]["wind_pairs"] = [pair]
     with pytest.raises(ValueError, match="wind_pairs"):
         resolve_schema(raw)
+
+
+def test_grid_basis_without_explicit_rotation_is_valid_for_native_requests():
+    raw = schema()
+    pair = {"u": "U", "v": "V", "basis": "grid"}
+    raw["sources"]["atmosphere"]["wind_pairs"] = [pair]
+    runtime = to_runtime(raw)
+    assert runtime["yaml_config"]["sources"]["atmosphere"]["wind_pairs"] == [pair]
+    assert runtime["source_requests"]["atmosphere"]["transforms"] == []
 
 
 def test_duplicate_pair_components_fail_but_different_groups_are_distinct():
@@ -216,7 +224,7 @@ def test_projection_parameters_require_projection_method(method):
 
 @pytest.mark.parametrize("section,key,value", [
     ("cartesian", "horizontal_vectors", "auto"), ("cartesian", "horizontal_vectors", []),
-    ("cartesian", "vertical_velocity", "native"), ("polar", "vertical_velocity", False),
+    ("cartesian", "vertical_velocity", "interfaces"), ("polar", "vertical_velocity", False),
 ])
 def test_invalid_output_selectors(section, key, value):
     raw = schema()
@@ -234,17 +242,18 @@ def test_invalid_output_selectors(section, key, value):
         resolve_schema(raw)
 
 
-def test_output_selections_are_preserved():
+@pytest.mark.parametrize("sampling", ["native", "mass"])
+def test_output_selections_are_preserved(sampling):
     raw = schema()
     source = raw["sources"]["atmosphere"]
     source["variables"] = {"3d": ["WT"]}
-    source["transforms"] = [{"fields": ["WT"], "sampling": "mass"}]
+    source["transforms"] = [{"fields": ["WT"], "sampling": sampling}]
     raw["products"] = {"model_grid": True, "polar": {"radius_km": 10,
         "field_options": {"atmosphere": {"WT": {"sampling": "native"}}}}}
     runtime = to_runtime(raw)
     assert runtime["cartesian_horizontal_winds"] == "native"
     selected = runtime["source_requests"]["atmosphere"]
-    assert selected["transforms"] == [{"fields": ["WT"], "sampling": "mass"}]
+    assert selected["transforms"] == [{"fields": ["WT"], "sampling": sampling}]
     assert selected["polar_options"]["WT"]["sampling"] == "native"
 
 

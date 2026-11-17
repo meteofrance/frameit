@@ -314,6 +314,10 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
         result.time.encoding = {
             key: value for key, value in clock.encoding.items()
             if key in {"units", "calendar", "dtype"}}
+        if source.get("allowed_gaps") and len(binding["products"]["polar"]) > 1:
+            from frameit.processing.requests import qualify_field_time
+
+            result = qualify_field_time(result, job["name"])
         if source["model"] == "croco":
             # Point-sampled auxiliaries do not establish the native nonlinear depth formula.
             for axis in ("s_rho", "s_w"):

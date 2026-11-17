@@ -320,7 +320,7 @@ assert 'frameit' not in sys.modules and 'falfilfa4py' not in sys.modules
     assert result.ok and result.n_files == 2  # The non-common FA file was not processed.
     strict = copy.deepcopy(raw)
     strict["region"]["sources_coupling_time_association"] = "strict"
-    with pytest.raises(ValueError, match="Strict source time alignment"):
+    with pytest.raises(ValueError, match="sources_coupling_time_association"):
         bind_sources(SimulationConfig.from_mapping_with_model_preset(strict))
 
 
@@ -599,17 +599,14 @@ def test_primary_grib_epygram_surfex_native_exports(tmp_path, synchronous, monke
 
 
 @EPYGRAM
-@pytest.mark.parametrize("failure", ["strict", "cycle", "mixed_cycles", "clock", "source"])
+@pytest.mark.parametrize("failure", ["cycle", "mixed_cycles", "clock", "source"])
 def test_primary_pair_rejects_time_cycle_clock_and_source_conflicts(tmp_path, failure):
     raw = primary_pair_document(
         tmp_path, cycles={1: 1, 2: 1} if failure == "cycle" else (
             {2: 1} if failure == "mixed_cycles" else None),
         surface_overrides={2: {"state_hours": 9}} if failure == "clock" else None)
-    if failure == "strict":
-        raw["region"]["sources_coupling_time_association"] = "strict"
-        message = "Strict source time alignment"
-    elif failure == "cycle":
-        message = "Coupled forecast cycles disagree"
+    if failure == "cycle":
+        message = r"sources\.atmosphere:.*several forecast cycles.*time\.cycle"
     elif failure == "mixed_cycles":
         message = "Source atmosphere: select one forecast cycle|time.cycle"
     elif failure == "clock":

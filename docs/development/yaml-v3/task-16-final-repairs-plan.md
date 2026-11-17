@@ -1,5 +1,9 @@
 # Task16 input-aware validation and CROCO/W repairs
 
+> Historical repair plan. The subsequent deprecated-test check and small temporal
+> metadata fix resolve the required-suite failures recorded below; see `STATE.md`
+> for current verification and the remaining broader qualification gates.
+
 > Execute inline with systematic debugging and TDD under the maintainer's
 > 17 November instruction to fix these issues without unnecessary questions.
 
