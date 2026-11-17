@@ -1,13 +1,12 @@
 A question about a key?
 =======================
 
-This annotated reference shows public configuration keys and their alternatives.
-It combines mutually exclusive choices, so **it is not a runnable configuration**.
-Start with the complete example in :doc:`../user_guide/configuration_file` and
-select only the options needed for your data.
+Find a key in the annotated YAML below, then follow its detailed reference.
+The example combines mutually exclusive choices: **it is not runnable**.
+For a complete request, start with :doc:`../user_guide/configuration_file`.
 
-Values marked as examples are not defaults. Scientific declarations must match
-source evidence. Omit optional controls for their defaults; do not write ``null``.
+Example values are not defaults. Match scientific declarations to source evidence.
+Omit optional controls to use defaults; do not write ``null``.
 
 Find the detailed contract
 --------------------------
@@ -40,16 +39,16 @@ Find the detailed contract
 All-options example
 -------------------
 
-Each source has its own field lists and a shared level selector, or explicit
-vertical groups with local selectors (see :ref:`explicit-vertical-groups`). ``2d`` means
-no selectable vertical axis, not necessarily the ground. FA field/cube names
-and annotation keys are user-chosen names. Commented alternatives must replace
-the active choice, not be added beside it.
+Each source uses field lists with a shared level selector, or
+:ref:`vertical groups with local selectors <explicit-vertical-groups>`.
+``2d`` means no selectable vertical axis, not necessarily the ground.
+FA logical cube names and annotation keys are user-chosen; native record IDs
+must match the input. Replace active choices with their commented alternatives;
+do not add both.
 
 .. literalinclude:: ../_static/configuration-reference.yaml
    :language: yaml
    :linenos:
 
-The :download:`annotated YAML <../_static/configuration-reference.yaml>` is a
-reference download only. Use the configuration reference for complete requests,
-defaults and failure rules.
+Download the :download:`annotated YAML <../_static/configuration-reference.yaml>`
+for lookup, not as a starter.

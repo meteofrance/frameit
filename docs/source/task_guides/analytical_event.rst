@@ -51,18 +51,24 @@ View the output
 ----------------
 
 The inventory lists model-grid/polar products for each source and a track file.
-Download :download:`plot_analytical_event.py <../../../example/plots/plot_analytical_event.py>`:
+Copy this into ``plot_analytical_event.py``:
+
+.. literalinclude:: ../../../example/plots/plot_analytical_event.py
+   :language: python
+
+Optional: :download:`script file <../../../example/plots/plot_analytical_event.py>`.
 
 .. code-block:: bash
 
-   python plot_analytical_event.py results/analytic-moving/products/analytic-moving.atmosphere.model_grid.nc analytical-event.svg
+   python plot_analytical_event.py results/analytic-moving/products/analytic-moving.atmosphere.polar.nc analytical-event.svg
 
 .. figure:: ../_static/figures/tutorial-analytical-event.svg
    :target: ../_static/figures/tutorial-analytical-event.svg
    :width: 480px
-   :alt: The exported single 1000 metre layer has the declared analytical temperature of 294 kelvin at the selected time.
+   :alt: Circular polar wind-speed plot at 01:00, with clockwise azimuth from north, radius in kilometres and speed in metres per second.
 
-   First retained atmospheric time, 01:00. The vertical axis still has length one.
+   First retained atmospheric time, 01:00. Speed is calculated from the sampled
+   Earth-relative components, without subtracting the centre's motion.
 
 For missing-data/category practice, the generated ``missing-data`` directory
 works with :download:`analytic-missing.yaml <../../../example/tutorials/analytic-missing.yaml>`.

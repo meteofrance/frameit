@@ -52,7 +52,12 @@ Run
 View the output
 ----------------
 
-Download :download:`plot_scalars_and_vectors.py <../../../example/plots/plot_scalars_and_vectors.py>`:
+Copy this into ``plot_scalars_and_vectors.py``:
+
+.. literalinclude:: ../../../example/plots/plot_scalars_and_vectors.py
+   :language: python
+
+Optional: :download:`script file <../../../example/plots/plot_scalars_and_vectors.py>`.
 
 .. code-block:: bash
 

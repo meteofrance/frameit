@@ -45,7 +45,12 @@ Run
 View the output
 ----------------
 
-Download :download:`plot_fixed_region.py <../../../example/plots/plot_fixed_region.py>`:
+Copy this into ``plot_fixed_region.py``:
+
+.. literalinclude:: ../../../example/plots/plot_fixed_region.py
+   :language: python
+
+Optional: :download:`script file <../../../example/plots/plot_fixed_region.py>`.
 
 .. code-block:: bash
 

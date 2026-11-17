@@ -1,14 +1,9 @@
 Prescribed-track method
 ========================
 
+Set ``region.track.file`` to use an external NetCDF trajectory. FrameIt keeps its
+geographical positions and selects native extraction indices on each source grid.
 For setup and run checks, use :doc:`../task_guides/moving_region`.
-
-Purpose
--------
-
-``region.track.file`` uses positions from an external NetCDF
-trajectory. It keeps the supplied geographical centres and selects native grid
-indices ``(cy, cx)`` for extraction.
 
 Core assumptions
 ----------------
@@ -36,8 +31,9 @@ Coordinates are discovered from unambiguous CF metadata or conventional
 ``time``, ``latitude``/``lat`` and ``longitude``/``lon`` names with consistent
 units and dimensions. All three must identify the same one-dimensional
 trajectory; equal lengths alone are insufficient.
-Missing units, contradictory identification and incompatible dimensions fail.
-Time must be CF-decodable. Export order is chronological.
+Missing units, contradictory identification, incompatible dimensions, duplicate
+times and nonfinite positions fail. Time must be CF-decodable; export order is
+chronological.
 
 
 Configuration keys
@@ -52,8 +48,8 @@ Set only the file path. This is a fragment of a complete source request:
        file: ./prescribed_track.nc
 
 ``region.sources_coupling_time_association`` defaults to ``exact``.
-Every selected source sample must have a centre, even when source timelines
-differ. Explicit ``common`` reports the records excluded by that association.
+Every selected source sample must have a centre; missing required centres fail
+and extra track times do not create samples. Explicit ``common`` reports exclusions.
 The admitted ``preceding_hour`` method has additional sampling and interval
 requirements; see :doc:`../concepts/time_support`.
 No policy silently interpolates missing positions.
@@ -62,20 +58,16 @@ No policy silently interpolates missing positions.
 Reuse a FrameIt track
 ----------------------
 
-.. tip::
+Check the earlier run's status and track quality, then use its geographical
+positions, not ``cx/cy``:
 
-   A requested ``<run.name>.track.nc`` can supply positions for another run,
-   including extraction from another compatible source. Use its geographical
-   coordinates, not its native grid indices:
+.. code-block:: yaml
 
-   .. code-block:: yaml
+   region:
+     track:
+       file: ../previous-run/products/case.track.nc
 
-      region:
-        track:
-          file: ../previous-run/products/case.track.nc
-
-   Check the earlier run's status and track quality first. The new run selects
-   native points on its own source grid; it does not reuse the old ``cx/cy``.
+The new run selects points on its own grids, including another compatible source.
 
 Request ``products.track: true`` to export a trajectory. Its coordinates are
 ``time(time)``, ``latitude(time)`` and ``longitude(time)``, with CF time

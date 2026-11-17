@@ -25,12 +25,10 @@ Inspect and declare exact associations
 
    frameit inspect frameit.yaml
 
-Use the declared source files/profile and exact record associations in the YAML.
-For a separate runtime, set source ``reader.python_executable``.
-Inspection reads selected metadata, not physical field payloads. Preflight uses
-lazy NaN shape placeholders, never physical zeroes or decoded data. A selected
-spectral record or native -91/-93/-94 error fails before physical decoding; it
-cannot be accepted as harmless metadata or replaced by another field.
+Declare source files/profile and exact records before inspection. It reads
+metadata, not physical payloads. Selected spectral records and native -91/-93/-94
+errors fail before physical decoding; they are not replaced by other fields.
+Set ``reader.python_executable`` only for a deliberately separate runtime.
 
 The complete request below is an association example, **not** a release-qualified
 field catalogue. A literal ID such as ``S001TEMPERATURE`` can be spectral in a real
@@ -123,10 +121,10 @@ full levels. Library pressure-valued A and B must agree exactly with the origina
 normalized A/B/PREFER words and interface labels, once per transaction. Each
 selected hybrid field must agree with that resource vertical grid.
 
-Independent fixtures use PREFER=100000 Pa and known A=[0,10000,20000,0] Pa to
-distinguish normalization/reference-pressure errors. Nonfinite/incomplete arrays,
-invalid counts, nonpositive reference pressure, nonfinite A*PREFER or contradictory
-library coefficients fail. Full-level coefficient means are not inferred.
+For example, PREFER=100000 Pa and normalized A=[0,0.1,0.2,0] give
+A=[0,10000,20000,0] Pa. Nonfinite/incomplete arrays, invalid counts, nonpositive
+reference pressure, nonfinite A*PREFER or contradictory library coefficients fail.
+Full-level coefficient means are not inferred.
 
 Ordinary NetCDF products retain:
 
@@ -156,11 +154,9 @@ source ``wind_pairs`` when a paired operation needs them. Here ``earth`` means e
 ``grid`` means grid-aligned components along the model's x/y axes; see
 :ref:`wind-component-directions`. Unresolved staggering or map-scaled components
 fail.
-These declarations describe stored components; they do not request collocation,
-rotation or unit conversion. Native copying of one component does not request
-its unselected companion. A transform or calculation needs an explicit request,
-its required support and an executable method binding. Unresolved preparation
-fails rather than changing a native export.
+These declarations describe stored components, not a request to collocate,
+rotate or convert units. Native copying of one component needs no unselected
+companion. Select transforms/calculations explicitly; unsupported preparation fails.
 Location/collocation, vector-basis rotation and reference-frame motion are
 separate concepts; see :ref:`wind-grid-contract` and
 :ref:`wind-preparation-method` for equations and method limits.
@@ -169,8 +165,7 @@ separate concepts; see :ref:`wind-grid-contract` and
 producer-specific conformal correction. Independently specified spherical Lambert
 vectors in both hemispheres check signs/components. The ``5e-4 m/s`` bound applies
 to the specified 1-km-spacing, 8-km-wide, 5-m/s fixture and its direction-discretization/
-ellipsoid effects, not arbitrary production accuracy. Available U/V do not enable
-an unrequested wind-speed or polar product. Native cube assembly does not
+ellipsoid effects, not arbitrary production accuracy. Cube assembly does not
 establish support for every transform or polar combination.
 
 FA-driven atmospheric trackers remain unsupported. Cubes alone do not provide
@@ -188,11 +183,7 @@ multi-time or post-crop result; see :doc:`fa_contracts` and :doc:`output_files`.
 Source-qualified products retain labelled native axes and per-product
 atomic/final-status handling. A failed required decode/export is not a completed run.
 
-Independent generated gridpoint fixtures cover coefficients/columns, zeroes and
-undefined values, full/interface sparse/reordered selection, two times, selected-only
-reads, unit/basis/staggering failures, vector preparation, sync/spawn export and
-ordinary-reader reopening. They establish finite engineering/numerical behavior,
-not real-producer scientific approval. Real sampling, release-matched units/scaling,
-spectral decodes and independent real vertical/vector references remain unresolved.
-No layer/tile axis, interval conversion or diagnostic is admitted by availability;
-see :doc:`fa_baseline` and :doc:`fa_spectral` for remaining limits.
+Numerical checks of gridpoint assembly do not qualify real-producer sampling,
+units/scaling or spectral decodes. Trusted real vertical/vector references and
+scientific review remain required. See :doc:`fa_baseline` and :doc:`fa_spectral`
+for unsupported axes, intervals and operations.

@@ -1,8 +1,12 @@
 Native FA inputs
 ================
 
-Start with the supported scope and required declarations. Use the detailed
-geometry, surface and native-level contracts when those paths apply.
+Start with :doc:`../user_guide/fa_inputs` for a request and
+:doc:`../user_guide/fa_baseline` to check support. Use
+:doc:`../user_guide/fa_environment` for reader setup or failures.
+
+The remaining pages define metadata, geometry, coupled surface sampling and
+native atmospheric cubes. Spectral physical fields are unsupported.
 
 .. toctree::
    :maxdepth: 1

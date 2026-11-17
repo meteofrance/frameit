@@ -39,13 +39,12 @@ Contradictory averaging metadata still fails; missing evidence is not inferred.
 
 Regional crops keep the native sample label in ``time`` and the associated
 centre time in ``center_time(time)``. Interval bounds keep their native meaning.
-An interval-end centre is not the native mean's
-sampling label or evidence that the mean is instantaneous. Read the
-full :doc:`NEMO association contract <../user_guide/ocean_netcdf>` before choosing
-this convention.
+An interval-end centre does not make the native mean instantaneous or replace
+its sampling label. Check the
+:doc:`NEMO association contract <../user_guide/ocean_netcdf>` before choosing
+``preceding_hour``.
 
-Association does not widen source time selection or change unrelated native
-extraction. No policy silently fills a missing field, interpolates a centre,
-deaccumulates energy or turns a mean into a
-snapshot. Check ``cell_methods``, units, bounds and forecast identity with an
-ordinary reader, not the filename alone. See :doc:`../task_guides/coupled_inputs`.
+Association does not widen source selections, change unrelated native extraction,
+fill fields, interpolate centres, deaccumulate energy or turn means into snapshots.
+Check ``cell_methods``, units, bounds and forecast identity with an ordinary
+reader, not the filename alone. See :doc:`../task_guides/coupled_inputs`.

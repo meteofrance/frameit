@@ -194,6 +194,45 @@ def create_task_fixtures(directory: Path) -> dict[str, Path]:
     paths["pressure"] = directory / "pressure.nc"
     with atomic_output(paths["pressure"], overwrite=False) as temporary:
         pressure.to_netcdf(temporary, engine="netcdf4")
+    from pyproj import Geod
+
+    with xr.open_dataset(paths["moving.atmosphere"]) as source:
+        coupled_air = source.load()
+    anomaly = (101000. - coupled_air.pressure) / 5000.
+    coupled_air["temperature"] = (
+        coupled_air.temperature + 2. * anomaly * np.exp(-coupled_air.height / 1000.)
+    ).assign_attrs(
+        units="K", kind="continuous",
+        formula="300 K - (0.006 K/m) z + (2 K) exp(-(r/40 km)^2) exp(-z/1000 m)")
+    for name in ("u", "v"):
+        coupled_air[name].attrs["sampling_height_m"] = 10.
+    with xr.open_dataset(paths["moving.ocean"]) as source:
+        coupled_ocean = source.load().drop_dims("time")
+    coupled_ocean = coupled_ocean.assign_coords(time=coupled_air.time)
+    lon, lat = coupled_ocean.lon_rho.values, coupled_ocean.lat_rho.values
+    radii = []
+    geod = Geod(ellps="WGS84")
+    with xr.open_dataset(paths["moving.track"]) as track:
+        for x, y in zip(track.longitude.values, track.latitude.values, strict=True):
+            radii.append(geod.inv(np.full(lon.shape, x), np.full(lat.shape, y), lon, lat)[2])
+    wake = np.maximum.accumulate(np.exp(-(np.asarray(radii) / 15000.)**2), axis=0)
+    z = coupled_ocean.depth.values[None, :, None, None]
+    coupled_ocean["temp"] = (
+        ("time", "s_rho", "eta_rho", "xi_rho"),
+        300. + .01 * z - 2. * wake[:, None] * np.exp(z / 20.),
+        {"units": "K", "kind": "continuous", "temporal_kind": "instantaneous",
+         "long_name": "prescribed ocean temperature with a persistent cold trail",
+         "formula": "300 K + (0.01 K/m) z - (2 K) max[k<=t](exp(-(r_k/15 km)^2)) exp(z/20 m)",
+         "ancillary_variables": "mask_rho"})
+    coupled_ocean["zeta"] = (
+        ("time", "eta_rho", "xi_rho"), np.zeros((3, *lon.shape)), {"units": "m"})
+    for name, scene in (("atmosphere", coupled_air), ("ocean", coupled_ocean)):
+        scene.attrs["event"] = (
+            "prescribed translating temperature/winds and persistent cold trail; "
+            "no coupled dynamics")
+        paths[f"coupled.{name}"] = directory / f"coupled-{name}.nc"
+        with atomic_output(paths[f"coupled.{name}"], overwrite=False) as temporary:
+            scene.to_netcdf(temporary, engine="netcdf4")
     return paths
 
 

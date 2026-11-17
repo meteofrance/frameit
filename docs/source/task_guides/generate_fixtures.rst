@@ -35,24 +35,35 @@ Choose a new directory; existing directories are refused.
          paths = create_task_fixtures(Path("tutorial-data"))
          print(paths)
 
-The command creates twelve small NetCDF files:
+The command creates fourteen small NetCDF files:
 
 * ``first-run.nc``: dimensionless scalar, with a valid zero and a missing sample;
 * ``stationary/``: analytical atmosphere, ocean and stationary track;
 * ``data/``: the same formulas with a translating prescribed centre;
 * ``missing-data/``: explicit missing samples and categorical labels;
 * ``pressure.nc``: temperatures on pressure and height axes;
-* ``interfaces.nc``: native interface W and mass-level coordinates.
+* ``interfaces.nc``: native interface W and mass-level coordinates;
+* ``coupled-atmosphere.nc`` and ``coupled-ocean.nc``: three prescribed storm/cold-trail snapshots.
 
-Work inside ``tutorial-data`` for the remaining tasks. Save each downloaded
-YAML and plotting script there. Every task uses a separate results directory.
+Work inside ``tutorial-data`` for the remaining tasks. Copy each guide's YAML
+and plotting code into the named files there. Each task uses a separate results directory.
 See :doc:`../reference/analytical_inputs` for formulas, units and masks.
+
+.. _tutorial-plotting-requirements:
 
 View a generated dataset
 ------------------------
 
-Download :download:`plot_generate_fixtures.py <../../../example/plots/plot_generate_fixtures.py>`.
-It reads the generator's output with ordinary xarray:
+The plotting examples need **Matplotlib** in the Python environment used to run
+them. Install it separately; it is not included in FrameIt's core dependencies
+or the declared reference environment. Extraction does not require it.
+
+Copy this into ``plot_generate_fixtures.py``:
+
+.. literalinclude:: ../../../example/plots/plot_generate_fixtures.py
+   :language: python
+
+Optional: :download:`script file <../../../example/plots/plot_generate_fixtures.py>`.
 
 .. code-block:: bash
 
@@ -65,10 +76,3 @@ It reads the generator's output with ordinary xarray:
    :alt: Generated analytical pressure depression centred at 20 degrees south and 60 degrees east, in pascals.
 
    Output of the fixture generator, before any extraction.
-
-Adapt to real inputs
----------------------
-
-Do not use these fixtures for scientific conclusions. For real processing,
-replace the paths and adapter declarations using :doc:`../reference/inputs`;
-the next tasks identify their task-specific changes.

@@ -1,56 +1,28 @@
 Polar projection with xESMF regridding
 ======================================
 
-For the workflow, start with :doc:`../task_guides/polar_sampling`. This page
-specifies target geometry, interpolation, coverage and numerical conventions.
+Request ``products.polar`` to sample selected fields around a fixed or moving
+geographical centre. Set the radius, then choose spacing and a missing-data policy.
+For a worked run, use :doc:`../task_guides/polar_sampling`.
 
 Polar projection using xESMF
 ----------------------------
 
-Purpose
-~~~~~~~
-FrameIt samples selected model fields on a polar grid around a declared
-geographical centre. The outputs can be used for downstream radial/angular
-analysis; selecting a field does not request additional diagnostics.
+Targets use WGS84 forward geodesics from the continuous centre, not its snapped
+extraction cell. ``radius`` is in kilometres; ``azimuth`` runs clockwise from
+north in radians (0° north, 90° east, 180° south, 270° west).
+`xESMF <https://xesmf.readthedocs.io/>`_ samples them as a LocStream of points.
 
-FrameIt resolves the required native support and any selected preparation before
-sparse selection removes neighbours. It builds a geodesic target (``radius``,
-``azimuth``) around the region's continuous centre and samples it with
-`xESMF <https://xesmf.readthedocs.io/>`_. Polar input support is independent of
-model-grid exports; no crop width or model-grid product is required.
-The source's snapped extraction cell does not replace the declared centre.
+Continuous fields default to bilinear sampling; categorical fields use
+nearest-neighbour (``interpolation: nearest``, backend ``nearest_s2d``).
+Kind must be established from evidence. These are point samples, not area averages.
 
-See :ref:`wind-grid-contract` for the illustrated distinction between native
-output and mass-point, eastward/northward analysis components, explicit input
-declarations, W choices and level mappings. Cartesian representation choices
-do not change polar sampling or tracking.
-
-General strategy
-~~~~~~~~~~~~~~~~
-1. **Define the target polar grid**
-
-   The target grid is parameterised by:
-
-   - **radius** ``radius`` (km), from 0 to ``products.polar.radius_km``
-   - **azimuth** ``azimuth`` (radians), with ``azimuth_degrees`` in degrees, clockwise from North:
-     0° North, 90° East, 180° South, 270° West.
-   - For each time step, the polar grid points are converted to geographic
-     coordinates (lon, lat) using a forward geodesic mapping on the WGS84 ellipsoid.
-
-
-2. **Interpolate fields onto the polar grid**
-
-   - FrameIt uses xESMF in **LocStream output** mode, which treats the polar grid as a list of target points.
-   - Proven continuous fields default to **bilinear**; proven categorical fields
-     use nearest-neighbour. The public override is ``interpolation: nearest``;
-     its xESMF method name is ``nearest_s2d``.
-
-3. **Preserve time and vertical dimensions**
-
-   - Horizontal sampling retains selected vertical levels. W-to-mass preparation,
-     when selected, happens with native brackets available, before sparse subsetting.
-   - The source's single level selector applies on each actual representation.
-     Native neighbours needed for a remap stay internal, not extra exported levels.
+Polar support is resolved independently of model-grid exports; no crop width or
+model-grid product is needed. Selected preparation happens before sparse selection
+removes neighbours. Levels are selected on each actual representation, without
+exporting internal brackets. See :ref:`wind-grid-contract` for collocation,
+rotation and W sampling. Model-grid transforms do not control polar preparation,
+and field availability does not enable extra diagnostics.
 
 Configuration
 ~~~~~~~~~~~~~
@@ -80,8 +52,6 @@ the preceding ``products`` mapping, using the instructional guide's centre/input
        azimuth_count: 8
        processing:
          max_target_points: 2000000
-
-Notes:
 
 - The last radius is exactly ``radius_km``. Its preceding interval can be shorter
   than ``radial_step_km``; use actual coordinates for derivatives.
@@ -143,9 +113,7 @@ actual representations; see :ref:`explicit-vertical-groups`.
 
 Output structure
 ~~~~~~~~~~~~~~~~
-Public runs write one field dataset per requested source/product. A low-level
-``polar_project`` call returns internal grouped datasets; group keys are not the
-public filename contract. Polar products typically contain:
+Each requested source/product writes one dataset. Polar products contain:
 
 - Dimensions: ``time``, ``radius``, ``azimuth`` (plus each field's own vertical/member dimensions).
 - Coordinates:
@@ -169,7 +137,7 @@ Metadata includes:
 - ``n_theta``, ``theta_closed=False``, ``theta_topology="uniform_periodic"``,
   requested/effective sampling settings and ``radial_spacing_uniform``.
 
-The retained low-level numerical APIs use ``rr``, ``theta`` and ``theta_deg``.
+The Python numerical APIs use ``rr``, ``theta`` and ``theta_deg``.
 Those internal names are not the public product dimensions or chunk keys.
 
 Alignment, native support and missing data
@@ -180,8 +148,8 @@ sampling job, component/support fields must agree on their actual sample context
 Missing required centres or incompatible calendars fail under the selected policy,
 not through silent nearest-time matching. See :doc:`../concepts/time_support`.
 
-Source longitude/latitude are broadcast and transposed using named
-``y_box``/``x_box`` dimensions. Regional quadrilateral cells must be finite,
+Source longitude/latitude are associated through named dimensions, not array shape.
+Regional quadrilateral cells must be finite,
 nondegenerate and consistently connected. Antimeridian coordinates are unwrapped
 without reordering fields. NaN-padded model-domain edges are trimmed to the valid
 rectangular footprint; missing coordinates inside that footprint are rejected,
@@ -220,28 +188,23 @@ data and :math:`s_i=\sum_jW_{ij}`. Valid-weight support is
    q_i^{\mathrm{renorm}} =
    \frac{\sum_j W_{ij}M_j q_j^{\mathrm{filled}}}{\sum_j W_{ij}M_j}.
 
-Missing values are explicitly filled with zero only for the sparse multiply,
-then masked/normalized according to policy. This avoids ``0 * NaN`` poisoning
-an exact native-node sample. Coefficients at or below the declared absolute
-zero-weight tolerance are removed before both weighting and stencil-validity
-checks. Small row-sum roundoff is normalized. Public speed requests apply each
-component's declared method/coverage policy, then take magnitude. Both sampled
-components must be valid. Reported speed support is the minimum component support,
-not a joint-stencil fraction. Explicit radial/tangential methods instead require
-strict sampling with a joint finite U/V mask. A U hole and a V hole in different
-contributors both reduce their joint support; it is not the minimum of separate
-support fractions. Renormalization remains available for speed and other admitted
-fields, but is not admitted for these experimental component methods.
-The retained low-level vector API can apply its own declared joint-mask policy.
+Zero filling occurs only inside the sparse multiply, followed by masking and
+normalization; it never turns missing output into physical zero. This avoids
+``0 * NaN`` poisoning exact-node samples. Weights at or below the absolute
+zero-weight tolerance are removed before weighting and stencil checks; small
+row-sum roundoff is normalized.
 
-Partial-stencil support within ``2 * n * eps64`` of a renormalization threshold
-is re-summed with Python's accurate ``math.fsum`` before the ordinary
-``support >= threshold`` comparison; ``n`` is the nonzero stencil size. This
-roundoff bound only selects sums to re-evaluate: it is **not** acceptance slack,
-and a support fraction genuinely below the threshold remains rejected. Complete
-stencils have exactly unit support; a threshold of one still requires every
-contributor to be present. This removes borderline mask decisions caused by
-floating-point accumulation/chunk order, not a change to the scientific cutoff.
+Speed samples each component with its declared policy, then takes magnitude.
+Both must be valid; support is the minimum component fraction. Radial/tangential
+methods instead use strict sampling and a joint finite U/V mask: holes in
+different contributors both reduce joint support. They reject renormalization.
+The low-level vector API uses its own declared joint-mask policy.
+
+Support within ``2 * n * eps64`` of the threshold is accurately re-summed
+(``math.fsum``), where ``n`` is the nonzero stencil size. The cutoff remains
+``support >= threshold``: this is **not** acceptance slack. Complete stencils
+have unit support; a threshold of one requires every contributor. Genuine
+below-threshold support is rejected regardless of chunk/accumulation order.
 
 These fractions describe **interpolation-weight support**, not area coverage or
 conservation. The supported point methods are bilinear and nearest-neighbour
@@ -249,10 +212,9 @@ conservation. The supported point methods are bilinear and nearest-neighbour
 different support definition. Kind evidence selects the default method, not
 failure of another method. There is no nearest-neighbour fallback.
 Nearest-neighbour does not accept partial-stencil renormalization.
-Nearest weights are restricted to the ESMF spherical source-cell footprint,
-determined by an additional geometry-only bilinear weight build. This is not a
-planar longitude/latitude polygon test. Its cost does not imply a scalar payload
-read; retained-plan counts do not count every native weight constructor.
+Nearest sampling is restricted to the ESMF spherical source-cell footprint,
+using an additional geometry-only bilinear weight build, not a planar
+longitude/latitude polygon test. This adds geometry work, not scalar payload reads.
 The sparse linear-map interpretation follows Ullrich and Taylor (2015), Section
 2a, DOI ``10.1175/MWR-D-14-00343.1``.
 
@@ -292,7 +254,7 @@ Status values are encoded with CF ``flag_values`` and ``flag_meanings``:
    * - 4
      - Undefined radial/tangential component at zero radius
 
-Status4 marks requested radial/tangential results at the origin; public U/V
+Status 4 marks requested radial/tangential results at the origin; public U/V
 selection alone does not request them. Scalar speed can be valid at zero radius.
 Per-field geometry flags remain available when invalidity causes overlap.
 For public speed, validity requires both sampled components; internal component
@@ -379,7 +341,7 @@ Select ``radial_wind`` or ``tangential_wind`` through source ``derived``, with
 explicit ``u``/``v`` source references and a user-chosen output alias.
 The public binding is **experimental**, polar-only, and admits atmospheric AROME
 GRIB/NetCDF or Meso-NH NetCDF, not FA or ocean currents.
-See :doc:`../task_guides/scalars_and_vectors` for a request.
+See :doc:`../task_guides/scalars_and_vectors` for base-component declarations.
 Selecting U/V alone does not request either component; selecting one component
 does not export its sibling, speed or internal-only inputs.
 
@@ -406,7 +368,7 @@ azimuth :math:`\theta`. These angles generally differ on a curved Earth:
    v_\mathrm{tan} = u \cos\alpha - v \sin\alpha
 
 At zero radius the direction is undefined: both requested components and
-``radial_bearing`` are NaN. Component status is4, validity and ring eligibility
+``radial_bearing`` are NaN. Component status is 4, validity and ring eligibility
 are zero; joint support and geometric mapping evidence are retained separately.
 Scalar values and horizontal speed can remain valid. Missing or misaligned
 positive-radius bearing fails rather than using launch angle.
@@ -416,9 +378,8 @@ Results record ``wind_reference_frame="earth"``,
 ``origin_policy="undefined_at_zero_radius"`` and
 ``polar_support_definition="joint_finite_component_stencil"``.
 They have outward/clockwise long names, not eastward/northward standard names.
-``frameit_method_maturity="experimental_public_binding"`` distinguishes this
-interface from stable scientific qualification. The binding reuses the retained
-equations and geometry; it adds explicit selection and strict admission limits.
+``frameit_method_maturity="experimental_public_binding"`` marks the method's
+qualification status, not stable scientific approval.
 
 The numerical vector method and public derived speed use collocated
 eastward/northward components (U positive eastward, V positive northward).
@@ -453,29 +414,18 @@ qualification limits.
 
 Numerical verification
 ~~~~~~~~~~~~~~~~~~~~~~
-``python -m pytest src/frameit/testing/numerical/test_v3_polar_components.py``
-checks public selection, joint masks, cardinal signs, endpoint bearings in both
-hemispheres across the dateline, fixed/moving centres, selected NetCDF/GRIB reads,
-units/rotation, and ordinary NetCDF/sharded-Zarr readback. Cardinal dot products
-use a binary64 absolute tolerance of 1e-12 m/s; synthetic public readbacks use
-2e-10 m/s. These compact numerical checks are not real-producer qualification.
+Independent numerical checks cover cardinal signs, joint masks, endpoint bearings
+in both hemispheres/across the dateline, fixed/moving centres, unit/rotation
+preparation and ordinary NetCDF/Zarr reopening. Cardinal dot products use a
+binary64 absolute tolerance of 1e-12 m/s; compact synthetic readbacks use
+2e-10 m/s. Neither is a real-producer accuracy estimate.
 
-``python -m pytest src/frameit/testing/numerical/test_polar_wind.py src/frameit/testing/numerical/test_wind_collocation.py``
-checks Karney's published geodesic example, endpoint-bearing radial leakage,
-cardinal signs, origin handling, continuous centres, wind frame/unit conversion,
-native affine-field collocation, sparse W selections and real-xESMF vortex
-sampling with a source-grid refinement check. The geometry follows Karney
+Geometry checks include Karney's published example and source-refined analytical
+vortex sampling. The geometry follows Karney
 (2013), DOI ``10.1007/s00190-012-0578-z``; the emphasis on radial-wind
 contamination and centre sensitivity follows Ryglicki and Hodyss (2016), DOI
 ``10.1175/JAMC-D-15-0125.1``, and Zhao et al. (2019), DOI
 ``10.3390/atmos10060300``.
-
-``src/frameit/testing/numerical/test_polar_contracts.py`` and
-``src/frameit/testing/numerical/test_polar_coverage.py`` additionally
-exercise exact time alignment, finite footprints, dateline connectivity, changing
-source geometry, CF auxiliary/bounds retention through loading and extraction,
-weight-based missing-data oracles, joint vector masks, partial-ring eligibility,
-lazy/eager equivalence and NetCDF validity metadata with the actual backend.
 
 The references above and :ref:`wind-preparation-method` describe the retained
 geometry/preparation conventions. Publication and community-use evidence for
@@ -498,21 +448,15 @@ Grid geometry constraints
 
 Performance
 ~~~~~~~~~~~
-``PolarRegridPlan`` separates geometry-owned weights from field application.
-Compatible groups and variables share a plan. Across time, reuse requires
-identical source and target geometry; a fixed origin alone is not sufficient.
-Moving workloads process all groups at one instant before advancing time, so
-even a small cache can share a moving-grid plan across those groups.
+Start with default chunks/cache limits; tune only after measuring a representative
+selection. Weight plans can be shared only for identical source/target geometry,
+ordering, method, Earth model, numerical options and backend versions.
+A fixed centre or equal array shape is insufficient.
 
-The in-memory LRU key includes canonical source/target coordinates, ordering,
-polar axes, method, periodic/extrapolation options, zero-weight tolerance,
-target Earth-model assumptions and backend versions. Shapes or group names
-alone never authorize reuse. Plans own read-only geometry snapshots and retain
-no field arrays, finite-data masks or valid-weight denominators. Every
-application recomputes field-specific support (or the low-level API's joint
-vector mask). An optional
-static binary source mask at the plan API excludes whole contributing
-stencils and is part of the geometry signature.
+Plans retain read-only geometry/weights, not field arrays or finite-data masks.
+Each application recomputes field-specific support. An optional static binary
+mask in the Python plan API excludes whole stencils and belongs to the geometry
+signature.
 
 .. code-block:: yaml
 
@@ -525,11 +469,9 @@ This fragment belongs inside ``products.polar``. The default cache holds at most
 eight plans and an estimated 128 MiB of
 geometry/weight arrays. Oversized plans are applied without retention. Setting
 either limit to zero disables plan retention and provides an
-uncached baseline. Normalized source coordinates have a separate small cache
-(eight entries, at most 8 MiB). NumPy coordinates are content-fingerprinted;
-Dask geometry uses immutable graph tokens to avoid repeatedly loading the
-same arrays. Files and lazy geometry sources must remain unchanged while
-execution is in progress, as required by the input inventory contract.
+uncached baseline. Normalized source coordinates have a separate cache of
+eight entries/8 MiB. Keep source files and lazy geometry unchanged throughout
+execution.
 
 These limits bound cache-owned arrays, not total process memory: field outputs,
 native backend allocations and pending Dask graphs can retain additional
@@ -546,11 +488,9 @@ collide; see :ref:`model-grid-coordinate-names`. Sizes are positive integers or
 Unknown dimensions fail clearly. NumPy inputs stay eager.
 An explicit angular split still needs consolidation before ordinary Fourier
 analysis. Output chunking changes storage/computation layout, not the operator.
-CSR target rows are partitioned before multiplication, so these radial blocks
-bound executed interpolation outputs as well as final Dask chunks. Each task
-uses one cropped horizontal source plane per existing leading-dimension chunk;
-it does not combine all times or levels. Selecting a subset of target chunks
-does not multiply the unselected target rows.
+These blocks bound interpolation output work as well as final Dask chunks.
+Each task uses one cropped horizontal source plane per leading-dimension chunk,
+not all times/levels. Unselected target chunks are not multiplied.
 
 The projection report includes cache builds, hits, evictions, retained-array
 estimates and geometry signatures. In YAML runs,
@@ -574,12 +514,6 @@ For callers reusing a cache across repeated invocations:
    cache = PolarRegridPlanCache(maxsize=8, max_bytes=128 * 1024**2)
    output, report = polar_project(source_groups, conf=conf, track=track, plan_cache=cache)
 
-Scientific equivalence and cache lifetime are covered by the packaged
-``test_polar_regrid_plan.py`` and ``test_polar_dask.py`` tests. These check
-constant preservation, nonnegative weights, linearity for fixed masks,
-geometry/mask/backend invalidation, moving-group reuse, eviction, per-field
-mask changes and lazy/eager agreement under multiple chunk layouts.
-
 Reproducible computation benchmark
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Run cached and uncached workflows in fresh workers:
@@ -588,22 +522,12 @@ Run cached and uncached workflows in fresh workers:
 
    python -m frameit.testing.polar_benchmark --output ./runs/polar-benchmark --repeats 2
 
-The output directory must be fresh or empty. ``--data-root`` selects full-domain
-model inputs; repeated ``--case`` options restrict workloads. The default CI
-workloads include fixed AROME/MNH runs, moving MNH tracking and a small explicit
-continuous-origin AROME track within the frozen fixture. Input preloading,
-computation, weight construction/application and NetCDF export timings are
-reported separately. Fresh workers isolate RSS high-water marks; the driver
-verifies all physical and quality outputs against the uncached
-operator and stores versions, parameters and results in ``benchmark.json``.
-
-A single local CI run observed weight-build reductions of 3 to 1 for fixed
-AROME, 2 to 1 for fixed MNH, 6 to 3 for moving MNH and 15 to 5 for continuous
-AROME origins. All numerical differences were zero. Projection wall-time
-ratios were approximately 1.05, 1.00, 1.01 and 1.25 respectively: application
-work dominates these small fixtures. These are measured examples, not a
-universal speedup claim or a brittle timing threshold. Use repeated runs and
-the recorded environment/memory breakdown for larger workloads.
+Use a fresh/empty output directory. ``--data-root`` selects model inputs;
+repeat ``--case`` to restrict workloads. The report separates input loading,
+computation, weight building/application and export. Fresh workers isolate RSS
+high-water marks; ``benchmark.json`` records versions, parameters and comparison
+with uncached physical/quality outputs. Results apply to the measured workload,
+not a universal speedup.
 
 Software dependencies
 ~~~~~~~~~~~~~~~~~~~~~

@@ -1,8 +1,8 @@
 Sampling locations, vector basis and frame motion
 =================================================
 
-Three different questions arise when following an event. Choose the sampling
-location first, then check what the exported vector components mean.
+Choose sample locations, component directions and any event-motion subtraction
+separately. Moving a region does not change the meaning of its velocities.
 
 .. figure:: ../_static/figures/sampling-frames.svg
    :target: ../_static/figures/sampling-frames.svg

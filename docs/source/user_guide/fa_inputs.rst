@@ -1,12 +1,13 @@
 Native FA and coupled sources
 ========================================
 
-FrameIt can extract selected instantaneous 2-D gridpoint records from native
-AROME and AROME-produced SURFEX FA histories. It can also process these alongside
-atmospheric GRIB or NetCDF inputs in one run, using one geographical track and
-each source's own grid. The reader is **EPyGrAM 2.1.0**. Supported layouts include
-dense AROME-47 / SURFEX-8.1 histories and explicitly associated atmospheric cubes.
-Check :doc:`fa_baseline` for source and operation limits.
+Use ``format: fa`` with ``profile: arome_history`` for admitted atmospheric
+gridpoint records or ``profile: surfex_history`` for dense AROME-produced
+SURFEX-8.1 histories. Records must be instantaneous. Native atmospheric cubes
+need explicit record associations.
+
+The reader is **EPyGrAM 2.1.0**. Check :doc:`fa_baseline` before selecting fields;
+FA support is limited to its listed producers, layouts and operations.
 
 Installation and native isolation
 ----------------------------------------
@@ -16,11 +17,10 @@ FA reads run in isolated processes using the active Python by default. Set
 the FA stack. See :doc:`fa_environment` for installation and troubleshooting.
 NetCDF/GRIB processing does not require the FA package.
 
-Helpers use one native thread and one serialized request at a time per consuming
-process. They use their bundled definition/sample tables: inherited parent
-``ECCODES_DEFINITION_PATH`` and ``ECCODES_SAMPLES_PATH`` overrides are excluded
-only in the helper. The policy and child versions are recorded. Custom FA
-definition-table loading is not an adapter option.
+Helpers use one native thread and serialize requests per consuming process.
+They use bundled definition/sample tables, not inherited
+``ECCODES_DEFINITION_PATH``/``ECCODES_SAMPLES_PATH`` overrides. Parent GRIB settings
+are unchanged. Custom FA tables are not an adapter option.
 
 Inspect first
 -------------
@@ -30,11 +30,9 @@ Inspect first
    frameit inspect frameit.yaml
    frameit inspect frameit.yaml --json
 
-Set source files, ``format: fa`` and the applicable ``profile`` in the request.
-Select a separate helper through ``reader.python_executable`` when needed.
-Inspection reports native metadata without choosing units or inferring an Earth
-model. An atmospheric record rejected with native error
--91 is not automatically treated as harmless metadata.
+Set source files, ``format: fa`` and ``profile`` before inspection.
+Inspection reports native facts, not inferred units or an Earth model.
+Selected native errors such as -91 remain failures.
 
 Continue with the topic relevant to your request:
 
@@ -92,21 +90,16 @@ it only from producer evidence:
    output:
      directory: ./results/coupled-surface
 
-Each source owns its files, selections, declarations and technical ``reader``
-settings. Paths use the YAML directory. ``profile`` and ``native_cubes`` belong
-beside ``model``/``format``; ``fa`` contains only FA-specific source options.
-Both admitted profiles use ``model: arome``; that does not admit another producer.
-The profile and native evidence distinguish atmosphere from surface.
+Keep files, selections, declarations and ``reader`` settings inside their source.
+``profile`` and ``native_cubes`` sit beside ``model``/``format``; FA-only options
+sit under ``fa``. Both profiles use ``model: arome``. Profile and native evidence
+distinguish atmosphere from surface; other producers remain unsupported.
 
 Omitted ``region`` and ``products`` copy full native model-grid fields without
 tracking or polar processing. To crop, add one top-level ``region.center`` or
 ``region.track.file``. Calculated tracking uses the atmospheric source, independent
 of its name; FA-driven atmospheric tracking is unsupported. See
 :doc:`../task_guides/coupled_inputs` for centre and time requirements.
-
-NetCDF sources use their actual model/coordinate conventions and source-local
-``reader`` settings. A matching container does not establish schema compatibility.
-Decoded sample clocks retain their labels; conflicting time identities fail.
 
 .. _time-choice-common-or-strict:
 
@@ -120,13 +113,11 @@ the default ``exact`` requires a centre at each selected source sample, while
 ``common`` explicitly reports excluded records. Extra supplied track times do
 not create source samples; missing required centres fail by default.
 
-The AROME/NEMO-only ``preceding_hour`` method retains its narrow instantaneous/
-hourly-mean, interval and selected-cycle requirements. No policy interpolates
-missing positions, fills fields, deaccumulates energy or silently changes interval
-meaning. Invalid or ambiguous native clocks still fail.
-See :doc:`../concepts/time_support` for the canonical association contract.
-Explicit association exclusions and structural tracker incompleteness are
-different facts; inspect both in provenance/status.
+``preceding_hour`` is restricted to the
+:doc:`AROME/NEMO NetCDF contract <../concepts/time_support>`, not FA.
+No policy interpolates centres, fills fields, deaccumulates energy or changes
+interval meaning. Invalid/ambiguous clocks fail. Association exclusions and
+tracker incompleteness are separate facts in provenance/status.
 
 Grids, centres and products
 ---------------------------
@@ -147,49 +138,36 @@ Native products are source-qualified:
 
 No trajectory is requested by this example. Select ``products.track`` explicitly
 when using a centre provider and needing its reusable NetCDF trajectory.
-Native indices belong to each source's own grid; do not reuse another source's
-``cx/cy``. Inspect the product inventory, coordinates and per-source provenance.
-FA fields retain their declared meaning, source indices, masks and native facts.
-
-Source declarations do not rotate winds, diagnose pressure/height, calculate
-speed or request polar sampling. Those are separate selected operations and
-require their own executable method support. An unresolved request fails rather
-than being enabled by field availability. Keep physical support, native undefined
-values, extension zones and real zeroes distinct; missing support is never zero.
+Inspect each product's coordinates and provenance. FA fields retain source indices,
+masks and scientific meaning. Declarations do not request rotation, pressure/height,
+speed or polar processing: each operation needs explicit selection and support.
+Physical support labels, undefined samples, extension zones and real zeroes remain
+distinct; missing support is never zero.
 
 FA definitions, domain and limits
 ----------------------------------------
 
-Profiles are ``arome_history`` and ``surfex_history``. The latter reads
-AROME-produced SURFEX ``SFX.PACK=0`` histories with horizontal ``X1`` entries
-matching the full storage grid. Layer/patch/tile record names and mask labels are
-retained, not averaged or assembled into an invented vertical coordinate. Use
-``variables.2d`` for individually selected 2-D records; this does
-not label every quantity as a physical ground-surface variable.
+Use ``variables.2d`` for individual records, including layer/patch/tile names.
+They remain separate 2-D records, not inferred vertical axes or averages.
+``surfex_history`` requires dense ``SFX.PACK=0`` horizontal ``X1`` entries matching
+the full storage grid; support labels do not determine physical meaning.
 
 SURFEX execution requires the evidenced source tags
 ``PROGRAM=AROME, VERSION=8, BUG=1, MASDEV=47, BUGFIX=0``, a complete FBUF
 directory, matching CI dimensions and a matching DTCUR/header state clock.
-Unmatched releases remain inspectable but require independent structural/type
-evidence before execution. This is distinct from the optional ``expected_source``
-assertions and does not establish field units or physical support from tables.
+Unmatched releases remain inspectable but cannot execute without independent
+structural/type evidence. Layout checks do not establish field units/support.
 
-Source ``fa.expected_source`` accepts exact assertions for ``PROGRAM``, ``VERSION``,
-``BUG``, ``MASDEV`` and ``BUGFIX``; it defaults to an empty mapping. Missing or
-unequal native values fail even during metadata inventory. Assertions do not
-override source facts or supply a missing producer identity. Semantic precedence
-is native facts, release-matched documented conventions, then user completion of
-unresolved meaning. A declaration cannot overwrite known units/time semantics.
-There is no name-based unit/quantity inference or release-qualified physical
-catalogue that fills missing declarations automatically.
+Optionally assert exact ``PROGRAM``, ``VERSION``, ``BUG``, ``MASDEV`` and ``BUGFIX``
+under ``fa.expected_source`` (default ``{}``). Missing/unequal native values fail
+even at inventory. Assertions neither supply producer identity nor override facts.
+Precedence is native facts, release-matched conventions, then user completion of
+unresolved meaning. There is no automatic name-based physical catalogue.
 
-For atmospheric ``profile: arome_history``, source ``native_cubes`` explicitly
-associates exact gridpoint records with mass/full or interface labels and centre
-sampling. Original record IDs and native indices survive sparse selection.
-Normalized A, pressure-valued A, dimensionless B and source reference pressure
-remain separate metadata. No pressure, height or full-level mean is inferred;
-see :doc:`Native atmospheric levels and cubes <fa_atmosphere>` for these contracts
-and collocated physical-vector requirements.
+For atmospheric cubes, declare exact records, mass/full or interface labels and
+centre sampling under ``native_cubes``. Original IDs/indices and distinct native
+A/B/reference-pressure metadata survive selection; no pressure, height or full-level
+mean is inferred. See :doc:`fa_atmosphere` for the association and wind requirements.
 
 Each selected physical record or logical cube needs source ``field_metadata``:
 
@@ -201,66 +179,45 @@ Each selected physical record or logical cube needs source ``field_metadata``:
   fallback when a native scaling warning cannot be resolved. Default
   false: uncertainty discovered during decoding fails the operation.
 
-Fallback warnings are logged and summarized in provenance, including spawned
-exporter requests. Packing-120 GRIB2 records with encoded centre-85 local-section-1
-factors are observed explicitly; a native unknown-parameter warning alone does
-not reject them. Other unresolved warnings still fail by default. Absence of a
-scaling warning is not verified identity scaling; see :doc:`fa_contracts`.
-Permission to fall back and an actually observed fallback are separate facts.
-Permission is not scientific validation. File-level start markers do not
-establish every field's interval. Accumulated/averaged FA records,
-automatic unit inference, spectral transforms, global/reduced grids, plain LFI
-and arbitrary producer conventions are not currently supported.
-Packed SURFEX support-map reconstruction, unqualified physical typed arrays and
-invented layer/tile axes are also unsupported. Selected native -91/-93/-94 errors
-remain failures, not harmless metadata. A transform installation cannot resolve
-a native header/encoding failure. Obtain release-specific definitions and trusted
-values/masks/coordinates before claiming scientific suitability for a real stream.
+Packing-120 GRIB2 records use observed centre-85 local-section-1 scaling factors;
+an unknown-parameter warning alone does not reject them. Other unresolved warnings
+fail by default. Fallback permission and actual fallback are recorded separately;
+neither permission nor absence of warnings proves scaling. See :doc:`fa_contracts`.
 
-Geometry supports modern regular lon/lat and spherical tangent-Lambert headers.
-Projected inputs require explicit ``earth_radius_m``. ``subdomain: CI`` (default)
-keeps central plus intermediate points; ``C`` excludes the declared I-zone widths.
-The spectral extension zone is excluded. Shape/zone indices, angles, radius and
-CRS are retained; there is no fitting or guessed Earth-shape default.
-Qualified library axes/CRS/zones define the labelled grid; original header
-flags/corners remain admission evidence. Provenance records the library-to-CF
-origin translation and explicit Earth-model origin.
-Dateline-crossing/polar FA grids and unsupported projections fail explicitly.
-Existing spacing/anisotropy checks still apply.
+Accumulated/averaged fields, spectral transforms, packed support-map reconstruction,
+unqualified physical typed arrays and inferred layer/tile axes are unsupported.
+File-level time markers do not establish field intervals. Selected -91/-93/-94
+errors need producer/upstream evidence, not relabelling or another transform library.
+See :doc:`fa_baseline` for all excluded layouts and operations.
+
+Geometry admits modern regular lon/lat and spherical tangent Lambert.
+Lambert requires explicit ``earth_radius_m``; ``subdomain: CI`` (default) retains
+central/intermediate points and ``C`` removes the declared I zone. Spectral extension
+points are excluded. Regular lon/lat permits CI only. Unsupported projections,
+dateline-crossing/polar grids and excessive spacing variation fail.
+:doc:`fa_geometry` defines the checks, zones and recorded library-to-CF translation;
+there is no fitted or guessed Earth model.
 
 Source ``reader.max_points`` defaults to 20,000,000 stored points and
 ``reader.timeout_seconds`` to 120 per transaction. Raise budgets explicitly after
 inspection. Decoding can require a full horizontal record even for a tiny crop,
 plus coordinate/temporary arrays. Laziness avoids unselected records/times but
 does not provide NetCDF-style subrecord I/O.
-Transfers are validated against this point budget before materialization. The
-actual NPY dtype/shape is checked read-only before copying out of the owned
-temporary directory; malformed/partial transfers fail with source/field context.
-Point budgets are not an RSS quota: library workspaces, coordinates, temporary
-arrays, mapped transfers and their detached copies contribute to peak memory.
-Metadata preflight does not establish native decode throughput or exact peak RSS.
+Malformed/partial transfers fail with source/field context. Point budgets are not
+RSS quotas: library workspaces, coordinates and transfer copies add memory.
+Preflight does not measure decode throughput or peak RSS.
 
 Provenance and failure
 ----------------------
 
-Run provenance records inventories, geometry, units, winds, time alignment,
-FA declarations/encoding and child-native versions separately from the parent
-ecCodes version. Diagnostics are retained in ``logs/fa-decoder-*.jsonl`` and
-summarized after exporters complete. Size/mtime freshness is not checksum proof.
-Per-file versioned field descriptors retain unresolved facts explicitly. Decode
-logs and ``fa_decoder.field_observations`` add observed undefined-value and
-scaling-warning/fallback facts. A representative input descriptor is also stored
-as a JSON variable attribute; it does not replace per-file run provenance.
-``geometry_contract`` records library axes/CRS/native zones
-and origin evidence. ``horizontal_header_signature`` has a library-derived JSON
-value; consumers must not assume a raw-header layout. ``backend`` / ``FA_backend`` identify
-the effective ``epygram`` implementation; ``requested_backend`` /
-``FA_backend_requested`` retain the request.
+Read ``run-provenance.yaml`` and ``logs/fa-decoder-*.jsonl`` for per-file
+descriptors, geometry, source declarations and actual versions/scaling/mask facts.
+A variable's JSON descriptor is only a representative input snapshot.
+:doc:`fa_contracts` defines these records, including requested versus actual backends.
+Size/mtime freshness is not checksum proof.
 
-Existing atomic publication, exclusive run ownership and final ``run-status.yaml``
-handle helper/export failures. Failed required sources never publish a completed
-run status. Atomicity is per product, not a multi-product transaction or an fsync
-durability guarantee.
+A required decode/export failure prevents completed status. Publication is per
+product, not a multi-product transaction or fsync guarantee; see :doc:`output_files`.
 
 .. _fa-geometry-method:
 
@@ -295,8 +252,8 @@ library-derived axes/CRS in the parent. Original encoded corners remain an
 independent consistency check; no raw-header geometry reconstruction runs there.
 
 **Independent checks:** asymmetric geometry is checked against separately
-evaluated spherical equations in ``test_fa_geometry.py`` (absolute tolerance
-:math:`2\times10^{-11}` degrees). Reconstructed CI corners must match encoded
+evaluated spherical equations (absolute tolerance :math:`2\times10^{-11}` degrees).
+Reconstructed CI corners must match encoded
 corners within :math:`2\times10^{-5}` degrees, allowing rounded header angles;
 this threshold does not permit fitting another CRS. Agreement with encoded
 corners is not independent proof of the producer's Earth model.
@@ -310,8 +267,7 @@ snapping offsets are distinguished; see
 :doc:`FA geometry and centres <fa_geometry>`. Grids, zones, masks, units and
 intervals remain distinct.
 
-**Scope/gaps:** generated fixtures verify known values, typed metadata, dates,
-readonly bytes, native isolation, multiple times, distinct-grid crops, optional
-polar targets, failure handling and ordinary-reader reopening. Physical field/
-scaling assumptions still need producer documentation. Spectral records and native
--91 failures need upstream investigation and separate qualification.
+**Scope/gaps:** compact analytical checks do not qualify real-producer field
+definitions or scaling. These need release-matched documentation and trusted
+values/masks/coordinates. Spectral records and unexplained native errors need
+separate qualification.

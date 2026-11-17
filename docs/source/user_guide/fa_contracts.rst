@@ -1,16 +1,18 @@
 FA metadata and provenance
 ==========================
 
-Inspection and outputs distinguish **native observations, explicit declarations
-and unresolved scientific meaning**. Use :doc:`fa_inputs` to select records and
-:doc:`fa_baseline` to check whether the requested operation is supported.
-Metadata readability is not physical decode eligibility.
+Use the descriptors to check what was observed, what you declared and what remains
+unresolved. Read per-file provenance for the complete record; a variable's descriptor
+is only a representative input snapshot.
+
+Use :doc:`fa_inputs` to select records and :doc:`fa_baseline` to check support.
+Readable metadata does not establish physical decode eligibility.
 
 What a field descriptor means
 -----------------------------
 
-Version-1 field descriptors are portable JSON facts carried through inspection,
-preflight, decode logs and representative NetCDF variable attributes. They retain:
+Field descriptors (version 1) are portable JSON in inspection, preflight, decode
+logs and representative variable attributes. They retain:
 
 * ``native_id``, indexed word count, source/profile and exact producer tags;
 * directory type/dimensions/support label and selected encoding flags or native error;
@@ -28,10 +30,10 @@ physical/spectral shape. Unprobed encodings, units, coefficient counts, support
 maps, vector bases and field-specific intervals remain unresolved unless supported
 by the selected contract.
 
-``available`` inspection or typed ``metadata_decode`` does not imply physical
-``decode``. ``conditional`` dataset/extraction/polar eligibility still requires
-admitted geometry, explicit field meaning, the decode-time scaling check and an
-explicit eligible polar selection/method. ``blocked`` operations retain reasons.
+Read ``eligibility`` per operation: ``available`` inspection or typed
+``metadata_decode`` does not imply physical ``decode``. ``conditional`` execution
+still needs admitted geometry, explicit field meaning, decode-time scaling checks
+and, for polar output, a selected eligible method. ``blocked`` gives the reason.
 Selected -91/-93/-94 errors remain failures, not metadata classifications.
 Unknown unselected fields remain indexable without physical payload reads.
 
@@ -106,13 +108,11 @@ diagnosed by retaining coefficients.
 Scaling and masks after decoding
 --------------------------------
 
-For gridpoint packing **120**, the worker observes explicitly encoded FA factors
-in the embedded GRIB2 centre-85 local-section-1 message. It reads the selected
-encoded record through the same open FA unit and inspects metadata with the
-worker's bundled ecCodes C library; no Python GRIB runtime or second physical
-decoder is loaded. EPyGrAM remains the sole physical decoder. The extra encoded
-record read is bounded to ``2 * max_points + 4096`` words and released before
-physical decoding; it adds I/O and temporary memory, not a full-archive scan.
+For gridpoint packing **120**, scaling evidence comes from encoded FA factors in
+the embedded GRIB2 centre-85 local-section-1 message. EPyGrAM is the sole physical
+decoder; the worker's bundled ecCodes C library inspects the encoded metadata.
+This adds a selected-record read bounded to ``2 * max_points + 4096`` words,
+not a full-archive scan.
 
 ``scaling.status: encoded`` records the native mantissa/exponent, their
 ``divisor = FMULTM * 10**FMULTE`` and effective ``multiplier = 1 / divisor`` with
@@ -122,11 +122,10 @@ with actual encoded sign-magnitude integers: transient/default keys are not
 accepted as encoded evidence. Zero, underflowing or nonfinite factors fail even
 with ``allow_unscaled: true``. Units/time/support still need their declarations.
 
-The native diagnostic ``has no encoded FMULTM and FMULTE`` can occur even when
-these factors are present. The published CNRM implementation emits it for an
-unknown parameter number (255), separately from reading the factors. Encoded
-observations therefore take precedence over this warning, which remains logged.
-If factors cannot be observed, the warning still fails execution by default.
+The warning ``has no encoded FMULTM and FMULTE`` can occur despite encoded factors:
+the published CNRM implementation emits it for unknown parameter 255 separately
+from reading them. Observed factors take precedence; the warning stays logged.
+If factors cannot be observed, the warning fails execution by default.
 An explicitly justified ``allow_unscaled: true`` permits an unverified
 ``identity_explicit_opt_in`` fallback; it does not establish physical scaling.
 Other encodings retain ``not_exposed`` when no warning is emitted: absence of a
@@ -145,11 +144,10 @@ Codec evidence and verification scope:
   <https://github.com/ecmwf/eccodes/blob/2.44.0/definitions/grib2/local.85.1.def>`_
   defines the two eight-octet signed factors with identity defaults. This adapter
   accepts observed encoded values, not those defaults by assumption.
-* Compact fixtures independently change encoded factor bytes without changing
-  packed samples. Checks compare native output to known scalars divided by the
-  factor, within one 24-bit packing step rescaled by that divisor, including
-  missing samples and valid zeroes. Missing sections and invalid factors fail.
-  This is codec engineering verification, not universal physical validation.
+* Independent encoded-factor checks compare known scalars divided by the factor,
+  within one 24-bit packing step rescaled by that divisor, including missing
+  samples and valid zeroes. This verifies the codec convention, not physical
+  validity for every producer.
 
 SURFEX ``SFX.PACK=0`` describes the dense support layout, not the scaling of each
 FA record. A dense ``X1`` field can still have native packing 120 and trigger
@@ -211,9 +209,7 @@ freshness, not checksum/corruption verification. Per-product atomic publication
 does not make a multi-product transaction; inspect final status and incomplete
 steps as described in :doc:`output_files`.
 
-Independent compact references cover integer/IEEE/ASCII words, large integers,
-clocks, selected/unselected failures, contradictory declarations, masks/zeroes
-and ordinary-reader exports. They do not replace release-matched physical
-definitions, independent real data or scientific review. Unknown layouts/types,
-unresolved native errors, scaling, intervals and spectral/vector/vertical
-conventions retain the limitations in :doc:`fa_baseline`.
+Release-matched physical definitions, trusted real values/masks and scientific
+review are still required. Unresolved layouts/types, native errors, scaling,
+intervals and spectral/vector/vertical conventions retain the limits in
+:doc:`fa_baseline`.

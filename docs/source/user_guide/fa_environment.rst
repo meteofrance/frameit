@@ -33,7 +33,7 @@ Conda owns the shared NetCDF/HDF5/ecCodes/ESMF stack. The declared Python
 ``netCDF4==1.7.2`` and ``python-eccodes=2.44.0`` packages satisfy the corresponding
 EPyGrAM requirements without pip replacing them with wheel-bundled I/O libraries.
 The Python ecCodes binding version is distinct from the native library version.
-The YAML also selects ESMPy 8.9.1 and xESMF 0.9.2.
+``environment.yaml`` also selects ESMPy 8.9.1 and xESMF 0.9.2.
 
 The ``fa`` extra installs unmodified EPyGrAM 2.1.0 with ctypesForFortran 1.3.0;
 the FA worker also checks falfilfa4py 1.2.1, ecTrans 1.6.0 and netCDF4 1.7.2.
@@ -92,9 +92,8 @@ Troubleshoot failures
   exit as well as completed products/status. A preceding success message is not
   sufficient. Check the active Python and native package versions. Include them,
   the exit code and the native error logs when reporting the failure.
-  FrameIt initializes core PROJ before matrix GRIB inventories; external code
-  that preloads conflicting native libraries can still fail. Use a fresh process
-  with a coherent stack rather than treating native libraries as unloadable.
+  Use a fresh process with a coherent stack; preloaded conflicting native
+  libraries cannot safely be unloaded to repair the process.
 * **Unsupported source/record/geometry:** readable headers or an installed library
   do not admit a physical operation. Resolve the stated source, type, time,
   scaling or reference-evidence requirement in :doc:`fa_inputs`.

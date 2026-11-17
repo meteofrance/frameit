@@ -79,7 +79,12 @@ Run
 View the output
 ----------------
 
-Download :download:`plot_field_selection.py <../../../example/plots/plot_field_selection.py>`:
+Copy this into ``plot_field_selection.py``:
+
+.. literalinclude:: ../../../example/plots/plot_field_selection.py
+   :language: python
+
+Optional: :download:`script file <../../../example/plots/plot_field_selection.py>`.
 
 .. code-block:: bash
 

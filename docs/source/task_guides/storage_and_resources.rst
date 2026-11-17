@@ -60,7 +60,12 @@ Progress reports execution activity, not scientific validation. Read
 View the output
 ----------------
 
-Download :download:`plot_storage_and_resources.py <../../../example/plots/plot_storage_and_resources.py>`:
+Copy this into ``plot_storage_and_resources.py``:
+
+.. literalinclude:: ../../../example/plots/plot_storage_and_resources.py
+   :language: python
+
+Optional: :download:`script file <../../../example/plots/plot_storage_and_resources.py>`.
 
 .. code-block:: bash
 

@@ -3,20 +3,17 @@ Utrack (AI) tracker
 
 .. warning::
 
-   UTrack cannot execute a version-3 tracking request: its selected-input binding
-   is not implemented. Configuration and an optional adapter exist, but installing
-   dependencies or weights does not enable this path. The beta adapter described
-   below is limited to AROME and requires separately obtained weights.
+   UTrack cannot execute current tracking requests: its selected-input binding
+   is unavailable. Installing dependencies or weights does not enable it.
+   The beta adapter below is limited to AROME.
 
 Overview
 --------
 
-The Utrack adapter (declared as ``region.tracker.method: utrack``) estimates the cyclone center at each time
-step using a convolutional neural network based on the **U-Net architecture**, as introduced
-by `Raynaud, et al. (2024) <https://journals.ametsoc.org/view/journals/aies/3/2/AIES-D-23-0059.1.xml>`_.
-The model was designed to detect the TC wind structure — including the maximum wind speed area
-and the hurricane-force wind speed area — directly from AROME convective-scale NWP outputs,
-without relying on heuristic rules or empirical thresholds.
+The ``utrack`` adapter uses the U-Net model of
+`Raynaud et al. (2024) <https://journals.ametsoc.org/view/journals/aies/3/2/AIES-D-23-0059.1.xml>`_
+to detect cyclone wind structure, including maximum-wind and hurricane-force-wind
+areas, in AROME convective-scale forecasts.
 
 The model was trained and evaluated on a dataset of 400 hand-labeled AROME forecasts over the
 West Indies domain, covering Atlantic hurricane seasons 2016–2018.
@@ -44,8 +41,7 @@ The tracker returns two 1D arrays:
 - ``cy(time)``: row index of the estimated center,
 - ``cx(time)``: column index of the estimated center,
 
-Both are integers in the adapter's track dataset. This does not establish a
-working version-3 execution path.
+Both are integers in the adapter's track dataset, not available current-run outputs.
 
 Configuration and usage
 -----------------------
@@ -84,16 +80,9 @@ execution limitation above.
 Dependencies
 ------------
 
-The optional adapter requires ``torch`` and ``utrack``. Neither is needed for
-core extraction. These dependencies do not enable version-3 UTrack execution.
-
-Clone the repository and install the package locally:
-
-.. code-block:: bash
-
-   git clone https://git.meteo.fr/hoarauk/unet_tracker
-   cd unet_tracker
-   pip install .
+The optional adapter requires ``torch`` and the external
+`utrack package <https://git.meteo.fr/hoarauk/unet_tracker>`_.
+Neither is needed for core extraction, and neither enables the missing binding.
 
 Model weights
 -------------
@@ -107,8 +96,8 @@ Known limitations
 
 * **Beta and external assets:** the UTrack package and separately obtained weights
   are required. Their presence is not verification of a new dataset or regime.
-* **AROME scope:** FrameIt's adapter supports AROME inputs; generalisation beyond
-  the model's training conditions is not established by these documentation tests.
+* **AROME scope:** generalisation beyond the model's training conditions is
+  unestablished.
 * **No detection:** the current implementation warns and returns native grid
   indices ``(0,0)`` when no cyclone is found. These are not a confirmed centre or
   geographical zero; downstream users must treat the failure explicitly.
@@ -116,5 +105,5 @@ Known limitations
   does not provide researcher-seeded multi-object association.
 * **Input conventions:** winds and signed 850-hPa vorticity must share compatible
   geography and the expected conventions; hemisphere correction must not be applied twice.
-* **Qualification gap:** unavailable weights and the reduced fixture's limited
-  spatial context prevent treating the excluded crop case as passed qualification.
+* **Qualification gap:** separately controlled weights and limited reference
+  evidence prevent a general scientific qualification claim.

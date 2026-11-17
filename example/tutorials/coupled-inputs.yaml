@@ -3,17 +3,21 @@ run: {name: coupled-inputs}
 sources:
   atmosphere:
     model: arome
-    files: ./stationary/atmosphere.nc
+    files: ./coupled-atmosphere.nc
     variables:
-      2d: [pressure]
+      2d: [u, v]  # Prescribed eastward/northward winds at 10 m.
+      3d:
+        height:
+          names: [temperature]
+          levels: {values: [10], units: m}  # Existing near-surface level.
   ocean:
     model: croco
-    files: ./stationary/ocean.nc
+    files: ./coupled-ocean.nc
     variables:
       3d: [temp]
       levels: {indices: [2]}  # The fixture's surface rho level.
 region:
   center: {latitude: -20, longitude: 60}
-  width_km: {x: 40, y: 40}  # Applied separately on each source grid.
+  width_km: {x: 100, y: 100}  # Fixed box, applied separately on each source grid.
 output: {directory: ./results/coupled-inputs}
 resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

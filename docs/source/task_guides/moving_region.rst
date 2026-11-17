@@ -53,7 +53,12 @@ View the output
 ----------------
 
 The run writes a model-grid pressure file and a track file.
-Download :download:`plot_moving_region.py <../../../example/plots/plot_moving_region.py>`:
+Copy this into ``plot_moving_region.py``:
+
+.. literalinclude:: ../../../example/plots/plot_moving_region.py
+   :language: python
+
+Optional: :download:`script file <../../../example/plots/plot_moving_region.py>`.
 
 .. code-block:: bash
 

@@ -91,6 +91,10 @@ def test_first_run_plot_cli_reads_only_the_selected_time(tmp_path):
     assert figure.read_bytes().startswith(b"\x89PNG")
     assert (source.read_bytes(), product.read_bytes()) == before
     assert subprocess.run(args, capture_output=True, timeout=60).returncode != 0
+    figure_before = figure.read_bytes()
+    args[-1] = str(figure.with_suffix(""))
+    assert subprocess.run(args, capture_output=True, timeout=60).returncode != 0
+    assert figure.read_bytes() == figure_before
     args[-1] = str(source)
     assert subprocess.run(args, capture_output=True, timeout=60).returncode != 0
     assert (source.read_bytes(), product.read_bytes()) == before

@@ -1,17 +1,18 @@
 Native ocean NetCDF
 ===================
 
-For the workflow, use :doc:`../task_guides/coupled_inputs` and
-:doc:`../task_guides/scalars_and_vectors`. This page specifies native quantities,
-grids, vertical coordinates, temporal support and admitted transformations.
+Use ``model: nemo`` or ``model: croco`` to copy supported regional ocean fields
+on their native grids. Select current analysis or polar sampling separately.
+For worked runs, use :doc:`../task_guides/coupled_inputs` and
+:doc:`../task_guides/scalars_and_vectors`.
 
 NEMO regional native scalars
 ----------------------------
 
-``model: nemo`` admits the tested regional NetCDF family with ``nav_lat`` and
+NEMO support requires regional NetCDF with ``nav_lat`` and
 ``nav_lon`` on its own ``(y, x)`` grid, decoded Gregorian ``time_counter``, and
-native ``deptht/depthu/depthv/depthw`` coordinates. It is not qualification of
-every NEMO release, arbitrary global/folded grids or companion mesh files.
+native ``deptht/depthu/depthv/depthw`` coordinates. Other releases/layouts,
+global/folded grids and companion mesh files are not generally qualified.
 The regional geometry limits are at most 10% difference
 between X/Y spacing and 20% within-axis variability. A spacing override cannot
 bypass them. NetCDF is the base path; FA, GRIB, polar and Zarr dependencies are
@@ -27,9 +28,8 @@ lookup with the supplied continuous centres.
 List complementary T-grid scalar files in the named source's ``files``;
 their layout is discovered automatically. See :doc:`input_files`.
 Do not merge shifted U/V geography into a T-grid source
-merely because dimensions have the same names/shapes. Instantiate only requested
-native contexts. Extraction preserves data meaning rather than
-converting between similarly named quantities:
+merely because dimensions have the same names/shapes. Extraction preserves
+quantities without automatic conversion:
 
 * potential temperature is not relabelled as in-situ or sea-surface temperature;
 * practical salinity is not converted to absolute salinity;
@@ -67,9 +67,8 @@ and loading; no automatic Celsius/Kelvin or other ocean quantity conversion is
 introduced. Native clocks are checked before selecting variables, including
 ``time_centered`` stored as an auxiliary data variable rather than a coordinate.
 
-Verification uses compact synthetic time/depth/crop, independent source-window
-and ordinary-reader checks. Broader real-data qualification remains open. Native
-components have the separate limits below.
+Broader real-data qualification remains open. Native components have the separate
+limits below.
 
 Separate native components
 --------------------------
@@ -81,22 +80,18 @@ unrequested companions or interpreting their basis, sign or scaling. Separate
 contexts preserve shifted native sampling even when every file uses ``x/y``.
 ``depthw`` is not relabelled as ``deptht`` merely because their lengths agree.
 
-Native component copying needs no transform or wind-pair declaration.
-It does not turn currents/stresses into winds.
-The native ocean path never derives wind speed, radial/tangential winds or
-atmospheric reference-frame metadata. Explicitly requested analysis fails
-for NEMO components rather than silently returning a different representation.
-Native W keeps ``depthw``, not a diagnosed mass-level velocity.
-An explicitly requested ``sampling: mass`` transform fails.
+Copy native components without a transform or wind-pair declaration. They remain
+currents/stresses, not winds; no wind diagnostics or atmospheric frame metadata
+are added. Native W keeps ``depthw``. NEMO analysis, including
+``sampling: mass``, fails rather than returning another representation.
 
 Analysed NEMO components, including explicit polar component requests, remain
 unsupported: the admitted files do not establish a qualified angle, mesh,
 support and collocation contract. A wind declaration is not such evidence.
 This does not block independent scalar copies or eligible scalar polar samples.
-No current rotation, stress reconciliation, coastal filling, speed diagnostic or
-track-motion subtraction is performed. Native copied samples are checked for
-exact decoded numerical agreement; no conservation or all-regime validation is
-claimed.
+No current rotation, stress reconciliation, coastal filling, speed calculation or
+track-motion subtraction is performed. Native copying is not a conservation or
+all-regime validation claim.
 
 Coupled extraction and optional scalar targets
 ----------------------------------------------
@@ -130,14 +125,11 @@ matching clock/bounds metadata. Preserve this method's admitted calendar and
 selected-cycle rules. It does not apply to CROCO; the default association is
 ``exact``, not ``preceding_hour``.
 
-At reference time T, the policy selects the unique native NEMO sample whose
-averaging interval is exactly **[T-1 hour, T]**, using the preceding interval
-convention (T-1 hour, T]. For example, an AROME snapshot at 06:00 is paired with
-the NEMO mean over 05:00–06:00, typically labelled 05:30. It does not select the
-following hour or compute an interpolated instantaneous ocean value. Native
-values, zeros, field-local missing cells, depth axes and spatial grids are
-unchanged. This is an explicit comparison convention, not reconstruction of an
-instantaneous state, producer endorsement or general scientific validation.
+At reference time T, select the unique NEMO interval **[T-1 hour, T]** using
+the preceding-interval convention (T-1 hour, T]. An AROME snapshot at 06:00
+therefore pairs with the 05:00–06:00 NEMO mean, typically labelled 05:30.
+Values, masks, depths and grids do not change. This is a comparison convention,
+not an instantaneous ocean reconstruction or scientific validation.
 
 If any source lacks a temporal partner, the entire reference-time pairing is
 omitted for all sources with a warning. All omissions and selected source times,
@@ -153,9 +145,8 @@ their meaning; ``time_centered`` and original bound arrays remain visible where
 supplied. ``source_time`` is reserved for the original sampling clock and must
 not already exist in the ocean input. Inspect the stored clocks and association
 records rather than assuming a coupling label is a native interval centre.
-Ordinary readers do not need FrameIt to interpret the basic data model.
-Association does not enable temporal interpolation, extrapolation, averaging of
-means or nearest-time fallback.
+There is no temporal interpolation, extrapolation, averaging of means or
+nearest-time fallback.
 
 Optional spatial scalar targets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -170,7 +161,7 @@ Polar processing stays optional and is not enabled by the native example.
 CROCO native history scalars
 ----------------------------
 
-``model: croco`` admits the tested regional ``CROCO history file`` family with
+CROCO support requires regional ``CROCO history file`` inputs with
 decoded Gregorian ``time``, optional agreeing ``scrum_time``, native rho geography
 ``lat_rho/lon_rho`` on ``(eta_rho, xi_rho)`` and explicit consistent
 ``Vtransform=2`` declarations. Use ``frameit init croco``, edit its source request,
@@ -224,12 +215,9 @@ a physical-depth cube. The producer spelling
 because the declared equation is the same at that sampling location. Other source
 definitions are not guessed or silently completed.
 
-Verification includes an independent formula-dependency anchor
-(``h=20, hc=5, s=-0.5, C=-0.25, eta=1`` gives ``z=-5.3 m``), exact native decoded
-value/mask/coordinate round trips in an ordinary reader, changing-state snapshots,
-invalid metadata and lazy selected loading without optional model/polar stacks.
-This is engineering verification of copied data and metadata, not scientific
-validation of every real regime or a new stable depth diagnostic.
+For example, ``h=20, hc=5, s=-0.5, C=-0.25, eta=1`` gives ``z=-5.3 m``.
+Preserving formula dependencies does not compute a depth diagnostic or validate
+every real regime.
 
 Native CROCO faces and current analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -291,11 +279,10 @@ conservation, smoothing or track-motion subtraction. Declared velocity and angle
 units are converted explicitly to m/s and radians; native exports are not converted.
 Different static angle/mask arrays or scientific companion definitions across
 snapshots fail instead of inheriting the first file's interpretation.
-An assembly-added singleton time axis does not make a proven native-static mask
-dynamic. Current preparation restores that mask's native shape; genuinely
-time-dependent masks remain unsupported. The selected reader checks static
-support again before use. A required angle that differs from the bound rotation
-geometry fails with a request to revalidate; it is not silently refreshed.
+A proven native-static mask remains static even if assembly adds a singleton time
+axis; genuinely time-dependent masks are unsupported. Static support is rechecked
+before use. A changed required angle fails with a request to revalidate, not a
+silent geometry refresh.
 
 The producer reference is the official `CROCO v2.1.0 source release
 <https://doi.org/10.5281/zenodo.15064113>`_: ``OCEAN/setup_grid1.F`` defines the
@@ -303,11 +290,9 @@ static face-mask products and ``OCEAN/cpl_prism_put.F`` defines midpoint averagi
 followed by this east/north rotation. The rotation applies geometrically at each
 native level; the producer routine's coupling example is at the surface. This is
 a bounded coordinate-transformation implementation, not a new stable diagnostic
-or proof of an unmodified producer build. Independent constant/linear-field,
-90-degree/varying-angle and reversed/permuted-axis tests use float64 analytic
-references with absolute/relative tolerances of 1e-12; support, zeros, sparse sigma
-dependencies, exports, laziness and invalid inputs are also tested. Synthetic
-agreement does not validate every real coastline or flow regime.
+or proof of an unmodified producer build. Constant/linear-field and rotation checks
+use float64 analytic references with absolute/relative tolerances of 1e-12.
+This numerical agreement does not validate every coastline or flow regime.
 
 Analysed fields retain their names but now have rho dimensions and east/north
 current definitions in m/s; downstream scripts must use the selected representation
@@ -339,12 +324,11 @@ current companions or angle. Supported current analysis requires explicit
 and the pair/rotation declaration above. Those options prepare the pair before
 sampling even when model-grid output remains native. Unsupported native-face
 polar requests fail rather than borrowing rho masks or changing representation.
-Unselected
-native faces do not enter a scalar-only polar crop. No ocean wind diagnostics or
-automatic storm-motion subtraction run. Shared targets have the same radius and
-azimuth, with identical geography at the same associated centre. Native sample
-times, interval bounds and field-local missing
-support remains different. Missing brackets/land remain missing under the declared
+Unselected native faces do not enter a scalar-only polar crop. No ocean wind
+diagnostics or automatic storm-motion subtraction run. Shared targets have the
+same radius/azimuth and identical geography at the same associated centre. Native sample
+times, interval bounds and field-local support remain distinct.
+Missing brackets/land remain missing under the declared
 polar coverage policy; this is not conservative area or transport remapping.
 Native binary water masks are used before interpolation, but are not automatically
 sampled into polar auxiliaries: bilinear fractions must not be advertised as binary
@@ -360,12 +344,8 @@ section or that a reconstructed depth equals sampled native depth. The product
 records ``vertical_sampling: native_sigma_indices_not_constant_physical_depth``.
 Native Cartesian products retain their valid original formula metadata unchanged.
 
-Compact paired tests cover fixed/moving shifted grids, exact common/strict time
-policies, shared scalar/current targets, legitimate SURFEX zeros, sigma metadata,
-diagnostics-disabled processing, synchronous/spawned exports, NetCDF and Zarr
-ordinary-reader reopening, failed mid-write publication and overwrite protection.
-These tests establish bounded implementation behavior, not scientific equivalence
-of unlike source quantities or validity of every real configuration.
+Shared targets do not establish scientific equivalence of source quantities or
+validity of every real configuration.
 
 Embedded SURFEX sea fields in Meso-NH
 ----------------------------------------
@@ -412,8 +392,8 @@ values become missing. Selected SEA quantities are supported where the fraction
 is strictly positive. Fractional coastal coverage stays fractional and separate
 from Boolean support; values are neither multiplied nor divided by that fraction.
 Source time selection applies to interpreted quantities and required support.
-Metadata preflight leaves support-value checks pending. Execution checks the
-selected two-dimensional support; it does not need unselected thermal/flux cubes.
+Support-value checks run at execution, not metadata preflight, and do not require
+unselected thermal/flux cubes.
 
 Native ``units`` take precedence. If absent, the terminal parenthesized unit in
 the comment supplies the label, with ``(fraction)`` represented as ``1``.
@@ -442,7 +422,7 @@ metadata origins. Combined variable attributes represent the first selected
 record; consult these per-record facts for equivalent spellings or unit origins
 that differ between snapshots. Values are not rescaled.
 
-Producer evidence was checked in the official `Meso-NH 5.7.2 archive
+Writer conventions are defined in the official `Meso-NH 5.7.2 archive
 <https://doi.org/10.5281/zenodo.15698760>`_: ``src/MNH/modd_parameters.f90`` defines
 Meso-NH's undefined value as 999; ``write_surf_mnh.f90`` and
 ``unpack_1d_2d.f90`` scatter native SURFEX values onto the atmospheric array and
@@ -451,7 +431,6 @@ undefined constants are different; 999 is not asserted as universal across all
 SURFEX containers. ``writesurf_seafluxn.F90`` emits the SST/SSS unit comments;
 ``write_diag_seb_seafluxn.F90`` emits the heat/stress comments.
 ``write_diag_surf_atmn.F90`` writes the sea fraction, and ``get_1d_mask.F90`` uses
-positive fraction support. This verifies writer conventions, not the actual run's
-DIAG averaging/reset configuration or an unmodified producer build. Those facts
-remain unresolved where an operation would require them; this native path does
-not silently complete them.
+positive fraction support. These conventions do not establish a run's DIAG
+averaging/reset configuration or an unmodified producer build. Operations needing
+those facts must resolve them explicitly.

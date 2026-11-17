@@ -7,9 +7,10 @@ centroid of Nguyen, Molinari and Thomas (2014), DOI
 are specified below. This is an independent implementation, not a bitwise
 reproduction of the authors' analysis code.
 
-The method finds a pressure-deficit-weighted centre and adapts the region used
-around it. It needs the physical fields and wide input coverage described below;
-the small extraction box does not bound the tracking calculation.
+Use this method only with at least two increasing times and valid input coverage
+of the full 500-km environmental-pressure ring. The extraction box does not limit
+tracking reads. See `Configuration defaults`_ for controls and
+`Inputs and supported grids`_ for the required fields.
 
 .. figure:: ../_static/figures/pressure-centroid-method.svg
    :target: ../_static/figures/pressure-centroid-method.svg
@@ -45,8 +46,7 @@ coordinates. The existing grid-spacing support limits still apply (see
 :doc:`/user_guide/configuration_file`). Native ``ni``, ``nj`` and ``level``
 coordinates and at least two increasing times are required.
 
-The tracker resolves the following quantities independently of the variables
-selected for export:
+The tracker needs these quantities even when they are not exported:
 
 * Absolute model-level pressure: ``PABST`` preferred, otherwise ``PRES``.
   Declared pressure units are required and values are normalized to Pa.
@@ -86,9 +86,8 @@ explicit rotation method; see :ref:`wind-grid-contract` and
 :ref:`wind-preparation-method` for equations and geometry checks. The tracker
 records source frames and rotation. User fields use the same preparation contract.
 
-The adapter respects a declared one-based inclusive vertical
-``c_grid_dynamic_range`` to exclude nonphysical levels. It does not blindly
-discard the first level of files that already contain physical levels only.
+Declared one-based inclusive ``c_grid_dynamic_range`` excludes nonphysical levels;
+no first level is discarded when the file already contains only physical levels.
 Pressure and winds are interpolated to **2,000 m altitude above mean sea level**,
 using linear wind and log-pressure interpolation. Finite height columns must
 be strictly monotone. Missing heights invalidate the column; nonpositive
@@ -96,9 +95,8 @@ absolute pressure is an error. Missing brackets remain missing: no vertical
 extrapolation or substitution of sea-level pressure is performed. Required
 reference-ring/R80/integration samples must remain valid.
 
-The MNH geometric-altitude target and the existing AROME geopotential-height
-target are distinct vertical definitions, recorded in the track metadata.
-Their numerical equivalence is not assumed.
+MNH geometric altitude and AROME geopotential height are distinct definitions,
+recorded in track metadata; numerical equivalence is not assumed.
 
 Preparing Meso-NH diagnostics
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -218,41 +216,30 @@ origins use continuous centres. Diagnostics include ``r80_km``, ``radius_km``,
 ``motion_outer_iterations``, ``translation_u`` and ``translation_v``. Solver
 translation uses central differences; the generic exported ``speed`` uses
 forward differences. Global attributes record the implementation and settings.
-MNH attributes additionally record the selected pressure/height/wind sources,
-height reference, vector frames and rotation, quadrilateral interpolation and
-nodal area weighting. The implementation identifier is ``frameit_mnh_native_v1``;
-its geometry preparation differs from the comparison script. Resolved inputs
-are also included in ``run-provenance.yaml``.
+MNH attributes record pressure/height/wind sources, height reference, vector frames
+and rotation, quadrilateral interpolation and nodal area weighting under method
+``frameit_mnh_native_v1``. Resolved inputs also appear in ``run-provenance.yaml``.
 
 Troubleshooting reference-ring coverage
 ----------------------------------------
 
-The full 500-km reference ring needs finite pressure at 2,000 m geopotential
-height for AROME, or 2,000 m altitude ASL for Meso-NH, including the horizontal
-interpolation stencil. An invalid sample
-causes failure, not averaging over a partial ring. The error reports the candidate
-centre and invalid sample count. Check whether the centre belongs to the intended
-disturbance, whether the ring crosses the atmospheric input boundary, and whether
-vertical brackets or masks leave missing pressure at that height. Supply wider
-valid atmospheric coverage or choose another suitable tracker when these
-requirements cannot be met. Increasing ``region.width_km`` changes the output box,
-not the atmospheric input coverage. The reference radius is not a configuration
-workaround. Motion coupling also requires at least two increasing valid times;
-a single snapshot can test spatial support but cannot validate a full track.
+If the reference-ring check fails, inspect the reported candidate centre and
+invalid sample count. The full ring needs finite pressure and horizontal stencils
+at 2,000 m geopotential height (AROME) or altitude ASL (MNH). A partial ring is
+not averaged.
+
+Check the intended disturbance, input boundary, vertical brackets and masks.
+Supply wider valid inputs or choose a suitable alternative tracker.
+Increasing ``region.width_km`` changes only the output box; it cannot repair input
+coverage. The reference radius is fixed by the method. A single snapshot cannot
+support the motion-coupled track.
 
 Dedicated verification
 ----------------------
 
-Run the dedicated suites:
-
-.. code-block:: bash
-
-   python -m pytest src/frameit/testing/numerical/test_pressure_centroid.py src/frameit/testing/numerical/test_pressure_centroid_mnh.py
-
-These cover synthetic-vortex, interpolation, solver and sub-grid integration
-checks, MNH failure messages, and NetCDF end-to-end reopening. This tracker is not
-included in the matrix tests. Scientific comparisons require full-domain
-inputs covering the 500-km reference ring, rather than cropped CI fixtures.
+Synthetic vortex, interpolation, solver and sub-grid integration checks establish
+bounded numerical behavior. Scientific comparisons still need full-domain inputs
+covering the 500-km ring; a small cropped example is insufficient.
 
 MNH method record and qualification status
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -261,9 +248,8 @@ MNH method record and qualification status
   adaptive pressure centroid; independently checked on synthetic fields.
   Full-domain real-MNH qualification and independent scientific review remain
   outstanding. Passing the tests is not a claim of validity for all MNH cases.
-* **Scientific reference:** the Nguyen, Molinari and Thomas (2014) method and
-  comparison implementation cited above are inherited from the existing
-  tracker. This extension adds no new stable-method or community-adoption claim.
+* **Scientific reference:** Nguyen, Molinari and Thomas (2014), cited above.
+  The MNH extension adds no new stable-method or community-adoption claim.
 * **Inputs/conventions:** the quantities, units, mass-grid preparation, height
   reference and candidate precedence are specified above. At least two times
   support the existing storm-motion-coupled solve.
@@ -293,15 +279,10 @@ MNH method record and qualification status
 Known limitations
 ------------------
 
-* **Wide complete input support:** the full 500-km reference ring, R80 search and
-  integration samples must be valid. A small output box cannot repair missing
-  input coverage; no partial-ring or local-reference fallback is used.
-* **Vertical requirements:** inputs must bracket 2,000 m with valid pressure,
-  height and winds. There is no vertical extrapolation or MSLP substitution.
-  MNH geometric altitude and AROME geopotential height remain distinct definitions.
-* **Coupled time solve:** at least two increasing times are needed for motion.
-  Unresolved R80, insufficient deficits or nonconvergence fail explicitly.
-* **Native Cartesian crop:** continuous centres can differ from nearest native
-  ``cx/cy``. Polar origins retain continuous positions; crops remain grid-aligned.
-* **Qualification gaps:** synthetic checks do not establish full-domain real-MNH
-  accuracy, mountainous-mask robustness or independent scientific acceptance.
+* Complete reference-ring, R80 and integration support is required; no partial-ring,
+  local-pressure, fixed-radius, vertical-extrapolation or MSLP fallback is used.
+* At least two increasing times are needed. Unresolved R80, insufficient deficits
+  and nonconvergence fail explicitly.
+* Continuous centres define polar origins; native Cartesian crops remain grid-aligned.
+* Synthetic checks do not establish real-MNH accuracy, mountainous-mask robustness
+  or independent scientific acceptance.

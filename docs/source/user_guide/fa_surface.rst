@@ -1,19 +1,15 @@
 Coupled atmosphere and surface sampling
 =======================================
 
-Named atmospheric and surface sources share a geographical centre provider while
-retaining their native grids, masks, field definitions and vertical coordinates.
-The primary pair is atmospheric AROME GRIB plus EPyGrAM-decoded dense
-AROME-47 / SURFEX-8.1 FA histories. Native atmospheric FA/SURFEX FA and compatible
-NetCDF sources use the same coupling contract, subject to each adapter's limits.
-See :doc:`fa_inputs`, :doc:`fa_baseline` and :doc:`fa_geometry`.
+Start with the named-source request in :doc:`fa_inputs`. Atmospheric AROME
+GRIB/NetCDF or admitted FA and dense AROME-47/SURFEX-8.1 FA can share geographical
+centres while retaining separate grids, clocks, masks, quantities and vertical axes.
+Each source must meet its own :doc:`adapter limits <fa_baseline>`.
 
-For the workflow, start with :doc:`../task_guides/coupled_inputs` and the complete
-native source request in :doc:`fa_inputs`. Add a polar product only when needed.
-Adapt paths/centres and verify all source declarations. The example radius and
-SFX units/time are explicit declarations, not universal producer defaults;
-``allow_unscaled`` remains false. Neither a unit label nor a plausible range
-resolves the native missing-scaling guard.
+Verify paths, centres, Earth radius and field units/time against producer evidence.
+Example declarations are not defaults; ``allow_unscaled`` remains false.
+Use :doc:`../task_guides/coupled_inputs` for a worked run. Add polar sampling only
+when needed.
 
 Independent native sources and exact times
 ------------------------------------------
@@ -74,11 +70,9 @@ grid. Omission resolves the **coarsest participating native spacing** and record
 that evidence. Source methods, support thresholds, masks, units, vertical axes
 and time associations remain distinct; shared coordinates do not harmonize physics.
 
-Source metadata, units, wind frames and native geometry are checked **before**
-common sampling/allocation. The effective per-source, complete-time target budget
-is then checked. An unused fine-grid intermediate cannot reject a valid common
-target; invalid native grids, too-fine requested sampling or genuine budget excess
-still fail before payload reads/target construction.
+Validation checks source meaning/geometry and each source's full-time target budget
+before constructing targets or reading payloads. Invalid grids, finer-than-native
+requested spacing and budget excess fail.
 
 For a compact 1-km/3-km pair with two common times, a 4-km outer radius and
 9 azimuths, the default shared step is 3 km and radii are 0/3/4 km. That gives
@@ -86,9 +80,8 @@ For a compact 1-km/3-km pair with two common times, a 4-km outer radius and
 budget does not. These are target-allocation counts, not a full-native decode
 budget, peak-memory estimate or a physical-resolution accuracy guarantee.
 
-A supplied moving track controls each source at every associated time, including
-independent grids. An internal crop context cannot freeze its first centre or
-replace continuous centres with snapped cells.
+A supplied moving track sets each source's continuous centre at every associated
+time; snapped extraction cells do not replace it.
 
 Verify coordinates, keep separate products
 --------------------------------------------
@@ -99,8 +92,8 @@ does not merge or relabel native source clocks. A target signature describes
 coordinates and Earth-model assumptions, not source-data identity, physical
 equivalence, conservation, equal masks or bitwise field identity.
 
-Preview/provenance records identify resolved axes/counts, source spacing evidence,
-requested sampling, participants and target verification. Source IDs
+Effective settings/provenance record axes/counts, source spacing, participants,
+requested sampling and target verification. Source IDs
 ``atmosphere`` and ``surface`` with run name ``coupled-surface`` produce:
 
 .. code-block:: text
@@ -124,10 +117,9 @@ See :doc:`output_files` for ordinary readers and per-product atomic publication.
 Quantities, units and temporal meaning
 --------------------------------------
 
-Select actual quantities needed for downstream analysis. The following finite
-examples describe observed metadata and interpretation limits, **not** an
-automatic preset or a release-qualified physical catalogue. Inspect your own
-records/levels/cycles; names and library tables are not independent validation.
+Check quantity, units and time support before comparing sources. These examples
+explain distinctions, not an automatic preset or a release-qualified catalogue.
+Native names and library tables alone do not establish physical meaning.
 
 .. list-table:: Atmospheric/surface field distinctions
    :header-rows: 1
@@ -135,45 +127,44 @@ records/levels/cycles; names and library tables are not independent validation.
 
    * - Quantity / example identity
      - Units and support to verify
-     - Interpretation / unresolved evidence
+     - Interpretation rule
    * - MSLP: GRIB ``prmsl`` / ``meanSea``
      - Pa, instantaneous valid time.
      - MSLP is not surface pressure; do not substitute one for the other.
    * - Near-surface winds: GRIB ``10u``/``10v`` at 10 m
-     - m s-1; observed ``uvRelativeToGrid=0``.
+     - m s-1; component-direction metadata.
      - Preserve/check eastward/northward component directions, sampling and pairing,
        not short names alone.
    * - Pressure-level ``u``, ``v``, ``t``, ``r``, ``z``
-     - m s-1, K, %, m2 s-2; example 850/700/500 hPa, instantaneous.
+     - U/V: m s-1; temperature: K; RH: %; geopotential: m2 s-2.
+       Verify pressure labels and instantaneous support.
      - Pressure labels use their actual coordinate units; RH is not specific
        humidity and geopotential is not geometric height.
    * - GRIB ``2t``/``2r`` at 2 m
      - K / %, instantaneous.
      - Near-surface temperature/RH metadata does not supply a missing SFX unit definition.
    * - ``SFX.SST``, ``SFX.T2M``, ``SFX.HU2M``, ``SFX.TSRAD``
-     - Observed support labels SEA / FULL / FULL / FULL; gridpoint 120/24 encoding.
-     - Verify physical meaning from source evidence. Packing-120 decoding records
-       encoded scaling factors separately from native warnings; see :doc:`fa_contracts`.
+     - Producer-defined units, support and encoding.
+     - Declare verified physical meaning. SEA/FULL labels do not establish masks
+       or units. Check packing-120 scaling separately; see :doc:`fa_contracts`.
    * - Native layer/patch states ``SFX.TG1P1`` / ``SFX.WG1P1``
-     - Dense individual records, observed NATURE label and 120/24 encoding.
+     - Individual dense records, native support labels and encoding.
      - Keep the exact native IDs. No depth, patch/tile axis, fraction or average
        follows from the names or support label.
    * - ``slhf``, ``sshf``, ``ssrd``, ``strd``
-     - Observed GRIB accumulated J m-2, with 0–12-hour support in the example.
+     - For accumulated energy: J m-2, source interval/reset and sign.
      - Energy is not instantaneous W m-2 flux. Preserve source sign/bounds;
        no automatic rate, deaccumulation or sign reversal.
    * - GRIB ``tirf`` (time integral of rain flux)
-     - Observed kg m-2 accumulated over 0–12 hours.
+     - kg m-2, accumulation interval and reset convention.
      - Rain amount is not a rate; interval/reset evidence is required for conversions.
    * - Turbulent stresses ``iews`` / ``inss``
-     - Observed N m-2, ``stepType=accum`` with 0–12-hour keys.
-     - Instantaneous labels conflict with accumulated temporal metadata;
-       interpretation remains unresolved rather than guessed.
+     - N m-2; verify time support and signs.
+     - If instantaneous labels conflict with accumulated temporal metadata,
+       resolve the contradiction with the producer; do not guess.
 
-Exact IDs such as ``SFX.H``, ``SFX.LE``, ``SFX.FMU``, ``SFX.FMV`` and ``SFX.RAIN``
-were not established in the inspected selection. This is not a claim about every
-producer or permission to choose a different field by analogy. Unestablished SFX
-humidity units/specific-humidity identity likewise remain unresolved.
+Do not choose an SFX field by analogy with a GRIB name. In particular, a humidity
+name does not establish units or specific-humidity identity.
 
 Dense SURFEX scope and remaining limits
 ---------------------------------------
@@ -182,8 +173,8 @@ The admitted dense branch uses complete AROME-47/SURFEX-8.1 source/directory fac
 ``SFX.PACK=0``, ``X1``, ``DIM1=storage X*Y`` and ``DIM2=-1``. IMAX/JMAX and DIM_FULL
 describe CI, which need not equal complete storage. Layout PACK and native FA
 codec packing are distinct. Dense directories do not establish native scaling.
-Full/point/strided/reversed selections preserve prescribed values/NaNs/real zeroes;
-categorical codes keep their declared units/kind and float64 decoded representation.
+Categorical codes keep their declared units/kind and float64 decoded representation;
+missing values and real zeroes remain distinct.
 
 No sparse support map is guessed. Individually selected layer/patch records remain
 2-D; no soil-depth, layer/tile or atmospheric axis is inferred. X0/X2 and physical
@@ -193,11 +184,9 @@ NAME/TYPE/MASK/SIZE/dimension/source records are reported as missing; any surviv
 atmospheric to bypass it. Available metadata can still be inspected without
 accepting physical execution. See :doc:`fa_contracts`.
 
-Compact independent native/GRIB/NetCDF cases cover multiple times, different
-grids, moving centres, planning/replay, masks/zeroes, sync/spawn exports and fresh
-ordinary readers. Shared coordinates are checked exactly; constant polar scalar
-fixtures use the existing absolute ``1e-9`` interpolation bound. These are finite
-engineering/numerical checks, not scientific validation of real producer fields.
+Shared coordinates are checked exactly; compact constant-scalar checks use an
+absolute ``1e-9`` interpolation bound. These numerical checks do not validate real
+producer fields.
 
 Packed layouts require release-specific maps/order/coverage and trusted
 scatter-gather references; scientific layer/tile axes require original indices,

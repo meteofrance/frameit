@@ -1,9 +1,15 @@
 Tracking methods
 ================
 
-For setup, use :doc:`../task_guides/moving_region`. These pages explain inputs,
-method choices, outputs and known limitations. Experimental and beta methods
-retain their stated qualification limits.
+Choose :doc:`../tracker/fixed_box` for a stationary region or
+:doc:`../tracker/prescribed_track` to use known positions. For calculated
+atmospheric centres, compare :doc:`../tracker/pressure_wind_tracker`,
+:doc:`../tracker/pressure_centroid` and the experimental
+:doc:`../tracker/multifield_vortex`.
+
+Each method lists its required inputs and limits. The beta
+:doc:`../tracker/utrack` adapter cannot execute current requests.
+For setup, use :doc:`../task_guides/moving_region`.
 
 .. toctree::
    :maxdepth: 1

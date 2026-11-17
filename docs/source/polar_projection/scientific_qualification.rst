@@ -4,11 +4,11 @@ Scientific qualification
 Run and retain the evidence
 ----------------------------
 
-These tests sample geodesically defined storm-centred target points, rather than
-performing a stereographic map projection. They check bilinear sampling of scalar
-values and prepared eastward/northward wind components. Vector rotation uses the
-terminal-forward geodesic bearing at each target; tangential wind is positive
-clockwise.
+Use these optional checks to measure bilinear sampling errors against prescribed
+analytical fields. They sample WGS84 storm-centred points, not a stereographic
+projection. Prepared winds use east/north components and terminal-forward bearings;
+tangential wind is positive clockwise. Passing checks do not establish validity
+for every real dataset.
 
 .. code-block:: bash
 
@@ -32,10 +32,10 @@ The complete qualification writes:
 Analytical definitions
 ----------------------
 
-``frameit.testing.analytic_vortices`` evaluates source values and exact target
-values directly, without frameit's interpolator or component-rotation functions.
-Geodesic fixtures use WGS84 distance and terminal bearing independently through
-pyproj. Existing geometry tests separately check published Karney coordinates.
+Source and exact target values are evaluated directly, independently of FrameIt's
+interpolation/component-rotation functions. Geodesic cases use WGS84 distance
+and terminal bearing through pyproj; separate geometry checks use published
+Karney coordinates.
 
 The geodesic kinematic vortex uses
 :math:`f(r)=(r/R)\exp[(1-(r/R)^2)/2]`, :math:`v_t=V_0 f` and
@@ -177,18 +177,13 @@ without optional map-factor correction. These source conventions and software
 references are not evidence of independent scientific sign-off. Geolocation is
 a local finite-neighbour approximation, not a conservative transformation.
 
-**Verification and tolerances.** Under ``src/frameit/testing/numerical/``,
-``test_wind_reference.py`` checks quarter-turn vector truth, metadata conflicts,
-idempotence and independently projected axes. Projection-sign tests use pyproj
-Mercator/Lambert/stereographic perturbations (north-component absolute tolerance
-2e-7 m/s); 100-m geolocation fixtures allow 5e-5 m/s for one-sided boundary
-direction error. ``test_wind_collocation.py`` and ``test_request_selection.py``
-check coordinate-based interpolation and level mappings.
-``test_native_extraction.py`` and ``test_grid_representations.py`` check labelled
-faces, field-specific W, per-file units, independent NetCDF reopening, and
-tracking/polar invariance under Cartesian choices. The latter's real-xESMF
-synthetic 1-km-cell vector check allows 2e-4 m/s for spherical-cell curvature.
-``test_wind_preflight.py`` checks declarations and shared tracker preparation.
+**Verification and tolerances.** Independent quarter-turn vectors, projected-axis
+perturbations and affine fields check rotation signs, coordinate interpolation and
+level mappings. Mercator/Lambert/stereographic sign checks use a north-component
+absolute tolerance of 2e-7 m/s. A 100-m geolocation example allows 5e-5 m/s for
+one-sided boundary direction error; a synthetic 1-km-cell xESMF vector example
+allows 2e-4 m/s for spherical-cell curvature. These are bounded numerical
+tolerances, not general accuracy estimates.
 
 **Metadata and remaining limits.** Effective configuration/provenance records
 selected operations, pair declarations and level choices; field metadata retains source basis,
@@ -202,12 +197,11 @@ diagnostic admission or general conservation claim follows from these checks.
 Sampling conventions and units
 ------------------------------------
 
-These vector checks use collocated, prepared eastward/northward components.
-Radial/tangential winds use the local bearing. Speed is the norm of sampled
-components. The origin can lie between grid points, and full-ring angle grids
-are uniform and endpoint-exclusive.
-At zero radius, radial/tangential components are undefined even when east/north
-winds and speed are finite. Coverage and missing-data policies are explicit.
+The origin can lie between native points. Full rings are uniform and
+endpoint-exclusive. Radial/tangential components use the local bearing and are
+undefined at zero radius, even when east/north winds and speed are finite.
+Speed is the norm of sampled components. See
+:doc:`xESMF_proj` for coverage and missing-data policies.
 
 ``products.polar.radial_step_km`` and exported ``radius`` use kilometres.
 Exported ``azimuth`` uses radians and ``azimuth_degrees`` uses degrees.

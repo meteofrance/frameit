@@ -51,8 +51,12 @@ Run
 View the output
 ----------------
 
-The run exports native-grid and polar files. Download
-:download:`plot_polar_sampling.py <../../../example/plots/plot_polar_sampling.py>`:
+The run exports native-grid and polar files. Copy this into ``plot_polar_sampling.py``:
+
+.. literalinclude:: ../../../example/plots/plot_polar_sampling.py
+   :language: python
+
+Optional: :download:`script file <../../../example/plots/plot_polar_sampling.py>`.
 
 .. code-block:: bash
 
@@ -61,9 +65,10 @@ The run exports native-grid and polar files. Download
 .. figure:: ../_static/figures/tutorial-polar-sampling.svg
    :target: ../_static/figures/tutorial-polar-sampling.svg
    :width: 480px
-   :alt: Eastward analytical wind sampled on the exported radius and azimuth coordinates.
+   :alt: Circular polar plot of the eastward wind component, with north at the top, clockwise azimuth and radius in kilometres.
 
-   First output time. Radius/azimuth identify sample locations, not vector basis.
+   First output time. The circular display retains the eastward component;
+   it does not turn it into radial wind.
 
 Use the output's validity, support-fraction and interpolation-status variables
 when analysing missing samples; see :doc:`../concepts/missingness_and_status`.

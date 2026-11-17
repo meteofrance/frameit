@@ -1,10 +1,10 @@
 FA grids, domain selection and centres
 ======================================
 
-FrameIt labels FA samples using qualified EPyGrAM axes/CRS/native-zone facts,
-with independent original-header admission checks. Geometry success does not
-establish field identity, scaling, vector basis or physical vertical coordinates.
-See :doc:`fa_inputs` for declarations and :doc:`fa_baseline` for compatibility.
+Choose ``fa.subdomain`` for the retained zone and, for projected inputs, declare
+the producer's ``fa.earth_radius_m``. The rules below determine sample locations,
+not field identity, scaling, vector basis or physical height.
+See :doc:`fa_inputs` for a complete request and :doc:`fa_baseline` for compatibility.
 
 Supported grids and Earth model
 -------------------------------
@@ -31,19 +31,16 @@ and a nondegenerate reference latitude, with tangent-cone magnitude matching
 
 Unknown/older headers, rotation/stretch/academic conventions, secant Lambert,
 Mercator, stereographic, ellipsoidal, global/reduced, dateline-crossing and polar
-grids are not admitted. Additional variants need actual versioned native headers,
-Earth models, anchor/scanning/zone conventions and independent geographic checks;
-a similarly named library projection is insufficient.
+grids are unsupported. A similarly named library projection does not establish
+their native header, Earth-model, scanning or zone conventions.
 
 Library axes and CF origin
 --------------------------
 
-EPyGrAM centres projected axes on CI. FrameIt translates that library CRS origin
-to its CF tangent-latitude origin while preserving the **same physical samples**.
-This is an origin translation, not a fitted projection, field interpolation,
-vector rotation or pressure/height calculation. Only one-dimensional axes/CRS/zone
-facts cross the worker boundary; the parent expands geographic coordinates.
-Native point budgets apply before axis allocation and coordinate expansion.
+EPyGrAM centres projected axes on CI. FrameIt translates that origin to the CF
+tangent-latitude origin while preserving the **same physical samples**.
+It does not fit a projection, interpolate fields, rotate vectors or calculate
+pressure/height. Native point budgets apply before axes/geography are allocated.
 
 CI/C slices keep original zero-based ``source_i`` and ``source_j``. Masks cannot
 become valid geographic coordinates. Library CI corners must agree with original
@@ -69,10 +66,7 @@ This chooses an index; it does not interpolate the scientific field.
 Regular lon/lat FA and other input formats retain their squared-degree lookup,
 with equivalent longitudes handled modulo 360. An ordinary CF mapping on another
 format does not switch its lookup convention. Neither metric promises the minimum
-ground/geodesic distance. For example, the independently specified southern
-Lambert fixture at requested projected ``(-4499.99, -2100) m`` selects storage
-``(j=1, i=1)`` using native axes but ``(1,0)`` using squared geographic degrees.
-The distinction matters near cell boundaries.
+ground/geodesic distance; they can select different points near cell boundaries.
 
 Requested ``lat``/``lon`` remain continuous and define polar targets/track
 kinematics. They are not replaced by snapped source coordinates. Each source is
@@ -85,9 +79,9 @@ Projected lookup requires explicit spherical Lambert CF metadata, static labelle
 latitude/longitude in degrees and finite monotone regular X/Y axes in metres.
 Lookup supports ascending/descending storage, subject to the native-header
 admission rules. Before choosing centres, **every** geographic sample is projected
-and compared to its labelled axes in blocks of at most 32 rows. This checks
-interior association, not just corners/equal shapes. Scientific payloads stay
-lazy; coordinate I/O and projection add to preflight cost.
+and compared to its labelled axes. Interior association is checked, not just
+corners/shapes. Coordinate I/O and projection add to preflight cost; scientific
+payloads stay lazy.
 
 The internal double-precision sample/CRS consistency tolerance is ``1e-5 m``.
 Axis regularity, boundary roundoff and ties use the greater of ``1e-5 m`` and
@@ -143,8 +137,6 @@ bounds, distinct from the ``2e-5 degree`` native-header precision check and
 ``1e-5 m`` internal consistency tolerance. A pyproj round trip alone is not the
 independent scientific oracle.
 
-Compact native extraction/coupling checks reopen values and metadata through
-ordinary NetCDF readers. They do not independently confirm a real producer's
-Earth model, geographic checkpoints, physical definitions or vector/vertical
-sampling. Those references and scientific review remain required. See
-:doc:`fa_baseline` for field and encoding limits.
+These numerical bounds do not confirm a real producer's Earth model, geographic
+checkpoints, physical definitions or vector/vertical sampling. Trusted references
+and scientific review remain required; see :doc:`fa_baseline`.

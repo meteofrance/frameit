@@ -12,9 +12,11 @@ Save :download:`coupled-inputs.yaml <../../../example/tutorials/coupled-inputs.y
 .. literalinclude:: ../../../example/tutorials/coupled-inputs.yaml
    :language: yaml
 
-Atmospheric pressure has three times; ocean temperature has two. Each uses
-its own native grid and retains its own units. The ocean request selects its
-surface rho index, not an assumed depth shared with the atmosphere.
+Both sources have 00:00, 01:00 and 02:00 samples, on separate grids. The atmosphere
+contains temperature and Earth-relative winds at 10 m; the ocean contains a
+prescribed surface cold trail. These are analytical signals, not a coupled simulation.
+The existing height label is selected with ``values`` and ``units``; the ocean
+request selects its own surface rho index.
 
 .. _choose-the-reference-and-time-policy:
 
@@ -51,22 +53,32 @@ Run
 View the output
 ----------------
 
-The completed inventory lists separate atmosphere and ocean NetCDF files.
-Download :download:`plot_coupled_inputs.py <../../../example/plots/plot_coupled_inputs.py>`:
+The inventory lists separate atmosphere and ocean NetCDF files. Copy this into
+``plot_coupled_inputs.py``:
+
+.. literalinclude:: ../../../example/plots/plot_coupled_inputs.py
+   :language: python
+
+Optional: :download:`script file <../../../example/plots/plot_coupled_inputs.py>`.
 
 .. code-block:: bash
 
-   python plot_coupled_inputs.py results/coupled-inputs/products/coupled-inputs.atmosphere.model_grid.nc coupled-inputs.svg
+   python plot_coupled_inputs.py \
+     results/coupled-inputs/products/coupled-inputs.atmosphere.model_grid.nc \
+     results/coupled-inputs/products/coupled-inputs.ocean.model_grid.nc coupled-inputs.svg
 
 .. figure:: ../_static/figures/tutorial-coupled-inputs.svg
    :target: ../_static/figures/tutorial-coupled-inputs.svg
-   :width: 480px
-   :alt: Exported analytical atmospheric-pressure crop from a two-source run.
+   :width: 920px
+   :alt: Six panels at 00:00, 01:00 and 02:00 in one fixed longitude-latitude box. Top row: near-surface air temperature and eastward-moving 10 metre wind pattern. Bottom row: SST with a persistent prescribed cold trail.
 
-   Atmospheric product. Ocean temperatures remain in their own product and grid.
+   Columns show the three input times. Top: 10 m air temperature (K) with wind
+   vectors (m s-1). Bottom: SST (K). Every panel uses the same fixed geographical
+   bounds, with one colour scale per row. Winds remain Earth-relative.
 
-Equal shapes or coordinates do not establish physical equivalence. See
-:doc:`../user_guide/ocean_netcdf` for native ocean grids, masks and depth conventions.
+The plot uses the central latitude for map aspect ratio. See
+:doc:`../reference/analytical_inputs` for the prescribed warm/cold signals and
+:doc:`../user_guide/ocean_netcdf` for real ocean grids, masks and depth conventions.
 
 Adapt to real inputs
 ---------------------

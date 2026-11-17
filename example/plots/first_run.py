@@ -10,6 +10,8 @@ import numpy as np
 import xarray as xr
 
 source, product, output = map(Path, sys.argv[1:])
+if not output.suffix:
+    raise ValueError("figure needs an explicit extension, for example .png")
 if output.exists():
     raise FileExistsError(output)
 with xr.open_dataset(source, engine="netcdf4") as a, xr.open_dataset(product, engine="netcdf4") as b:

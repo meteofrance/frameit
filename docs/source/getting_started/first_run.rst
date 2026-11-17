@@ -139,14 +139,28 @@ They separate the captured request, effective settings, processing facts and
 execution state. A failed run can leave earlier complete products, so check
 status before using them.
 
+Plot the result
+----------------
+
+Check the :ref:`plotting requirements <tutorial-plotting-requirements>`, then
+copy this into ``first_run.py``:
+
+.. literalinclude:: ../../../example/plots/first_run.py
+   :language: python
+
+Optional: :download:`script file <../../../example/plots/first_run.py>`.
+
+.. code-block:: bash
+
+   python first_run.py data/first-run.nc results/products/first-run.atmosphere.model_grid.nc first-run.png
+
 .. figure:: ../_static/figures/first-run.png
    :target: ../_static/figures/first-run.png
    :width: 100%
    :alt: First-time instructional input and its actual exported 5-by-5 crop. Both use the same dimensionless colour scale; the missing sample is grey and zero remains valid.
 
-   Actual input and exported crop from this tutorial, not a simulation. The
-   :download:`standalone plotting script <../../../example/plots/first_run.py>`
-   uses ordinary xarray and Matplotlib, without importing FrameIt.
+   Actual input and exported crop from this tutorial, not a simulation.
+   The plotting code uses ordinary xarray and Matplotlib, without importing FrameIt.
 
 Next steps
 ----------

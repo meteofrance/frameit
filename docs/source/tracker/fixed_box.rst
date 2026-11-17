@@ -1,49 +1,26 @@
 Fixed-box method
 ================
 
-For a worked run, use :doc:`../task_guides/fixed_region`.
-
-Overview
---------
-
-``region.center`` keeps one geographical centre at every selected source time.
-FrameIt selects its native grid indices once and repeats them along the time axis.
-The requested latitude/longitude remain the polar origin.
-
-This option is useful when:
-
-- the region of interest is fixed (site-focused diagnostics),
-- tracking variables (MSLP, winds) are not available or not reliable.
-
-Inputs and outputs
-------------------
-
-Input dataset
-~~~~~~~~~~~~~
-
-Each source adapter must identify its own selected sample clock and native
-geography. On a stationary grid, supported geography includes:
-
-- 1D latitude and 1D longitude axes;
-- matching 2D latitude and longitude grids.
-
-Fixed geometry needs no atmospheric reference source. The geographical request
-is applied independently to every required source, without intersecting clocks.
+Use ``region.center`` for a fixed geographical region, including when tracking
+fields are unavailable. The centre stays fixed at every selected source time,
+even if the event leaves the box. For a worked run, use
+:doc:`../task_guides/fixed_region`.
 
 Configuration
 -------------
 
-Minimal configuration
-~~~~~~~~~~~~~~~~~~~~~
-
-Region fragment; the complete source request is in
-:doc:`../task_guides/fixed_region`:
+Add this region fragment to a complete source request:
 
 .. code-block:: yaml
 
    region:
      center: {latitude: -17.5, longitude: 60.0}  # Degrees north/east
      width_km: {x: 400, y: 400}
+
+Each source needs an identified sample clock and stationary native geography:
+1-D latitude/longitude axes or matching 2-D grids. It selects its own indices
+independently, without intersecting source clocks or requiring an atmosphere.
+The continuous requested position remains the polar origin.
 
 Algorithm
 ---------
@@ -55,8 +32,6 @@ Projected FA uses :doc:`source-CRS axes <../user_guide/fa_geometry>` instead.
 Rectilinear grid (latitude 1D, longitude 1D)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-If latitude and longitude are 1D arrays:
-
 .. code-block:: text
 
    cy = argmin_j (lat[j] - lat0)^2
@@ -64,8 +39,6 @@ If latitude and longitude are 1D arrays:
 
 Curvilinear grid (latitude 2D, longitude 2D)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-If latitude and longitude are 2D arrays:
 
 .. code-block:: text
 
@@ -75,27 +48,13 @@ If latitude and longitude are 2D arrays:
 Output
 ~~~~~~
 
-The index pair ``(cy, cx)`` is repeated for each model timestamp, producing:
-
-- ``cy(time) = constant``
-- ``cx(time) = constant``
-
-Example
--------
-
-For an inspected Meso-NH source, this region fragment selects a 500-km native box:
-
-.. code-block:: yaml
-
-   region:
-      center: {latitude: -20, longitude: 60}
-      width_km: {x: 500, y: 500}
-
+The selected ``cy`` and ``cx`` remain constant along that source's time axis.
+The centre does not request a trajectory file; select ``products.track: true``
+when a reusable NetCDF trajectory is needed.
 
 Known limitations
 ------------------
 
-* **Not event detection:** the centre stays fixed even if the event leaves the box.
 * **Grid-aligned extraction:** a native point supplies ``cx/cy``. Requested widths
   round to native point counts; neither location nor extent is imposed by regridding.
   A rotated source grid can give a rotated crop.
@@ -105,6 +64,3 @@ Known limitations
 * **Coverage:** a centre outside a required footprint or no finite candidate
   causes failure. A partially covered crop retains its shape with missing padding.
 * **Stationary geometry:** this lookup does not implement an evolving source mesh.
-
-The centre does not request a trajectory file. Select ``products.track: true``
-only when a reusable NetCDF trajectory is needed.

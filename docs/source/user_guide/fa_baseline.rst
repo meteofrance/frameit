@@ -1,19 +1,18 @@
 FA compatibility and limitations
 ================================
 
-FrameIt provides a **limited native FA adapter**, using EPyGrAM 2.1.0 in isolated
-worker processes. Start with :doc:`fa_inputs` for record selection and
-:doc:`fa_environment` for setup.
+Check the operation below before selecting FA records. Supported execution still
+requires admitted geometry, field declarations, readable encoding and decode-time
+scaling checks. Metadata inspection alone does not admit physical decoding.
 
-The matrix below distinguishes implemented operations from metadata that is only
-inspectable and operations that remain blocked. Implemented rows still require
-valid geometry, selected field declarations, readable native encoding and the
-decode-time scaling check. Compact independently prescribed fixtures exercise
-these engineering/numerical contracts; they do not qualify arbitrary real fields
-or constitute independent human scientific approval.
+The reader is EPyGrAM 2.1.0 in isolated workers. Use :doc:`fa_inputs` for requests
+and :doc:`fa_environment` for setup. Compact numerical checks do not qualify
+arbitrary real fields or replace scientific review.
 
-Current operation matrix
--------------------------
+.. _current-operation-matrix:
+
+Supported and blocked operations
+---------------------------------
 
 Header/index and selected encoding inspection
    Read-only metadata includes names/lengths, clocks, source/directory facts and
@@ -93,22 +92,18 @@ Lambert supports selected ``CI`` or ``C`` zones with an explicit Earth radius;
 rotated, stretched, academic, secant/ellipsoidal, dateline-crossing and polar
 variants are not admitted. See :doc:`fa_geometry` for exact numerical choices.
 
-FA-only regions use ``region.center`` or ``region.track.file``. For atmospheric
-trackers, use a qualified GRIB/NetCDF tracking source in a coupled run. Native
-cubes do not themselves establish verified MSLP or pressure-level tracker inputs.
-Diagnostics remain selected operations, not automatic consequences of available
-fields. Native copying alone does not establish a transform, derived or polar
-method's eligibility. Unresolved requested operations fail; metadata readability
-does not authorize them.
+For FA-only regions, use ``region.center`` or ``region.track.file``. Calculated
+tracking needs a qualified atmospheric GRIB/NetCDF source in a coupled run;
+native cubes do not supply an FA tracker binding. Transforms, diagnostics and polar
+sampling require their own selected, supported operation.
 
 Interpret failures without guessing physics
 -------------------------------------------
 
 * **Native -91/-93/-94 on a selected physical record:** execution fails rather
   than accepting a library metadata classification. Unselected records can remain
-  indexed without payload reads. Observed ``SURFPRESSION``, ``S090TEMPERATURE``
-  and ``S090WIND.U.PHYS`` header failures have no established encoding/cause from
-  index lengths alone. Ask the producer/upstream for the exact native build,
+  indexed without payload reads. Index lengths do not establish the cause.
+  Ask the producer/upstream for the exact native build,
   header/error specification and a trusted decode or known-good copy. The error
   alone does not establish corruption or harmless metadata.
 * **Unresolved FMULTM/FMULTE scaling:** encoded packing-120 GRIB2 factors take
@@ -127,17 +122,13 @@ Interpret failures without guessing physics
 Scientific evidence still needed
 --------------------------------
 
-Native names/flags, a readable index and plausible values do not establish
-release-specific quantities, units, signs, temporal support, scaling, masks,
-Earth model or vector/vertical sampling. ``KNIVER`` counts native levels, not a
-producer/header release. A matching array shape does not prove a common grid.
-Source size/mtime checks detect freshness changes, not content integrity or
-corruption; package version strings do not verify the native Fortran revision.
+Real-producer use needs release-matched quantities, units, signs, time support,
+scaling, masks, Earth model and vector/vertical sampling. Confirm these with trusted
+values/masks, geographic checkpoints, appropriate multi-time/cycle/reset references,
+justified tolerances and scientific review.
 
-Real-producer use still needs release-matched definitions, independently trusted
-values/masks and geographic checkpoints with justified tolerances, appropriate
-multi-time/cycle/reset examples, and scientific review. Missing native scaling,
-unexplained selected errors and spectral/typed/interval references remain
-unresolved. No implicit deaccumulation, pressure/height calculation, vector
-conversion, averaging, extrapolation or missing-to-zero filling resolves them.
-See :doc:`fa_contracts` for the facts retained in inspection and ordinary outputs.
+Names, shapes, readable indexes and plausible values are insufficient.
+``KNIVER`` counts levels, not the producer release. Size/mtime checks establish
+freshness, not integrity; package versions do not identify the native Fortran build.
+Unexplained native errors and missing scaling/spectral/typed/interval evidence
+remain unresolved. See :doc:`fa_contracts` for the recorded facts.
