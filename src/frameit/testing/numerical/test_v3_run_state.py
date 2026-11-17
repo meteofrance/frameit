@@ -426,13 +426,22 @@ def test_cleanup_failure_keeps_complete_products_and_pending_cleanup(tmp_path, m
     from frameit.core.runner import FrameitRunner
 
     conf = two_sources(tmp_path, "netcdf", True)
-    original_close = FrameitRunner.close
+    original_run = FrameitRunner.run
 
-    def close(runner):
-        original_close(runner)
-        raise OSError("input cleanup failed")
+    def run(runner, *args, **kwargs):
+        result = original_run(runner, *args, **kwargs)
+        consumer = runner.resources._datasets[0]
+        data = consumer.resources._datasets[0]
+        original_close = data._close
 
-    monkeypatch.setattr(FrameitRunner, "close", close)
+        def close():
+            original_close()
+            raise OSError("input cleanup failed")
+
+        data.set_close(close)
+        return result
+
+    monkeypatch.setattr(FrameitRunner, "run", run)
     with pytest.raises(OSError, match="input cleanup failed"):
         execute_simulation(conf)
     status = record(conf.output_dir, "run-status.yaml")

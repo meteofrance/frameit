@@ -12,9 +12,10 @@ tracking; the declared structure, support and continuity criteria do.
 The nine estimates are MSLP; relative vorticity at the surface, 850 and 700 hPa;
 geopotential height at 850 and 700 hPa; and wind circulation at the surface,
 850 and 700 hPa. Winds at 500 hPa additionally support the next-position guess.
-700-hPa contributions are relevant to mountainous crossings: Marchok reports
-operational experience that these help when terrain interferes with lower layers.
-This evidence is not a qualification of FrameIt's implementation for landfall.
+Marchok reports that 700-hPa contributions help when terrain interferes with lower
+layers; FrameIt's landfall implementation remains unqualified.
+See `Configuration`_ for the required seed and `Inputs and explicit conventions`_
+for fields and coverage.
 
 .. figure:: ../_static/figures/multifield-method.svg
    :target: ../_static/figures/multifield-method.svg
@@ -28,20 +29,18 @@ Inputs and explicit conventions
 ------------------------------------------------------------
 
 AROME requires ``prmsl``, ``u10``, ``v10``, ``u``/``v`` at 850, 700 and
-500 hPa, and geopotential ``z`` at 850 and 700 hPa. The current adapter uses
-``isobaric``. Geopotential is converted to geopotential height with
-``g0 = 9.80665 m s-2``. A GRIB ``msl`` field is available through the canonical
-``prmsl`` alias; the original source variable remains requestable by direct
-loader callers. Every required GRIB variable/level/time combination is checked,
-not just the union of levels shared by different variables.
+500 hPa, and geopotential ``z`` at 850 and 700 hPa. Pressure groups use
+``isobaric``. Geopotential converts to geopotential height with
+``g0 = 9.80665 m s-2``; GRIB ``msl`` is available through canonical ``prmsl``.
+Every required variable/level/time combination must exist; a union of levels
+across variables is insufficient.
 
 Meso-NH requires native-level absolute pressure (``PABST`` or ``PRES``),
 physical altitude (``ALT`` or the explicitly supported formula described in
 :doc:`pressure_centroid`), horizontal winds, ``MSLP`` and ``UM10``/``VM10``.
 One explicitly declared ``UT``/``VT`` or ``UT_ZM``/``VT_ZM`` pair selects the
-native winds. The pressure-centroid adapter's supported field discovery and
-native physical-level selection are reused. Invalid inputs produce multi-field
-specific preparation instructions rather than the centroid's 2-km recipe.
+native winds. Field/physical-level discovery follows :doc:`pressure_centroid`;
+missing inputs report this method's preparation requirements, not a 2-km recipe.
 
 MNH native pressure must bracket the required pressure surfaces in each usable
 column. Wind and geometric altitude are interpolated linearly in log-pressure
@@ -61,10 +60,10 @@ Existing MNH backup fields may supply all necessary information without
 
 Declare wind frames and any rotation with source ``wind_pairs``. Collocation and
 rotation precede pressure-level interpolation; physical east/north components
-in m/s are required. No frame is inferred from a filename. Per-file MNH
-preparation normalizes pressure/height/winds before concatenation so units cannot
-silently inherit the first file's interpretation. Relative vorticity is derived
-from those winds; MNH ``POVOT`` is not used as a substitute.
+in m/s are required. No frame is inferred from a filename. Preparation normalizes
+method inputs per file; a native multi-file source still requires consistent
+stored scientific definitions and units. Relative vorticity is derived from
+the prepared winds, not substituted with MNH ``POVOT``.
 
 Only stationary regional structured grids, excluding poles and spanning less
 than 180 degrees longitude, are supported. Existing extraction/grid-spacing
@@ -237,28 +236,19 @@ Method record and qualification gaps
 * **Unresolved qualification:** unrounded NOAA-executable comparison, representative
   real MNH/AROME landfall cases, mountainous mask sensitivity, resolution and
   basin sensitivity, and reviewed tolerances for native/reference comparisons.
-  The packaged cropped MNH fixture lacks pressure and sufficient domain coverage.
-  Passing the synthetic tests does not establish accuracy for those real cases.
-
-.. code-block:: bash
-
-    python -m pytest src/frameit/testing/numerical/test_multifield_vortex.py
+  Synthetic agreement does not establish accuracy for those real cases.
 
 Known limitations
 ------------------
 
-* **Experimental adaptation:** this is not a bitwise NOAA tracker reproduction.
-  Independent executable comparisons and representative real-case/landfall
-  qualification remain outstanding.
-* **Explicit initial conditions:** the researcher supplies the seed and initial
-  motion. The method follows one disturbance; it does not detect genesis or
-  classify tropical stages. Equator crossing terminates tracking.
-* **Extensive inputs and coverage:** required pressure levels, complete circulation
-  rings and the 1000-km steering influence region can exceed the extraction box
-  by a large margin. Missing support can reject an otherwise plausible centre.
-* **Termination:** later QC failure can produce an accepted prefix under ``keep_prefix``.
-  Check tracking completeness; no missing positions are interpolated or extrapolated.
-* **Regional conventions:** supported stationary grids exclude poles and large
-  longitude spans. MNH gravity/height assumptions and masks must match the source.
-* **Uncertainty:** estimate dispersion is not calibrated confidence. Sensitivity
-  to resolution, basin, terrain and native/reference differences remains unresolved.
+* **Experimental:** independent NOAA-executable and representative real/landfall
+  comparisons remain outstanding; dispersion is not calibrated confidence.
+* **One seeded disturbance:** no genesis detection or tropical-stage classification.
+  Equator crossing terminates tracking.
+* **Wide complete support:** required levels, circulation rings and the 1000-km
+  steering footprint can reject an otherwise plausible centre.
+* **Incomplete tracks:** ``keep_prefix`` accepts only the recorded valid prefix;
+  missing positions are not interpolated or extrapolated.
+* **Regional assumptions:** stationary nonpolar grids span less than 180 degrees
+  longitude; MNH gravity/height conventions and masks must match the source.
+  Resolution, basin and terrain sensitivities remain unresolved.

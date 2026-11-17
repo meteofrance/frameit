@@ -352,6 +352,7 @@ def capabilities():
     tracking["multifield_vortex"]["inputs"] += [
         "explicit seed/motion", "pressure-level or Meso-NH native multi-field support"]
     tracking["utrack"].update(
+        models=["arome"],
         dependencies=["torch", "utrack"],
         inputs=["weights_file", "UTrack-compatible input fields"],
         limits=["Configuration and optional adapter exist, but v3 selected tracker binding "

@@ -448,6 +448,45 @@ def test_grouped_w_transform_selects_destination_without_changing_other_group(
     assert (tmp_path / "input.nc").read_bytes() == original
 
 
+@pytest.mark.parametrize("grouped", [False, True])
+@pytest.mark.parametrize("product", ["model_grid", "polar"])
+@pytest.mark.parametrize("value", [5., 10.])
+def test_mass_w_values_select_the_destination_grid(tmp_path, monkeypatch, grouped, product, value):
+    from frameit.core.preflight import collect_preflight
+    from frameit.testing.numerical.test_grid_representations import native_scene
+    from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
+    from frameit.testing.numerical.test_v3_polar import configuration
+
+    path = tmp_path / "input.nc"
+    native_scene().to_netcdf(path)
+    before = path.read_bytes()
+    name = "level_w.WT" if grouped else "WT"
+    selector = {"values": [value], "units": "m"}
+    variables = ({"3d": {"level_w": {"names": ["WT"], "levels": selector}}} if grouped else
+                 {"3d": ["WT"], "levels": selector})
+    source = {"variables": variables, "field_metadata": {name: {"kind": "continuous"}}}
+    if product == "model_grid":
+        source["transforms"] = [{"fields": [name], "sampling": "mass"}]
+        products = {"model_grid": True}
+    else:
+        products = {"polar": {"radius_km": 2.5, "azimuth_count": 8,
+                              "field_options": {"atmosphere": {name: {"sampling": "mass"}}}}}
+    conf = configuration(tmp_path, source=source, products=products)
+    if value == 10.:
+        guard_netcdf_payloads(monkeypatch, {"WT"})
+        report = collect_preflight(conf)
+        assert report.errors
+        assert "unavailable level value 10" in str(report.errors)
+        assert not conf.output_dir.exists()
+    else:
+        result = execute_simulation(conf)
+        with xr.open_dataset(result.products[0]["path"]) as data:
+            np.testing.assert_array_equal(data.level, [5.])
+            np.testing.assert_allclose(data[name], 85., rtol=0, atol=1e-12)
+            assert data[name].attrs["units"] == "m/s"
+    assert path.read_bytes() == before
+
+
 def test_grouped_polar_speed_keeps_magnitude_after_component_sampling(tmp_path):
     from frameit.testing.numerical.test_v3_polar import configuration, ordinary_reader, scene
 

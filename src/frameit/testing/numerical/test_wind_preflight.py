@@ -161,7 +161,11 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
                 reopened[name].isel(x=slice(2, 11), y=slice(2, 11)), source[name]
             )
             assert reopened[name].isel(x=0).isnull().all()
-            if frame == "earth":
+            if representation == "native":
+                assert reopened[name].attrs["standard_name"] == source[name].attrs["standard_name"]
+                assert reopened[name].attrs["wind_reference_frame"] == "grid"
+                assert "wind_reference_frame_override" not in reopened[name].attrs
+            elif frame == "earth":
                 assert "missing" in reopened[name].attrs["wind_reference_frame_override"]
                 assert reopened[name].attrs["source_standard_name"] == source[name].attrs["standard_name"]
             elif representation == "earth_centered":
@@ -171,9 +175,16 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
 
         import yaml
 
-        assert "metadata says grid-aligned" in Path(result.log_path).read_text()
         provenance = yaml.safe_load((tmp_path / "output" / "run-provenance.yaml").read_text())
-        assert "wind_reference_frame_override" in str(provenance)
+        operations = provenance["sources"]["atmosphere"]["operations"]
+        if representation == "native":
+            assert operations == []
+            assert "metadata says grid-aligned" not in Path(result.log_path).read_text()
+        else:
+            assert "metadata says grid-aligned" in Path(result.log_path).read_text()
+            assert len(operations) == 4
+            assert all("missing" in operation["wind_reference_frame_override"]
+                       for operation in operations)
 
 
 @pytest.mark.parametrize("method", ["pressure_centroid", "multifield_vortex"])
@@ -207,7 +218,21 @@ def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(t
     })
     report = collect_preflight(conf)
     assert not report.errors, report.errors
-    resolve_tracker_support(conf, report.facts["sources"]["atmosphere"])
+    plan = report.facts["sources"]["atmosphere"]
+    support = resolve_tracker_support(conf, plan)
+    assert {"RPK", "LON0"} <= support["inputs"].keys()
+    with DatasetResources() as resources:
+        _, selected = concat_nc2ds_by_vert_coord(
+            [path], {}, {}, selected_records=plan["field_binding"],
+            source_plan=plan, resources=resources)
+        from frameit.tracking.multifield_inputs import canonical_inputs
+        from frameit.tracking.tracker_core import make_tracking_dataset
+
+        native = make_tracking_dataset({method: selected["internal"]}, method)
+        prepared = (prepare_mnh_inputs(native, conf) if method == "pressure_centroid"
+                    else canonical_inputs(native, conf))
+        np.testing.assert_allclose(prepared.u, -source.VT_ZM, atol=1e-12)
+        np.testing.assert_allclose(prepared.v, source.UT_ZM, atol=1e-12)
     with DatasetResources() as resources:
         _, trackers = concat_nc2ds_by_vert_coord(
             [path], {"surface": {"variables": ["MSLP"]}}, {method: {}}, method,
@@ -354,8 +379,15 @@ def test_arome_vertical_quantities_have_no_horizontal_frame_requirement(tmp_path
         source[name].attrs["units"] = "m s-1"
         source.to_netcdf(path, engine="h5netcdf")
         report = collect_preflight(conf)
+        assert not report.errors, report.errors
+        assert report.facts["sources"]["atmosphere"]["field_binding"]["operation_plans"] == []
+        raw = deepcopy(conf.yaml_config)
+        raw["sources"]["atmosphere"]["transforms"] = [{"fields": [name], "units": "Pa s-1"}]
+        report = collect_preflight(SimulationConfig.from_mapping_with_model_preset(raw))
         assert report.errors
-        assert "pressure velocity" in str(report.errors)
+        message = report.errors[0].message
+        assert "incompatible" in message
+        assert "m s-1" in message and "Pa s-1" in message
 
 
 @pytest.mark.parametrize("method", ["coordinate", "geolocation"])
@@ -480,6 +512,63 @@ def grib_blocks(stamp, *, scalar=True, units="m s-1", flag=1, angle=90.):
     # Rotation geometry need not be a requested field or live in the wind block.
     geometry = xr.Dataset({"rotation": xr.DataArray(angle, attrs={"units": "degrees"})})
     return [source[["u"]], source[["v"]], geometry]
+
+
+@pytest.mark.parametrize("attribute,earth,grid", [
+    ("wind_reference_frame", "earth", "grid"),
+    ("GRIB_uvRelativeToGrid", 0, 1),
+    ("uvRelativeToGrid", 0, 1),
+])
+@pytest.mark.parametrize("conflicting", [False, True])
+def test_native_sequence_preserves_or_rejects_file_wide_basis(
+    tmp_path, monkeypatch, attribute, earth, grid, conflicting,
+):
+    import subprocess
+    import sys
+
+    from frameit.core.execution import execute_simulation
+    from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
+
+    values = np.arange(12., dtype=float).reshape(2, 2, 3)
+    values[0, 0, 0] = np.nan
+    source = xr.Dataset({"u": (("time", "latitude", "longitude"), values, {"units": "m s-1"})},
+                        coords={"time": np.array(["2026-01-01T00", "2026-01-01T01"],
+                                                 dtype="datetime64[ns]"),
+                                "latitude": [-20., -19.], "longitude": [60., 61., 62.]})
+    paths = [tmp_path / "first.nc", tmp_path / "second.nc"]
+    for index, path in enumerate(paths):
+        source.isel(time=[index]).assign_attrs({
+            attribute: grid if index and conflicting else earth,
+        }).to_netcdf(path, engine="h5netcdf")
+    original = {path: path.read_bytes() for path in paths}
+    conf = SimulationConfig.from_mapping_with_model_preset({
+        "schema_version": 3,
+        "sources": {"atmosphere": {"model": "arome", "files": list(map(str, paths)),
+                                    "variables": {"2d": ["u"]}}},
+        "output": {"directory": str(tmp_path / "out")},
+        "resources": {"cpus": 1, "scheduler": "synchronous", "synchronous_export": True},
+    })
+    if conflicting:
+        guard_netcdf_payloads(monkeypatch, {"u"})
+        report = collect_preflight(conf)
+        assert report.errors
+        message = str(report.errors)
+        assert all(word in message for word in ("first.nc", "second.nc", attribute, "consistent"))
+        assert not conf.output_dir.exists()
+    else:
+        result = execute_simulation(conf)
+        subprocess.run([sys.executable, "-c", """
+import sys, numpy as np, xarray as xr
+assert 'frameit' not in sys.modules
+with xr.open_dataset(sys.argv[1]) as data:
+    expected = np.arange(12.).reshape(2, 2, 3)
+    expected[0, 0, 0] = np.nan
+    np.testing.assert_array_equal(data.u, expected)
+    assert str(data.attrs[sys.argv[2]]) == sys.argv[3]
+    assert data.u.attrs['units'] == 'm s-1'
+    assert 'wind_reference_frame_override' not in data.u.attrs
+""", result.products[0]["path"], attribute, str(earth)], check=True)
+    assert {path: path.read_bytes() for path in paths} == original
 
 
 def grib_settings():

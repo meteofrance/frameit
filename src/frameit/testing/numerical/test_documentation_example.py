@@ -62,6 +62,27 @@ def test_analytical_inputs_follow_declared_formulas_and_independent_clocks(tmp_p
     assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in before} == before
 
 
+def test_tutorial_core_cases_run_without_the_polar_backend(tmp_path):
+    from pathlib import Path
+
+    root = Path(__file__).parents[4]
+    module = "src/frameit/testing/numerical/test_documentation_example.py"
+    cases = [
+        module + "::test_analytical_tutorial_commands_keep_sparse_times_levels_and_source_bytes",
+        module + "::test_missing_tutorial_consumes_category_and_explicit_renormalization",
+        module + "::test_interface_walkthrough_keeps_native_w_and_explicit_mass_w_distinct",
+        "docs/test_repository_examples.py::test_independent_checker_uses_product_clocks_and_optional_track",
+    ]
+    result = subprocess.run([sys.executable, "-c", """
+import sys, pytest
+sys.modules['xesmf'] = None
+raise SystemExit(pytest.main(sys.argv[1:]))
+""", "-q", "-p", "no:cacheprovider", "--basetemp", str(tmp_path / "without-polar"), *cases],
+        cwd=root, capture_output=True, text=True, timeout=90)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "3 passed, 5 skipped" in result.stdout
+
+
 def test_analytical_missing_and_category_variant_keeps_valid_zeroes(tmp_path):
     from frameit.testing.documentation_example import create_tutorial_inputs
 
@@ -79,6 +100,9 @@ def test_analytical_missing_and_category_variant_keeps_valid_zeroes(tmp_path):
 @pytest.mark.parametrize("polar", [False, True])
 def test_analytical_tutorial_commands_keep_sparse_times_levels_and_source_bytes(tmp_path, polar):
     from pathlib import Path
+
+    if polar:
+        pytest.importorskip("xesmf")
 
     def run(*args):
         result = subprocess.run([sys.executable, *args], cwd=tmp_path,
@@ -134,6 +158,7 @@ def test_missing_tutorial_consumes_category_and_explicit_renormalization(tmp_pat
 
     from frameit.testing.documentation_example import create_tutorial_inputs
 
+    pytest.importorskip("xesmf")
     paths = create_tutorial_inputs(tmp_path / "missing-data", missing=True)
     before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in paths.values()}
     example = Path(__file__).parents[4] / "example/tutorials/analytic-missing.yaml"
@@ -169,6 +194,7 @@ def test_interface_walkthrough_keeps_native_w_and_explicit_mass_w_distinct(tmp_p
 
     from frameit.testing.documentation_example import create_task_fixtures
 
+    pytest.importorskip("xesmf")
     paths = create_task_fixtures(tmp_path / "generated")
     root = Path(__file__).parents[4]
     path = tmp_path / "interfaces.nc"

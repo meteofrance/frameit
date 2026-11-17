@@ -33,6 +33,9 @@ Keep ``region.tracker.on_incomplete: error`` to reject that prefix before
 export. A missing final status or ``failed`` state is not success, even when
 some products exist.
 
+An input-close failure marks the run failed and leaves cleanup pending. Complete
+products remain in the inventory; they are not discarded to hide the failure.
+
 Complete earlier files can survive an interrupted run. Inspect the status
 inventory, captured request, effective configuration and provenance before
 reusing them. Planned products are not published products; a last-recorded

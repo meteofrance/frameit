@@ -1,8 +1,8 @@
 Troubleshooting
 ===============
 
-Use the failing phase and affected source/field in the error to narrow the
-problem. Keep the configuration and logs with the attempt.
+Start with the failing phase and source/field named in the error. Keep the
+configuration and logs with the attempt. Use the matching section below.
 
 Configuration fails before inputs open
 --------------------------------------
@@ -21,7 +21,7 @@ require execution and are not successful validation results.
 Input or metadata validation fails
 ----------------------------------
 
-Run ``frameit inspect`` on the affected stream, then ``frameit validate``.
+Run ``frameit inspect frameit.yaml``, then ``frameit validate frameit.yaml``.
 Check selected fields in every file, coordinate units, grids and time/cycle
 metadata. The report retains each affected source/file rather than choosing a
 substitute. Do not fix a scientific ambiguity by renaming units or selecting a
@@ -77,12 +77,11 @@ eastward/northward, declare that decision explicitly instead:
            v: VT
            basis: earth
 
-For an explicitly declared Meso-NH NetCDF pair, coherent grid-aligned metadata
-warns rather than fails only when the pair is needed and a projection parameter
-is missing.
-**No grid-to-Earth rotation is applied.** Missing projection metadata does not
-prove that grid and Earth directions coincide; you are responsible for this
-assumption. Native sample locations and any required collocation are unchanged.
+This exception applies only to an explicitly declared Meso-NH NetCDF pair needed
+by an operation, with coherent grid-aligned metadata and at least one missing
+projection parameter. **No grid-to-Earth rotation is applied.** Missing metadata
+does not prove coincident directions; this is your scientific assumption.
+Native sample locations and required collocation are unchanged.
 
 The warning is logged and recorded as ``wind_reference_frame_override`` in
 ``run-provenance.yaml`` and exported wind attributes. Original component flags
@@ -92,9 +91,9 @@ basis from the user's Earth-basis declaration. Conflicts still fail when all
 three effective parameters are available, metadata are invalid or contradictory,
 or components are misidentified. Other models and implicit declarations do not
 get this exception; GRIB input remains strict even with ``model: mesonh``.
-Superseded dataset-wide basis flags move to ``source_`` attributes; other raw
-pairs retain their own basis metadata. Run ``frameit validate`` again after
-editing the YAML.
+Superseded dataset-wide flags move to ``source_`` attributes; other raw pairs
+retain their own basis metadata. An unused declaration does not rotate/relabel
+native copied fields. Run ``frameit validate`` after editing.
 See :doc:`user_guide/configuration_file` for the rotation methods.
 
 No common times or a shortened track

@@ -1,14 +1,12 @@
 Input files
 ===========
 
-FrameIt accepts NetCDF and GRIB files, plus selected native AROME/SURFEX FA
-histories through an optional isolated reader. See :doc:`fa_inputs` for the exact
-FA scope and declarations. A supported container alone does not establish
-compatible model, field or grid conventions.
+Put a path, glob, or list of paths/globs under each named source's ``files``;
+put exclusions under its ``exclude``. YAML paths are relative to the YAML directory.
 
-Files belong to named sources. Each source can use a path, glob, or list of
-paths and globs under ``files``. Exclusions belong under that source's
-``exclude``. All YAML paths are relative to the YAML directory.
+FrameIt reads NetCDF, GRIB and selected native AROME/SURFEX FA histories.
+Check :doc:`fa_inputs` for FA declarations and :doc:`ocean_netcdf` for ocean
+conventions. A supported container does not establish compatible quantities or grids.
 
 This complete request uses an illustrative field, path and time window. Inspect
 your source metadata before replacing them:
@@ -125,10 +123,9 @@ leads from one forecast cycle. A selection varying several sample axes at once
 fails before reading scientific values. FrameIt does not guess a flattening
 order or fill the gaps between those samples.
 
-The loader owns open inputs until calculation/export finishes, then closes them.
-Lazy preparation is not the same as computing or writing data; compare whole-run
-timings as well as phase timings. Storage chunks and full-record native decoders
-can impose costs beyond the selected output size. A point guard is not a memory
+Inputs stay open until calculation/export finishes. Compare whole-run timings:
+lazy preparation may only build a computation graph. Storage chunks and full-record
+decoders add costs beyond the selected output size; a point guard is not a memory
 ceiling. See :doc:`../task_guides/storage_and_resources`.
 
 .. _wind-metadata:
@@ -139,10 +136,6 @@ Wind metadata to check
 Inspect each pair's sampling coordinates, units and vector basis, not only its
 names. Determine the component directions from source metadata first:
 
-NetCDF inspection retains relevant dataset-level wind attributes beside each
-file's variable evidence. Opposing declarations remain visible; inspection does
-not resolve them. Unrelated dataset annotations are not included in this evidence.
-
 * **East/north components:** GRIB ``uvRelativeToGrid=0`` (read as
   ``GRIB_uvRelativeToGrid``), or the CF ``standard_name`` pair
   ``eastward_wind`` / ``northward_wind``. U points east and V points north.
@@ -152,11 +145,10 @@ not resolve them. Unrelated dataset annotations are not included in this evidenc
   ``grid_eastward_wind`` / ``grid_northward_wind``. U/V follow the model's x/y
   axes. A declaration uses ``basis: grid`` with a supported rotation.
 
-If this metadata is absent or inconclusive, use the producer's documentation
-for the release and fields in your files. Do not guess from the model name,
-variable names or grid shape. Projection parameters describe grid orientation
-and can support a rotation calculation; they do not establish whether a field
-already contains eastward/northward components.
+If metadata is inconclusive, use the producer's release-matched documentation.
+Model/variable names and grid shape do not establish component directions.
+Projection parameters can support a rotation calculation but do not show whether
+the stored components are already eastward/northward.
 
 Operations needing a pair use reliable metadata first. A source declaration can
 fill unresolved meaning using producer evidence; contradictions fail.
@@ -164,28 +156,24 @@ Copying a native component alone does not require a pair or rotation.
 Without identifying metadata, resolve uncertainty with the producer before
 requesting an operation that needs component directions.
 
-``frameit inspect frameit.yaml --json`` records field definitions under
-``data.plan.sources.<source>.fields``, keyed by field identity.
-Each definition gives ``name`` and, for GRIB, the native ``group`` so repeated
-names on different level types remain separate. Join ``record_inventory``
-entries to these definitions using ``field_id``.
-Group labels describe native metadata. Use an explicit vertical-group request
-when distinct fields share a name; qualification must still identify one field.
-See :ref:`explicit-vertical-groups` for copyable syntax and references.
-``attributes`` contains the recorded units, CF ``standard_name``, component
-flags and ``wind_reference_frame`` when present. Missing attributes are omitted,
-not filled with assumptions. Relevant dataset-wide evidence is retained
-separately as ``dataset_attributes``.
+In ``frameit inspect frameit.yaml --json``, look under
+``data.plan.sources.<source>``:
 
-Relevant dataset-level evidence stays on its owning input entry under
-``dataset_attributes``. The report does not manufacture a resolved wind pair or
-direction label from these raw attributes.
-For example, ``GRIB_uvRelativeToGrid: 1`` records a grid-relative convention.
-This is not proof that the field is a wind:
-GRIB grid flags can also occur on scalar messages. Inspection does not select
-wind pairs, rotate components or change the configuration. Inconsistent units
-or wind flags across GRIB records of the same field/group still fail header
-inspection rather than being silently merged.
+* ``fields`` contains definitions keyed by identity. Each has a ``name`` and,
+  for GRIB, a ``group`` separating repeated names on different level types.
+  Pressure groups use ``isobaric``; units and raw GRIB level-type enums remain
+  coordinate/external metadata. Use :ref:`explicit-vertical-groups` when names
+  are ambiguous.
+* ``record_inventory`` links records to definitions through ``field_id``.
+* Field ``attributes`` retains units, CF ``standard_name``, component flags and
+  ``wind_reference_frame`` when present. Relevant dataset-wide evidence stays
+  under the owning input's ``dataset_attributes``. Missing facts remain absent;
+  conflicting evidence remains visible.
+
+Inspection does not choose a pair, rotate values or edit the request.
+``GRIB_uvRelativeToGrid: 1`` alone does not identify a wind: scalar messages can
+also carry this flag. Inconsistent units or wind flags across records of the
+same GRIB field/group fail header inspection rather than being silently merged.
 
 After declaring the pairs, run ``frameit validate`` to check them against
 available input metadata; ``--schema-only`` checks the YAML without opening inputs.

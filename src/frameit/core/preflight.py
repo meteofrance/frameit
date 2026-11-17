@@ -303,6 +303,9 @@ def _netcdf_inventory(path, source, resources):
             metadata.add(value.attrs["bounds"])
         if value.attrs.get("grid_mapping"):
             metadata.add(value.attrs["grid_mapping"])
+    from frameit.processing.wind_reference import inspect_wind_metadata
+
+    dataset_attributes = inspect_wind_metadata({}, ds.attrs).get("dataset_attributes", {})
     fields, grids, records, cache = {}, {}, [], {}
     for name in ds.variables:
         if name in metadata:
@@ -326,7 +329,8 @@ def _netcdf_inventory(path, source, resources):
                                 for sample in samples],
                 }] for coordinate in grid["coordinates"]}}
         field = {"name": name, "dimensions": list(var.dims), "dtype": str(var.dtype),
-                 "attributes": deepcopy(var.attrs), "grid_id": grid_id,
+                  "attributes": deepcopy(var.attrs), "grid_id": grid_id,
+                  **({"dataset_attributes": dataset_attributes} if dataset_attributes else {}),
                  "coordinate_names": list(grid["coordinates"]),
                  "role": "array",
                  "xarray_coordinate": name in ds.coords,
@@ -354,6 +358,7 @@ def _netcdf_inventory(path, source, resources):
                     identity_attributes = dict(identity_attributes, units=_unit_identity(units))
         field_id = _metadata_id("field_", {
             "name": name, "grid_id": identity_grid, "attributes": identity_attributes,
+            **({"dataset_attributes": dataset_attributes} if dataset_attributes else {}),
             "dimensions": [d for d in var.dims if d not in temporal_dims]})
         fields[field_id] = field
         explicit = str(var.attrs.get(
@@ -391,11 +396,9 @@ def _netcdf_inventory(path, source, resources):
                 "locator": {"format": "netcdf", "path": str(path), "variable": name,
                             "indexers": indexers,
                             "coordinate_indexers": dict(sample["indexers"])}})
-    from frameit.processing.wind_reference import inspect_wind_metadata
-
     return {"model": model,
             "physical_type": "ocean" if model in {"nemo", "croco"} else "atmosphere",
-            "dataset_attributes": inspect_wind_metadata({}, ds.attrs).get("dataset_attributes", {}),
+            "dataset_attributes": dataset_attributes,
             "profile": None, "evidence": evidence, "fields": fields,
             "native_grids": grids, "records": records}
 
@@ -888,15 +891,18 @@ def inventory_source(conf, name, *, resources=None):
         identities = {r["field_id"] for r in matching}
         if len(identities) > 1:
             definitions = [
-                {"identity": identity, "dimensions": fields[identity]["dimensions"],
-                 "group": fields[identity].get("group"), "grids": fields[identity]["grid_ids"],
+                 {"identity": identity, "dimensions": fields[identity]["dimensions"],
+                  "group": fields[identity].get("group"), "grids": fields[identity]["grid_ids"],
+                  "attributes": fields[identity]["attributes"],
+                  "dataset_attributes": fields[identity].get("dataset_attributes", {}),
                  "providers": sorted({r["locator"]["path"] for r in selected
                                       if r["field_id"] == identity})}
                 for identity in sorted(identities)]
             errors.append(f"sources.{name}: distinct fields share requested name {field_name!r}; "
                           f"conflicting fields {definitions}; "
                           "use an explicit vertical group; qualification must identify "
-                          "exactly one field")
+                           "exactly one field. For files in the same group, "
+                           "select or regenerate a consistent sequence")
         available = {r["time"] for r in matching}
         from frameit.processing.requests import initial_gap_times
 

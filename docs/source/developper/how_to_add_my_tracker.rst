@@ -71,8 +71,8 @@ Output contract
 
 ``_track_method`` must return an ``xr.Dataset`` with at least two variables:
 
-- ``cx`` — the **column** (longitude) index of the detected cyclone centre, dtype ``int``.
-- ``cy`` — the **row** (latitude) index of the detected cyclone centre, dtype ``int``.
+- ``cx`` — the **native column/x index** of the detected centre, dtype ``int``.
+- ``cy`` — the **native row/y index** of the detected centre, dtype ``int``.
 
 Both must share a ``time`` coordinate aligned with ``ds["time"]``.
 Trackers may additionally return continuous ``lon(time)`` and ``lat(time)``

@@ -313,6 +313,8 @@ exec "$@"
 def test_independent_checker_uses_product_clocks_and_optional_track(tmp_path, polar, track):
     from frameit.testing.documentation_example import create_tutorial_inputs
 
+    if polar:
+        pytest.importorskip("xesmf")
     create_tutorial_inputs(tmp_path / "data", translating=True)
     raw = yaml.safe_load((ROOT / "example/tutorials/analytic-moving.yaml").read_text())
     if not polar:

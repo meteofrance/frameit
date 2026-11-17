@@ -289,6 +289,8 @@ finally:
     assert support["tracking"]["multifield_vortex"]["maturity"] == (
         "experimental_native_grid_adaptation")
     assert set(support["tracking"]["utrack"]["dependencies"]) == {"torch", "utrack"}
+    assert support["tracking"]["utrack"]["models"] == ["arome"]
+    assert support["tracking"]["utrack"]["v3_execution"] is False
     assert "weights" in str(support["tracking"]["utrack"]["inputs"])
     assert support["products"]["polar"]["dependencies"] == ["xesmf", "ESMF"]
     assert set(support["products"]) == {"model_grid", "polar", "track"}
@@ -296,6 +298,14 @@ finally:
     assert "spectral" in str(support["sources"]["arome"]["limits"])
     assert "not scientific qualification" in support["dependency_check"]
     assert not list(tmp_path.iterdir())
+
+
+def test_fixture_command_help_has_no_archive_specific_track_name():
+    result = subprocess.run(
+        [sys.executable, "-m", "frameit", "prepare-ci-dataset", "--help"],
+        capture_output=True, text=True, check=True)
+    assert "recipe's prescribed track file" in result.stdout
+    assert "CHIDO" not in result.stdout
 
 
 def test_editor_schema_is_generated_from_shared_structural_definitions():

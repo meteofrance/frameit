@@ -75,8 +75,13 @@ class FrameitRunner:
     def __enter__(self):
         return self
 
-    def __exit__(self, *exc):
-        self.close()
+    def __exit__(self, exc_type, exc, traceback):
+        try:
+            self.close()
+        except Exception as error:
+            if exc is None:
+                raise
+            exc.add_note(f"Input cleanup also failed: {type(error).__name__}: {error}")
 
     @property
     def output_dir(self) -> Path:

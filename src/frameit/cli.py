@@ -231,7 +231,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--track-file",
         type=Path,
         default=None,
-        help="Override source/MNH/IBTracks_reunion_CHIDO.nc",
+        help="Override the recipe's prescribed track file",
     )
 
     pm = sub.add_parser(

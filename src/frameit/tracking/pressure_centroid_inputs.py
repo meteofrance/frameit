@@ -13,7 +13,12 @@ import xarray as xr
 
 from frameit.processing.requests import selected_native_indices
 from frameit.processing.wind_collocation import prepare_native_mnh
-from frameit.processing.wind_reference import pair_definition, rotation_angle, validate_pair_frame
+from frameit.processing.wind_reference import (
+    MESONH_PROJECTION_METADATA,
+    pair_definition,
+    rotation_angle,
+    validate_pair_frame,
+)
 from frameit.utils.units import convert_units, normalize_geography, unit_metadata
 
 HEIGHT_FORMULA = "z(n,k,j,i)=s(k)*(height-orog(j,i))/height+orog(j,i)"
@@ -197,7 +202,10 @@ def selected_mnh_metadata(source, conf, resources):
     from frameit.io.netcdf_utils import normalize_netcdf_time
 
     names = {"PABST", "PRES", "UT_ZM", "VT_ZM", "UT", "VT", "ALT",
-             "MSLP", "UM10", "VM10"}
+              "MSLP", "UM10", "VM10"}
+    geometry = set(MESONH_PROJECTION_METADATA)
+    geometry.update(pair["rotation"]["coordinate"] for pair in conf.wind_pairs
+                    if (pair.get("rotation") or {}).get("coordinate"))
     for field in source["fields"].values():
         if field["name"] in names:
             names.update(field.get("dependencies", {}))
@@ -217,7 +225,8 @@ def selected_mnh_metadata(source, conf, resources):
             indexers = local[0]["locator"]["coordinate_indexers"]
             if any(r["locator"]["coordinate_indexers"] != indexers for r in local):
                 raise ValueError("Tracker inputs have conflicting native sample axes")
-            part = original[list(variables)].isel({dim: [i] for dim, i in indexers.items()})
+            part = original[list(variables | (geometry & set(original.variables)))].isel(
+                {dim: [i] for dim, i in indexers.items()})
             parts.append(normalize_netcdf_time(part, conf))
         sequence.append((str(stamp), xr.merge(parts, join="exact", compat="identical",
                                             combine_attrs="no_conflicts")))

@@ -69,7 +69,7 @@ def test_validate_reports_a_copyable_input_dependent_radial_minimum(
 @pytest.mark.parametrize("units,interface_values,mass_values", [
     ("m", [10., 0.], [15., 5.]), ("km", [.01, 0.], [.015, .005]),
 ])
-def test_grouped_interface_values_keep_native_w_and_corresponding_mass_targets(
+def test_grouped_interface_indices_keep_native_w_and_corresponding_mass_targets(
         tmp_path, w_only, units, interface_values, mass_values):
     from .test_grid_representations import native_scene
 
@@ -77,7 +77,7 @@ def test_grouped_interface_values_keep_native_w_and_corresponding_mass_targets(
     native_scene().to_netcdf(path)
     before = path.read_bytes(), path.stat().st_mtime_ns
     groups = {"level_w": {
-        "names": ["WT"], "levels": {"values": interface_values, "units": units}}}
+        "names": ["WT"], "levels": {"indices": [2, 1], "units": units}}}
     if not w_only:
         groups["level"] = {
             "names": ["UT", "VT"], "levels": {"values": mass_values, "units": units}}
@@ -145,28 +145,21 @@ def test_polar_accepts_registry_geographic_degree_spellings_without_rounding(uni
     xr.testing.assert_identical(geographic_degrees(coordinate), coordinate)
 
 
-def test_original_mnh_physical_value_catalogue_binds_without_selector_substitution(tmp_path):
+def test_original_mnh_physical_value_catalogue_rejects_incompatible_destination_values(tmp_path):
     from frameit.testing.catalog import load_cases, resolve_case
     from frameit.testing.datasets import ci_dataset_root
 
     case, = load_cases(patterns=("mnh_chido_fixed_values_polar",))
     resolved = resolve_case(case, ci_dataset_root(), tmp_path / "out")
-    assert resolved["preflight"] == "READY", resolved["reason"]
+    assert resolved["preflight"] == "INVALID_INPUT", resolved["reason"]
+    assert "unavailable level value 0" in resolved["reason"]
     groups = resolved["config"]["sources"]["atmosphere"]["variables"]["3d"]
     assert groups["level"]["levels"]["values"] == [5., 25., 65.]
     assert groups["level_w"]["levels"]["values"] == [0., 20., 50.]
-    products = {item["role"]: item for item in resolved["expected"]["products"]}
-    assert products["model_grid"]["levels"] == {
-        "level": [5., 25., 65.], "level_w": [0., 20., 50.]}
-    assert products["polar"]["levels"] == {"level": [5., 25., 65.]}
-    from frameit.testing.checks import check_products
-
-    resolved["config"]["resources"] = {
-        "cpus": 1, "scheduler": "synchronous", "synchronous_export": True}
-    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(resolved["config"]))
-    checked = check_products(resolved, result.products)
-    assert checked["ok"], checked["reason"]
-    assert checked["reference_validation"] == "not_performed"
+    assert resolved["expected"]["levels"]["level"] == [5., 25., 65.]
+    assert resolved["expected"]["levels"]["level_w"] == [0., 20., 50.]
+    assert "products" not in resolved["expected"]
+    assert not (tmp_path / "out").exists()
 
 
 def test_model_grid_preview_uses_destination_axes_after_mass_collocation(tmp_path):

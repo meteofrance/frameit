@@ -211,7 +211,7 @@ def test_missing_projection_error_lists_parameters_and_yaml_remedy():
     with pytest.raises(ValueError) as caught:
         normalize_winds(field(), settings(definition(method="mesonh_projection")), "level")
     message = str(caught.value)
-    for text in ("u/v", "BETA", "RPK", "LON0", "input.wind_pairs", "rotation", "YAML"):
+    for text in ("u/v", "BETA", "RPK", "LON0", "sources.<name>.wind_pairs", "rotation", "YAML"):
         assert text in message
 
 
@@ -248,7 +248,7 @@ def test_explicit_mnh_earth_override_warns_preserves_evidence_and_is_idempotent(
     original = ds.copy(deep=True)
     conf = settings(definition(frame="earth"))
     operation = normalize_native_wind_units if native else normalize_winds
-    with pytest.warns(UserWarning, match="u/v.*grid.*missing.*reference_frame: earth"):
+    with pytest.warns(UserWarning, match="u/v.*grid.*missing.*Earth-relative"):
         out = operation(ds, conf, "level")
     np.testing.assert_allclose(out.u, [10, 0])
     np.testing.assert_allclose(out.v, [0, 10])

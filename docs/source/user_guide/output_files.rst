@@ -1,22 +1,18 @@
 Output files
 ============
 
-FrameIt writes NetCDF products that can be opened without FrameIt, for example
-with xarray/netCDF4, NCO or CDO. Alternatively, ``output.format: zarr`` selects
-sharded Zarr v3 directory stores, readable with compatible xarray/Zarr readers
-(not the NetCDF readers NCO/CDO). Existing scripts still need compatible variable
-definitions, dimensions, coordinates and reader support; a matching format alone
-does not make schemas or physical quantities equivalent.
+Read ``run-status.yaml`` first, then open its listed products with an ordinary
+reader. NetCDF is the default, readable with xarray/netCDF4, NCO or CDO.
+``output.format: zarr`` selects sharded Zarr v3 stores requiring compatible
+xarray/Zarr readers, not NCO/CDO.
 
-Omitted ``products`` requests model-grid fields only. Omitted ``region`` keeps
-the full domain, without calculating a centre or writing a track. Independent
-sources keep their own timestamps, grids, units and missing values; their
-clocks need not overlap. Review ``run-status.yaml`` and provenance before using
-the products. A completed run is not scientific approval.
+Each source/product has its own dataset. Sources retain their timestamps, grids,
+quantities, units and missing values; clocks need not overlap. Distinct native
+grids retain separate coordinates within a dataset. Ambiguous combinations fail
+rather than aligning or interpolating silently.
 
-Distinct admitted native grids keep their own coordinates in one source dataset.
-Colliding axes use inventoried grid identity, not implicit alignment. Unsupported
-or ambiguous combinations fail rather than dropping coordinates or interpolating.
+Existing scripts need compatible definitions, dimensions and reader support,
+not just the same file format. A completed run is not scientific validation.
 
 .. figure:: ../_static/figures/processing-products.svg
    :target: ../_static/figures/processing-products.svg
@@ -42,15 +38,15 @@ keys under ``sources``; they do not identify a model or physical type.
 An explicitly requested trajectory uses ``SIMU.track.nc``, independently of
 the field format. A centre provider alone does not request trajectory export.
 
-Native extraction does not normalize field units, rotate winds, interpolate
-or compute unrequested diagnostics. A single component can be copied without
-loading an unselected companion. Vertical-coordinate unit conversion changes
-labels and their metadata, not the physical array values or field units.
-Unresolved scientific or representation binding fails before output; an accepted
-YAML request alone does not establish that its methods are executable.
+Native extraction preserves values, scientific definitions, units, masks,
+sampling and basis; multi-file copies require consistent stored definitions
+and units. It does not rotate/relabel fields because an unused wind declaration
+exists. A single component needs no unselected companion. Explicit transforms
+make only their declared sampling, basis or unit changes; vertical-coordinate
+conversion changes labels/metadata, not field values. Unresolved operations fail.
 
 ``output.directory`` is the run root (see :doc:`configuration_file`).
-Artifacts use the same layout for ordinary runs and each matrix case::
+The run layout is::
 
     <output_dir>/
         cache/       # GRIB index files
@@ -71,11 +67,9 @@ excluded files: replacing the store would remove those paths.
 Coupled and native FA products
 ------------------------------
 
-Each source has its own model-grid dataset, for example
-``SIMU.ocean.model_grid.nc``. Independent extraction does not intersect clocks or
-regrid sources onto a common mesh. A requested operation needing shared centres
-must resolve its time association explicitly. See :doc:`fa_inputs` for coupled
-and FA-specific method limits.
+Independent extraction neither intersects source clocks nor creates a shared
+mesh. Operations needing shared centres require a declared time association.
+See :doc:`fa_inputs` for coupled and FA-specific limits.
 FA variables additionally carry a JSON ``fa_field_descriptor`` input snapshot
 and ``fa_field_descriptor_scope``. This is a representative input-record
 description, not a combined multi-time or post-crop description. Per-file
@@ -90,11 +84,10 @@ not pressure or height coordinates; the complete coefficient axis survives
 sparse data selection without re-expanding unselected levels. See
 :doc:`Native atmospheric levels and cubes <fa_atmosphere>`.
 
-Decoder observations identify actual helper/backend versions, returned native
-masks and post-normalization full-native nonfinite counts. A count before
-cropping is not the output mask. Support labels, native undefined/IEEE NaN
-samples, extension zones and valid physical zeroes remain separate facts.
-Missing values are not converted to physical zeroes to complete an output.
+Decoder observations record helper/backend versions, native masks and full-native
+nonfinite counts after normalization. A pre-crop count is not the output mask.
+Support labels, undefined/IEEE NaN samples, extension zones and valid zeroes remain
+distinct; missing values are never filled with zero.
 
 ``sources.<id>.fa_decoder.payload_reads`` identifies actual read calls by source
 basename and native field. Decoder JSONL logs retain individual requests and
@@ -113,68 +106,53 @@ settings and :doc:`ocean_netcdf` for ocean-specific conventions.
 Completion, provenance and ordinary readers
 -------------------------------------------
 
-GRIB indexes are stored in ``cache/``, never beside the input files. Cache
-filenames distinguish input paths and cfgrib indexing keys. Meso-NH NetCDF
-loading does not create disk indexes; its processing caches remain in memory.
-Normal execution atomically publishes each complete NetCDF/YAML file through a
-same-directory temporary file. Interrupted attempts can retain complete earlier
-products or hidden ``*.partial`` files. The authoritative completion record is
-``run-status.yaml`` (schema version 1). Running checkpoints record successful
-publications; the final state is written after export and input cleanup.
-It lists relative product paths, byte sizes, tracking completeness, execution
-limits, package/native-backend versions and selected Slurm metadata. Scientific
-provenance also records versions and code revision/dirty state when available.
-``planned_products`` describes intent; ``products`` lists complete publications
-observed by the parent. ``pending`` retains unresolved processing, publication
-or cleanup phases. ``updated_at`` is the last checkpoint time, not a heartbeat.
-Its ``layouts`` section records selected-reader and product chunk applications,
-dimensions and uncompressed array sizes. Published field descriptors record
-the actual reopened storage layout. Array estimates exclude unresolved decoder,
-backend and processing workspace; they are not process-memory limits.
-Sizes and paths are not content checksums. ``completed`` means the requested
-execution finished; a permitted shortened track is marked ``incomplete``.
-With the default ``region.tracker.on_incomplete: error``, an incomplete track fails
-before export. Missing final status, a failed state or an abnormal process exit
-must not be inferred successful from the presence of one file. Atomic publication
-is per product, not an all-products transaction or an fsync durability guarantee.
-See :doc:`/getting_started/hpc` for states, ownership and retry policy.
-
-Read the last-recorded result without reopening the original archive:
+Check status after a normal process exit. Read the last recorded result without
+reopening the source archive:
 
 .. code-block:: bash
 
    frameit status ./results
 
-The summary distinguishes actual publications from plans and shows recorded
-fields/paths, warnings, exclusions, failures and pending work. It does not verify
-payload values or infer process liveness from ``running``. A successful status
-command is not scientific validation.
-Recorded ``completed`` or accepted ``incomplete`` returns exit code 0.
-``running``, ``failed``, ``interrupted`` or unreadable required records returns 1.
-Syntax errors return 2.
-An accepted shortened track remains visibly incomplete.
+``completed`` means requested execution finished. An accepted shortened track is
+``incomplete``; default ``region.tracker.on_incomplete: error`` rejects it before
+export. A failed/missing final status or abnormal process exit is not success,
+even if a product exists. ``status`` returns 0 for recorded ``completed`` or
+accepted ``incomplete``, 1 for running/failed/interrupted or unreadable records,
+and 2 for syntax errors. It checks recorded state, not payload validity or liveness.
 
-The attempt captures ``run-request.yaml`` before processing. It keeps the
-original parsed YAML or mapping, operational overrides, requested execution
-options, available code identity and configuration/launch path bases. Editing
-or moving the original YAML does not change this snapshot. Runtime-only callers
-without an authored request are labelled accordingly. The record preserves
-parsed values, not YAML comments, formatting or checksums of the source archive.
+Keep these four records with the data:
 
-This request record is a metadata envelope, not a runnable configuration.
-Authored relative paths keep their original configuration base; operational
-path overrides keep their launch base. They are not relative to the output root.
-``resolved-config.yaml`` contains effective controls, but its presence does not
-mean processing completed. Available provenance is recorded early and updated as
-facts become known; unresolved facts remain explicit.
+* ``run-request.yaml`` captures parsed authored values, operational overrides,
+  execution options, available code identity and path bases before processing.
+  It is a metadata envelope, not a runnable configuration. YAML paths retain their
+  configuration base; CLI path overrides retain their launch base. Moving or editing
+  the original YAML does not change the snapshot. Comments, formatting and source
+  content checksums are not captured; runtime-only callers are identified.
+* ``resolved-config.yaml`` records effective controls, not completion.
+* ``run-provenance.yaml`` records scientific/execution facts as they become known,
+  including versions and code revision/dirty state when available. Unknown facts
+  remain explicit.
+* ``run-status.yaml`` (record version 1) inventories complete publications:
+  relative paths, byte sizes, tracking completeness, execution limits, backend
+  versions and selected Slurm metadata. ``planned_products`` is intent;
+  ``products`` lists observed complete publications; ``pending`` lists unresolved
+  processing, publication or cleanup.
 
-Keep all four records with the data. After a forced kill, the last checkpoint
-can remain ``running`` and omit a publication whose parent callback never ran.
-It is not a full archive audit. Do not delete locks, partials or backups merely
-because they look old, or infer a live process from the recorded state.
+Status ``layouts`` records reader/product chunks, dimensions and uncompressed
+array sizes; published descriptors record reopened storage layouts. Estimates
+exclude unresolved decoder/backend/workspace allocations and are not memory
+limits. Paths and sizes are not checksums. ``updated_at`` is a checkpoint, not
+a heartbeat. After a forced kill, status can remain ``running`` or miss a
+publication not yet reported by an exporter.
 
-``metadata.extra`` is serialized as the JSON global attribute
-``frameit_user_metadata_json`` for ordinary readers of either output backend.
+Complete NetCDF/YAML files are published atomically through same-directory
+temporary files. An interruption can leave earlier complete products and hidden
+``*.partial`` files. Atomicity is per file, not an all-products transaction or
+fsync durability guarantee. Do not remove locks, partials or backups merely
+because they look old. See :doc:`/getting_started/hpc` for ownership and retries.
+
+GRIB indexes stay in ``cache/``, with names distinguishing paths/index keys,
+never beside inputs. Meso-NH processing caches stay in memory.
 
 .. figure:: ../_static/figures/status-provenance.svg
    :target: ../_static/figures/status-provenance.svg
@@ -323,7 +301,7 @@ to the configured Dask/export workers. There is no universally optimal layout:
 start with defaults and measure representative selections before tuning.
 
 The :doc:`storage/resource guide <../task_guides/storage_and_resources>` includes
-the chunks/shards schematic and a bounded pilot configuration.
+a bounded pilot configuration.
 
 Completion and reading
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -365,12 +343,11 @@ Produced files
 SIMU.track.nc
 ~~~~~~~~~~~~~
 
-This file contains the fixed or moving geographical centres and track diagnostics:
+This file contains fixed or moving centres and the selected method's diagnostics:
 
 - Coordinates: ``time``
-- Data variables: center indices (for example ``cx``, ``cy``), latitude and longitude, motion estimates
-  (for example ``heading_deg``, ``speed``), and any additional diagnostic variables created by
-  ``enrich_track_with_kinematics``.
+- Data variables: native indices such as ``cx``/``cy``, latitude/longitude,
+  kinematics such as ``heading_deg``/``speed`` and method-specific diagnostics.
 
 For a single-time automatic track, ``latitude`` and ``longitude`` still identify the centre
 used by every coupled source. ``heading_deg``, ``dist`` and ``speed`` are NaN:
@@ -516,22 +493,18 @@ U/V face locations or imply a face-depth interpolation. Support arrays can remai
 much larger than the field crop and can add storage. Uncropped naming, canonical
 rho-grid axes, rho/Earth target axes and polar naming are unchanged.
 
-This regional output-schema correction can require downstream scripts to use
-the qualified names and formula links. Explicit processing and writer chunk/shard
-keys must use the actual exported dimensions, including support-only dimensions;
-unknown dimension keys fail. Storage format, compression and numerical precision
-are unchanged. No YAML syntax, level-selection rule or scientific method changed.
+Use the qualified names/formula links in downstream scripts. Processing and
+writer chunk/shard keys must use actual exported dimensions, including support-only
+axes; unknown dimension keys fail.
 
 .. _wind-grid-contract:
 
 Wind locations, reference frames and output choices
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. note::
-
-    Native model-grid copying preserves component values, units, sample locations
-    and basis. Any change needs an explicit, supported transformation.
-    Numerical conventions and qualification limits are in :ref:`wind-preparation-method`.
+Use ``transforms`` to change model-grid sampling, basis or units explicitly.
+Native copying preserves all three. Numerical conventions and qualification
+limits are in :ref:`wind-preparation-method`.
 
 **Location is not direction.** On a Meso-NH C grid, U and V are sampled on
 different horizontal faces; scalars occupy mass points. **Grid-aligned components**
@@ -562,14 +535,10 @@ unit changes are separate choices; see :doc:`configuration_file`.
 * ``basis: earth`` rotates supported pairs to eastward/northward components.
   It needs reliable pair and rotation metadata. Collocation is a separate operation.
 
-Native model-grid output preserves source sample locations, staggering, units and
-basis. Both cropped and full-domain products use the
-:ref:`public coordinate names <model-grid-coordinate-names>`. Native faces bracket
-mass points, but a geographical crop selects each native grid independently.
-It does not promise N+1 faces for N exported mass points.
-Source coordinates, including face geolocation, remain auxiliary coordinates
-on the corresponding public axes. Read each field's coordinates and retained
-source labels/indices rather than assuming literal source dimension names survive.
+Both cropped and full-domain products use the
+:ref:`public coordinate names <model-grid-coordinate-names>`, with source labels,
+indices and face geography as auxiliaries. A crop selects each native grid
+independently; it does not promise N+1 faces for N exported mass points.
 
 Tracking and polar processing prepare their own required analysis representations.
 A model-grid transform does not request the same transform for another product
@@ -681,7 +650,7 @@ The experimental binding is marked
 ``frameit_method_maturity="experimental_public_binding"``.
 Values are in m s-1, Earth-relative, with
 ``vector_basis="terminal_forward_geodesic"``: radial is outward and tangential
-clockwise in both hemispheres. At zero radius they are NaN/status4; geometry and
+clockwise in both hemispheres. At zero radius they are NaN/status 4; geometry and
 support evidence remain separate from undefined direction.
 See :doc:`../polar_projection/xESMF_proj` for flags, coverage equations,
 spacing rules, numerical-API naming and origin conventions.
@@ -708,7 +677,7 @@ promised.
 Metadata and attributes
 -----------------------
 
-FrameIt adds a minimal set of global attributes to each file:
+Global attributes identify the product and its origin:
 
 - ``Conventions`` (currently ``CF-1.8``)
 - ``title``, ``summary``, ``institution``, ``source``
@@ -741,21 +710,13 @@ NetCDF backends do not accept complex Python objects as attributes. During expor
 Compression and performance
 ---------------------------
 
-By default, the exporter applies DEFLATE compression to all data variables:
+Set ``output.writer.compression: {level: 2, coordinates: false}`` to choose
+compression. The default is level 1 on data variables, with coordinates uncompressed.
+NetCDF uses DEFLATE with shuffle; higher levels generally trade more CPU for
+smaller files. Writing also computes lazy arrays, so export time includes that work.
 
-- ``zlib=True``, ``shuffle=True``, ``complevel=<compress_level>``
-
-Notes:
-
-- Lower compression levels (for example 1) typically write faster but generate larger files.
-- Higher compression levels reduce size but increase CPU cost during export.
-- Export time is also controlled by dask materialization, because writing triggers computation of lazy arrays.
-
-Coordinates are not compressed by default. Configure storage with
-``output.writer.compression: {level: 2, coordinates: false}``. The default level is 1;
 NetCDF storage chunks are backend-selected unless ``output.writer.chunks``
-sets element counts on exported dimensions. Zarr chunk/shard rules are described
-above.
+sets element counts on exported dimensions. See `Sharded Zarr v3`_ for Zarr layouts.
 Compression is lossless. The NetCDF writer adds no quantization or requested
 reduced-precision encoding; inspect each variable's actual dtype/encoding with
 the reader rather than assuming every prepared quantity has the source dtype.

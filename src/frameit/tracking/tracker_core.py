@@ -398,7 +398,11 @@ def build_tracker_from_config(conf: SimulationConfig) -> TcTracker:
 
 def resolve_tracker_support(conf, source):
     """Resolve existing method inputs from the closed selected metadata pool."""
-    from frameit.processing.wind_reference import _metadata_frames, validate_pair_frame
+    from frameit.processing.wind_reference import (
+        MESONH_PROJECTION_METADATA,
+        _metadata_frames,
+        validate_pair_frame,
+    )
     from frameit.utils.units import unit_metadata
 
     method = conf.tracking_method
@@ -431,6 +435,12 @@ def resolve_tracker_support(conf, source):
                 mnh_wind_frames(ds, fields, conf)
             coordinates = set.intersection(*(set(ds.coords) for _, ds in sequence))
             inputs = {name: {} for name in fields.variables if name not in coordinates}
+            geometry = set(MESONH_PROJECTION_METADATA)
+            geometry.update(pair["rotation"]["coordinate"] for pair in conf.wind_pairs
+                            if (pair.get("rotation") or {}).get("coordinate"))
+            inputs.update({field["name"]: {} for field in source["fields"].values()
+                           if field["name"] in geometry
+                           and any(field["name"] in ds for _, ds in sequence)})
         if method == "pressure_centroid" and len(source["selected_times"]) < 2:
             raise ValueError("pressure_centroid requires at least two selected source times")
         conf.add_parameter(f"{method}_inputs", {

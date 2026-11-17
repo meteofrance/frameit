@@ -1,22 +1,15 @@
 Pressure-wind tracker
 =====================
 
-For setup and run checks, use :doc:`../task_guides/moving_region`.
-
-Overview
---------
-
-The pressure-wind tracker (``region.tracker.method: pressure_wind``) estimates the cyclone center at each selected time using a sequential two-stage procedure combining:
-
-1. a *pressure-based first guess* from mean sea-level pressure (MSLP),
-2. a *wind-based refinement* using the 10 m wind speed magnitude.
-
-The output contains native centre indices ``cy(time)`` and ``cx(time)``.
+Select ``region.tracker.method: pressure_wind`` to find an MSLP minimum, then
+refine it to a nearby 10-m wind-speed minimum at each selected time.
+The output ``cy(time)``/``cx(time)`` centres are native grid points, not continuous
+sub-grid estimates. For setup and run checks, use :doc:`../task_guides/moving_region`.
 
 Required input fields
 ---------------------
 
-This tracker requires the following variables to be available in the dataset:
+The atmospheric source must supply:
 
 - Mean sea-level pressure (MSLP),
 - 10 m zonal wind component,
@@ -26,8 +19,9 @@ These are internal method inputs from the atmospheric source, independent of
 its name. They obey source time selection and need not be exported. Native
 exports retain their declared field values, units and sampling.
 The selected-input path requires Earth-relative winds with unambiguous metadata
-or an explicit wind-pair declaration. Grid-relative pairs fail without supported
-explicit preparation; changing a label is not vector rotation.
+or an explicit wind-pair declaration. This tracker does not rotate grid-relative
+surface inputs, and export transforms do not prepare them for tracking. Supply
+independently prepared Earth-relative inputs; changing a label is not rotation.
 
 Algorithm
 ---------
@@ -50,39 +44,29 @@ Sequential procedure
 Initialization (t = 0)
 ^^^^^^^^^^^^^^^^^^^^^^
 
-1. **MSLP first guess**:
-   compute the global minimum of MSLP at ``t = 0``, yielding a first-guess index pair
-   ``(cy_fg, cx_fg)``.
+1. Find the global MSLP minimum, or restrict candidates with
+   `Optional initial position`_. This gives ``(cy_fg, cx_fg)``.
 
-2. **Wind refinement**:
-   build a sub-window centered on the first guess with half-width ``half_refine`` and
-   select the minimum of wind speed magnitude ``W`` inside that window.
+2. Find the minimum ``W`` within ``half_refine`` grid points of that guess.
 
-   - If the refinement sub-window contains only missing values, the wind minimum is
-     computed over the full domain.
+   If this window is all missing, search wind speed over the full domain.
 
 3. Store the resulting indices as ``(cy_0, cx_0)``.
 
 Tracking for t >= 1
 ^^^^^^^^^^^^^^^^^^^
 
-For each time step ``t = 1..nt-1``:
+At each later time:
 
-1. **Restricted MSLP search around previous center**:
-   define a search window centered on ``(cy_{t-1}, cx_{t-1})`` with half-width
-   ``half_search`` and compute the minimum of MSLP in that window.
+1. Find the MSLP minimum within ``half_search`` grid points of the previous
+   centre ``(cy_{t-1}, cx_{t-1})``.
 
-   - If this MSLP sub-window contains only missing values, the MSLP minimum is computed
-     over the full domain.
+   If this window is all missing, search MSLP over the full domain.
+   The minimum gives the pressure guess ``(cy_fg, cx_fg)``.
 
-   The corresponding minimum defines the pressure-based first guess ``(cy_fg, cx_fg)``.
+2. Find the minimum ``W`` within ``half_refine`` grid points of the pressure guess.
 
-2. **Wind refinement around the MSLP first guess**:
-   define a refinement window centered on ``(cy_fg, cx_fg)`` with half-width
-   ``half_refine`` and compute the minimum of wind speed magnitude ``W`` in that window.
-
-   - If the wind sub-window contains only missing values, the wind minimum is computed
-     over the full domain.
+   If this window is all missing, search wind speed over the full domain.
 
 3. Store the refined indices as ``(cy_t, cx_t)`` and proceed to the next time step.
 
@@ -96,11 +80,7 @@ The tracker uses two configurable square **full widths** in kilometres:
 - ``region.tracker.search_width_km = 200``: MSLP search,
 - ``region.tracker.refine_width_km = 100``: wind refinement.
 
-These windows are converted into grid-point half-widths using resolved native
-grid geometry. Grid spacing is inferred before tracker construction.
-
-Given the resolved grid spacing ``grid_spacing_m`` in metres,
-the tracker computes:
+Convert full widths to index half-widths using resolved native ``grid_spacing_m``:
 
 - ``grid_spacing_km = grid_spacing_m / 1000``,
 - ``half_search = ceil(search_width_km / (2 * grid_spacing_km))``,
@@ -113,7 +93,7 @@ geodesic searches.
 Configuration and usage
 -----------------------
 
-To activate this tracker in the YAML configuration, set:
+Add this fragment to a complete atmospheric source request:
 
 .. code-block:: yaml
 

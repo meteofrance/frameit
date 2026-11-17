@@ -46,13 +46,21 @@ class DatasetResources:
     def close_from(self, start=0):
         datasets = self._datasets[start:]
         del self._datasets[start:]
+        failure = None
         for dataset in reversed(datasets):
             self._ids.discard(id(dataset))
             try:
                 dataset.close()
-            except Exception:
+            except Exception as error:
                 log.exception("Failed to close a loaded dataset")
+                if failure is None:
+                    failure = error
+                else:
+                    failure.add_note(
+                        f"Additional input cleanup failure: {type(error).__name__}: {error}")
         self._netcdf = {key: ds for key, ds in self._netcdf.items() if id(ds) in self._ids}
+        if failure is not None:
+            raise failure
 
     def close(self):
         self.close_from()
@@ -60,8 +68,13 @@ class DatasetResources:
     def __enter__(self):
         return self
 
-    def __exit__(self, *exc):
-        self.close()
+    def __exit__(self, exc_type, exc, traceback):
+        try:
+            self.close()
+        except Exception as error:
+            if exc is None:
+                raise
+            exc.add_note(f"Input cleanup also failed: {type(error).__name__}: {error}")
 
 
 def managed_loading(function):
@@ -74,8 +87,11 @@ def managed_loading(function):
         start = len(registry._datasets)
         try:
             result = function(*args, resources=registry, **kwargs)
-        except BaseException:
-            registry.close_from(start)
+        except BaseException as error:
+            try:
+                registry.close_from(start)
+            except Exception as cleanup:
+                error.add_note(f"Input cleanup also failed: {type(cleanup).__name__}: {cleanup}")
             raise
         if owned:
 

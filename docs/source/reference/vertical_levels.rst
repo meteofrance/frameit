@@ -4,28 +4,32 @@ Vertical level selection
 Selection retains input samples; it does not interpolate new layers. Omitted
 ``levels`` retains every input level in its original order.
 
-Physical domain and input boundaries
-------------------------------------
+.. _physical-domain-and-input-boundaries:
 
-Some models include halo or boundary levels used by their numerical scheme.
-``levels: {domain: physical}`` excludes those levels only when the adapter has
-producer metadata identifying the physical range. It is not a height threshold
-or a test for finite values. Without that evidence, physical-domain selection
-fails. Pressure-level GRIB axes have no additional vertical halo.
+Choose a selector
+------------------
 
-Indices refer to the original selectable axis, counting from zero. Lists keep
-their requested order. Inclusive index/value intervals keep grid order.
-Duplicate, unavailable or ambiguous selections fail; selecting one level keeps
-a length-one vertical axis.
+Use one selection strategy:
+
+* ``indices: [0, 2]`` selects original zero-based positions. An inclusive
+  range uses ``indices: {start: 0, end: 10, step: 2}``.
+* ``values: [850, 700]`` selects existing labels. An inclusive interval uses
+  ``values: {min: 700, max: 850}``; endpoints need not be stored labels.
+* ``domain: physical`` excludes model halo/boundary levels only when producer
+  metadata identifies the physical range. Without that evidence, selection fails.
+  This is not a height or finite-value threshold. Pressure-level GRIB axes have
+  no additional vertical halo.
+
+Lists keep requested order; intervals keep grid order. Duplicate, unavailable
+or ambiguous selections fail. One selected level keeps a length-one vertical axis.
 
 Groups and units
 ----------------
 
-Use the group names reported by inspection. FrameIt identifies pressure groups
-as ``isobaric``; the coordinate units distinguish Pa from hPa. External GRIB
-level-type identifiers remain decoder/provenance metadata, not YAML group names.
-NetCDF groups otherwise follow their selectable vertical dimensions; native FA
-cubes use ``level`` or ``level_w``.
+Use group names reported by ``frameit inspect``. Pressure groups use ``isobaric``;
+coordinate units distinguish Pa from hPa. Raw GRIB level-type identifiers are
+external decoder/provenance metadata, not YAML group names. NetCDF groups follow
+their selectable vertical dimensions; native FA cubes use ``level`` or ``level_w``.
 
 Grouped requests use ``group.field`` everywhere a field is referenced, including
 wind pairs, transforms, derived inputs and product filters. Exported grouped
@@ -37,6 +41,21 @@ For example, 850 hPa selects an existing 85000 Pa label and exports 850 hPa.
 Coordinate bounds and range metadata use the same conversion; field values and
 their units do not change. ``levels: {units: hPa}`` converts without subsetting.
 Without requested units, each coordinate retains its own units.
+
+For an input whose height group is ``height`` and whose ``temperature`` field
+has existing 10 m and 1000 m coordinates:
+
+.. code-block:: yaml
+
+   variables:
+     3d:
+       height:
+         names: [temperature]
+         levels: {values: [0.01, 1.0], units: km}
+
+This selects those two samples and exports their labels in kilometres; it does
+not interpolate. Height group and field names are input-specific: replace them
+with the names reported by inspection.
 
 Value selection across axes with different known units needs explicit units.
 An input coordinate without units is not silently rescaled: requested units
@@ -76,6 +95,12 @@ Each product applies the selector on its own representation. An explicit
 mass-point transform selects on the destination grid. Native W index 5 is an
 interface; mass-point W index 5 is a different sampling location. A model-grid
 transform does not also remap polar W.
+
+For example, a mass-point request for 5 m selects the existing 5 m mass label;
+an interface-only 10 m label is not silently replaced by a 15 m mass label.
+This also applies to qualified fields such as ``level_w.WT``. Use explicit
+indices for corresponding native/mass positions, or separate requests when
+the products need different physical-value selections.
 
 Native brackets needed for a remap remain internal reads, not additional
 exported levels or times. See :ref:`wind-grid-contract` for locations and

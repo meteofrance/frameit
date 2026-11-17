@@ -23,8 +23,8 @@ def mnh_error(context, detail):
         "LVAR_RS=.TRUE., LWIND_ZM=.TRUE. write UT_ZM/VT_ZM; LMSLP=.TRUE. writes MSLP.\n"
         "Include the surface diagnostics for your MNH/SURFEX setup. Retain physical "
         "levels bracketing 850, 700 and 500 hPa. Declare both wind pairs and any rotation "
-        "using input.wind_pairs. Declare the model's constant gravity as "
-        "tracking.multifield_vortex.mnh_gravity_m_s2 to convert geometric altitude "
+        "using sources.<name>.wind_pairs. Declare the model's constant gravity as "
+        "region.tracker.mnh_gravity_m_s2 to convert geometric altitude "
         "to geopotential height. Check the DIAG instructions for your MNH version."
     )
 

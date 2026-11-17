@@ -1055,7 +1055,11 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
     from frameit.core.preflight import _metadata_id
     from frameit.processing.derived.wind import align_wind_pair
     from frameit.processing.wind_collocation import collocate_mnh_component, staggered_support
-    from frameit.processing.wind_reference import _metadata_frames, operation_pair
+    from frameit.processing.wind_reference import (
+        _metadata_frames,
+        operation_pair,
+        wind_frame_override,
+    )
 
     exports = request["exports"]
     active = {}
@@ -1286,7 +1290,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                             f"{field_name}: only admitted W quantities support mass remapping")
                     prepared[field_name] = collocate_mnh_component(
                         value.reset_coords(drop=True), geometry, conf, vertical=vertical_w)
-            pair = None
+            pair, override = None, None
             if "u" in inputs and "v" in inputs and not croco:
                 u, v = inputs["u"], inputs["v"]
                 align_wind_pair(prepared[u], prepared[v])
@@ -1303,6 +1307,9 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 if source["format"] == "grib":
                     rotation_settings.name_lat_dim, rotation_settings.name_lon_dim = "y", "x"
                 pair = operation_pair(headers, source, (u, v), rotation_settings)
+                override = wind_frame_override(headers, pair, rotation_settings)
+                if override:
+                    binding["warnings"].append(override)
             anchor = next(iter(inputs.values()))
             result = prepared[anchor]
             result_geometry = geometry.assign_coords({
@@ -1339,19 +1346,6 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 "transforms": [{"fields": [anchor], "sampling": operation["sampling"]}],
                 "polar_options": {anchor: {"sampling": operation["sampling"]}},
             }
-            _, group, selector = field_selection(native, anchor)
-            if (source["model"] == "mesonh" and operation["sampling"] == "mass"
-                    and group == "level_w" and anchor_axis is not None
-                    and axis is not None and axis["dimension"] != anchor_axis["dimension"]
-                    and "values" in selector):
-                native_levels = _bind_vertical(
-                    anchor_axis, selector, f"{loc}: native {group}", binding["warnings"])
-                mass_selector = {**selector, "indices": native_levels["source_native_indices"]}
-                del mass_selector["values"]
-                # Qualified interface values retain the established native-index mass mapping.
-                result_request["groups"] = {
-                    **native["groups"], group: {
-                        **native["groups"][group], "levels": mass_selector}}
             result_binding = bind_requests(
                 local, result_request, representations={
                     product: {anchor: {records[anchor][0]["grid_id"]: representation}}})
@@ -1392,6 +1386,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
             binding["representation_grids"][grid_id] = destination
             planned = {
                 **deepcopy(operation), "name": name, "product": product,
+                **({"wind_reference_frame_override": override} if override else {}),
                 "inputs": inputs, "input_binding": support, "pair": pair,
                 "vertical": selected, "grid_id": grid_id,
                 "grid": destination, "geometry": {
@@ -1598,14 +1593,16 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                              "dependencies cannot widen files or times")
         if len(identities) > 1:
             definitions = [{"identity": identity, **{
-                key: source["fields"][identity].get(key) for key in ("dimensions", "grid_ids")},
+                key: source["fields"][identity].get(key) for key in (
+                    "dimensions", "grid_ids", "attributes", "dataset_attributes")},
                 "providers": sorted({r["locator"]["path"] for _, r in candidates
                                      if r["field_id"] == identity})}
                 for identity in sorted(identities)]
             raise ValueError(f"{context}: distinct fields share requested name {name!r}; "
                              f"conflicting fields {definitions}; "
                               "use an explicit vertical group; qualification must identify "
-                              "exactly one field")
+                               "exactly one field. For files in the same group, "
+                               "select or regenerate a consistent sequence")
         field_id = next(iter(identities))
         # Generated method support keeps its native key and independent selector.
         if any(field_id == value[0] and name not in generated and other not in generated

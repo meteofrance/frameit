@@ -37,8 +37,8 @@ sources:
       # Inspection declaration only: confirm the actual producer Earth model.
       earth_radius_m: 6371229.0
     field_metadata:
-      # Explicit source-unit/time declarations requiring review. Labels do not
-      # repair codec scaling. Supplied real T2M fails missing scaling; no fallback.
+      # Review source units/time support. Unresolved scaling fails by default;
+      # an identity fallback needs independent producer/release-specific evidence.
       SFX.T2M:
         units: K
         kind: continuous

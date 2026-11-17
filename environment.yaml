@@ -15,7 +15,7 @@
 #
 # FrameIt and its maintained FA extra are installed from this checkout below.
 # One Python-3.13 environment supplies GRIB/NetCDF/Zarr/ESMF and EPyGrAM. FA still runs
-# in fresh isolated subprocesses using that Python; omit input.fa.python_executable.
+# in fresh isolated subprocesses using that Python; omit sources.<name>.reader.python_executable.
 # Conda owns the shared NetCDF/HDF5/ecCodes stack. Exact Python-package versions
 # satisfy unmodified EPyGrAM 2.1.0 requirements, preventing pip replacements.
 # Qualification uses Conda's resolved serial ESMF/shared NetCDF/HDF5 stack.

@@ -13,8 +13,6 @@ from frameit.core.configuration import resolve_schema
 from frameit.core.execution import ExecutionOptions, execute_simulation
 from frameit.core.preflight import collect_preflight
 from frameit.core.settings_class import SimulationConfig
-from frameit.io.loader import DatasetResources
-from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
 from frameit.tracking.multifield_inputs import canonical_inputs, inspect_inputs, iter_fields
 from frameit.tracking.multifield_vortex import (
     PARAMETERS,
@@ -383,27 +381,36 @@ def test_structural_quality_checks_and_mask_support(tmp_path):
                          VortexOptions(max_separation_km=200))[0] == 5
 
 
+def test_mnh_input_error_names_current_scientific_controls():
+    from frameit.tracking.multifield_inputs import mnh_error
+
+    message = str(mnh_error("fixture.nc", "missing pressure/height support"))
+    assert "sources.<name>.wind_pairs" in message
+    assert "region.tracker.mnh_gravity_m_s2" in message
+
+
 def test_mnh_per_file_pressure_and_height_units_are_normalized(tmp_path):
+    from frameit.tracking.pressure_centroid_inputs import prepare_mnh_inputs
+
     source, _ = vortex(n=41)
     source.isel(time=[0]).to_netcdf(tmp_path / "native0.nc", engine="h5netcdf")
     other = source.isel(time=[1]).copy()
     other["PABST"] = (other.PABST / 100).assign_attrs(units="hPa")
     other["ALT"] = (other.ALT / 1000).assign_attrs(units="km", standard_name="altitude")
     other.to_netcdf(tmp_path / "native1.nc", engine="h5netcdf")
+    original = {path: path.read_bytes() for path in tmp_path.glob("native*.nc")}
     conf = SimulationConfig.from_mapping_with_model_preset(document(tmp_path))
     preview = collect_preflight(conf)
-    assert not preview.errors, preview.errors
-    resolve_tracker_support(conf, preview.facts["sources"]["atmosphere"])
-    with DatasetResources() as resources:
-        _, tree = concat_nc2ds_by_vert_coord(
-            sorted(tmp_path.glob("native*.nc")), {}, {"multifield_vortex": {}},
-            method="multifield_vortex", wind_conf=conf, resources=resources)
-        loaded = tree["multifield_vortex"]["native"]
-        np.testing.assert_allclose(loaded.pressure[0], loaded.pressure[1], rtol=1e-14)
-        assert loaded.pressure.attrs["units"] == "Pa"
-        assert loaded.height.attrs["units"] == "m"
-        heights = loaded.height.broadcast_like(loaded.pressure)
-        np.testing.assert_allclose(heights[0], heights[1], atol=1e-12)
+    assert preview.errors
+    assert "inconsistent fields, units or native coordinates" in str(preview.errors)
+    assert "regenerate a consistent diagnostic sequence" in str(preview.errors)
+    first = prepare_mnh_inputs(source.isel(time=[1]))
+    second = prepare_mnh_inputs(other)
+    np.testing.assert_allclose(first.pressure, second.pressure, rtol=1e-14)
+    assert second.pressure.attrs["units"] == "Pa"
+    assert second.height.attrs["units"] == "m"
+    np.testing.assert_allclose(first.height, second.height, atol=1e-12)
+    assert {path: path.read_bytes() for path in original} == original
 
 
 @pytest.mark.parametrize("model", ["arome", "mesonh"])

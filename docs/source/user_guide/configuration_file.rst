@@ -6,6 +6,9 @@ choices belong under ``sources``. Shared geographical and output choices belong
 at the top level. Paths in the YAML are relative to that file's directory,
 including auxiliary files and the output directory.
 
+Start with the example below. For every public key and its alternatives, use the
+:doc:`annotated all-options reference <../reference/all_keys>`.
+
 Minimal example
 ---------------
 
@@ -41,10 +44,10 @@ Check the same request before running it:
    frameit validate frameit.yaml --json
    frameit validate frameit.yaml --schema-only --json
 
-Schema-only checks the controls without opening inputs. Ordinary validation
-inspects metadata, needed coordinates and required dependencies, including
-declared static analysis support. It does not validate requested scientific
-field values. Execution-dependent checks remain deferred.
+``--schema-only`` checks controls without opening inputs. Ordinary validation
+checks metadata, coordinates, dependencies and declared static analysis support.
+It does not check requested scientific field values; execution-dependent checks
+remain deferred.
 
 The JSON report has ``report_version: 1``, ``command``, ``status``, ``data``,
 ``warnings``, ``errors`` and ``deferred_checks``. Standard output contains one
@@ -52,10 +55,9 @@ document; logs go to standard error. An error report exits nonzero.
 ``data`` separates effective ``configuration``, ``origins``, ``inputs``, ``plan``
 and ``pending`` facts. Pending metadata is not a completed configuration choice.
 
-Errors identify affected keys/files, YAML locations, expected and observed facts,
-and possible repairs. Independent errors are collected together; checks blocked
-by another error are not reported as passed. A successful schema or metadata
-check is not proof of scientific validity. See :doc:`../troubleshooting`.
+Errors identify keys/files, YAML locations, expected/observed facts and possible
+repairs. Blocked checks are not passes. Successful validation does not establish
+scientific validity. See :doc:`../troubleshooting`.
 
 Authored and effective views
 ----------------------------
@@ -69,16 +71,14 @@ Use the same file for inspection, validation and execution:
    frameit config show frameit.yaml --json
    frameit config show frameit.yaml --effective --json
 
-Plain ``config show`` presents the authored mapping without adding defaults.
-Its JSON view converts YAML dates/timestamps to ISO strings and sets to arrays.
-Binary values use ``{"hex": "..."}``. Non-finite numbers use
-``{"nonfinite": "..."}``, with ``"nan"``, ``"inf"`` or ``"-inf"`` as the value.
-Object keys become strings.
-The YAML view keeps the parsed YAML values.
+``config show`` shows the parsed request without defaults. Its YAML view keeps
+parsed values. The JSON view uses ISO strings for dates/timestamps, arrays for
+sets, string keys, ``{"hex": "..."}`` for binary values and
+``{"nonfinite": "nan"}`` (or ``"inf"``/``"-inf"``) for nonfinite numbers.
 
-``--effective`` checks metadata and separates resolved settings, their origins,
-observed inputs, the plan and pending checks. Neither view rewrites the file.
-Inspection accepts unfinished field selections and reports available selectors.
+``--effective`` adds metadata checks, resolved settings, origins, observed inputs,
+the plan and pending checks. Neither view rewrites the file. ``inspect`` accepts
+unfinished field selections and reports available selectors.
 
 ``validate``, ``run`` and ``config show --effective`` accept
 ``--output-directory``, ``--cpus``, ``--overwrite`` or ``--no-overwrite``, and
@@ -101,11 +101,10 @@ Capabilities and editor assistance
    frameit capabilities --json
    python -c "from importlib.resources import files; print(files('frameit').joinpath('schemas/config-v3.schema.json'))"
 
-Capabilities describe implemented support, required inputs/dependencies and
-method limits. The packaged version-3 JSON Schema supports editor checks of
-configuration structure. Point your editor's schema setting at the displayed
-file; it is not a new YAML control. Input-dependent field names, units, geometry
-and scientific eligibility still require inspection and validation.
+Use ``capabilities`` to check support, dependencies and method limits. Point your
+editor's schema setting at the displayed JSON Schema file to check structure;
+do not add it as a YAML control. Field names, units, geometry and scientific
+eligibility still require input inspection and validation.
 
 .. _starter-catalogue:
 
@@ -192,25 +191,25 @@ Selections restrict scientific reads for extraction and internal calculations,
 including tracking. A method needing unavailable times fails rather than
 expanding the selection.
 
-Missing required records fail by default. A source may explicitly list
-``allow_initial_gaps: [field_name]`` for selected GRIB/NetCDF fields that are
-wholly absent at its first selected time. Later real records must establish the
-field's identity, units and unchanged grid, with that grid independently present
-at the initial time. For a two-dimensional GRIB field, this proves horizontal
-geometry without equating different level types. Layered fields still require
-the native vertical grid and all sample-axis contexts. The clock is retained and
-absent values stay missing.
-This does not permit later gaps, missing levels, ambiguous providers or absent
-tracker/derived-input support. The effective plan records each permitted absence;
-no physical source record or accumulation interval is invented.
-A gap-enabled field without a native time dimension gains an output time axis
-over its real available samples before the absent initial value is added.
-On these sources, model-grid output keeps GRIB temporal evidence in field-prefixed
-coordinates, for example ``u_GRIB_startStep``. Interval fields use a field-specific
-auxiliary time and bounds. Absent interval evidence stays missing rather than
-borrowing another field's interval. Multi-field polar output uses the same
-field-owned convention: shared ``time`` does not inherit one field's bounds.
-Single-field polar output retains its native time-bounds link.
+Missing required records fail by default. To retain a wholly absent field at the
+first selected time, explicitly list ``allow_initial_gaps: [field_name]`` on its
+GRIB/NetCDF source. The timestamp remains and the values stay missing. This needs:
+
+* later records proving the same field identity, units and grid;
+* that grid independently present at the initial time, including the vertical
+  grid and sample-axis contexts for layered fields. A 2-D GRIB field needs
+  horizontal geometry evidence, not an assumed equivalence of level types.
+
+Later gaps, missing levels, ambiguous providers and absent tracker/derived support
+still fail. The plan records permitted absences; it invents neither physical
+records nor accumulation intervals. A field without a native time axis gains one
+over its real samples before the missing initial value is added.
+
+Temporal evidence remains field-owned. Model-grid GRIB coordinates use prefixes
+such as ``u_GRIB_startStep``; interval fields use their own auxiliary time and
+bounds. Missing interval evidence stays missing. Multi-field polar output does
+not attach one field's bounds to shared ``time``; single-field output keeps its
+native time-bounds link.
 
 Variables and vertical levels
 -----------------------------
@@ -235,12 +234,10 @@ between providers. Pressure groups use ``isobaric``; coordinate metadata and
 :ref:`explicit-vertical-groups` for an example and
 :doc:`../reference/vertical_levels` for selection and shared-axis limits.
 
-For grouped Meso-NH W, ``level_w`` values identify native interfaces. Explicit
-``sampling: mass`` carries their original indices to the corresponding mass
-targets, using the same mapping as index selection. Required W brackets are
-read separately; native output keeps the selected interface labels. This is
-not nearest-level matching or a declaration that interface and mass heights
-are equal. Flat source-wide selectors still apply to each product's representation.
+Grouped and flat selectors both apply to each product's actual representation.
+With ``sampling: mass``, values match mass labels, not native interface labels.
+Use explicit indices for corresponding positions, or separate requests for
+different physical-value selections.
 
 Choose exactly one selection strategy:
 
@@ -309,11 +306,15 @@ A point guard or estimate is not a peak-memory ceiling.
 Transforms and derived fields
 -----------------------------
 
-Native copying preserves stored samples, units, grids and masks. Copying one
-wind component does not require its unselected companion or a basis declaration.
-Selecting U/V does not automatically calculate speed or radial/tangential wind.
-Native multi-file copies require consistent stored units; they do not silently
-normalize later files to the first file's label.
+Native copying preserves stored samples, scientific definitions, units, grids,
+masks and vector basis. Across files, stored definitions and units must remain
+consistent, including file-wide wind-basis evidence inherited by the fields.
+Conflicting files must be excluded or regenerated as a consistent sequence;
+an unused wind-pair declaration cannot resolve that conflict.
+Method-specific unit conversion does not relax the source requirement.
+Copying one wind component needs neither its unselected companion
+nor a basis declaration. An unused ``wind_pairs`` declaration does not rotate or
+relabel native fields; selecting U/V does not request speed or radial/tangential wind.
 
 When an operation needs a wind pair, reliable metadata takes precedence.
 ``wind_pairs`` can declare ``u``, ``v`` and ``basis: grid | earth``.
@@ -330,7 +331,7 @@ Control W separately from U/V. Remapping changes sample locations, not the
 physical quantity; pressure vertical velocity remains pressure vertical velocity.
 These transforms govern model-grid exports, not tracking or polar preparation.
 
-Source ``derived`` maps an output name to an admitted ``method`` and explicit
+Use source ``derived`` to map an output name to an admitted ``method`` and explicit
 ``inputs: {u: <source reference>, v: <source reference>}``. Inputs must be distinct
 actual source fields; use qualified references for ambiguous native groups.
 ``wind_speed`` calculates horizontal speed. The experimental ``radial_wind``
@@ -352,7 +353,7 @@ model-grid fields explicitly and select these methods only in
 Active component aliases must not collide with polar coordinates or selected
 fields' quality variables, including ``radial_bearing`` and ``geometry_mapped``.
 Choose another alias if metadata validation reports a generated-name collision.
-See :doc:`../task_guides/scalars_and_vectors` for syntax and
+See :doc:`../task_guides/scalars_and_vectors` for base-component declarations and
 :ref:`explicit-polar-wind-methods` for signs, reference frame, origin and validation
 limits.
 
@@ -404,17 +405,18 @@ Field products reuse source ``variables`` and ``derived``. Optional product
 and fields are excluded. Unknown references fail; internal inputs need not be
 exported.
 
+Polar geometry
+~~~~~~~~~~~~~~~
+
 ``products.polar`` requires ``radius_km`` and a region centre provider, not a
 model-grid crop or model-grid export. Its input support is resolved separately.
 Changing only the crop must not change polar sampling.
 See :doc:`../task_guides/polar_sampling` for a complete instructional request.
 
 Optional ``radial_step_km`` defaults to native source spacing and cannot be finer.
-Input-aware ``frameit validate`` rejects a smaller step as not supported yet and
-reports a minimum usable value for the selected files. Use at least that value,
-or omit the setting to use native spacing. Schema-only validation cannot determine
-this file-dependent minimum. For a shared target, the minimum is set by the
-coarsest participating grid.
+Input-aware ``frameit validate`` rejects a smaller step and reports the minimum
+for the selected files. Use at least that value, or omit the setting. Schema-only
+validation cannot determine it. A shared target uses the coarsest participating grid.
 ``azimuth_count`` is the only angular control. Omission chooses a count from
 outer-ring native spacing. Rings run clockwise from north without a duplicate
 endpoint. The exact outer radius is included; the final interval may be shorter.
@@ -423,6 +425,9 @@ These are point samples, not area averages or conservative remapping.
 ``shared_grid: true`` opts into common target coordinates. Automatic shared
 spacing uses the coarsest participating source. Source masks, vertical axes,
 quantities and time-association choices remain distinct.
+
+Interpolation and field options
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Proven continuous fields default to bilinear interpolation; proven categorical
 fields use nearest-neighbour. Unresolved kind fails rather than being guessed
@@ -457,6 +462,9 @@ Wind speed is the magnitude of U/V sampled at polar points, not an interpolation
 of speed calculated earlier. Polar W stays native unless its own option requests
 supported mass-point remapping.
 
+Polar processing controls
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
 Advanced polar ``processing`` keys are ``chunks``, ``max_target_points``,
 ``plan_cache.entries``, ``plan_cache.max_bytes``, ``source_halo_points``,
 ``weight_zero_tolerance`` and ``profile``. Insufficient support fails.
@@ -464,8 +472,10 @@ Advanced polar ``processing`` keys are ``chunks``, ``max_target_points``,
 When false, optional polar timings and graph/RSS measurements are unmeasured;
 cache activity and retention counters remain available.
 
-Output, resources and metadata
--------------------------------
+.. _output-resources-and-metadata:
+
+Output
+-------
 
 ``output.directory`` defaults to ``./output``. ``output.overwrite`` defaults to
 false in runtime and starters. Replacement never authorizes source-data
@@ -487,6 +497,9 @@ Precision and missing values are preserved. See :doc:`output_files`.
 Storage keys use the :ref:`exported coordinate names <model-grid-coordinate-names>`,
 not source reader dimension names. Naming preserves distinct sampling grids;
 it is not a numerical remap.
+
+Resources and metadata
+-----------------------
 
 Optional ``resources.cpus`` sets the CPU budget; omission uses detected
 allocation/affinity limits. Requests above that limit fail.
@@ -514,8 +527,6 @@ remove the key instead. Empty mappings are allowed only where no required entry
 is missing. Arbitrary annotation values in ``metadata.extra`` are exempt.
 Booleans do not count as numeric sizes or integer versions.
 
-Operational precedence is CLI, then YAML, then defaults. CLI paths are relative
-to the launch directory; YAML paths remain relative to the YAML directory.
-Scientific selections stay in the YAML. Defaults, input evidence, automatic
-choices and overrides must remain distinguishable in the effective settings and
-run records.
+Effective settings and run records distinguish defaults, input evidence,
+automatic choices and overrides. Operational precedence and path bases are
+defined under `Authored and effective views`_.

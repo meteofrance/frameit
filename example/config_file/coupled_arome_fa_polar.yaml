@@ -38,9 +38,8 @@ sources:
       expected_source: {PROGRAM: AROME, VERSION: 8, BUG: 1, MASDEV: 47, BUGFIX: 0}
       earth_radius_m: 6371229.0
     field_metadata:
-      # Declarations are not codec definitions. The supplied real T2M currently
-      # fails native scaling; do not enable fallback without independent
-      # producer/release-specific justification.
+      # Unresolved scaling fails by default. An identity fallback needs independent
+      # producer/release-specific evidence; unit declarations do not define a codec.
       SFX.T2M:
         units: K
         kind: continuous

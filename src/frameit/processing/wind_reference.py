@@ -155,7 +155,7 @@ def wind_frame_override(ds: xr.Dataset, pair: dict, conf: Any) -> str | None:
         return None
     return (f"Wind pair {pair['u']}/{pair['v']}: metadata says grid-aligned, but projection "
             f"parameters are missing: {', '.join(missing)}. Trusting explicit "
-            "input.wind_pairs reference_frame: earth; no grid-to-Earth rotation is applied. "
+            "Earth-relative wind-pair declaration; no grid-to-Earth rotation is applied. "
             "The user is responsible for confirming eastward/northward component directions.")
 
 
@@ -362,7 +362,7 @@ def mesonh_projection_rotation(ds: xr.Dataset, conf: Any, rotation=None) -> xr.D
         raise ValueError(
             "mesonh_projection rotation is missing required projection metadata: "
             f"{', '.join(missing)}. "
-            "Set the known values in the YAML under input.wind_pairs[].rotation "
+            "Set the known values in the YAML under sources.<name>.wind_pairs[].rotation "
             "(BETA/LON0 in degrees, RPK dimensionless); no defaults are assumed."
         )
     beta, rpk, lon0 = (parameters[name] for name in ("BETA", "RPK", "LON0"))

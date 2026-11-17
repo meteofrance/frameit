@@ -422,6 +422,76 @@ def test_runner_reuses_netcdf_metadata_without_reading_fields(tmp_path, monkeypa
     assert set(closed) == set(range(len(opened)))
 
 
+def test_resource_close_attempts_every_callback_and_surfaces_failure():
+    closed = []
+    resources = DatasetResources()
+    for index in range(3):
+        data = xr.Dataset()
+
+        def close(index=index):
+            closed.append(index)
+            if index == 1:
+                raise OSError("registered close failed")
+
+        data.set_close(close)
+        resources.add(data)
+    with pytest.raises(OSError, match="registered close failed"):
+        resources.close()
+    assert closed == [2, 1, 0]
+
+
+@pytest.mark.parametrize("context_manager", [False, True])
+def test_failed_loading_retains_primary_error_and_reports_cleanup(context_manager):
+    from frameit.io.loader import managed_loading
+
+    data = xr.Dataset()
+
+    def close():
+        raise OSError("registered close failed")
+
+    data.set_close(close)
+
+    @managed_loading
+    def load(*, resources):
+        resources.add(data)
+        raise ValueError("primary load failure")
+
+    with pytest.raises(ValueError, match="primary load failure") as caught:
+        if context_manager:
+            with DatasetResources() as resources:
+                resources.add(data)
+                raise ValueError("primary load failure")
+        else:
+            load()
+    assert any("registered close failed" in note for note in getattr(caught.value, "__notes__", []))
+
+
+@pytest.mark.parametrize("body_failure", [False, True])
+def test_runner_context_preserves_primary_error_during_failed_cleanup(tmp_path, body_failure):
+    from frameit.core.runner import FrameitRunner
+
+    data = xr.Dataset()
+    closed = []
+
+    def close():
+        closed.append(True)
+        raise OSError("secondary backend close failure")
+
+    data.set_close(close)
+    conf = configuration(tmp_path, [tmp_path / "unused.nc"])
+    error = ValueError if body_failure else OSError
+    message = "primary processing" if body_failure else "secondary"
+    with pytest.raises(error, match=message) as caught:
+        with FrameitRunner(conf) as runner:
+            runner.resources.add(data)
+            if body_failure:
+                raise ValueError("primary processing failure")
+    assert closed == [True]
+    if body_failure:
+        assert any("secondary backend close failure" in note for note in caught.value.__notes__)
+    assert not conf.output_dir.exists()
+
+
 def test_netcdf_reuse_expires_on_close(tmp_path, monkeypatch):
     path = write_shards(tmp_path, [shard('prmsl', 1.)])[0]
     opened, closed = track_netcdf_opens(monkeypatch)

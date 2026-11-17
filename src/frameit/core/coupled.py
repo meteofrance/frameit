@@ -464,7 +464,9 @@ def _prepare_v3_regions(conf, children, plans):
             fields = {field for product, names in requests["exports"].items() for field in names
                       if product != "model_grid" or field not in mass_transforms}
             grids = {r["grid_id"] for r in source["records"] if r["name"] in fields}
-        grids.update(r["grid_id"] for r in source["records"] if r["name"] in tracker_fields)
+        # Scalar tracker metadata has no geographical footprint.
+        grids.update(r["grid_id"] for r in source["records"] if r["name"] in tracker_fields
+                     and source["native_grids"][r["grid_id"]]["dimensions"])
         for grid_id in grids:
             if set(requests["exports"]) == {"polar"} and not tracker_fields:
                 binding = source.get("field_binding")
@@ -1070,7 +1072,10 @@ def run_native_sources(runner, *, benchmark=False):
                         "grid_id", "preparation", "result_units", "rotation_coordinate")},
                      "source_time": str(operation["context"][0]),
                      "cycle": (str(operation["context"][1])
-                               if operation["context"][1] is not None else None),
+                                if operation["context"][1] is not None else None),
+                     **({"wind_reference_frame_override":
+                         operation["wind_reference_frame_override"]}
+                        if "wind_reference_frame_override" in operation else {}),
                      "levels": {key: operation["vertical"][key] for key in (
                          "dimension", "source_native_indices", "values", "units", "units_origin")}
                      if operation["vertical"] else None}
