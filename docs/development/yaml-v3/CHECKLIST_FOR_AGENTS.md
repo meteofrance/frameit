@@ -1433,17 +1433,17 @@ new problems. Do not repeat passed checks without a change or unresolved concern
 **Scope:** the combined branch and complete user journey. **Output:** final evidence,
 local commits, remaining limitations, and the exact next action.
 
-- [ ] Dispatch a fresh whole-branch reviewer for contract coverage, scientific/output
+- [x] Dispatch a fresh whole-branch reviewer for contract coverage, scientific/output
   meaning, installation/package behavior, failure safety, and unnecessary code.
   Dispatch a separate fresh documentation reviewer for the entire inventory after
   Task 20's edits. Neither reviewer may have authored the reviewed work.
-- [ ] Fix findings and verify their closure with the reviewers. Run the affected
+- [x] Fix findings and verify their closure with the reviewers. Run the affected
   checks and final docs/publication checks against the reviewed revision.
 - [ ] Ask the human reviewer to perform the documented tasks: sparse times and a
   singleton level, add a different physical source, polar-only output, locate/read
   results, and repair a reported error. Record their actual observations and acceptance.
   Subagent approval or a screenshot is not human usability acceptance.
-- [ ] Apply the completion gates in Section 8. If evidence or human approval is
+- [x] Apply the completion gates in Section 8. If evidence or human approval is
   missing, record the task as blocked and give the exact next action. Otherwise mark
   all tasks done, commit the final state, and hand over locally without pushing.
 

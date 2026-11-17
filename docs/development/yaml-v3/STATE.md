@@ -49,7 +49,225 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 18 | done, local evidence | lead + fresh bounded reviewer | 16 | `bd882c2`; final exact122 has58 passes; all six findings closed. No real-cluster claim. |
 | 19 | blocked | lead | 16, 18 | Installed/full-branch qualification remains unavailable; no inferred pass. |
 | 20 | wording gates verified | lead + fresh reviewers | 17, 19 | `2095dd8`; both full passes and technical closure; strict09/publication/live text pass. Restricted acceptance remains separate. |
-| 21 | blocked | lead + fresh reviewers + human | 20 | Whole-branch reviews and actual human usability acceptance. |
+| 21 | reviews closed; acceptance blocked | lead + fresh reviewers + human | 20 | Both independent review seats verified their fixes; Task19 qualification and actual human usability observations remain open. |
+
+### 17 November — six-failure disposition and tutorial polish
+
+The maintainer requested the six reader/tracker failures be checked against the
+current contract before fixing them, inline plotting code, clearer Reference
+pages, circular polar displays and a fixed-box coupled illustration. They chose
+air-temperature colours with 10 m wind vectors above SST.
+
+- Three expectations were obsolete: silently combining changing native units,
+  relabelling native copies from unused declarations, and inferring a physical
+  quantity solely from the name `w`. Replacement assertions preserve unchanged
+  native values/basis, per-file pressure/height conversion and explicit
+  incompatible-unit rejection.
+- Three defects were real: two selected Meso-NH tracker paths lost partial
+  projection metadata; the transformed-wind path omitted the explicit Earth-basis
+  override from portable provenance. Selected headers are now retained through
+  closed-pool reading; scalar metadata is not a geographical footprint.
+  Operation warnings and source provenance record actual overrides.
+- Height selection with units already works: `values: [0.01, 1.0], units: km`
+  selects the existing 10/1000 m labels without interpolating field values.
+- All nine task guides show their plotting source inline. Optional downloads
+  remain beside the code. Fixture generation no longer has a real-input
+  adaptation section. The trajectory uses three one-decimal ticks per axis.
+- Two dedicated coupled fixtures bring the generated set to fourteen files;
+  the original twelve definitions and clocks are unchanged. The 2×3 figure
+  shows three common timestamps with row-shared scales and a wind-vector key.
+  Its warm anomaly and persistent cold trail are prescribed formulas, not
+  coupled dynamics or real-producer qualification.
+- Polar plots keep north-zero/clockwise sample locations and their existing
+  component meanings. Explicit display-cell edges span zero to the requested
+  radius and exactly one circle; no exported samples are altered.
+- Connected reader/operation verification: **872 passed**,1732 warnings,251.27s.
+  Connected documentation/example/CLI verification: **168 passed**,40 passing
+  subtests,1443 warnings,160.86s. These suites overlap; do not add their totals.
+  Existing PNG smokes ran only inside unfiltered modules; their images were not
+  opened. Current Python is3.13.18 from the intended checkout.
+- Ruff comparison across the fifteen changed Python files introduces no
+  diagnostics (ten existing before/after). `git diff --check` and `pip check`
+  pass. No environment was installed or repaired.
+- Reference authoring covers all32 destinations;31 pages are edited, preserving
+  equations, anchors, defaults and limitations. Strict Sphinx02 and publication02
+  pass. Live GUI checks cover all41 changed pages at1280/320px, all nine tutorial
+  no-JavaScript fallbacks and all nine SVG drawing/text bounds. The latter caught
+  a clipped wind-key label; a renderer test failed before moving it inward.
+  The final connected rerun is **168 passed**,40 passing subtests,1443 warnings,
+  162.98s. The corrected final coupled figure is also verified live after a brief
+  GUI disconnect. Preview ownership/restart details stay in the private handover.
+- Both fresh Task21 reviews completed their initial passes: combined technical
+  branch and complete documentation/user journey, with neither reviewer an author.
+  Their findings and final verification are recorded below. Task19 full/installed
+  evidence and actual human usability acceptance remain separate gates.
+
+Verification commands, all from this worktree:
+
+```bash
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env python -B -m pytest -q src/frameit/testing/numerical/test_isobaric_group.py src/frameit/testing/numerical/test_grouped_requests.py src/frameit/testing/numerical/test_v3_grib_reads.py src/frameit/testing/numerical/test_grib_lifecycle.py src/frameit/testing/numerical/test_v3_netcdf_reads.py src/frameit/testing/numerical/test_request_selection.py src/frameit/testing/numerical/test_pressure_centroid.py src/frameit/testing/numerical/test_multifield_vortex.py src/frameit/testing/numerical/test_wind_preflight.py src/frameit/testing/numerical/test_inspect_metadata.py src/frameit/testing/numerical/test_v3_boundary_review.py src/frameit/testing/numerical/test_v3_polar_components.py src/frameit/testing/numerical/test_wind_reference.py src/frameit/testing/numerical/test_pressure_centroid_mnh.py src/frameit/testing/numerical/test_v3_operations.py src/frameit/testing/numerical/test_v3_regions.py
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env python -B -m pytest -q docs/test_tutorials.py docs/test_repository_examples.py docs/test_documentation_plots.py docs/test_check_publication.py src/frameit/testing/numerical/test_documentation_example.py src/frameit/testing/numerical/test_task_fixtures.py src/frameit/testing/numerical/test_v3_cli.py
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 conda run --no-capture-output -n frameit_env python -B -m pip check
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/tutorial-polish-02
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env python -B docs/check_publication.py build/docs-preview/tutorial-polish-02
+git diff --check
+```
+
+The first command also used
+`FRAMEIT_CI_DATA_ROOT="$PWD/build/yaml-v3-ci-fixture-01"`. Full commands,
+RED/GREEN evidence, review dispositions and retained preview ownership belong to
+this plan's ignored workspace. Nothing is pushed or merged.
+
+#### Task21 findings and final verification
+
+The technical review covers C1–C9 through connected, risk-based tracing, not every
+line of all285 branch-changed files. The separate documentation reviewer read all
+101 inventory entries, expanded to108 files including all53 RST pages, then
+checked the complete install/inspect/select/run/read/repair journey.
+
+Four Important technical findings were reproduced before fixing:
+
+1. Changing file-wide wind basis is now part of selected-field consistency
+   checking. Conflicts identify both files and inherited definitions; native
+   copying does not apply an unused declaration to hide them.
+2. Grouped W values now select the actual destination grid. The native-values to
+   mass-indices exception is removed. Existing corresponding-position tests use
+   explicit indices while retaining all numerical labels, values and tolerances.
+   The original incompatible physical-value catalogue request remains unchanged
+   and is now marked invalid, **not qualified**.
+3. Registered input-close failures are propagated after best-effort cleanup.
+   Existing primary loading errors survive with cleanup notes. The real-backend
+   callback regression retains complete publications and pending cleanup.
+4. Polar tutorial success cases require their optional backend; native cases still
+   run without it. An isolated-process check blocks xESMF imports and observes
+   three native passes/five explicit polar skips, without creating an environment.
+
+All eleven documentation findings are addressed: optional Matplotlib prerequisites,
+visible first-run plotting code and invocation, extensionless-figure refusal,
+current YAML repair keys, generic public fixture help, reusable FA scaling
+comments, accurate pressure-wind eligibility, complete inspect commands, honest
+link labels, AROME-only UTrack capability metadata with execution still disabled,
+and native x/y tracker-index terminology. No dependency was installed or made
+mandatory.
+
+Final results against the revised source:
+
+- Focused technical checks:6 wind-consistency cases,8 destination-W cases,
+  4 cleanup cases and the optional-backend subprocess regression pass. All were
+  observed failing before their root fixes. The complete bounded repair module
+  passes27 tests; the invalid catalogue is tested as rejection, not execution.
+- Connected documentation/examples/CLI: **170 passed**,40 passing subtests,
+  1443 warnings,188.94s. PNG smokes ran only inside unfiltered modules; their
+  generated images were not opened.
+- Expanded28-module source lane: **1462 passed,19 failed**,3341 warnings,403.37s.
+  All19 failing nodes also fail on untouched `e40998a`:19 failures,196 warnings,
+  13.68s,using the same environment/approved fixture and asserted baseline source
+  identity. The failing-node sets match exactly. Improved conflict diagnostics and
+  varying raw grid hashes are not concealed. This is **not a green suite** or a
+  waiver of those failures; the other previously reported cases were not all
+  reassessed.
+- Strict Sphinx03 and publication03 pass. The first-run heading changes global
+  navigation on all53 pages; all53 were checked in the live GUI at exact1280/320px
+  framed viewports(106 checks),without document overflow,missing images/alt text
+  or missing full-size figure targets. All nine tutorial SVGs are byte-identical
+  to inspected02; no new scientific figure was generated during review closure.
+- The29-file Ruff comparison introduces no diagnostics:61 existing before/after.
+  Whitespace checks pass. Python3.13.18/current source and dependency consistency
+  were checked; no installation/environment repair was attempted.
+
+Both original reviewers verified closure of their findings. Their first closure
+passes found two directly connected issues,also reproduced and fixed:
+
+- N1: the canonical configuration page still described the removed W-value
+  shortcut. It now matches the corrected vertical reference. The documentation
+  reviewer verified source and final HTML consistency.
+- T3-R1: runner context exit could replace an active processing error with a
+  cleanup error after real close failures began propagating. Context exit now
+  preserves the primary exception,adds cleanup notes,and still propagates
+  cleanup-only failures through `self.close()`. RED:one failure/one control pass;
+  final five-module lifecycle/operation/resource/collocation run: **266 passed**,
+  978 warnings,97.20s. Final focused follow-up:two passes. The technical reviewer
+  independently verified primary/cleanup controls and close dispatch.
+
+There is no open finding in either review seat's bounded closure set. That is
+**not merge/release qualification**. The266-pass follow-up is after the expanded
+1462-pass/19-failure run; neither a new whole-suite run nor a green expanded result
+is inferred. All19 baseline primary diagnostics also agree after declared
+temporary-path/raw-identity/diagnostic-detail normalization; this is not a waiver.
+
+Strict Sphinx05/publication05 pass. All HTML is byte-identical from04 to05;04
+differs from inspected03 only in the corrected configuration paragraph. That
+paragraph was rendered/read at1280/320px without overflow. A later screenshot
+capture was unavailable because the GUI window was not visible; the live preview
+is retained, and actual human acceptance remains absent. Final30-file Ruff
+comparison:65 existing diagnostics before/after,zero introduced. Source identity,
+`pip check` and whitespace checks pass.
+
+Task21 remains blocked on actual human observations/acceptance; Task19's
+full/installed qualification and unresolved failures remain open. No push or merge
+is authorized. The next human tasks are sparse times plus a singleton level,
+adding a different physical source,polar-only output,locating/reopening results
+and repairing a reported error. Record actual observations,not predicted success.
+
+Exact expanded-source command:
+
+```bash
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 FRAMEIT_CI_DATA_ROOT="$PWD/build/yaml-v3-ci-fixture-01" MPLBACKEND=Agg TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env python -B -m pytest -q src/frameit/testing/numerical/test_isobaric_group.py src/frameit/testing/numerical/test_grouped_requests.py src/frameit/testing/numerical/test_v3_grib_reads.py src/frameit/testing/numerical/test_grib_lifecycle.py src/frameit/testing/numerical/test_v3_netcdf_reads.py src/frameit/testing/numerical/test_request_selection.py src/frameit/testing/numerical/test_pressure_centroid.py src/frameit/testing/numerical/test_multifield_vortex.py src/frameit/testing/numerical/test_wind_preflight.py src/frameit/testing/numerical/test_inspect_metadata.py src/frameit/testing/numerical/test_v3_boundary_review.py src/frameit/testing/numerical/test_v3_polar_components.py src/frameit/testing/numerical/test_wind_reference.py src/frameit/testing/numerical/test_pressure_centroid_mnh.py src/frameit/testing/numerical/test_v3_operations.py src/frameit/testing/numerical/test_v3_regions.py src/frameit/testing/numerical/test_v3_task16_repairs.py src/frameit/testing/numerical/test_netcdf_assembly.py src/frameit/testing/numerical/test_v3_run_state.py src/frameit/testing/numerical/test_v3_resources.py src/frameit/testing/numerical/test_configuration_v2_1.py src/frameit/testing/numerical/test_fa_resources.py src/frameit/testing/numerical/test_fa_io.py src/frameit/testing/numerical/test_fa_contracts.py src/frameit/testing/numerical/test_metadata_preservation.py src/frameit/testing/numerical/test_grid_representations.py src/frameit/testing/numerical/test_output_layout.py src/frameit/testing/numerical/test_v3_reports.py
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/tutorial-polish-03
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env python -B docs/check_publication.py build/docs-preview/tutorial-polish-03
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env python -B -m pytest -q src/frameit/testing/numerical/test_netcdf_assembly.py src/frameit/testing/numerical/test_v3_run_state.py src/frameit/testing/numerical/test_v3_operations.py src/frameit/testing/numerical/test_v3_resources.py src/frameit/testing/numerical/test_wind_collocation.py
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env sphinx-build -q -W --keep-going -b html docs/source build/docs-preview/tutorial-polish-05
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 TMPDIR=/tmp/opencode conda run --no-capture-output -n frameit_env python -B docs/check_publication.py build/docs-preview/tutorial-polish-05
+```
+
+The documentation command above was rerun unchanged for170 passes. Baseline
+comparison used `git archive e40998a` into a fresh approved temporary directory,
+then `python -B -m pytest -q -p no:cacheprovider` with exactly the19 failed node IDs,
+baseline-only absolute source `PYTHONPATH` and the same approved fixture. The exact
+argument array,source assertion,node IDs and results are retained in this plan's
+private `task21-baseline-19.json` and comparison logs. No working-tree reset,
+installation or source-data mutation was used.
+
+Scientific/compatibility impact: corrections enforce inherited-basis consistency
+and destination-grid selection; no diagnostic method/default is added. Requests
+that relied on mapping interface values to different mass values must explicitly
+use corresponding indices or separate physical-value requests. The coupled
+scenario remains instructional. First-run/task plots require an explicit figure
+suffix and a separately supplied downstream Matplotlib installation.
+
+Docs impact: canonical configuration/vertical/status/input-method pages, repaired
+commands/help,examples,template comments and plotting instructions are updated.
+Internal plans/state have no separate user-facing interface and are not published.
+
+#### Local delivery and next action
+
+- `3a3d3ff611533f3b54400fe98a724f2c7d58afbe`: runtime/source-identity,
+  destination-selector,provenance and cleanup fixes with connected tests and
+  canonical guidance.
+- `def3c6a79110af9c2e072369cd2b576f36897a49`: copyable tutorials,explicit
+  plotting prerequisites,revised analytical figures,dedicated coupled teaching
+  fixtures and simplified Reference.
+- The accompanying internal-record commit preserves the approved design/plan,
+  final review closures and blocked gates. Exact delivery IDs and retained preview
+  ownership/restart details are in this session's private handover.
+
+Final precommit identity checks confirm all85 reviewed frozen paths,with only
+development-record changes afterward. All canonical RST matches the final05
+generated source copies. Original reports remain hash-identical. Only the three
+Task21 dispatch/fix/gate-application boxes changed in the main checklist; the human
+observations/acceptance box and the final whole-branch completion gates stay open.
+
+Maintainer walkthrough request: please report actual outcomes and confusion for
+sparse times plus a singleton level,adding another physical source,polar-only
+output,locating/reopening a result and repairing a reported error. No observation
+or acceptance has been received. The next agent must retain the branch/preview
+and these blocked gates,not repeat passed checks or run restricted qualification
+without authorization. Nothing is pushed or merged.
+
+Docs: no user-facing impact from this final internal-record commit because the
+development state,checklist,design and plan are excluded from publication. Public
+implementation,documentation,tests,examples and assets retain their verified
+content; no additional Sphinx build or scientific run is needed for these records.
 
 ### 17 November — analytical tutorials and pressure-group review
 
