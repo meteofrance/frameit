@@ -64,7 +64,7 @@ def test_adapter_pressure_and_wind_units_preserve_centres_and_hpa_outputs():
     height = np.stack([lower_height, lower_height + 1000.])
     times = np.array(["2022-02-01", "2022-02-01T06:00"], dtype="datetime64[ns]")
     horizontal = ("time", "latitude", "longitude")
-    vertical = ("time", "isobaricInhPa", "latitude", "longitude")
+    vertical = ("time", "isobaric", "latitude", "longitude")
     wind_attrs = {"units": "m s-1", "GRIB_uvRelativeToGrid": 0}
     ds = xr.Dataset({
         "prmsl": (horizontal, np.stack([pressure_hpa * 100] * 2), {"units": "Pa"}),
@@ -74,7 +74,7 @@ def test_adapter_pressure_and_wind_units_preserve_centres_and_hpa_outputs():
         "v": (vertical, np.broadcast_to(v, (2, 2, *v.shape)), wind_attrs),
         "z": (vertical, np.stack([height * pc.G0] * 2), {"units": "m2 s-2"}),
     }, coords={"time": times, "latitude": lat[:, 0], "longitude": lon[0],
-               "isobaricInhPa": ("isobaricInhPa", [900., 700.], {"units": "hPa"})})
+               "isobaric": ("isobaric", [900., 700.], {"units": "hPa"})})
     tracker = PressureCentroidTracker(
         {"mslp": "prmsl", "u10m": "u10", "v10m": "v10", "u": "u", "v": "v",
          "geopot": "z"}, 5000,
@@ -199,8 +199,8 @@ def test_aitken_backtracks_and_returns_current_centres(monkeypatch):
 def test_adapter_and_continuous_outputs(tmp_path):
     lon, lat, pressure, u, v = vortex()
     time = np.array(["2022-01-01T00", "2022-01-01T06"], dtype="datetime64[ns]")
-    dims = ("time", "isobaricInhPa", "latitude", "longitude")
-    ds = xr.Dataset(coords=dict(time=time, isobaricInhPa=[900., 700.],
+    dims = ("time", "isobaric", "latitude", "longitude")
+    ds = xr.Dataset(coords=dict(time=time, isobaric=[900., 700.],
                                 latitude=lat[:, 0], longitude=lon[0]))
     for name, value in (("u", u), ("v", v)):
         ds[name] = xr.DataArray(np.broadcast_to(value, (2, 2, *value.shape)), dims=dims,

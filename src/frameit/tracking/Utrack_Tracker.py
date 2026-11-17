@@ -145,7 +145,7 @@ class UtrackTracker(TcTracker):
 
         u10 = self._field(ds, "u10m")
         v10 = self._field(ds, "v10m")
-        absv = self._field(ds, "absv").isel(isobaricInhPa=0)
+        absv = self._field(ds, "absv").isel(isobaric=0)
         lat = get_latitude(ds)
         lon_name = next((n for n in ("longitude", "lon") if n in ds), None)
         if lon_name is None:

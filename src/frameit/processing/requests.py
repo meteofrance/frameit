@@ -107,7 +107,7 @@ def selected_native_indices(ds: xr.Dataset, req: dict[str, Any], vert_dim: str) 
         coord = ds.coords.get(vert_dim)
         dynamic_range = None if coord is None else coord.attrs.get("c_grid_dynamic_range")
         if dynamic_range is None:
-            if vert_dim not in {"isobaricInhPa", "isobaricInPa", "heightAboveGround",
+            if vert_dim not in {"isobaric", "heightAboveGround",
                                 "heightAboveSea"}:
                 raise ValueError(
                     f"Physical selection for {vert_dim} requires "
@@ -248,7 +248,7 @@ def build_group_ds(
         Normalized request for this group, produced by _normalize_requests.
     group_key:
         Group name. For vertical groups, it is also the vertical dimension name
-        (example: "level", "level_w", "isobaricInhPa", "heightAboveGround").
+        (example: "level", "level_w", "isobaric", "heightAboveGround").
         For surface group: use "surface".
     concat_dimension:
         Name of the time dimension to enforce on outputs (expand_dims if missing).
@@ -256,7 +256,7 @@ def build_group_ds(
         Tolerance for numeric level matching when req specifies values.
     vertical_dims:
         Set of known vertical dimensions used to identify surface variables.
-        If None, defaults to {"level","level_w","isobaricInhPa","heightAboveGround"}.
+        If None, defaults to {"level","level_w","isobaric","heightAboveGround"}.
 
     Returns
     -------
@@ -273,7 +273,7 @@ def build_group_ds(
         return None
 
     if vertical_dims is None:
-        vertical_dims = {"level", "level_w", "isobaricInhPa", "heightAboveGround",
+        vertical_dims = {"level", "level_w", "isobaric", "heightAboveGround",
                          "deptht", "depthu", "depthv", "depthw", "s_rho", "s_w"}
 
     def _warn(msg: str) -> None:
@@ -378,8 +378,8 @@ def build_group_ds(
 
 
 _VERTICAL_DIMENSIONS = {
-    "level", "level_w", "heightAboveGround", "heightAboveSea", "isobaricInhPa",
-    "isobaricInPa", "deptht", "depthu", "depthv", "depthw", "s_rho", "s_w",
+    "level", "level_w", "heightAboveGround", "heightAboveSea", "isobaric",
+    "deptht", "depthu", "depthv", "depthw", "s_rho", "s_w",
 }
 
 
@@ -704,11 +704,13 @@ def _fa_cube_axis(source, field, record, records_by_name):
 def _field_axis(source, field, record, records_by_name):
     grid = source["native_grids"][record["grid_id"]]
     if record["locator"]["format"] == "grib":
+        from frameit.io.grib_utils import GRIB_PRESSURE_UNITS
+
         group = field["group"]
         # These are adapter-identified single-height parameters, not a singleton-axis rule.
         if group in {"surface", "meanSea"} or field["attributes"].get("GRIB_paramId") in {165, 166}:
             return None
-        if group not in {"isobaricInhPa", "isobaricInPa", "heightAboveGround",
+        if group not in {"isobaric", "heightAboveGround",
                          "heightAboveSea", "hybrid"}:
             raise ValueError(f"{field['name']}: unresolved GRIB selectable axis {group!r}")
         # cfgrib's admitted coordinate convention is decreasing pressure, otherwise
@@ -716,9 +718,10 @@ def _field_axis(source, field, record, records_by_name):
         labels = np.asarray(sorted(
             {r["level"] for _, r in records_by_name[record["name"]]
              if r["field_id"] == record["field_id"]},
-            reverse=group in {"isobaricInhPa", "isobaricInPa"}))
-        units = {"isobaricInhPa": "hPa", "isobaricInPa": "Pa",
-                 "heightAboveGround": "m", "heightAboveSea": "m", "hybrid": "1"}[group]
+            reverse=group == "isobaric"))
+        units = (GRIB_PRESSURE_UNITS[field["attributes"]["GRIB_typeOfLevel"]]
+                 if group == "isobaric" else
+                 {"heightAboveGround": "m", "heightAboveSea": "m", "hybrid": "1"}[group])
         # Use this field's inventoried axis, not levels shared by horizontal geometry.
         grid = {**grid, "dimensions": {**grid["dimensions"], group: len(labels)},
                 "coordinates": {**grid["coordinates"], group: {

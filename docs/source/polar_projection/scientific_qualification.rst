@@ -14,11 +14,6 @@ clockwise.
 
    python -m frameit.testing.polar_qualification --output ./runs/polar-qualification
    python -m frameit.testing.polar_qualification --example --output ./runs/analytical-vortex
-   FRAMEIT_CI_DATA_ROOT=/path/to/ci_dataset frameit run-all-tests --output ./runs/all-tests
-
-``run-all-tests`` also requires the separately supplied, verified
-:doc:`simulation fixture <../user_guide/matrix_testing>`. Set
-``FRAMEIT_CI_DATA_ROOT`` to its absolute directory.
 
 Each output directory must be fresh or empty. The small example exports
 ``analytical-vortex.nc`` and ``example.json`` with errors, radial profiles,
@@ -110,12 +105,9 @@ support. NetCDF reloads also exercise full-ring means and FFTs.
 Cached/uncached and eager/Dask products are compared at tight tolerances. Backend
 versions and resource measurements apply to the environment recorded in the report.
 
-The AROME BATSIRAI/MNH CHIDO matrix covers fixed/moving origins, supplied tracks,
-scalar-only, U-only, V-only, speed-only, W-only, sparse levels and coarse angles.
-Its contract/norm checks complement analytical truth, not observational validation.
-Cropped CI data do not establish coverage of the pressure-centroid tracker's
-500-km reference ring; retain its dedicated tests and use full-domain inputs for
-that scientific comparison.
+Compact analytical inputs do not establish real-model validity or the wide
+coverage required by every tracker. In particular, the pressure-centroid method
+requires its documented 500-km reference ring.
 
 .. _wind-preparation-method:
 

@@ -29,7 +29,7 @@ Inputs and explicit conventions
 
 AROME requires ``prmsl``, ``u10``, ``v10``, ``u``/``v`` at 850, 700 and
 500 hPa, and geopotential ``z`` at 850 and 700 hPa. The current adapter uses
-``isobaricInhPa``. Geopotential is converted to geopotential height with
+``isobaric``. Geopotential is converted to geopotential height with
 ``g0 = 9.80665 m s-2``. A GRIB ``msl`` field is available through the canonical
 ``prmsl`` alias; the original source variable remains requestable by direct
 loader callers. Every required GRIB variable/level/time combination is checked,

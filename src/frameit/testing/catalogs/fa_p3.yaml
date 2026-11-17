@@ -65,7 +65,7 @@ priority_inputs:
     status: observed metadata; preserve Earth-relative definition
   - priority: 1
     quantity: pressure-level winds, temperature, relative humidity, geopotential
-    record: GRIB u, v, t, r, z / isobaricInhPa
+    record: GRIB u, v, t, r, z / isobaric
     selected_levels_available_hPa: [850, 700, 500]
     native_units: {u: m s**-1, v: m s**-1, t: K, r: '%', z: m**2 s**-2}
     temporal_support: instant at valid time

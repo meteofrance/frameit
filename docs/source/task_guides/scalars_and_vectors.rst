@@ -1,223 +1,82 @@
 Choose scalar and vector representations
 ========================================
 
-Field names alone do not establish quantity, sampling location or vector basis.
-Inspect :ref:`source metadata and producer conventions <wind-metadata>` before
-requesting an operation.
-
-Copy native components
------------------------
-
-This complete request copies two existing levels of one Meso-NH component.
-Replace the illustrative path, field and indices with those in your input:
-
-.. code-block:: yaml
-
-   schema_version: 3
-   run:
-     name: native-component
-   sources:
-     atmosphere:
-       model: mesonh
-       files: ./data/mnh*.nc
-       variables:
-         3d: [UT]
-         levels: {indices: [2, 0]}
-   output:
-     directory: ./results/native-component
-
-No wind pair is needed for native copying. Values, units, staggering and masks
-stay native; the unselected V component is not required. Selecting both U and V
-still does not calculate speed or radial/tangential winds.
+Copy native components or explicitly request a derived wind speed.
+Start in the directory from :doc:`generate_fixtures`.
 
 .. _declare-atmospheric-wind-pairs:
 
-Request a model-grid transform
-------------------------------
+Declare the components
+----------------------
 
-Source ``transforms`` target explicit exported fields. Sampling, vector basis
-and units are separate choices. This fragment supplements the request above,
-selecting U/V/W and moving them to mass points. It also rotates U/V to east/north
-and explicitly converts their velocity units:
+Save :download:`scalars-and-vectors.yaml <../../../example/tutorials/scalars-and-vectors.yaml>`:
 
-.. code-block:: yaml
+.. literalinclude:: ../../../example/tutorials/scalars-and-vectors.yaml
+   :language: yaml
 
-   sources:
-     atmosphere:
-       variables:
-         3d: [UT, VT, WT]
-         levels: {indices: [2, 0]}
-       wind_pairs:
-         - u: UT
-           v: VT
-           basis: grid
-           rotation: {method: mesonh_projection}
-       transforms:
-         - fields: [UT, VT]
-           sampling: mass
-           basis: earth
-           units: m s-1
-         - fields: [WT]
-           sampling: mass
-           units: m s-1
+The fixture's U/V components are collocated and Earth-relative.
+``basis: earth`` declares their east/north directions; it does not rotate values.
+The selected ``speed`` result is their magnitude in m s-1.
+Copying native components alone needs no wind pair and does not calculate speed.
 
-Here ``basis: grid`` describes stored U/V directions; ``basis: earth`` requests
-eastward/northward output. This example requires the applicable Meso-NH
-``BETA``, ``RPK`` and ``LON0``. Missing or conflicting geometry fails. Supply
-producer-confirmed parameters only; see :ref:`missing-mesonh-wind-projection`
-for the narrow existing exception and its responsibilities.
+Sampling locations, basis rotation and subtraction of centre motion are separate
+operations. See :ref:`wind-grid-contract` for native/mass locations and
+:doc:`../reference/polar` for explicitly requested polar wind methods.
 
-An explicit remap selects levels on its destination axis. Required native
-neighbours remain internal; they do not add exported levels. W remapping is
-independent of U/V rotation and does not turn pressure velocity into geometric
-velocity. Mass points are model cell centres, not fixed heights.
-The example's ``WT`` conversion to m s-1 requires geometric vertical velocity
-in compatible units. Pressure velocity in Pa s-1 cannot use that conversion;
-remapping its sample locations must retain its pressure-velocity units.
-See :ref:`wind-grid-contract` for C-grid/W diagrams and boundary rules.
+Run
+----
 
-Calculate only a requested result
----------------------------------
+.. container:: frameit-tabs
 
-This complete request calculates a speed from inspected eastward/northward
-10-m components. It does not export the input components:
+   .. container:: frameit-tab
 
-.. code-block:: yaml
+      .. rubric:: CLI
 
-   schema_version: 3
-   run:
-     name: horizontal-speed
-   sources:
-     atmosphere:
-       model: mesonh
-       files: ./data/mnh*.nc
-       wind_pairs:
-         - u: UM10
-           v: VM10
-           basis: earth
-       derived:
-         speed:
-           method: wind_speed
-           inputs: {u: UM10, v: VM10}
-   products:
-     model_grid:
-       fields: {atmosphere: [speed]}
-   output:
-     directory: ./results/horizontal-speed
+      .. code-block:: bash
 
-``wind_speed`` uses collocated, physically compatible components and reports
-m s-1. It is not ``hypot`` of two staggered face arrays. The method prepares its
-own required inputs; a model-grid export transform does not change another
-calculation, tracker or polar preparation.
-Output-name collisions, incompatible units and unavailable support fail.
-Definitions excluded from all requested products and dependencies do not execute.
+         frameit run scalars-and-vectors.yaml
 
-.. figure:: ../_static/figures/sampling-frames.svg
-   :target: ../_static/figures/sampling-frames.svg
-   :width: 540px
-   :alt: Three separate operations: choose native or polar sample locations, rotate a vector basis to east and north, and subtract frame motion only in an explicitly separate downstream calculation.
+   .. container:: frameit-tab
 
-   Schematic. Sample locations, vector basis and reference-frame motion are
-   different choices. Storm-centred polar positions do not subtract storm motion
-   from the winds.
+      .. rubric:: Python API
 
-Request a polar wind component
--------------------------------
+      .. code-block:: python
 
-In the speed request above, merge ``field_metadata`` and replace ``derived``
-under ``sources.atmosphere``. Add ``region`` and replace ``products`` as shown.
-Adapt the centre; ``vrad`` and ``vtan`` are user-chosen aliases:
+         from frameit.core.execution import execute_simulation
+         from frameit.core.settings_class import SimulationConfig
 
-.. code-block:: yaml
+         config = SimulationConfig.from_yaml_with_model_preset("scalars-and-vectors.yaml")
+         result = execute_simulation(config)
+         print(result.products)
 
-   sources:
-     atmosphere:
-       field_metadata:
-         UM10: {kind: continuous}
-         VM10: {kind: continuous}
-       derived:
-         speed: {method: wind_speed, inputs: {u: UM10, v: VM10}}
-         vrad: {method: radial_wind, inputs: {u: UM10, v: VM10}}
-         vtan: {method: tangential_wind, inputs: {u: UM10, v: VM10}}
-   region:
-     center: {latitude: -20, longitude: 60}
-   products:
-     model_grid:
-       fields: {atmosphere: [speed]}
-     polar:
-       radius_km: 2.5
-       azimuth_count: 8
-       missing_data_policy: strict
-       fields: {atmosphere: [vrad]}
-
-Only ``vrad`` is exported to the polar dataset; ``vtan`` stays inactive.
-Add it to ``products.polar.fields.atmosphere`` to request it too.
-``model_grid: true`` would also select the polar-only declarations and fail;
-combined runs must filter their model-grid fields explicitly.
-
-These methods are experimental and admit AROME GRIB/NetCDF or Meso-NH NetCDF
-atmospheric winds, not FA or ocean currents. Both inputs need matching effective
-interpolation/sampling settings and strict joint finite-source stencils;
-renormalization is rejected. Radial is outward, tangential clockwise in both
-hemispheres. Both are Earth-relative, use endpoint bearing rather than launch
-angle, and are NaN/status4 at the origin. Moving the centre does not subtract
-storm motion or change requested base/speed fields.
-See :ref:`explicit-polar-wind-methods` for equations and qualification limits.
-
-Check the result
+View the output
 ----------------
 
-Check metadata with ``frameit validate frameit.yaml`` and review
-``frameit config show frameit.yaml --effective`` before running. Reopen the
-source-qualified model-grid or polar output with an ordinary
-reader. Check each field's values, dimensions, native indices, coordinates,
-units, basis and recorded method. Internal-only companions must not appear as
-extra physical outputs.
-Public model-grid axes use the :ref:`output coordinate names
-<model-grid-coordinate-names>`. Native copying preserves sample locations and
-values, not necessarily the source file's dimension labels. Use retained native
-coordinate/index auxiliaries when you need the original source positions.
-
-Ocean component operations keep their adapter-specific angle, mask, bracket and
-quantity requirements. Atmospheric declarations do not supply missing ocean
-geometry or make currents into atmospheric winds.
-See :doc:`../user_guide/ocean_netcdf` for the admitted source limits.
-
-Run and read a selected representation
----------------------------------------
-
-For native copying, save the first complete request as ``native-component.yaml``
-and adapt the input path and confirmed native indices:
+Download :download:`plot_scalars_and_vectors.py <../../../example/plots/plot_scalars_and_vectors.py>`:
 
 .. code-block:: bash
 
-   python -m frameit inspect native-component.yaml
-   python -m frameit validate native-component.yaml
-   python -m frameit run native-component.yaml
-   python -m frameit status results/native-component
+   python plot_scalars_and_vectors.py results/scalars-and-vectors/products/scalars-and-vectors.atmosphere.model_grid.nc scalars-and-vectors.svg
 
-The field product is
-``results/native-component/products/native-component.atmosphere.model_grid.nc``:
+.. figure:: ../_static/figures/tutorial-scalars-and-vectors.svg
+   :target: ../_static/figures/tutorial-scalars-and-vectors.svg
+   :width: 480px
+   :alt: Wind-speed magnitude calculated from the generated stationary analytical vector field, in metres per second.
 
-.. code-block:: python
+   Requested speed. The exported U/V components retain their Earth-relative basis.
 
-   import xarray as xr
+.. _prepare-interface-input:
 
-   with xr.open_dataset(
-       "results/native-component/products/native-component.atmosphere.model_grid.nc"
-   ) as fields:
-       print(fields.UT.dims, fields.UT.attrs["units"])
-       print(fields.level_source_native_index.values)  # [2, 0].
+For an explicit interface-to-mass W example, the generated ``interfaces.nc``
+also works with
+:download:`analytic-interfaces.yaml <../../../example/tutorials/analytic-interfaces.yaml>`.
+Native index 1 is W=0.5 m s-1 at 500 m; its explicitly requested polar mass
+index 1 is W=1 m s-1 at 1000 m. Equal index numbers do not mean equal locations.
+See :doc:`../reference/vertical_levels` for selection on destination grids.
 
-Apply the transform fragment to that complete request only after checking its
-quantity and geometry prerequisites, and choose a fresh output directory.
-Save the speed-only request as ``horizontal-speed.yaml``. Use the same inspect,
-validate and run commands with that filename, then run
-``python -m frameit status results/horizontal-speed``. Its product is
-``results/horizontal-speed/products/horizontal-speed.atmosphere.model_grid.nc``;
-it contains ``speed`` in m s-1, not the internal U/V inputs.
+Adapt to real inputs
+---------------------
 
-If a transform reports incompatible units or missing rotation geometry, correct
-the declaration using producer evidence. Native copying remains available
-without enabling that transform. The small :doc:`analytical_event` example
-provides known values for practicing a supported interface remap.
+Replace names and verify units, staggering and vector basis from producer
+metadata. Grid-relative winds need evidenced rotation; changing a label to
+``earth`` is not a conversion. A W remap retains its physical quantity and units.

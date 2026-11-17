@@ -310,7 +310,7 @@ def test_catalog_emits_current_requests_without_legacy_conversion():
     case = next(case for case in cases if case["id"] == "arome_batsirai_fixed_polar")
     conf = SimulationConfig.from_mapping_with_model_preset(case["config"])
     variables = conf.yaml_config["sources"]["atmosphere"]["variables"]
-    assert variables["3d"]["isobaricInhPa"]["levels"] == {
+    assert variables["3d"]["isobaric"]["levels"] == {
         "values": [1000, 850, 400], "units": "hPa"}
     assert variables["3d"]["heightAboveGround"]["levels"] == {"indices": [0, 2, 5]}
     assert variables["2d"] == ["u10", "v10", "prmsl", "sshf", "slhf"]

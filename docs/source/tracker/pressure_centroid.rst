@@ -3,10 +3,9 @@ Adaptive pressure centroid
 
 Select ``region.tracker.method: pressure_centroid`` to use the adaptive pressure-deficit
 centroid of Nguyen, Molinari and Thomas (2014), DOI
-``10.1175/MWR-D-14-00044.1``. Numerical choices and the coupled motion solver
-follow the supplied ``compare_batsirai_centers_v1.4.1.py`` implementation. This
-is an independent implementation, not a bitwise reproduction of the authors'
-analysis code.
+``10.1175/MWR-D-14-00044.1``. The numerical choices and coupled motion solver
+are specified below. This is an independent implementation, not a bitwise
+reproduction of the authors' analysis code.
 
 The method finds a pressure-deficit-weighted centre and adapts the region used
 around it. It needs the physical fields and wide input coverage described below;

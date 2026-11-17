@@ -90,8 +90,8 @@ def load_cases(mode="ci", profile="full", patterns=()):
                 req["levels"] = {"indices": list(spec["indices"])}
             elif selection == "values" and spec.get("values"):
                 req["levels"] = {"values": list(spec["values"])}
-                if group in {"isobaricInhPa", "isobaricInPa"}:
-                    req["levels"]["units"] = "hPa" if group == "isobaricInhPa" else "Pa"
+                if group == "isobaric":
+                    req["levels"]["units"] = "hPa"
             elif selection == "values":
                 pending_values.append(group)
             variables.setdefault("3d", {})[group] = req
@@ -260,6 +260,8 @@ def _grib_inventory(paths, progress=None):
     import eccodes as ec
     import numpy as np
 
+    from frameit.io.grib_utils import GRIB_PRESSURE_UNITS
+
     records, coordinates, shape, geometry = [], None, None, None
     aliases = {"10u": "u10", "10v": "v10", "msl": "prmsl"}
     for index, path in enumerate(paths, 1):
@@ -310,6 +312,8 @@ def _grib_inventory(paths, progress=None):
                     ):
                         continue
                     group, level = str(get("typeOfLevel")), float(get("level"))
+                    if group in GRIB_PRESSURE_UNITS:
+                        group = "isobaric"
                     short = str(get("shortName"))
                     try:
                         name = str(ec.codes_get(handle, "cfVarName"))
@@ -431,7 +435,7 @@ def _finish_inventory(records, shape, coordinates, model):
         # u is the reference stack for GRIB coordinate order; inventories may
         # contain unrelated fields at additional levels.
         values = fields.get("u", next(iter(fields.values())))
-        levels[group] = sorted(values, reverse=group == "isobaricInhPa")
+        levels[group] = sorted(values, reverse=group == "isobaric")
     return {
         "records": records,
         "times": times,
@@ -483,7 +487,7 @@ def _check_fields(case, inventory, selected):
         names = ["u10", "v10", "prmsl"] if model == "AROME" else ["UM10", "VM10", "MSLP"]
         if tracker == "utrack":
             names = names[:2]
-            requests.setdefault("isobaricInhPa", {"variables": []})["variables"].append("absv")
+            requests.setdefault("isobaric", {"variables": []})["variables"].append("absv")
         surface = requests.setdefault("surface", {"variables": []})
         surface["variables"] = list(set(surface["variables"]) | set(names))
     for pair in source["wind_pairs"]:
@@ -799,7 +803,7 @@ def resolve_case(case, data_root, case_output, *, input_policy="strict", mode=No
                 config["region"]["center"] = point
         if value["tracker"] == "utrack":
             if any(
-                850.0 not in r["fields"].get("isobaricInhPa", {}).get("absv", set())
+                850.0 not in r["fields"].get("isobaric", {}).get("absv", set())
                 for r in inventory["records"]
             ):
                 value.update(

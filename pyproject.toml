@@ -59,6 +59,7 @@ addopts = "-ra"
 testpaths = [
     "src/frameit/testing/numerical",
     "docs/test_documentation_plots.py",
+    "docs/test_tutorials.py",
     "docs/test_repository_examples.py",
     "docs/test_release.py",
 ]

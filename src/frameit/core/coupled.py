@@ -964,7 +964,7 @@ def run_native_sources(runner, *, benchmark=False):
         consumer.conf.resolution = settings.resolution
         resolve_geometry(consumer.conf, [geometry])
         prepared = ({grid: normalize_winds(ds, consumer.conf,
-                         "isobaricInhPa" if "isobaricInhPa" in ds.dims else "surface")
+                         "isobaric" if "isobaric" in ds.dims else "surface")
                      for grid, ds in internal.items()}
                     if consumer.conf.tracking_method == "wind_pressure"
                     or consumer.conf.atm_model == "AROME" else internal)

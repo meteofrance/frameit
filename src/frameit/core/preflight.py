@@ -277,7 +277,10 @@ def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None):
 
 
 def _netcdf_inventory(path, source, resources):
-    ds = resources.open_netcdf(path, engine=source.get("reader", {}).get("engine", "h5netcdf"))
+    from frameit.io.grib_utils import normalize_isobaric_coordinates
+
+    ds = normalize_isobaric_coordinates(resources.open_netcdf(
+        path, engine=source.get("reader", {}).get("engine", "h5netcdf")))
     model, evidence = _source_model(source, [ds], path, fmt="netcdf")
     if model == "nemo":
         if "time_counter" not in ds or ds.time_counter.dims != ("time_counter",):
@@ -403,6 +406,8 @@ def _grib_source_inventory(path, source):
 
     import eccodes as ec
 
+    from frameit.io.grib_utils import GRIB_PRESSURE_UNITS
+
     model, evidence = _source_model(source, [], path, fmt="grib")
     fields, grids, records, horizontal = {}, {}, [], {}
     aliases = {"10u": "u10", "10v": "v10", "msl": "prmsl"}
@@ -435,8 +440,10 @@ def _grib_source_inventory(path, source):
                                                        ("longitude", lon, "degrees_east"))},
                         "grid_mapping": None, "grib_grid_section": signature,
                         "grid_type": get("gridType")}
-                group = get("typeOfLevel")
-                grid = {**horizontal[signature], "vertical_group": group}
+                native_group = get("typeOfLevel")
+                group = "isobaric" if native_group in GRIB_PRESSURE_UNITS else native_group
+                grid = {**horizontal[signature], "vertical_group": group,
+                        "vertical_units": GRIB_PRESSURE_UNITS.get(native_group)}
                 grid_id = _metadata_id("grid_", grid)
                 grids[grid_id] = grid
                 short, name = str(get("shortName", "")), str(get("cfVarName", ""))
@@ -447,7 +454,7 @@ def _grib_source_inventory(path, source):
                     # Unknown parameters remain inspectable, without invented field aliases.
                     name = None
                 attributes = {"units": get("units"), "GRIB_paramId": get("paramId"),
-                              "GRIB_typeOfLevel": group, "GRIB_stepType": get("stepType")}
+                              "GRIB_typeOfLevel": native_group, "GRIB_stepType": get("stepType")}
                 if (value := get("uvRelativeToGrid")) is not None:
                     attributes["GRIB_uvRelativeToGrid"] = value
                 native_axes = ({"number": int(get("number"))}
@@ -1461,6 +1468,8 @@ def _grib_metadata(path):
 
     import eccodes as ec
 
+    from frameit.io.grib_utils import GRIB_PRESSURE_UNITS
+
     aliases = {"10u": "u10", "10v": "v10", "msl": "prmsl"}
     groups, geometry, signature = {}, None, None
     unmapped, all_times = [], set()
@@ -1536,11 +1545,11 @@ def _grib_metadata(path):
             value.attrs["_frameit_level_times"] = entry["coverage"][name]
         coords = {"valid_time": sorted(entry["times"])}
         if group != "surface":
-            units = {"isobaricInhPa": "hPa", "isobaricInPa": "Pa",
-                     "heightAboveGround": "m"}.get(group)
-            coords[group] = (group, sorted(entry["levels"]), {"units": units})
+            units = {**GRIB_PRESSURE_UNITS, "heightAboveGround": "m"}.get(group)
+            dimension = "isobaric" if group in GRIB_PRESSURE_UNITS else group
+            coords[dimension] = (dimension, sorted(entry["levels"]), {"units": units})
         datasets.append(xr.Dataset(entry["fields"], coords=coords, attrs={
-            "_frameit_vertical_group": group,
+            "_frameit_vertical_group": "isobaric" if group in GRIB_PRESSURE_UNITS else group,
             "_frameit_forecast_reference_times": sorted(entry["references"])}))
     return datasets
 
@@ -1611,7 +1620,7 @@ def _belongs_to_group(ds, name, group):
         return metadata_group == group
     if group != "surface":
         return group in ds[name].dims or group in ds[name].coords
-    vertical = {"level", "level_w", "heightAboveGround", "isobaricInhPa", "isobaricInPa",
+    vertical = {"level", "level_w", "heightAboveGround", "isobaric",
                 "deptht", "depthu", "depthv", "depthw", "s_rho", "s_w"}
     return not (set(ds[name].dims) & vertical)
 
@@ -1977,14 +1986,8 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
                                              "source_units": ds[name].attrs.get("units"),
                                              "calculation_units": normalized["units"],
                                              "assumed": not bool(ds[name].attrs.get("units"))})
-                for group, expected in (("isobaricInhPa", "hPa"), ("isobaricInPa", "Pa")):
-                    if group in ds.coords:
-                        da = ds[group]
-                        converted = convert_units(da, "pressure", target=expected, assumed=expected)
-                        if not np.allclose(da, converted):
-                            raise ValueError(
-                                f"{path}: {group} contradicts declared coordinate units"
-                            )
+                if "isobaric" in ds.coords and ds.isobaric.attrs.get("units"):
+                    convert_units(ds.isobaric, "pressure")
             calendars = {str(ds[name].encoding.get("calendar", ds[name].attrs.get(
                 "calendar", "standard"))) for ds in datasets
                 for name in ("time", "valid_time") if name in ds.coords}

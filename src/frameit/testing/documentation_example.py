@@ -152,6 +152,51 @@ def create_tutorial_inputs(directory: Path, *, translating=False, missing=False)
     return paths
 
 
+def create_task_fixtures(directory: Path) -> dict[str, Path]:
+    """Generate every task-guide input locally, in a new directory only."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=False)
+    paths = {"scalar": create_first_run_input(directory / "first-run.nc")}
+    for name, folder, options in (
+        ("stationary", "stationary", {}),
+        ("moving", "data", {"translating": True}),
+        ("missing", "missing-data", {"missing": True}),
+    ):
+        paths.update({f"{name}.{field}": path for field, path in
+                      create_tutorial_inputs(directory / folder, **options).items()})
+    with xr.open_dataset(paths["stationary.atmosphere"]) as source:
+        air = source.load()
+    interfaces = air[["temperature", "interface_w"]].rename({
+        "height": "level", "interface_height": "level_w",
+        "temperature": "THT", "interface_w": "WT",
+    }).rename_dims({"latitude": "nj", "longitude": "ni"})
+    interfaces = interfaces.assign_coords(
+        ni=("ni", 5000. * np.arange(25), {"units": "m"}),
+        nj=("nj", 5000. * np.arange(25), {"units": "m"}),
+    )
+    interfaces.WT.attrs["standard_name"] = "upward_air_velocity"
+    paths["interfaces"] = directory / "interfaces.nc"
+    with atomic_output(paths["interfaces"], overwrite=False) as temporary:
+        interfaces.to_netcdf(temporary, engine="netcdf4")
+    pressure = air[["pressure", "temperature"]].rename({
+        "pressure": "prmsl", "temperature": "height_temperature"})
+    levels = np.array([85000., 70000., 50000.])
+    t, _, j, i = np.indices((3, 3, 25, 25))
+    pressure["temperature"] = (
+        ("time", "isobaric", "latitude", "longitude"),
+        270. + .0002 * levels[None, :, None, None] + t + .1 * (j - 12) + .1 * (i - 12),
+        {"units": "K", "kind": "continuous",
+         "formula": "270 K + (0.0002 K/Pa) p + (1 K) t + (0.1 K) (j-12+i-12)"},
+    )
+    pressure = pressure.assign_coords(
+        isobaric=("isobaric", levels, {"units": "Pa", "axis": "Z", "positive": "down",
+                                      "standard_name": "air_pressure"}))
+    paths["pressure"] = directory / "pressure.nc"
+    with atomic_output(paths["pressure"], overwrite=False) as temporary:
+        pressure.to_netcdf(temporary, engine="netcdf4")
+    return paths
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True,

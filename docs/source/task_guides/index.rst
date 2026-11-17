@@ -1,12 +1,13 @@
 Task guides
 ===========
 
-Choose the task you need. Each guide gives its prerequisites, a starter command,
-the settings to adapt and checks for the result.
+Generate the small analytical fixtures once, then choose a task. Each guide
+offers equivalent CLI/API execution and a standalone output plot.
 
 .. toctree::
    :maxdepth: 1
 
+   generate_fixtures
    fixed_region
    field_selection
    moving_region

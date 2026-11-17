@@ -165,16 +165,16 @@ def test_component_alias_cannot_replace_generated_polar_data(tmp_path, monkeypat
 
 @pytest.mark.parametrize("alias,axis", [
     ("level", "level"), ("level_source_native_index", "level"),
-    ("isobaricInhPa", "isobaricInhPa"),
-    ("isobaricInhPa_source_native_index", "isobaricInhPa"),
-    ("pressure", "isobaricInhPa"), ("pressure_source_native_index", "isobaricInhPa"),
+    ("isobaric", "isobaric"),
+    ("isobaric_source_native_index", "isobaric"),
+    ("pressure", "isobaric"), ("pressure_source_native_index", "isobaric"),
 ])
 def test_component_alias_cannot_replace_native_or_public_vertical_coordinates(
         tmp_path, monkeypatch, alias, axis):
     ds = wind_scene(hours=(1,))
     for name in ("U", "V"):
         ds[name] = ds[name].expand_dims({axis: [850., 700.]}, axis=1)
-    ds[axis].attrs.update(units="hPa" if axis == "isobaricInhPa" else "m", axis="Z")
+    ds[axis].attrs.update(units="hPa" if axis == "isobaric" else "m", axis="Z")
     ds.to_netcdf(tmp_path / "input.nc")
     raw = component_document(tmp_path)
     raw["sources"]["atmosphere"]["derived"] = {
@@ -291,30 +291,30 @@ def test_component_grouped_binding_preserves_identity_and_guards(tmp_path, monke
         {"hour": 1, "param": param, "group": group, "level": level, "missing": False}
         for param in (131, 132)
         for group, levels in (("heightAboveGround", (20, 40, 70)),
-                              ("isobaricInhPa", (850, 700)))
+                              ("isobaric", (850, 700)))
         for level in levels])
     raw = grouped_document(tmp_path)
     source = raw["sources"]["atmosphere"]
     source["variables"].pop("2d")
     source["variables"]["3d"]["heightAboveGround"]["levels"] = {"indices": [2, 0]}
-    source["variables"]["3d"]["isobaricInhPa"]["levels"] = {"indices": [1]}
+    source["variables"]["3d"]["isobaric"]["levels"] = {"indices": [1]}
     source["wind_pairs"] = [
         {**pair, "basis": "grid", "rotation": {"method": "geolocation"}}
         for pair in source["wind_pairs"]]
     source["derived"] = {
         alias: {"method": method, "inputs": {"u": f"{group}.u", "v": f"{group}.v"}}
         for (alias, method), group in zip(
-            METHODS.items(), ("heightAboveGround", "isobaricInhPa"), strict=True)}
+            METHODS.items(), ("heightAboveGround", "isobaric"), strict=True)}
     source["field_metadata"] = {
         f"{group}.{name}": {"kind": "continuous"}
-        for group in ("heightAboveGround", "isobaricInhPa") for name in ("u", "v")}
+        for group in ("heightAboveGround", "isobaric") for name in ("u", "v")}
     raw["region"] = {"center": {"latitude": -20., "longitude": 60.}}
     raw["products"] = {"polar": {"radius_km": 2.5, "azimuth_count": 8,
                                  "fields": {"atmosphere": list(METHODS)}}}
     if problem == "ambiguous":
         source["derived"]["outward"]["inputs"]["u"] = "u"
     elif problem == "unequal":
-        source["derived"]["outward"]["inputs"]["v"] = "isobaricInhPa.v"
+        source["derived"]["outward"]["inputs"]["v"] = "isobaric.v"
     elif problem == "collision":
         source["derived"]["u"] = source["derived"].pop("outward")
         raw["products"]["polar"]["fields"]["atmosphere"] = ["u"]
@@ -699,7 +699,7 @@ def test_explicit_components_grib_reads_keep_grouped_clock_and_levels(tmp_path, 
         {"hour": hour, "param": param, "group": group, "level": level, "missing": False}
         for hour in (0, 1, 2) for param in (131, 132)
         for group, levels in (("heightAboveGround", (20, 40, 70)),
-                              ("isobaricInhPa", (850, 700))) for level in levels])
+                              ("isobaric", (850, 700))) for level in levels])
     path = tmp_path / "input.grib"
     with raw_path.open("rb") as stream, path.open("wb") as output:
         while (handle := ec.codes_grib_new_from_file(stream)) is not None:
@@ -718,15 +718,15 @@ def test_explicit_components_grib_reads_keep_grouped_clock_and_levels(tmp_path, 
     source = raw["sources"]["atmosphere"]
     source["variables"].pop("2d")
     source["variables"]["3d"]["heightAboveGround"]["levels"] = {"indices": [2, 0]}
-    source["variables"]["3d"]["isobaricInhPa"]["levels"] = {"indices": [1]}
+    source["variables"]["3d"]["isobaric"]["levels"] = {"indices": [1]}
     source["time"] = {"values": ["2026-01-01T01:00:00"]}
     source["derived"] = {
         alias: {"method": method, "inputs": {"u": f"{group}.u", "v": f"{group}.v"}}
         for (alias, method), group in zip(
-            METHODS.items(), ("heightAboveGround", "isobaricInhPa"), strict=True)}
+            METHODS.items(), ("heightAboveGround", "isobaric"), strict=True)}
     source["field_metadata"] = {
         f"{group}.{name}": {"kind": "continuous"}
-        for group in ("heightAboveGround", "isobaricInhPa") for name in ("u", "v")}
+        for group in ("heightAboveGround", "isobaric") for name in ("u", "v")}
     raw["region"] = {"center": {"latitude": -19.5, "longitude": 60.5}}
     raw["products"] = {"polar": {"radius_km": 2.5, "azimuth_count": 8,
                                  "fields": {"atmosphere": list(METHODS)}}}

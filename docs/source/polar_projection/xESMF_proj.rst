@@ -638,25 +638,5 @@ Troubleshooting
   - Confirm xESMF and its backend are installed in the active environment used to run FrameIt.
 
 
-Illustration
-------------
-
-The same stored BATSIRAI 10-m zonal wind at 00:20 on native and polar points:
-
-.. figure:: ../_static/figures/batsirai-cartesian.png
-   :target: ../_static/figures/batsirai-cartesian.png
-   :width: 80%
-   :align: center
-   :alt: Stored BATSIRAI 10-m zonal wind at 00:20 in m/s on the native Cartesian crop, shown without grid lines.
-
-   Native Cartesian crop at the fixed geographical centre.
-
-.. figure:: ../_static/figures/batsirai-polar.png
-   :target: ../_static/figures/batsirai-polar.png
-   :width: 80%
-   :align: center
-   :alt: Stored BATSIRAI 10-m zonal wind sampled at 6-km radial spacing and 180 azimuths, retaining its eastward basis and m/s units. Angle labels start north and increase clockwise; circular grid lines are absent.
-
-   Radius is in km; angle starts north and increases clockwise. The sampled field
-   remains eastward wind in m/s: changing locations does not make it radial wind.
-   See the :doc:`source conventions and standalone script <../reference/illustrations>`.
+For a runnable analytical example and standalone output plot, see
+:doc:`../task_guides/polar_sampling`.

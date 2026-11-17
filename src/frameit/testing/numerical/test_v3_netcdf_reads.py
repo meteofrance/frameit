@@ -83,14 +83,14 @@ def _payload_reads(monkeypatch, scenes, names):
 @pytest.mark.parametrize("engine", ["h5netcdf", "netcdf4"])
 def test_internal_vertical_stencils_preserve_native_indices_and_product_reads(
         tmp_path, monkeypatch, engine):
-    dims = ("time", "isobaricInhPa", "y", "x")
+    dims = ("time", "isobaric", "y", "x")
     values = np.arange(72., dtype=float).reshape(3, 4, 2, 3)
     scene = xr.Dataset({name: (dims, values + offset, {
         "units": "m2 s-2" if name == "z" else "m s-1"})
         for name, offset in (("u", 0), ("v", 100), ("z", 200))}, coords={
         "time": np.array(["2026-01-01T00", "2026-01-01T01", "2026-01-01T02"],
                          dtype="datetime64[ns]"),
-        "isobaricInhPa": ("isobaricInhPa", [850., 700., 500., 300.],
+        "isobaric": ("isobaric", [850., 700., 500., 300.],
                           {"axis": "Z", "units": "hPa"}),
         "latitude": ("y", [-20., -19.], {"units": "degrees_north"}),
         "longitude": ("x", [60., 61., 62.], {"units": "degrees_east"}),
@@ -107,25 +107,25 @@ def test_internal_vertical_stencils_preserve_native_indices_and_product_reads(
         users, internal = _load(paths, binding, source, engine=engine, resources=resources)
         assert not reads
         out = next(iter(internal["internal"].values()))
-        np.testing.assert_array_equal(out.isobaricInhPa, [850., 700., 500.])
-        np.testing.assert_array_equal(out.isobaricInhPa_source_native_index, [0, 1, 2])
-        assert out.isobaricInhPa.attrs == scene.isobaricInhPa.attrs
+        np.testing.assert_array_equal(out.isobaric, [850., 700., 500.])
+        np.testing.assert_array_equal(out.isobaric_source_native_index, [0, 1, 2])
+        assert out.isobaric.attrs == scene.isobaric.attrs
         out.load(scheduler="synchronous")
         for name in ("u", "v"):
             np.testing.assert_array_equal(
-                out[name], scene[name].isel(time=[0, 2], isobaricInhPa=[0, 1, 2]))
-        np.testing.assert_array_equal(out.z.sel(isobaricInhPa=[850, 700]),
-                                      scene.z.isel(time=[0, 2], isobaricInhPa=[0, 1]))
-        assert np.isnan(out.z.sel(isobaricInhPa=500)).all()
+                out[name], scene[name].isel(time=[0, 2], isobaric=[0, 1, 2]))
+        np.testing.assert_array_equal(out.z.sel(isobaric=[850, 700]),
+                                      scene.z.isel(time=[0, 2], isobaric=[0, 1]))
+        assert np.isnan(out.z.sel(isobaric=500)).all()
         assert {name for name, _ in reads} == {"u", "v", "z"}
         for name, positions in reads:
             assert set(positions["time"]) <= {0, 2}
-            assert set(positions["isobaricInhPa"]) <= ({0, 1} if name == "z" else {0, 1, 2})
+            assert set(positions["isobaric"]) <= ({0, 1} if name == "z" else {0, 1, 2})
         reads.clear()
         product = next(iter(users.values()))
-        np.testing.assert_array_equal(product.isobaricInhPa, [500.])
-        np.testing.assert_array_equal(product.z, scene.z.isel(time=[0, 2], isobaricInhPa=[2]))
-        assert reads and all(name == "z" and positions["isobaricInhPa"] == [2]
+        np.testing.assert_array_equal(product.isobaric, [500.])
+        np.testing.assert_array_equal(product.z, scene.z.isel(time=[0, 2], isobaric=[2]))
+        assert reads and all(name == "z" and positions["isobaric"] == [2]
                              for name, positions in reads)
 
 
@@ -137,12 +137,12 @@ def test_internal_vertical_alignment_rejects_incompatible_coordinates(problem):
     from frameit.tracking.tracker_core import merge_internal_stencils
 
     def dataset(name, labels, indices):
-        return xr.Dataset({name: (("time", "isobaricInhPa", "y", "x"),
+        return xr.Dataset({name: (("time", "isobaric", "y", "x"),
                                   np.zeros((1, len(labels), 2, 2)))}, coords={
             "time": [np.datetime64("2026-01-01", "ns")],
             "forecast_reference_time": np.datetime64("2025-12-31", "ns"),
-            "isobaricInhPa": ("isobaricInhPa", labels, {"units": "hPa"}),
-            "isobaricInhPa_source_native_index": ("isobaricInhPa", indices, {"units": "1"}),
+            "isobaric": ("isobaric", labels, {"units": "hPa"}),
+            "isobaric_source_native_index": ("isobaric", indices, {"units": "1"}),
             "y": [0, 1], "x": [0, 1],
         })
 
@@ -157,11 +157,11 @@ def test_internal_vertical_alignment_rejects_incompatible_coordinates(problem):
     elif problem == "horizontal":
         right = right.assign_coords(x=[1, 2])
     elif problem == "vertical_attributes":
-        right.isobaricInhPa.attrs["units"] = "Pa"
+        right.isobaric.attrs["units"] = "Pa"
     else:
-        right.isobaricInhPa_source_native_index.values[-1 if problem == "reused_index" else 0] = 0
+        right.isobaric_source_native_index.values[-1 if problem == "reused_index" else 0] = 0
     with pytest.raises(ValueError, match="internal|Internal"):
-        merge_internal_stencils([left, right], {"isobaricInhPa"})
+        merge_internal_stencils([left, right], {"isobaric"})
 
 
 def test_internal_native_index_preserves_existing_coordinate_attributes(tmp_path):

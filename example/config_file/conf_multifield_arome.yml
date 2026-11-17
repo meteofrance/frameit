@@ -10,7 +10,7 @@ sources:
     files: "./data/AROME/*.grib"
     wind_pairs:
       - {u: u10, v: v10, basis: earth}
-      - {u: isobaricInhPa.u, v: isobaricInhPa.v, basis: earth}
+      - {u: isobaric.u, v: isobaric.v, basis: earth}
     variables:
       2d: [prmsl, u10, v10]
     transforms:

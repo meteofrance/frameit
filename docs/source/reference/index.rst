@@ -13,7 +13,7 @@ repeating the tutorial.
    ../user_guide/output_files
    tracking
    polar
-   illustrations
    analytical_inputs
+   vertical_levels
    concepts
    ../troubleshooting

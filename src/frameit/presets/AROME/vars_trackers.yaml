@@ -6,14 +6,14 @@ requested_variables_by_method:
   multifield_vortex:
     surface:
       variables: ["u10", "v10", "prmsl"]
-    isobaricInhPa:
+    isobaric:
       variables: ["u", "v", "z"]
       level_selection: "values"
       level_values: [850, 700, 500]
   pressure_centroid:
     surface:
       variables: ["u10", "v10", "prmsl"]
-    isobaricInhPa:
+    isobaric:
       variables: ["u", "v", "z"]
       level_selection: "all"
   wind_pressure:
@@ -21,7 +21,7 @@ requested_variables_by_method:
       variables: ["u10", "v10", "prmsl"]
 
   other_method:
-    isobaricInhPa:
+    isobaric:
       variables: ["u", "v", "z", "pv"]
       level_selection: "values"                # ou "values" "indices"; "all"
       level_values:  [850,800,750,700]         # if level_selection = "values" 
@@ -40,12 +40,11 @@ requested_variables_by_method:
   utrack:
     surface:
       variables: ["u10", "v10"]
-    isobaricInhPa:
+    isobaric:
       variables: ["absv"]
       level_selection: "values"                # ou "values" "indices"; "all"
       level_values:  [850]         # if level_selection = "values" 
       level_indices: []  
-
 
 
 

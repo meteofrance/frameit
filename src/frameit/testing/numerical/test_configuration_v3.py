@@ -927,7 +927,7 @@ def test_omitted_vortex_options_reach_the_existing_numerical_tracker(with_seed_t
     # The existing in-memory fixture declares physical Earth-relative components.
     conf.wind_pairs = [
         {"group": "surface", "u": "u10", "v": "v10", "reference_frame": "earth"},
-        {"group": "isobaricInhPa", "u": "u", "v": "v", "reference_frame": "earth"},
+        {"group": "isobaric", "u": "u", "v": "v", "reference_frame": "earth"},
     ]
     conf.resolution = 32500
     source = vortex(model="arome")[0].isel(time=[0])

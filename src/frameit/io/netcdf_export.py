@@ -242,7 +242,7 @@ def output_grid_layout(source, *, regional=False):
             coord = coordinates.get(dim, {})
             attrs = coord.get("attributes", {})
             base = names.get(dim, dim)
-            if dim in {"isobaricInhPa", "isobaricInPa"} or attrs.get(
+            if dim == "isobaric" or attrs.get(
                 "standard_name") == "air_pressure":
                 base = "pressure"
             elif dim == "heightAboveGround":

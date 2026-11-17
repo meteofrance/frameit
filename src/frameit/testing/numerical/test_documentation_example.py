@@ -99,27 +99,31 @@ def test_analytical_tutorial_commands_keep_sparse_times_levels_and_source_bytes(
     run("-m", "frameit", "validate", "frameit.yaml")
     assert not (tmp_path / "results").exists()
     run("-m", "frameit", "run", "frameit.yaml")
-    run("-m", "frameit", "status", "results")
+    run("-m", "frameit", "status", "results/analytic-moving")
     run("-c", """
 import sys, numpy as np, xarray as xr, yaml
-status = yaml.safe_load(open('results/run-status.yaml'))
+status = yaml.safe_load(open('results/analytic-moving/run-status.yaml'))
 assert status['state'] == 'completed'
 products = status['products']
-with xr.open_dataset('results/products/analytic-moving.atmosphere.model_grid.nc') as air:
+with xr.open_dataset(
+    'results/analytic-moving/products/analytic-moving.atmosphere.model_grid.nc'
+) as air:
     np.testing.assert_array_equal(air.time, np.array(
         ['2000-01-01T01', '2000-01-01T02'], dtype='datetime64[ns]'))
     values = air['height.temperature']
     assert values.sizes['height'] == 1
     np.testing.assert_allclose(values, 294.)
     assert 'speed' not in air
-with xr.open_dataset('results/products/analytic-moving.ocean.model_grid.nc') as water:
+with xr.open_dataset(
+    'results/analytic-moving/products/analytic-moving.ocean.model_grid.nc'
+) as water:
     np.testing.assert_array_equal(water.time, np.array(
         ['2000-01-01T00', '2000-01-01T02'], dtype='datetime64[ns]'))
     np.testing.assert_allclose(water.s_rho, [0., -.25, -.75])
     assert water.temp.attrs['units'] == 'K'
 assert 'frameit' not in sys.modules
 """)
-    status = yaml.safe_load((tmp_path / "results/run-status.yaml").read_text())
+    status = yaml.safe_load((tmp_path / "results/analytic-moving/run-status.yaml").read_text())
     roles = {p["role"] for p in status["products"]}
     assert roles == ({"model_grid", "polar", "track"} if polar else {"model_grid"})
     assert {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in before} == before
@@ -162,21 +166,13 @@ def test_missing_tutorial_consumes_category_and_explicit_renormalization(tmp_pat
 
 def test_interface_walkthrough_keeps_native_w_and_explicit_mass_w_distinct(tmp_path):
     from pathlib import Path
-    import re
 
-    from frameit.testing.documentation_example import create_tutorial_inputs
+    from frameit.testing.documentation_example import create_task_fixtures
 
-    create_tutorial_inputs(tmp_path / "data")
+    paths = create_task_fixtures(tmp_path / "generated")
     root = Path(__file__).parents[4]
-    text = (root / "docs/source/task_guides/analytical_event.rst").read_text()
-    section = text.split(".. _prepare-interface-input:", 1)[1]
-    block = re.search(r"\.\. code-block:: python\n\n((?:   .*\n|\n)+)", section).group(1)
-    recipe = "\n".join(line[3:] if line.startswith("   ") else line
-                       for line in block.splitlines())
-    prepared = subprocess.run([sys.executable, "-c", recipe], cwd=tmp_path,
-                              capture_output=True, text=True, timeout=30)
-    assert prepared.returncode == 0, prepared.stderr
     path = tmp_path / "interfaces.nc"
+    path.write_bytes(paths["interfaces"].read_bytes())
     before = path.read_bytes(), path.stat().st_mtime_ns
     request = tmp_path / "interfaces.yaml"
     request.write_text((root / "example/tutorials/analytic-interfaces.yaml").read_text())
@@ -195,9 +191,8 @@ with xr.open_dataset('interface-results/products/analytic-interfaces.atmosphere.
 assert 'frameit' not in sys.modules
 """], cwd=tmp_path, capture_output=True, text=True, timeout=30)
     assert reader.returncode == 0, reader.stderr
-    refused = subprocess.run([sys.executable, "-c", recipe], cwd=tmp_path,
-                             capture_output=True, text=True, timeout=30)
-    assert refused.returncode != 0 and "FileExistsError" in refused.stderr
+    with pytest.raises(FileExistsError):
+        create_task_fixtures(tmp_path / "generated")
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
 
 

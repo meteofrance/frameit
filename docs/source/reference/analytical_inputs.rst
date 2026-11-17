@@ -1,11 +1,10 @@
 Instructional analytical inputs
 ===============================
 
-``python -m frameit.testing.documentation_example --tutorial translating --output data``
-creates small deterministic inputs for :doc:`../task_guides/analytical_event`.
-``stationary`` holds the centre fixed; ``missing`` adds a labelled static
-hole and a categorical field. The original ``--output data/first-run.nc``
-command still creates the separate first-run scalar.
+Follow :doc:`../task_guides/generate_fixtures` to generate every task's inputs
+locally through the CLI or Python API. ``stationary`` holds the centre fixed;
+``data`` uses the translating case; ``missing-data`` adds a labelled static hole
+and a categorical field. These fixtures are instructional only.
 
 Definitions
 -----------
@@ -37,6 +36,23 @@ temperature is :math:`300\,\mathrm K-(0.006\,\mathrm{K\,m^{-1}})z`.
 Interfaces at 0, 500, 2000 and 4000 m carry
 :math:`w=(0.001\,\mathrm{s^{-1}})z`. These fields illustrate separate axes,
 not an atmospheric vertical discretization validated against a producer.
+
+Pressure-level and interface exercises
+--------------------------------------
+
+``pressure.nc`` has pressure labels 85000, 70000 and 50000 Pa on ``isobaric``.
+At zero-based time/horizontal indices :math:`t,j,i`, its instructional
+temperature is
+
+.. math::
+
+   T = 270\,\mathrm K + (0.0002\,\mathrm{K\,Pa^{-1}})p
+       + (1\,\mathrm K)t + (0.1\,\mathrm K)(j-12+i-12).
+
+``height_temperature`` retains the independent height formula above.
+``interfaces.nc`` retains the same temperature/W arrays, with Meso-NH-labelled
+``level/level_w`` and computational axes at 5000 m spacing. This demonstrates
+the coordinate-linear interface remap; it is not producer-conformance evidence.
 
 Ocean response
 --------------
@@ -74,6 +90,6 @@ own error and coverage behavior; point sampling is not an area-budget calculatio
 These checks establish the instructional definitions, not scientific validity
 for real atmospheric or ocean-model outputs.
 
-Each file is published atomically and existing paths are refused. The three-file
+Each file is published atomically and existing paths are refused. The generated
 set is not a transaction: if generation fails part-way, retain that directory
 for inspection and retry in a fresh directory rather than mixing attempts.

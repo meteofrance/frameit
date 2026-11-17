@@ -29,12 +29,14 @@ and [dependency troubleshooting](https://meteofrance.github.io/frameit/user_guid
 ## Quick start
 
 New to FrameIt? Follow [Your first run](https://meteofrance.github.io/frameit/getting_started/first_run.html).
+For practice without model files, start with the
+[analytical task fixtures](https://meteofrance.github.io/frameit/task_guides/generate_fixtures.html).
 
 1. Create a starter:
 
 ```bash
 frameit init arome
-# For Meso-NH: frameit init mesonh --output chido.yaml
+# For Meso-NH: frameit init mesonh --output model.yaml
 # Coupled native scalars: frameit init arome --coupling nemo
 ```
 
@@ -101,16 +103,12 @@ and reference frames before comparing products.
 ```bash
 python -m frameit.testing.polar_qualification --output ./runs/polar-qualification
 python -m frameit.testing.polar_qualification --example --output ./runs/analytical-vortex
-FRAMEIT_CI_DATA_ROOT=/path/to/ci_dataset frameit run-all-tests --output ./runs/all-tests
 ```
 
 Use fresh output directories. Qualification writes numerical JSON reports and
 NetCDF examples with analytical errors, profiles, harmonics and coverage checks.
 See [qualification](https://meteofrance.github.io/frameit/polar_projection/scientific_qualification.html) for
-methods and tolerances. `run-all-tests` also runs the
-[AROME/MNH matrix](https://meteofrance.github.io/frameit/user_guide/matrix_testing.html), which requires its
-frozen input fixture, supplied separately through `FRAMEIT_CI_DATA_ROOT` (use
-an absolute directory). These checks do not validate every real-data regime.
+methods and tolerances. These analytical checks do not validate every real-data regime.
 
 ## Optional HPC / Slurm execution
 

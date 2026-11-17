@@ -1,0 +1,13 @@
+schema_version: 3
+run: {name: fixed-region}
+sources:
+  atmosphere:
+    model: arome
+    files: ./first-run.nc
+    variables:
+      2d: [instructional_scalar]
+region:
+  center: {latitude: -20, longitude: 60}  # Fixed geographical centre.
+  width_km: {x: 4, y: 4}  # Full widths, not half-widths.
+output: {directory: ./results/fixed-region}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

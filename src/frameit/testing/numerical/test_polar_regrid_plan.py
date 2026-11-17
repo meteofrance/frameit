@@ -104,12 +104,12 @@ def test_lru_eviction_disabled_cache_and_byte_budget():
 def three_groups(times=(0, 1)):
     source = source_scene(times=times)
     return {name: source.copy(deep=True).assign(q=source.q + offset).expand_dims(level=[1, 2])
-            for name, offset in (("surface", 0), ("heightAboveGround", 10), ("isobaricInhPa", 20))}
+            for name, offset in (("surface", 0), ("heightAboveGround", 10), ("isobaric", 20))}
 
 
 def group_config(**options):
     return polar_settings(polar_variables={name: {"variables": ["q"]} for name in
-                                          ("surface", "heightAboveGround", "isobaricInhPa")},
+                                          ("surface", "heightAboveGround", "isobaric")},
                           **options)
 
 

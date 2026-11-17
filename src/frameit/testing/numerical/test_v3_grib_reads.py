@@ -23,6 +23,7 @@ def write_messages(path, declarations, *, jfast=False):
                 hour = declaration.get("hour", 1)
                 level = declaration.get("level", 850)
                 latitude = declaration.get("latitude", -20.)
+                group = declaration.get("group", "isobaric")
                 for key, value in {
                     "Ni": 3, "Nj": 2, "latitudeOfFirstGridPointInDegrees": latitude,
                     "latitudeOfLastGridPointInDegrees": latitude + 1.,
@@ -32,7 +33,7 @@ def write_messages(path, declarations, *, jfast=False):
                     "jScansPositively": 1, "jPointsAreConsecutive": int(jfast),
                     "dataDate": 20260101, "dataTime": declaration.get("cycle", 0),
                     "paramId": declaration.get("param", 131),
-                    "typeOfLevel": declaration.get("group", "isobaricInhPa"),
+                    "typeOfLevel": "isobaricInhPa" if group == "isobaric" else group,
                     "level": level, "forecastTime": hour, "uvRelativeToGrid": 1,
                 }.items():
                     ec.codes_set(handle, key, value)
@@ -159,11 +160,11 @@ def test_selected_messages_are_lazy_and_exclude_times_levels_and_providers(
         grid_id, dataset = next(iter(user.items()))
         assert grid_id == binding["records"][0]["grid_id"]
         assert set(dataset.data_vars) == {"u"}
-        assert dataset.u.dims == ("time", "isobaricInhPa", "y", "x")
+        assert dataset.u.dims == ("time", "isobaric", "y", "x")
         assert dataset.u.chunks is not None
-        np.testing.assert_array_equal(dataset.isobaricInhPa, [70000., 100000.])
-        assert dataset.isobaricInhPa.attrs["units"] == "Pa"
-        np.testing.assert_array_equal(dataset.isobaricInhPa_source_native_index, [2, 0])
+        np.testing.assert_array_equal(dataset.isobaric, [70000., 100000.])
+        assert dataset.isobaric.attrs["units"] == "Pa"
+        np.testing.assert_array_equal(dataset.isobaric_source_native_index, [2, 0])
         np.testing.assert_array_equal(dataset.time, np.array(
             ["2026-01-01T01", "2026-01-01T02"], dtype="datetime64[ns]"))
         np.testing.assert_array_equal(dataset.forecast_reference_time, np.array(
@@ -176,7 +177,7 @@ def test_selected_messages_are_lazy_and_exclude_times_levels_and_providers(
         result = dataset.u.compute(scheduler="synchronous")
         expected = np.array([0., 1701., np.nan, 9999., 1704., 1705.])
         expected = expected.reshape(3, 2).T if jfast else expected.reshape(2, 3)
-        np.testing.assert_array_equal(result.isel(time=0, isobaricInhPa=0), expected)
+        np.testing.assert_array_equal(result.isel(time=0, isobaric=0), expected)
         assert set(reads) == {
             (131, 0, 1, 700, None), (131, 0, 1, 1000, None),
             (131, 0, 2, 700, None), (131, 0, 2, 1000, None),
@@ -208,8 +209,8 @@ def test_internal_stencil_of_exported_name_is_not_exported_or_trimmed(tmp_path, 
         exported = next(iter(user.values()))
         ancillary = next(iter(internal["internal"].values()))
         assert not reads
-        np.testing.assert_array_equal(exported.isobaricInhPa, [700., 1000.])
-        np.testing.assert_array_equal(ancillary.isobaricInhPa, [700., 850., 1000.])
+        np.testing.assert_array_equal(exported.isobaric, [700., 1000.])
+        np.testing.assert_array_equal(ancillary.isobaric, [700., 850., 1000.])
         exported.load(scheduler="synchronous")
         assert len(reads) == 4 and {r[3] for r in reads} == {700, 1000}
         reads.clear()
@@ -260,8 +261,8 @@ def test_selected_native_clocks_members_single_levels_and_aliases(
         assert not reads and not active and not internal
         assert set(dataset.data_vars) == {field}
         if category == "3d":
-            assert dataset.sizes["isobaricInhPa"] == 1
-            np.testing.assert_array_equal(dataset.isobaricInhPa, [850.])
+            assert dataset.sizes["isobaric"] == 1
+            np.testing.assert_array_equal(dataset.isobaric, [850.])
         if case == "members":
             np.testing.assert_array_equal(dataset.number, [0, 1])
             assert dataset.number.attrs["standard_name"] == "realization"
@@ -640,12 +641,12 @@ def test_internal_vertical_stencils_decode_no_unselected_messages_or_product_uni
             [path], {}, {}, selected_records=binding, source_plan=source, resources=resources)
         assert not reads and not active
         out = next(iter(internal["internal"].values()))
-        np.testing.assert_array_equal(out.isobaricInhPa, [850., 700., 500.])
-        np.testing.assert_array_equal(out.isobaricInhPa_source_native_index, [0, 1, 2])
-        assert out.isobaricInhPa.attrs["units"] == "hPa"
+        np.testing.assert_array_equal(out.isobaric, [850., 700., 500.])
+        np.testing.assert_array_equal(out.isobaric_source_native_index, [0, 1, 2])
+        assert out.isobaric.attrs["units"] == "hPa"
         out.load(scheduler="synchronous")
-        assert np.isnan(out.z.sel(isobaricInhPa=500)).all()
-        np.testing.assert_array_equal(out.z.sel(isobaricInhPa=700).isel(time=0),
+        assert np.isnan(out.z.sel(isobaric=500)).all()
+        np.testing.assert_array_equal(out.z.sel(isobaric=700).isel(time=0),
                                       [[0., 701., np.nan], [9999., 704., 705.]])
         assert set(reads) == {(param, 0, hour, level, None)
                               for param in (131, 132, 129) for hour in (0, 2)
@@ -653,7 +654,7 @@ def test_internal_vertical_stencils_decode_no_unselected_messages_or_product_uni
         assert len(reads) == 16 and not active
         reads.clear()
         product = next(iter(users.values()))
-        np.testing.assert_array_equal(product.isobaricInhPa, [500.])
+        np.testing.assert_array_equal(product.isobaric, [500.])
         product.load(scheduler="synchronous")
         assert set(reads) == {(129, 0, hour, 500, None) for hour in (0, 2)}
         assert len(reads) == 2 and not active

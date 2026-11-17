@@ -464,9 +464,9 @@ def test_arome_tracker_binds_its_pressure_group_without_filtering_archive(
     source = result.conf.simulation_parameter["request_plan"]["sources"]["atmosphere"]
     support = source["field_binding"]["dependencies"]
     for name in ("u", "v", "z"):
-        assert source["fields"][support[name]["field_id"]]["group"] == "isobaricInhPa"
+        assert source["fields"][support[name]["field_id"]]["group"] == "isobaric"
     assert {source["fields"][r["field_id"]]["group"] for r in source["record_inventory"]
-            if r["name"] == "u"} >= {"isobaricInhPa", "heightAboveGround", "potentialVorticity"}
+            if r["name"] == "u"} >= {"isobaric", "heightAboveGround", "potentialVorticity"}
     assert not (tmp_path / "out").exists()
 
 

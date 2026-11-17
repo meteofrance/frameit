@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -22,6 +23,28 @@ from frameit.processing.wind_reference import wind_pairs
 
 logger = logging.getLogger(__name__)
 logging.getLogger("cfgrib").setLevel(logging.WARNING)
+
+GRIB_PRESSURE_UNITS = {"isobaricInhPa": "hPa", "isobaricInPa": "Pa"}
+
+
+def normalize_isobaric_coordinates(ds):
+    """Keep producer pressure units while removing them from FrameIt axis names."""
+    renames = {name: "isobaric" for name in GRIB_PRESSURE_UNITS if name in ds}
+    if not renames:
+        return ds
+    if len(renames) > 1 or "isobaric" in ds:
+        raise ValueError("Competing pressure coordinates cannot share the isobaric axis")
+    result = ds.rename(renames)
+    pattern = re.compile(r"\b(" + "|".join(renames) + r")\b")
+    for name in result.variables:
+        for mapping in ("attrs", "encoding"):
+            metadata = dict(getattr(result[name], mapping))
+            for key in ("coordinates", "bounds", "cell_methods", "formula_terms",
+                        "cell_measures", "ancillary_variables"):
+                if isinstance(metadata.get(key), str):
+                    metadata[key] = pattern.sub(lambda match: renames[match[0]], metadata[key])
+            setattr(result[name], mapping, metadata)
+    return result
 
 
 @contextmanager
@@ -171,7 +194,7 @@ def _selected_grib(files, binding, source, resources):
                         f"{name}: changing native GRIB read stencils are not executable")
                 native_levels = sorted(
                     {r["level"] for r in pool.values() if r["field_id"] == descriptor["field_id"]},
-                    reverse=field["group"] in {"isobaricInhPa", "isobaricInPa"},
+                    reverse=field["group"] == "isobaric",
                 )
                 levels = ([native_levels[i] for i in records[0]["source_positions"]]
                           if vertical is not None else [records[0]["level"]])
@@ -619,6 +642,7 @@ def concat_grib2ds_by_vert_coord(
                     **backend_kwargs, "filter_by_keys": {"shortName": short}}))
         for ds in dsets:
             resources.add(ds)
+        dsets = [normalize_isobaric_coordinates(ds) for ds in dsets]
         # Match the canonical aliases already used by metadata preflight, while
         # retaining original variables for callers that request native names.
         aliases = {"msl": "prmsl", "10u": "u10", "10v": "v10"}
@@ -677,6 +701,8 @@ def concat_grib2ds_by_vert_coord(
     parts_native_all: dict[str, list[xr.Dataset]] = {}
     parts_trk_all: dict[str, dict[str, list[xr.Dataset]]] = {m: {} for m in methods}
 
+    from frameit.io.netcdf_utils import validate_native_metadata
+
     for _f, dsets in opened_per_file.items():
         parts_user = _collect_parts_for_req(
             dsets, user_req, float_tol, tag="user variables dict", select_levels=False
@@ -690,6 +716,7 @@ def concat_grib2ds_by_vert_coord(
         }
 
         for g, parts in parts_user.items():
+            validate_native_metadata(parts, model="GRIB")
             ds_file = xr.merge(
                 parts, compat="override", join="outer", combine_attrs="drop_conflicts"
             )
@@ -708,6 +735,7 @@ def concat_grib2ds_by_vert_coord(
 
         for m, parts_trk in parts_trk_by_m.items():
             for g, parts in parts_trk.items():
+                validate_native_metadata(parts, model="GRIB")
                 ds_file = xr.merge(
                     parts, compat="override", join="outer", combine_attrs="drop_conflicts"
                 )
@@ -718,13 +746,14 @@ def concat_grib2ds_by_vert_coord(
                 if ds_file is not None:
                     parts_trk_all[m].setdefault(g, []).append(ds_file)
 
-    from frameit.io.netcdf_utils import validate_native_metadata
-
     if wind_conf is None or getattr(wind_conf, "cartesian_horizontal_winds", "native") == "native":
         for parts in parts_user_all.values():
             validate_native_metadata(parts, model="GRIB")
     for parts in parts_native_all.values():
         validate_native_metadata(parts, model="GRIB")
+    for groups in parts_trk_all.values():
+        for parts in groups.values():
+            validate_native_metadata(parts, model="GRIB")
     # Concat unique en fin de boucle — une seule allocation par groupe
     by_group_user: dict[str, xr.Dataset] = {
         g: xr.concat(

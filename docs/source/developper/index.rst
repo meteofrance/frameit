@@ -13,4 +13,3 @@ Rémi Laxenaire and Maxence DEFERREZ. Citation metadata is in the repository's
 
    how_to_add_my_tracker
    ../contributing/documentation
-   ../user_guide/matrix_testing

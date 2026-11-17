@@ -698,7 +698,7 @@ with xr.open_dataset(sys.argv[1]) as out, xr.open_dataset(sys.argv[2]) as source
     np.testing.assert_array_equal(out.pressure_source_native_index, [2])
     np.testing.assert_array_equal(out.time, source.time.isel(time=[0, 2]))
     # 24-bit GRIB packing of this <70-m/s range has error below 1e-4 m/s.
-    np.testing.assert_allclose(out.u, source.u.isel(time=[0, 2], isobaricInhPa=[2]),
+    np.testing.assert_allclose(out.u, source.u.isel(time=[0, 2], isobaric=[2]),
                                rtol=0, atol=1e-4)
     np.testing.assert_allclose(track.latitude, -20, atol=.05)
     np.testing.assert_allclose(track.longitude, 60, atol=.05)

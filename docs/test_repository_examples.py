@@ -52,7 +52,7 @@ def test_unambiguous_examples_emit_direct_v3_without_changing_quantities(filenam
     elif filename == "conf_pressure_centroid.yml":
         assert raw["sources"]["atmosphere"]["variables"] == {
             "2d": ["u10", "v10", "prmsl"],
-            "3d": {"isobaricInhPa": {"names": ["u", "v"],
+            "3d": {"isobaric": {"names": ["u", "v"],
                                     "levels": {"values": [850, 700], "units": "hPa"}}}}
         assert raw["region"]["tracker"]["motion"] == {
             "max_iterations": 50, "solver": "aitken", "relaxation": .25, "tolerance_m": 250}
@@ -323,18 +323,18 @@ def test_independent_checker_uses_product_clocks_and_optional_track(tmp_path, po
     path.write_text(yaml.safe_dump(raw))
     execute_simulation(SimulationConfig.from_yaml(path))
     checker = SLURM_EXAMPLES / "check_run.py"
-    command = [sys.executable, str(checker), str(tmp_path / "results")]
+    command = [sys.executable, str(checker), str(tmp_path / "results/analytic-moving")]
     result = subprocess.run(command, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     import json
 
     report = json.loads(result.stdout)
     assert report["time_counts"]["atmosphere"] == report["time_counts"]["ocean"] == 2
-    product = tmp_path / "results/products/analytic-moving.atmosphere.model_grid.nc"
+    product = tmp_path / "results/analytic-moving/products/analytic-moving.atmosphere.model_grid.nc"
     with xr.open_dataset(product) as original:
         altered = original.load().assign_coords(time=original.time + np.timedelta64(1, "s"))
     altered.to_netcdf(product)
-    status_path = tmp_path / "results/run-status.yaml"
+    status_path = tmp_path / "results/analytic-moving/run-status.yaml"
     status = yaml.safe_load(status_path.read_text())
     descriptor = next(p for p in status["products"]
                       if p["role"] == "model_grid" and p["source"] == "atmosphere")

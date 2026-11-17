@@ -56,6 +56,9 @@ def validate_native_metadata(datasets, variables=None, *, model):
 
 def normalize_netcdf_time(ds: xr.Dataset, conf) -> xr.Dataset:
     """Use sample time without discarding an evidenced AROME forecast clock."""
+    from frameit.io.grib_utils import normalize_isobaric_coordinates
+
+    ds = normalize_isobaric_coordinates(ds)
     if getattr(conf, "atm_model", None) == "NEMO":
         from frameit.io.nemo_utils import prepare_nemo
 
@@ -280,6 +283,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
     if binding.get("status") != "bound" or source is None:
         raise ValueError(
             "NetCDF selected_records requires bound requests and owning source metadata")
+    from frameit.io.grib_utils import normalize_isobaric_coordinates
     from frameit.processing.polar.contracts import require_executable_products
 
     require_executable_products(binding, source)
@@ -311,7 +315,8 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                 f"{name}: selected locator is outside the admitted NetCDF files")
         if record["selection_grid_id"] != record["grid_id"]:
             raise ValueError(f"{name}: destination-grid transformation is not executable")
-        original = resources.open_netcdf(path, engine=engine, chunks=None)
+        original = normalize_isobaric_coordinates(
+            resources.open_netcdf(path, engine=engine, chunks=None))
         variable = locator["variable"]
         grid = source["native_grids"][record["grid_id"]]
         coordinates = set(grid["coordinates"]) | {record["clock"]}

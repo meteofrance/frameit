@@ -105,7 +105,7 @@ Input variables are declared in the preset YAML file for the model you are targe
 For AROME this is ``src/frameit/presets/AROME/vars_trackers.yaml``.
 
 Add a block under ``requested_variables_by_method`` using your tracker's ``name`` as the key.
-Specify each vertical coordinate type (``surface``, ``isobaricInhPa``, …), the variable names,
+Specify each vertical coordinate type (``surface``, ``isobaric``, …), the variable names,
 and, for pressure-level variables, the level selection strategy.
 
 Example (from the ``utrack`` entry)::
@@ -115,13 +115,13 @@ Example (from the ``utrack`` entry)::
       my_tracker:
         surface:
           variables: ["u10", "v10"]
-        isobaricInhPa:
+        isobaric:
           variables: ["absv"]
           level_selection: "values"   # "values" | "indices" | "all"
           level_values:  [850]        # used when level_selection = "values"
           level_indices: []           # used when level_selection = "indices"
 
-If your tracker only uses surface fields, omit the ``isobaricInhPa`` block entirely.
+If your tracker only uses surface fields, omit the ``isobaric`` block entirely.
 
 Variable aliases
 ^^^^^^^^^^^^^^^^

@@ -70,7 +70,7 @@ def test_positive_mnh_heights_do_not_establish_physical_domain():
     assert selected_native_indices(ds, {"level_domain": "stored"}, "level") == [0, 1, 2, 3]
 
 
-@pytest.mark.parametrize("axis", ["isobaricInhPa", "isobaricInPa", "heightAboveGround"])
+@pytest.mark.parametrize("axis", ["isobaric", "heightAboveGround"])
 def test_ordinary_grib_axes_have_no_vertical_halo(axis):
     ds = xr.Dataset(coords={axis: [1000., 850., 700.]})
     assert selected_native_indices(ds, {"level_domain": "physical"}, axis) == [0, 1, 2]
@@ -771,8 +771,9 @@ def grib_binding_inventory():
     """Frozen message metadata only; no decoder or native-stack qualification."""
     times = np.array(["2026-01-01", "2026-01-01T01"], dtype="datetime64[ns]")
     field = {"name": "u", "dimensions": ["y", "x"], "dtype": "float64", "grid_id": "g",
-             "grid_ids": ["g"], "attributes": {"units": "m s-1", "GRIB_paramId": 131},
-             "group": "isobaricInhPa", "levels": [700, 850], "dependencies": {},
+             "grid_ids": ["g"], "attributes": {"units": "m s-1", "GRIB_paramId": 131,
+                                            "GRIB_typeOfLevel": "isobaricInhPa"},
+             "group": "isobaric", "levels": [700, 850], "dependencies": {},
              "coordinate_names": ["latitude", "longitude"], "time_varying": True}
     records = [
         {"field_id": "u", "name": "u", "grid_id": "g", "level": level,
@@ -816,8 +817,8 @@ def test_v3_grib_binding_metadata(case):
         source["fields"]["u"]["levels"] = [500, 700, 850]
         request["levels"] = {}
     else:
-        source["native_grids"]["g"]["coordinates"]["isobaricInhPa"] = {
-            "dimensions": ["isobaricInhPa"], "values": [1000., 925., 850., 700., 500.],
+        source["native_grids"]["g"]["coordinates"]["isobaric"] = {
+            "dimensions": ["isobaric"], "values": [1000., 925., 850., 700., 500.],
             "dtype": "float64", "attributes": {"units": "hPa"}}
     if case in {"selected_conflict", "missing_level_at_time"}:
         with pytest.raises(ValueError, match="competing.*providers" if case == "selected_conflict"

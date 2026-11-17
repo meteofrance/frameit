@@ -88,24 +88,9 @@ For an inspected Meso-NH source, this region fragment selects a 500-km native bo
 .. code-block:: yaml
 
    region:
-      center: {latitude: -16.342215392786485, longitude: 62.15487544109405}
+      center: {latitude: -20, longitude: 60}
       width_km: {x: 500, y: 500}
 
-
-Illustration
-------------
-
-Fixed-box extraction of the real BATSIRAI 10-m zonal wind:
-
-.. figure:: ../_static/figures/batsirai-fixed.png
-   :target: ../_static/figures/batsirai-fixed.png
-   :width: 100%
-   :align: center
-   :alt: Stored BATSIRAI 10-m zonal wind at 00:20 in m/s, with a fixed centre and native 500-km crop outline; no geographical grid lines are drawn.
-
-   The outline follows the selected native indices, not a continuously recentered
-   box. Colours show stored eastward wind in m/s; negative values are westward.
-   See the :doc:`data conventions and regeneration script <../reference/illustrations>`.
 
 Known limitations
 ------------------

@@ -136,25 +136,25 @@ def test_grib_library_metadata_selection_preserves_native_pressure_units(tmp_pat
     from frameit.io.loader import DatasetResources
 
     metadata = _grib_metadata(path)
-    levels = next(ds for ds in metadata if "isobaricInhPa" in ds.coords)
-    assert levels.isobaricInhPa.values.tolist() == [700., 850.]
-    assert levels.isobaricInhPa.attrs["units"] == "hPa"
+    levels = next(ds for ds in metadata if "isobaric" in ds.coords)
+    assert levels.isobaric.values.tolist() == [700., 850.]
+    assert levels.isobaric.attrs["units"] == "hPa"
     assert levels.t.attrs["units"] == selected["metadata"]["units"] == "K"
     assert levels.attrs["_frameit_forecast_reference_times"] == ["2026-01-01T00:00:00.000000000"]
     assert str(levels.valid_time.values[0]) == "2026-01-01T01:00:00.000000000"
     with DatasetResources() as resources:
         groups, _ = concat_grib2ds_by_vert_coord([path], {
-            "isobaricInhPa": {"variables": ["t"], "levels": [850]}}, {},
+            "isobaric": {"variables": ["t"], "levels": [850]}}, {},
             index_dir=tmp_path / "indexes", resources=resources, filter_requested=True)
-        data = groups["isobaricInhPa"]
-        assert data.isobaricInhPa.values.tolist() == [850.]
+        data = groups["isobaric"]
+        assert data.isobaric.values.tolist() == [850.]
         np.testing.assert_array_equal(data.t.squeeze(), (np.arange(35) + 280.).reshape(5, 7))
         assert data.t.attrs["units"] == "K"
         data.to_netcdf(tmp_path / "selected.nc", engine="netcdf4")
     ordinary = subprocess.run([EPYTHON, "-c", """
 import sys, numpy as np, xarray as xr
 with xr.open_dataset(sys.argv[1], engine='netcdf4') as ds:
-    assert ds.isobaricInhPa.values.tolist() == [850.]
+    assert ds.isobaric.values.tolist() == [850.]
     assert ds.t.attrs['units'] == 'K'
     np.testing.assert_array_equal(ds.t.squeeze(), (np.arange(35)+280.).reshape(5,7))
 assert not {'frameit', 'epygram', 'falfilfa4py'} & sys.modules.keys()

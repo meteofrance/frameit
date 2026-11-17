@@ -1,0 +1,18 @@
+schema_version: 3
+run: {name: polar-sampling}
+sources:
+  atmosphere:
+    model: arome
+    files: ./stationary/atmosphere.nc
+    variables:
+      2d: [u]
+region:
+  center: {latitude: -20, longitude: 60}
+products:
+  model_grid: true
+  polar:  # Sampling locations change; the eastward component stays eastward.
+    radius_km: 20
+    azimuth_count: 16
+    fields: {atmosphere: [u]}
+output: {directory: ./results/polar-sampling}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

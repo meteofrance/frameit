@@ -90,10 +90,10 @@ def inspect_inputs(datasets, conf, context="selected-inputs"):
         available = set()
         coverage = []
         for ds in datasets:
-            if name not in ds or "isobaricInhPa" not in ds:
+            if name not in ds or "isobaric" not in ds:
                 continue
             unit_metadata(ds[name], "geopotential" if name == "z" else "velocity")
-            levels = convert_units(ds.isobaricInhPa, "pressure", target="hPa", assumed="hPa")
+            levels = convert_units(ds.isobaric, "pressure", target="hPa", assumed="hPa")
             available.update(np.atleast_1d(levels.values).astype(float))
             coverage.extend(ds[name].attrs.get("_frameit_level_times", []))
         for level in required:
@@ -138,7 +138,7 @@ def canonical_inputs(ds, conf):
         prepared.attrs["multifield_height_conversion"] = "H=z_geometric*g_model/9.80665"
         return prepared
     ds = normalize_geography(ds, conf)
-    for group in ("surface", "isobaricInhPa"):
+    for group in ("surface", "isobaric"):
         ds = normalize_winds(ds, conf, group)
     inspect_inputs([ds], conf)
     result = xr.Dataset({name: ds[name] for name in ("u", "v", "z")})
@@ -173,8 +173,8 @@ def iter_fields(ds, conf):
         else:
             for name in ("u", "v", "z"):
                 record["height" if name == "z" else name] = np.asarray(
-                    part[name].sel(isobaricInhPa=list(LEVELS_HPA)).transpose(
-                        "isobaricInhPa", *spatial), float)
+                    part[name].sel(isobaric=list(LEVELS_HPA)).transpose(
+                        "isobaric", *spatial), float)
         for name in ("u", "v"):
             if not all(np.isfinite(layer).any() for layer in record[name]):
                 raise ValueError(f"multifield_vortex at {stamp}: no valid {name} coverage "

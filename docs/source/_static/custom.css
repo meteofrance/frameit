@@ -9,6 +9,27 @@
     --frameit-muted: #526377;
 }
 
+.frameit-tablist { display: flex; gap: .35rem; margin-bottom: .65rem; }
+.frameit-tablist button {
+    padding: .55rem .9rem;
+    border: 1px solid var(--frameit-teal-text);
+    border-radius: .2rem;
+    color: var(--frameit-teal-text);
+    background: white;
+    font: inherit;
+    cursor: pointer;
+}
+.frameit-tablist button[aria-selected="true"] {
+    color: white;
+    background: var(--frameit-teal-text);
+}
+.frameit-tabs-ready .frameit-tab > .rubric { display: none; }
+.frameit-tab[hidden] { display: none; }
+@media print {
+    .frameit-tablist { display: none; }
+    .frameit-tab[hidden], .frameit-tabs-ready .frameit-tab > .rubric { display: block; }
+}
+
 body { color: var(--frameit-navy); }
 .wy-nav-content { max-width: 58rem; background: white; }
 .wy-nav-content-wrap { background: var(--frameit-surface); }

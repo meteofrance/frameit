@@ -190,7 +190,7 @@ def test_grib_inspect_preserves_same_name_in_different_groups_without_payload_re
     assert [(r["name"], r["group"], r["attributes"]["GRIB_uvRelativeToGrid"],
              inspect_wind_metadata(r["attributes"], {})["wind_basis"])
             for r in records] == [
-        ("u", "isobaricInhPa", 1, "grid-aligned components"),
+        ("u", "isobaric", 1, "grid-aligned components"),
         ("u", "hybrid", 0, "eastward/northward components"),
     ]
     assert set(tmp_path.iterdir()) == {path, request}

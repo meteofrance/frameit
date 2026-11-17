@@ -6,7 +6,7 @@ catalog_version: '3'
 wind_pairs:
   AROME:
     - {group: heightAboveGround, u: u, v: v, reference_frame: earth}
-    - {group: isobaricInhPa, u: u, v: v, reference_frame: earth}
+    - {group: isobaric, u: u, v: v, reference_frame: earth}
     - {group: surface, u: u10, v: v10, reference_frame: earth}
   MNH:
     - {group: level, u: UT, v: VT, reference_frame: grid, rotation: {method: geolocation}}
@@ -57,11 +57,11 @@ datasets:
 fragments:
   arome_ci:
     heightAboveGround: {variables: [u, v, t, r, tke], indices: [0, 2, 5]}
-    isobaricInhPa: {variables: [u, v], values: [1000, 850, 400]}
+    isobaric: {variables: [u, v], values: [1000, 850, 400]}
     surface: {variables: [u10, v10, prmsl, sshf, slhf]}
   arome_full:
     heightAboveGround: {variables: [u, v, t, r, tke], indices: [0, 2, 5]}
-    isobaricInhPa: {variables: [u, v], values: [1000, 850, 400]}
+    isobaric: {variables: [u, v], values: [1000, 850, 400]}
     surface: {variables: [u10, v10, prmsl, sshf, slhf]}
   mnh:
     level: {variables: [UT, VT, THT, POVOT], indices: [1, 3, 5]}

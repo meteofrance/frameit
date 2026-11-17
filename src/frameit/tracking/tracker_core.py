@@ -240,7 +240,7 @@ def make_tracking_dataset(
             if name in {"latitude", "longitude", "lat", "lon"} or coord.attrs.get(
                     "standard_name") in {"latitude", "longitude"}:
                 horizontal_names.update(d for d in coord.dims if d not in {
-                    "time", "level", "level_w", "isobaricInhPa", "heightAboveGround"}
+                    "time", "level", "level_w", "isobaric", "heightAboveGround"}
                     and dataset[d].attrs.get("axis") != "Z")
     for i, left in enumerate(datasets):
         for right in datasets[i + 1:]:
@@ -452,8 +452,8 @@ def resolve_tracker_support(conf, source):
         identities = {record["field_id"] for record in source["record_inventory"]
                       if record["name"] == name and (
                           name not in {"u", "v", "z"}
-                          or source["fields"][record["field_id"]].get("group") == "isobaricInhPa"
-                          or "isobaricInhPa" in source["fields"][record["field_id"]]["dimensions"])}
+                          or source["fields"][record["field_id"]].get("group") == "isobaric"
+                          or "isobaric" in source["fields"][record["field_id"]]["dimensions"])}
         if len(identities) != 1:
             raise ValueError(
                 f"{method}: required input {name} missing or ambiguous in selected metadata")
@@ -469,8 +469,8 @@ def resolve_tracker_support(conf, source):
         axis = _field_axis(source, field, by_name[name][0][1], by_name)
         selector = {}
         if name in {"u", "v", "z"}:
-            if axis is None or axis["dimension"] != "isobaricInhPa":
-                raise ValueError(f"{method}: {name} requires the admitted AROME isobaricInhPa axis")
+            if axis is None or axis["dimension"] != "isobaric":
+                raise ValueError(f"{method}: {name} requires the admitted AROME isobaric axis")
             axes[name] = axis["descriptor"]
             unit_metadata(xr.DataArray(0., attrs=axes[name]["attributes"]), "pressure")
             if method == "multifield_vortex":
@@ -481,7 +481,7 @@ def resolve_tracker_support(conf, source):
         inputs[name] = selector
     conf.wind_pairs = []
     for group, components in (("surface", names[1:3]), *(
-            [("isobaricInhPa", ("u", "v"))] if method != "wind_pressure" else [])):
+            [("isobaric", ("u", "v"))] if method != "wind_pressure" else [])):
         from frameit.core.configuration import field_selection
 
         request = conf.source_requests[conf.source_name]

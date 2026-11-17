@@ -508,7 +508,7 @@ with xr.open_dataset(p['track'], engine='netcdf4') as track:
         np.testing.assert_array_equal(grid['native_y_indices'], [4,4])
     assert sum(len(s['skipped_times']) for s in
                provenance['time_alignment']['sources'].values()) == 2
-    for name in ('atmosphere.surface','atmosphere.isobaricInhPa','surface.surface'):
+    for name in ('atmosphere.surface','atmosphere.isobaric','surface.surface'):
         with xr.open_dataset(p[name.split('.')[0]], engine='netcdf4') as data:
             np.testing.assert_array_equal(data.time, times)
             assert data.attrs['source_id'] == name.split('.')[0]
@@ -524,7 +524,7 @@ with xr.open_dataset(p['track'], engine='netcdf4') as track:
                     np.testing.assert_array_equal(data.u10[t],np.zeros_like(j))
                     np.testing.assert_array_equal(data.v10[t],np.full_like(j,4+hour))
                     assert data.prmsl.attrs['units'] == 'Pa'
-                elif name == 'atmosphere.isobaricInhPa':
+                elif name == 'atmosphere.isobaric':
                     assert set(data.data_vars) == {'prmsl','u10','v10','u','v','t','r','z'}
                     np.testing.assert_array_equal(data.pressure,[850.])
                     for var,base in (('u',3.),('v',4.),('t',260.),('r',60.),('z',50000.)):

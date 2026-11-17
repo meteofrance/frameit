@@ -124,24 +124,6 @@ To activate this tracker in the YAML configuration, set:
        refine_width_km: 100
 
 
-Illustration
-------------
-
-Pressure-wind tracking on the two BATSIRAI times, with
-``region.width_km: {x: 500, y: 500}`` (full widths in kilometres).
-The outline shows the final native crop. The two centres are only one native
-grid point apart; no artificial displacement or second centre marker is added.
-
-.. figure:: ../_static/figures/batsirai-tracking.png
-   :target: ../_static/figures/batsirai-tracking.png
-   :width: 100%
-   :align: center
-   :alt: Two real pressure-wind tracking centres separated by one native point, with the final crop outline over stored 10-m zonal wind at 00:20 in m/s. No extracted-centre cross or graticule is added.
-
-   Actual tracking output over stored 10-m zonal wind at 00:20, not independent
-   evidence of track accuracy. The :doc:`external plotting recipe
-   <../reference/illustrations>` declares the source, time and wind convention.
-
 Optional initial position
 -------------------------
 
@@ -182,7 +164,7 @@ Known limitations
   inspection; the pressure minimum and wind-refined centre need not coincide.
 * **Initial selection:** without ``initial_guess``, the first pressure search is
   global. A seed restricts pressure candidates, not the following wind refinement.
-* **Search windows:** large movement between saved times or poorly chosen window
+* **Search windows:** large movement between input times or poorly chosen window
   widths can lose the intended disturbance. Windows are square native-index
   searches, not exact geodesic disks.
 * **Missing-data fallbacks:** an all-missing local window triggers the documented

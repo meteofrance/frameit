@@ -8,7 +8,7 @@ sources:
     files: "./data/AROME/BATSIRAI/arome_BATSIRAI_20220201+???0P.grib"
     wind_pairs:
       - {u: heightAboveGround.u, v: heightAboveGround.v, basis: earth}
-      - {u: isobaricInhPa.u, v: isobaricInhPa.v, basis: earth}
+      - {u: isobaric.u, v: isobaric.v, basis: earth}
       - {u: u10, v: v10, basis: earth}
     variables:
       2d: [u10, v10, prmsl, sshf, slhf]
@@ -16,13 +16,13 @@ sources:
         heightAboveGround:
           names: [u, v, t, r, tke]
           levels: {indices: [0, 2, 5]}
-        isobaricInhPa:
+        isobaric:
           names: [u, v]
           levels: {values: [1000, 850, 400], units: hPa}
     # Only the declared initial absences remain missing; later gaps still fail.
     allow_initial_gaps: [heightAboveGround.tke, sshf, slhf]
     transforms:
-      - fields: [heightAboveGround.u, heightAboveGround.v, isobaricInhPa.u, isobaricInhPa.v, u10, v10]
+      - fields: [heightAboveGround.u, heightAboveGround.v, isobaric.u, isobaric.v, u10, v10]
         sampling: native
         basis: earth
     field_metadata:
@@ -31,8 +31,8 @@ sources:
       heightAboveGround.t: {kind: continuous}
       heightAboveGround.r: {kind: continuous}
       heightAboveGround.tke: {kind: continuous}
-      isobaricInhPa.u: {kind: continuous}
-      isobaricInhPa.v: {kind: continuous}
+      isobaric.u: {kind: continuous}
+      isobaric.v: {kind: continuous}
       u10: {kind: continuous}
       v10: {kind: continuous}
       prmsl: {kind: continuous}

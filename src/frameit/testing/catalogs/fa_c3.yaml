@@ -36,7 +36,7 @@ fixture:
   moving_centres_lon_lat: [[50.0, -20.0], [50.015, -19.988]]
   atmospheric_indices_i_j: [[7, 6], [9, 7]]
   surfex_indices_i_j: [[5, 4], [6, 4]]
-  products: [atmosphere.surface, atmosphere.isobaricInhPa, surfex.surface]
+  products: [atmosphere.surface, atmosphere.isobaric, surfex.surface]
   cartesian_winds: explicitly native; original component names/values; no magnitude export
   polar_scalars: {atmosphere: [prmsl, t, r, z], surfex: [SFX.T2M, SFX.SST]}
   derivations: no unselected wind diagnostic, physical vertical coordinates, height, pressure or interval conversion

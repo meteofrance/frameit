@@ -1,0 +1,17 @@
+schema_version: 3
+run: {name: scalars-and-vectors}
+sources:
+  atmosphere:
+    model: arome
+    files: ./stationary/atmosphere.nc
+    variables:
+      2d: [u, v]
+    wind_pairs:
+      - {u: u, v: v, basis: earth}  # The fixture already uses east/north components.
+    derived:
+      speed: {method: wind_speed, inputs: {u: u, v: v}}  # Opt-in result.
+products:
+  model_grid:
+    fields: {atmosphere: [u, v, speed]}
+output: {directory: ./results/scalars-and-vectors}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

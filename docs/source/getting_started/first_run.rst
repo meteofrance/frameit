@@ -145,8 +145,8 @@ status before using them.
    :alt: First-time instructional input and its actual exported 5-by-5 crop. Both use the same dimensionless colour scale; the missing sample is grey and zero remains valid.
 
    Actual input and exported crop from this tutorial, not a simulation. The
-   :doc:`standalone plotting recipe <../reference/illustrations>` uses ordinary
-   xarray and Matplotlib, without importing FrameIt.
+   :download:`standalone plotting script <../../../example/plots/first_run.py>`
+   uses ordinary xarray and Matplotlib, without importing FrameIt.
 
 Next steps
 ----------

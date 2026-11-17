@@ -106,8 +106,8 @@ def vortex(*, model="mesonh", latitude=-20., moving=False, n=81):
         ds["VT_ZM"] = (("time", "level", *spatial),
                        np.repeat(np.asarray(vs)[:, None], 4, axis=1), wind_attrs)
     else:
-        ds = ds.assign_coords(isobaricInhPa=("isobaricInhPa", [850., 700., 500.], {"units": "hPa"}))
-        vertical = ("time", "isobaricInhPa", *spatial)
+        ds = ds.assign_coords(isobaric=("isobaric", [850., 700., 500.], {"units": "hPa"}))
+        vertical = ("time", "isobaric", *spatial)
         ds["u"] = (vertical, np.repeat(np.asarray(us)[:, None], 3, axis=1), wind_attrs)
         ds["v"] = (vertical, np.repeat(np.asarray(vs)[:, None], 3, axis=1), wind_attrs)
         h = 8000 * np.log(1000 / np.array([850, 700, 500]))[None, :, None, None]
@@ -215,7 +215,7 @@ def write_grib(path, ds, *, omit=None):
         for k in range(ds.sizes["time"]):
             for name, parameter in (("prmsl", 151), ("u10", 165), ("v10", 166),
                                     ("u", 131), ("v", 132), ("z", 129)):
-                levels = ds.isobaricInhPa.values if name in {"u", "v", "z"} else [None]
+                levels = ds.isobaric.values if name in {"u", "v", "z"} else [None]
                 for level in levels:
                     if omit is not None and (name, level, k) == omit:
                         continue
@@ -242,7 +242,7 @@ def write_grib(path, ds, *, omit=None):
                             ec.codes_set(message, "level", int(level))
                         values = ds[name].isel(time=k)
                         if level is not None:
-                            values = values.sel(isobaricInhPa=level)
+                            values = values.sel(isobaric=level)
                         ec.codes_set_values(message, values.values.ravel())
                         ec.codes_write(message, handle)
                     finally:

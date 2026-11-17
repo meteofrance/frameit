@@ -15,6 +15,43 @@ from check_publication import check_artifact, check_text
 
 
 class PublicationBoundaryTests(unittest.TestCase):
+    def test_public_readme_is_checked_alongside_sphinx_sources(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+
+        import check_publication as checker
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "docs/source"
+            source.mkdir(parents=True)
+            (source / "conf.py").write_text("")
+            (root / "README.md").write_text("Run chido.yaml")
+            artifact = root / "html"
+            artifact.mkdir()
+            output = StringIO()
+            with patch.object(checker, "ROOT", root), patch.object(
+                checker.sys, "argv", ["check_publication.py", str(artifact)]
+            ), redirect_stdout(output):
+                checker.main()
+            self.assertIn("README.md:1: non-public reference", output.getvalue())
+
+    def test_real_event_references_are_not_public_documentation(self):
+        for text in ("BATSIRAI", "chido", "BELNA", "1BT01.1.MXX30.001dg.nc",
+                     "reference/illustrations.html", "matrix_testing.html"):
+            with self.subTest(text=text):
+                self.assertTrue(check_text(Path("topic.html"), text))
+
+    def test_real_event_assets_are_rejected_even_without_links(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = root / "_static/batsirai-private.png"
+            image.parent.mkdir()
+            image.write_bytes(b"not publicly distributable")
+            self.assertTrue(any("batsirai-private.png" in error and "non-public" in error
+                                for error in check_artifact(root)))
+
     def test_utrack_configuration_example_is_valid_yaml(self):
         import yaml
 

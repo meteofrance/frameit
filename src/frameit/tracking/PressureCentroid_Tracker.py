@@ -60,7 +60,7 @@ class PressureCentroidTracker(TcTracker):
 
             ds = prepare_mnh_inputs(ds, self.conf)
             provenance = dict(ds.attrs)
-        level_dim = "level" if native else "isobaricInhPa"
+        level_dim = "level" if native else "isobaric"
         field = (lambda name: ds[name]) if native else (lambda name: self._field(ds, name))
         mslp = field("mslp")
         if "time" not in mslp.dims or mslp.ndim != 3:

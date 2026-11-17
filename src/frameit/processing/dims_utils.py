@@ -124,7 +124,7 @@ def normalize_dims_for_extraction(
     default_vertical_dims = (
         "level",  # MNH
         "level_w",  # MNH W grid
-        "isobaricInhPa",  # AROME, GRIB pressure levels
+        "isobaric",  # Pressure levels; coordinate metadata carries the units.
         "heightAboveGround",
         "hybrid",
         "hybrid1",

@@ -28,12 +28,12 @@ def grouped_document(tmp_path):
             "variables": {"2d": ["prmsl"], "3d": {
                 "heightAboveGround": {"names": ["u", "v"],
                                       "levels": {"indices": [0, 2, 5]}},
-                "isobaricInhPa": {"names": ["u", "v"],
+                "isobaric": {"names": ["u", "v"],
                                  "levels": {"values": [1000, 850, 400], "units": "hPa"}},
             }},
             "wind_pairs": [
                 {"u": "heightAboveGround.u", "v": "heightAboveGround.v", "basis": "earth"},
-                {"u": "isobaricInhPa.u", "v": "isobaricInhPa.v", "basis": "earth"},
+                {"u": "isobaric.u", "v": "isobaric.v", "basis": "earth"},
             ],
             "derived": {"speed": {"method": "wind_speed", "inputs": {
                 "u": "heightAboveGround.u", "v": "heightAboveGround.v"}}},
@@ -46,21 +46,21 @@ def grouped_document(tmp_path):
 def test_grouped_schema_preserves_separate_levels_and_reference_consumers(tmp_path):
     raw = grouped_document(tmp_path)
     raw["sources"]["atmosphere"]["transforms"] = [
-        {"fields": ["isobaricInhPa.u"], "units": "m s-1"}]
+        {"fields": ["isobaric.u"], "units": "m s-1"}]
     raw["products"] = {"model_grid": {"fields": {"atmosphere": [
-        "prmsl", "heightAboveGround.u", "isobaricInhPa.u", "speed"]}}}
+        "prmsl", "heightAboveGround.u", "isobaric.u", "speed"]}}}
     original = deepcopy(raw)
     effective, requests, polar = resolve_schema(raw)
     assert raw == original
     request = requests["atmosphere"]
     assert request["fields"] == {"2d": ["prmsl"], "3d": [
-        "heightAboveGround.u", "heightAboveGround.v", "isobaricInhPa.u", "isobaricInhPa.v"]}
+        "heightAboveGround.u", "heightAboveGround.v", "isobaric.u", "isobaric.v"]}
     assert request["groups"] == original["sources"]["atmosphere"]["variables"]["3d"]
     assert request["levels"] == {}
     assert request["exports"] == {"model_grid": [
-        "prmsl", "heightAboveGround.u", "isobaricInhPa.u", "speed"]}
+        "prmsl", "heightAboveGround.u", "isobaric.u", "speed"]}
     assert request["internal_inputs"] == ["heightAboveGround.u", "heightAboveGround.v"]
-    assert request["transforms"] == [{"fields": ["isobaricInhPa.u"], "units": "m s-1"}]
+    assert request["transforms"] == [{"fields": ["isobaric.u"], "units": "m s-1"}]
     assert polar == {}
     assert resolve_schema(effective)[0] == effective
     child = source_document(effective, "atmosphere")
@@ -70,22 +70,22 @@ def test_grouped_schema_preserves_separate_levels_and_reference_consumers(tmp_pa
             == original["sources"]["atmosphere"]["variables"])
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     assert conf.expected_variables_user() == [
-        "heightAboveGround.u", "heightAboveGround.v", "isobaricInhPa.u",
-        "isobaricInhPa.v", "prmsl", "speed"]
+        "heightAboveGround.u", "heightAboveGround.v", "isobaric.u",
+        "isobaric.v", "prmsl", "speed"]
     assert not (tmp_path / "out").exists()
 
 
 @pytest.mark.parametrize("groups,source_levels,error", [
     ({}, None, "3d.*nonempty"),
-    ({"isobaricInhPa": []}, None, "isobaricInhPa.*mapping"),
-    ({"isobaricInhPa": {}}, None, "isobaricInhPa.*names"),
-    ({"isobaricInhPa": {"names": []}}, None, "names.*nonempty"),
-    ({"isobaricInhPa": {"names": ["u", "u"]}}, None, "names.*duplicate"),
-    ({"isobaricInhPa": {"names": ["u"], "indices": [0]}}, None, "indices"),
-    ({"isobaricInhPa": {"names": ["u"], "levels": {"indices": [-1]}}}, None, "indices"),
+    ({"isobaric": []}, None, "isobaric.*mapping"),
+    ({"isobaric": {}}, None, "isobaric.*names"),
+    ({"isobaric": {"names": []}}, None, "names.*nonempty"),
+    ({"isobaric": {"names": ["u", "u"]}}, None, "names.*duplicate"),
+    ({"isobaric": {"names": ["u"], "indices": [0]}}, None, "indices"),
+    ({"isobaric": {"names": ["u"], "levels": {"indices": [-1]}}}, None, "indices"),
     ({"bad.group": {"names": ["u"]}}, None, "group.*identifier"),
-    ({"isobaricInhPa": {"names": ["u"]}}, {}, "levels.*group"),
-    ({"isobaricInhPa": {"names": ["u"]}}, {"indices": [0]}, "levels.*group"),
+    ({"isobaric": {"names": ["u"]}}, {}, "levels.*group"),
+    ({"isobaric": {"names": ["u"]}}, {"indices": [0]}, "levels.*group"),
 ])
 def test_grouped_schema_rejects_invalid_or_overlapping_controls(
         tmp_path, groups, source_levels, error):
@@ -126,7 +126,7 @@ def grib_document(tmp_path, *, extra=()):
         {"hour": hour, "param": param, "group": group, "level": level}
         for hour in (0, 1, 2) for param in (131, 132, 130)
         for group, levels in (("heightAboveGround", (20, 30, 40, 50, 60, 70)),
-                              ("isobaricInhPa", (1000, 850, 700, 400)))
+                              ("isobaric", (1000, 850, 700, 400)))
         for level in levels
     ]
     path = write_messages(tmp_path / "input.grib", [*declarations, *extra])
@@ -151,7 +151,7 @@ def test_grouped_grib_binds_exact_fields_and_independent_levels_without_payloads
     assert binding["status"] == "bound"
     fields = binding["products"]["model_grid"]
     assert set(fields) == {
-        "heightAboveGround.u", "heightAboveGround.v", "isobaricInhPa.u", "isobaricInhPa.v"}
+        "heightAboveGround.u", "heightAboveGround.v", "isobaric.u", "isobaric.v"}
     assert len({field["field_id"] for field in fields.values()}) == 4
     for reference, field in fields.items():
         height = reference.startswith("heightAboveGround.")
@@ -235,7 +235,7 @@ def test_grouped_metadata_never_applies_a_bare_ambiguous_declaration(
     binding = bind_source(conf, "atmosphere")
     fields = binding["products"]["model_grid"]
     assert fields["heightAboveGround.u"]["field_metadata"]["attributes"]["kind"] == "continuous"
-    assert "field_metadata" not in fields["isobaricInhPa.u"]
+    assert "field_metadata" not in fields["isobaric.u"]
 
 
 def test_grouped_inspection_offers_only_evidenced_copyable_groups(tmp_path, monkeypatch):
@@ -249,10 +249,10 @@ def test_grouped_inspection_offers_only_evidenced_copyable_groups(tmp_path, monk
     selectors = {item["field"]: item["variables"] for item in source["available_selectors"]}
     assert selectors["heightAboveGround.u"] == {
         "3d": {"heightAboveGround": {"names": ["u"]}}}
-    assert selectors["isobaricInhPa.u"] == {
-        "3d": {"isobaricInhPa": {"names": ["u"]}}}
+    assert selectors["isobaric.u"] == {
+        "3d": {"isobaric": {"names": ["u"]}}}
     assert "u" not in selectors
-    for reference in ("heightAboveGround.u", "isobaricInhPa.u"):
+    for reference in ("heightAboveGround.u", "isobaric.u"):
         selected = deepcopy(raw)
         selected["sources"]["atmosphere"]["variables"] = selectors[reference]
         child = SimulationConfig.from_mapping_with_model_preset(selected)
@@ -271,7 +271,7 @@ def test_grouped_derived_inputs_bind_their_own_native_identity(tmp_path, monkeyp
                              "basis": "grid", "rotation": {"method": "geolocation"}}]
     source["derived"] = {"speed": {"method": "wind_speed", "inputs": {
         "u": "heightAboveGround.u",
-        "v": "isobaricInhPa.v" if different else "heightAboveGround.v"}}}
+        "v": "isobaric.v" if different else "heightAboveGround.v"}}}
     raw["products"] = {"model_grid": {"fields": {"atmosphere": ["speed"]}}}
     monkeypatch.setattr(ec, "codes_get_values", lambda *a, **kw: pytest.fail("scientific read"))
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
@@ -299,11 +299,11 @@ def test_grouped_grib_execution_preserves_values_names_and_plain_reader(
 
     path, raw = grib_document(tmp_path)
     before = hashlib.sha256(path.read_bytes()).hexdigest()
-    pressure = raw["sources"]["atmosphere"]["variables"]["3d"]["isobaricInhPa"]["levels"]
+    pressure = raw["sources"]["atmosphere"]["variables"]["3d"]["isobaric"]["levels"]
     pressure.update(values=[100000, 85000, 40000], units="Pa")
     raw["output"]["format"] = format
     names = ["heightAboveGround.u"] if filtered else [
-        "isobaricInhPa.v", "heightAboveGround.u", "isobaricInhPa.u", "heightAboveGround.v"]
+        "isobaric.v", "heightAboveGround.u", "isobaric.u", "heightAboveGround.v"]
     raw["products"] = {"model_grid": {"fields": {"atmosphere": names}}}
     calls = []
     original = ec.codes_get_values
@@ -335,12 +335,12 @@ with (xr.open_zarr(path, consolidated=False) if fmt == 'zarr' else xr.open_datas
         ['2026-01-01T01', '2026-01-01T02'], dtype='datetime64[ns]'))
     np.testing.assert_array_equal(ds.height_above_ground, [20, 40, 70])
     assert ds.height_above_ground.attrs['units'] == 'm'
-    if 'isobaricInhPa.u' in names:
+    if 'isobaric.u' in names:
         np.testing.assert_array_equal(ds.pressure, [100000, 85000, 40000])
         assert ds.pressure.attrs['units'] == 'Pa'
     for name in names:
         group, raw = name.split('.')
-        axis = 'pressure' if group == 'isobaricInhPa' else 'height_above_ground'
+        axis = 'pressure' if group == 'isobaric' else 'height_above_ground'
         assert ds[name].dims == ('time', axis, 'y', 'x')
         assert ds[name].attrs['source_variable_name'] == raw
         assert ds[name].attrs['units'] == 'm s**-1'
@@ -553,11 +553,13 @@ for path in json.loads(sys.argv[2]):
                 ec.codes_release(h)
 with xr.open_dataset(sys.argv[1]) as ds:
     assert set(ds.data_vars) == {
-        'heightAboveGround.u', 'heightAboveGround.v', 'isobaricInhPa.u', 'isobaricInhPa.v'}
-    for group, axis in (('heightAboveGround', 'height_above_ground'),
-                        ('isobaricInhPa', 'pressure')):
+        'heightAboveGround.u', 'heightAboveGround.v', 'isobaric.u', 'isobaric.v'}
+    for group, native_group, axis in (
+        ('heightAboveGround', 'heightAboveGround', 'height_above_ground'),
+        ('isobaric', 'isobaricInhPa', 'pressure'),
+    ):
         for name in ('u', 'v'):
-            available = sorted({k[3] for k in records if k[1:3] == (group, name)})
+            available = sorted({k[3] for k in records if k[1:3] == (native_group, name)})
             levels = ([available[i] for i in (0, 2, 5)] if axis == 'height_above_ground'
                       else [1000,850,400])
             field = ds[group+'.'+name]
@@ -565,7 +567,8 @@ with xr.open_dataset(sys.argv[1]) as ds:
             np.testing.assert_array_equal(field[axis], levels)
             for t, stamp in enumerate(sorted(selected)):
                 for z, level in enumerate(levels):
-                    np.testing.assert_array_equal(field[t,z], records[stamp,group,name,level])
+                    np.testing.assert_array_equal(
+                        field[t,z], records[stamp,native_group,name,level])
     assert ds.pressure.attrs['units'] == 'hPa'
     assert ds.height_above_ground.attrs['units'] == 'm'
 assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
@@ -593,7 +596,7 @@ def test_grouped_stored_name_cannot_replace_required_native_support(tmp_path, mo
     assert not (tmp_path / "out").exists()
 
 
-@pytest.mark.parametrize("forged", ["invented.u", "isobaricInhPa.v", "unrequested_alias"])
+@pytest.mark.parametrize("forged", ["invented.u", "isobaric.v", "unrequested_alias"])
 def test_grouped_grib_reader_still_checks_reference_against_native_identity(
         tmp_path, monkeypatch, forged):
     import eccodes as ec

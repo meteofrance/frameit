@@ -797,7 +797,7 @@ def test_numerical_native_grib_cannot_hide_mixed_stored_units(tmp_path, monkeypa
     settings.cartesian_horizontal_winds = "native"
     with pytest.raises(ValueError, match="conflicting scientific metadata.*units"):
         concat_grib2ds_by_vert_coord(
-            paths, {"isobaricInhPa": {"variables": ["u"], "all_levels": True}}, {},
+            paths, {"isobaric": {"variables": ["u"], "all_levels": True}}, {},
             index_dir=tmp_path / "cache", wind_conf=settings)
 
 

@@ -45,11 +45,72 @@ An owner of `lead` on future tasks is a reservation, not a claim of implementati
 | 14 | done | Task14 worker + lead + independent reviewer | 13 | `bde826b`; owning plan/progress approved, A1 corrected; frozen handoff below. |
 | 15 | done | Task15 worker + lead + independent reviewer | 14 | `40f9bcd`; C9 surface approved after fix1, frozen handoff below. |
 | 16 | partial, required checks pass | lead inline | 15 | Current required suite and bounded connected checks pass; broader qualification/freeze remains separate. |
-| 17 | partial | lead + fresh bounded reviewer | 16 | Approved analytical tasks verified: exact required53 pass; new plotting evidence remains restricted. |
+| 17 | partial | lead + fresh bounded reviewer | 16 | Generated-NetCDF task tutorials and nine analytical SVGs now verified; broader qualification remains separate. |
 | 18 | done, local evidence | lead + fresh bounded reviewer | 16 | `bd882c2`; final exact122 has58 passes; all six findings closed. No real-cluster claim. |
 | 19 | blocked | lead | 16, 18 | Installed/full-branch qualification remains unavailable; no inferred pass. |
 | 20 | wording gates verified | lead + fresh reviewers | 17, 19 | `2095dd8`; both full passes and technical closure; strict09/publication/live text pass. Restricted acceptance remains separate. |
 | 21 | blocked | lead + fresh reviewers + human | 20 | Whole-branch reviews and actual human usability acceptance. |
+
+### 17 November — analytical tutorials and pressure-group review
+
+The maintainer approved generated NetCDF inputs and actual analytical tutorial
+figures. That instruction supersedes the earlier plotting restriction only for
+these nine tutorial SVGs; it does not authorize production runs, other restricted
+image review, the reserved full diagnostic, or scientific/human acceptance.
+
+- Public pressure groups, axes and qualified references now use `isobaric`.
+  Coordinate/selector metadata carries Pa or hPa. Raw GRIB level-type identifiers
+  remain external decoder/encoder/provenance identities, not public aliases.
+  Grouped output names change intentionally; numerical methods, physical field
+  values, masks, units, clocks and diagnostic defaults are unchanged.
+- `frameit generate-tests-fixtures --output tutorial-data` and
+  `create_task_fixtures(Path(...))` reuse the analytical generator. Twelve small
+  instructional NetCDF files are written into a new directory only.
+- The fixture-first guide and eight task tutorials have equivalent CLI/API tabs,
+  focused YAML comments, standalone ordinary-reader plots, actual analytical
+  output figures and short real-input adaptation sections. Field selection is
+  shorter; roundoff/selection-grid detail is in Reference.
+- Public real-case references, illustration/matrix pages and four real-data
+  figures are removed. Scientific regression fixtures and private evidence are
+  preserved. Publication checks now cover README and orphan artifacts as well.
+- One fresh bounded review found selected-NetCDF normalization, direct-GRIB
+  metadata merging and extensionless-plot overwrite defects. All were reproduced
+  before fixing. The README's broken link/real-case name was regraded as required
+  public-documentation cleanup and fixed in the same pass; no minor is deferred.
+- Review regressions: **22 failed/18 passed** before the fixes; the complete
+  focused rerun is **55 passed,40 passing subtests**,794 warnings,91.06s.
+  The ordinary-reader frozen-GRIB comparison also now distinguishes public group
+  names from raw GRIB record keys without changing values, levels or tolerances.
+- Final strict Sphinx iteration05 and publication05 pass. Nine pages at exact1280/320px
+  GUI viewports pass tab keyboard/click and overflow checks; all nine rebuilt
+  plotting downloads contain the explicit-suffix/no-overwrite guard.
+  Earlier no-JavaScript and final SVG drawing-bound checks also pass.
+  Preview process/URL/restart details are retained only in the session handover.
+- Before the review fixes, connected documentation/example/CLI checks passed144
+  tests. Broad connected checks reported29 failures, all independently reproduced
+  on untouched `5c8885c`; they are not silently reclassified as passes.
+  Unfiltered suites alone ran the existing PNG smoke tests; their generated
+  images were not opened.
+- Final unfiltered reader/group/tracker rerun: **684 passed,6 failed**,878
+  warnings,180.16s. All six failing node IDs exactly match the independently
+  reproduced baseline. The frozen real-GRIB ordinary-reader comparison passes;
+  no new reader failure remains in this lane. This is not a green whole suite.
+- Final Ruff comparison, including diagnostic multiplicity, finds zero
+  introduced diagnostics across52 changed/new Python files; existing findings
+  are not called clean. The staged whitespace check exposed Matplotlib's trailing
+  spaces in the new SVGs; formatting-only normalization preserves every SVG
+  element, attribute/path token and text. The rebuilt artifact and staged
+  `git diff --check` pass.
+
+Docs impact: fixture commands, pressure configuration/grouped names, output
+descriptions, tutorial examples and figures are updated together. No installation
+or dependency change. This scoped review does not close Task16's wider freeze,
+Task19 full/installed qualification or Task21 human acceptance. No environment
+repair, production/HPC run, benchmark campaign, push or merge was performed.
+
+The plan is `2026-11-17-documentation-review-plan.md` beside this record.
+Detailed commands, baseline node IDs, the review and local preview ownership are
+retained in this plan's ignored `.superpowers/sdd` handover/ledger.
 
 ### 17 November — deprecated-test check and polar temporal metadata
 

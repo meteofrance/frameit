@@ -34,10 +34,10 @@ from frameit.io.loader import DatasetResources
 with DatasetResources() as owned:
     user, _ = concat_grib2ds_by_vert_coord(
         sorted(Path(sys.argv[1]).glob('*.grib'))[:1],
-        {'isobaricInhPa': {'variables': ['u', 'v'], 'level_selection': 'indices',
+        {'isobaric': {'variables': ['u', 'v'], 'level_selection': 'indices',
                            'level_indices': [0]}}, {}, method='fixed_box',
         index_dir=sys.argv[2], resources=owned, filter_requested=True)
-    data = user['isobaricInhPa'].load()
+    data = user['isobaric'].load()
     assert data.u.shape == data.v.shape == (1, 1, 81, 81)
     assert data.u.attrs['units'] == 'm s**-1'
     assert data.u.notnull().all() and data.v.notnull().all()

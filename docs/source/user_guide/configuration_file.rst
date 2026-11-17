@@ -224,14 +224,16 @@ One optional ``variables.levels`` applies to all requested 3D fields and results
 in that source, separately on each product's representation. It does not affect
 2D fields. Omission keeps every level on each field's own grid.
 
-Alternatively, use ``variables.3d.<native-group>: {names: [...], levels: {...}}``.
+Alternatively, use ``variables.3d.<group>: {names: [...], levels: {...}}``.
 Each group has its own optional selector; source-wide ``variables.levels`` is
 then forbidden. Use this form for distinct fields sharing a name, even if you
 want only one, or for independent selections on different axes. References in
-operations, metadata and products use ``<native-group>.<field>``. Grouped exports
+operations, metadata and products use ``<group>.<field>``. Grouped exports
 keep that name. Groups must identify fields unambiguously; they do not choose
-between providers. See :ref:`explicit-vertical-groups` for syntax, derived
-selection and shared-destination-axis limits.
+between providers. Pressure groups use ``isobaric``; coordinate metadata and
+``levels.units`` carry the units, not the group name. See
+:ref:`explicit-vertical-groups` for an example and
+:doc:`../reference/vertical_levels` for selection and shared-axis limits.
 
 For grouped Meso-NH W, ``level_w`` values identify native interfaces. Explicit
 ``sampling: mass`` carries their original indices to the corresponding mass

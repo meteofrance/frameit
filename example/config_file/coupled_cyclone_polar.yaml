@@ -12,18 +12,18 @@ sources:
     # Explicit declarations: check actual GRIB uvRelativeToGrid flags first.
     wind_pairs:
       - {u: u10, v: v10, basis: earth}
-      - {u: isobaricInhPa.u, v: isobaricInhPa.v, basis: earth}
+      - {u: isobaric.u, v: isobaric.v, basis: earth}
     variables:
       2d: [prmsl, u10, v10]
       3d:
-        isobaricInhPa:
+        isobaric:
           names: [u, v, t, r, z]
           levels: {values: [850, 700, 500], units: hPa}
     field_metadata:
       prmsl: {kind: continuous}
-      isobaricInhPa.t: {kind: continuous}
-      isobaricInhPa.r: {kind: continuous}
-      isobaricInhPa.z: {kind: continuous}
+      isobaric.t: {kind: continuous}
+      isobaric.r: {kind: continuous}
+      isobaric.z: {kind: continuous}
   surface:
     model: arome
     format: fa
@@ -67,7 +67,7 @@ products:
     # Native winds stay in model-grid products. Only scalar polar quantities:
     # no wind diagnostic, pressure/height diagnosis or interval conversion.
     fields:
-      atmosphere: [prmsl, isobaricInhPa.t, isobaricInhPa.r, isobaricInhPa.z]
+      atmosphere: [prmsl, isobaric.t, isobaric.r, isobaric.z]
       surface: [SFX.T2M, SFX.SST]
     radius_km: 20
     # No finer than any participating source's native spacing.

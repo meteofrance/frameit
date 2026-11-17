@@ -1,0 +1,17 @@
+schema_version: 3
+run: {name: field-selection}
+sources:
+  atmosphere:
+    model: arome
+    files: ./pressure.nc
+    variables:
+      2d: [prmsl]
+      3d:
+        isobaric:
+          names: [temperature]
+          levels: {values: [850, 700], units: hPa}  # Existing labels, in this order.
+        height:
+          names: [height_temperature]
+          levels: {indices: [0, 2]}  # Independent positions on the height axis.
+output: {directory: ./results/field-selection}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

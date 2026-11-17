@@ -11,23 +11,23 @@ sources:
     files: "./data/AROME/BATSIRAI/arome_BATSIRAI_20220201+???0P.grib"
     wind_pairs:
       - {u: u10, v: v10, basis: earth}
-      - {u: isobaricInhPa.u, v: isobaricInhPa.v, basis: earth}
+      - {u: isobaric.u, v: isobaric.v, basis: earth}
     variables:
       2d: [u10, v10, prmsl]
       3d:
-        isobaricInhPa:
+        isobaric:
           names: [u, v]
           levels: {values: [850, 700], units: hPa}
     transforms:
-      - fields: [u10, v10, isobaricInhPa.u, isobaricInhPa.v]
+      - fields: [u10, v10, isobaric.u, isobaric.v]
         sampling: native
         basis: earth
     field_metadata:
       u10: {kind: continuous}
       v10: {kind: continuous}
       prmsl: {kind: continuous}
-      isobaricInhPa.u: {kind: continuous}
-      isobaricInhPa.v: {kind: continuous}
+      isobaric.u: {kind: continuous}
+      isobaric.v: {kind: continuous}
 region:
   tracker:
     method: pressure_centroid

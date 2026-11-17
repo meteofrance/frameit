@@ -28,7 +28,7 @@ def generated_tracker_document(directory, method):
     fraction = (np.log(pressure) - np.log(900.)) / (np.log(700.) - np.log(900.))
     lower = 2000. - 1000. * fraction
     horizontal = ("valid_time", "latitude", "longitude")
-    vertical = ("valid_time", "isobaricInhPa", "latitude", "longitude")
+    vertical = ("valid_time", "isobaric", "latitude", "longitude")
     winds = {"units": "m s-1", "GRIB_uvRelativeToGrid": 0}
     atmosphere = xr.Dataset({
         "prmsl": (horizontal, np.stack([pressure * 100 + 20000] * 2), {"units": "Pa"}),
@@ -41,7 +41,7 @@ def generated_tracker_document(directory, method):
     }, coords={"valid_time": ocean.time_counter.values,
                "latitude": ("latitude", lat[:, 0], {"units": "degrees_north"}),
                "longitude": ("longitude", lon[0], {"units": "degrees_east"}),
-               "isobaricInhPa": ("isobaricInhPa", [900., 700.], {"units": "hPa"})})
+               "isobaric": ("isobaric", [900., 700.], {"units": "hPa"})})
     atmosphere.to_netcdf(directory / "atmosphere.nc", engine="h5netcdf")
     for name, source in raw["sources"].items():
         source["files"] = str(directory / f"{name}.nc")

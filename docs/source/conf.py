@@ -49,4 +49,5 @@ html_static_path = ["_static"]
 html_logo = "_static/logo/frameit_logo.svg"
 html_favicon = "_static/logo/frameit_logo_symbol_vector.svg"
 html_css_files = ["custom.css"]
+html_js_files = ["command-tabs.js"]
 html_title=f"FrameIt {release} documentation"

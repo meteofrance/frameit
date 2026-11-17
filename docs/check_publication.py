@@ -18,7 +18,8 @@ FORBIDDEN = re.compile(
     r"|(?:docs/)?development/fa|fa_\w+_history(?:\.|/)"
     r"|Frozen\s+developer\s+evidence|\bFA\s+P\d+\b|\bEPyGrAM\s+C\d+\b"
     r"|\b(?:stage|increment)\s+[PC]\d+\b|upgrading_to_v2"
-    r"|visualization_tools|frameit\.viz\b|conservative_experiment|wind_method_comparison",
+    r"|visualization_tools|frameit\.viz\b|conservative_experiment|wind_method_comparison"
+    r"|batsirai|chido|belna|(?:all|3)CH09|1BT01|reference/illustrations|matrix_testing",
     re.IGNORECASE,
 )
 TEXT_SUFFIXES = {".html", ".js", ".txt", ".rst", ".yaml", ".yml", ".json"}
@@ -162,6 +163,8 @@ def main() -> int:
         print(f"Not a documentation artifact directory: {artifact}")
         return 2
     errors = check_brand_assets(ROOT / 'docs/source', artifact)
+    readme = ROOT / "README.md"
+    errors.extend(check_text(readme, readme.read_text(encoding="utf-8")))
     for source in sorted((ROOT / "docs/source").rglob("*.rst")):
         errors.extend(check_text(source, source.read_text(encoding="utf-8")))
     errors.extend(check_artifact(artifact))

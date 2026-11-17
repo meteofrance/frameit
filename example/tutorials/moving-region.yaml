@@ -1,0 +1,16 @@
+schema_version: 3
+run: {name: moving-region}
+sources:
+  atmosphere:
+    model: arome
+    files: ./data/atmosphere.nc
+    variables:
+      2d: [pressure]
+region:
+  track: {file: ./data/track.nc}  # Use the generated three-time trajectory.
+  width_km: {x: 60, y: 60}
+products:
+  model_grid: true
+  track: true  # Export the trajectory as well as using it.
+output: {directory: ./results/moving-region}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

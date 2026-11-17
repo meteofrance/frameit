@@ -1,0 +1,18 @@
+schema_version: 3
+run: {name: storage-and-resources}
+sources:
+  atmosphere:
+    model: arome
+    files: ./first-run.nc
+    variables:
+      2d: [instructional_scalar]
+output:
+  directory: ./results/storage-and-resources
+  format: zarr
+  writer:
+    chunks: {time: 1, y: 8, x: 8}  # Element counts, not bytes.
+    shards: {time: 2, y: 16, x: 16}  # Multiples of the stored chunk extents.
+resources:
+  cpus: 1  # Bounded tutorial run, not a performance recommendation.
+  scheduler: synchronous
+  synchronous_export: true

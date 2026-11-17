@@ -86,7 +86,7 @@ def test_frozen_matrix_yaml_and_mapping_requests_match(tmp_path, model):
     source = case["config"]["sources"]["atmosphere"]
     source["wind_pairs"] = (
         [{"u": f"{group}.u", "v": f"{group}.v", "basis": "earth"}
-         for group in ("heightAboveGround", "isobaricInhPa")]
+         for group in ("heightAboveGround", "isobaric")]
         + [{"u": "u10", "v": "v10", "basis": "earth"}]
         if model == "AROME" else
         [{"u": "level.UT", "v": "level.VT", "basis": "grid",

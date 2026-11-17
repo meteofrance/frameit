@@ -793,7 +793,7 @@ def test_no_export_does_not_claim_planned_products(tmp_path):
 
 
 @pytest.mark.parametrize("native_axis,exported_axis,label,units", [
-    ("isobaricInhPa", "pressure", 850, "hPa"),
+    ("isobaric", "pressure", 850, "hPa"),
     ("heightAboveGround", "height_above_ground", 10, "m"),
 ])
 def test_grib_preview_and_publication_use_c7_axes(

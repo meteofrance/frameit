@@ -1,0 +1,19 @@
+schema_version: 3
+run: {name: coupled-inputs}
+sources:
+  atmosphere:
+    model: arome
+    files: ./stationary/atmosphere.nc
+    variables:
+      2d: [pressure]
+  ocean:
+    model: croco
+    files: ./stationary/ocean.nc
+    variables:
+      3d: [temp]
+      levels: {indices: [2]}  # The fixture's surface rho level.
+region:
+  center: {latitude: -20, longitude: 60}
+  width_km: {x: 40, y: 40}  # Applied separately on each source grid.
+output: {directory: ./results/coupled-inputs}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

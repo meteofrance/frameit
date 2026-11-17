@@ -461,13 +461,13 @@ def grib_blocks(stamp, *, scalar=True, units="m s-1", flag=1, angle=90.):
     """Synthetic cfgrib blocks with explicitly declared grid-basis vectors."""
     levels = 850. if scalar else [850., 700.]
     dims = ("latitude", "longitude") if scalar else (
-        "isobaricInhPa", "latitude", "longitude")
+        "isobaric", "latitude", "longitude")
     shape = (2, 2) if scalar else (2, 2, 2)
     scale = 3.6 if units == "km h-1" else 1.
     source = xr.Dataset(coords={
         "time": np.datetime64("2024-01-01", "ns"),
         "valid_time": np.datetime64(stamp, "ns"),
-        "isobaricInhPa": xr.DataArray(levels, dims=() if scalar else "isobaricInhPa",
+        "isobaric": xr.DataArray(levels, dims=() if scalar else "isobaric",
                                       attrs={"units": "hPa"}),
         "latitude": ("latitude", [-20., -19.99], {"units": "degrees_north"}),
         "longitude": ("longitude", [60., 60.01], {"units": "degrees_east"}),
@@ -487,7 +487,7 @@ def grib_settings():
         atm_model="AROME", name_latitude="latitude", name_longitude="longitude",
         wind_reference_frame=None,
         wind_pairs=[{
-            "group": "isobaricInhPa", "u": "u", "v": "v", "reference_frame": "grid",
+            "group": "isobaric", "u": "u", "v": "v", "reference_frame": "grid",
             "rotation": {"method": "coordinate", "coordinate": "rotation"},
         }],
     )
@@ -507,7 +507,7 @@ def test_grib_per_file_units_rotation_and_native_branch(tmp_path, monkeypatch):
                                   units="km h-1", angle=0.),
     }
     monkeypatch.setattr(cfgrib, "open_datasets", lambda path, **kw: blocks[path])
-    request = {"isobaricInhPa": {
+    request = {"isobaric": {
         "variables": ["u", "v"], "level_selection": "values", "level_values": [850.],
     }}
     settings = grib_settings()
@@ -517,21 +517,21 @@ def test_grib_per_file_units_rotation_and_native_branch(tmp_path, monkeypatch):
             paths, request, {"pressure_centroid": request}, method="pressure_centroid",
             index_dir=tmp_path / "indexes", wind_conf=settings, resources=resources,
         )
-        prepared = user["isobaricInhPa"]
+        prepared = user["isobaric"]
         assert prepared.sizes["time"] == 2
-        assert prepared.sizes["isobaricInhPa"] == 1
+        assert prepared.sizes["isobaric"] == 1
         np.testing.assert_allclose(prepared.u.isel(time=0), -4., atol=1e-14)
         np.testing.assert_allclose(prepared.v.isel(time=0), 3., atol=1e-14)
         np.testing.assert_allclose(prepared.u.isel(time=1), 3., atol=1e-14)
         np.testing.assert_allclose(prepared.v.isel(time=1), 4., atol=1e-14)
-        xr.testing.assert_identical(tracker["pressure_centroid"]["isobaricInhPa"], prepared)
+        xr.testing.assert_identical(tracker["pressure_centroid"]["isobaric"], prepared)
         for index, (unit, u, v, angle) in enumerate((
                 ("m s-1", 3., 4., 90.), ("km h-1", 10.8, 14.4, 0.))):
             native = {}
             grib_utils.concat_grib2ds_by_vert_coord(
                 [paths[index]], request, {}, index_dir=tmp_path / "indexes",
                 wind_conf=settings, native_output_groups=native, resources=resources)
-            raw = native["isobaricInhPa"]
+            raw = native["isobaric"]
             np.testing.assert_allclose(raw.u, u)
             np.testing.assert_allclose(raw.v, v)
             assert set(raw.data_vars) == {"u", "v"}
@@ -559,7 +559,7 @@ def test_grib_later_frame_conflict_is_checked_before_concatenation(tmp_path, mon
     settings.cartesian_horizontal_winds = "mass_earth"
     with pytest.raises(ValueError, match="Conflicting wind reference metadata"):
         grib_utils.concat_grib2ds_by_vert_coord(
-            paths, {"isobaricInhPa": {"variables": ["u", "v"], "level_selection": "all"}},
+            paths, {"isobaric": {"variables": ["u", "v"], "level_selection": "all"}},
             {}, index_dir=tmp_path / "indexes", wind_conf=settings,
         )
 
@@ -580,15 +580,15 @@ def test_grib_all_scalar_level_headers_retain_selected_timestamps(tmp_path, monk
         paths, ["2024-01-01", "2024-01-01T01:00"], strict=True)}
     monkeypatch.setattr(cfgrib, "open_datasets", lambda path, **kw: blocks[path])
     user, _ = grib_utils.concat_grib2ds_by_vert_coord(
-        paths, {"isobaricInhPa": {"variables": ["u", "v"], **selection}}, {},
+        paths, {"isobaric": {"variables": ["u", "v"], **selection}}, {},
         index_dir=tmp_path / "indexes",
     )
     try:
-        assert user["isobaricInhPa"].sizes["time"] == 2
-        assert user["isobaricInhPa"].isobaricInhPa.values.tolist() == [850.]
+        assert user["isobaric"].sizes["time"] == 2
+        assert user["isobaric"].isobaric.values.tolist() == [850.]
         # Omitting wind_conf retains the historical raw-vector API.
-        np.testing.assert_allclose(user["isobaricInhPa"].u, 3.)
-        assert user["isobaricInhPa"].u.attrs["GRIB_uvRelativeToGrid"] == 1
+        np.testing.assert_allclose(user["isobaric"].u, 3.)
+        assert user["isobaric"].u.attrs["GRIB_uvRelativeToGrid"] == 1
     finally:
         for ds in user.values():
             ds.close()

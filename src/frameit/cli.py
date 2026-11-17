@@ -198,6 +198,12 @@ def _build_parser() -> argparse.ArgumentParser:
     status_parser.add_argument("run_directory", type=Path,
                                help="Directory containing run-status.yaml")
 
+    fixtures = sub.add_parser(
+        "generate-tests-fixtures", allow_abbrev=False,
+        help="Generate analytical task-tutorial inputs only; no supplied data needed.")
+    fixtures.add_argument("--output", type=Path, default=Path("tutorial-data"),
+                          help="New tutorial directory; existing directories are refused")
+
     # info (fusion of version and doctor, verbose by default)
     pi = sub.add_parser(
         "info", help="Print FrameIt and environment information (verbose by default)."
@@ -573,6 +579,12 @@ def main(argv: list[str] | None = None) -> None:
             code = 0 if facts["state"] in {"completed", "incomplete"} else 1
         elif args.command == "info":
             code = _cmd_info(short=bool(args.short))
+        elif args.command == "generate-tests-fixtures":
+            from frameit.testing.documentation_example import create_task_fixtures
+
+            for path in create_task_fixtures(args.output).values():
+                print(f"Created instructional fixture: {path}")
+            code = 0
         elif args.command == "prepare-ci-dataset":
             code = _cmd_prepare_ci_dataset(args)
         elif args.command == "run-matrix-test":

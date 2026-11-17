@@ -165,7 +165,7 @@ This request record is a metadata envelope, not a runnable configuration.
 Authored relative paths keep their original configuration base; operational
 path overrides keep their launch base. They are not relative to the output root.
 ``resolved-config.yaml`` contains effective controls, but its presence does not
-mean processing completed. Available provenance is saved early and updated as
+mean processing completed. Available provenance is recorded early and updated as
 facts become known; unresolved facts remain explicit.
 
 Keep all four records with the data. After a forced kill, the last checkpoint
@@ -390,8 +390,8 @@ Typical structure:
 - Data variables depend on the YAML request (see :doc:`configuration_file`)
 
 Flat requests retain source field names. Explicitly grouped fields use
-``<native-group>.<field>``, such as ``heightAboveGround.u`` and
-``isobaricInhPa.u``, even when a product selects only one group. Derived results
+``<group>.<field>``, such as ``heightAboveGround.u`` and
+``isobaric.u``, even when a product selects only one group. Derived results
 retain their declared names. Colliding names fail instead of overwriting another
 field. Read dotted names with ``ds["heightAboveGround.u"]``; the binding in run
 provenance retains the native field name, identity and selected records.
