@@ -187,10 +187,18 @@ def _cf_coordinate_metadata(ds):
     ancillary = {name for var in ds.variables.values()
                  for name in str(var.attrs.get("ancillary_variables", "")).split()}
     for name, coord in ds.coords.items():
-        if (coord.ndim != 1 or coord.attrs.get("axis") != "Z" or name in ancillary
-                or coord.attrs.keys() & {"flag_values", "flag_masks"}):
+        if name in ancillary or coord.attrs.keys() & {"flag_values", "flag_masks", "flag_meanings"}:
             continue
         standard, units = coord.attrs.get("standard_name"), unit_key(coord.attrs.get("units"))
+        scalar_level = coord.ndim == 0 and coord.dtype.kind in "iuf" and (
+            (standard == "height" and units in UNITS["distance"][1])
+            or (name == "meanSea" and units == "1" and coord.attrs.get("long_name")
+                == "original GRIB coordinate for key: level(meanSea)"))
+        if scalar_level or (standard == "forecast_period" and coord.dtype.kind == "m"):
+            metadata[name] = set()
+            continue
+        if coord.ndim != 1 or coord.attrs.get("axis") != "Z":
+            continue
         if standard == "air_pressure" and units in UNITS["pressure"][1]:
             metadata[name] = set()
         elif (standard == "atmosphere_hybrid_sigma_pressure_coordinate"

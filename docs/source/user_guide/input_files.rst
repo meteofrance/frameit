@@ -61,6 +61,11 @@ Use ``files``, ``exclude`` or ``time.cycle`` to make the request unambiguous.
 There is no first/last-provider setting. If excluding a whole file would remove
 needed records, make the input archive unambiguous upstream.
 
+Complementary AROME NetCDF files may repeat linked forecast periods and scalar
+height labels. FrameIt treats these as coordinates of their owning fields, not
+as competing physical fields. It retains different heights or surface labels and
+does not combine wind components with conflicting coordinate definitions.
+
 A matched file is skipped only when metadata proves that it supplies no requested
 field or required dependency. The reason is reported. An unreadable matched file
 fails; it is not treated as irrelevant. Calculation inputs must come from the

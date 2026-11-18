@@ -430,6 +430,11 @@ NEMO depth axes retain their own ``deptht/depthu/depthv/depthw`` identity, and
 CROCO sigma retains ``s_rho/s_w``. Labels, bounds, formula dependencies and
 singleton selections remain. Hybrid/sigma/model labels do not become fixed
 pressure, height or depth.
+In AROME NetCDF converted from GRIB, a linked scalar ``heightAboveGround``
+keeps its supplied height and units. A linked ``meanSea`` label with units
+``1`` remains dimensionless; it is not a height in metres. A decoded
+``forecast_period`` coordinate retains its lead duration, distinct from the
+sample time and forecast reference time.
 Vertical native-index auxiliaries retain original zero-based source positions,
 not renumbered selection positions. Transforms preserve an existing index
 coordinate's metadata; generated NEMO/CROCO indices use the same description as

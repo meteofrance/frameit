@@ -290,6 +290,82 @@ def guard_netcdf_payloads(monkeypatch, forbidden_names):
     return reads
 
 
+@pytest.mark.parametrize("case", ["complementary", "height", "lead", "duplicate", "flag"])
+def test_arome_split_fields_keep_forecast_and_scalar_height_metadata(tmp_path, monkeypatch, case):
+    from frameit.core.coupled import bind_sources
+
+    cycle = np.datetime64("2024-12-11T00", "ns")
+    lead = np.array([0, 6, 12], dtype="timedelta64[h]")
+    paths = []
+    for name in ("prmsl", "u10", "v10"):
+        pressure = name == "prmsl"
+        level = "meanSea" if pressure else "heightAboveGround"
+        height = 20. if name == "v10" and case == "height" else 10.
+        period = lead.copy()
+        if name == "v10" and case == "lead":
+            period[-1] += np.timedelta64(1, "h")
+        scene = xr.Dataset({name: (
+            ("valid_time", "latitude", "longitude"), np.ones((3, 2, 3)), {
+                "units": "Pa" if pressure else "m s-1", "GRIB_typeOfLevel": level,
+                "GRIB_stepType": "instant"})}, coords={
+            "valid_time": cycle + lead,
+            "time": ((), cycle, {"standard_name": "forecast_reference_time"}),
+            "step": ("valid_time", period, {"standard_name": "forecast_period"}),
+            level: ((), 0., {"units": "1", "long_name": "original GRIB coordinate for key: level(meanSea)"})
+            if pressure else ((), height, {"standard_name": "height", "units": "m", "positive": "up"}),
+            "latitude": ("latitude", [-20., -19.99], {"units": "degrees_north"}),
+            "longitude": ("longitude", [60., 60.01, 60.02], {"units": "degrees_east"}),
+        })
+        if case == "flag" and not pressure:
+            scene = scene.assign_coords(quality=((), 0, {
+                "flag_values": [0, 1], "flag_meanings": "good bad", "units": "1"}))
+            scene[name].attrs["ancillary_variables"] = "quality"
+        path = tmp_path / f"{name}.nc"
+        scene.to_netcdf(path, engine="h5netcdf")
+        paths.append(path)
+        if name == "u10" and case == "duplicate":
+            copy = tmp_path / "extra-u.nc"
+            scene.to_netcdf(copy, engine="h5netcdf")
+            paths.append(copy)
+
+    guard_netcdf_payloads(monkeypatch, {"prmsl", "u10", "v10", "quality"})
+    names = ("prmsl", "u10", "v10")
+    time = {"values": ["2024-12-11T06:00:00", "2024-12-11T12:00:00"]}
+    conf = v3_config(tmp_path, paths, names=names, time=time, model="arome")
+    if case in {"duplicate", "flag"}:
+        field = "u10" if case == "duplicate" else "quality"
+        with pytest.raises(ValueError, match=f"competing physical-field providers for {field}"):
+            preflight(conf, check_output=False)
+        return
+
+    source = preflight(conf, check_output=False)["sources"]["weather"]
+    assert {r["name"] for r in source["records"]} == set(names)
+    assert not source["provider_conflicts"]
+    grids = {name: next(r["grid_id"] for r in source["records"] if r["name"] == name)
+             for name in names}
+    assert grids["prmsl"] not in {grids["u10"], grids["v10"]}
+    assert (grids["u10"] == grids["v10"]) is (case == "complementary")
+    pressure, wind = (source["native_grids"][grids[name]] for name in ("prmsl", "u10"))
+    assert pressure["coordinates"]["meanSea"]["values"] == 0.
+    assert pressure["coordinates"]["meanSea"]["attributes"]["units"] == "1"
+    assert wind["coordinates"]["heightAboveGround"]["values"] == 10.
+    assert wind["coordinates"]["heightAboveGround"]["attributes"]["units"] == "m"
+    np.testing.assert_array_equal(wind["coordinates"]["step"]["values"], lead)
+    providers = wind["coordinate_providers"]["step"]
+    assert {p["path"] for p in providers} == {
+        str(path) for path in paths if path.stem in ({"u10", "v10"} if case == "complementary" else {"u10"})}
+    assert all([r["indexers"] for r in p["samples"]] == [{"valid_time": 1}, {"valid_time": 2}]
+               for p in providers)
+    if case in {"height", "lead"}:
+        combined = v3_config(tmp_path, paths, time=time, model="arome",
+                             wind_pairs=[{"u": "u10", "v": "v10", "basis": "earth"}],
+                             names=names, derived={"speed": {
+                                 "method": "wind_speed", "inputs": {"u": "u10", "v": "v10"}}})
+        coordinate = "heightAboveGround" if case == "height" else "step"
+        with pytest.raises(ValueError, match=f"{coordinate}: conflicting operation coordinate geometry"):
+            bind_sources(combined, check_output=False)
+
+
 @pytest.mark.parametrize("case", [
     "aliases", "copies", "field_split", "irrelevant", "unreadable", "shuffled",
     "excluded", "model_conflict", "unknown_model", "embedded_surfex", "two_atmospheres",
