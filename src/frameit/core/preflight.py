@@ -98,7 +98,7 @@ def _source_model(source, datasets, path, *, fmt):
     return model, evidence
 
 
-def _decoded_clock(ds, path):
+def _decoded_clock(ds, path, *, model):
     """Keep native decoded types, clocks, cycles and interval endpoints separate."""
     references = [name for name in ds.variables if (
         name == "forecast_reference_time"
@@ -125,13 +125,19 @@ def _decoded_clock(ds, path):
         raise ValueError(f"{path}: missing sample timestamps in {name}")
     calendar = clock.encoding.get("calendar", clock.attrs.get("calendar", "standard"))
     for other in candidates:
-        if ds[other].dims != clock.dims or not np.array_equal(ds[other].values, values):
-            raise ValueError(f"{path}: conflicting or unidentified sample/forecast clocks "
-                             f"{name}, {other}")
-        other_calendar = ds[other].encoding.get(
-            "calendar", ds[other].attrs.get("calendar", "standard"))
+        candidate = ds[other]
+        other_calendar = candidate.encoding.get("calendar", candidate.attrs.get("calendar", "standard"))
         if other_calendar != calendar:
             raise ValueError(f"{path}: conflicting calendars on {name} and {other}")
+        if (model == "mesonh" and name == "time" and clock.dims == ("time",)
+                and values.shape == (1,) and other == "DTCUR" and candidate.ndim == 0):
+            alias = candidate.values[()]
+            equal = type(alias) is type(values[0]) and alias == values[0]
+        else:
+            equal = candidate.dims == clock.dims and np.array_equal(candidate.values, values)
+        if not equal:
+            raise ValueError(f"{path}: conflicting or unidentified sample/forecast clocks "
+                             f"{name}, {other}")
     reference = None
     for ref in references:
         da = ds[ref]
@@ -290,7 +296,7 @@ def _netcdf_inventory(path, source, resources):
             raise ValueError(f"{path}: NEMO requires source-local (y, x) nav_lat/nav_lon geography")
     if model == "croco" and ds.attrs.get("type") != "CROCO history file":
         raise ValueError(f"{path}: CROCO requires the admitted CROCO history file profile")
-    samples, time_names = _decoded_clock(ds, path)
+    samples, time_names = _decoded_clock(ds, path, model=model)
     temporal_dims = {dim for sample in samples for dim in sample["indexers"]}
     coordinate_metadata = _cf_coordinate_metadata(ds)
     metadata = (set(time_names) | set(ds.dims) | set(coordinate_metadata)

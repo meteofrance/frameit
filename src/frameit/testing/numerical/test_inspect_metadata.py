@@ -11,10 +11,58 @@ import yaml
 from dask import delayed
 
 from frameit.cli import _build_parser, _cmd_inspect
-from frameit.core.preflight import preflight
+from frameit.core.preflight import _netcdf_inventory, preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.loader import DatasetResources
 from frameit.testing.numerical.test_configuration_v2_1 import dataset
+
+
+@pytest.mark.parametrize("calendar", ["proleptic_gregorian", "360_day"])
+def test_mesonh_scalar_dtcur_agrees_with_single_sample(tmp_path, calendar):
+    import cftime
+
+    stamp = (cftime.Datetime360Day(2024, 2, 30, 1) if calendar == "360_day"
+             else np.datetime64("2024-12-10T01:00:00.123456789", "ns"))
+    ds = xr.Dataset(coords={"time": ("time", [stamp])})
+    ds["DTCUR"] = xr.DataArray(stamp, attrs={"standard_name": "time"})
+    ds["temperature"] = ("time", [280.], {"units": "K"})
+    path = tmp_path / "mesonh.nc"
+    ds.to_netcdf(path, engine="h5netcdf")
+    with DatasetResources() as resources:
+        inventory = _netcdf_inventory(path, {"model": "mesonh"}, resources)
+    record, = inventory["records"]
+    assert record["time"] == stamp and record["calendar"] == calendar
+    assert record["locator"]["indexers"] == {"time": 0}
+    assert {field["name"] for field in inventory["fields"].values()} == {"temperature"}
+
+
+@pytest.mark.parametrize("case,match", [
+    ("different", "sample/forecast clocks"), ("missing", "sample/forecast clocks"),
+    ("calendar", "conflicting calendars"), ("many", "sample/forecast clocks"),
+    ("unrelated", "sample/forecast clocks"), ("other_model", "sample/forecast clocks"),
+    ("bounds", "invalid time bounds"), ("forecast", "conflicting forecast reference clocks"),
+])
+def test_mesonh_dtcur_alias_cannot_hide_inconsistent_clocks(tmp_path, case, match):
+    stamp = np.datetime64("2024-12-10T01:00:00", "ns")
+    later = stamp + np.timedelta64(1, "h")
+    stamps = [stamp, later] if case == "many" else [stamp]
+    ds = xr.Dataset({"temperature": ("time", np.full(len(stamps), 280.), {"units": "K"})},
+                    coords={"time": ("time", stamps)})
+    value = {"different": later, "missing": np.datetime64("NaT", "ns")}.get(case, stamp)
+    ds["DTCUR"] = (("unrelated", [value], {"standard_name": "time"}) if case == "unrelated"
+                   else xr.DataArray(value, attrs={"standard_name": "time"}))
+    if case == "calendar":
+        ds.DTCUR.encoding["calendar"] = "gregorian"
+    if case == "bounds":
+        ds.DTCUR.attrs["bounds"] = "missing_bounds"
+    if case == "forecast":
+        ds["forecast_reference_time"] = xr.DataArray(stamp)
+        ds["reference"] = xr.DataArray(later, attrs={"standard_name": "forecast_reference_time"})
+    path = tmp_path / "clock.nc"
+    ds.to_netcdf(path, engine="h5netcdf")
+    with DatasetResources() as resources, pytest.raises(ValueError, match=match):
+        _netcdf_inventory(path, {"model": "arome" if case == "other_model" else "mesonh"},
+                          resources)
 
 
 @pytest.mark.parametrize("attrs,dataset_attrs,basis", [

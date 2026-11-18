@@ -355,6 +355,10 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     dataset = dataset.assign_coords({index: (dim, np.arange(original.sizes[dim]), {
                         "units": "1", "long_name": f"zero-based native source {dim} index"})})
         dataset = dataset.isel(indexers)
+        if (model == "MNH" and record["clock"] == "time" and "DTCUR" in dataset.coords
+                and "DTCUR" in record.get("temporal_names", ()) and dataset.DTCUR.ndim == 0):
+            # The admitted current-time alias belongs to this sample, not to the file series.
+            dataset = dataset.assign_coords(DTCUR=dataset.DTCUR.variable.set_dims(("time",)))
         samples_by_record[key] = dataset
         return dataset
 

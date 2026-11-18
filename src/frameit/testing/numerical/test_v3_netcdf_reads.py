@@ -80,6 +80,23 @@ def _payload_reads(monkeypatch, scenes, names):
     return reads
 
 
+def test_selected_mesonh_dtcur_is_retained_along_assembled_time(tmp_path):
+    times = np.array(["2024-12-10T01", "2024-12-10T02"], dtype="datetime64[ns]")
+    scenes = [
+        xr.Dataset({"SST": (("time", "nj", "ni"), np.full((1, 2, 2), value), {"units": "K"}),
+                    "DTCUR": ((), time, {"standard_name": "time"})},
+                   coords={"time": [time], "nj": [0, 1], "ni": [0, 1]})
+        for time, value in zip(times, (280., 281.), strict=True)]
+    paths, binding, source = _binding(tmp_path, scenes, "mesonh", {"2d": ["SST"]})
+    with DatasetResources() as resources:
+        products, _ = _load(paths, binding, source, resources=resources)
+        product, = products.values()
+        assert product.DTCUR.dims == ("time",)
+        np.testing.assert_array_equal(product.DTCUR, times)
+        assert product.DTCUR.attrs["standard_name"] == "time"
+        np.testing.assert_array_equal(product.SST[:, 0, 0], [280., 281.])
+
+
 @pytest.mark.parametrize("engine", ["h5netcdf", "netcdf4"])
 def test_internal_vertical_stencils_preserve_native_indices_and_product_reads(
         tmp_path, monkeypatch, engine):

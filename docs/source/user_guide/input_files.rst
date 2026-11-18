@@ -88,6 +88,12 @@ remain distinct. Conflicting or unidentified clocks fail. Ordering or assembling
 files does not make interval means equivalent to instantaneous fields, shift
 timestamps or fill missing samples.
 
+A one-record Meso-NH NetCDF file may also declare a scalar ``DTCUR`` current
+time. It must match the sole decoded ``time`` value and calendar exactly.
+FrameIt selects by ``time`` and retains ``DTCUR`` along that axis when assembling
+the files. Forecast reference clocks and interval bounds are still checked.
+This convention does not extend to multi-record input files or other models.
+
 An explicit source ``allow_initial_gaps`` list can preserve a wholly absent
 selected field at the first selected time as missing output, without dropping
 that timestamp. The default remains strict. See :doc:`configuration_file` for
