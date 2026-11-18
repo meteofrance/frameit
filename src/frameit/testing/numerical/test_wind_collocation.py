@@ -199,7 +199,8 @@ def test_runner_loads_speed_only_native_dependencies(tmp_path, monkeypatch):
 ])
 def test_native_horizontal_output_keeps_independent_sparse_mass_w(
         tmp_path, monkeypatch, units, standard):
-    from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
+    import dask
+    from h5py import Dataset
 
     from frameit.processing.wind_collocation import select_vertical_velocity
 
@@ -215,17 +216,18 @@ def test_native_horizontal_output_keeps_independent_sparse_mass_w(
     settings.cartesian_vertical_velocity = "mass"
     requests = {"level_w": {"variables": ["WT"], "level_selection": "indices",
                             "level_indices": [0, 2]}}
-    original_get, reads = H5NetCDFArrayWrapper.__getitem__, set()
+    original_get, reads = Dataset.__getitem__, set()
 
-    def selected(array, key):
-        assert array.variable_name not in {"UT", "VT"}
-        if array.variable_name == "WT":
-            assert np.atleast_1d(np.arange(array.shape[0])[key.tuple[0]]).tolist() == [0]
-            reads.update(np.atleast_1d(np.arange(array.shape[1])[key.tuple[1]]).tolist())
-        return original_get(array, key)
+    def selected(array, key, *args, **kwargs):
+        assert array.name not in {"/UT", "/VT"}
+        if array.name == "/WT":
+            assert np.atleast_1d(np.arange(array.shape[0])[key[0]]).tolist() == [0]
+            reads.update(np.atleast_1d(np.arange(array.shape[1])[key[1]]).tolist())
+        return original_get(array, key, *args, **kwargs)
 
-    monkeypatch.setattr(H5NetCDFArrayWrapper, "__getitem__", selected)
-    with DatasetResources() as resources:
+    # The full suite can bypass a patched xarray wrapper; count actual HDF5 reads.
+    monkeypatch.setattr(Dataset, "__getitem__", selected)
+    with dask.config.set(scheduler="synchronous"), DatasetResources() as resources:
         groups, _ = concat_nc2ds_by_vert_coord(
             [path], requests, {}, wind_conf=settings, resources=resources,
             chunks={"time": 1, "level_w": 1})
