@@ -11,6 +11,8 @@ class _Navigation(HTMLParser):
         super().__init__()
         self.links = []
         self.warning = False
+        self.in_warning = False
+        self.warning_text = []
         self.feed(html)
 
     def handle_starttag(self, tag, attrs):
@@ -19,6 +21,15 @@ class _Navigation(HTMLParser):
             self.links.append(attrs)
         if tag == "aside" and "docs-development-warning" in attrs.get("class", "").split():
             self.warning = True
+            self.in_warning = True
+
+    def handle_endtag(self, tag):
+        if tag == "aside":
+            self.in_warning = False
+
+    def handle_data(self, data):
+        if self.in_warning:
+            self.warning_text.append(data)
 
 
 def check_versions(site: Path) -> list[str]:
@@ -44,13 +55,19 @@ def check_versions(site: Path) -> list[str]:
             for link in links:
                 target_channel = link["data-docs-channel"]
                 target = site / ("develop/index.html" if target_channel == "develop" else "index.html")
-                url = urlsplit(link.get("href", ""))
+                try:
+                    url = urlsplit(link.get("href", ""))
+                except ValueError:
+                    errors.append(f"{location}: malformed {target_channel} home link")
+                    continue
                 if (url.scheme or url.netloc or url.path.startswith("/") or url.query
                         or url.fragment or (page.parent / unquote(url.path)).resolve() != target):
                     errors.append(f"{location}: invalid {target_channel} home link")
                 if (link.get("aria-current") == "true") != (target_channel == channel):
                     errors.append(f"{location}: incorrect current documentation version")
-            if navigation.warning != (channel == "develop"):
+            if (navigation.warning != (channel == "develop")
+                    or (channel == "develop"
+                        and "unreleased" not in "".join(navigation.warning_text).lower())):
                 errors.append(f"{location}: incorrect unreleased documentation warning")
     return errors
 

@@ -2,63 +2,120 @@ name: Documentation
 
 on:
   push:
-    branches:
-      - main
-      - dev_md
+    branches: [main, develop]
   pull_request:
-    branches:
-      - main
-      - dev_md
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: docs-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'pull_request' && format('docs-pr-{0}', github.event.pull_request.number) || 'pages' }}
+  cancel-in-progress: false
 
 jobs:
-  build:
+  resolve:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+    outputs:
+      main: ${{ steps.refs.outputs.main }}
+      develop: ${{ steps.refs.outputs.develop }}
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve both source revisions inside the publication queue
+        id: refs
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main develop:refs/remotes/origin/develop
+          main=$(git rev-parse refs/remotes/origin/main)
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            main=$GITHUB_SHA
+          fi
+          echo "main=$main" >> "$GITHUB_OUTPUT"
+          echo "develop=$(git rev-parse refs/remotes/origin/develop)" >> "$GITHUB_OUTPUT"
 
+  build:
+    needs: resolve
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [main, develop]
+    env:
+      FRAMEIT_DOCS_CHANNEL: ${{ matrix.channel }}
+      LC_ALL: C
+      LANG: C
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs[matrix.channel] }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-
-      - name: Install dependencies
+      - name: Install this branch's documentation and package
         run: |
           pip install -r docs/docs-requirements.txt
           pip install .
-
-      - name: Build documentation
-        env:
-          LC_ALL: C
-          LANG: C
+      - name: Verify package identity and test navigation
         run: |
-          make -C docs clean
-          make -C docs html SPHINXOPTS="-q -W --keep-going"
-
-      - name: Check publication boundary and local links
-        run: |
-          python -m unittest discover -s docs -p test_check_publication.py
-          python docs/check_publication.py docs/build/html
-
+          python -c "import frameit, tomllib; from pathlib import Path; from importlib.metadata import version; expected = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']; assert version('frameit') == expected; print(frameit.__file__, version('frameit'))"
+          python -m unittest discover -s docs -p test_doc_versions.py
+          if [ -f docs/test_check_publication.py ]; then
+            python -m unittest discover -s docs -p test_check_publication.py
+          fi
+      - name: Build this documentation channel strictly
+        run: make -C docs html SPHINXOPTS="-q -W --keep-going"
       - uses: actions/upload-artifact@v4
         with:
-          name: documentation-html
+          name: documentation-${{ matrix.channel }}
           path: docs/build/html
           if-no-files-found: error
 
-      - uses: actions/upload-pages-artifact@v3
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  assemble:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          path: docs/build/html
+          python-version: "3.13"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.develop }}
+          path: development-source
+      - uses: actions/download-artifact@v4
+        with:
+          name: documentation-main
+          path: site
+      - name: Reserve the development URL namespace
+        run: test ! -e site/develop
+      - uses: actions/download-artifact@v4
+        with:
+          name: documentation-develop
+          path: site/develop
+      - name: Check complete-site readiness and scoped publication policy
+        run: |
+          python docs/check_doc_versions.py site
+          python development-source/docs/check_publication.py site/develop --site-root site
+          PYTHONPATH=development-source/docs python -c "import sys; from pathlib import Path; from check_publication import check_local_links; errors = check_local_links(Path('site')); print('\n'.join(errors)); sys.exit(bool(errors))"
+      - name: Record both source revisions
+        env:
+          STABLE_REVISION: ${{ needs.resolve.outputs.main }}
+          DEVELOPMENT_REVISION: ${{ needs.resolve.outputs.develop }}
+        run: |
+          {
+            echo "### Documentation source revisions"
+            echo "main: $STABLE_REVISION"
+            echo "develop: $DEVELOPMENT_REVISION"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: site
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    if: github.event_name != 'pull_request'
+    needs: assemble
     runs-on: ubuntu-latest
     permissions:
       pages: write

@@ -55,6 +55,16 @@ Do not invent module names, supported models, CLI flags, configuration keys, Pyt
 
 Preserve unrelated work. Do not rewrite history, reset changes, upgrade the whole environment, or restructure the repository merely to complete a focused task. Routine reversible implementation choices do not need repeated approval; unresolved scientific choices and changes to agreed scope do.
 
+### Documentation publication exception
+
+Documentation CI MAY run and publish on `main` and `develop` pushes. Publish
+stable HTML at the existing root and development HTML under `develop/` in one
+checked Pages artifact. Serialize publications across both branches; PRs MUST
+NOT deploy. This exception does not change runtime CI or authorize pushes,
+PR publication/merges, remote-setting changes, or pushing local feature branches.
+Follow the approved staged rollout in `docs/development/ci.md` before enabling
+the development publisher; a legacy main deployment can erase `/develop/`.
+
 ## 4. Feature admission and architecture
 
 Before adding a feature, answer: **Which demonstrated user task does this simplify, and why does it belong in FrameIt rather than a downstream script or existing tool?**
