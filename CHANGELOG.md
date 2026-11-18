@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0rc3 — 2026-11-18 (development candidate)
+
+- Place the coupled-input task guide's wind reference arrow immediately above
+  the 10 m air-temperature colorbar. Update the downloadable example and its
+  illustration.
+- Label the current development snapshot `2.0.0rc3`. This version update and
+  plotting correction do not change scientific calculations, units, masks or
+  output contracts. This is not a main release, release tag or new scientific
+  validation claim.
+
 ## 2.0.0rc2-hotfix1 — 2026-11-12
 
 - Accept known `BETA`, `RPK` and `LON0` values under a wind pair's

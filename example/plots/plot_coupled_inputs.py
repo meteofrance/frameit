@@ -48,7 +48,7 @@ with xr.open_dataset(args.atmosphere) as air, xr.open_dataset(args.ocean) as oce
         axes[1, column].set_xlabel("Longitude (°E)")
     axes[0, 0].set_ylabel("Latitude (°N)")
     axes[1, 0].set_ylabel("Latitude (°N)")
-    axes[0, 2].quiverkey(arrows, .86, .93, 20, "20 m s$^{-1}$", coordinates="figure")
+    axes[0, 2].quiverkey(arrows, .92, .95, 20, "20 m s$^{-1}$", coordinates="figure")
     fig.colorbar(temperature, ax=axes[0], label="10 m air temperature (K)", shrink=.85)
     fig.colorbar(sst, ax=axes[1], label="SST (K)", shrink=.85)
     fig.savefig(args.figure)
