@@ -2,3 +2,13 @@ img.logo {
     width: 200px !important;
     max-width: none !important;
 }
+
+.docs-versions { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: 1rem; }
+.docs-versions a { padding: .5rem 0; }
+.docs-versions [aria-current="true"] { font-weight: bold; }
+.docs-development-warning {
+    padding: .75rem 1rem;
+    margin-bottom: 1.25rem;
+    border-left: .25rem solid #9a4400;
+    background: #fff4e8;
+}
