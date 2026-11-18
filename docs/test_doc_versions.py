@@ -93,6 +93,7 @@ class DocumentationVersionTests(unittest.TestCase):
             original.replace('../../index.html', 'https://example.org/index.html'),
             original.replace('../../index.html', '../../../index.html'),
             original.replace('docs-development-warning', 'missing-warning'),
+            original.replace('Development documentation — unreleased.', 'Welcome.'),
             original.replace('aria-current="true"', 'aria-current="false"'),
             original.replace('data-docs-channel="main"', 'data-docs-channel="typo"'),
         ):
@@ -115,6 +116,17 @@ class DocumentationVersionTests(unittest.TestCase):
             self.assertTrue(check_versions(self.site))
         finally:
             page.unlink()
+
+    def test_malformed_link_is_reported_without_crashing(self):
+        from check_doc_versions import check_versions
+
+        page = self.site / 'develop/guide/topic.html'
+        original = page.read_text()
+        page.write_text(original.replace('../../index.html', 'https://[invalid'))
+        try:
+            self.assertTrue(check_versions(self.site))
+        finally:
+            page.write_text(original)
 
     def test_cli_rejects_incomplete_artifact(self):
         result = subprocess.run(
