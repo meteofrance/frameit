@@ -592,6 +592,13 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     concat_dim = varying[0]
                 static = (not source["fields"][descriptor["field_id"]]["time_varying"]
                           and len({r["locator"]["path"] for r in descriptor["records"]}) == 1)
+                if not export_support and name in source.get("tracker_support", {}).get(
+                        "projection_constants", ()):
+                    constant = sequence[0][name].variable
+                    if constant.ndim or any(not constant.identical(ds[name].variable)
+                                            for ds in sequence[1:]):
+                        raise ValueError(f"Meso-NH projection scalar {name} changed after binding")
+                    static = True
                 # Static support in successive files belongs to each sample, not an
                 # eager equality check or an arbitrary first-file depth/mask.
                 support_coords = [

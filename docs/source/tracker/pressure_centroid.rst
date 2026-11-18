@@ -80,6 +80,8 @@ Every selected file must contain a complete input set with consistent field
 names, units, wind metadata and native coordinate labels. A missing field in
 a later file is an error, even if another file supplies it. Candidate precedence
 is recorded; the adapter does not mix pressure or wind sources between times.
+For the Meso-NH projection rotation, scalar projection inputs must agree across
+the selected files. Repeated identical scalars remain constants during tracking.
 
 Native winds are collocated linearly using the actual mass/staggered coordinate
 pairs before height interpolation. Horizontal native coordinates normalize to

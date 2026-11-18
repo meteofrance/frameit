@@ -441,12 +441,28 @@ def resolve_tracker_support(conf, source):
             inputs.update({field["name"]: {} for field in source["fields"].values()
                            if field["name"] in geometry
                            and any(field["name"] in ds for _, ds in sequence)})
+            native_pairs = {(fields.u, fields.v), ("UM10", "VM10")}
+            projection = set().union(*(
+                set(MESONH_PROJECTION_METADATA) - rotation.keys()
+                for pair in conf.wind_pairs
+                if (pair["u"], pair["v"]) in native_pairs and pair["reference_frame"] == "grid"
+                and (rotation := pair.get("rotation") or {}).get("method") == "mesonh_projection"))
+            projection_constants = []
+            for name in sorted(projection):
+                if all(name in ds and ds[name].ndim == 0 for _, ds in sequence):
+                    values = [ds[name].variable for _, ds in sequence]
+                    if any(not values[0].identical(value) for value in values[1:]):
+                        raise ValueError(
+                            f"{method}: Meso-NH projection scalar {name} differs across "
+                            "selected samples; tracking requires one stationary projection.")
+                    projection_constants.append(name)
         if method == "pressure_centroid" and len(source["selected_times"]) < 2:
             raise ValueError("pressure_centroid requires at least two selected source times")
         conf.add_parameter(f"{method}_inputs", {
             "pressure": fields.pressure, "winds": [fields.u, fields.v],
             "height": list(fields.height)})
         return {"method": method, "inputs": inputs,
+                **({"projection_constants": projection_constants} if projection_constants else {}),
                 "selected_time_count": len(source["selected_times"]),
                 "value_checks": (
                     "pending execution: physical brackets, masks, geometry and convergence")}

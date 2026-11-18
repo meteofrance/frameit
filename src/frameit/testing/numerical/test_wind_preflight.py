@@ -188,16 +188,28 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
 
 
 @pytest.mark.parametrize("method", ["pressure_centroid", "multifield_vortex"])
-def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(tmp_path, method):
+@pytest.mark.parametrize("layout", ["single", "time_split", "conflict"])
+def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(
+        tmp_path, method, layout):
     from frameit.io.loader import DatasetResources
     from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
 
     source, _ = native_vortex(n=9)
-    source = source.assign(RPK=0., LON0=54.2)
+    source = source.assign(RPK=0., LON0=54.2, CARTESIAN=0)
     for name, standard in (("UT_ZM", "x_wind"), ("VT_ZM", "y_wind")):
         source[name].attrs["standard_name"] = standard
-    path = tmp_path / "native.nc"
-    source.to_netcdf(path, engine="h5netcdf")
+    rotation = {"method": "mesonh_projection"}
+    if layout == "single":
+        rotation["BETA"] = 90
+        parts = [source]
+    else:
+        source = source.assign(BETA=90.)
+        parts = [source.isel(time=[i]) for i in range(2)]
+        if layout == "conflict":
+            parts[1] = parts[1].assign(RPK=.1)
+    paths = [tmp_path / f"native-{i}.nc" for i in range(len(parts))]
+    for part, path in zip(parts, paths, strict=True):
+        part.to_netcdf(path, engine="h5netcdf")
     tracking = {"method": method}
     if method == "multifield_vortex":
         tracking.update(seed={"latitude": -20., "longitude": 60.,
@@ -206,9 +218,8 @@ def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(t
     conf = SimulationConfig.from_mapping_with_model_preset({
         "schema_version": 3,
         "sources": {"atmosphere": {
-            "model": "mesonh", "files": [str(path)], "wind_pairs": [
-                {"u": "UT_ZM", "v": "VT_ZM", "basis": "grid",
-                 "rotation": {"method": "mesonh_projection", "BETA": 90}},
+            "model": "mesonh", "files": list(map(str, paths)), "wind_pairs": [
+                {"u": "UT_ZM", "v": "VT_ZM", "basis": "grid", "rotation": rotation},
                 {"u": "UM10", "v": "VM10", "basis": "earth"},
             ], "variables": {"2d": ["MSLP"]},
         }},
@@ -217,25 +228,32 @@ def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(t
         "output": {"directory": str(tmp_path / "out")},
     })
     report = collect_preflight(conf)
+    if layout == "conflict":
+        assert any("projection" in error.message and "RPK" in error.message
+                   for error in report.errors), report.errors
+        return
     assert not report.errors, report.errors
     plan = report.facts["sources"]["atmosphere"]
     support = resolve_tracker_support(conf, plan)
     assert {"RPK", "LON0"} <= support["inputs"].keys()
     with DatasetResources() as resources:
         _, selected = concat_nc2ds_by_vert_coord(
-            [path], {}, {}, selected_records=plan["field_binding"],
+            paths, {}, {}, selected_records=plan["field_binding"],
             source_plan=plan, resources=resources)
         from frameit.tracking.multifield_inputs import canonical_inputs
         from frameit.tracking.tracker_core import make_tracking_dataset
 
         native = make_tracking_dataset({method: selected["internal"]}, method)
+        assert all(native[name].dims == () for name in ("RPK", "LON0", "CARTESIAN"))
         prepared = (prepare_mnh_inputs(native, conf) if method == "pressure_centroid"
                     else canonical_inputs(native, conf))
         np.testing.assert_allclose(prepared.u, -source.VT_ZM, atol=1e-12)
         np.testing.assert_allclose(prepared.v, source.UT_ZM, atol=1e-12)
+    if layout != "single":
+        return
     with DatasetResources() as resources:
         _, trackers = concat_nc2ds_by_vert_coord(
-            [path], {"surface": {"variables": ["MSLP"]}}, {method: {}}, method,
+            paths, {"surface": {"variables": ["MSLP"]}}, {method: {}}, method,
             wind_conf=conf, resources=resources,
         )
         prepared = trackers[method]["native"]
