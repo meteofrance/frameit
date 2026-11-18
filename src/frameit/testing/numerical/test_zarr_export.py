@@ -90,6 +90,71 @@ def test_default_layout_does_not_multiply_large_vertical_blocks(tmp_path):
     assert array.shards == (8, 1, 20, 28)
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_default_blocks_cover_each_grid(tmp_path, reverse):
+    zarr = pytest.importorskip("zarr")
+    fields = [
+        ("first", (("time", "y_first", "x_first"),
+                   np.arange(12, dtype=np.float32).reshape(1, 3, 4), {"units": "K"})),
+        ("last", (("time", "y_last", "x_last"), np.ones((1, 2, 2)))),
+        ("column", (("time", "level", "member_id", "station"), np.ones((1, 3, 2, 2)))),
+        ("level_bounds", (("level", "endpoints"), [[0., 1.], [1., 2.], [2., 3.]])),
+    ]
+    ds = xr.Dataset(dict(reversed(fields) if reverse else fields), coords={
+        "time": [np.datetime64("2026-01-01", "ns")],
+        "level": ("level", [.5, 1.5, 2.5], {"axis": "Z", "units": "m", "bounds": "level_bounds"}),
+        "member_id": ("member_id", [0, 1], {"standard_name": "realization"}),
+    })
+    ds.first.values[0, 1, 2] = np.nan
+    target = write(ds, tmp_path / "multi.zarr", shard_size={"x_first": 6})
+    store = zarr.open_group(target, mode="r")
+    assert store["first"].chunks == (1, 3, 2)
+    assert store["first"].shards == (8, 12, 6)
+    assert store["last"].chunks == (1, 2, 2)
+    assert store["column"].chunks == (1, 1, 1, 1)
+    assert store["level_bounds"].chunks == (1, 1)
+    with xr.open_zarr(target, consolidated=False) as reopened:
+        xr.testing.assert_identical(reopened.first, ds.first)
+        xr.testing.assert_equal(reopened.level_bounds, ds.level_bounds)
+        assert reopened.level.attrs["bounds"] == "level_bounds"
+        assert reopened.level.attrs["units"] == "m"
+        assert reopened.first.dtype == np.float32
+
+
+def test_annotated_face_and_support_axes_follow_roles_not_order(tmp_path):
+    zarr = pytest.importorskip("zarr")
+    ds = xr.Dataset({
+        "face": (("x_u", "time", "y_rho_owner", "s_rho_support_owner", "member"),
+                 np.ones((4, 1, 3, 2, 3))),
+        "zeta_support_owner": (("x_rho_support_owner", "y_rho_support_owner", "time"),
+                               np.ones((6, 5, 1))),
+    }, coords={"latitude_rho_support_owner": (
+        ("y_rho_support_owner", "x_rho_support_owner"), np.ones((5, 6)))},
+        attrs={"frameit_output_coordinates": {"face_grid": {
+            "dimensions": {"xi_u": "x_u", "eta_rho": "y_rho_owner"},
+            "original_coordinates": {"xi_u": {}, "eta_rho": {}},
+            "support_views": {"lat_rho": {
+                "stored_name": "latitude_rho_support_owner",
+                "dimensions": {"xi_rho": "x_rho_support_owner", "eta_rho": "y_rho_support_owner",
+                               "s_rho": "s_rho_support_owner", "time": "time"}}},
+        }}})
+    target = write(ds, tmp_path / "face.zarr")
+    store = zarr.open_group(target, mode="r")
+    assert store["face"].chunks == (4, 1, 3, 1, 1)
+    assert store["face"].shards == (16, 8, 12, 1, 1)
+    assert store["zeta_support_owner"].chunks == (6, 5, 1)
+
+
+def test_polar_target_axes_are_blocked_not_levels_or_members(tmp_path):
+    zarr = pytest.importorskip("zarr")
+    ds = xr.Dataset({
+        "polar": (("azimuth", "time", "radius", "level", "member"), np.ones((8, 1, 4, 3, 2)))
+    }, attrs={"frameit_output_coordinates": {"grid": {"dimensions": {"level": "level"}}}})
+    array = zarr.open_group(write(ds, tmp_path / "polar.zarr"), mode="r")["polar"]
+    assert array.chunks == (8, 1, 4, 1, 1)
+    assert array.shards == (32, 8, 16, 1, 1)
+
+
 def test_store_failure_and_overwrite(tmp_path, monkeypatch):
     pytest.importorskip("zarr")
     target = write(scene(), tmp_path / "field.zarr")

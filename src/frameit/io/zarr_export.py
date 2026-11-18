@@ -41,6 +41,38 @@ def validate_zarr_sizes(chunk_size, shard_size):
             raise ValueError(f"Zarr shard size for {dim} must be a multiple of chunk size")
 
 
+def _spatial_block_dims(ds):
+    blocks = set()
+    for polar in ({"radius", "azimuth"}, {"radius_cell", "azimuth_cell"}):
+        if polar <= ds.sizes.keys():
+            blocks.update(polar)
+    layout = ds.attrs.get("frameit_output_coordinates")
+    if isinstance(layout, dict):
+        for grid in layout.values():
+            blocks.update(grid["dimensions"][axis] for axis in grid.get("original_coordinates", {}))
+            for name in ("lat_rho", "lon_rho"):
+                view = grid.get("support_views", {}).get(name)
+                if view and view["stored_name"] in ds:
+                    blocks.update(view["dimensions"][axis] for axis in ("eta_rho", "xi_rho"))
+        return blocks
+
+    other = {"time", "level", "lev", "member", "ensemble", "number", "bounds", "bnds", "nv"}
+    for name, coord in ds.coords.items():
+        if name in ds.dims and (
+                coord.attrs.get("axis") in {"T", "Z"}
+                or coord.attrs.get("positive") in {"up", "down"}
+                or coord.attrs.get("standard_name") in {"realization", "time", "forecast_period"}):
+            other.add(name)
+        if (bounds := coord.attrs.get("bounds")) in ds.variables:
+            other.update(set(ds[bounds].dims) - set(coord.dims))
+    # shortcut: unannotated arrays use their trailing spatial pair; supply layout metadata for transposed grids.
+    for value in ds.data_vars.values():
+        axes = [dim for dim in value.dims if dim not in other]
+        if len(axes) >= 2:
+            blocks.update(axes[-2:])
+    return blocks
+
+
 def write_dataset_zarr(
     ds, path, *, metadata, product_type, group=None, track_filename=None,
     overwrite=True, compress_level=1, compress_coords=False, chunk_size=None, shard_size=None,
@@ -62,7 +94,7 @@ def write_dataset_zarr(
     if type(compress_level) is not int or not 0 <= compress_level <= 9:
         raise ValueError("compress_level must be an integer in [0, 9]")
     chunks, shards = {}, {}
-    block_dims = [dim for dim in ds.sizes if dim != "time"][-2:]
+    block_dims = _spatial_block_dims(ds)
     for dim, size in ds.sizes.items():
         if size == 0:
             raise ValueError(f"Cannot export Zarr with empty dimension {dim!r}")

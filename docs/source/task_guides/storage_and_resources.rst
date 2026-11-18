@@ -16,6 +16,9 @@ Save :download:`storage-and-resources.yaml <../../../example/tutorials/storage-a
 Stored chunk/shard extents count elements. Shards must be multiples of chunks.
 These storage choices do not change values, masks or scientific resolution.
 NetCDF is the default if ``format`` is omitted.
+Without overrides, Zarr blocks the spatial axes of each exported grid while
+keeping other scientific axes, such as depth and ensemble member, separate.
+Use the actual exported dimension names when overriding the layout.
 
 Input-reader chunks schedule source reads; product processing chunks schedule
 calculations; output chunks/shards encode storage. See

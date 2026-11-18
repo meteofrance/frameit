@@ -275,10 +275,12 @@ Defaults and tuning
 Both mappings are optional; ``output.format: zarr`` alone works. For each product:
 
 * Time chunks contain one element; a time shard spans eight chunks.
-* The last two non-time dimensions in dataset order use chunk extents of
+* Each grid's exported horizontal axes use chunk extents of
   ``min(dimension length, 128)``, with four chunks per shard along each axis.
-  These normally correspond to the two spatial axes. Other dimensions use
-  chunk and shard extents of one, avoiding large vertical-cube write blocks.
+  This includes qualified CROCO support grids and the radius/azimuth axes of
+  polar products. Reordering fields does not change which axes are blocked.
+* Vertical, forecast-member and interval-endpoint axes use chunk and shard
+  extents of one.
 * Explicit chunk sizes replace those defaults. Without a shard override,
   the default number of chunks per shard is retained.
 * A shard-only override chooses a chunk extent equal to the greatest common
@@ -297,6 +299,9 @@ the atmospheric centre-grid output axes, not native latitude/longitude axes. Ins
 the actual dimensions before setting chunks for another grid. The actual
 layout is inspectable in each array's ``zarr.json`` metadata or through
 ``zarr.open_group(path)[variable].chunks`` and ``.shards``.
+The per-grid default changes the storage encoding of new writes, not decoded
+values or the product schema. Existing stores remain readable, and explicit
+chunk and shard settings still take precedence.
 
 Storage chunks are not the input or polar-processing **Dask chunks**. Before
 writing, FrameIt rechunks lazily to shard boundaries so parallel tasks do not
