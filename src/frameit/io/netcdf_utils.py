@@ -28,6 +28,35 @@ from frameit.processing.wind_reference import MESONH_PROJECTION_METADATA
 logger = logging.getLogger(__name__)
 
 
+def mnh_altitude_height_term(name, dims, attrs):
+    """Identify the declared model top of the native Meso-NH altitude formula."""
+    quantity = {"level": "altitude", "level_w": "altitude_at_w_location"}.get(name)
+    if (quantity is None or dims != (name,) or attrs.get("computed_standard_name") != quantity
+            or "".join(str(attrs.get("formula_definition", "")).split())
+            != "z(n,k,j,i)=s(k)*(height-orog(j,i))/height+orog(j,i)"):
+        return None
+    tokens = str(attrs.get("formula_terms", "")).split()
+    if len(tokens) != 6:
+        return None
+    terms = dict(zip(tokens[::2], tokens[1::2], strict=True))
+    if terms.keys() == {"s:", "height:", "orog:"} and terms["s:"] == name:
+        return terms["height:"]
+    return None
+
+
+def mnh_native_level_attributes(name, dims, attrs, missing):
+    """Archive the unusable conversion without relabelling native level values."""
+    if not missing or mnh_altitude_height_term(name, tuple(dims), attrs) not in missing:
+        return attrs
+    result = dict(attrs)
+    for key in ("formula_terms", "formula_definition", "computed_standard_name"):
+        result[f"source_{key}"] = result.pop(key)
+    if result.get("standard_name") in {
+            "altitude", "altitude_at_w_location", "height", "atmosphere_hybrid_height_coordinate"}:
+        result["source_standard_name"] = result.pop("standard_name")
+    return result
+
+
 def validate_native_metadata(datasets, variables=None, *, model):
     """Reject changing native scientific definitions without loading physical fields."""
     from frameit.processing.polar.metadata import coordinate_dependency_names
@@ -337,6 +366,10 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                            if original[n].attrs.get("bounds"))
         coords = {n: original[n].variable.copy(deep=False) for n in coordinates}
         for n, definition in grid["coordinates"].items():
+            if definition.get("incomplete_altitude_formula"):
+                coords[n].attrs = dict(definition["attributes"])
+                for attr in ("formula_terms", "formula_definition", "computed_standard_name"):
+                    coords[n].encoding.pop(attr, None)
             if (coords[n].ndim == 0 and coords[n].attrs.get("standard_name") == "forecast_period"
                     and definition["dimensions"]):
                 coords[n] = coords[n].set_dims(definition["dimensions"])
@@ -510,7 +543,8 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                         if (coordinate in prepared
                                 and "source_standard_name" in prepared[coordinate].attrs):
                             attrs.update({key: prepared[coordinate].attrs[key]
-                                          for key in ("standard_name", "source_standard_name")})
+                                          for key in ("standard_name", "source_standard_name")
+                                          if key in prepared[coordinate].attrs})
                         value = xr.Variable(
                             metadata["dimensions"], metadata["values"], attrs=attrs)
                         value = value.isel({

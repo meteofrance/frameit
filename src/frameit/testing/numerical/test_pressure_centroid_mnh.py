@@ -380,6 +380,46 @@ def test_inconsistent_sequence_units_and_frames_are_not_silently_combined():
         prepare_mnh_inputs(contradictory, wind_settings())
 
 
+@pytest.mark.parametrize("interface_only", [False, True])
+def test_altitude_formula_pressure_centroid_requires_owning_grid_height(tmp_path, interface_only):
+    source, _ = native_vortex()
+    source["ZS"] = xr.zeros_like(source.MSLP.isel(time=0)).assign_attrs(units="m")
+    source.level.attrs.update(
+        formula_definition=HEIGHT_FORMULA,
+        computed_standard_name="altitude",
+        formula_terms="s: level height: ZTOP orog: ZS")
+    if interface_only:
+        source["ALT"] = source.ALT.rename(level="level_w")
+    source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
+    report = collect_preflight(config(tmp_path))
+    if interface_only:
+        assert any("ALT has incompatible dimensions" in error.message
+                   for error in report.errors), report.errors
+    else:
+        assert not report.errors, report.errors
+        assert "ALT" in report.facts["sources"]["atmosphere"]["tracker_support"]["inputs"]
+
+
+def test_interface_alt_does_not_shadow_complete_mass_height_formula(tmp_path):
+    source, _ = native_vortex()
+    source["ALT"] = source.ALT.rename(level="level_w")
+    source["ZTOP"] = xr.DataArray(10_000., attrs={"units": "m"})
+    source["ZS"] = xr.full_like(source.MSLP.isel(time=0), 200.).assign_attrs(units="m")
+    source.level.attrs.update(
+        formula_definition=HEIGHT_FORMULA,
+        computed_standard_name="altitude",
+        formula_terms="s: level height: ZTOP orog: ZS")
+    source.to_netcdf(tmp_path / "native.nc", engine="h5netcdf")
+    report = collect_preflight(config(tmp_path))
+    assert not report.errors, report.errors
+    inputs = report.facts["sources"]["atmosphere"]["tracker_support"]["inputs"]
+    assert "ALT" not in inputs and {"ZTOP", "ZS"} <= inputs.keys()
+    prepared = prepare_mnh_inputs(source, wind_settings())
+    np.testing.assert_allclose(prepared.height.isel(nj=0, ni=0), [1180., 3140.],
+                               rtol=0, atol=1e-12)
+    assert prepared.attrs["pressure_centroid_height_source"] == "level,ZTOP,ZS"
+
+
 def test_formula_dependencies_survive_loading(tmp_path):
     source, _ = native_vortex(n=9)
     source = source.drop_vars("ALT")

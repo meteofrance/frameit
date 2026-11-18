@@ -303,6 +303,7 @@ def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None):
 
 def _netcdf_inventory(path, source, resources):
     from frameit.io.grib_utils import normalize_isobaric_coordinates
+    from frameit.io.netcdf_utils import mnh_altitude_height_term
 
     ds = normalize_isobaric_coordinates(resources.open_netcdf(
         path, engine=source.get("reader", {}).get("engine", "h5netcdf")))
@@ -401,7 +402,10 @@ def _netcdf_inventory(path, source, resources):
             "coordinates", var.encoding.get("coordinates", ""))).split()
         dependencies = {dep: "coordinates" for dep in explicit
                         if dep not in time_names and dep != name and dep not in ds.dims}
+        strict, altitude = set(dependencies), {}
         for owner in (var, *(ds[n] for n in grid["coordinates"] if n in ds)):
+            height = (mnh_altitude_height_term(owner.name, owner.dims, owner.attrs)
+                      if model == "mesonh" and owner.name in grid["coordinates"] else None)
             for attr in ("ancillary_variables", "formula_terms", "cell_measures"):
                 value = str(owner.attrs.get(attr, ""))
                 tokens = value.split()
@@ -410,10 +414,17 @@ def _netcdf_inventory(path, source, resources):
                 for dep in tokens:
                     if dep not in {"or", "orog:"}:
                         dependencies[dep] = attr
+                        if attr == "formula_terms" and dep == height:
+                            altitude[owner.name] = height
+                        else:
+                            strict.add(dep)
         field["coordinate_dependencies"] = {
             dep: attr for dep, attr in dependencies.items() if dep in grid["coordinates"]}
         field["dependencies"] = {
             dep: attr for dep, attr in dependencies.items() if dep not in grid["coordinates"]}
+        if optional := {axis: dep for axis, dep in altitude.items()
+                        if dep in field["dependencies"] and dep not in strict}:
+            field["altitude_formula_operands"] = optional
         if source.get("interpretation") == "mesonh_surfex_sea":
             from frameit.io.surfex_utils import SURFEX_FIELDS
 
@@ -756,6 +767,44 @@ def _source_file_entries(source, name):
         return entries, excluded, overlaps, errors or [failure(original, patterns)]
 
 
+def _incomplete_mnh_altitude(fields, grids, selected, records):
+    """Use the whole closed selection so per-sample operations see the same contract."""
+    from frameit.io.netcdf_utils import mnh_native_level_attributes
+    from frameit.processing.requests import _sample_context
+
+    candidates = {term for field in fields.values()
+                  for term in field.get("altitude_formula_operands", {}).values()}
+    if not candidates or not selected:
+        return []
+    providers = {term: [] for term in candidates}
+    for record in records:
+        if record["name"] in providers:
+            providers[record["name"]].append(record)
+    samples = {_sample_context(record) for record in selected}
+    missing = set()
+    for term, matches in providers.items():
+        available = {_sample_context(record) for record in matches}
+        # Leave competing providers to the usual strict dependency checks.
+        if (len({r["field_id"] for r in matches}) <= 1 and len(available) == len(matches)
+                and samples - available):
+            missing.add(term)
+    if not missing:
+        return []
+    for field in fields.values():
+        if omitted := {axis: term for axis, term in field.get(
+                "altitude_formula_operands", {}).items() if term in missing}:
+            field["incomplete_altitude_formulas"] = omitted
+            for term in omitted.values():
+                field["dependencies"].pop(term, None)
+    for grid in grids.values():
+        for axis, coordinate in grid["coordinates"].items():
+            original = coordinate["attributes"]
+            attrs = mnh_native_level_attributes(axis, coordinate["dimensions"], original, missing)
+            if attrs is not original:
+                coordinate.update(attributes=attrs, incomplete_altitude_formula=True)
+    return sorted(missing)
+
+
 def inventory_source(conf, name, *, resources=None):
     """Populate a v3 source's metadata handoff without binding or processing fields."""
     source = conf.sources[name]
@@ -894,7 +943,11 @@ def inventory_source(conf, name, *, resources=None):
     while pending:
         field_name = pending.pop()
         for _, record in candidates.get(field_name, []):
-            for dep in fields[record["field_id"]].get("dependencies", {}):
+            field = fields[record["field_id"]]
+            altitude = field.get("altitude_formula_operands", {}).values()
+            for dep in field.get("dependencies", {}):
+                if dep in altitude:
+                    continue  # Evaluate this metadata edge after closing the sample selection.
                 if dep not in required:
                     required.add(dep)
                     needed.add(dep)
@@ -996,6 +1049,8 @@ def inventory_source(conf, name, *, resources=None):
     record_inventory = sorted(
         (r for r in records if r["time"] in selected_times and r["cycle"] in selected_cycles),
         key=lambda r: (r["time"], r["name"] or "", r["field_id"], str(r["level"])))
+    missing_altitude = (_incomplete_mnh_altitude(fields, grids, selected, record_inventory)
+                        if model == "mesonh" and fmt == "netcdf" else [])
     for grid in grids.values():
         for providers in grid.get("coordinate_providers", {}).values():
             for provider in providers:
@@ -1025,6 +1080,10 @@ def inventory_source(conf, name, *, resources=None):
                   records=selected, record_inventory=record_inventory, selected_times=times,
                   dependency_resolution=dependency_resolution, provider_conflicts=conflicts,
                   tracker_input_groups=tracker_groups)
+    if missing_altitude:
+        result["missing_mnh_altitude_operands"] = missing_altitude
+    else:
+        result.pop("missing_mnh_altitude_operands", None)
     if allowed_gaps:
         result["allowed_gaps"] = allowed_gaps
     result["pending_operations"] = [

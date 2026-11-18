@@ -500,6 +500,132 @@ def test_transformed_and_native_fields_share_unchanged_scalar_support_across_fil
         assert saved.ZTOP.attrs["units"] == "m"
 
 
+def _native_altitude_scene():
+    from .test_wind_collocation import native
+
+    scene = native()
+    scene["THT"] = (("time", "level", "nj", "ni"), np.arange(27.).reshape(1, 3, 3, 3),
+                    {"units": "K"})
+    scene["ZS"] = xr.zeros_like(scene.latitude).assign_attrs(units="m")
+    scene["ALT"] = xr.broadcast(scene.level_w, scene.latitude)[0].assign_attrs(
+        units="m", standard_name="altitude", positive="up")
+    scene.WT.values[0, 2, 1, 1] = np.nan
+    for dim, quantity in (("level", "altitude"), ("level_w", "altitude_at_w_location")):
+        scene[dim].attrs.update(
+            units="m", computed_standard_name=quantity,
+            formula_definition="z(n,k,j,i)=s(k)*(height-orog(j,i))/height+orog(j,i)",
+            formula_terms=f"s: {dim} height: ZTOP orog: ZS")
+    scene.level.attrs["standard_name"] = "altitude"
+    return scene
+
+
+def _native_altitude_request(tmp_path, paths, *, fmt="netcdf"):
+    return {
+        "schema_version": 3,
+        "sources": {"atmosphere": {"model": "mesonh", "files": [str(path) for path in paths],
+                     "variables": {"3d": ["THT", "WT", "ALT"], "levels": {"indices": [0, 2]}}}},
+        "products": {"model_grid": True},
+        "output": {"directory": str(tmp_path / "out"), "format": fmt},
+        "resources": {"cpus": 1, "synchronous_export": True},
+    }
+
+
+@pytest.mark.parametrize("fmt", ["netcdf", "zarr"])
+def test_altitude_formula_native_export_keeps_labels_and_interface_alt(tmp_path, fmt):
+    from frameit.core.preflight import collect_preflight
+
+    scene = _native_altitude_scene()
+    path = tmp_path / "native.nc"
+    scene.to_netcdf(path, engine="h5netcdf")
+    raw = _native_altitude_request(tmp_path, [path], fmt=fmt)
+    report = collect_preflight(raw)
+    assert not report.errors, report.errors
+    warnings = report.facts["sources"]["atmosphere"]["field_binding"]["warnings"]
+    assert all(any(f"{dim} native labels" in warning and "ZTOP" in warning for warning in warnings)
+               for dim in ("level", "level_w"))
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    product, = result.products
+    opened = (xr.open_zarr(product["path"], decode_coords=False, consolidated=False)
+              if fmt == "zarr" else xr.open_dataset(product["path"], decode_coords=False))
+    with opened as saved:
+        for dim, labels in (("level", [.5, 6.]), ("level_w", [0., 4.])):
+            np.testing.assert_array_equal(saved[dim], labels)
+            np.testing.assert_array_equal(saved[f"{dim}_source_native_index"], [0, 2])
+            assert saved[dim].attrs["source_formula_terms"] == scene[dim].attrs["formula_terms"]
+            assert "formula_terms" not in saved[dim].attrs
+            assert "computed_standard_name" not in saved[dim].attrs
+        assert saved.level.attrs["source_standard_name"] == "altitude"
+        assert "standard_name" not in saved.level.attrs
+        np.testing.assert_array_equal(saved.THT, scene.THT.isel(level=[0, 2]))
+        np.testing.assert_array_equal(saved.WT, scene.WT.isel(level_w=[0, 2]))
+        assert "level_w" in saved.ALT.dims and "level" not in saved.ALT.dims
+        alt = saved.ALT.isel(time=0) if "time" in saved.ALT.dims else saved.ALT
+        np.testing.assert_array_equal(alt, scene.ALT.isel(level_w=[0, 2]))
+        assert "ZTOP" not in saved.variables
+
+
+def test_altitude_formula_mass_transform_uses_native_labels_without_active_formula(tmp_path):
+    scene = _native_altitude_scene()
+    path = tmp_path / "native.nc"
+    scene.to_netcdf(path, engine="h5netcdf")
+    raw = _native_altitude_request(tmp_path, [path])
+    source = raw["sources"]["atmosphere"]
+    source["variables"]["3d"] = ["THT", "WT"]
+    source["transforms"] = [{"fields": ["WT"], "sampling": "mass"}]
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    product, = result.products
+    with xr.open_dataset(product["path"], decode_coords=False) as saved:
+        np.testing.assert_array_equal(saved.level, [.5, 6.])
+        expected = np.broadcast_to(np.array([.5, 6.])[None, :, None, None], (1, 2, 3, 3)).copy()
+        expected[0, 1, 1, 1] = np.nan
+        np.testing.assert_allclose(saved.WT, expected, atol=1e-12, rtol=0)
+        assert saved.level.attrs["source_formula_terms"] == scene.level.attrs["formula_terms"]
+        assert "formula_terms" not in saved.level.attrs
+
+
+@pytest.mark.parametrize("case", ["partial", "complete", "requested", "ancillary", "conflict"])
+def test_altitude_formula_distinguishes_partial_complete_and_required_support(tmp_path, case):
+    from frameit.core.preflight import collect_preflight
+
+    scene = _native_altitude_scene()
+    first, second = tmp_path / "first.nc", tmp_path / "second.nc"
+    scene.assign(ZTOP=xr.DataArray(20., attrs={"units": "m"})).to_netcdf(first, engine="h5netcdf")
+    missing = scene.assign_coords(time=scene.time.values + np.timedelta64(1, "h"))
+    if case == "ancillary":
+        missing.WT.attrs["ancillary_variables"] = "ZTOP"
+    missing.to_netcdf(second, engine="h5netcdf")
+    paths = [first, second]
+    if case == "conflict":
+        third = tmp_path / "third.nc"
+        scene.assign_coords(time=scene.time.values + np.timedelta64(2, "h")).assign(
+            ZTOP=xr.DataArray(.02, attrs={"units": "km"})).to_netcdf(third, engine="h5netcdf")
+        paths.append(third)
+    raw = _native_altitude_request(tmp_path, paths)
+    atmosphere = raw["sources"]["atmosphere"]
+    if case == "complete":
+        atmosphere["time"] = {"values": ["2024-01-01T00:00:00"]}
+    if case == "requested":
+        atmosphere["variables"]["2d"] = ["ZTOP"]
+    report = collect_preflight(raw)
+    if case in {"requested", "ancillary", "conflict"}:
+        assert any("ZTOP" in error.message for error in report.errors), report.errors
+        assert not (tmp_path / "out").exists()
+        return
+    assert not report.errors, report.errors
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    product, = result.products
+    with xr.open_dataset(product["path"], decode_coords=False) as saved:
+        for dim in ("level", "level_w"):
+            label = "formula_terms" if case == "complete" else "source_formula_terms"
+            assert saved[dim].attrs[label] == scene[dim].attrs["formula_terms"]
+        if case == "complete":
+            assert saved.ZTOP.item() == 20.
+        else:
+            assert saved.sizes["time"] == 2 and "ZTOP" not in saved.variables
+            assert "formula_terms" not in saved.level.attrs
+            assert "formula_terms" not in saved.level_w.attrs
+
+
 @pytest.mark.parametrize("file_count", [1, 2])
 def test_preview_keeps_per_file_static_samples_separate_but_not_single_file_static(
         tmp_path, file_count):

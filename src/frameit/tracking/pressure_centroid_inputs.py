@@ -99,9 +99,13 @@ def resolve_mnh_fields(ds, context="Dataset"):
                  if all(name in ds for name in pair)), None)
     if pair is None:
         problems.append("Missing complete horizontal wind pair: UT_ZM/VT_ZM or UT/VT")
-    height = ("ALT",) if "ALT" in ds else _height_terms(ds)
+    interface_alt = "ALT" in ds and set(ds.ALT.dims) in (
+        {"level_w", "nj", "ni"}, {"time", "level_w", "nj", "ni"})
+    height = ("ALT",) if "ALT" in ds and not interface_alt else _height_terms(ds)
     if height is None or any(name not in ds for name in height):
         problems.append("Missing physical model-level altitude: ALT or its explicit level formula")
+        if interface_alt:
+            problems.append(f"ALT has incompatible dimensions {ds.ALT.dims} for mass-level altitude")
     for name in ("MSLP", "UM10", "VM10", "time", "latitude", "longitude", "level", "ni", "nj"):
         if name not in ds:
             problems.append(f"Missing {name}")

@@ -70,8 +70,11 @@ may differ), and this exact ``formula_definition``:
 
 This evaluates ``z = s*(ZTOP-ZS)/ZTOP + ZS`` using declared length units.
 Numeric ``level`` labels alone do not establish physical altitude. Other
-coordinate formulas, including SLEVE, require explicit ``ALT`` output.
-An available ``ALT`` takes precedence over the formula.
+coordinate formulas, including SLEVE, require explicit mass-level ``ALT``.
+Valid mass-level ``ALT`` takes precedence over the formula. An ``ALT`` field
+on the ``level_w`` interfaces is not a mass-level input; if supplied alone,
+the tracker requires the complete declared ``level`` formula instead. It
+never substitutes or interpolates interface altitude onto the mass grid.
 
 Every selected file must contain a complete input set with consistent field
 names, units, wind metadata and native coordinate labels. A missing field in

@@ -435,6 +435,16 @@ NEMO depth axes retain their own ``deptht/depthu/depthv/depthw`` identity, and
 CROCO sigma retains ``s_rho/s_w``. Labels, bounds, formula dependencies and
 singleton selections remain. Hybrid/sigma/model labels do not become fixed
 pressure, height or depth.
+
+If a selected Meso-NH sample lacks the declared model-top operand and no
+requested operation uses that incomplete formula, NetCDF and Zarr keep the
+native labels and indices without an active altitude conversion. The affected
+axis stores the original formula in ``source_formula_terms`` and
+``source_formula_definition`` and its computed name in
+``source_computed_standard_name``. An altitude ``standard_name`` from that axis
+is retained as ``source_standard_name``. The run provenance records the
+warning; a separately selected ``ALT`` stays on its input grid.
+
 In AROME NetCDF converted from GRIB, a linked scalar ``heightAboveGround``
 keeps its supplied height and units. A linked ``meanSea`` label with units
 ``1`` remains dimensionless; it is not a height in metres. A decoded

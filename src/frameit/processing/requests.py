@@ -962,6 +962,7 @@ def _merge_operation_dependencies(source, binding, addition):
 def _operation_geometry(source, records, operation, conf):
     """Read only selected-sample coordinates and required admitted rotation geometry."""
     from frameit.io.loader import DatasetResources
+    from frameit.io.netcdf_utils import mnh_native_level_attributes
 
     coordinates, attributes, scalar_roles = {}, {}, {}
     for record in (sequence[0] for sequence in records.values()):
@@ -1014,9 +1015,12 @@ def _operation_geometry(source, records, operation, conf):
                             f"{name}: categorical data cannot supply rotation geometry")
                     indexers = record["locator"]["coordinate_indexers"]
                     selected = value.isel({dim: i for dim, i in indexers.items()
-                                           if dim in value.dims}, drop=True)
+                                            if dim in value.dims}, drop=True)
+                    attrs = mnh_native_level_attributes(
+                        name, selected.dims, selected.attrs,
+                        source.get("missing_mnh_altitude_operands", ()))
                     selected = xr.DataArray(
-                        np.asarray(selected.values), dims=selected.dims, attrs=dict(selected.attrs))
+                        np.asarray(selected.values), dims=selected.dims, attrs=dict(attrs))
                     if name in coordinates and not coordinates[name].variable.equals(
                             selected.variable):
                         raise ValueError(
@@ -1628,6 +1632,11 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
             raise ValueError(f"{context}: {name} unavailable at selected times/cycles/native axes; "
                              f"missing support {sorted(missing, key=str)}")
         resolved[name] = field_id, field, candidates
+        for axis, term in field.get("incomplete_altitude_formulas", {}).items():
+            warning = (f"{context}: {axis} native labels retained; altitude formula archived "
+                       f"because {term} is missing from the selected samples.")
+            if warning not in binding["warnings"]:
+                binding["warnings"].append(warning)
         collisions = [dependency for dependency in field.get("dependencies", {})
                       if field_selection(request, dependency)[1] is not None]
         if collisions:

@@ -68,6 +68,13 @@ does not combine wind components with conflicting coordinate definitions, even
 when the coordinates use different names. A separate field referenced by a
 vertical formula stays a scientific input.
 
+For Meso-NH NetCDF, a native-level request can proceed if its declared altitude
+formula lacks the model-top operand (often ``ZTOP``) and no requested operation
+needs it. FrameIt warns and keeps the native ``level`` or ``level_w`` labels. It
+does not infer a model-top value or physical altitudes. Complete formulas stay
+active; a method that needs physical height still requires valid altitude on
+its working grid or a complete supported formula.
+
 A matched file is skipped only when metadata proves that it supplies no requested
 field or required dependency. The reason is reported. An unreadable matched file
 fails; it is not treated as irrelevant. Calculation inputs must come from the
