@@ -307,6 +307,12 @@ analysis remains separately gated; native stress copies do not establish its sig
 basis or physical definition. No optional FA/GRIB/polar stack is needed for
 Cartesian copies or current analysis.
 
+If ``mask_rho`` declares ``option_0=land`` and ``option_1=water``, the CF name
+``land_binary_mask`` contradicts those codes. FrameIt records that source label
+as ``source_standard_name`` instead, for both native and analysis support
+exports. Mask values and polarity do not change. Use ``mask_rho`` and its
+declared options rather than querying the old CF name.
+
 Optional shared point sampling
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

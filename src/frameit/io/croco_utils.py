@@ -64,6 +64,16 @@ def _static_wet_mask(ds):
     return mask == 1
 
 
+def mask_rho_attributes(attrs):
+    """Preserve a producer's misleading CF label without changing mask polarity."""
+    if (attrs.get("standard_name") == "land_binary_mask"
+            and str(attrs.get("option_0", "")).lower() == "land"
+            and str(attrs.get("option_1", "")).lower() == "water"):
+        attrs = dict(attrs)
+        attrs["source_standard_name"] = attrs.pop("standard_name")
+    return attrs
+
+
 def _validate_face_masks(ds):
     for suffix, dims in (("u", {"eta_rho", "xi_u"}), ("v", {"eta_v", "xi_rho"})):
         name = f"mask_{suffix}"
@@ -118,7 +128,8 @@ def _record_current_provenance(ds, conf, pairs, *, source_paths=None):
                   "producer_reference": "CROCO 2.1.0 cpl_prism_put.F/setup_grid1.F",
                   "support": ("static MASKING; mask_rho option_0=land option_1=water; "
                               "joint finite vector"),
-                  "source_mask_standard_name": ds.mask_rho.attrs.get("standard_name"),
+                   "source_mask_standard_name": ds.mask_rho.attrs.get(
+                       "source_standard_name", ds.mask_rho.attrs.get("standard_name")),
                   "reference_frame": "earth", "units": "m s-1",
                   "source_units": {name: ds[name].attrs["units"] for name in pair},
                   "boundary_policy": "missing bracket remains missing; no extrapolation",
@@ -145,12 +156,9 @@ def prepare_croco_currents(ds, conf):
         return ds
     _validate_faces(ds, [name for pair in pairs for name in pair])
     _validate_current_inputs(ds, pairs)
-    result = ds.copy(deep=False)
-    if result.mask_rho.attrs.get("standard_name") == "land_binary_mask":
-        attrs = dict(result.mask_rho.attrs)
-        attrs["source_standard_name"] = attrs.pop("standard_name")
-        result["mask_rho"].attrs = attrs
     wet = _static_wet_mask(ds)
+    result = ds.copy(deep=False)
+    result.mask_rho.attrs = mask_rho_attributes(result.mask_rho.attrs)
     angle = convert_units(ds.angle, "angle") if pairs else None
     for pair in pairs:
         components = []

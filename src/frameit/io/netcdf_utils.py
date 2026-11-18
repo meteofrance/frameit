@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections import ChainMap
@@ -362,6 +363,17 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
         samples_by_record[key] = dataset
         return dataset
 
+    def effective_attrs(value, record, descriptor):
+        metadata = record.get("field_metadata", descriptor.get("field_metadata"))
+        attrs = ({**metadata["attributes"],
+                  "frameit_metadata_origins": json.dumps(metadata["origins"], sort_keys=True)}
+                 if metadata else value.attrs)
+        if model == "CROCO" and record["locator"]["variable"] == "mask_rho":
+            from frameit.io.croco_utils import mask_rho_attributes
+
+            attrs = mask_rho_attributes(attrs)
+        return attrs
+
     def formula_support(dataset, record):
         """Only already-bound ordinary-reader support can accompany a product."""
         field = source["fields"][record["field_id"]]
@@ -401,22 +413,20 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                 native = vertical["source_native_indices"]
                 support = support.isel({vertical["dimension"]: [
                     native.index(index) for index in parent["source_native_indices"]]})
+            value = support[name].variable.copy(deep=False)
+            if model == "CROCO":
+                value.attrs = effective_attrs(value, other, descriptor)
             dataset = dataset.assign_coords({
                 **{n: value.variable.copy(deep=False) for n, value in support.coords.items()
                    if n not in dataset},
-                name: support[name].variable.copy(deep=False),
+                name: value,
             })
         return dataset
 
     def prepare(dataset, name, record, descriptor):
         supported = formula_support(dataset, record)
         metadata = record.get("field_metadata", descriptor.get("field_metadata"))
-        if metadata:
-            import json
-
-            supported[name].attrs = {
-                **metadata["attributes"],
-                "frameit_metadata_origins": json.dumps(metadata["origins"], sort_keys=True)}
+        supported[name].attrs = effective_attrs(supported[name], record, descriptor)
         sea_fields = binding.get("interpretation", {}).get("fields", [])
         if name in sea_fields:
             from frameit.io.surfex_utils import prepare_surfex

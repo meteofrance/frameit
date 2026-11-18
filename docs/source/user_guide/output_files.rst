@@ -500,7 +500,8 @@ order, aliases or product filtering. The dataset's
 identities, stored support names, dimension mappings and sigma formula links.
 Some inventoried views may not be exported; follow names actually present in the
 dataset. An explicitly requested ``zeta`` remains a data variable on its rho view;
-the face-specific copies are support coordinates.
+the face-specific copies are support coordinates. Formula support retains its
+own declared metadata, including when the field is requested separately.
 
 The sigma labels stay dimensionless. Their formula references retain the original
 rho-grid bathymetry and surface elevation; they do not supply physical depths at

@@ -119,6 +119,34 @@ assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
     assert source.read_bytes() == before
 
 
+def test_croco_coexported_mask_has_same_definition_with_or_without_analysis(tmp_path):
+    conf = role_case(tmp_path, [0, 2], region={
+        "center": {"latitude": -20., "longitude": 60.}, "width_km": {"x": 2., "y": 2.}})
+    raw = deepcopy(conf.yaml_config)
+    raw["sources"]["ocean"]["variables"]["2d"] = ["zeta", "mask_rho"]
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert result.ok, result
+    raw["sources"]["ocean"].pop("transforms")
+    raw["output"]["directory"] = str(tmp_path / "native")
+    ordinary = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert ordinary.ok, ordinary
+    with xr.open_dataset(result.products[0]["path"]) as currents, xr.open_dataset(
+            ordinary.products[0]["path"]) as native, xr.open_dataset(tmp_path / "ocean.nc") as source:
+        xr.testing.assert_identical(currents.mask_rho.variable, native.mask_rho.variable)
+        assert currents.mask_rho.attrs["source_standard_name"] == "land_binary_mask"
+        assert "standard_name" not in currents.mask_rho.attrs
+        assert currents.mask_rho.attrs["option_0"] == "land"
+        assert currents.mask_rho.attrs["option_1"] == "water"
+        assert source.mask_rho.attrs["standard_name"] == "land_binary_mask"
+        for name in ("zeta", "temp", "salt", "w"):
+            xr.testing.assert_identical(currents[name].variable, native[name].variable)
+        for name, expected in (("u", -4.), ("v", 2.)):
+            values = currents[name].values
+            assert np.isfinite(values).any()
+            np.testing.assert_allclose(values[np.isfinite(values)], expected, atol=1e-12, rtol=0.)
+            assert np.isnan(currents[name].where(currents.mask_rho == 0)).all()
+
+
 @pytest.mark.parametrize("problem", ["indices", "labels", "attributes"])
 def test_croco_role_normalization_preserves_conflict_rejection(tmp_path, problem):
     conf = role_case(tmp_path, [0, 2], coexport_zeta=False)
@@ -172,6 +200,33 @@ def native_case(tmp_path, *, fields=None, products=None, fmt="netcdf", region=No
         "center": {"latitude": -20., "longitude": 60.},
         "width_km": {"x": 2., "y": 2.}},
         products=products, output={"format": fmt})
+
+
+def test_croco_coexported_zeta_retains_own_metadata_with_polar(tmp_path):
+    conf = native_case(
+        tmp_path, fields={"2d": ["zeta"], "3d": ["temp", "salt"], "levels": {"indices": [0, 2]}},
+        products={"model_grid": True, "track": True,
+                  "polar": {"radius_km": 2, "radial_step_km": 2, "azimuth_count": 8}},
+        region={"center": {"latitude": -20., "longitude": 60.},
+                "width_km": {"x": 4., "y": 4.}})
+    raw = deepcopy(conf.yaml_config)
+    raw["sources"]["ocean"]["field_metadata"] = {
+        name: {"kind": "continuous"} for name in ("temp", "salt", "zeta")}
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert result.ok, result
+    products = {p["role"]: p["path"] for p in result.products}
+    with xr.open_dataset(products["model_grid"]) as grid, xr.open_dataset(products["polar"]) as polar:
+        assert grid.zeta.attrs["kind"] == "continuous"
+        assert grid.zeta.attrs["units"] == "meter"
+        assert json.loads(grid.zeta.attrs["frameit_metadata_origins"]) == {
+            "kind": "declaration", "units": "input"}
+        assert "eta: zeta" in grid.s_rho.attrs["formula_terms"]
+        t = xr.DataArray([0., 1.], dims="time")
+        zeta = t + .01 * grid.eta_rho_source_native_index + .001 * grid.xi_rho_source_native_index
+        np.testing.assert_array_equal(grid.zeta, zeta.transpose(*grid.zeta.dims))
+        np.testing.assert_array_equal(grid.s_rho_source_native_index, [0, 2])
+        assert np.isfinite(polar.temp).any() and np.isfinite(polar.salt).any()
+        np.testing.assert_array_equal(polar.time, grid.time)
 
 
 def model_grid_id(source, name):
