@@ -290,7 +290,8 @@ def guard_netcdf_payloads(monkeypatch, forbidden_names):
     return reads
 
 
-@pytest.mark.parametrize("case", ["complementary", "height", "lead", "duplicate", "flag"])
+@pytest.mark.parametrize("case", ["complementary", "height", "height_alias", "lead", "lead_alias",
+                                 "duplicate", "flag"])
 def test_arome_split_fields_keep_forecast_and_scalar_height_metadata(tmp_path, monkeypatch, case):
     from frameit.core.coupled import bind_sources
 
@@ -300,9 +301,11 @@ def test_arome_split_fields_keep_forecast_and_scalar_height_metadata(tmp_path, m
     for name in ("prmsl", "u10", "v10"):
         pressure = name == "prmsl"
         level = "meanSea" if pressure else "heightAboveGround"
-        height = 20. if name == "v10" and case == "height" else 10.
+        level_coord = "height" if name == "v10" and case == "height_alias" else level
+        lead_coord = "lead" if name == "v10" and case == "lead_alias" else "step"
+        height = 20. if name == "v10" and case.startswith("height") else 10.
         period = lead.copy()
-        if name == "v10" and case == "lead":
+        if name == "v10" and case.startswith("lead"):
             period[-1] += np.timedelta64(1, "h")
         scene = xr.Dataset({name: (
             ("valid_time", "latitude", "longitude"), np.ones((3, 2, 3)), {
@@ -310,8 +313,8 @@ def test_arome_split_fields_keep_forecast_and_scalar_height_metadata(tmp_path, m
                 "GRIB_stepType": "instant"})}, coords={
             "valid_time": cycle + lead,
             "time": ((), cycle, {"standard_name": "forecast_reference_time"}),
-            "step": ("valid_time", period, {"standard_name": "forecast_period"}),
-            level: ((), 0., {"units": "1", "long_name": "original GRIB coordinate for key: level(meanSea)"})
+            lead_coord: ("valid_time", period, {"standard_name": "forecast_period"}),
+            level_coord: ((), 0., {"units": "1", "long_name": "original GRIB coordinate for key: level(meanSea)"})
             if pressure else ((), height, {"standard_name": "height", "units": "m", "positive": "up"}),
             "latitude": ("latitude", [-20., -19.99], {"units": "degrees_north"}),
             "longitude": ("longitude", [60., 60.01, 60.02], {"units": "degrees_east"}),
@@ -356,14 +359,60 @@ def test_arome_split_fields_keep_forecast_and_scalar_height_metadata(tmp_path, m
         str(path) for path in paths if path.stem in ({"u10", "v10"} if case == "complementary" else {"u10"})}
     assert all([r["indexers"] for r in p["samples"]] == [{"valid_time": 1}, {"valid_time": 2}]
                for p in providers)
-    if case in {"height", "lead"}:
+    if case in {"height", "height_alias", "lead", "lead_alias"}:
         combined = v3_config(tmp_path, paths, time=time, model="arome",
                              wind_pairs=[{"u": "u10", "v": "v10", "basis": "earth"}],
                              names=names, derived={"speed": {
                                  "method": "wind_speed", "inputs": {"u": "u10", "v": "v10"}}})
-        coordinate = "heightAboveGround" if case == "height" else "step"
-        with pytest.raises(ValueError, match=f"{coordinate}: conflicting operation coordinate geometry"):
+        with pytest.raises(ValueError, match="conflicting operation coordinate geometry"):
             bind_sources(combined, check_output=False)
+
+
+@pytest.mark.parametrize("model", ["mesonh", "arome"])
+def test_linked_formula_height_remains_a_physical_field(tmp_path, model):
+    scene = v3_scene(names=(), model=None).assign_coords(
+        level=("level", [1., 2.], {"axis": "Z", "units": "m",
+                                 "formula_terms": "s: level height: ZTOP orog: ZS"}),
+        ZTOP=((), 20., {"standard_name": "height", "units": "m"}))
+    scene["THT"] = (("time", "level", "y", "x"), np.ones((4, 2, 2, 3)), {"units": "K"})
+    scene["ZS"] = (("y", "x"), np.zeros((2, 3)), {"units": "m"})
+    path = tmp_path / "mesonh.nc"
+    scene.to_netcdf(path, engine="h5netcdf")
+    with DatasetResources() as resources:
+        inventory = _netcdf_inventory(path, {"model": model}, resources)
+    assert "ZTOP" in {f["name"] for f in inventory["fields"].values()}
+    theta = next(f for f in inventory["fields"].values() if f["name"] == "THT")
+    assert theta["dependencies"]["ZTOP"] == "formula_terms"
+
+
+def test_arome_singleton_scalar_leads_follow_the_sample_axis(tmp_path):
+    from frameit.core.execution import execute_simulation
+
+    cycle = np.datetime64("2026-01-01", "ns")
+    paths = []
+    for hour in (6, 12):
+        scene = v3_scene(names=("prmsl",), hours=(hour,), model="AROME").rename(time="valid_time")
+        scene.prmsl.attrs["units"] = "Pa"
+        scene = scene.assign_coords(
+            time=((), cycle, {"standard_name": "forecast_reference_time"}),
+            step=((), np.timedelta64(hour, "h"), {"standard_name": "forecast_period"}))
+        path = tmp_path / f"lead-{hour}.nc"
+        scene.to_netcdf(path, engine="h5netcdf")
+        paths.append(path)
+    conf = v3_config(tmp_path, paths, names=("prmsl",), model="arome")
+    inventory = preflight(conf, check_output=False)["sources"]["weather"]
+    grids = {r["grid_id"] for r in inventory["records"]}
+    assert len({r["field_id"] for r in inventory["records"]}) == 1
+    for grid in grids:
+        providers = inventory["native_grids"][grid]["coordinate_providers"]["step"]
+        assert providers[0]["samples"][0]["indexers"] == {}
+        assert providers[0]["samples"][0]["coordinate_indexers"] == {"valid_time": 0}
+    result = execute_simulation(conf)
+    assert result.ok
+    with xr.open_dataset(result.products[0]["path"]) as output:
+        assert output.step.dims == ("time",)
+        np.testing.assert_array_equal(output.step, np.array([6, 12], dtype="timedelta64[h]"))
+        np.testing.assert_array_equal(output.time, cycle + np.array([6, 12], dtype="timedelta64[h]"))
 
 
 @pytest.mark.parametrize("case", [

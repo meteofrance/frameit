@@ -439,7 +439,8 @@ In AROME NetCDF converted from GRIB, a linked scalar ``heightAboveGround``
 keeps its supplied height and units. A linked ``meanSea`` label with units
 ``1`` remains dimensionless; it is not a height in metres. A decoded
 ``forecast_period`` coordinate retains its lead duration, distinct from the
-sample time and forecast reference time.
+sample time and forecast reference time. A scalar lead without its own bounds
+from a single-record file is stored along the assembled sample axis.
 Vertical native-index auxiliaries retain original zero-based source positions,
 not renumbered selection positions. Transforms preserve an existing index
 coordinate's metadata; generated NEMO/CROCO indices use the same description as

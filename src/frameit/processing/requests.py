@@ -590,9 +590,10 @@ def _coordinate_support(source, field, record):
             and any(sample["time"] == record["time"] and sample["cycle"] == record["cycle"]
                     and sample["clock"] == record["clock"]
                     and sample["coordinate_indexers"] == locator["coordinate_indexers"]
-                    and sample["indexers"] == {
-                        dim: i for dim, i in locator["coordinate_indexers"].items()
-                        if dim in grid["coordinates"][name]["dimensions"]}
+                     and sample["indexers"] == {
+                         dim: i for dim, i in locator["coordinate_indexers"].items()
+                         if dim in provider.get("native_dimensions",
+                                                grid["coordinates"][name]["dimensions"])}
                     for sample in provider["samples"])
             for provider in providers)
         if not available:
@@ -962,7 +963,7 @@ def _operation_geometry(source, records, operation, conf):
     """Read only selected-sample coordinates and required admitted rotation geometry."""
     from frameit.io.loader import DatasetResources
 
-    coordinates, attributes = {}, {}
+    coordinates, attributes, scalar_roles = {}, {}, {}
     for record in (sequence[0] for sequence in records.values()):
         grid = source["native_grids"][record["grid_id"]]
         for name, descriptor in grid["coordinates"].items():
@@ -971,6 +972,11 @@ def _operation_geometry(source, records, operation, conf):
             indexers = record["locator"].get("coordinate_indexers", {})
             value = value.isel({dim: i for dim, i in indexers.items() if dim in value.dims},
                                drop=True)
+            role = value.attrs.get("standard_name")
+            if source["model"] == "arome" and value.ndim == 0 and role in {"height", "forecast_period"}:
+                if role in scalar_roles and not scalar_roles[role].identical(value):
+                    raise ValueError(f"{name}: conflicting operation coordinate geometry for {role}")
+                scalar_roles[role] = value
             if name in coordinates and not coordinates[name].identical(value):
                 raise ValueError(f"{name}: conflicting operation coordinate geometry")
             coordinates[name] = value

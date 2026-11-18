@@ -42,6 +42,16 @@ def validate_zarr_sizes(chunk_size, shard_size):
 
 
 def _spatial_block_dims(ds):
+    other = {"time", "level", "lev", "member", "ensemble", "number", "bounds", "bnds", "nv"}
+    for coord in ds.coords.values():
+        if coord.ndim == 1 and (
+                coord.attrs.get("axis") in {"T", "Z"}
+                or coord.attrs.get("positive") in {"up", "down"}
+                or coord.attrs.get("standard_name") in {"realization", "time", "forecast_period"}):
+            other.update(coord.dims)
+        if isinstance(bounds := coord.attrs.get("bounds"), str) and bounds in ds.variables:
+            other.update(set(ds[bounds].dims) - set(coord.dims))
+
     blocks = set()
     for polar in ({"radius", "azimuth"}, {"radius_cell", "azimuth_cell"}):
         if polar <= ds.sizes.keys():
@@ -50,21 +60,15 @@ def _spatial_block_dims(ds):
     if isinstance(layout, dict):
         for grid in layout.values():
             blocks.update(grid["dimensions"][axis] for axis in grid.get("original_coordinates", {}))
+            geographic = {axis for name in grid.get("geography", {}).values()
+                          if name in ds for axis in ds[name].dims} - other
+            if len(geographic) == 2:
+                blocks.update(geographic)
             for name in ("lat_rho", "lon_rho"):
                 view = grid.get("support_views", {}).get(name)
                 if view and view["stored_name"] in ds:
                     blocks.update(view["dimensions"][axis] for axis in ("eta_rho", "xi_rho"))
-        return blocks
-
-    other = {"time", "level", "lev", "member", "ensemble", "number", "bounds", "bnds", "nv"}
-    for name, coord in ds.coords.items():
-        if name in ds.dims and (
-                coord.attrs.get("axis") in {"T", "Z"}
-                or coord.attrs.get("positive") in {"up", "down"}
-                or coord.attrs.get("standard_name") in {"realization", "time", "forecast_period"}):
-            other.add(name)
-        if (bounds := coord.attrs.get("bounds")) in ds.variables:
-            other.update(set(ds[bounds].dims) - set(coord.dims))
+        return blocks - other
     # shortcut: unannotated arrays use their trailing spatial pair; supply layout metadata for transposed grids.
     for value in ds.data_vars.values():
         axes = [dim for dim in value.dims if dim not in other]

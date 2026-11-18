@@ -64,7 +64,9 @@ needed records, make the input archive unambiguous upstream.
 Complementary AROME NetCDF files may repeat linked forecast periods and scalar
 height labels. FrameIt treats these as coordinates of their owning fields, not
 as competing physical fields. It retains different heights or surface labels and
-does not combine wind components with conflicting coordinate definitions.
+does not combine wind components with conflicting coordinate definitions, even
+when the coordinates use different names. A separate field referenced by a
+vertical formula stays a scientific input.
 
 A matched file is skipped only when metadata proves that it supplies no requested
 field or required dependency. The reason is reported. An unreadable matched file
@@ -96,7 +98,9 @@ timestamps or fill missing samples.
 A one-record Meso-NH NetCDF file may also declare a scalar ``DTCUR`` current
 time. It must match the sole decoded ``time`` value and calendar exactly.
 FrameIt selects by ``time`` and retains ``DTCUR`` along that axis when assembling
-the files. Forecast reference clocks and interval bounds are still checked.
+the files. If a selected file lacks the optional alias, the assembled product
+keeps the canonical clock and records why ``DTCUR`` was omitted. It does not
+invent an alias. Forecast reference clocks and interval bounds are still checked.
 This convention does not extend to multi-record input files or other models.
 
 An explicit source ``allow_initial_gaps`` list can preserve a wholly absent

@@ -124,6 +124,7 @@ def _decoded_clock(ds, path, *, model):
     if values.size == 0 or values.dtype.kind == "M" and np.isnat(values).any():
         raise ValueError(f"{path}: missing sample timestamps in {name}")
     calendar = clock.encoding.get("calendar", clock.attrs.get("calendar", "standard"))
+    scalar_dtcur_alias = False
     for other in candidates:
         candidate = ds[other]
         other_calendar = candidate.encoding.get("calendar", candidate.attrs.get("calendar", "standard"))
@@ -133,6 +134,7 @@ def _decoded_clock(ds, path, *, model):
                 and values.shape == (1,) and other == "DTCUR" and candidate.ndim == 0):
             alias = candidate.values[()]
             equal = type(alias) is type(values[0]) and alias == values[0]
+            scalar_dtcur_alias = equal
         else:
             equal = candidate.dims == clock.dims and np.array_equal(candidate.values, values)
         if not equal:
@@ -176,16 +178,23 @@ def _decoded_clock(ds, path, *, model):
         samples.append({"time": values[position], "calendar": calendar,
                         "cycle": reference[position] if reference is not None else None,
                          "time_bounds": tuple(bounds[position]) if bounds is not None else None,
-                         "clock": name, "temporal_names": sorted(set(candidates) | set(clock.dims)),
-                         "indexers": dict(zip(clock.dims, position, strict=True))})
+                          "clock": name, "temporal_names": sorted(set(candidates) | set(clock.dims)),
+                          **({"scalar_dtcur_alias": True} if scalar_dtcur_alias else {}),
+                          "indexers": dict(zip(clock.dims, position, strict=True))})
     return samples, set(candidates + references + bound_names)
 
 
-def _cf_coordinate_metadata(ds):
+def _cf_coordinate_metadata(ds, *, model):
     """Recognize declared coordinate labels/constants, not scientific formula inputs."""
     metadata = {}
     ancillary = {name for var in ds.variables.values()
                  for name in str(var.attrs.get("ancillary_variables", "")).split()}
+    if model == "arome":
+        scientific = {name for var in ds.variables.values()
+                      for key in ("cell_measures", "formula_terms")
+                      for name in str(var.attrs.get(key, "")).split()[1::2]}
+        linked = {name for var in ds.data_vars.values() for name in str(var.attrs.get(
+            "coordinates", var.encoding.get("coordinates", ""))).split()}
     for name, coord in ds.coords.items():
         if name in ancillary or coord.attrs.keys() & {"flag_values", "flag_masks", "flag_meanings"}:
             continue
@@ -194,7 +203,8 @@ def _cf_coordinate_metadata(ds):
             (standard == "height" and units in UNITS["distance"][1])
             or (name == "meanSea" and units == "1" and coord.attrs.get("long_name")
                 == "original GRIB coordinate for key: level(meanSea)"))
-        if scalar_level or (standard == "forecast_period" and coord.dtype.kind == "m"):
+        if (model == "arome" and name in linked and name not in scientific
+                and (scalar_level or (standard == "forecast_period" and coord.dtype.kind == "m"))):
             metadata[name] = set()
             continue
         if coord.ndim != 1 or coord.attrs.get("axis") != "Z":
@@ -306,7 +316,16 @@ def _netcdf_inventory(path, source, resources):
         raise ValueError(f"{path}: CROCO requires the admitted CROCO history file profile")
     samples, time_names = _decoded_clock(ds, path, model=model)
     temporal_dims = {dim for sample in samples for dim in sample["indexers"]}
-    coordinate_metadata = _cf_coordinate_metadata(ds)
+    coordinate_metadata = _cf_coordinate_metadata(ds, model=model)
+    scalar_leads = set()
+    if len(samples) == len(temporal_dims) == 1:
+        scalar_leads = {name for name in coordinate_metadata if ds[name].ndim == 0
+                        and ds[name].attrs.get("standard_name") == "forecast_period"
+                        and "bounds" not in ds[name].attrs}
+        if scalar_leads:
+            axis, = temporal_dims
+            # Store sample-aligned geometry without changing the native scalar locator.
+            ds = ds.assign_coords({n: ds[n].variable.set_dims((axis,)) for n in scalar_leads})
     metadata = (set(time_names) | set(ds.dims) | set(coordinate_metadata)
                 | {n for values in coordinate_metadata.values() for n in values})
     for name, value in ds.variables.items():
@@ -338,9 +357,10 @@ def _netcdf_inventory(path, source, resources):
             grids[grid_id] = {**grid, "coordinate_providers": {
                 coordinate: [{
                     "format": "netcdf", "path": str(path), "variable": coordinate,
+                    **({"native_dimensions": []} if coordinate in scalar_leads else {}),
                     "samples": [{**sample,
-                                 "indexers": {d: i for d, i in sample["indexers"].items()
-                                              if d in ds[coordinate].dims},
+                                  "indexers": {d: i for d, i in sample["indexers"].items()
+                                               if d in ds[coordinate].dims and coordinate not in scalar_leads},
                                  "coordinate_indexers": dict(sample["indexers"])}
                                 for sample in samples],
                 }] for coordinate in grid["coordinates"]}}

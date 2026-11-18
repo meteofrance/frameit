@@ -155,6 +155,25 @@ def test_polar_target_axes_are_blocked_not_levels_or_members(tmp_path):
     assert array.shards == (32, 8, 16, 1, 1)
 
 
+@pytest.mark.parametrize("annotated", [False, True])
+def test_cf_geography_and_auxiliary_member_identify_storage_axes(tmp_path, annotated):
+    zarr = pytest.importorskip("zarr")
+    ds = xr.Dataset({
+        "sample": (("time", "row", "column", "ens"), np.ones((1, 3, 4, 5))),
+    }, coords={"realization": ("ens", np.arange(5), {"standard_name": "realization"}),
+               "latitude": ("row", [1., 2., 3.], {"standard_name": "latitude"}),
+               "longitude": ("column", [1., 2., 3., 4.], {"standard_name": "longitude"})})
+    if annotated:
+        ds.attrs["frameit_output_coordinates"] = {"weather": {
+            "dimensions": {"row": "row", "column": "column", "ens": "ens"},
+            "original_coordinates": {},
+            "geography": {"latitude": "latitude", "longitude": "longitude"}}}
+    target = write(ds, tmp_path / "cf.zarr")
+    array = zarr.open_group(target, mode="r")["sample"]
+    assert array.chunks == (1, 3, 4, 1)
+    assert array.shards == (8, 12, 16, 1)
+
+
 def test_store_failure_and_overwrite(tmp_path, monkeypatch):
     pytest.importorskip("zarr")
     target = write(scene(), tmp_path / "field.zarr")

@@ -304,6 +304,9 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
         cartesian_vertical_velocity="interfaces", compute_polar_proj=False,
     )
     samples_by_record = {}
+    records = binding["records"]
+    omit_dtcur = (any(record.get("scalar_dtcur_alias") for record in records)
+                  and any("DTCUR" not in record["temporal_names"] for record in records))
 
     def sample(name, record):
         key = name, id(record)
@@ -328,11 +331,18 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                   "scrum_time", "forecast_reference_time"}
             or original[n].attrs.get("standard_name") in {"time", "forecast_reference_time"}
             or original[n].attrs.get("axis") == "T"))
+        if omit_dtcur:
+            coordinates.discard("DTCUR")
         coordinates.update(original[n].attrs["bounds"] for n in list(coordinates)
                            if original[n].attrs.get("bounds"))
+        coords = {n: original[n].variable.copy(deep=False) for n in coordinates}
+        for n, definition in grid["coordinates"].items():
+            if (coords[n].ndim == 0 and coords[n].attrs.get("standard_name") == "forecast_period"
+                    and definition["dimensions"]):
+                coords[n] = coords[n].set_dims(definition["dimensions"])
         dataset = xr.Dataset(
             {name: original[variable].variable.copy(deep=False)},
-            coords={n: original[n].variable.copy(deep=False) for n in coordinates},
+            coords=coords,
             attrs=dict(original.attrs),
         )
         if name != variable:
@@ -356,8 +366,10 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     dataset = dataset.assign_coords({index: (dim, np.arange(original.sizes[dim]), {
                         "units": "1", "long_name": f"zero-based native source {dim} index"})})
         dataset = dataset.isel(indexers)
-        if (model == "MNH" and record["clock"] == "time" and "DTCUR" in dataset.coords
-                and "DTCUR" in record.get("temporal_names", ()) and dataset.DTCUR.ndim == 0):
+        if omit_dtcur:
+            dataset.attrs["frameit_omitted_time_alias"] = (
+                "DTCUR is absent from some selected native samples; use canonical time")
+        elif record.get("scalar_dtcur_alias"):
             # The admitted current-time alias belongs to this sample, not to the file series.
             dataset = dataset.assign_coords(DTCUR=dataset.DTCUR.variable.set_dims(("time",)))
         samples_by_record[key] = dataset
