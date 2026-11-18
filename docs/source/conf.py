@@ -44,6 +44,11 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "sphinx_rtd_theme"  # or "furo" or "alabaster" sphinx_rtd_theme sphinx_book_theme to install
 html_static_path = ["_static"]
-html_logo = "_static/logo/logo_FrameIt.png"
 html_css_files = ["custom.css"]
 html_title=f"FrameIt {release} documentation"
+
+# Standalone local builds have no links to another documentation tree.
+docs_channel = os.environ.get("FRAMEIT_DOCS_CHANNEL", "")
+if docs_channel not in ("", "main", "develop"):
+    raise ValueError("FRAMEIT_DOCS_CHANNEL must be main, develop, or empty")
+html_context = {"docs_channel": docs_channel}
