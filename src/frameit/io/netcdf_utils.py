@@ -28,25 +28,29 @@ from frameit.processing.wind_reference import MESONH_PROJECTION_METADATA
 logger = logging.getLogger(__name__)
 
 
-def mnh_altitude_height_term(name, dims, attrs):
-    """Identify the declared model top of the native Meso-NH altitude formula."""
+def mnh_altitude_terms(name, dims, attrs):
+    """Identify the exact native Meso-NH altitude terms, without using their values."""
     quantity = {"level": "altitude", "level_w": "altitude_at_w_location"}.get(name)
     if (quantity is None or dims != (name,) or attrs.get("computed_standard_name") != quantity
             or "".join(str(attrs.get("formula_definition", "")).split())
             != "z(n,k,j,i)=s(k)*(height-orog(j,i))/height+orog(j,i)"):
-        return None
+        return {}
     tokens = str(attrs.get("formula_terms", "")).split()
     if len(tokens) != 6:
-        return None
+        return {}
     terms = dict(zip(tokens[::2], tokens[1::2], strict=True))
     if terms.keys() == {"s:", "height:", "orog:"} and terms["s:"] == name:
-        return terms["height:"]
-    return None
+        return terms
+    return {}
 
 
 def mnh_native_level_attributes(name, dims, attrs, missing):
     """Archive the unusable conversion without relabelling native level values."""
-    if not missing or mnh_altitude_height_term(name, tuple(dims), attrs) not in missing:
+    if not missing:
+        return attrs
+    terms = mnh_altitude_terms(name, tuple(dims), attrs)
+    top = terms.get("height:")
+    if top not in missing or top in {terms.get("orog:"), name}:
         return attrs
     result = dict(attrs)
     for key in ("formula_terms", "formula_definition", "computed_standard_name"):
@@ -334,6 +338,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
     )
     samples_by_record = {}
     records = binding["records"]
+    tracker_support = source.get("tracker_support", {})
     omit_dtcur = (any(record.get("scalar_dtcur_alias") for record in records)
                   and any("DTCUR" not in record["temporal_names"] for record in records))
 
@@ -592,8 +597,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     concat_dim = varying[0]
                 static = (not source["fields"][descriptor["field_id"]]["time_varying"]
                           and len({r["locator"]["path"] for r in descriptor["records"]}) == 1)
-                if not export_support and name in source.get("tracker_support", {}).get(
-                        "projection_constants", ()):
+                if not export_support and name in tracker_support.get("projection_constants", ()):
                     constant = sequence[0][name].variable
                     if constant.ndim or any(not constant.identical(ds[name].variable)
                                             for ds in sequence[1:]):
@@ -610,6 +614,13 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     sequence, dim=concat_dim, data_vars="minimal" if static else "all",
                     coords=support_coords or "minimal",
                     compat="equals", join="exact", combine_attrs="override"))
+                if not export_support and (attributes := tracker_support.get("projection_attributes")):
+                    for key, value in attributes.items():
+                        if any(key in ds.attrs and np.asarray(ds.attrs[key]).item() != value
+                               for ds in sequence):
+                            raise ValueError(f"Meso-NH projection attribute {key} changed after binding")
+                    # The native attribute can be on a different field's file.
+                    combined = combined.assign_attrs(attributes)
                 if export_support:
                     from frameit.processing.requests import align_initial_gap
 

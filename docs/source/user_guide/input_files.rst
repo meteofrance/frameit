@@ -65,15 +65,18 @@ Complementary AROME NetCDF files may repeat linked forecast periods and scalar
 height labels. FrameIt treats these as coordinates of their owning fields, not
 as competing physical fields. It retains different heights or surface labels and
 does not combine wind components with conflicting coordinate definitions, even
-when the coordinates use different names. A separate field referenced by a
-vertical formula stays a scientific input.
+when the coordinates use different names. If one component owns a scalar
+surface label, its partner must identify the same surface. A separate field
+referenced by a vertical formula stays a scientific input.
 
 For Meso-NH NetCDF, a native-level request can proceed if its declared altitude
 formula lacks the model-top operand (often ``ZTOP``) and no requested operation
 needs it. FrameIt warns and keeps the native ``level`` or ``level_w`` labels. It
-does not infer a model-top value or physical altitudes. Complete formulas stay
-active; a method that needs physical height still requires valid altitude on
-its working grid or a complete supported formula.
+does not infer a model-top value or physical altitudes. Other required links to
+that operand still have to resolve. A transform to mass levels checks the
+destination axis's formula, not just the input axis's formula. A method that
+needs physical height requires valid altitude on its working grid or a complete
+supported formula.
 
 A matched file is skipped only when metadata proves that it supplies no requested
 field or required dependency. The reason is reported. An unreadable matched file
@@ -98,7 +101,8 @@ exact reference time as ``time.cycle``. Do not treat equal valid timestamps as
 proof that cycles are equivalent.
 
 Forecast reference time, sample/valid time, interval bounds and sampling meaning
-remain distinct. Conflicting or unidentified clocks fail. Ordering or assembling
+remain distinct. Conflicting clocks or calendars fail, including when reference
+aliases or supporting files decode to the same timestamp. Ordering or assembling
 files does not make interval means equivalent to instantaneous fields, shift
 timestamps or fill missing samples.
 

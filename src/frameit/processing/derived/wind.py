@@ -334,6 +334,8 @@ def prepare_source_operation(operation, internal, source, conf):
     prepared = xr.Dataset({n: value for n, value in arrays.items() if n in input_names})
     prepared = prepared.assign_coords({
         n: c for n, c in geometry.coords.items() if set(c.dims) <= set(prepared.dims)})
+    if support := operation.get("mass_altitude_support"):
+        prepared = prepared.assign_coords({name: arrays[name] for name in support})
     prepared.attrs = dict(geometry.attrs)
     if operation["preparation"] == "croco_midpoint_both_valid_then_rho_angle":
         from frameit.io.croco_utils import _record_current_provenance, prepare_croco_currents

@@ -41,6 +41,7 @@ def test_mesonh_scalar_dtcur_agrees_with_single_sample(tmp_path, calendar):
     ("calendar", "conflicting calendars"), ("many", "sample/forecast clocks"),
     ("unrelated", "sample/forecast clocks"), ("other_model", "sample/forecast clocks"),
     ("bounds", "invalid time bounds"), ("forecast", "conflicting forecast reference clocks"),
+    ("reference_calendar", "conflicting forecast reference calendars"),
 ])
 def test_mesonh_dtcur_alias_cannot_hide_inconsistent_clocks(tmp_path, case, match):
     stamp = np.datetime64("2024-12-10T01:00:00", "ns")
@@ -55,9 +56,13 @@ def test_mesonh_dtcur_alias_cannot_hide_inconsistent_clocks(tmp_path, case, matc
         ds.DTCUR.encoding["calendar"] = "gregorian"
     if case == "bounds":
         ds.DTCUR.attrs["bounds"] = "missing_bounds"
-    if case == "forecast":
+    if case in {"forecast", "reference_calendar"}:
         ds["forecast_reference_time"] = xr.DataArray(stamp)
-        ds["reference"] = xr.DataArray(later, attrs={"standard_name": "forecast_reference_time"})
+        ds["reference"] = xr.DataArray(
+            later if case == "forecast" else stamp, attrs={"standard_name": "forecast_reference_time"})
+        if case == "reference_calendar":
+            ds.forecast_reference_time.encoding["calendar"] = "standard"
+            ds.reference.encoding["calendar"] = "proleptic_gregorian"
     path = tmp_path / "clock.nc"
     ds.to_netcdf(path, engine="h5netcdf")
     with DatasetResources() as resources, pytest.raises(ValueError, match=match):
@@ -290,8 +295,10 @@ def guard_netcdf_payloads(monkeypatch, forbidden_names):
     return reads
 
 
-@pytest.mark.parametrize("case", ["complementary", "height", "height_alias", "lead", "lead_alias",
-                                 "duplicate", "flag"])
+@pytest.mark.parametrize("case", [
+    "complementary", "height", "height_alias", "different_surface", "unlabelled_surface",
+    "lead", "lead_alias", "duplicate", "flag",
+])
 def test_arome_split_fields_keep_forecast_and_scalar_height_metadata(tmp_path, monkeypatch, case):
     from frameit.core.coupled import bind_sources
 
@@ -300,7 +307,8 @@ def test_arome_split_fields_keep_forecast_and_scalar_height_metadata(tmp_path, m
     paths = []
     for name in ("prmsl", "u10", "v10"):
         pressure = name == "prmsl"
-        level = "meanSea" if pressure else "heightAboveGround"
+        sea_surface = pressure or (name == "v10" and case == "different_surface")
+        level = "meanSea" if sea_surface else "heightAboveGround"
         level_coord = "height" if name == "v10" and case == "height_alias" else level
         lead_coord = "lead" if name == "v10" and case == "lead_alias" else "step"
         height = 20. if name == "v10" and case.startswith("height") else 10.
@@ -315,10 +323,13 @@ def test_arome_split_fields_keep_forecast_and_scalar_height_metadata(tmp_path, m
             "time": ((), cycle, {"standard_name": "forecast_reference_time"}),
             lead_coord: ("valid_time", period, {"standard_name": "forecast_period"}),
             level_coord: ((), 0., {"units": "1", "long_name": "original GRIB coordinate for key: level(meanSea)"})
-            if pressure else ((), height, {"standard_name": "height", "units": "m", "positive": "up"}),
+            if sea_surface else ((), height, {"standard_name": "height", "units": "m", "positive": "up"}),
             "latitude": ("latitude", [-20., -19.99], {"units": "degrees_north"}),
             "longitude": ("longitude", [60., 60.01, 60.02], {"units": "degrees_east"}),
         })
+        if name == "v10" and case == "unlabelled_surface":
+            scene = scene.drop_vars(level_coord)
+            scene[name].attrs.pop("GRIB_typeOfLevel")
         if case == "flag" and not pressure:
             scene = scene.assign_coords(quality=((), 0, {
                 "flag_values": [0, 1], "flag_meanings": "good bad", "units": "1"}))
@@ -346,7 +357,8 @@ def test_arome_split_fields_keep_forecast_and_scalar_height_metadata(tmp_path, m
     assert not source["provider_conflicts"]
     grids = {name: next(r["grid_id"] for r in source["records"] if r["name"] == name)
              for name in names}
-    assert grids["prmsl"] not in {grids["u10"], grids["v10"]}
+    assert grids["prmsl"] != grids["u10"]
+    assert (grids["prmsl"] == grids["v10"]) is (case == "different_surface")
     assert (grids["u10"] == grids["v10"]) is (case == "complementary")
     pressure, wind = (source["native_grids"][grids[name]] for name in ("prmsl", "u10"))
     assert pressure["coordinates"]["meanSea"]["values"] == 0.
@@ -359,7 +371,7 @@ def test_arome_split_fields_keep_forecast_and_scalar_height_metadata(tmp_path, m
         str(path) for path in paths if path.stem in ({"u10", "v10"} if case == "complementary" else {"u10"})}
     assert all([r["indexers"] for r in p["samples"]] == [{"valid_time": 1}, {"valid_time": 2}]
                for p in providers)
-    if case in {"height", "height_alias", "lead", "lead_alias"}:
+    if case in {"height", "height_alias", "different_surface", "unlabelled_surface", "lead", "lead_alias"}:
         combined = v3_config(tmp_path, paths, time=time, model="arome",
                              wind_pairs=[{"u": "u10", "v": "v10", "basis": "earth"}],
                              names=names, derived={"speed": {

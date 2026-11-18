@@ -399,7 +399,6 @@ def build_tracker_from_config(conf: SimulationConfig) -> TcTracker:
 def resolve_tracker_support(conf, source):
     """Resolve existing method inputs from the closed selected metadata pool."""
     from frameit.processing.wind_reference import (
-        MESONH_PROJECTION_METADATA,
         _metadata_frames,
         validate_pair_frame,
     )
@@ -431,22 +430,34 @@ def resolve_tracker_support(conf, source):
                 for path, ds in sequence:
                     inspect_inputs([ds], conf, path)
             fields = inspect_mnh_sequence(sequence)
+            projections = []
             for _, ds in sequence:
-                mnh_wind_frames(ds, fields, conf)
+                active = {}
+                mnh_wind_frames(ds, fields, conf, active_projection=active)
+                projections.append(active)
             coordinates = set.intersection(*(set(ds.coords) for _, ds in sequence))
             inputs = {name: {} for name in fields.variables if name not in coordinates}
-            geometry = set(MESONH_PROJECTION_METADATA)
-            geometry.update(pair["rotation"]["coordinate"] for pair in conf.wind_pairs
-                            if (pair.get("rotation") or {}).get("coordinate"))
+            reference = projections[0]
+            if any(projection.keys() != reference.keys() for projection in projections[1:]):
+                raise ValueError(f"{method}: inconsistent active Meso-NH projection across samples")
+            projection = {"CARTESIAN"} if reference else set()
+            projection_attributes = {}
+            for pair, parameters in reference.items():
+                for name, definition in parameters.items():
+                    if any(p[pair][name] != definition for p in projections[1:]):
+                        raise ValueError(
+                            f"{method}: Meso-NH projection scalar {name} differs across "
+                            "selected samples; tracking requires one stationary projection.")
+                    if definition[1] == "variable":
+                        projection.add(name)
+                    elif definition[1] == "dataset_attribute":
+                        projection_attributes[name] = definition[0]
+            geometry = projection | {
+                pair["rotation"]["coordinate"] for pair in conf.wind_pairs
+                if (pair.get("rotation") or {}).get("coordinate")}
             inputs.update({field["name"]: {} for field in source["fields"].values()
                            if field["name"] in geometry
                            and any(field["name"] in ds for _, ds in sequence)})
-            native_pairs = {(fields.u, fields.v), ("UM10", "VM10")}
-            projection = set().union(*(
-                set(MESONH_PROJECTION_METADATA) - rotation.keys()
-                for pair in conf.wind_pairs
-                if (pair["u"], pair["v"]) in native_pairs and pair["reference_frame"] == "grid"
-                and (rotation := pair.get("rotation") or {}).get("method") == "mesonh_projection"))
             projection_constants = []
             for name in sorted(projection):
                 if all(name in ds and ds[name].ndim == 0 for _, ds in sequence):
@@ -463,6 +474,7 @@ def resolve_tracker_support(conf, source):
             "height": list(fields.height)})
         return {"method": method, "inputs": inputs,
                 **({"projection_constants": projection_constants} if projection_constants else {}),
+                **({"projection_attributes": projection_attributes} if projection_attributes else {}),
                 "selected_time_count": len(source["selected_times"]),
                 "value_checks": (
                     "pending execution: physical brackets, masks, geometry and convergence")}

@@ -444,6 +444,9 @@ axis stores the original formula in ``source_formula_terms`` and
 ``source_computed_standard_name``. An altitude ``standard_name`` from that axis
 is retained as ``source_standard_name``. The run provenance records the
 warning; a separately selected ``ALT`` stays on its input grid.
+This also applies to the destination ``level`` axis when remapping interface
+fields to mass levels. A supported, complete destination formula retains its
+operands with the product.
 
 In AROME NetCDF converted from GRIB, a linked scalar ``heightAboveGround``
 keeps its supplied height and units. A linked ``meanSea`` label with units

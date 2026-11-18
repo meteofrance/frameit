@@ -335,6 +335,14 @@ def _mesonh_parameters(ds: xr.Dataset, rotation: dict) -> tuple[dict, dict]:
         elif name in ds:
             value = ds[name]
             sources[name] = "variable"
+            if (value.attrs.get("standard_name") == "status_flag"
+                    or value.attrs.keys() & {"flag_values", "flag_masks", "flag_meanings"}
+                    or any(name in str(var.attrs.get("ancillary_variables", "")).split()
+                           or any(name in str(var.attrs.get(key, "")).split()[1::2]
+                                  for key in ("formula_terms", "cell_measures"))
+                           for var in ds.variables.values())):
+                raise ValueError(
+                    f"mesonh_projection {name} cannot use a categorical or scientific support field")
         elif name in ds.attrs:
             value = xr.DataArray(ds.attrs[name])
             sources[name] = "dataset_attribute"

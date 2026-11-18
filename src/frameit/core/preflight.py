@@ -140,9 +140,12 @@ def _decoded_clock(ds, path, *, model):
         if not equal:
             raise ValueError(f"{path}: conflicting or unidentified sample/forecast clocks "
                              f"{name}, {other}")
-    reference = None
+    reference, reference_calendar = None, None
     for ref in references:
         da = ds[ref]
+        declared_calendar = da.encoding.get("calendar", da.attrs.get("calendar", "standard"))
+        if reference_calendar is not None and declared_calendar != reference_calendar:
+            raise ValueError(f"{path}: conflicting forecast reference calendars")
         if not set(da.dims) <= set(clock.dims):
             raise ValueError(f"{path}: forecast reference clock {ref} does not index {name}")
         broadcast = da.broadcast_like(clock).transpose(*clock.dims).values
@@ -153,7 +156,7 @@ def _decoded_clock(ds, path, *, model):
             raise ValueError(f"{path}: forecast reference clock is not decoded")
         if np.asarray(broadcast).dtype.kind == "M" and np.isnat(broadcast).any():
             raise ValueError(f"{path}: missing forecast reference timestamp")
-        reference = broadcast
+        reference, reference_calendar = broadcast, declared_calendar
     bound_names = list(dict.fromkeys(ds[n].attrs["bounds"] for n in candidates
                                     if ds[n].attrs.get("bounds")))
     bounds = None
@@ -303,7 +306,7 @@ def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None):
 
 def _netcdf_inventory(path, source, resources):
     from frameit.io.grib_utils import normalize_isobaric_coordinates
-    from frameit.io.netcdf_utils import mnh_altitude_height_term
+    from frameit.io.netcdf_utils import mnh_altitude_terms
 
     ds = normalize_isobaric_coordinates(resources.open_netcdf(
         path, engine=source.get("reader", {}).get("engine", "h5netcdf")))
@@ -317,6 +320,10 @@ def _netcdf_inventory(path, source, resources):
         raise ValueError(f"{path}: CROCO requires the admitted CROCO history file profile")
     samples, time_names = _decoded_clock(ds, path, model=model)
     temporal_dims = {dim for sample in samples for dim in sample["indexers"]}
+    altitude_axes = {name: terms for name in ("level", "level_w") if model == "mesonh"
+                     and name in ds.coords
+                     and (terms := mnh_altitude_terms(name, ds[name].dims, ds[name].attrs))}
+    altitude_height_terms = {terms["height:"] for terms in altitude_axes.values()}
     coordinate_metadata = _cf_coordinate_metadata(ds, model=model)
     scalar_leads = set()
     if len(samples) == len(temporal_dims) == 1:
@@ -393,28 +400,28 @@ def _netcdf_inventory(path, source, resources):
                     pass  # Selected metadata validation reports invalid/missing evidence.
                 else:
                     identity_attributes = dict(identity_attributes, units=_unit_identity(units))
-        field_id = _metadata_id("field_", {
-            "name": name, "grid_id": identity_grid, "attributes": identity_attributes,
-            **({"dataset_attributes": dataset_attributes} if dataset_attributes else {}),
-            "dimensions": [d for d in var.dims if d not in temporal_dims]})
-        fields[field_id] = field
         explicit = str(var.attrs.get(
             "coordinates", var.encoding.get("coordinates", ""))).split()
         dependencies = {dep: "coordinates" for dep in explicit
                         if dep not in time_names and dep != name and dep not in ds.dims}
+        linked_tops = sorted(dependencies.keys() & altitude_height_terms)
+        field_id = _metadata_id("field_", {
+            "name": name, "grid_id": identity_grid, "attributes": identity_attributes,
+            **({"dataset_attributes": dataset_attributes} if dataset_attributes else {}),
+            **({"linked_altitude_tops": linked_tops} if linked_tops else {}),
+            "dimensions": [d for d in var.dims if d not in temporal_dims]})
+        fields[field_id] = field
         strict, altitude = set(dependencies), {}
         for owner in (var, *(ds[n] for n in grid["coordinates"] if n in ds)):
-            height = (mnh_altitude_height_term(owner.name, owner.dims, owner.attrs)
-                      if model == "mesonh" and owner.name in grid["coordinates"] else None)
+            height = altitude_axes.get(owner.name, {}).get("height:")
             for attr in ("ancillary_variables", "formula_terms", "cell_measures"):
-                value = str(owner.attrs.get(attr, ""))
-                tokens = value.split()
-                if attr != "ancillary_variables":
-                    tokens = tokens[1::2]
-                for dep in tokens:
+                tokens = str(owner.attrs.get(attr, "")).split()
+                references = ((attr, dep) for dep in tokens) if attr == "ancillary_variables" else (
+                    zip(tokens[::2], tokens[1::2]))
+                for term, dep in references:
                     if dep not in {"or", "orog:"}:
                         dependencies[dep] = attr
-                        if attr == "formula_terms" and dep == height:
+                        if attr == "formula_terms" and term == "height:" and dep == height:
                             altitude[owner.name] = height
                         else:
                             strict.add(dep)
@@ -444,8 +451,9 @@ def _netcdf_inventory(path, source, resources):
                             "indexers": indexers,
                             "coordinate_indexers": dict(sample["indexers"])}})
     return {"model": model,
-            "physical_type": "ocean" if model in {"nemo", "croco"} else "atmosphere",
-            "dataset_attributes": dataset_attributes,
+             "physical_type": "ocean" if model in {"nemo", "croco"} else "atmosphere",
+             "dataset_attributes": dataset_attributes,
+             "altitude_height_terms": altitude_height_terms,
             "profile": None, "evidence": evidence, "fields": fields,
             "native_grids": grids, "records": records}
 
@@ -767,13 +775,11 @@ def _source_file_entries(source, name):
         return entries, excluded, overlaps, errors or [failure(original, patterns)]
 
 
-def _incomplete_mnh_altitude(fields, grids, selected, records):
+def _incomplete_mnh_altitude(fields, grids, selected, records, candidates):
     """Use the whole closed selection so per-sample operations see the same contract."""
     from frameit.io.netcdf_utils import mnh_native_level_attributes
     from frameit.processing.requests import _sample_context
 
-    candidates = {term for field in fields.values()
-                  for term in field.get("altitude_formula_operands", {}).values()}
     if not candidates or not selected:
         return []
     providers = {term: [] for term in candidates}
@@ -810,6 +816,7 @@ def inventory_source(conf, name, *, resources=None):
     source = conf.sources[name]
     entries, excluded, overlaps, errors = _source_file_entries(source, name)
     fields, grids, records, facts = {}, {}, [], []
+    altitude_height_terms = set()
     with (DatasetResources() if resources is None else nullcontext(resources)) as owned:
         for entry in entries:
             path = Path(entry["path"])
@@ -844,6 +851,7 @@ def inventory_source(conf, name, *, resources=None):
                     info = _fa_source_inventory(path, source, conf)
                 facts.append((fmt, info["model"], info["physical_type"],
                               info["profile"], info["evidence"]))
+                altitude_height_terms.update(info.get("altitude_height_terms", ()))
                 for field_id, field in info["fields"].items():
                     previous = fields.get(field_id, {})
                     ids = set(previous.get("grid_ids", ())) | {field["grid_id"]}
@@ -1049,8 +1057,9 @@ def inventory_source(conf, name, *, resources=None):
     record_inventory = sorted(
         (r for r in records if r["time"] in selected_times and r["cycle"] in selected_cycles),
         key=lambda r: (r["time"], r["name"] or "", r["field_id"], str(r["level"])))
-    missing_altitude = (_incomplete_mnh_altitude(fields, grids, selected, record_inventory)
-                        if model == "mesonh" and fmt == "netcdf" else [])
+    missing_altitude = (_incomplete_mnh_altitude(
+        fields, grids, selected, record_inventory, altitude_height_terms)
+                         if model == "mesonh" and fmt == "netcdf" else [])
     for grid in grids.values():
         for providers in grid.get("coordinate_providers", {}).values():
             for provider in providers:

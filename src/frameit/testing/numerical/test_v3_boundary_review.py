@@ -583,18 +583,67 @@ def test_altitude_formula_mass_transform_uses_native_labels_without_active_formu
         assert "formula_terms" not in saved.level.attrs
 
 
-@pytest.mark.parametrize("case", ["partial", "complete", "requested", "ancillary", "conflict"])
+@pytest.mark.parametrize("fmt", ["netcdf", "zarr"])
+@pytest.mark.parametrize("case", ["missing_top", "complete", "missing_terrain", "different_grid"])
+def test_w_only_mass_transform_binds_destination_altitude_formula(tmp_path, fmt, case):
+    from frameit.core.preflight import collect_preflight
+
+    scene = _native_altitude_scene().drop_vars(["UT", "VT", "THT", "ALT"])
+    scene.level_w.attrs = {"units": "m"}
+    if case != "missing_top":
+        scene["ZTOP"] = xr.DataArray(20., attrs={"units": "m"})
+    if case == "missing_terrain":
+        scene = scene.drop_vars("ZS")
+    if case == "different_grid":
+        scene["ZS"] = scene.ZS.rename({"ni": "ni_u", "nj": "nj_u"})
+    path = tmp_path / "native.nc"
+    scene.to_netcdf(path, engine="h5netcdf")
+    raw = _native_altitude_request(tmp_path, [path], fmt=fmt)
+    source = raw["sources"]["atmosphere"]
+    source["variables"]["3d"] = ["WT"]
+    source["transforms"] = [{"fields": ["WT"], "sampling": "mass"}]
+    report = collect_preflight(raw)
+    if case in {"missing_terrain", "different_grid"}:
+        assert any("ZS" in e.message for e in report.errors), report.errors
+        return
+    assert not report.errors, report.errors
+    warnings = report.facts["sources"]["atmosphere"]["field_binding"]["warnings"]
+    if case == "missing_top":
+        assert any("level" in warning and "ZTOP" in warning for warning in warnings)
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    product, = result.products
+    opened = (xr.open_zarr(product["path"], decode_coords=False, consolidated=False)
+              if fmt == "zarr" else xr.open_dataset(product["path"], decode_coords=False))
+    with opened as saved:
+        np.testing.assert_array_equal(saved.level, [.5, 6.])
+        if case == "complete":
+            assert saved.level.attrs["formula_terms"] == scene.level.attrs["formula_terms"]
+            assert saved.ZTOP.item() == 20.
+            np.testing.assert_array_equal(saved.ZS, scene.ZS)
+        else:
+            assert saved.level.attrs["source_formula_terms"] == scene.level.attrs["formula_terms"]
+            assert "formula_terms" not in saved.level.attrs
+
+
+@pytest.mark.parametrize("case", [
+    "partial", "complete", "requested", "ancillary", "conflict", "linked_first", "linked_last",
+])
 def test_altitude_formula_distinguishes_partial_complete_and_required_support(tmp_path, case):
     from frameit.core.preflight import collect_preflight
 
     scene = _native_altitude_scene()
     first, second = tmp_path / "first.nc", tmp_path / "second.nc"
-    scene.assign(ZTOP=xr.DataArray(20., attrs={"units": "m"})).to_netcdf(first, engine="h5netcdf")
+    complete = scene.assign(ZTOP=xr.DataArray(20., attrs={"units": "m"}))
+    if case.startswith("linked"):
+        complete.THT.encoding = {"coordinates": "ZTOP latitude longitude"}
+    complete.to_netcdf(first, engine="h5netcdf")
     missing = scene.assign_coords(time=scene.time.values + np.timedelta64(1, "h"))
     if case == "ancillary":
         missing.WT.attrs["ancillary_variables"] = "ZTOP"
     missing.to_netcdf(second, engine="h5netcdf")
     paths = [first, second]
+    if case == "linked_last":
+        paths.reverse()
     if case == "conflict":
         third = tmp_path / "third.nc"
         scene.assign_coords(time=scene.time.values + np.timedelta64(2, "h")).assign(
@@ -607,7 +656,7 @@ def test_altitude_formula_distinguishes_partial_complete_and_required_support(tm
     if case == "requested":
         atmosphere["variables"]["2d"] = ["ZTOP"]
     report = collect_preflight(raw)
-    if case in {"requested", "ancillary", "conflict"}:
+    if case in {"requested", "ancillary", "conflict", "linked_first", "linked_last"}:
         assert any("ZTOP" in error.message for error in report.errors), report.errors
         assert not (tmp_path / "out").exists()
         return
@@ -624,6 +673,32 @@ def test_altitude_formula_distinguishes_partial_complete_and_required_support(tm
             assert saved.sizes["time"] == 2 and "ZTOP" not in saved.variables
             assert "formula_terms" not in saved.level.attrs
             assert "formula_terms" not in saved.level_w.attrs
+
+
+def test_altitude_optional_top_does_not_hide_required_terrain_of_same_name(tmp_path):
+    from frameit.core.preflight import collect_preflight
+
+    scene = _native_altitude_scene().drop_vars("ZS")
+    for dim in ("level", "level_w"):
+        scene[dim].attrs["formula_terms"] = f"s: {dim} height: ZS orog: ZS"
+    path = tmp_path / "native.nc"
+    scene.to_netcdf(path, engine="h5netcdf")
+    report = collect_preflight(_native_altitude_request(tmp_path, [path]))
+    assert any("ZS" in error.message for error in report.errors), report.errors
+
+
+def test_altitude_formula_support_cannot_borrow_a_conflicting_calendar(tmp_path):
+    from frameit.core.preflight import collect_preflight
+
+    scene = _native_altitude_scene()
+    top = xr.Dataset({"ZTOP": ((), 20., {"units": "m"})}, coords={"time": scene.time.values})
+    scene.time.encoding["calendar"] = "standard"
+    top.time.encoding["calendar"] = "proleptic_gregorian"
+    path, support = tmp_path / "fields.nc", tmp_path / "top.nc"
+    scene.to_netcdf(path, engine="h5netcdf")
+    top.to_netcdf(support, engine="h5netcdf")
+    report = collect_preflight(_native_altitude_request(tmp_path, [path, support]))
+    assert any("calendar" in e.message and "ZTOP" in e.message for e in report.errors), report.errors
 
 
 @pytest.mark.parametrize("file_count", [1, 2])

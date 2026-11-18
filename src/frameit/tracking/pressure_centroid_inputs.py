@@ -15,6 +15,7 @@ from frameit.processing.requests import selected_native_indices
 from frameit.processing.wind_collocation import prepare_native_mnh
 from frameit.processing.wind_reference import (
     MESONH_PROJECTION_METADATA,
+    _mesonh_parameters,
     pair_definition,
     rotation_angle,
     validate_pair_frame,
@@ -237,7 +238,7 @@ def selected_mnh_metadata(source, conf, resources):
     return sequence
 
 
-def mnh_wind_frames(ds, fields, conf=None):
+def mnh_wind_frames(ds, fields, conf=None, *, active_projection=None):
     """Validate declared native/surface bases, never infer them from field names.
 
     The lightweight ``conf=None`` numerical API takes canonical Earth-relative
@@ -257,6 +258,10 @@ def mnh_wind_frames(ds, fields, conf=None):
             ) from exc
         if frame == "grid":
             rotation_angle(ds, conf, pair)
+            rotation = pair["rotation"]
+            if active_projection is not None and rotation["method"] == "mesonh_projection":
+                values, origins = _mesonh_parameters(ds, rotation)
+                active_projection[names] = {n: (v, origins[n]) for n, v in values.items()}
         result.update(dict.fromkeys(names, pair["reference_frame"]))
     return result
 

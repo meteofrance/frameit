@@ -188,7 +188,10 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
 
 
 @pytest.mark.parametrize("method", ["pressure_centroid", "multifield_vortex"])
-@pytest.mark.parametrize("layout", ["single", "time_split", "conflict"])
+@pytest.mark.parametrize("layout", [
+    "single", "time_split", "conflict", "attribute_conflict", "attribute_split",
+    "prepared", "flag", "ancillary",
+])
 def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(
         tmp_path, method, layout):
     from frameit.io.loader import DatasetResources
@@ -203,10 +206,30 @@ def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(
         rotation["BETA"] = 90
         parts = [source]
     else:
-        source = source.assign(BETA=90.)
+        if layout == "attribute_conflict":
+            source.attrs["BETA"] = 90.
+        else:
+            source = source.assign(BETA=90.)
+        if layout == "prepared":
+            for name, standard in (("UT_ZM", "eastward_wind"), ("VT_ZM", "northward_wind")):
+                source[name].attrs.update(
+                    standard_name=standard, wind_reference_frame="earth",
+                    source_wind_reference_frame="grid", wind_rotation_method="mesonh_projection")
+        if layout == "flag":
+            source.BETA.attrs.update(standard_name="status_flag", flag_meanings="ok bad")
+        if layout == "ancillary":
+            source.PABST.attrs["ancillary_variables"] = "BETA"
         parts = [source.isel(time=[i]) for i in range(2)]
         if layout == "conflict":
             parts[1] = parts[1].assign(RPK=.1)
+        if layout == "attribute_conflict":
+            parts[1] = parts[1].assign_attrs(BETA=80.)
+        if layout == "attribute_split":
+            wind = ["UT_ZM", "VT_ZM"]
+            parts = [shard for part in parts for shard in (
+                part.drop_vars([*wind, "BETA"]), part[wind].assign_attrs(BETA=90.))]
+        if layout == "prepared":
+            parts[1] = parts[1].assign(BETA=xr.DataArray(80., attrs={"long_name": "unused"}))
     paths = [tmp_path / f"native-{i}.nc" for i in range(len(parts))]
     for part, path in zip(parts, paths, strict=True):
         part.to_netcdf(path, engine="h5netcdf")
@@ -228,14 +251,19 @@ def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(
         "output": {"directory": str(tmp_path / "out")},
     })
     report = collect_preflight(conf)
-    if layout == "conflict":
-        assert any("projection" in error.message and "RPK" in error.message
+    if layout in {"conflict", "attribute_conflict", "flag", "ancillary"}:
+        name = "RPK" if layout == "conflict" else "BETA"
+        assert any("projection" in error.message and name in error.message
                    for error in report.errors), report.errors
         return
     assert not report.errors, report.errors
     plan = report.facts["sources"]["atmosphere"]
     support = resolve_tracker_support(conf, plan)
-    assert {"RPK", "LON0"} <= support["inputs"].keys()
+    if layout == "prepared":
+        assert not support.get("projection_constants")
+        assert {"BETA", "RPK", "LON0", "CARTESIAN"}.isdisjoint(support["inputs"])
+    else:
+        assert {"RPK", "LON0"} <= support["inputs"].keys()
     with DatasetResources() as resources:
         _, selected = concat_nc2ds_by_vert_coord(
             paths, {}, {}, selected_records=plan["field_binding"],
@@ -244,11 +272,16 @@ def test_partial_projection_yaml_retains_source_parameters_for_native_trackers(
         from frameit.tracking.tracker_core import make_tracking_dataset
 
         native = make_tracking_dataset({method: selected["internal"]}, method)
-        assert all(native[name].dims == () for name in ("RPK", "LON0", "CARTESIAN"))
+        if layout != "prepared":
+            assert all(native[name].dims == () for name in ("RPK", "LON0", "CARTESIAN"))
+        if layout == "attribute_split":
+            assert native.attrs["BETA"] == 90.
         prepared = (prepare_mnh_inputs(native, conf) if method == "pressure_centroid"
                     else canonical_inputs(native, conf))
-        np.testing.assert_allclose(prepared.u, -source.VT_ZM, atol=1e-12)
-        np.testing.assert_allclose(prepared.v, source.UT_ZM, atol=1e-12)
+        u, v = (source.UT_ZM, source.VT_ZM) if layout == "prepared" else (
+            -source.VT_ZM, source.UT_ZM)
+        np.testing.assert_allclose(prepared.u, u, atol=1e-12)
+        np.testing.assert_allclose(prepared.v, v, atol=1e-12)
     if layout != "single":
         return
     with DatasetResources() as resources:

@@ -959,13 +959,17 @@ def _merge_operation_dependencies(source, binding, addition):
                     evidence.append(deepcopy(record))
 
 
-def _operation_geometry(source, records, operation, conf):
+def _operation_geometry(source, records, operation, conf, *, wind_pair=()):
     """Read only selected-sample coordinates and required admitted rotation geometry."""
     from frameit.io.loader import DatasetResources
-    from frameit.io.netcdf_utils import mnh_native_level_attributes
 
-    coordinates, attributes, scalar_roles = {}, {}, {}
-    for record in (sequence[0] for sequence in records.values()):
+    coordinates, attributes = {}, {}
+    reference_roles = None
+    for field_name, sequence in records.items():
+        record = sequence[0]
+        compare_roles = (field_name in wind_pair and source["model"] == "arome"
+                         and source["format"] == "netcdf")
+        roles = {}
         grid = source["native_grids"][record["grid_id"]]
         for name, descriptor in grid["coordinates"].items():
             value = xr.DataArray(xr.Variable(
@@ -974,13 +978,22 @@ def _operation_geometry(source, records, operation, conf):
             value = value.isel({dim: i for dim, i in indexers.items() if dim in value.dims},
                                drop=True)
             role = value.attrs.get("standard_name")
-            if source["model"] == "arome" and value.ndim == 0 and role in {"height", "forecast_period"}:
-                if role in scalar_roles and not scalar_roles[role].identical(value):
+            if name == "meanSea" and value.attrs.get("units") == "1":
+                role = "meanSea"
+            if compare_roles and value.ndim == 0 and role in {"height", "forecast_period", "meanSea"}:
+                if role in roles and not roles[role].identical(value):
                     raise ValueError(f"{name}: conflicting operation coordinate geometry for {role}")
-                scalar_roles[role] = value
+                roles[role] = value
             if name in coordinates and not coordinates[name].identical(value):
                 raise ValueError(f"{name}: conflicting operation coordinate geometry")
             coordinates[name] = value
+        if compare_roles:
+            if reference_roles is not None and (roles.keys() != reference_roles.keys() or any(
+                    not roles[role].identical(reference_roles[role]) for role in roles)):
+                raise ValueError(
+                    f"{field_name}: conflicting operation coordinate geometry; "
+                    "wind components must declare the same surface and forecast period")
+            reference_roles = roles
         attributes.update(grid.get("fa_geometry", {}))
     if source["format"] == "netcdf" and (
             operation["sampling"] == "mass" or operation["basis"] == "earth"):
@@ -994,6 +1007,7 @@ def _operation_geometry(source, records, operation, conf):
         if source["model"] == "croco":
             names.update(("xi_rho", "eta_rho", "lat_rho", "lon_rho", "angle"))
         names.update(r["coordinate"] for r in rotations if r.get("coordinate"))
+        mass_level = None
         with DatasetResources() as resources:
             for record in (sequence[0] for sequence in records.values()):
                 original = resources.open_netcdf(
@@ -1016,11 +1030,12 @@ def _operation_geometry(source, records, operation, conf):
                     indexers = record["locator"]["coordinate_indexers"]
                     selected = value.isel({dim: i for dim, i in indexers.items()
                                             if dim in value.dims}, drop=True)
-                    attrs = mnh_native_level_attributes(
-                        name, selected.dims, selected.attrs,
-                        source.get("missing_mnh_altitude_operands", ()))
                     selected = xr.DataArray(
-                        np.asarray(selected.values), dims=selected.dims, attrs=dict(attrs))
+                        np.asarray(selected.values), dims=selected.dims, attrs=dict(selected.attrs))
+                    if source["model"] == "mesonh" and name == conf.name_vertical_dim:
+                        if mass_level is not None and not mass_level.identical(selected):
+                            raise ValueError(f"{name}: conflicting mass-level coordinate metadata")
+                        mass_level = selected
                     if name in coordinates and not coordinates[name].variable.equals(
                             selected.variable):
                         raise ValueError(
@@ -1063,6 +1078,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
     import dask.array as da
 
     from frameit.core.preflight import _metadata_id
+    from frameit.io.netcdf_utils import mnh_altitude_terms, mnh_native_level_attributes
     from frameit.processing.derived.wind import align_wind_pair
     from frameit.processing.wind_collocation import collocate_mnh_component, staggered_support
     from frameit.processing.wind_reference import (
@@ -1189,7 +1205,16 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                        for n, candidates in by_name.items()}
             if any(not sequence for sequence in records.values()):
                 raise ValueError(f"{name}: missing input support at selected time/cycle {context}")
-            geometry = _operation_geometry(source, records, operation, conf)
+            geometry = _operation_geometry(
+                source, records, operation, conf,
+                wind_pair=(inputs["u"], inputs["v"]) if {"u", "v"} <= inputs.keys() else ())
+            mass_terms = {}
+            mass_dim = conf.name_vertical_dim
+            if source["model"] == "mesonh" and mass_dim in geometry.coords:
+                mass = geometry[mass_dim]
+                mass_terms = mnh_altitude_terms(mass_dim, mass.dims, mass.attrs)
+                mass.attrs = mnh_native_level_attributes(
+                    mass_dim, mass.dims, mass.attrs, source.get("missing_mnh_altitude_operands", ()))
             attrs, axes, grids, probes = {}, {}, {}, {}
             for field_name, sequence in records.items():
                 record = sequence[0]
@@ -1336,7 +1361,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
             output.update(field_id=records[anchor][0]["field_id"], category=category)
             local_pool = [r for r in pool if _sample_context(r) == context]
             local = {**source, "record_inventory": local_pool,
-                     "records": local_pool, "selected_times": [context[0]],
+                     "records": records[anchor], "selected_times": [context[0]],
                      "pending_operations": [], "dependency_resolution": "declared"}
             anchor_axis = axes[anchor]
             source_positions = {}
@@ -1390,7 +1415,32 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                                              for key in ("2d", "3d")},
                           "exports": {}, "internal_inputs": list(dict.fromkeys(inputs.values())),
                           "derived": {}, "levels": {}}
+            altitude_support, active_altitude_support = set(), set()
+            if (mass_terms and operation["sampling"] == "mass"
+                    and axis and axis["dimension"] == mass_dim):
+                altitude_support.add(mass_terms["orog:"])
+                top = mass_terms["height:"]
+                if "formula_terms" in destination["coordinates"][mass_dim]["attributes"]:
+                    altitude_support.add(top)
+                    active_altitude_support = altitude_support
+                else:
+                    _warn_archived_altitude(binding, f"sources.{source['name']}", mass_dim, top)
+                for operand in sorted(altitude_support):
+                    selectors.setdefault(operand, {})
             support = bind_requests(local, subrequest, required_inputs=selectors)
+            for operand in sorted(altitude_support):
+                descriptor = support["dependencies"][operand]
+                for record in descriptor["records"]:
+                    grid = source["native_grids"][record["grid_id"]]
+                    dims = grid["dimensions"].keys()
+                    horizontal = {conf.name_lon_dim, conf.name_lat_dim}
+                    if dims and (dims != horizontal or any(
+                            coord not in grid["coordinates"] or coord not in destination["coordinates"]
+                            or _metadata_id("", grid["coordinates"][coord]) != _metadata_id(
+                                "", destination["coordinates"][coord])
+                            for coord in horizontal)):
+                        raise ValueError(
+                            f"{name}: formula operand {operand} is not on the destination mass grid")
             _merge_operation_dependencies(source, binding, support)
             output["records"].extend(deepcopy(bound_result["records"]))
             # Native sampling keeps inventory identity; remapping retains its destination record.
@@ -1399,6 +1449,8 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
             planned = {
                 **deepcopy(operation), "name": name, "product": product,
                 **({"wind_reference_frame_override": override} if override else {}),
+                **({"mass_altitude_support": sorted(active_altitude_support)}
+                   if active_altitude_support else {}),
                 "inputs": inputs, "input_binding": support, "pair": pair,
                 "vertical": selected, "grid_id": grid_id,
                 "grid": destination, "geometry": {
@@ -1556,6 +1608,13 @@ def _initial_gap_clock(dataset, source):
     return result
 
 
+def _warn_archived_altitude(binding, context, axis, term):
+    warning = (f"{context}: {axis} native labels retained; altitude formula archived "
+               f"because {term} is missing from the selected samples.")
+    if warning not in binding["warnings"]:
+        binding["warnings"].append(warning)
+
+
 def bind_requests(source, request, *, representations=None, required_inputs=()):
     """Bind v3 declarations using only a closed, metadata-only record inventory.
 
@@ -1589,7 +1648,7 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
     generated = set(method_inputs) - declared.keys() - set(needed)
     needed = list(dict.fromkeys([*needed, *method_inputs]))
     resolved, pending = {}, list(needed)
-    clocks = {(r["time"], r["cycle"]) for r in source["records"]}
+    clocks = {(r["time"], r["cycle"]): r.get("calendar") for r in source["records"]}
     while pending:
         name = pending.pop(0)
         if name in resolved:
@@ -1621,6 +1680,10 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                for other, value in resolved.items()):
             raise ValueError(f"{context}: duplicate field request by resolved identity {field_id}")
         field = source["fields"][field_id]
+        for _, record in candidates:
+            clock = record["time"], record["cycle"]
+            if clock in clocks and record.get("calendar") != clocks[clock]:
+                raise ValueError(f"{context}: {name} has a conflicting calendar at {record['time']}")
         available = {(r["time"], r["cycle"], tuple(sorted(r.get("native_axes", {}).items())))
                      for _, r in candidates}
         axes = {entry[2] for entry in available}
@@ -1633,10 +1696,7 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                              f"missing support {sorted(missing, key=str)}")
         resolved[name] = field_id, field, candidates
         for axis, term in field.get("incomplete_altitude_formulas", {}).items():
-            warning = (f"{context}: {axis} native labels retained; altitude formula archived "
-                       f"because {term} is missing from the selected samples.")
-            if warning not in binding["warnings"]:
-                binding["warnings"].append(warning)
+            _warn_archived_altitude(binding, context, axis, term)
         collisions = [dependency for dependency in field.get("dependencies", {})
                       if field_selection(request, dependency)[1] is not None]
         if collisions:
