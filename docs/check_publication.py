@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import ast
 import math
 import re
@@ -92,12 +93,17 @@ class _HTMLLinks(HTMLParser):
                 self.links.append((self.getpos()[0], name, value))
 
 
-def check_local_links(artifact: Path) -> list[str]:
+def check_local_links(artifact: Path, site_root: Path | None = None) -> list[str]:
     """Check HTML href/src targets and HTML fragments without network access."""
-    root = artifact.resolve()
+    artifact = artifact.resolve()
+    root = site_root.resolve() if site_root is not None else artifact
+    if not artifact.is_relative_to(root):
+        return [f"{artifact}: artifact leaves site root {root}"]
     pages = {path.resolve(): _HTMLLinks(path) for path in sorted(root.rglob("*.html"))}
     errors = []
     for path, page in pages.items():
+        if not path.is_relative_to(artifact):
+            continue
         for line, attribute, value in page.links:
             location = f"{path.relative_to(root)}:{line}"
             if not value and attribute == "src":
@@ -130,8 +136,8 @@ def check_local_links(artifact: Path) -> list[str]:
     return errors
 
 
-def check_artifact(artifact: Path) -> list[str]:
-    errors = check_local_links(artifact)
+def check_artifact(artifact: Path, site_root: Path | None = None) -> list[str]:
+    errors = check_local_links(artifact, site_root)
     for name in ("index.html", "searchindex.js", "objects.inv", "_sources/index.rst.txt"):
         if not (artifact / name).is_file():
             errors.append(f"{artifact / name}: missing expected Sphinx product")
@@ -155,10 +161,12 @@ def check_artifact(artifact: Path) -> list[str]:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("Usage: python docs/check_publication.py <fresh-sphinx-html-directory>")
-        return 2
-    artifact = Path(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("artifact", type=Path)
+    parser.add_argument("--site-root", type=Path,
+                        help="Combined site root for cross-version local links")
+    args = parser.parse_args()
+    artifact = args.artifact
     if not artifact.is_dir():
         print(f"Not a documentation artifact directory: {artifact}")
         return 2
@@ -167,7 +175,7 @@ def main() -> int:
     errors.extend(check_text(readme, readme.read_text(encoding="utf-8")))
     for source in sorted((ROOT / "docs/source").rglob("*.rst")):
         errors.extend(check_text(source, source.read_text(encoding="utf-8")))
-    errors.extend(check_artifact(artifact))
+    errors.extend(check_artifact(artifact, args.site_root))
     if errors:
         print("\n".join(errors))
         return 1

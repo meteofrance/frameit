@@ -31,6 +31,15 @@
 }
 
 body { color: var(--frameit-navy); }
+.docs-versions { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: 1rem; }
+.docs-versions a { padding: .5rem 0; }
+.docs-versions [aria-current="true"] { font-weight: bold; }
+.docs-development-warning {
+    padding: .75rem 1rem;
+    margin-bottom: 1.25rem;
+    border-left: .25rem solid #9a4400;
+    background: #fff4e8;
+}
 .wy-nav-content { max-width: 58rem; background: white; }
 .wy-nav-content-wrap { background: var(--frameit-surface); }
 .rst-content { line-height: 1.65; overflow-wrap: anywhere; }

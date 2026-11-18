@@ -15,6 +15,24 @@ from check_publication import check_artifact, check_text
 
 
 class PublicationBoundaryTests(unittest.TestCase):
+    def test_combined_site_links_are_bounded(self):
+        from check_publication import check_local_links
+
+        with tempfile.TemporaryDirectory() as directory:
+            site = Path(directory) / 'site'
+            development = site / 'develop'
+            development.mkdir(parents=True)
+            (site / 'index.html').write_text('<h1 id="home">Stable</h1>')
+            page = development / 'index.html'
+            page.write_text('<a href="../index.html#home">Stable</a>')
+            self.assertEqual(check_local_links(development, site_root=site), [])
+            self.assertTrue(check_local_links(development))
+            for target in ('../../secret.html', '../missing.html', '../index.html#absent'):
+                with self.subTest(target=target):
+                    page.write_text(f'<a href="{target}">Bad</a>')
+                    self.assertTrue(check_local_links(development, site_root=site))
+            self.assertTrue(check_local_links(site, site_root=development))
+
     def test_public_readme_is_checked_alongside_sphinx_sources(self):
         from contextlib import redirect_stdout
         from io import StringIO

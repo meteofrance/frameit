@@ -1,5 +1,23 @@
 {% extends "!layout.html" %}
 
+{% block content %}
+  {% if docs_channel %}
+    {% set root = pathto('', 1) %}
+    {% if root == '#' %}{% set root = '' %}{% endif %}
+    <nav class="docs-versions" aria-label="Documentation version">
+      <a data-docs-channel="main" href="{{ root }}{% if docs_channel == 'develop' %}../{% endif %}index.html"{% if docs_channel == 'main' %} aria-current="true"{% endif %}>Stable (main)</a>
+      <a data-docs-channel="develop" href="{{ root }}{% if docs_channel == 'main' %}develop/{% endif %}index.html"{% if docs_channel == 'develop' %} aria-current="true"{% endif %}>Development (develop)</a>
+    </nav>
+    {% if docs_channel == 'develop' %}
+      <aside class="docs-development-warning" aria-label="Unreleased documentation">
+        <strong>Development documentation — unreleased.</strong>
+        Features and commands may differ from the stable release.
+      </aside>
+    {% endif %}
+  {% endif %}
+  {{ super() }}
+{% endblock %}
+
 {% block menu %}
   {# Keep RTD navigation while supplying its omitted caption heading levels. #}
   {{ super() | replace('role="heading"', 'role="heading" aria-level="2"') }}

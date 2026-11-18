@@ -51,3 +51,9 @@ html_favicon = "_static/logo/frameit_logo_symbol_vector.svg"
 html_css_files = ["custom.css"]
 html_js_files = ["command-tabs.js"]
 html_title=f"FrameIt {release} documentation"
+
+# Standalone local builds have no links to another documentation tree.
+docs_channel = os.environ.get("FRAMEIT_DOCS_CHANNEL", "")
+if docs_channel not in ("", "main", "develop"):
+    raise ValueError("FRAMEIT_DOCS_CHANNEL must be main, develop, or empty")
+html_context = {"docs_channel": docs_channel}

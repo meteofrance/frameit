@@ -151,6 +151,17 @@ root-relative ``/_static/...`` links drop the site's hosting prefix and are reje
 Local HTML preview
 ------------------
 
+The publication build sets ``FRAMEIT_DOCS_CHANNEL=main`` or
+``FRAMEIT_DOCS_CHANNEL=develop`` to show the version links. Development pages
+include an unreleased-content warning. Leave it unset for a standalone preview
+without links to another documentation tree.
+
+For a combined preview, build stable HTML at the site root and development HTML
+under ``develop/``. Run ``python docs/check_doc_versions.py <site-root>`` and
+``python docs/check_publication.py <site-root>/develop --site-root <site-root>``.
+The explicit site root permits cross-version links but not filesystem escapes;
+development-only publication rules still apply only to development content.
+
 Run commands from the repository root. Use the required Python 3.13 environment
 for builds and checks; if it is unavailable, report the blocker rather than
 switching interpreters:
