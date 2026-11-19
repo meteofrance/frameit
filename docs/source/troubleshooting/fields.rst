@@ -63,7 +63,25 @@ Read the missing names in the error. Get ``BETA``, ``RPK`` and
 ``LON0`` from the producer. Supply the missing values in the pair's
 ``rotation`` if they are not in the source. Use degrees for ``BETA``
 and ``LON0``. Do not use ``LAT0`` in place of ``LON0``. Validate
-again. See :ref:`missing-mesonh-wind-projection` for the full example.
+again. Here is a fragment to put under the source:
+
+.. code-block:: yaml
+
+   wind_pairs:
+     - u: UT
+       v: VT
+       basis: grid
+       rotation:
+         method: mesonh_projection
+         BETA: 0
+         RPK: 0
+         LON0: 54.2
+
+These numbers are examples, not defaults. ``RPK`` has no unit and
+must be in [-1, 1]. Omitted values must be in the source variables or
+attributes. FrameIt keeps an explicit zero and rejects a conflict
+with reliable source metadata. See :doc:`../task_guides/scalars_and_vectors`
+for a complete request.
 
 .. _e1307:
 
@@ -97,8 +115,19 @@ wind pair when projection values are missing and the source metadata
 meet the documented conditions. No grid-to-Earth rotation was applied.
 Check that the winds can be treated as eastward and northward. If not,
 get the producer's projection values and use the correct rotation.
+This warning is tied to ``basis: earth`` on the named wind pair.
+An Earth declaration does not change the sample locations or remove
+the need to place both components on the same grid. It is not allowed
+for GRIB, other models, or implicit declarations. FrameIt still fails
+if all three projection values are available and the declared basis
+conflicts, or if the source evidence is invalid or contradictory.
+
 Check ``wind_reference_frame_override`` in provenance and output.
-See :ref:`missing-mesonh-wind-projection` for the limits.
+Original component metadata and superseded dataset flags have ``source_``
+prefixes. For example, ``source_wind_reference_frame_metadata: grid``
+records the original basis, not the user's declaration. Other raw
+pairs keep their own basis metadata. An unused declaration does
+not rotate or relabel native fields.
 
 .. _w1302:
 
@@ -129,6 +158,26 @@ Read the named variable, axis, and labels or indices in the warning.
 Check which levels the reader kept. Use available levels on that
 axis if they meet your needs. The warning does not mean every
 requested level was returned.
+
+.. _e1310:
+
+E1310: The selected field cannot feed the requested method
+----------------------------------------------------------------------
+
+Read the operation, field and reason in the validation report.
+Check the method's required inputs, grid and levels against
+``frameit inspect frameit.yaml``. Remove the operation only if you
+do not need it. Do not change the field's meaning to make it fit.
+Validate and check which method is now planned.
+
+.. _w1305:
+
+W1305: A field check found missing variables
+----------------------------------------------------------------------
+
+Read the group name and missing variables in the warning. Check
+the input inventory for those names. Do not assume the group contains
+every requested field. Use the actual list when choosing what to analyse.
 
 Results that look wrong
 -----------------------

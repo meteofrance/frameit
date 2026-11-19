@@ -57,6 +57,12 @@ remaining validation gaps. Check claims against the implementation and actual
 evidence, not just the roadmap. A passing test or plausible figure is not proof
 of scientific validity or human scientific approval.
 
+Write troubleshooting entries in very simple English. Cover one problem
+in one context. Name the exact file, setting or command to check, what
+to do next, and how to tell the fix worked. Cut filler and vague advice.
+When adding a code, test the message and add its help entry and code-index
+link in the same change. Never reuse a code for a different cause.
+
 Templates and executable examples
 ----------------------------------
 

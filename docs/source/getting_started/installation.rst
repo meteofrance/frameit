@@ -32,6 +32,7 @@ Check the installation
 
 Run ``frameit info`` to show the imported FrameIt file and environment details.
 Check this path when more than one checkout or installation is available.
+If the command does not start, see :doc:`../troubleshooting/start`.
 
 Continue with :doc:`first_run` for a small processing example.
 

@@ -7,7 +7,6 @@ inherit the other variant's allocations. Computation and export are separated.
 
 from __future__ import annotations
 
-import argparse
 import copy
 import multiprocessing
 import os
@@ -16,6 +15,7 @@ from pathlib import Path
 from time import perf_counter
 
 from frameit.testing.artifacts import atomic_json, environment_metadata, read_json, utc_now
+from frameit.utils.diagnostics import FrameItArgumentParser, tag_error
 from frameit.testing.datasets import ci_dataset_root
 
 DEFAULT_CASES = (
@@ -187,16 +187,19 @@ def run_polar_benchmark(output, *, data_root=None, case_ids=DEFAULT_CASES, repea
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = FrameItArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--data-root", type=Path)
     parser.add_argument("--case", action="append", dest="cases")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--timeout", type=float, default=600)
     args = parser.parse_args(argv)
-    report = run_polar_benchmark(args.output, data_root=args.data_root,
-                                 case_ids=args.cases or DEFAULT_CASES,
-                                 repeats=args.repeats, timeout=args.timeout)
+    try:
+        report = run_polar_benchmark(args.output, data_root=args.data_root,
+                                     case_ids=args.cases or DEFAULT_CASES,
+                                     repeats=args.repeats, timeout=args.timeout)
+    except Exception as exc:
+        raise tag_error(exc, "E1903")
     for row in report["comparisons"]:
         print(f"{row['case']}: cached={row['cached_polar_s']:.3f}s "
               f"uncached={row['uncached_polar_s']:.3f}s speedup={row['polar_speedup']:.2f}x "

@@ -35,16 +35,85 @@ output file does not guarantee low memory use during reading.
 Check the resolved chunks and workers. See
 :doc:`../task_guides/storage_and_resources` before retrying.
 
+.. _e1901:
+
+E1901: FrameIt could not create the test inputs
+----------------------------------------------------------------------
+
+Read the path and cause in the error. The tutorial generator needs a
+new path. For example, run
+``frameit generate-tests-fixtures --output tutorial-data-retry``.
+It lists each file it created. Do not replace a research directory
+with test inputs.
+
+For ``frameit prepare-ci-dataset``, use ``--plan-only`` to check the
+source files and track without writing the fixture. Give ``--output``
+a path outside the source tree. A successful plan does not verify
+the installed size or file contents.
+
+.. _e1902:
+
+E1902: A test case or its inputs could not be set up
+----------------------------------------------------------------------
+
+Check ``--case``, ``--profile`` and ``--data-root`` against the
+command and named case in the error. For ``run-all-tests``,
+``FRAMEIT_CI_DATA_ROOT`` must point to the reduced fixture directory,
+not your full archive. If a planned file changed, keep the old plan
+and check the intended input before making a new plan.
+
+Add ``--plan-only`` to ``frameit run-matrix-test`` and give
+``--output`` a fresh directory. Read the case status and its reason
+in ``run.json``. A case marked ``PLANNED`` was selected, not run.
+
+.. _e1903:
+
+E1903: A test command reported a failure
+----------------------------------------------------------------------
+
+This is a summary. Look in ``run.json`` for a matrix run or
+``all-tests.json`` for the combined command. Open the failed case's
+log or the named test report. For the standalone polar tools, use
+the printed check or traceback and any report in ``--output``.
+Follow the first specific code if there is one.
+
+After fixing the cause, retry the smallest affected case in a fresh
+directory. Check that the case or test passes. Do not loosen a
+numerical check just to make it pass.
+
+.. _w1901:
+
+W1901: Fixture preparation kept its old backup
+----------------------------------------------------------------------
+
+``frameit prepare-ci-dataset --force`` installed the new fixture but
+could not remove the old copy. Check the backup path in ``warnings``
+and the new ``manifest_path`` in the JSON report. The backup is not
+the new fixture. Keep it until you know it is no longer needed.
+
 The run stopped without a code
 ------------------------------
 
 Check stderr and, for a cluster job, the scheduler's final state.
 A kill, time limit, node loss, or native crash can stop Python before
 FrameIt reports a code. The exit number alone does not prove the cause.
-On Slurm, check the job's time limit and memory accounting. See
-:doc:`../getting_started/hpc` for a small, one-task pilot.
+On Slurm, get the recorded reason with:
 
-If a run is quiet, check the latest progress line in stderr or the
-run log. It shows the last activity FrameIt could report, not proof
-that a native call is moving. A status of ``running`` is a saved fact,
-not proof the process is alive.
+.. code-block:: bash
+
+   sacct -j JOBID --format=JobID,State,ExitCode,Elapsed,MaxRSS
+
+Replace ``JOBID`` with your job number. For a reported time limit or
+out-of-memory stop, try a smaller selection first. See
+:doc:`../getting_started/hpc` for a small, one-task pilot. If no
+job log was created, check the job's output directory exists and
+is writable before submission.
+
+The job is pending or the run is quiet
+--------------------------------------
+
+For a pending Slurm job, run ``squeue -j JOBID`` and read its reason in
+the last column. If the run started, check the latest progress line in
+stderr or its run log. It shows the last activity FrameIt could report,
+not proof that a native call is moving. ``running`` is a saved state,
+not proof the process is alive. See :ref:`execution-progress`.

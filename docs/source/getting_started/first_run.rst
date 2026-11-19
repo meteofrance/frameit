@@ -92,6 +92,8 @@ Check that the preview selects the intended work. Validation reads metadata and
 needed coordinate/static-support arrays; requested field values are read during
 execution.
 
+If a check fails, use the code or symptom in :doc:`../troubleshooting`.
+
 .. figure:: ../_static/figures/processing-products.svg
    :width: 440px
    :target: ../_static/figures/processing-products.svg

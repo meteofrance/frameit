@@ -10,6 +10,8 @@ import numpy as np
 import xarray as xr
 from pyproj import Geod
 
+from frameit.utils.diagnostics import format_message, tag_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -87,6 +89,9 @@ def enrich_track_with_kinematics(
     ``track_ds`` or ``ds_flat``.
     """
 
+    def warn(message, *args):
+        logger.warning(format_message("W1503", message), *args)
+
     tracking_method = str(getattr(conf, "tracking_method", "")).lower()
     if tracking_method == "fixed_box":
         return track_ds
@@ -96,19 +101,19 @@ def enrich_track_with_kinematics(
     latv_name = lat_name or getattr(conf, "name_latitude", None)
 
     if lonv_name is None or latv_name is None:
-        logger.warning("[track_kinematics] conf missing name_longitude/name_latitude, skip.")
+        warn("[track_kinematics] conf missing name_longitude/name_latitude, skip.")
         return track_ds
 
     if tdim not in track_ds.dims:
-        logger.warning("[track_kinematics] track_ds missing time dim %r, skip.", tdim)
+        warn("[track_kinematics] track_ds missing time dim %r, skip.", tdim)
         return track_ds
 
     if (cx_name not in track_ds) or (cy_name not in track_ds):
-        logger.warning("[track_kinematics] track_ds missing %r/%r, skip.", cx_name, cy_name)
+        warn("[track_kinematics] track_ds missing %r/%r, skip.", cx_name, cy_name)
         return track_ds
 
     if (lonv_name not in ds_flat) or (latv_name not in ds_flat):
-        logger.warning(
+        warn(
             "[track_kinematics] ds_flat missing lon/lat (%s/%s), skip.", lonv_name, latv_name
         )
         return track_ds
@@ -144,9 +149,10 @@ def enrich_track_with_kinematics(
         lon_c = track_ds["lon"]
         lat_c = track_ds["lat"]
         if lon_c.dims != (tdim,) or lat_c.dims != (tdim,):
-            raise ValueError("Tracker geographic centres must have dimensions (time,)")
+            raise tag_error(ValueError("Tracker geographic centres must have dimensions (time,)"),
+                            "E1501")
         if not (np.isfinite(lon_c.values).all() and np.isfinite(lat_c.values).all()):
-            raise ValueError("Tracker geographic centres must be finite")
+            raise tag_error(ValueError("Tracker geographic centres must be finite"), "E1501")
     elif is_2d:
         # Standard case: lon(y, x) and lat(y, x)
         ydim, xdim = non_time_dims_lon[-2], non_time_dims_lon[-1]
@@ -154,7 +160,7 @@ def enrich_track_with_kinematics(
             lon_c = lon_src.isel({ydim: cy, xdim: cx})
             lat_c = lat_src.isel({ydim: cy, xdim: cx})
         except Exception as exc:
-            logger.warning(
+            warn(
                 "[track_kinematics] failed to sample lon/lat at (cy,cx) using (%s,%s): %s",
                 ydim,
                 xdim,
@@ -170,7 +176,7 @@ def enrich_track_with_kinematics(
             lon_c = lon_src.isel({xdim_lon: cx})
             lat_c = lat_src.isel({ydim_lat: cy})
         except Exception as exc:
-            logger.warning(
+            warn(
                 "[track_kinematics] failed to sample 1D lon/lat at (cx=%s, cy=%s): %s",
                 xdim_lon,
                 ydim_lat,
@@ -179,7 +185,7 @@ def enrich_track_with_kinematics(
             return track_ds
 
     else:
-        logger.warning(
+        warn(
             "[track_kinematics] lon/lat have unexpected dimensions "
             "(lon dims=%s, lat dims=%s), expected 1D or 2D spatial fields, skip.",
             non_time_dims_lon,

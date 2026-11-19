@@ -15,6 +15,18 @@ from check_publication import check_artifact, check_text
 
 
 class PublicationBoundaryTests(unittest.TestCase):
+    def test_artifact_rejects_duplicate_codes_and_missing_old_hub_fragment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            guide = root / "troubleshooting"
+            guide.mkdir()
+            (guide / "start.html").write_text('<h2 id="e0999">E0999</h2>' * 2)
+            (guide / "codes.html").write_text('<a href="start.html#e0999">E0999</a>')
+            (root / "troubleshooting.html").write_text("<h1>Troubleshooting</h1>")
+            errors = check_artifact(root)
+            self.assertTrue(any("E0999" in error and "one anchor" in error for error in errors))
+            self.assertTrue(any("missing-mesonh-wind-projection" in error for error in errors))
+
     def test_diagnostic_index_rejects_a_link_to_the_wrong_article(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -25,6 +37,16 @@ class PublicationBoundaryTests(unittest.TestCase):
             (guide / 'codes.html').write_text('<a href="other.html#different">E0999</a>')
             self.assertTrue(any('E0999' in error and 'index' in error
                                 for error in check_artifact(root)))
+
+    def test_diagnostic_link_check_rejects_an_unregistered_code(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            guide = root / "troubleshooting"
+            guide.mkdir()
+            (guide / "start.html").write_text('<h2 id="w9999">W9999</h2>')
+            (guide / "codes.html").write_text('<a href="start.html#w9999">W9999</a>')
+            self.assertIn("troubleshooting/start.html: unregistered diagnostic anchor w9999",
+                          check_artifact(root))
 
     def test_combined_site_links_are_bounded(self):
         from check_publication import check_local_links

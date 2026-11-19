@@ -11,6 +11,9 @@ the stable site, the development site under ``develop/``, or your local
 HTML build. If a code is not listed, find the symptom in
 :doc:`../troubleshooting`.
 
+Errors
+------
+
 * :ref:`e0001`
 * :ref:`e0002`
 * :ref:`e0999`
@@ -35,6 +38,7 @@ HTML build. If a code is not listed, find the symptom in
 * :ref:`e1204`
 * :ref:`e1205`
 * :ref:`e1206`
+* :ref:`e1207`
 * :ref:`e1301`
 * :ref:`e1302`
 * :ref:`e1303`
@@ -43,6 +47,7 @@ HTML build. If a code is not listed, find the symptom in
 * :ref:`e1306`
 * :ref:`e1307`
 * :ref:`e1308`
+* :ref:`e1310`
 * :ref:`e1401`
 * :ref:`e1402`
 * :ref:`e1403`
@@ -69,6 +74,13 @@ HTML build. If a code is not listed, find the symptom in
 * :ref:`e1808`
 * :ref:`e1809`
 * :ref:`e1810`
+* :ref:`e1901`
+* :ref:`e1902`
+* :ref:`e1903`
+
+Warnings
+--------
+
 * :ref:`w1001`
 * :ref:`w1201`
 * :ref:`w1202`
@@ -77,10 +89,17 @@ HTML build. If a code is not listed, find the symptom in
 * :ref:`w1302`
 * :ref:`w1303`
 * :ref:`w1304`
+* :ref:`w1305`
 * :ref:`w1401`
 * :ref:`w1402`
 * :ref:`w1501`
 * :ref:`w1502`
+* :ref:`w1503`
+* :ref:`w1504`
 * :ref:`w1505`
+* :ref:`w1506`
+* :ref:`w1507`
 * :ref:`w1601`
+* :ref:`w1602`
 * :ref:`w1801`
+* :ref:`w1901`

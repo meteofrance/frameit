@@ -7,6 +7,8 @@ import logging
 import numpy as np
 import xarray as xr
 
+from frameit.utils.diagnostics import format_message
+
 logger = logging.getLogger(__name__)
 
 
@@ -123,7 +125,8 @@ def check_group_var(by_group: dict, requests: dict) -> dict:
             present = set(by_group[grp].data_vars)
             missing = sorted(exp - present)
             if missing:
-                logger.warning("[%s] Missing variables: %s", grp, ", ".join(missing))
+                logger.warning(format_message("W1305", "[%s] Missing variables: %s"),
+                               grp, ", ".join(missing))
                 missing_by_group[grp] = missing
             else:
                 logger.debug("[%s] Requested variables verified: %d", grp, len(exp))
@@ -180,7 +183,8 @@ def check_group_var(by_group: dict, requests: dict) -> dict:
             missing = sorted(exp - present)
             key = f"{m}/{g}"
             if missing:
-                logger.warning("[%s] Missing variables: %s", key, ", ".join(missing))
+                logger.warning(format_message("W1305", "[%s] Missing variables: %s"),
+                               key, ", ".join(missing))
                 missing_flat[key] = missing
             else:
                 logger.debug("[%s] Requested variables verified: %d", key, len(exp))
@@ -263,4 +267,3 @@ def check_resolution(
         actual_m,
         rel_diff * 100,
     )
-

@@ -26,6 +26,15 @@ FORBIDDEN = re.compile(
     re.IGNORECASE,
 )
 TEXT_SUFFIXES = {".html", ".js", ".txt", ".rst", ".yaml", ".yml", ".json"}
+TROUBLESHOOTING_BOOKMARKS = (
+    "configuration-fails-before-inputs-open",
+    "input-or-metadata-validation-fails",
+    "missing-mesonh-wind-projection",
+    "meso-nh-wind-projection-parameters-are-missing",
+    "no-common-times-or-a-shortened-track",
+    "missing-polar-values-or-unexpected-vector-components",
+    "memory-export-or-retry-problems",
+)
 
 
 def check_brand_assets(source: Path, artifact: Path | None = None) -> list[str]:
@@ -149,6 +158,11 @@ def check_diagnostic_links(artifact: Path) -> list[str]:
     index = pages.get("codes.html")
     links = {target for _, attribute, target in index.links if attribute == "href"} if index else set()
     errors = []
+    hub = artifact / "troubleshooting.html"
+    bookmarks = _HTMLLinks(hub).anchors if hub.is_file() else {}
+    for anchor in TROUBLESHOOTING_BOOKMARKS:
+        if anchor not in bookmarks:
+            errors.append(f"Missing troubleshooting bookmark: troubleshooting.html#{anchor}")
     for code, topic in codes.items():
         if not re.fullmatch(r"[EW][0-9]{4}", code):
             errors.append(f"Invalid FrameIt diagnostic ID: {code}")

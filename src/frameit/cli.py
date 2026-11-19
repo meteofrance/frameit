@@ -38,18 +38,17 @@ _sanitize_sys_path_user_site()
 import argparse  # noqa: E402
 import logging  # noqa: E402
 import platform  # noqa: E402
-from typing import Any, NoReturn  # noqa: E402
+from typing import Any  # noqa: E402
 
+from frameit.utils.diagnostics import (  # noqa: E402
+    FrameItArgumentParser as _FrameItArgumentParser,
+)
 from frameit.utils.diagnostics import (  # noqa: E402
     diagnostic_path,
     exception_code,
-    format_message,
+    format_help,
     tag_error,
 )
-
-
-def _with_help(code: str, message: str) -> str:
-    return f"{format_message(code, message)}\nTroubleshooting: {diagnostic_path(code)}"
 
 
 def _failure_message(exc: Exception) -> str:
@@ -58,12 +57,7 @@ def _failure_message(exc: Exception) -> str:
     if isinstance(exc, PreflightError) and exc.diagnostics:
         paths = dict.fromkeys(diagnostic_path(error.code) for error in exc.diagnostics)
         return str(exc) + "\nTroubleshooting: " + ", ".join(paths)
-    return _with_help(exception_code(exc), str(exc))
-
-
-class _FrameItArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> NoReturn:
-        super().error(_with_help("E0001", message))
+    return format_help(exception_code(exc), str(exc))
 
 
 def _package_version(pkg_name: str) -> str | None:
@@ -413,7 +407,7 @@ def _cmd_info(short: bool) -> int:
 
     critical_missing = [k for k in ("numpy", "xarray") if not modules[k]["ok"]]
     if critical_missing:
-        print(_with_help(
+        print(format_help(
             "E1001", f"Overall: FAIL (missing critical modules: {', '.join(critical_missing)})"
         ))
         return 1
@@ -509,14 +503,17 @@ def _cmd_inspect(args):
 def _cmd_prepare_ci_dataset(args: argparse.Namespace) -> int:
     from frameit.testing.datasets import prepare_ci_dataset
 
-    report = prepare_ci_dataset(
-        args.source,
-        args.output,
-        max_size_mb=args.max_size_mb,
-        force=args.force,
-        plan_only=args.plan_only,
-        track_file=args.track_file,
-    )
+    try:
+        report = prepare_ci_dataset(
+            args.source,
+            args.output,
+            max_size_mb=args.max_size_mb,
+            force=args.force,
+            plan_only=args.plan_only,
+            track_file=args.track_file,
+        )
+    except (ValueError, OSError) as exc:
+        raise tag_error(exc, "E1901")
     import json
 
     print(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False))
@@ -529,7 +526,7 @@ def _cmd_run_matrix(args: argparse.Namespace) -> int:
     from frameit.testing.matrix import run_matrix
 
     if args.data_root is None and not args.ci:
-        raise ValueError("--data-root is required without --ci")
+        raise tag_error(ValueError("--data-root is required without --ci"), "E1902")
     data_root = args.data_root
     if data_root is None:
         data_root = Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
@@ -547,6 +544,8 @@ def _cmd_run_matrix(args: argparse.Namespace) -> int:
     )
     print(f"Matrix results: {args.output.resolve()}")
     print(f"Exit code: {report['exit_code']}")
+    if report["exit_code"]:
+        print(format_help(report.get("code", "E1903"), "The matrix did not pass. See run.json."))
     return int(report["exit_code"])
 
 
@@ -568,7 +567,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         parser = _build_parser()
     except ImportError as exc:
-        print(_with_help("E1001", str(exc)), file=sys.stderr)
+        print(format_help("E1001", str(exc)), file=sys.stderr)
         raise SystemExit(1) from None
     args = parser.parse_args(argv)
 
@@ -633,10 +632,12 @@ def main(argv: list[str] | None = None) -> None:
             print(f"All-test results: {args.output.resolve()}")
             print(f"Computation benchmark: {report['benchmark']['computation_s']:.6f} s")
             code = report["exit_code"]
+            if code:
+                print(format_help(report.get("code", "E1903"), "See all-tests.json and the logs."))
         else:
             code = 2
     except KeyboardInterrupt:
-        logging.getLogger("frameit").error("%s", _with_help("E0002", "FrameIt was interrupted"))
+        logging.getLogger("frameit").error("%s", format_help("E0002", "FrameIt was interrupted"))
         code = 130
     except (ValueError, FileNotFoundError, FileExistsError) as exc:
         logging.getLogger("frameit").error("%s", _failure_message(exc))

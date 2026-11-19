@@ -53,6 +53,16 @@ Read which group and controls were ignored. Check the actual levels
 in the product. For current YAML, select levels under the source's
 ``variables``. See :doc:`../reference/vertical_levels`.
 
+.. _w1602:
+
+W1602: An older Python caller used native spacing for its radial step
+----------------------------------------------------------------------
+
+No radial spacing was supplied to that caller. Check the spacing in
+the warning against the input grid. For current YAML, use
+``products.polar.radial_step_km`` if you need to set the step.
+Read :ref:`e1601` before choosing a smaller step.
+
 Missing values in a polar result
 --------------------------------
 

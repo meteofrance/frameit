@@ -7,7 +7,6 @@ source refinement, spectra, centre sensitivity and deliberate coverage loss.
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
@@ -22,6 +21,7 @@ from frameit.testing.analytic_vortices import (
     sampled_truth,
 )
 from frameit.testing.artifacts import atomic_json, environment_metadata, utc_now
+from frameit.utils.diagnostics import FrameItArgumentParser, format_help, tag_error
 
 REFERENCES = {
     "geodesic_geometry": "10.1007/s00190-012-0578-z",
@@ -526,15 +526,19 @@ def qualification_summary(report):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = FrameItArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--example", action="store_true", help="Run the analytical vortex example")
     args = parser.parse_args(argv)
     runner = run_analytic_example if args.example else run_polar_qualification
-    report = runner(args.output)
+    try:
+        report = runner(args.output)
+    except Exception as exc:
+        raise tag_error(exc, "E1903")
     failures = [c for c in report["checks"] if not c["ok"]]
-    print(f"Polar scientific qualification: {'PASS' if report['passed'] else 'FAIL'}; "
-          f"{len(report['checks'])} checks, {len(failures)} failures")
+    summary = (f"Polar scientific qualification: {'PASS' if report['passed'] else 'FAIL'}; "
+               f"{len(report['checks'])} checks, {len(failures)} failures")
+    print(summary if report["passed"] else format_help("E1903", summary))
     for failure in failures:
         print(failure)
     print(f"Report: {args.output / ('example.json' if args.example else 'qualification.json')}")

@@ -72,6 +72,17 @@ scaling. Use an explicit unscaled declaration only when you can justify
 it for that record. See :doc:`../user_guide/fa_contracts` for the
 declaration and the provenance to check on a small retry.
 
+.. _e1207:
+
+E1207: FrameIt could not use a selected file's metadata
+----------------------------------------------------------------------
+
+Read the file name and the first metadata error. Check that the
+reader can open the file. Compare the named header, axis or record
+with a supported example in :doc:`../reference/inputs`. Inspect one
+file at a time to find the incompatible file. Do not edit the
+source metadata unless you can verify the correction.
+
 .. _e1007:
 
 E1007: An FA decoder request timed out

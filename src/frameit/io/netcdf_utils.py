@@ -25,6 +25,8 @@ from frameit.processing.requests import (
 )
 from frameit.processing.wind_reference import MESONH_PROJECTION_METADATA
 
+from frameit.utils.diagnostics import format_message
+
 logger = logging.getLogger(__name__)
 
 
@@ -735,7 +737,9 @@ def concat_nc2ds_by_vert_coord(
         methods = [m for m in tracker_yaml.keys() if m == method]
         if not methods:
             logger.warning(
-                "Tracker method '%s' not found. No tracker group will be produced.", method
+                format_message(
+                    "W1507", "Tracker method '%s' not found. No tracker group will be produced."
+                ), method,
             )
     tracker_req_by_method: dict[str, dict[str, Any]] = {
         m: normalize_requests(tracker_yaml.get(m, {})) for m in methods

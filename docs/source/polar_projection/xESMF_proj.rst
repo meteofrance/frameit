@@ -528,6 +528,7 @@ computation, weight building/application and export. Fresh workers isolate RSS
 high-water marks; ``benchmark.json`` records versions, parameters and comparison
 with uncached physical/quality outputs. Results apply to the measured workload,
 not a universal speedup.
+If the benchmark stops with an error, see :doc:`../troubleshooting`.
 
 Software dependencies
 ~~~~~~~~~~~~~~~~~~~~~

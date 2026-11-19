@@ -9,8 +9,10 @@ import time
 from importlib import resources
 from pathlib import Path
 
+from frameit.core.reports import primary_error_code
 from frameit.testing.artifacts import atomic_json, environment_metadata, utc_now
 from frameit.testing.datasets import ci_dataset_root
+from frameit.utils.diagnostics import tag_error
 
 
 def run_all_tests(
@@ -24,9 +26,9 @@ def run_all_tests(
     root = (fixture_root if ci else Path(data_root)).expanduser().resolve()
     if any(output == source or source in output.parents or output in source.parents
            for source in (root, fixture_root)):
-        raise ValueError("Data and test output trees must not overlap")
+        raise tag_error(ValueError("Data and test output trees must not overlap"), "E1804")
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
-        raise ValueError(f"Test output must be a fresh directory: {output}")
+        raise tag_error(ValueError(f"Test output must be a fresh directory: {output}"), "E1802")
     output.mkdir(parents=True, exist_ok=True)
     from frameit.testing.matrix import run_matrix
     started = time.perf_counter()
@@ -71,10 +73,12 @@ def run_all_tests(
             benchmark=True,
         )
     except (ValueError, OSError, ImportError) as exc:
-        matrix = {"exit_code": 2, "results": [], "reason": str(exc)}
+        matrix = {"exit_code": 2, "results": [], "reason": str(exc),
+                  "code": primary_error_code(tag_error(exc, "E1902"))}
     report["matrix"] = {
         "exit_code": matrix["exit_code"], "duration_s": time.perf_counter() - matrix_start,
         "report": "matrix/run.json", "reason": matrix.get("reason", ""),
+        **({"code": matrix["code"]} if "code" in matrix else {}),
     }
     cases = [
         {"id": case["id"], "computation_s": case["computation_s"],
@@ -93,6 +97,8 @@ def run_all_tests(
     report["exit_code"] = 130 if 130 in codes or -2 in codes else (
         2 if any(code not in (0, 1) for code in codes) else int(any(codes))
     )
+    if report["exit_code"]:
+        report["code"] = "E0002" if report["exit_code"] == 130 else matrix.get("code", "E1903")
     report["duration_s"] = time.perf_counter() - started
     report["finished_at"] = utc_now()
     atomic_json(output / "all-tests.json", report)

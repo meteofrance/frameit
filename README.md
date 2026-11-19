@@ -125,6 +125,8 @@ from the current HPC documentation.
 ## Documentation
 
 [Read the documentation](https://meteofrance.github.io/frameit/).
+For errors, warnings, and unexpected results, see
+[Troubleshooting](https://meteofrance.github.io/frameit/troubleshooting.html).
 For your own data: [fields and levels](https://meteofrance.github.io/frameit/task_guides/field_selection.html),
 [moving regions](https://meteofrance.github.io/frameit/task_guides/moving_region.html),
 [coupled inputs](https://meteofrance.github.io/frameit/task_guides/coupled_inputs.html), and

@@ -771,7 +771,7 @@ def test_final_record_failure_is_not_current_success_or_persisted_checkpoint(
 
 @pytest.mark.parametrize("boundary", ["locked", "initial_record"])
 def test_real_unowned_failure_keeps_old_records_out_of_summary(
-        tmp_path, monkeypatch, capsys, boundary):
+        tmp_path, monkeypatch, capsys, caplog, boundary):
     from frameit.core import run_state
 
     create_first_run_input(tmp_path / "input.nc")
@@ -799,6 +799,7 @@ def test_real_unowned_failure_keeps_old_records_out_of_summary(
     assert "owner-attested" not in out.lower() and "STALE-ATTEMPT" not in out
     assert f"code: {'E1801' if boundary == 'locked' else 'E1808'}" in out
     if boundary == "locked":
+        assert "troubleshooting/outputs.html#e1801" in caplog.text
         assert record.read_bytes() == original_bytes
     else:
         assert yaml.safe_load(record.read_text())["state"] == "failed"

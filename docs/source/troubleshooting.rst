@@ -1,8 +1,30 @@
 Troubleshooting
 ===============
 
-Start with the failing phase and source/field named in the error. Keep the
-configuration and logs with the attempt. Use the matching section below.
+* **I have a code.** Find it in the :doc:`troubleshooting/codes`.
+  Start with the first error that names a cause, not a later message
+  that says the run failed.
+* **I have no code.** If the command does not start, see
+  :doc:`troubleshooting/start`. If the run stopped or went quiet, see
+  :doc:`troubleshooting/run`.
+* **My result looks wrong.** Start with the
+  :doc:`saved run status <troubleshooting/outputs>`. Then check the
+  :doc:`fields <troubleshooting/fields>` or :doc:`polar values <troubleshooting/polar>`.
+
+Quick checks
+------------
+
+1. Run ``frameit --help`` to check that FrameIt starts. Run
+   ``frameit info --short`` to see the version.
+2. Run ``frameit validate frameit.yaml --schema-only`` to check the
+   YAML without opening data.
+3. Run ``frameit inspect frameit.yaml`` to see what is in the files.
+   Run ``frameit validate frameit.yaml`` to check the request against
+   those files. Use ``--json`` for one structured report.
+4. Try a small run in a new output directory. Check the exit status
+   and read ``frameit status path/to/run``. Replace ``path/to/run``
+   with your output directory. Validation is not proof that the
+   result is scientifically valid.
 
 .. toctree::
    :maxdepth: 1
@@ -21,125 +43,49 @@ configuration and logs with the attempt. Use the matching section below.
 Configuration fails before inputs open
 --------------------------------------
 
-Run ``frameit validate frameit.yaml --schema-only``. Supply integer
-``schema_version: 3`` and current key/value spellings. Check duplicate keys,
-source declarations and mutually exclusive selection controls.
-Relative YAML paths start at the configuration file, not the launch directory.
-See :doc:`user_guide/configuration_file`.
-
-Add ``--json`` for a single machine-readable report. Read each error's affected
-path, YAML location, expected/observed facts and suggested repairs.
-Fix prerequisite errors before checks marked blocked; deferred value checks
-require execution and are not successful validation results.
+See :doc:`troubleshooting/configuration`. Fix an error before trying
+any check it blocked. A deferred check still needs to run.
 
 Input or metadata validation fails
 ----------------------------------
 
-Run ``frameit inspect frameit.yaml``, then ``frameit validate frameit.yaml``.
-Check selected fields in every file, coordinate units, grids and time/cycle
-metadata. The report retains each affected source/file rather than choosing a
-substitute. Do not fix a scientific ambiguity by renaming units or selecting a
-different quantity. See
-:doc:`user_guide/input_files`, :doc:`user_guide/fa_inputs` and
-:doc:`user_guide/ocean_netcdf`.
-
-For missing readers, native-library conflicts or FA worker errors, use
-:doc:`user_guide/fa_environment`. Selecting a reader explicitly avoids unrelated
-xarray backend discovery; it does not repair an incompatible native stack.
+See :doc:`troubleshooting/inputs` for files and readers. If FrameIt
+can open the files but cannot use a field, see :doc:`troubleshooting/fields`.
 
 .. _missing-mesonh-wind-projection:
 
 Meso-NH wind projection parameters are missing
 ------------------------------------------------
 
-``rotation.method: mesonh_projection`` needs ``BETA``, ``RPK`` and ``LON0``.
-The error lists the affected pair and all missing parameters. If you know them
-from the producer configuration, supply them under that pair's ``rotation``:
-this fragment supplements a complete source request in
-:doc:`task_guides/scalars_and_vectors`.
-
-.. code-block:: yaml
-
-   sources:
-     atmosphere:
-       wind_pairs:
-         - u: UT
-           v: VT
-           basis: grid
-           rotation:
-             method: mesonh_projection
-             BETA: 0
-             RPK: 0
-             LON0: 54.2
-
-These numbers are an example, not defaults. ``BETA`` and ``LON0`` are degrees;
-``RPK`` is dimensionless in [-1, 1]. The required longitude is ``LON0``, not
-``LAT0``. YAML values can supply missing projection parameters; conflicts with
-reliable source geometry fail. Omitted values must be available in source
-variables or dataset attributes. Explicit zero is retained. FrameIt does not
-infer missing parameters.
-
-If you have independently established that the components can be treated as
-eastward/northward, declare that decision explicitly instead:
-
-.. code-block:: yaml
-
-   sources:
-     atmosphere:
-       wind_pairs:
-         - u: UT
-           v: VT
-           basis: earth
-
-This exception applies only to an explicitly declared Meso-NH NetCDF pair needed
-by an operation, with coherent grid-aligned metadata and at least one missing
-projection parameter. **No grid-to-Earth rotation is applied.** Missing metadata
-does not prove coincident directions; this is your scientific assumption.
-Native sample locations and required collocation are unchanged.
-
-The warning is logged and recorded as ``wind_reference_frame_override`` in
-``run-provenance.yaml`` and exported wind attributes. Original component flags
-and standard names are retained with ``source_`` prefixes;
-``source_wind_reference_frame_metadata: grid`` distinguishes the recorded source
-basis from the user's Earth-basis declaration. Conflicts still fail when all
-three effective parameters are available, metadata are invalid or contradictory,
-or components are misidentified. Other models and implicit declarations do not
-get this exception; GRIB input remains strict even with ``model: mesonh``.
-Superseded dataset-wide flags move to ``source_`` attributes; other raw pairs
-retain their own basis metadata. An unused declaration does not rotate/relabel
-native copied fields. Run ``frameit validate`` after editing.
-See :doc:`user_guide/configuration_file` for the rotation methods.
+See :ref:`e1306` for the missing values. See :ref:`w1301` if FrameIt
+used your declared Earth directions without rotation.
 
 No common times or a shortened track
 ------------------------------------
 
-Check decoded labels and prescribed-track coverage. Hourly means centred at
-half hours do not exactly match whole-hour snapshots. Do not invent a time shift;
-choose an applicable declared policy in :doc:`concepts/time_support`.
-For automatic trackers, check required inputs and the method's failure notes.
-An incomplete track needs a scientific decision, not automatic gap filling.
+See :ref:`e1404` when the source or track times do not match. If
+tracking stopped early, see :ref:`e1504` or :ref:`w1501`.
 
 Missing polar values or unexpected vector components
 ----------------------------------------------------
 
-Check actual source coverage, quality flags and the declared missing-data policy.
-Radial/tangential components are undefined at zero radius. Finer sampling cannot
-create missing source support. Check collocation, basis and units separately;
-storm-centred positions do not imply motion-relative velocity. See
-:doc:`task_guides/polar_sampling` and :ref:`wind-grid-contract`.
-
-If validation reports a radial step below native spacing, finer sampling is not
-supported yet. Set ``products.polar.radial_step_km`` to at least the reported
-minimum for those input files, or omit it to use native spacing. A shared target
-uses the coarsest participating grid. ``--schema-only`` cannot check file spacing.
+See :doc:`troubleshooting/polar` for missing coverage and :doc:`troubleshooting/fields`
+for vector directions. Do not replace missing values with zeros.
 
 Memory, export or retry problems
 --------------------------------
 
-Start with a small selection and bounded workers. Check the resolved CPU budget,
-input/processing chunks and storage shards in :doc:`task_guides/storage_and_resources`.
-Use the product paths and state in ``run-status.yaml``; file presence alone does
-not establish completion. Stop the old writer before inspecting stale locks or
-partial/backup products. Keep inputs and prior completed products intact; retry
-in a fresh directory. See :doc:`getting_started/hpc` and
-:doc:`user_guide/output_files` for publication and overwrite limits.
+See :doc:`troubleshooting/run` for memory or CPU problems.
+See :doc:`troubleshooting/outputs` before retrying a failed write.
+
+What to share when you ask for help
+------------------------------------------
+
+Send the command, the first relevant message and its code, your FrameIt
+and Python versions, and the final exit number. Include just the YAML
+settings, input headers, and run records needed to explain the problem.
+Remove secrets and private paths. Do not share a whole data archive.
+
+If the code is not listed, check that you opened the docs for your
+version. Older builds may not print codes. Use the symptom and the
+message text to find the closest entry.

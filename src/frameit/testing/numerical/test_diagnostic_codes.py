@@ -1,5 +1,7 @@
 """Public diagnostic identifiers are independent of message text."""
 
+import pytest
+
 from frameit.core.reports import Diagnostic, PreflightResult, project_report, render_report
 
 
@@ -52,3 +54,46 @@ def test_aggregate_error_record_keeps_each_cause():
         ("source.one", "E0999"), ("source.two", "E0001"),
     ]
     assert "[E0001]" in str(original)
+
+
+def test_invalid_matrix_plan_leaves_no_run_directory(tmp_path, capsys, caplog):
+    from frameit.cli import main
+
+    output = tmp_path / "matrix"
+    with pytest.raises(SystemExit) as exc:
+        main(["run-matrix-test", "--ci", "--output", str(output),
+              "--case", "no-such-matrix-case", "--plan-only"])
+    assert exc.value.code == 2
+    assert "[E1902]" in capsys.readouterr().err + caplog.text
+    assert not output.exists()
+
+
+def test_failed_qualification_keeps_the_check_with_its_summary_code(tmp_path, monkeypatch, capsys):
+    from frameit.testing import polar_qualification
+
+    monkeypatch.setattr(polar_qualification, "run_analytic_example", lambda _output: {
+        "passed": False, "checks": [{"ok": False, "reason": "analytical limit exceeded"}],
+    })
+    assert polar_qualification.main(["--example", "--output", str(tmp_path)]) == 1
+    output = capsys.readouterr().out
+    assert "[E1903]" in output and "analytical limit exceeded" in output
+
+
+def test_fixture_replacement_reports_retained_backup_without_failing(tmp_path, monkeypatch):
+    from frameit.testing import datasets
+
+    output, staging = tmp_path / "fixture", tmp_path / "staging"
+    output.mkdir()
+    staging.mkdir()
+    (output / "previous").write_text("old fixture")
+    (staging / "current").write_text("new fixture")
+
+    def fail_to_remove(_path):
+        raise PermissionError("test: no permission to remove backup")
+
+    monkeypatch.setattr(datasets.shutil, "rmtree", fail_to_remove)
+    warning, = datasets._publish(staging, output, force=True)
+    assert (output / "current").read_text() == "new fixture"
+    backup, = tmp_path.glob(".fixture.backup-*")
+    assert (backup / "previous").read_text() == "old fixture"
+    assert warning.startswith("[W1901]") and str(backup) in warning

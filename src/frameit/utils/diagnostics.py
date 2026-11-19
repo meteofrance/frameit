@@ -1,6 +1,8 @@
 """Stable IDs for errors and warnings that FrameIt reports."""
 
 import errno
+from argparse import ArgumentParser
+from typing import NoReturn
 
 CODE_TOPICS: dict[str, str] = {
     "E0001": "start",
@@ -27,6 +29,7 @@ CODE_TOPICS: dict[str, str] = {
     "E1204": "inputs",
     "E1205": "inputs",
     "E1206": "inputs",
+    "E1207": "inputs",
     "E1301": "fields",
     "E1302": "fields",
     "E1303": "fields",
@@ -35,6 +38,7 @@ CODE_TOPICS: dict[str, str] = {
     "E1306": "fields",
     "E1307": "fields",
     "E1308": "fields",
+    "E1310": "fields",
     "E1401": "time",
     "E1402": "time",
     "E1403": "time",
@@ -61,6 +65,9 @@ CODE_TOPICS: dict[str, str] = {
     "E1808": "outputs",
     "E1809": "outputs",
     "E1810": "outputs",
+    "E1901": "run",
+    "E1902": "run",
+    "E1903": "run",
     "W1001": "start",
     "W1201": "inputs",
     "W1202": "inputs",
@@ -69,13 +76,20 @@ CODE_TOPICS: dict[str, str] = {
     "W1302": "fields",
     "W1303": "fields",
     "W1304": "fields",
+    "W1305": "fields",
     "W1401": "time",
     "W1402": "time",
     "W1501": "regions",
     "W1502": "regions",
+    "W1503": "regions",
+    "W1504": "regions",
     "W1505": "regions",
+    "W1506": "regions",
+    "W1507": "regions",
     "W1601": "polar",
+    "W1602": "polar",
     "W1801": "outputs",
+    "W1901": "run",
 }
 
 UNEXPECTED_ERROR = "E0999"
@@ -88,6 +102,15 @@ def diagnostic_path(code: str) -> str:
 def format_message(code: str, message: str) -> str:
     diagnostic_path(code)  # Require an entry for every emitted code.
     return f"[{code}] {message}"
+
+
+def format_help(code: str, message: str) -> str:
+    return f"{format_message(code, message)}\nTroubleshooting: {diagnostic_path(code)}"
+
+
+class FrameItArgumentParser(ArgumentParser):
+    def error(self, message: str) -> NoReturn:
+        super().error(format_help("E0001", message))
 
 
 def tag_error[ExcT: BaseException](exc: ExcT, code: str) -> ExcT:

@@ -56,8 +56,9 @@ class AllTestsTest(unittest.TestCase):
                          "frameit.testing.all_tests.environment_metadata", return_value=metadata
                      ):
                 report = run_all_tests(root / "results", data_root=full)
-                with self.assertRaisesRegex(ValueError, "must not overlap"):
+                with self.assertRaisesRegex(ValueError, "must not overlap") as exc:
                     run_all_tests(fixture / "do-not-write", data_root=full)
+                self.assertEqual(exc.exception.frameit_code, "E1804")
             self.assertEqual(report["numerical"]["data_root"], str(fixture))
             self.assertEqual(matrix.run_matrix.call_args.args[0], full)
             self.assertFalse(matrix.run_matrix.call_args.kwargs["ci"])
@@ -81,12 +82,14 @@ class AllTestsTest(unittest.TestCase):
             ):
                 report = run_all_tests(output)
             self.assertEqual(report["exit_code"], 1)
+            self.assertEqual(report["code"], "E1903")
             self.assertEqual(report["benchmark"]["computation_s"], 2.5)
             self.assertTrue(matrix.run_matrix.call_args.kwargs["benchmark"])
             self.assertTrue(matrix.run_matrix.call_args.kwargs["ci"])
             self.assertEqual(json.loads((output / "all-tests.json").read_text()), report)
-            with self.assertRaises(ValueError):
+            with self.assertRaises(ValueError) as exc:
                 run_all_tests(output)
+            self.assertEqual(exc.exception.frameit_code, "E1802")
 
     def test_scientific_failure_propagates_after_numerical_success(self):
         matrix = ModuleType("frameit.testing.matrix")

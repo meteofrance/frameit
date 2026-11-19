@@ -30,6 +30,7 @@ def test_fixture_command_creates_all_small_instructional_inputs(tmp_path):
         [sys.executable, "-m", "frameit", "generate-tests-fixtures", "--output", "tutorial-data"],
         cwd=tmp_path, capture_output=True, text=True, timeout=30)
     assert refused.returncode != 0
+    assert "[E1901]" in refused.stderr
     assert {path: path.read_bytes() for path in root.rglob("*.nc")} == before
 
 
@@ -40,8 +41,9 @@ def test_fixture_api_refuses_existing_directories_before_writing(tmp_path):
     target.mkdir()
     sentinel = target / "keep.txt"
     sentinel.write_text("research data")
-    with pytest.raises(FileExistsError):
+    with pytest.raises(FileExistsError) as exc:
         create_task_fixtures(target)
+    assert exc.value.frameit_code == "E1901"
     assert list(target.iterdir()) == [sentinel]
     assert sentinel.read_text() == "research data"
 

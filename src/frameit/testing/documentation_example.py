@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
 from frameit.utils.atomic import atomic_output
+from frameit.utils.diagnostics import FrameItArgumentParser, tag_error
 
 
 def create_first_run_input(path: Path) -> Path:
@@ -35,9 +35,13 @@ def create_first_run_input(path: Path) -> Path:
         "source": "Synthetic structured-adapter input; not an AROME producer file",
         "comment": "No physical interpretation or real-producer qualification; zero is valid, NaN is missing.",
     })
-    with atomic_output(path, overwrite=False) as temporary:
-        data.to_netcdf(temporary, engine="netcdf4", encoding={
-            "valid_time": {"units": "hours since 2000-01-01 00:00:00", "calendar": "proleptic_gregorian"}})
+    try:
+        with atomic_output(path, overwrite=False) as temporary:
+            data.to_netcdf(temporary, engine="netcdf4", encoding={
+                "valid_time": {"units": "hours since 2000-01-01 00:00:00",
+                               "calendar": "proleptic_gregorian"}})
+    except OSError as exc:
+        raise tag_error(exc, "E1901")
     return path
 
 
@@ -51,7 +55,7 @@ def create_tutorial_inputs(directory: Path, *, translating=False, missing=False)
     paths = {name: directory / f"{name}.nc" for name in ("atmosphere", "ocean", "track")}
     for path in paths.values():
         if path.exists():
-            raise FileExistsError(path)
+            raise tag_error(FileExistsError(path), "E1901")
     times = np.array(["2000-01-01T00", "2000-01-01T01", "2000-01-01T02"],
                      dtype="datetime64[ns]")
     centres = 60. + (.1 * np.arange(3) if translating else np.zeros(3))
@@ -155,7 +159,10 @@ def create_tutorial_inputs(directory: Path, *, translating=False, missing=False)
 def create_task_fixtures(directory: Path) -> dict[str, Path]:
     """Generate every task-guide input locally, in a new directory only."""
     directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=False)
+    try:
+        directory.mkdir(parents=True, exist_ok=False)
+    except OSError as exc:
+        raise tag_error(exc, "E1901")
     paths = {"scalar": create_first_run_input(directory / "first-run.nc")}
     for name, folder, options in (
         ("stationary", "stationary", {}),
@@ -237,7 +244,7 @@ def create_task_fixtures(directory: Path) -> dict[str, Path]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = FrameItArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True,
                         help="New instructional NetCDF path or tutorial directory (no overwrite)")
     parser.add_argument("--tutorial", choices=("stationary", "translating", "missing"),

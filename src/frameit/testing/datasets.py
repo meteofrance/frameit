@@ -13,6 +13,7 @@ from importlib import resources
 from pathlib import Path
 
 from frameit.io.subset import crop_grib, crop_netcdf, validate_grib_subset
+from frameit.utils.diagnostics import format_message, tag_error
 
 MANIFEST_FORMAT = "frameit-ci-dataset-v2"
 
@@ -24,7 +25,9 @@ def ci_dataset_root() -> Path:
         return Path(str(resources.files("frameit.testing").joinpath("ci_dataset")))
     root = Path(value).expanduser().resolve()
     if not value.strip() or not root.is_dir():
-        raise ValueError(f"FRAMEIT_CI_DATA_ROOT must name an existing fixture directory: {value!r}")
+        raise tag_error(ValueError(
+            f"FRAMEIT_CI_DATA_ROOT must name an existing fixture directory: {value!r}"
+        ), "E1902")
     return root
 
 
@@ -366,7 +369,9 @@ def _publish(staging, output, force):
         except OSError as exc:
             # The replacement has committed. A cleanup failure must not report
             # the completed installation as a failed transaction.
-            return [f"Installation completed; backup retained at {backup}: {exc}"]
+            return [format_message(
+                "W1901", f"Installation completed; backup retained at {backup}: {exc}"
+            )]
     return []
 
 

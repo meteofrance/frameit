@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 
 from frameit.utils.diagnostics import (
     CODE_TOPICS,
-    UNEXPECTED_ERROR,
     diagnostic_path,
     exception_code,
     format_message,
@@ -30,7 +29,7 @@ class Diagnostic:
     repairs: list[str]
     locations: list[dict] = field(default_factory=list)
     contexts: list[dict] = field(default_factory=list)
-    code: str = field(default=UNEXPECTED_ERROR, kw_only=True)
+    code: str = field(kw_only=True)
 
 
 class PreflightError(ValueError):

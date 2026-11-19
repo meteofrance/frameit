@@ -105,6 +105,7 @@ def test_no_matching_source_files_have_an_inventory_code(tmp_path):
     assert project(collect(raw, schema_only=True))["status"] == "ok"
     error, = project(collect(raw))["errors"]
     assert error["code"] == "E1201"
+    assert error["help"] == "troubleshooting/inputs.html#e1201"
     assert error["contexts"] == [{"source": "weather", "patterns": [pattern]}]
     assert not (tmp_path / "output").exists()
 

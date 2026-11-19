@@ -18,6 +18,7 @@ for every real dataset.
 Each output directory must be fresh or empty. The small example exports
 ``analytical-vortex.nc`` and ``example.json`` with errors, radial profiles,
 harmonic amplitudes and peak directions.
+If the command reports a failure, see :ref:`e1903`.
 
 The complete qualification writes:
 

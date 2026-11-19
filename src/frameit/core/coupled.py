@@ -849,6 +849,8 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                         tag_error(failure, "E1301")
                     raise failure
             except (OSError, ValueError) as exc:
+                if isinstance(exc, ValueError) and not isinstance(exc, PreflightError):
+                    tag_error(exc, "E1310")
                 diagnostics = exception_diagnostics(
                     exc, path=f"sources.{name}",
                     expected="requests compatible with selected field, level, unit "

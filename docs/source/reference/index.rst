@@ -10,7 +10,7 @@ Choose the reference for the question you need to answer:
 * **Which method applies?** Use :doc:`tracking` or :doc:`polar` for inputs,
   equations and limits.
 * **Why do apparently similar results differ?** Use :doc:`concepts`;
-  for a failed run, use :doc:`../troubleshooting`.
+  for an error code, warning, or confusing result, use :doc:`../troubleshooting`.
 
 For a worked run, start with the :doc:`task guides <../task_guides/index>`.
 

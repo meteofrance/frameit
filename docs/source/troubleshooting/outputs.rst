@@ -7,9 +7,12 @@ E1801: The run directory is locked
 ----------------------------------------------------------------------
 
 Another attempt owns the directory, or it left a lock after stopping.
-Use a fresh directory for the retry. Do not remove ``.frameit-run.lock``
-while its owner might still be running. If you must inspect a stale
-lock, confirm the owner has stopped first.
+Use a fresh directory for the retry, such as
+``frameit run frameit.yaml --output-directory ./retry``. Run
+``frameit status ./retry`` to check that attempt. Do not remove
+``.frameit-run.lock`` while its owner might still be running.
+Any status in the locked directory describes the saved attempt,
+not the command that could not acquire the lock.
 
 .. _e1802:
 
@@ -97,8 +100,9 @@ does not combine different snapshots of the run.
 E1810: The output filesystem reported a space or quota limit
 ----------------------------------------------------------------------
 
-Check free blocks, free file entries, and your quota on the target
-filesystem. System-wide free space does not show your user quota.
+Run ``df -h`` and ``df -i`` on the output directory or its parent to
+check free space and free file entries. Check your quota too: free
+space on the filesystem does not show your own limit.
 Use a fresh directory with enough space. A failed write does not
 make a partial product safe to use.
 

@@ -29,6 +29,8 @@ from pyproj import Geod
 
 from frameit.io.loader import load_config_with_model_presets, resolve_config_with_model_presets
 
+from frameit.utils.diagnostics import format_message, tag_error
+
 logger = logging.getLogger(__name__)
 
 # Restricted types for a few key fields
@@ -403,16 +405,18 @@ class SimulationConfig:
                 raise ValueError(f"radial_resolution={self.radial_resolution} m must be positive.")
             if not self.radial_resolution:
                 logger.warning(
-                    "radial_resolution not set, defaulting to native resolution=%d m.",
+                    format_message(
+                        "W1602", "radial_resolution not set, defaulting to native resolution=%d m."
+                    ),
                     self.resolution,
                 )
                 self.radial_resolution = float(self.resolution)
             elif self.radial_resolution < self.resolution:
-                raise ValueError(
+                raise tag_error(ValueError(
                     f"radial_resolution={self.radial_resolution:.0f} m is finer than "
                     f"the native grid resolution={self.resolution} m. "
                     "Interpolating to a finer radial grid than the source data is not meaningful."
-                )
+                ), "E1601")
             sampling_axes(self)
 
     # -----------------------

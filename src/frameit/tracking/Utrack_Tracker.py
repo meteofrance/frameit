@@ -10,6 +10,8 @@ from frameit.core.settings_class import SimulationConfig
 
 from .tracker_core import TcTracker, register_tracker
 
+from frameit.utils.diagnostics import format_message
+
 logger = logging.getLogger(__name__)
 
 
@@ -177,8 +179,10 @@ class UtrackTracker(TcTracker):
                 y, x = cycs[0].last_fix().vmax_center
             else:
                 logger.warning(
-                    "No cyclone detected by the tracker at position=%s,"
-                    " returning coordinates (x=0, y=0)",
+                    format_message(
+                        "W1506", "No cyclone detected by the tracker at position=%s,"
+                        " returning coordinates (x=0, y=0)"
+                    ),
                     i,
                 )
                 y, x = 0, 0  # np.nan, np.nan

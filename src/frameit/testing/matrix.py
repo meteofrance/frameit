@@ -15,6 +15,7 @@ from typing import Any
 
 import yaml
 
+from frameit.core.reports import error_record, primary_error_code
 from frameit.testing.artifacts import (
     FAILURE_STATUSES,
     SCHEMA_VERSION,
@@ -30,6 +31,7 @@ from frameit.testing.artifacts import (
     utc_now,
     write_summary,
 )
+from frameit.utils.diagnostics import format_message, tag_error
 
 
 @dataclass(frozen=True)
@@ -135,6 +137,7 @@ def _worker_entry(case: dict, log_path: str, completion_path: str, log_level: st
                     {
                         "ok": False,
                         "status": "INPUT_CHANGED",
+                        "code": "E1902",
                         "input_changes": changes,
                         "reason": "Planned inputs changed before opening",
                         "products": [],
@@ -159,23 +162,25 @@ def _worker_entry(case: dict, log_path: str, completion_path: str, log_level: st
                 metadata.update(
                     ok=False,
                     status="INPUT_CHANGED",
+                    code="E1902",
                     input_changes=changes,
                     reason="Planned inputs changed during execution",
                 )
             atomic_json(Path(completion_path), metadata)
         except BaseException as exc:
+            tag_error(exc, "E1903")
             traceback.print_exc()
             atomic_json(
                 Path(completion_path),
                 {
                     "ok": False,
                     "status": "RUN_FAILED",
+                    "code": primary_error_code(exc),
                     "products": [],
                     "duration_s": round(time.monotonic() - started, 6),
                     "reason": f"{type(exc).__name__}: {exc}",
                     "exception": {
-                        "type": type(exc).__name__,
-                        "message": str(exc),
+                        **error_record(exc),
                         "traceback": traceback.format_exc(),
                     },
                 },
@@ -197,6 +202,7 @@ def _execute_case(case: dict, output: Path, log_level: str | None) -> dict:
     if changes:
         return {
             "status": "INPUT_CHANGED",
+            "code": "E1902",
             "exit_code": 1,
             "products": [],
             "duration_s": 0.0,
@@ -240,9 +246,10 @@ def _execute_case(case: dict, output: Path, log_level: str | None) -> dict:
     except Exception as exc:
         _terminate_worker(process)
         with log_path.open("a", encoding="utf-8") as stream:
-            stream.write(f"Worker launch failed: {exc}\n")
+            stream.write(format_message("E1903", f"Worker launch failed: {exc}\n"))
         return {
             "status": "WORKER_FAILED",
+            "code": "E1903",
             "exit_code": 1,
             "products": [],
             "duration_s": round(time.monotonic() - started, 6),
@@ -252,6 +259,7 @@ def _execute_case(case: dict, output: Path, log_level: str | None) -> dict:
     if worker_exit != 0 or not completion_path.is_file():
         return {
             "status": "WORKER_FAILED",
+            "code": "E1903",
             "exit_code": 1,
             "worker_exit_code": worker_exit,
             "products": [],
@@ -263,6 +271,7 @@ def _execute_case(case: dict, output: Path, log_level: str | None) -> dict:
     except (OSError, ValueError) as exc:
         return {
             "status": "WORKER_FAILED",
+            "code": "E1903",
             "exit_code": 1,
             "worker_exit_code": worker_exit,
             "products": [],
@@ -278,6 +287,7 @@ def _execute_case(case: dict, output: Path, log_level: str | None) -> dict:
         result.update(
             ok=False,
             status="INPUT_CHANGED",
+            code="E1902",
             exit_code=1,
             input_changes=changes,
             reason="Planned inputs changed during execution",
@@ -300,6 +310,8 @@ def _preflight_result(case: dict, output: Path, *, plan_only: bool) -> dict:
         else (1 if status == "MISSING_REQUIRED_INPUT" else 0),
         "duration_s": 0.0,
         "reason": case.get("reason", ""),
+        **({"code": case.get("code", "E1902")}
+           if status in {"INVALID_INPUT", "MISSING_REQUIRED_INPUT"} else {}),
         "config": f"configs/{case['id']}.yaml",
         "output_dir": f"cases/{case['id']}/products",
         "log": f"cases/{case['id']}/logs/frameit.log",
@@ -383,6 +395,10 @@ def _publish_run(
             )
         ),
     }
+    if report["exit_code"]:
+        report["code"] = "E0002" if interrupted else next((
+            case["code"] for case in checkpoints if case["exit_code"] and case.get("code")
+        ), "E1903")
     atomic_json(output / "run.json", report)
     write_summary(output / "summary.tsv", checkpoints)
     return report
@@ -444,18 +460,23 @@ def run_matrix(
 
     mode = "ci" if ci else "full"
     if profile not in {"core", "full"}:
-        raise ValueError("profile must be 'core' or 'full'")
+        raise tag_error(ValueError("profile must be 'core' or 'full'"), "E1902")
     if input_policy not in {"strict", "available"}:
-        raise ValueError("input_policy must be 'strict' or 'available'")
+        raise tag_error(ValueError("input_policy must be 'strict' or 'available'"), "E1902")
     data_root = Path(data_root).expanduser().resolve()
     output = Path(output).expanduser().resolve()
     if output == data_root or data_root in output.parents or output in data_root.parents:
-        raise ValueError("Data and matrix output trees must not overlap")
+        raise tag_error(ValueError("Data and matrix output trees must not overlap"), "E1804")
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
-        raise ValueError(f"Matrix output must be a fresh directory: {output}")
-    definitions = load_cases(mode=mode, profile=profile, patterns=tuple(cases))
+        raise tag_error(ValueError(f"Matrix output must be a fresh directory: {output}"), "E1802")
+    try:
+        definitions = load_cases(mode=mode, profile=profile, patterns=tuple(cases))
+    except ValueError as exc:
+        raise tag_error(exc, "E1902")
     if not definitions:
-        raise ValueError("No matrix cases match the requested mode/profile/selection")
+        raise tag_error(ValueError(
+            "No matrix cases match the requested mode/profile/selection"
+        ), "E1902")
     print(f"[PLAN] Resolving {len(definitions)} cases", flush=True)
     output.mkdir(parents=True, exist_ok=True)
     (output / "configs").mkdir()
@@ -500,6 +521,7 @@ def run_matrix(
             case = copy.deepcopy(definition)
             case.update(
                 preflight="INVALID_INPUT",
+                code=primary_error_code(tag_error(exc, "E1902")),
                 reason=f"Case resolution failed: {exc}",
                 input_files=[],
                 input_records=[],
@@ -511,7 +533,7 @@ def run_matrix(
         case.setdefault("input_records", [])
         case.setdefault("expected", {})
         if fixture_error and case["preflight"] != "EXCLUDED":
-            case.update(preflight="INVALID_INPUT", reason=fixture_error)
+            case.update(preflight="INVALID_INPUT", reason=fixture_error, code="E1902")
         _bind_fixture_hashes(case, fixture, data_root)
         try:
             config = SimulationConfig.from_mapping_with_model_preset(case["config"])
@@ -521,7 +543,8 @@ def run_matrix(
             case["effective_config"] = {}
             case["identity"] = None
             if case["preflight"] == "READY":
-                case.update(preflight="INVALID_INPUT", reason=f"Configuration is invalid: {exc}")
+                case.update(preflight="INVALID_INPUT", reason=f"Configuration is invalid: {exc}",
+                            code=primary_error_code(tag_error(exc, "E1902")))
         # Save user mapping separately from the effective preset/default view.
         config_path = output / "configs" / f"{case['id']}.yaml"
         config_path.write_text(
@@ -586,10 +609,13 @@ def run_matrix(
                     result["status"] = "PASS" if checks["ok"] else "OUTPUT_CHECK_FAILED"
                     result["exit_code"] = 0 if checks["ok"] else 1
                     result["reason"] = checks.get("reason", "")
+                    if not checks["ok"]:
+                        result["code"] = "E1903"
                     result["products"] = describe_products(executed.get("products", []), output)
                 except Exception as exc:
                     result.update(
                         status="OUTPUT_CHECK_FAILED",
+                        code=primary_error_code(tag_error(exc, "E1903")),
                         exit_code=1,
                         reason=f"Product inspection failed: {type(exc).__name__}: {exc}",
                         product_checks={"state": "failed", "checks": []},
@@ -612,6 +638,7 @@ def run_matrix(
         except KeyboardInterrupt:
             result.update(
                 status="INTERRUPTED",
+                code="E0002",
                 exit_code=130,
                 reason="User interruption",
                 finished_at=utc_now(),
@@ -622,18 +649,19 @@ def run_matrix(
             # A scheduler/IPC failure must still leave a durable case record.
             result.update(
                 status="WORKER_FAILED",
+                code=primary_error_code(tag_error(exc, "E1903")),
                 exit_code=1,
                 reason=f"Worker orchestration failed: {type(exc).__name__}: {exc}",
                 finished_at=utc_now(),
                 exception={
-                    "type": type(exc).__name__,
-                    "message": str(exc),
+                    **error_record(exc),
                     "traceback": traceback.format_exc(),
                 },
             )
         results[index] = result
         atomic_json(output / "cases" / case["id"] / "result.json", result)
-        print(f"[{result['status']}] {case['id']} {result.get('reason', '')}", flush=True)
+        message = f"[{result['status']}] {case['id']} {result.get('reason', '')}"
+        print(format_message(result["code"], message) if "code" in result else message, flush=True)
         _publish_run(plan, results, output, started_at, complete=False)
         if result["status"] in FAILURE_STATUSES and not keep_going:
             stopped = True

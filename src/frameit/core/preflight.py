@@ -916,6 +916,8 @@ def inventory_source(conf, name, *, resources=None):
             except (OSError, ValueError, ImportError) as exc:
                 if isinstance(exc, OSError):
                     tag_error(exc, "E1202")
+                elif not isinstance(exc, PreflightError):
+                    tag_error(exc, "E1207")
                 diagnostics = exception_diagnostics(
                     exc, path=f"sources.{name}.files",
                     expected="readable admitted source metadata", observed={"cause": str(exc)},

@@ -21,6 +21,8 @@ from frameit.processing.derived.wind import normalize_winds
 from frameit.processing.polar.metadata import preserve_coordinate_dependencies
 from frameit.processing.wind_reference import wind_pairs
 
+from frameit.utils.diagnostics import format_message
+
 logger = logging.getLogger(__name__)
 logging.getLogger("cfgrib").setLevel(logging.WARNING)
 
@@ -663,9 +665,11 @@ def concat_grib2ds_by_vert_coord(
     else:
         methods = [m for m in tracker_yaml.keys() if m == method]
         if not methods and warn:
-            logger.warning(
-                "Tracker method '%s' not found; no tracker block will be produced.", method
-            )
+                logger.warning(
+                    format_message(
+                        "W1507", "Tracker method '%s' not found; no tracker block will be produced."
+                    ), method,
+                )
     tracker_req_by_method: dict[str, dict[str, dict]] = {
         m: _parse_and_normalize(tracker_yaml.get(m, {}), dims_seen) for m in methods
     }

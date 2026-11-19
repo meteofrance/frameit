@@ -15,6 +15,8 @@ from .derived.wind import add_speed_from_uv_dict as add_speed_from_uv_dict
 from .dims_utils import horizontal_axes, normalize_dims_for_extraction
 from .polar.metadata import preserve_coordinate_dependencies
 
+from frameit.utils.diagnostics import format_message
+
 logger = logging.getLogger(__name__)
 
 
@@ -368,7 +370,9 @@ def _build_box_indexers(track_box: xr.Dataset, nx: int, ny: int, resolution_m: f
 
     if box_nx != 2 * nx_half + 1 or box_ny != 2 * ny_half + 1:
         logger.warning(
-            "Inconsistent box geometry: box_nx=%d, nx_half=%d; box_ny=%d, ny_half=%d",
+            format_message(
+                "W1504", "Inconsistent box geometry: box_nx=%d, nx_half=%d; box_ny=%d, ny_half=%d"
+            ),
             box_nx,
             nx_half,
             box_ny,
@@ -592,8 +596,10 @@ def _extract_box_for_dataset(
 
             else:
                 logger.warning(
-                    "Latitude/longitude have unexpected shapes (lat.ndim=%d, lon.ndim=%d); "
-                    "skipping lat/lon extraction for this dataset.",
+                    format_message(
+                        "W1504", "Latitude/longitude have unexpected shapes "
+                        "(lat.ndim=%d, lon.ndim=%d); skipping lat/lon extraction for this dataset."
+                    ),
                     lat_full.ndim,
                     lon_full.ndim,
                 )
@@ -601,7 +607,7 @@ def _extract_box_for_dataset(
 
         except Exception as exc:  # xarray broadcasting / indexing issues
             logger.warning(
-                "Failed to extract lat/lon box for dataset: %s",
+                format_message("W1504", "Failed to extract lat/lon box for dataset: %s"),
                 exc,
                 exc_info=logger.isEnabledFor(logging.DEBUG),
             )
@@ -652,7 +658,7 @@ def _extract_box_for_dataset(
                     )
         except Exception as exc:
             logger.warning(
-                "Failed to reorient y_box according to latitude: %s",
+                format_message("W1504", "Failed to reorient y_box according to latitude: %s"),
                 exc,
                 exc_info=logger.isEnabledFor(logging.DEBUG),
             )

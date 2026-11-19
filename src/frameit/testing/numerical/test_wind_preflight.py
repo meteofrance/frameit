@@ -200,8 +200,12 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
             assert operations == []
             assert "metadata says grid-aligned" not in Path(result.log_path).read_text()
         else:
+            from frameit.utils.diagnostics import diagnostic_path
+
             log = Path(result.log_path).read_text()
-            assert "[W1301]" in log and "metadata says grid-aligned" in log
+            warning = next(line for line in log.splitlines() if "metadata says grid-aligned" in line)
+            assert "[W1301]" in warning
+            assert diagnostic_path("W1301") == "troubleshooting/fields.html#w1301"
             assert len(operations) == 4
             assert all("missing" in operation["wind_reference_frame_override"]
                        for operation in operations)

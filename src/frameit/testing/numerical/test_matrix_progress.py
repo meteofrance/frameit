@@ -12,6 +12,17 @@ from frameit.testing.matrix import _execute_case
 
 
 class MatrixProgressTests(unittest.TestCase):
+    def test_missing_planned_input_is_reported_before_scheduling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            case = {"id": "missing", "input_records": [{
+                "path": str(output / "gone.nc"), "size_bytes": 4, "mtime_ns": 0,
+            }]}
+            result = _execute_case(case, output, None)
+            self.assertEqual(result["status"], "INPUT_CHANGED")
+            self.assertEqual(result["code"], "E1902")
+            self.assertFalse((output / "cases/missing/worker_result.json").exists())
+
     def test_quiet_worker_emits_heartbeat(self):
         class Worker:
             exitcode = 0

@@ -174,6 +174,7 @@ During quiet work, :ref:`execution-progress` reports the operation/source,
 completed counts and last recorded activity. Early preparation notices can
 appear on standard error before a run log exists. A repeated notice is not
 evidence that a native call is advancing or that the run has completed.
+See :doc:`../troubleshooting/run` for a run that stops without a code.
 
 4. Cancellation, retries and interpreting status
 ------------------------------------------------------------

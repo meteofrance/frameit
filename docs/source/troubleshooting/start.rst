@@ -1,6 +1,20 @@
 Start and environment
 =====================
 
+The command does not start
+--------------------------
+
+If the shell says it cannot find ``frameit``, run
+``command -v frameit``. Activate ``frameit_env`` first if you used
+the reference install. Then run ``frameit --help`` and ``frameit info``.
+Check the listed Python and FrameIt location. An editable install
+still needs the checkout it points to.
+
+If the shell cannot find ``conda``, open a shell where Conda is set
+up. Follow :doc:`../getting_started/installation`. If it works on
+your computer but not in a job, check the job's environment and
+working directory. See :doc:`../getting_started/hpc`.
+
 .. _e0001:
 
 E0001: Command or option not accepted

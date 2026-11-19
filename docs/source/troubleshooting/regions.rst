@@ -3,7 +3,7 @@ Regions and tracks
 
 .. _e1501:
 
-E1501: A region centre is outside a selected grid
+E1501: A region centre could not be used
 ----------------------------------------------------------------------
 
 Read the source and centre in the error. Check longitude, latitude,
@@ -64,6 +64,26 @@ domain and the method's quality conditions at that time. The accepted
 track does not include the rejected part. Do not fill its gaps to
 make it look complete. See :doc:`../reference/tracking`.
 
+.. _w1503:
+
+W1503: FrameIt could not calculate track motion
+----------------------------------------------------------------------
+
+Read the named time dimension, position, or coordinate in the log.
+Check that the track centres have valid times and geographic
+coordinates on the selected grid. Do not assume that a track with
+centres also has usable speed or motion direction.
+
+.. _w1504:
+
+W1504: The extraction window has unexpected grid coordinates
+----------------------------------------------------------------------
+
+Check the source grid and the extracted box named in the warning.
+Confirm that its dimensions, orientation, longitude and latitude
+are what your analysis needs. Do not use a box index as a geographic
+coordinate. Run a small selection and check it with an ordinary reader.
+
 .. _w1505:
 
 W1505: An older Python tracker argument has a misleading name
@@ -72,3 +92,22 @@ W1505: An older Python tracker argument has a misleading name
 An older Python caller passed ``resolution_km`` to ``PressureWindTracker``.
 It has always meant metres in that call. Pass ``grid_spacing_m`` with
 the distance in metres. Do not divide an existing metre value by 1,000.
+
+.. _w1506:
+
+W1506: An older UTrack caller did not detect a centre
+----------------------------------------------------------------------
+
+The legacy caller returned the index pair ``(0, 0)`` for that
+sample. It is not a detected centre. Do not use it as one or try to
+make UTrack run a v3 request. Check :ref:`e1502` for supported choices.
+
+.. _w1507:
+
+W1507: An older reader did not create the tracker input group
+----------------------------------------------------------------------
+
+The named tracker did not match an input group in that caller.
+Check which groups are present. Do not expect tracking fields in
+a group the reader did not create. For current YAML, use
+:doc:`../reference/tracking` to choose inputs and a method.

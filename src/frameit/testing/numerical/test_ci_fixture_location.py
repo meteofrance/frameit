@@ -30,5 +30,6 @@ def test_invalid_explicit_ci_fixture_never_falls_back(tmp_path, monkeypatch, val
     (tmp_path / "not-a-directory").write_text("not fixture data")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("FRAMEIT_CI_DATA_ROOT", value)
-    with pytest.raises(ValueError, match="FRAMEIT_CI_DATA_ROOT.*directory"):
+    with pytest.raises(ValueError, match="FRAMEIT_CI_DATA_ROOT.*directory") as exc:
         ci_dataset_root()
+    assert exc.value.frameit_code == "E1902"

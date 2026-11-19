@@ -73,3 +73,4 @@ products with an ordinary NetCDF/Zarr reader. Keep ``run-request.yaml``,
 See :doc:`../task_guides/fixed_region` for a worked extraction,
 :doc:`../user_guide/configuration_file` for settings, and
 :doc:`../user_guide/output_files` for output contents and completion states.
+See :doc:`../troubleshooting` if a check fails or a result looks wrong.
