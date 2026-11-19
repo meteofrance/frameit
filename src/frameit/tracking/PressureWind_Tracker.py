@@ -243,10 +243,12 @@ class PressureWindTracker(TcTracker):
         if resolution_km is not None:
             import warnings
 
+            from frameit.utils.diagnostics import format_message
+
             if grid_spacing_m is not None:
                 raise ValueError("Supply grid_spacing_m, not both spacing arguments")
             warnings.warn(
-                "resolution_km historically means metres; use grid_spacing_m",
+                format_message("W1505", "resolution_km historically means metres; use grid_spacing_m"),
                 DeprecationWarning, stacklevel=2,
             )
             grid_spacing_m = resolution_km

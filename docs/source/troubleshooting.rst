@@ -11,7 +11,10 @@ configuration and logs with the attempt. Use the matching section below.
    troubleshooting/start
    troubleshooting/configuration
    troubleshooting/inputs
+   troubleshooting/fields
    troubleshooting/time
+   troubleshooting/regions
+   troubleshooting/polar
 
 Configuration fails before inputs open
 --------------------------------------

@@ -93,11 +93,14 @@ def require_executable_products(binding, source):
 
 def polar_field_options(metadata, options, conf, context):
     """Resolve methods from stored-value evidence, not field names or array dtype."""
+    from frameit.utils.diagnostics import tag_error
+
     attrs, origins = metadata["attributes"], metadata["origins"]
     kind = attrs.get("kind")
     if kind not in {"continuous", "categorical"}:
-        raise ValueError(
-            f"{context}: polar sampling needs proven kind; declare field_metadata.kind")
+        raise tag_error(ValueError(
+            f"{context}: polar sampling needs proven kind; declare field_metadata.kind"
+        ), "E1603")
     method = options.get("interpolation", "nearest" if kind == "categorical" else "bilinear")
     if kind == "categorical" and method != "nearest":
         raise ValueError(f"{context}: categorical fields require nearest interpolation")

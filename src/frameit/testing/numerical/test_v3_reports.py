@@ -219,6 +219,7 @@ def test_unfinished_inspection_lists_copyable_selectors_without_binding(tmp_path
         assert set(binding["products"]["model_grid"]) == {name}
     validation = project(collect(raw))
     assert validation["status"] == "error"
+    assert validation["errors"][0]["code"] == "E1301"
     assert "select" in validation["errors"][0]["repairs"][0].lower()
 
 

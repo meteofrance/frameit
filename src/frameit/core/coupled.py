@@ -459,10 +459,10 @@ def _prepare_v3_regions(conf, children, plans):
                      for record in alignment["sources"][atmosphere]["associations"]})
         support["operation_time_count"] = count
         if support["method"] == "pressure_centroid" and count < 2:
-            raise ValueError(
+            raise tag_error(ValueError(
                 "pressure_centroid requires at least two associated operation times; "
                 f"region.sources_coupling_time_association={conf.time_alignment!r} "
-                f"retains {count} for source {atmosphere!r}")
+                f"retains {count} for source {atmosphere!r}"), "E1503")
     conf.add_parameter("time_alignment", _association_report(alignment))
     conf.add_parameter("region_alignment", alignment)
     if "center" in region:
@@ -720,7 +720,9 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
         failure._binding_inputs = facts, {name: children[name] for name in plans}, plans
         raise failure
     if conf.yaml_config["region"].get("tracker") and "atmosphere" not in types:
-        raise ValueError("region.tracker requires an atmospheric source in the selected inventory")
+        raise tag_error(ValueError(
+            "region.tracker requires an atmospheric source in the selected inventory"
+        ), "E1503")
     if conf.yaml_config["region"].get("tracker"):
         from frameit.tracking.tracker_core import resolve_tracker_support
 
@@ -836,9 +838,14 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                             and binding.get("polar_plan", {}).get("status") == "prepared"
                             and not binding["deferred_checks"])
                 if binding["status"] != "bound" and not prepared:
-                    raise ValueError(
+                    failure = ValueError(
                         f"sources.{name}: cannot execute until requests bind to metadata "
                         f"and methods: {binding['deferred_checks']}")
+                    if not child.source_requests[name]["exports"] and not plans[name].get(
+                        "tracker_support"
+                    ):
+                        tag_error(failure, "E1301")
+                    raise failure
             except (OSError, ValueError) as exc:
                 diagnostics = exception_diagnostics(
                     exc, path=f"sources.{name}",
@@ -1267,8 +1274,10 @@ def _mapped_track(track, source, conf):
         lat, lon = lat.transpose(*axes), lon.transpose(*axes)
     for latitude, longitude in zip(track.lat.values, track.lon.values, strict=True):
         if not _inside_grid(lat, lon, float(latitude), float(longitude), source, conf):
-            raise ValueError("A coupled geographic centre is outside a selected source grid; "
-                             "no edge-point substitution or spatial time skipping is permitted")
+            raise tag_error(ValueError(
+                "A coupled geographic centre is outside a selected source grid; "
+                "no edge-point substitution or spatial time skipping is permitted"
+            ), "E1501")
     geography = xr.Dataset({conf.name_latitude: lat, conf.name_longitude: lon})
     return locate_track(track, geography, axes=(conf.name_lat_dim, conf.name_lon_dim),
                         lat_name=conf.name_latitude, lon_name=conf.name_longitude)

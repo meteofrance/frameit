@@ -24,6 +24,8 @@ from .multifield_vortex import (
 from .pressure_centroid import GEOD
 from .tracker_core import TcTracker, register_tracker
 
+from frameit.utils.diagnostics import format_message, tag_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -145,10 +147,12 @@ class MultifieldVortexTracker(TcTracker):
                     hint = ("500/700/850-hPa steering requires a 1000-km influence disk"
                             if quality == 8 else "check native-level masks, pressure/circulation "
                             "structure, domain coverage and QC settings")
-                    raise ValueError(f"multifield_vortex at {times[k]}: {reason}; "
-                                     f"{hint}")
-                logger.warning("multifield_vortex terminated at %s: %s (%d/%d accepted times)",
-                               times[k], reason, len(records), len(times))
+                    raise tag_error(ValueError(
+                        f"multifield_vortex at {times[k]}: {reason}; {hint}"
+                    ), "E1503")
+                logger.warning(format_message(
+                    "W1502", "multifield_vortex terminated at %s: %s (%d/%d accepted times)"),
+                                times[k], reason, len(records), len(times))
                 break
             if records:
                 dt = float((times[k] - records[-1]["time"]) / np.timedelta64(1, "s"))

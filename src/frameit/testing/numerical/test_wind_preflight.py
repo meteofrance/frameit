@@ -124,7 +124,11 @@ def test_missing_mnh_projection_headers_preflight_never_reads_winds(frame):
 @pytest.mark.parametrize("frame", ["grid", "earth"])
 @pytest.mark.parametrize("representation", ["native", "earth_centered"])
 def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, representation):
+    from copy import deepcopy
+
     from frameit.core.execution import ExecutionOptions, execute_simulation
+    from frameit.core.preflight import collect_preflight
+    from frameit.core.reports import PreflightError
 
     source, _ = native_vortex(n=9)
     source = source.drop_vars([n for n in ("BETA", "RPK", "LON0") if n in source])
@@ -136,7 +140,7 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
     pair = {"u": "UT_ZM", "v": "VT_ZM", "basis": frame}
     if frame == "grid":
         pair["rotation"] = {"method": "mesonh_projection", "BETA": 0, "RPK": 0, "LON0": 54.2}
-    conf = SimulationConfig.from_mapping_with_model_preset({
+    raw = {
         "schema_version": 3,
         "sources": {"atmosphere": {
             "model": "mesonh", "files": str(tmp_path / "native.nc"), "wind_pairs": [pair],
@@ -149,7 +153,21 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
                    "width_km": {"x": 2000, "y": 2000}},
         "products": {"model_grid": True},
         "output": {"directory": str(tmp_path / "output")},
-    })
+    }
+    if frame == "grid" and representation == "earth_centered":
+        missing = deepcopy(raw)
+        missing["sources"]["atmosphere"]["wind_pairs"][0]["rotation"] = {
+            "method": "mesonh_projection",
+        }
+        request = SimulationConfig.from_mapping_with_model_preset(missing)
+        error, = collect_preflight(request).errors
+        assert error.code == "E1306"
+        assert "BETA, RPK, LON0" in error.message
+        with pytest.raises(PreflightError) as exc:
+            execute_simulation(request)
+        assert exc.value.diagnostics[0].code == "E1306"
+        assert not request.output_dir.exists()
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
     result = execute_simulation(conf, ExecutionOptions(synchronous_export=True))
     assert result.ok
     path = next(p["path"] for p in result.products
@@ -167,6 +185,7 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
                 assert "wind_reference_frame_override" not in reopened[name].attrs
             elif frame == "earth":
                 assert "missing" in reopened[name].attrs["wind_reference_frame_override"]
+                assert "[W1301]" not in reopened[name].attrs["wind_reference_frame_override"]
                 assert reopened[name].attrs["source_standard_name"] == source[name].attrs["standard_name"]
             elif representation == "earth_centered":
                 assert reopened[name].attrs["rotation_LON0_degrees"] == 54.2
@@ -181,7 +200,8 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
             assert operations == []
             assert "metadata says grid-aligned" not in Path(result.log_path).read_text()
         else:
-            assert "metadata says grid-aligned" in Path(result.log_path).read_text()
+            log = Path(result.log_path).read_text()
+            assert "[W1301]" in log and "metadata says grid-aligned" in log
             assert len(operations) == 4
             assert all("missing" in operation["wind_reference_frame_override"]
                        for operation in operations)

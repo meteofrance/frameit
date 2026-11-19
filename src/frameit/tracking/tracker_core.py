@@ -12,6 +12,7 @@ from typing import ClassVar
 import xarray as xr
 
 from frameit.core.settings_class import SimulationConfig
+from frameit.utils.diagnostics import tag_error
 
 
 @dataclass
@@ -415,7 +416,8 @@ def resolve_tracker_support(conf, source):
         )
 
         if source["format"] != "netcdf":
-            raise ValueError(f"{method}: native Meso-NH NetCDF metadata is required")
+            raise tag_error(ValueError(f"{method}: native Meso-NH NetCDF metadata is required"),
+                            "E1502")
         conf.wind_pairs = [
             {**{key: value for key, value in pair.items() if key != "basis"},
              "reference_frame": pair["basis"],
@@ -480,7 +482,8 @@ def resolve_tracker_support(conf, source):
                     "pending execution: physical brackets, masks, geometry and convergence")}
     if (method not in {"wind_pressure", "pressure_centroid", "multifield_vortex"}
             or source["format"] == "fa"):
-        raise ValueError(f"{method}: selected tracker method support is not yet executable")
+        raise tag_error(ValueError(f"{method}: selected tracker method support is not yet executable"),
+                        "E1502")
     names = (("MSLP", "UM10", "VM10") if source["model"] == "mesonh" else
              ("prmsl", "u10", "v10"))
     if method != "wind_pressure":

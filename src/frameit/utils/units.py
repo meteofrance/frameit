@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from frameit.utils.diagnostics import tag_error
 
 def unit_key(value):
     return str(value or "").lower().replace(" ", "").replace("−", "-")
@@ -40,13 +41,16 @@ def convert_units(da, quantity, *, target=None, assumed=None):
     key = unit_key(source)
     destination = target or canonical
     if key not in factors or unit_key(destination) not in factors:
-        raise ValueError(f"{da.name}: unsupported {quantity} units {declared!r}")
+        raise tag_error(ValueError(f"{da.name}: unsupported {quantity} units {declared!r}"),
+                        "E1304")
     factor = factors[key] / factors[unit_key(destination)]
     limits = da.attrs.keys() & {"valid_min", "valid_max", "valid_range", "actual_range"}
     if factor != 1 and limits and any(
             key in metadata for metadata in (da.attrs, da.encoding)
             for key in ("scale_factor", "add_offset")):
-        raise ValueError(f"{da.name}: packed validity/range metadata requires explicit unpacking")
+        raise tag_error(ValueError(
+            f"{da.name}: packed validity/range metadata requires explicit unpacking"
+        ), "E1304")
     result = da.copy(deep=False) if factor == 1 else da * factor
     result.attrs = dict(da.attrs)
     if factor != 1:

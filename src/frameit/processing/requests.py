@@ -16,6 +16,7 @@ import xarray as xr
 
 from frameit.core.configuration import field_selection
 from frameit.processing.polar.metadata import preserve_coordinate_dependencies
+from frameit.utils.diagnostics import format_message, tag_error
 from frameit.utils.units import UNITS, convert_units, unit_key
 
 logger = logging.getLogger(__name__)
@@ -277,6 +278,7 @@ def build_group_ds(
                          "deptht", "depthu", "depthv", "depthw", "s_rho", "s_w"}
 
     def _warn(msg: str) -> None:
+        msg = format_message("W1304", msg)
         if logger is not None:
             logger.warning(msg)
         else:
@@ -437,7 +439,9 @@ def _coordinate_units(descriptor, target, *, inherited=None):
         quantity = next((q for q, (_, factors) in UNITS.items()
                          if unit_key(source) in factors and unit_key(target) in factors), None)
         if quantity is None:
-            raise ValueError(f"Incompatible vertical coordinate units {source!r} and {target!r}")
+            raise tag_error(ValueError(
+                f"Incompatible vertical coordinate units {source!r} and {target!r}"
+            ), "E1304")
         factors = UNITS[quantity][1]
         factor = factors[unit_key(source)] / factors[unit_key(target)]
         converted = convert_units(xr.DataArray(0., attrs={**attrs, "units": source}),
@@ -473,6 +477,13 @@ def _level_roundoff(descriptor, converted, factor):
 
 
 def _bind_vertical(axis, selector, context, warnings):
+    try:
+        return _bind_vertical_selection(axis, selector, context, warnings)
+    except ValueError as exc:
+        raise tag_error(exc, "E1303")
+
+
+def _bind_vertical_selection(axis, selector, context, warnings):
     dim, name = axis["dimension"], axis["coordinate"]
     descriptor = axis["descriptor"]
     source_units = descriptor["attributes"].get("units") if descriptor else None
@@ -484,6 +495,7 @@ def _bind_vertical(axis, selector, context, warnings):
                    f"to use requested {units!r} without rescaling (user-supplied assumption)."
                    if units else f"{context}: {name or dim} has no source or requested units; "
                    "vertical units remain unknown.")
+        warning = format_message("W1303", warning)
         if warning not in warnings:
             warnings.append(warning)
     values, tolerance = None, None
@@ -581,8 +593,10 @@ def _coordinate_support(source, field, record):
         needed.update(grid["coordinates"])
     for name in sorted(needed):
         if name not in grid["coordinates"]:
-            raise ValueError(f"{field['name']}: coordinate {name} support missing on owning grid "
-                             f"{record['grid_id']}")
+            raise tag_error(ValueError(
+                f"{field['name']}: coordinate {name} support missing on owning grid "
+                f"{record['grid_id']}"
+            ), "E1308")
         providers = grid.get("coordinate_providers", {}).get(name, [])
         locator = record["locator"]
         available = any(
@@ -597,8 +611,10 @@ def _coordinate_support(source, field, record):
                     for sample in provider["samples"])
             for provider in providers)
         if not available:
-            raise ValueError(f"{field['name']}: coordinate {name} support unavailable for owning "
-                             f"provider/sample {locator} at {record['time']}")
+            raise tag_error(ValueError(
+                f"{field['name']}: coordinate {name} support unavailable for owning "
+                f"provider/sample {locator} at {record['time']}"
+            ), "E1308")
 
 
 def _array_vertical_support(parent, positions, dependency, support, units, context):
@@ -614,7 +630,9 @@ def _array_vertical_support(parent, positions, dependency, support, units, conte
         return
     left_units, right_units = (c["attributes"].get("units") for c in (left, right))
     if not units and bool(unit_key(left_units)) != bool(unit_key(right_units)):
-        raise ValueError(f"{context}: vertical unit support needs explicit variables.levels.units")
+        raise tag_error(ValueError(
+            f"{context}: vertical unit support needs explicit variables.levels.units"
+        ), "E1304")
     target = units or left_units
     lv, _, lf = _coordinate_units(left, target)
     rv, _, rf = _coordinate_units(right, target)
@@ -782,7 +800,9 @@ def resolve_field_metadata(attributes, declaration, context, *, temporal_names=(
             temporal.append(kinds.get(method, method))
     facts = {value for value in temporal if value is not None}
     if len(facts) > 1:
-        raise ValueError(f"{context}: contradictory source temporal metadata {sorted(facts)}")
+        raise tag_error(ValueError(
+            f"{context}: contradictory source temporal metadata {sorted(facts)}"
+        ), "E1305")
     if facts:
         attrs["temporal_kind"] = next(iter(facts))
         origins["temporal_kind"] = "input"
@@ -1293,7 +1313,9 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 mask_attrs = attrs["mask_rho"]
                 if (mask_attrs.get("option_0") != "land" or mask_attrs.get("option_1") != "water"
                         or probes["mask_rho"].dims != ("eta_rho", "xi_rho")):
-                    raise ValueError("CROCO mask_rho requires explicit static land/water support")
+                    raise tag_error(ValueError(
+                        "CROCO mask_rho requires explicit static land/water support"
+                    ), "E1308")
                 if "angle" not in geometry or geometry.angle.dims != ("eta_rho", "xi_rho"):
                     raise ValueError("CROCO current analysis requires rho-point angle")
                 convert_units(geometry.angle, "angle")
@@ -1334,7 +1356,9 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                                      "m s-1")
                 if any(records[u][0].get(key) != records[v][0].get(key)
                        for key in ("time_bounds", "temporal_metadata", "calendar")):
-                    raise ValueError(f"{name}: wind inputs have incompatible temporal definitions")
+                    raise tag_error(ValueError(
+                        f"{name}: wind inputs have incompatible temporal definitions"
+                    ), "E1305")
                 headers = xr.Dataset({n: prepared[n] for n in (u, v)}).assign_coords(
                     geometry.coords)
                 headers.attrs = dict(geometry.attrs)
@@ -1344,7 +1368,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 pair = operation_pair(headers, source, (u, v), rotation_settings)
                 override = wind_frame_override(headers, pair, rotation_settings)
                 if override:
-                    binding["warnings"].append(override)
+                    binding["warnings"].append(format_message("W1301", override))
             anchor = next(iter(inputs.values()))
             result = prepared[anchor]
             result_geometry = geometry.assign_coords({
@@ -1609,8 +1633,9 @@ def _initial_gap_clock(dataset, source):
 
 
 def _warn_archived_altitude(binding, context, axis, term):
-    warning = (f"{context}: {axis} native labels retained; altitude formula archived "
-               f"because {term} is missing from the selected samples.")
+    warning = format_message(
+        "W1302", f"{context}: {axis} native labels retained; altitude formula archived "
+        f"because {term} is missing from the selected samples.")
     if warning not in binding["warnings"]:
         binding["warnings"].append(warning)
 
@@ -1636,7 +1661,8 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
     for category, names in request["fields"].items():
         for name in names:
             if name in declared:
-                raise ValueError(f"{context}: duplicate field request by identity: {name}")
+                raise tag_error(ValueError(f"{context}: duplicate field request by identity: {name}"),
+                                "E1302")
             declared[name] = category
     method_selectors = required_inputs if isinstance(required_inputs, dict) else {}
     method_inputs = required_inputs if isinstance(required_inputs, dict) else {
@@ -1661,8 +1687,10 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                           if native_field_group(source, source["fields"][r["field_id"]], r) == group]
         identities = {r["field_id"] for _, r in candidates}
         if not identities:
-            raise ValueError(f"{context}: {name} unavailable in selected record inventory; "
-                             "dependencies cannot widen files or times")
+            raise tag_error(ValueError(
+                f"{context}: {name} unavailable in selected record inventory; "
+                "dependencies cannot widen files or times"
+            ), "E1302")
         if len(identities) > 1:
             definitions = [{"identity": identity, **{
                 key: source["fields"][identity].get(key) for key in (
@@ -1670,16 +1698,19 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                 "providers": sorted({r["locator"]["path"] for _, r in candidates
                                      if r["field_id"] == identity})}
                 for identity in sorted(identities)]
-            raise ValueError(f"{context}: distinct fields share requested name {name!r}; "
-                             f"conflicting fields {definitions}; "
-                              "use an explicit vertical group; qualification must identify "
-                               "exactly one field. For files in the same group, "
-                               "select or regenerate a consistent sequence")
+            raise tag_error(ValueError(
+                f"{context}: distinct fields share requested name {name!r}; "
+                f"conflicting fields {definitions}; use an explicit vertical group; "
+                "qualification must identify exactly one field. For files in the same group, "
+                "select or regenerate a consistent sequence"
+            ), "E1302")
         field_id = next(iter(identities))
         # Generated method support keeps its native key and independent selector.
         if any(field_id == value[0] and name not in generated and other not in generated
                for other, value in resolved.items()):
-            raise ValueError(f"{context}: duplicate field request by resolved identity {field_id}")
+            raise tag_error(ValueError(
+                f"{context}: duplicate field request by resolved identity {field_id}"
+            ), "E1302")
         field = source["fields"][field_id]
         for _, record in candidates:
             clock = record["time"], record["cycle"]
@@ -1699,8 +1730,10 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                    if name not in method_inputs else set())
         if ({entry for entry in missing if entry[0] not in allowed}
                 or set(source["selected_times"]) - {r["time"] for _, r in candidates} - allowed):
-            raise ValueError(f"{context}: {name} unavailable at selected times/cycles/native axes; "
-                             f"missing support {sorted(missing, key=str)}")
+            raise tag_error(ValueError(
+                f"{context}: {name} unavailable at selected times/cycles/native axes; "
+                f"missing support {sorted(missing, key=str)}"
+            ), "E1302")
         resolved[name] = field_id, field, candidates
         for axis, term in field.get("incomplete_altitude_formulas", {}).items():
             _warn_archived_altitude(binding, context, axis, term)

@@ -330,15 +330,17 @@ def _execute_owned_simulation(config, options, input_files, progress, logs, leve
                 "in the configuration before execution"
             )
         from frameit.core.coupled import bind_sources
+        from frameit.core.preflight import preflight_result
+        from frameit.core.reports import PreflightError
 
         progress.update("preparing metadata/selected source plans",
                         source=next(iter(config.sources)) if len(config.sources) == 1 else None)
         try:
             prepared_sources = bind_sources(config, execution_options=effective)
+        except PreflightError:
+            raise
         except ValueError as exc:
             raise ValueError(f"Cannot bind source requests to metadata: {exc}") from exc
-        from frameit.core.preflight import preflight_result
-        from frameit.core.reports import PreflightError
 
         selected_plan = preflight_result(config, prepared_sources[0], command="run")
         if selected_plan.errors:

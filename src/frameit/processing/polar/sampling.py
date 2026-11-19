@@ -11,6 +11,8 @@ from copy import copy
 
 import numpy as np
 
+from frameit.utils.diagnostics import tag_error
+
 DEFAULT_MAX_POLAR_POINTS = 2_000_000
 
 
@@ -40,11 +42,11 @@ def validate_sampling_options(count, step_deg, max_points):
 
 def check_point_budget(points: int, limit: int) -> None:
     if points > limit:
-        raise ValueError(
+        raise tag_error(ValueError(
             f"Polar target grid requires {points} points, exceeding "
             f"products.polar.processing.max_target_points={limit}. "
             "Choose coarser sampling or explicitly increase that limit."
-        )
+        ), "E1604")
 
 
 def angular_tolerance(values, cycle):
@@ -143,6 +145,13 @@ def sampling_axes(conf):
 
 def bind_polar_plan(source, request, binding, conf, *, radial_step_km=None):
     """Resolve actual preparation, interpolation evidence and a crop-independent target."""
+    try:
+        return _bind_polar_plan(source, request, binding, conf, radial_step_km=radial_step_km)
+    except ValueError as exc:
+        raise tag_error(exc, "E1602")
+
+
+def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
     from frameit.processing.polar.contracts import polar_field_options, polar_source_geometry
     from frameit.processing.polar.polar_proj import require_polar_backend
     from frameit.processing.requests import resolve_field_metadata, source_field_metadata
@@ -235,12 +244,12 @@ def require_supported_radial_step(step, minimum_km, *, shared=False):
     """Report a round-trip-safe minimum for the actual selected input geometry."""
     if step < minimum_km * (1 - 1e-12):
         reference = "a participating native grid" if shared else "supported native spacing"
-        raise ValueError(
+        raise tag_error(ValueError(
             f"products.polar.radial_step_km={step} is finer than {reference} "
             f"({minimum_km!r} km); finer radial sampling is not supported yet. "
             f"For these input files, minimum supported radial_step_km={minimum_km!r} km. "
             "Use at least this value, or omit products.polar.radial_step_km "
-            "to use the supported native spacing.")
+            "to use the supported native spacing."), "E1601")
 
 
 def resolve_polar_sampling(source, binding, conf, *, radial_step_km=None):

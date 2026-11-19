@@ -766,6 +766,7 @@ def test_missing_utrack_dependencies_do_not_promise_executable_v3_support(tmp_pa
     facts, errors = _required_dependencies(conf)
     missing = [error for error in errors if error.path == "region.tracker"]
     assert len(missing) == 2
+    assert {error.code for error in missing} == {"E1502"}
     assert all(error.repairs == ["UTrack v3 execution is unavailable; select another tracker."]
                for error in missing)
     assert {fact["module"] for fact in facts if fact["path"] == "region.tracker"} == {

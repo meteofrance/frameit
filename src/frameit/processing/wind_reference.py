@@ -24,6 +24,8 @@ in testing/numerical/test_wind_reference.py; real-data qualification remains ope
 from __future__ import annotations
 
 import warnings
+
+from frameit.utils.diagnostics import format_message, tag_error
 from typing import Any
 
 import numpy as np
@@ -226,7 +228,7 @@ def validate_pair_frame(ds: xr.Dataset, pair: dict, conf: Any = None) -> str:
     if any(prepared) and not all(prepared):
         raise ValueError("Wind pair contains only one prepared component")
     if override:
-        warnings.warn(override, UserWarning, stacklevel=2)
+        warnings.warn(format_message("W1301", override), UserWarning, stacklevel=2)
     return "earth" if all(prepared) else source
 
 
@@ -363,16 +365,17 @@ def _mesonh_parameters(ds: xr.Dataset, rotation: dict) -> tuple[dict, dict]:
 def mesonh_projection_rotation(ds: xr.Dataset, conf: Any, rotation=None) -> xr.DataArray:
     """EPyGrAM/MNH conformal physical-vector convention; no map scaling."""
     if ("CARTESIAN" in ds and bool(ds.CARTESIAN.item())) or ds.attrs.get("CARTESIAN", False):
-        raise ValueError("mesonh_projection does not support CARTESIAN geometry")
+        raise tag_error(ValueError("mesonh_projection does not support CARTESIAN geometry"),
+                        "E1307")
     parameters, sources = _mesonh_parameters(ds, rotation or {})
     missing = [name for name in ("BETA", "RPK", "LON0") if name not in parameters]
     if missing:
-        raise ValueError(
+        raise tag_error(ValueError(
             "mesonh_projection rotation is missing required projection metadata: "
             f"{', '.join(missing)}. "
             "Set the known values in the YAML under sources.<name>.wind_pairs[].rotation "
             "(BETA/LON0 in degrees, RPK dimensionless); no defaults are assumed."
-        )
+        ), "E1306")
     beta, rpk, lon0 = (parameters[name] for name in ("BETA", "RPK", "LON0"))
     name = getattr(conf, "name_longitude", "longitude")
     if name not in ds:
@@ -394,19 +397,26 @@ def rotation_angle(ds: xr.Dataset, conf: Any, pair: dict) -> xr.DataArray:
     if method == "coordinate":
         name = rotation.get("coordinate")
         if not name or name not in ds:
-            raise ValueError(f"coordinate rotation requires named coordinate {name!r}")
+            raise tag_error(ValueError(f"coordinate rotation requires named coordinate {name!r}"),
+                            "E1307")
         angle = convert_units(ds[name], "angle")
     elif method == "geolocation":
-        angle = geolocation_rotation(ds, conf)
+        try:
+            angle = geolocation_rotation(ds, conf)
+        except ValueError as exc:
+            raise tag_error(exc, "E1307")
     elif method == "mesonh_projection":
         try:
             angle = mesonh_projection_rotation(ds, conf, rotation)
         except ValueError as error:
+            tag_error(error, "E1307")
             raise ValueError(f"Wind pair {pair['u']}/{pair['v']}: {error}") from error
     else:
-        raise ValueError(f"Grid wind requires explicit rotation method, got {method!r}")
+        raise tag_error(ValueError(
+            f"Grid wind requires explicit rotation method, got {method!r}"
+        ), "E1307")
     if not np.isfinite(angle).all():
-        raise ValueError(f"{method} wind rotation angle must be finite")
+        raise tag_error(ValueError(f"{method} wind rotation angle must be finite"), "E1307")
     return angle
 
 
@@ -422,7 +432,9 @@ def operation_pair(ds, source, names, conf):
         frames = [set(_metadata_frames(ds[n].attrs, n) + _metadata_frames(ds.attrs, "Dataset"))
                   for n in names]
         if len(frames[0]) != 1 or frames[0] != frames[1]:
-            raise ValueError("Wind basis missing or conflicting; declare sources.*.wind_pairs")
+            raise tag_error(ValueError(
+                "Wind basis missing or conflicting; declare sources.*.wind_pairs"
+            ), "E1307")
         pair = dict(u=names[0], v=names[1], group="operation",
                     reference_frame=next(iter(frames[0])))
     if pair["reference_frame"] == "grid" and not pair.get("rotation"):
@@ -431,16 +443,21 @@ def operation_pair(ds, source, names, conf):
         elif source["model"] == "croco":
             pair["rotation"] = {"method": "coordinate", "coordinate": "angle"}
         else:
-            raise ValueError("Grid winds require a declared supported rotation method")
+            raise tag_error(ValueError("Grid winds require a declared supported rotation method"),
+                            "E1307")
     if (pair.get("rotation") or {}).get("method") == "mesonh_projection":
         for key in ("BETA", "RPK", "LON0"):
             if key not in pair["rotation"] or key not in ds and key not in ds.attrs:
                 continue
             observed, _ = _mesonh_parameters(ds, {})
             if observed[key] != pair["rotation"][key]:
-                raise ValueError(
-                    f"mesonh_projection {key}: declaration conflicts with input geometry")
-    validate_pair_frame(ds, pair, conf)
+                raise tag_error(ValueError(
+                    f"mesonh_projection {key}: declaration conflicts with input geometry"
+                ), "E1307")
+    try:
+        validate_pair_frame(ds, pair, conf)
+    except ValueError as exc:
+        raise tag_error(exc, "E1307")
     if pair["reference_frame"] == "grid":
         rotation_angle(ds, conf, pair)
     return pair

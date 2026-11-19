@@ -11,6 +11,20 @@ from frameit.utils.logging import FrameitFormatter, configure_warnings, frameit_
 
 
 class LoggingTest(unittest.TestCase):
+    def test_scope_preserves_upstream_warning_as_upstream(self):
+        from frameit.utils.diagnostics import format_message
+
+        with tempfile.TemporaryDirectory() as directory:
+            with frameit_logging_scope(directory) as path:
+                warnings.simplefilter("always")
+                warnings.warn("upstream warning", UserWarning, stacklevel=1)
+                warnings.warn(format_message("W1301", "declared wind basis"),
+                              UserWarning, stacklevel=1)
+            text = Path(path).read_text()
+        upstream = next(line for line in text.splitlines() if "upstream warning" in line)
+        assert "UserWarning: upstream warning" in upstream and "[W" not in upstream
+        assert "UserWarning: [W1301] declared wind basis" in text
+
     def test_formatter_keeps_source_for_debug_only(self):
         record = logging.LogRecord("frameit.core.runner", logging.INFO, "runner.py", 42,
                                    "Loaded %d files", (3,), None)

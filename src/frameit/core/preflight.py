@@ -16,7 +16,6 @@ import numpy as np
 import xarray as xr
 
 from frameit.core.grid_geometry import resolve_geometry
-from frameit.utils.diagnostics import UNEXPECTED_ERROR, exception_code, tag_error
 from frameit.core.reports import (
     Diagnostic,
     PreflightError,
@@ -46,6 +45,7 @@ from frameit.processing.wind_reference import (
     wind_frame_override,
     wind_pairs,
 )
+from frameit.utils.diagnostics import exception_code, tag_error
 from frameit.utils.units import UNITS, convert_units, unit_key
 
 
@@ -1016,7 +1016,8 @@ def inventory_source(conf, name, *, resources=None):
             [f"Select files containing {', '.join(sorted(missing))}, "
              "or correct the required field names. "
              "Dependencies cannot widen the authored files/time selection."],
-            contexts=[{"source": name, "files": [entry["path"] for entry in entries]}])])
+             contexts=[{"source": name, "files": [entry["path"] for entry in entries]}],
+             code="E1302")])
     relevant_indices = {i for ref in needed for i, _ in candidates.get(ref, [])}
     relevant = [r for i, r in enumerate(records) if i in relevant_indices]
     if not relevant and not required and not tracker and not source.get("time"):
@@ -1268,7 +1269,7 @@ def _required_dependencies(conf, execution_options=None):
                   if path == "region.tracker" else
                   f"Install {installation} in the selected environment, or deselect this feature.")
         code = "E1004" if module == "xesmf" else (
-            "E1006" if path == "output.writer.engine" else UNEXPECTED_ERROR)
+            "E1006" if path == "output.writer.engine" else "E1502")
         fact, error = _installed_dependency(path, module, repair, code=code)
         facts.append(fact)
         if error:
@@ -1301,7 +1302,10 @@ def bind_source(conf, name, *, representations=None, required_inputs=(), resourc
         from frameit.tracking.tracker_core import resolve_tracker_support
 
         source.pop("tracker_support", None)
-        source["tracker_support"] = resolve_tracker_support(conf, source)
+        try:
+            source["tracker_support"] = resolve_tracker_support(conf, source)
+        except ValueError as exc:
+            raise tag_error(exc, "E1503")
         required_inputs = source["tracker_support"]["inputs"]
     from frameit.processing.requests import bind_source_operations
 
@@ -1923,7 +1927,7 @@ def preflight_result(conf, facts, *, command="validate"):
             "products", "No fields or trajectory selected for a product",
             "at least one selected product", conf.yaml_config["products"],
             ["Select fields in sources.<name>.variables, "
-             "or explicitly request a trajectory."]))
+              "or explicitly request a trajectory."], code="E1301"))
         result.deferred_checks.append(blocked_check(
             "plan", ["products"], "Product planning requires an explicit selection."))
     return result

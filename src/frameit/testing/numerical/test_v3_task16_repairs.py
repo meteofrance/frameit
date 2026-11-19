@@ -53,6 +53,7 @@ def test_validate_reports_a_copyable_input_dependent_radial_minimum(
         assert not collect_preflight(conf, schema_only=True).errors
     report = collect_preflight(conf)
     assert report.errors
+    assert {error.code for error in report.errors} == {"E1601"}
     message = "\n".join(error.message for error in report.errors)
     assert "not supported yet" in message
     found = re.search(r"minimum supported radial_step_km=([0-9.e+-]+)", message)

@@ -47,6 +47,7 @@ from frameit.processing.polar.regrid_plan import (
     PolarRegridPlanCache,
     validate_execution_options,
 )
+from frameit.utils.diagnostics import format_message, tag_error
 
 try:
     import xesmf as xe
@@ -63,10 +64,10 @@ _IGNORED_VERTICAL_KEYS = {
 
 def require_polar_backend():
     if xe is None:
-        raise ImportError(
+        raise tag_error(ImportError(
             "Polar products require xESMF/ESMF; install the optional polar dependencies "
             "or omit products.polar"
-        ) from _XESMF_IMPORT_ERROR
+        ), "E1004") from _XESMF_IMPORT_ERROR
 
 
 def verify_polar_target(dataset, plan, conf, source, centres):
@@ -416,7 +417,8 @@ def _get_polar_requests_variables_only(conf):
         elif isinstance(spec, dict):
             ignored = set(spec) & _IGNORED_VERTICAL_KEYS
             if ignored:
-                logger.warning("Polar vertical selections %s are ignored for %s", ignored, group)
+                logger.warning(format_message(
+                    "W1601", "Polar vertical selections %s are ignored for %s"), ignored, group)
             variables = spec.get("variables", []) or []
         else:
             raise TypeError(f"polar_variables[{group!r}] must be a dict or variable list")
