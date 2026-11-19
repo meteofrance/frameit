@@ -16,6 +16,7 @@ import numpy as np
 import xarray as xr
 
 from frameit.core.grid_geometry import resolve_geometry
+from frameit.utils.diagnostics import UNEXPECTED_ERROR, exception_code, tag_error
 from frameit.core.reports import (
     Diagnostic,
     PreflightError,
@@ -85,13 +86,15 @@ def _source_model(source, datasets, path, *, fmt):
             {"model": declared} if declared else "one unambiguous source model",
             {"models": sorted(models), "evidence": evidence},
             ["Select files with consistent model evidence; "
-             "correct model only from producer evidence."])])
+              "correct model only from producer evidence."], code="E1203")])
     model = declared or next(iter(models), None)
     if model is None:
-        raise ValueError(f"{path}: model has no unambiguous metadata evidence; "
-                         "declare sources.*.model")
+        raise tag_error(ValueError(
+            f"{path}: model has no unambiguous metadata evidence; declare sources.*.model"
+        ), "E1203")
     if model in {"nemo", "croco", "mesonh"} and fmt != "netcdf":
-        raise ValueError(f"{path}: {model} requires its admitted NetCDF file profile")
+        raise tag_error(ValueError(f"{path}: {model} requires its admitted NetCDF file profile"),
+                        "E1203")
     if not evidence:
         evidence.append({"declaration": model, "file_profile": fmt,
                          "scope": "declared model; not automatic model detection"})
@@ -120,7 +123,8 @@ def _decoded_clock(ds, path, *, model):
         raise PreflightError([Diagnostic(
             "input.clock", f"{name} must contain decoded timestamps",
             {"clock": "decoded timestamps"}, {"clock": name, "dtype": str(values.dtype)},
-            [f"Provide a CF-decodable {name} coordinate with units and calendar metadata."])])
+            [f"Provide a CF-decodable {name} coordinate with units and calendar metadata."],
+            code="E1401")])
     if values.size == 0 or values.dtype.kind == "M" and np.isnat(values).any():
         raise ValueError(f"{path}: missing sample timestamps in {name}")
     calendar = clock.encoding.get("calendar", clock.attrs.get("calendar", "standard"))
@@ -309,17 +313,31 @@ def _netcdf_inventory(path, source, resources):
     from frameit.io.grib_utils import normalize_isobaric_coordinates
     from frameit.io.netcdf_utils import mnh_altitude_terms
 
-    ds = normalize_isobaric_coordinates(resources.open_netcdf(
-        path, engine=source.get("reader", {}).get("engine", "h5netcdf")))
+    try:
+        ds = resources.open_netcdf(path, engine=source.get("reader", {}).get("engine", "h5netcdf"))
+    except ImportError as exc:
+        raise tag_error(exc, "E1006")
+    except OSError as exc:
+        raise tag_error(exc, "E1202")
+    ds = normalize_isobaric_coordinates(ds)
     model, evidence = _source_model(source, [ds], path, fmt="netcdf")
     if model == "nemo":
         if "time_counter" not in ds or ds.time_counter.dims != ("time_counter",):
-            raise ValueError(f"{path}: NEMO requires its native time_counter sample clock")
+            raise tag_error(ValueError(f"{path}: NEMO requires its native time_counter sample clock"),
+                            "E1401")
         if any(n not in ds or ds[n].dims != ("y", "x") for n in ("nav_lat", "nav_lon")):
-            raise ValueError(f"{path}: NEMO requires source-local (y, x) nav_lat/nav_lon geography")
+            raise tag_error(ValueError(
+                f"{path}: NEMO requires source-local (y, x) nav_lat/nav_lon geography"
+            ), "E1204")
     if model == "croco" and ds.attrs.get("type") != "CROCO history file":
-        raise ValueError(f"{path}: CROCO requires the admitted CROCO history file profile")
-    samples, time_names = _decoded_clock(ds, path, model=model)
+        raise tag_error(ValueError(f"{path}: CROCO requires the admitted CROCO history file profile"),
+                        "E1203")
+    try:
+        samples, time_names = _decoded_clock(ds, path, model=model)
+    except PreflightError:
+        raise
+    except ValueError as exc:
+        raise tag_error(exc, "E1401")
     temporal_dims = {dim for sample in samples for dim in sample["indexers"]}
     altitude_axes = {name: terms for name in ("level", "level_w") if model == "mesonh"
                      and name in ds.coords
@@ -463,7 +481,10 @@ def _grib_source_inventory(path, source):
     """Scan each message once; message offsets are the future payload read boundary."""
     from datetime import datetime
 
-    import eccodes as ec
+    try:
+        import eccodes as ec
+    except (ImportError, RuntimeError, OSError) as exc:
+        raise tag_error(exc, "E1002")
 
     from frameit.io.grib_utils import GRIB_PRESSURE_UNITS
 
@@ -480,10 +501,13 @@ def _grib_source_inventory(path, source):
 
                 shape = int(get("Nj", 0)), int(get("Ni", 0))
                 if min(shape) < 1 or np.prod(shape, dtype=object) != int(get("numberOfPoints", 0)):
-                    raise ValueError(f"{path}: GRIB grid is not an admitted rectangular Ni/Nj grid")
+                    raise tag_error(ValueError(
+                        f"{path}: GRIB grid is not an admitted rectangular Ni/Nj grid"
+                    ), "E1204")
                 signature = get("md5GridSection")
                 if not signature:
-                    raise ValueError(f"{path}: GRIB has no identifiable grid section")
+                    raise tag_error(ValueError(f"{path}: GRIB has no identifiable grid section"),
+                                    "E1204")
                 if signature not in horizontal:
                     lat = np.asarray(ec.codes_get_array(handle, "latitudes"))
                     lon = np.asarray(ec.codes_get_array(handle, "longitudes"))
@@ -535,7 +559,9 @@ def _grib_source_inventory(path, source):
                 seconds = {"s": 1, "m": 60, "h": 3600, "3h": 10800, "6h": 21600,
                            "12h": 43200, "D": 86400}.get(unit)
                 if seconds is None:
-                    raise ValueError(f"{path}: unsupported GRIB forecast step unit {unit!r}")
+                    raise tag_error(ValueError(
+                        f"{path}: unsupported GRIB forecast step unit {unit!r}"
+                    ), "E1401")
                 endpoints = tuple(
                     cycle + np.timedelta64(
                         round(ec.codes_get_double(handle, key) * seconds * 1e6), "us")
@@ -558,7 +584,7 @@ def _grib_source_inventory(path, source):
                 ec.codes_release(handle)
             index += 1
     if not records:
-        raise ValueError(f"{path}: no GRIB records")
+        raise tag_error(ValueError(f"{path}: no GRIB records"), "E1202")
     for field_id, field in fields.items():
         field["levels"] = sorted({r["level"] for r in records if r["field_id"] == field_id})
     return {"model": model, "physical_type": "atmosphere", "profile": None,
@@ -583,16 +609,22 @@ def _fa_source_inventory(path, source, conf):
     surface = bool(info["surfex_metadata"])
     if surface and (not layout_definition(info["surfex_metadata"])
                     or info["surfex_metadata"].get("PACK") != 0):
-        raise ValueError(f"{path}: only the admitted AROME-47 SURFEX-8.1 "
-                         "PACK=0 profile is supported")
+        raise tag_error(ValueError(
+            f"{path}: only the admitted AROME-47 SURFEX-8.1 PACK=0 profile is supported"
+        ), "E1205")
     profile = "surfex_history" if surface else "arome_history"
     model = source.get("model")
     if model not in {None, "arome"}:
-        raise ValueError(f"{path}: model conflicts with admitted FA profile {profile}")
+        raise tag_error(ValueError(f"{path}: model conflicts with admitted FA profile {profile}"),
+                        "E1203")
     if model is None and not source.get("profile") and not surface:
-        raise ValueError(f"{path}: model has no unambiguous FA producer evidence; "
-                         "declare model/profile")
-    geometry = fa_geometry(info["geometry"], options)
+        raise tag_error(ValueError(
+            f"{path}: model has no unambiguous FA producer evidence; declare model/profile"
+        ), "E1203")
+    try:
+        geometry = fa_geometry(info["geometry"], options)
+    except ValueError as exc:
+        raise tag_error(exc, "E1205")
     horizontal = geometry.latitude.broadcast_like(geometry.longitude).transpose("y", "x")
     _, grid = _native_grid(
         geometry, horizontal.assign_attrs(grid_mapping="crs"), set())
@@ -699,40 +731,46 @@ def _selection_stamp(value, example):
 
 def _select_source_records(records, selection, context):
     if not records:
-        raise ValueError(f"{context}: no selected decoded records; "
-                         "required fields need a sample clock")
+        raise tag_error(ValueError(
+            f"{context}: no selected decoded records; required fields need a sample clock"
+        ), "E1401")
     calendars = {r["calendar"] for r in records}
     if len(calendars) != 1:
-        raise ValueError(f"{context}: source has conflicting calendars {sorted(calendars)}")
+        raise tag_error(ValueError(f"{context}: source has conflicting calendars {sorted(calendars)}"),
+                        "E1401")
     cycles = {r["cycle"] for r in records if r["cycle"] is not None}
     if "cycle" in selection:
         if not cycles:
-            raise ValueError(f"{context}: time.cycle unavailable; "
-                             "inputs have no forecast reference clock")
+            raise tag_error(ValueError(
+                f"{context}: time.cycle unavailable; inputs have no forecast reference clock"
+            ), "E1403")
         cycle = _selection_stamp(selection["cycle"], next(iter(cycles)))
         if not any(cycle == c for c in cycles):
-            raise ValueError(f"{context}: time.cycle {selection['cycle']} "
-                             "unavailable in selected files")
+            raise tag_error(ValueError(
+                f"{context}: time.cycle {selection['cycle']} unavailable in selected files"
+            ), "E1403")
         records = [r for r in records if r["cycle"] == cycle]
     elif len(cycles) > 1:
-        raise ValueError(f"{context}: several forecast cycles; "
-                         "select an exact sources.*.time.cycle")
+        raise tag_error(ValueError(
+            f"{context}: several forecast cycles; select an exact sources.*.time.cycle"
+        ), "E1403")
     times = sorted({r["time"] for r in records})
     if not times:
-        raise ValueError(f"{context}: no selected decoded records")
+        raise tag_error(ValueError(f"{context}: no selected decoded records"), "E1402")
     if "values" in selection:
         wanted = [_selection_stamp(value, times[0]) for value in selection["values"]]
         missing = [value for value in wanted if not any(value == t for t in times)]
         if missing:
-            raise ValueError(f"{context}: time.values unavailable in selected files: "
-                             f"{sorted(missing)}")
+            raise tag_error(ValueError(
+                f"{context}: time.values unavailable in selected files: {sorted(missing)}"
+            ), "E1402")
         selected = [t for t in times if any(t == value for value in wanted)]
     else:
         start = _selection_stamp(selection["start"], times[0]) if "start" in selection else times[0]
         end = _selection_stamp(selection["end"], times[0]) if "end" in selection else times[-1]
         selected = [t for t in times if start <= t <= end][::selection.get("stride", 1)]
     if not selected:
-        raise ValueError(f"{context}: empty time selection; no selected records")
+        raise tag_error(ValueError(f"{context}: empty time selection; no selected records"), "E1402")
     selected_times = set(selected)
     return [r for r in records if r["time"] in selected_times], selected
 
@@ -746,7 +784,7 @@ def _source_file_entries(source, name):
             f"sources.{name}.files", str(exc), "readable selected input files",
             {"files": patterns, "exclude": source["exclude"], "cause": str(exc)},
             [f"Correct sources.{name}.files/exclude so required input files exist and match."],
-            contexts=[{"source": name, "patterns": patterns}])
+            contexts=[{"source": name, "patterns": patterns}], code=exception_code(exc))
 
     try:
         entries, excluded, overlaps = inventory_source_files(source)
@@ -841,7 +879,7 @@ def inventory_source(conf, name, *, resources=None):
                         f"sources.{name}.reader.engine" if fmt == "netcdf"
                         else f"sources.{name}.format",
                         module, f"Install the selected {module} reader "
-                        "in the selected environment.")
+                        "in the selected environment.", code="E1006" if fmt == "netcdf" else "E1002")
                     if dependency_error:
                         raise PreflightError([dependency_error])
                 if fmt == "netcdf":
@@ -876,6 +914,8 @@ def inventory_source(conf, name, *, resources=None):
                                           if f["name"] is not None})
                 entry["unmapped_records"] = [r for r in info["records"] if r["name"] is None]
             except (OSError, ValueError, ImportError) as exc:
+                if isinstance(exc, OSError):
+                    tag_error(exc, "E1202")
                 diagnostics = exception_diagnostics(
                     exc, path=f"sources.{name}.files",
                     expected="readable admitted source metadata", observed={"cause": str(exc)},
@@ -891,8 +931,10 @@ def inventory_source(conf, name, *, resources=None):
         raise PreflightError(errors)
     profiles = {fact[:4] for fact in facts}
     if len(profiles) != 1:
-        raise ValueError(f"sources.{name}: selected files have conflicting "
-                         f"model/format/physical profiles: {profiles}")
+        raise tag_error(ValueError(
+            f"sources.{name}: selected files have conflicting "
+            f"model/format/physical profiles: {profiles}"
+        ), "E1203")
     fmt, model, physical, profile = next(iter(profiles))
     if source.get("interpretation") and (fmt != "netcdf" or model != "mesonh"):
         raise ValueError(f"sources.{name}.interpretation requires Meso-NH NetCDF")
@@ -1193,13 +1235,13 @@ def _available_source_selectors(source):
         source["selection_pending"].append("A decoded sample clock is required before execution.")
 
 
-def _installed_dependency(path, module, repair):
+def _installed_dependency(path, module, repair, *, code):
     available = importlib.util.find_spec(module) is not None
     fact = {"path": path, "module": module, "available": available,
             "scope": "installed module; runtime initialization remains deferred"}
     error = None if available else Diagnostic(
         path, f"Selected feature requires {module}", {"module": module, "available": True},
-        {"module": module, "available": False}, [repair])
+        {"module": module, "available": False}, [repair], code=code)
     return fact, error
 
 
@@ -1225,8 +1267,9 @@ def _required_dependencies(conf, execution_options=None):
         repair = ("UTrack v3 execution is unavailable; select another tracker."
                   if path == "region.tracker" else
                   f"Install {installation} in the selected environment, or deselect this feature.")
-        fact, error = _installed_dependency(
-            path, module, repair)
+        code = "E1004" if module == "xesmf" else (
+            "E1006" if path == "output.writer.engine" else UNEXPECTED_ERROR)
+        fact, error = _installed_dependency(path, module, repair, code=code)
         facts.append(fact)
         if error:
             errors.append(error)
@@ -1238,7 +1281,8 @@ def _required_dependencies(conf, execution_options=None):
         except (ValueError, ImportError) as exc:
             errors.append(Diagnostic(
                 "output.format", str(exc), "xarray>=2026.9.0 and zarr>=3.4.2,<4",
-                {"cause": str(exc)}, ["Install FrameIt's zarr extra, or select NetCDF output."]))
+                {"cause": str(exc)}, ["Install FrameIt's zarr extra, or select NetCDF output."],
+                code="E1005"))
         else:
             facts.append({"path": "output.format", "module": "zarr", "available": True,
                           "scope": "supported installed xarray/Zarr versions"})
@@ -1680,8 +1724,9 @@ def infer_format(files, declared=None):
                 magic = handle.read(8)
             if magic.startswith((b"GRIB", b"CDF")) or magic == b"\x89HDF\r\n\x1a\n":
                 detected = "grib" if magic.startswith(b"GRIB") else "netcdf"
-                raise ValueError(
-                    f"Declared source format fa conflicts with detected {detected}: {path}")
+                raise tag_error(ValueError(
+                    f"Declared source format fa conflicts with detected {detected}: {path}"
+                ), "E1203")
         return "fa"
     formats = set()
     for path in files:
@@ -1695,12 +1740,15 @@ def infer_format(files, declared=None):
             raise PreflightError([Diagnostic(
                 "input.format", "Unsupported input file format",
                 {"formats": ["netcdf", "grib", "declared fa"]}, {"magic_hex": magic.hex()},
-                ["Select readable NetCDF/GRIB inputs, or declare an admitted FA profile for FA."])])
+                ["Select readable NetCDF/GRIB inputs, or declare an admitted FA profile for FA."],
+                code="E1202")])
     if len(formats) != 1:
-        raise ValueError("Mixed GRIB/NetCDF inputs are not supported")
+        raise tag_error(ValueError("Mixed GRIB/NetCDF inputs are not supported"), "E1203")
     detected = formats.pop()
     if declared and declared not in {detected, "nc" if detected == "netcdf" else "grib2"}:
-        raise ValueError(f"Declared source format {declared} conflicts with detected {detected}")
+        raise tag_error(ValueError(
+            f"Declared source format {declared} conflicts with detected {detected}"
+        ), "E1203")
     return detected
 
 

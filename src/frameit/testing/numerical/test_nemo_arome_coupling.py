@@ -655,7 +655,8 @@ def test_preceding_hour_selects_bounds_not_nearest_and_warns(caplog):
     target = inventory["atmosphere"][0]["times"]
     assert result["selected_times"] == target[1:]
     assert result["omitted_pairings"] == [{"coupling_time": target[0], "missing_sources": ["ocean"]}]
-    assert "omit" in caplog.text.lower() and target[0] in caplog.text
+    assert "[W1402]" in caplog.text and "omit" in caplog.text.lower()
+    assert target[0] in caplog.text
     mappings = result["sources"]["ocean"]["associations"]
     assert [m["source_time"] for m in mappings] == inventory["ocean"][0]["times"]
     assert [m["interval_end"] for m in mappings] == target[1:]
@@ -688,8 +689,11 @@ def test_preceding_hour_rejects_unresolved_inputs(problem):
         models["atmosphere"] = "NEMO"
     else:
         ocean["source_time_conflict"] = True
-    with pytest.raises(ValueError, match="bounds|hour|interval|mean|instant|AROME|source_time"):
+    with pytest.raises(
+        ValueError, match="bounds|hour|interval|mean|instant|AROME|source_time"
+    ) as exc:
         align_preceding_hour(inventory, "atmosphere", models)
+    assert exc.value.frameit_code == "E1405"
 
 
 def test_preceding_hour_exact_participants_track_subset_and_empty_failure():

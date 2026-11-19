@@ -20,6 +20,7 @@ from frameit.core.reports import (
 )
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.loader import DatasetResources, discover_input_files
+from frameit.utils.diagnostics import format_message, tag_error
 
 log = logging.getLogger(__name__)
 
@@ -231,8 +232,9 @@ def align_source_times(inventories, policy="common", track_times=None):
     common = set.intersection(*sets.values())
     if policy == "exact":
         if track_times is not None and union - track_times:
-            raise ValueError("Missing centres at selected source times: "
-                             f"{sorted(union - track_times)}")
+            raise tag_error(ValueError(
+                f"Missing centres at selected source times: {sorted(union - track_times)}"
+            ), "E1404")
         return {"policy": policy, "selected_times": sorted(union), "sources": {
             name: {"available_count": len(values), "selected_count": len(values),
                    "skipped_times": [], "missing_times": [], "skipped_files": [],
@@ -241,14 +243,19 @@ def align_source_times(inventories, policy="common", track_times=None):
             for name, values in sets.items()}}
     if policy == "strict" and any(values != union for values in sets.values()):
         details = {name: sorted(union - values) for name, values in sets.items()}
-        raise ValueError(f"Strict source time alignment failed; missing timestamps: {details}")
+        raise tag_error(ValueError(
+            f"Strict source time alignment failed; missing timestamps: {details}"
+        ), "E1404")
     if track_times is not None:
         if policy == "strict" and common - track_times:
-            raise ValueError("Prescribed track lacks strict source times: "
-                             f"{sorted(common - track_times)}")
+            raise tag_error(ValueError(
+                f"Prescribed track lacks strict source times: {sorted(common - track_times)}"
+            ), "E1404")
         common &= track_times
     if not common:
-        raise ValueError("Sources/prescribed track have no exact common timestamps")
+        raise tag_error(
+            ValueError("Sources/prescribed track have no exact common timestamps"), "E1404"
+        )
     report = {"policy": policy, "selected_times": sorted(common), "sources": {}}
     for name, values in sets.items():
         skipped = sorted(values - common)
@@ -261,8 +268,9 @@ def align_source_times(inventories, policy="common", track_times=None):
                               "offset_seconds": 0.} for time in sorted(common)],
         }
         if skipped:
-            log.warning("Source %s: exact-common-time alignment skips %d timestamp(s): %s%s; "
-                        "full list recorded in time_alignment provenance", name, len(skipped),
+            log.warning(format_message(
+                "W1401", "Source %s: exact-common-time alignment skips %d timestamp(s): %s%s; "
+                "full list recorded in time_alignment provenance"), name, len(skipped),
                         ", ".join(map(str, skipped[:10])), " ..." if len(skipped) > 10 else "")
     return report
 
@@ -392,8 +400,11 @@ def _prepare_v3_regions(conf, children, plans):
     if "track" in region:
         from frameit.io.track_file import load_track_coordinates
 
-        provider = load_track_coordinates(region["track"]["file"]).rename(
-            latitude="lat", longitude="lon")
+        try:
+            provider = load_track_coordinates(region["track"]["file"]).rename(
+                latitude="lat", longitude="lon")
+        except (OSError, ValueError) as exc:
+            raise tag_error(exc, "E1406")
     atmosphere = next((name for name, plan in plans.items()
                        if plan["physical_type"] == "atmosphere"), None)
     conf.tracking_source = atmosphere if "tracker" in region else None
@@ -428,7 +439,7 @@ def _prepare_v3_regions(conf, children, plans):
                                    for sample, lo, hi in sorted(cells)]})
             temporal[name] = entries
         if cycles and any(cycle != cycles[0] for cycle in cycles):
-            raise ValueError("preceding_hour: selected forecast cycles disagree")
+            raise tag_error(ValueError("preceding_hour: selected forecast cycles disagree"), "E1403")
         track_stamps = None if track_times is None else _stamps(list(track_times), "track")
         alignment = align_preceding_hour(
             temporal, atmosphere, {name: child.atm_model for name, child in children.items()},
@@ -679,7 +690,7 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
                     f"{types[physical]}, {name}", {"maximum_per_physical_type": 1},
                     {"physical_type": physical, "sources": [types[physical], name]},
                     ["Keep one source per physical type; "
-                     "combine compatible files in that source."]))
+                     "combine compatible files in that source."], code="E1203"))
             types[physical] = name
             plans[name] = source
         except (OSError, ValueError, ImportError) as exc:
@@ -733,10 +744,11 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
             source["native_grids"][record["grid_id"]]["fa_geometry"]["fa_earth_model_origin"]
             == FA_DEFAULT_RADIUS_ORIGIN for record in source["records"]
         ):
-            request_plan["warnings"].append(
+            request_plan["warnings"].append(format_message(
+                "W1201",
                 f"sources.{name}: using the documented FA default "
                 f"earth_radius_m={FA_DEFAULT_RADIUS_M:.0f} m; "
-                "declare fa.earth_radius_m if the producer used a different value.")
+                "declare fa.earth_radius_m if the producer used a different value."))
     request_plan["deferred_checks"] = [
         "Bind fields, levels, units and method dependencies against selected metadata.",
         "Check time associations, geometry, resources and decode-time eligibility.",

@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from frameit.io.fa_contracts import PROTOCOL_VERSION, validate_descriptor
+from frameit.utils.diagnostics import format_message, tag_error
 
 log = logging.getLogger(__name__)
 _REQUEST_LOCK = threading.Lock()
@@ -67,11 +68,12 @@ def request_fa(request):
     """
     if (type(request.get("protocol_version", PROTOCOL_VERSION)) is not int
             or request.get("protocol_version", PROTOCOL_VERSION) != PROTOCOL_VERSION):
-        raise ValueError("Unsupported FA worker protocol_version")
+        raise tag_error(ValueError("Unsupported FA worker protocol_version"), "E1003")
     request = {**request, "protocol_version": PROTOCOL_VERSION}
     if request.get("backend") == "native":
-        log.warning("FA backend: native is a deprecated alias for epygram; "
-                    "use backend: epygram and install FrameIt[fa] in the helper")
+        log.warning(format_message(
+            "W1001", "FA backend: native is a deprecated alias for epygram; "
+            "use backend: epygram and install FrameIt[fa] in the helper"))
     environment = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
                        MKL_NUM_THREADS="1", PYTHONNOUSERSITE="1")
     # The wheel's private ecCodes uses its own matching MEMFS definitions.
@@ -88,54 +90,71 @@ def request_fa(request):
                 env=environment, check=False, timeout=request.get("timeout_seconds", 120.),
             )
         except subprocess.TimeoutExpired as exc:
-            raise ValueError(f"FA request timed out for {Path(request['path']).name}; "
-                             "review sources.<id>.reader.timeout_seconds "
-                             "and source availability") from exc
+            raise tag_error(ValueError(
+                f"FA request timed out for {Path(request['path']).name}; review "
+                "sources.<id>.reader.timeout_seconds and source availability"
+            ), "E1007") from exc
         except OSError as exc:
-            raise ValueError("Cannot launch the FA helper; check sources.<id>.reader.python_executable "
-                             "and install FrameIt with the selected FA extra there") from exc
+            raise tag_error(ValueError(
+                "Cannot launch the FA helper; check sources.<id>.reader.python_executable "
+                "and install FrameIt with the selected FA extra there"
+            ), "E1003") from exc
         diagnostics = (result.stdout + result.stderr).strip()
         response = Path(directory) / "response.json"
         context = f"{Path(request['path']).name}: {', '.join(request.get('fields', []))}"
         if result.returncode or not response.is_file():
             _record_diagnostics(request, {"diagnostics": diagnostics,
                                           "returncode": result.returncode})
-            raise ValueError(f"FA decoder process failed ({result.returncode}) for {context}: "
-                             f"{diagnostics[-4000:]}")
+            raise tag_error(ValueError(
+                f"FA decoder process failed ({result.returncode}) for {context}: {diagnostics[-4000:]}"
+            ), "E1003")
         try:
             payload = json.loads(response.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            raise ValueError(f"Invalid FA decoder response for {context}: {exc}") from exc
+            raise tag_error(ValueError(f"Invalid FA decoder response for {context}: {exc}"),
+                            "E1003") from exc
         if not isinstance(payload, dict) or type(payload.get("ok")) is not bool:
-            raise ValueError(f"Invalid FA decoder response for {context}")
+            raise tag_error(ValueError(f"Invalid FA decoder response for {context}"), "E1003")
         if not payload["ok"]:
             _record_diagnostics(request, {"diagnostics": diagnostics, "error": payload["error"]})
-            raise ValueError(f"FA input {context}: {payload['error']}\n{diagnostics[-4000:]}")
+            code = payload.get("code")
+            if code not in ("E1003", "E1008", "E1202", "E1205", "E1206"):
+                code = "E1003"
+            raise tag_error(ValueError(
+                f"FA input {context}: {payload['error']}\n{diagnostics[-4000:]}"
+            ), code)
         info = payload.get("result")
         if not isinstance(info, dict):
-            raise ValueError(f"Invalid FA decoder response for {context}")
+            raise tag_error(ValueError(f"Invalid FA decoder response for {context}"), "E1003")
         if (type(info.get("protocol_version")) is not int
                 or info.get("protocol_version") != PROTOCOL_VERSION):
-            raise ValueError(f"Unsupported FA response protocol_version for {context}")
+            raise tag_error(ValueError(f"Unsupported FA response protocol_version for {context}"),
+                            "E1003")
         for name, descriptor in info.get("field_descriptors", {}).items():
             validate_descriptor(descriptor)
             if descriptor["native_id"] != name:
-                raise ValueError(f"FA descriptor native identity mismatch for {context}")
+                raise tag_error(ValueError(f"FA descriptor native identity mismatch for {context}"),
+                                "E1003")
         if diagnostics:
             observed = any(d["scaling"].get("status") == "encoded"
                            for d in info.get("field_descriptors", {}).values())
             note = " [encoded FA factors observed]" if observed else ""
-            log.warning("FA decoder %s%s: %s", context, note, diagnostics)
+            log.warning(format_message("W1203", "FA decoder %s%s: %s"), context, note, diagnostics)
         if request["operation"] == "read":
             descriptor = info.get("field_descriptors", {}).get(request["fields"][0])
             if descriptor is None:
-                raise ValueError(f"Missing FA decoded field descriptor for {context}")
+                raise tag_error(ValueError(f"Missing FA decoded field descriptor for {context}"),
+                                "E1003")
             if (descriptor["native"]["representation"] != "gridpoint"
                     or descriptor["eligibility"]["decode"] == "blocked"):
-                raise ValueError(f"FA transfer is not a qualified gridpoint field: {context}; "
-                                 "coefficients cannot be returned as values")
+                raise tag_error(ValueError(
+                    f"FA transfer is not a qualified gridpoint field: {context}; "
+                    "coefficients cannot be returned as values"
+                ), "E1205")
             if descriptor["native"]["decoded_dtype"] != info["dtype"]:
-                raise ValueError(f"FA decoded dtype contradicts field descriptor for {context}")
+                raise tag_error(ValueError(
+                    f"FA decoded dtype contradicts field descriptor for {context}"
+                ), "E1003")
             # FADGRA's unknown-parameter warning can coexist with encoded factors.
             observed = descriptor["scaling"].get("status") == "encoded"
             missing = "has no encoded FMULTM and FMULTE" in diagnostics and not observed
@@ -152,15 +171,19 @@ def request_fa(request):
                                           "protocol_version": PROTOCOL_VERSION,
                                           "field_descriptors": info["field_descriptors"]})
             if missing and not request.get("allow_unscaled"):
-                raise ValueError(f"{context}: unresolved native scaling metadata; "
-                                 "explicitly declare "
-                                 "field_metadata.<record>.allow_unscaled: true only when justified")
+                raise tag_error(ValueError(
+                    f"{context}: unresolved native scaling metadata; explicitly declare "
+                    "field_metadata.<record>.allow_unscaled: true only when justified"
+                ), "E1206")
             shape = info.get("shape")
             budget = request.get("max_points", 20_000_000)
             if (not isinstance(shape, list) or len(shape) > 2
-                    or any(type(n) is not int or not 0 <= n <= budget for n in shape)
-                    or prod(shape) > budget):
-                raise ValueError(f"Invalid native array transfer for {context}")
+                    or any(type(n) is not int or n < 0 for n in shape)):
+                raise tag_error(ValueError(f"Invalid native array transfer for {context}"), "E1003")
+            if any(n > budget for n in shape) or prod(shape) > budget:
+                raise tag_error(ValueError(
+                    f"Invalid native array transfer for {context}: exceeds max_points resource budget"
+                ), "E1008")
             try:
                 # Map first: a corrupt NPY header must not allocate before its
                 # dtype/shape is checked. Detach before the owned directory closes.
@@ -174,7 +197,9 @@ def request_fa(request):
                 finally:
                     del transfer
             except (OSError, ValueError, EOFError) as exc:
-                raise ValueError(f"Invalid native array transfer for {context}: {exc}") from exc
+                raise tag_error(ValueError(
+                    f"Invalid native array transfer for {context}: {exc}"
+                ), "E1003") from exc
         info["decoder_diagnostics"] = diagnostics
         return info
 

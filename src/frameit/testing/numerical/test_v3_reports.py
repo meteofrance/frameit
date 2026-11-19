@@ -66,12 +66,14 @@ def test_independent_file_causes_keep_locations_and_valid_source_metadata(tmp_pa
     assert len(report["errors"]) == 2
     errors = {error["path"]: error for error in report["errors"]}
     broken = errors["sources.broken.files"]
+    assert broken["code"] == "E1202"
     assert broken["observed"] == {"magic_hex": b"not data".hex()}
     assert "netcdf" in broken["expected"]["formats"]
     assert broken["locations"] == [
         {"file": str(document), "line": 4, "column": 5},
     ]
     clock = errors["sources.clock.files"]
+    assert clock["code"] == "E1401"
     assert clock["expected"] == {"clock": "decoded timestamps"}
     assert clock["observed"] == {"clock": "time", "dtype": "float64"}
     assert clock["locations"][0]["line"] == 7
@@ -93,6 +95,36 @@ def test_independent_file_causes_keep_locations_and_valid_source_metadata(tmp_pa
         for check in blocked
     )
     assert not (tmp_path / "output").exists()
+
+
+def test_no_matching_source_files_have_an_inventory_code(tmp_path):
+    pattern = str(tmp_path / "*.nc")
+    raw = request(tmp_path, {"weather": {
+        "model": "arome", "files": pattern, "variables": {"2d": ["temperature"]},
+    }})
+    assert project(collect(raw, schema_only=True))["status"] == "ok"
+    error, = project(collect(raw))["errors"]
+    assert error["code"] == "E1201"
+    assert error["contexts"] == [{"source": "weather", "patterns": [pattern]}]
+    assert not (tmp_path / "output").exists()
+
+
+def test_missing_grib_reader_only_blocks_grib_requests(tmp_path, monkeypatch):
+    original = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: (
+        None if name == "eccodes" else original(name)))
+    grib = tmp_path / "sample.grib"
+    grib.write_bytes(b"GRIB")
+    raw = request(tmp_path, {"weather": {
+        "model": "arome", "files": str(grib), "variables": {"2d": ["temperature"]},
+    }})
+    error, = project(collect(raw))["errors"]
+    assert error["code"] == "E1002" and error["observed"]["module"] == "eccodes"
+    netcdf = tmp_path / "sample.nc"
+    v3_scene(model="AROME").to_netcdf(netcdf, engine="h5netcdf")
+    raw["sources"]["weather"]["files"] = str(netcdf)
+    report = project(collect(raw))
+    assert report["status"] == "ok", report["errors"]
 
 
 def test_genuine_repeats_group_without_losing_files_or_distinct_observations(tmp_path):

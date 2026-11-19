@@ -28,6 +28,8 @@ from frameit.io.fa_geometry import fa_geometry, geometry_signature
 from frameit.io.loader import managed_loading, resolve_input_files
 from frameit.processing.requests import build_group_ds, normalize_requests
 
+from frameit.utils.diagnostics import format_message
+
 log = logging.getLogger(__name__)
 
 
@@ -486,8 +488,9 @@ def concat_fa2ds_by_vert_coord(
             dims = ("time", layout["group"], "y", "x") if layout else ("time", "y", "x")
             ds[name] = xr.DataArray(values[None, ...], dims=dims, attrs=attrs)
             if attrs.get("allow_unscaled"):
-                log.warning("%s: %s permits native identity-scaling fallback "
-                            "by explicit declaration", path.name, name)
+                log.warning(format_message(
+                    "W1202", "%s: %s permits native identity-scaling fallback "
+                    "by explicit declaration"), path.name, name)
         parts.append(ds)
         model = info["geometry"]["epygram"]["earth_model"]
         provenance.append({"source_id": path.name, "identity_strategy": "size_mtime_freshness",

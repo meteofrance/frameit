@@ -10,6 +10,8 @@ configuration and logs with the attempt. Use the matching section below.
    troubleshooting/codes
    troubleshooting/start
    troubleshooting/configuration
+   troubleshooting/inputs
+   troubleshooting/time
 
 Configuration fails before inputs open
 --------------------------------------

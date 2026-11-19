@@ -28,6 +28,7 @@ from frameit.io.fa_contracts import (
     native_descriptor,
     resolve_descriptor,
 )
+from frameit.utils.diagnostics import exception_code, tag_error
 
 
 def _text(words):
@@ -205,7 +206,10 @@ def handle(request, destination):
     import falfilfa4py
 
     path = Path(request["path"])
-    before = path.stat()
+    try:
+        before = path.stat()
+    except OSError as exc:
+        raise tag_error(exc, "E1202")
     identity = [before.st_size, before.st_mtime_ns]
     if request.get("identity") is not None and request["identity"] != identity:
         raise ValueError("FA input changed since inventory (size/mtime freshness check)")
@@ -213,17 +217,26 @@ def handle(request, destination):
     epy_resource = epygram.formats.resource(
         str(path), openmode="r", fmt="FA", fmtdelayedopen=True)
     try:
-        epy_resource.open()
-        info = inspect_resource(epy_resource, request)
+        try:
+            epy_resource.open()
+        except (OSError, RuntimeError) as exc:
+            raise tag_error(exc, "E1202")
+        try:
+            info = inspect_resource(epy_resource, request)
+        except ValueError as exc:
+            raise tag_error(exc, "E1205")
         if request["operation"] == "read":
             name = request["fields"][0]
             grid = info["geometry"]
             if grid["KNXLON"] * grid["KNLATI"] > request.get("max_points", 20_000_000):
-                raise ValueError("FA decoded record exceeds the declared "
-                                 "max_points resource budget")
+                raise tag_error(ValueError(
+                    "FA decoded record exceeds the declared max_points resource budget"
+                ), "E1008")
             descriptor = info["field_descriptors"][name]
             if descriptor["eligibility"]["decode"] == "blocked":
-                raise ValueError(f"{name}: " + "; ".join(descriptor["eligibility"]["reasons"]))
+                raise tag_error(ValueError(
+                    f"{name}: " + "; ".join(descriptor["eligibility"]["reasons"])
+                ), "E1205")
             if request.get("field_declaration") is not None:
                 descriptor = resolve_descriptor(
                     descriptor, request["field_declaration"],
@@ -312,7 +325,8 @@ def main():
             request["validate_selection"] = True
         result = {"ok": True, "result": handle(request, destination)}
     except Exception as exc:
-        result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        result = {"ok": False, "error": f"{type(exc).__name__}: {exc}",
+                  "code": exception_code(exc)}
     (destination / "response.json").write_text(
         json.dumps(result, allow_nan=False), encoding="utf-8")
 

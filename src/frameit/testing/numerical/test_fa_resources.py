@@ -57,14 +57,14 @@ else:
 """
 
 
-@pytest.mark.parametrize("failure, message", [
-    ("crash", r"process failed \(-11\)"),
-    ("timeout", "timed out"),
-    ("invalid_json", "Invalid FA decoder response.*surface.fa"),
-    ("truncated_npy", "Invalid native array transfer.*surface.fa"),
+@pytest.mark.parametrize("failure, message, code", [
+    ("crash", r"process failed \(-11\)", "E1003"),
+    ("timeout", "timed out", "E1007"),
+    ("invalid_json", "Invalid FA decoder response.*surface.fa", "E1003"),
+    ("truncated_npy", "Invalid native array transfer.*surface.fa", "E1003"),
 ])
 def test_failed_helper_is_reaped_transfer_removed_and_next_request_succeeds(
-    tmp_path, monkeypatch, failure, message,
+    tmp_path, monkeypatch, failure, message, code,
 ):
     original = subprocess.run
     destinations = []
@@ -82,8 +82,9 @@ def test_failed_helper_is_reaped_transfer_removed_and_next_request_succeeds(
     monkeypatch.setattr(subprocess, "run", injected)
     request = {"operation": "read", "path": "surface.fa", "fields": ["SFX.T2M"],
                "timeout_seconds": 1 if failure == "timeout" else 30}
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ValueError, match=message) as exc:
         request_fa(request)
+    assert getattr(exc.value, "frameit_code", None) == code
     assert pidfile.is_file(), "Injected helper never reached its failure point"
     with pytest.raises(ProcessLookupError):
         os.kill(int(pidfile.read_text()), 0)
@@ -96,8 +97,18 @@ def test_failed_helper_is_reaped_transfer_removed_and_next_request_succeeds(
     assert os.environ["ECCODES_DEFINITION_PATH"] == "parent-only"
 
 
-@pytest.mark.parametrize("shape", [[1001, 1001], [-1, 2], [True, 2], [1, 1, 1]])
-def test_invalid_transfer_shape_fails_before_opening_array(tmp_path, monkeypatch, shape):
+def test_missing_fa_interpreter_has_an_environment_code(tmp_path):
+    with pytest.raises(ValueError, match="Cannot launch") as exc:
+        request_fa({"operation": "inspect", "path": "surface.fa",
+                    "python_executable": str(tmp_path / "missing-python")})
+    assert getattr(exc.value, "frameit_code", None) == "E1003"
+
+
+@pytest.mark.parametrize("shape,code", [
+    ([1001, 1001], "E1008"), ([8, 8], "E1008"), ([-1, 2], "E1003"),
+    ([True, 2], "E1003"), ([1, 1, 1], "E1003"),
+])
+def test_invalid_transfer_shape_fails_before_opening_array(tmp_path, monkeypatch, shape, code):
     destinations = []
 
     def response(argv, **kwargs):
@@ -111,9 +122,10 @@ def test_invalid_transfer_shape_fails_before_opening_array(tmp_path, monkeypatch
 
     monkeypatch.setattr(subprocess, "run", response)
     monkeypatch.setattr(np, "load", forbidden)
-    with pytest.raises(ValueError, match="Invalid native array transfer"):
+    with pytest.raises(ValueError, match="Invalid native array transfer") as exc:
         request_fa({"operation": "read", "path": "surface.fa", "fields": ["SFX.T2M"],
                     "max_points": 63})
+    assert getattr(exc.value, "frameit_code", None) == code
     assert all(not path.exists() for path in destinations)
 
 

@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 
 from frameit.utils.atomic import atomic_directory_output
+from frameit.utils.diagnostics import tag_error
 
 
 def check_zarr_dependencies() -> None:
@@ -22,10 +23,10 @@ def check_zarr_dependencies() -> None:
             return
     except (PackageNotFoundError, ImportError):
         pass
-    raise ValueError(
+    raise tag_error(ValueError(
         "Zarr output requires xarray>=2026.9.0 and zarr>=3.4.2,<4; "
         "install FrameIt's optional extra: pip install 'frameit[zarr]'"
-    )
+    ), "E1005")
 
 
 def validate_zarr_sizes(chunk_size, shard_size):

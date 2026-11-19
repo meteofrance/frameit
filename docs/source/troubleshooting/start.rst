@@ -39,3 +39,68 @@ points to the wrong checkout.
 
 Run ``frameit --help`` and ``frameit info`` again. An optional reader
 listed as missing is not an error unless your request needs it.
+
+.. _e1002:
+
+E1002: The selected GRIB reader did not load
+-----------------------------------------------------------
+
+The request uses GRIB. Run ``frameit info`` in the same environment
+and check the ecCodes entry. Follow :doc:`../user_guide/fa_environment`
+for the GRIB extra and native library. Run ``frameit inspect frameit.yaml``
+again. It should list the fields in the GRIB files.
+
+.. _e1003:
+
+E1003: The FA decoder did not return a usable response
+-----------------------------------------------------------
+
+Read the decoder exit and error text. Check the Python path in
+``sources.<name>.reader.python_executable`` if you set it. That Python
+needs FrameIt and the FA libraries. If you did not set it, check the
+Python that runs FrameIt. Follow the FA worker steps in
+:doc:`../user_guide/fa_environment`. Retry inspection on one FA file
+before trying the whole request.
+
+.. _e1004:
+
+E1004: The polar sampling libraries are not available
+-----------------------------------------------------------
+
+Polar sampling needs xESMF and a matching ESMF/ESMPy install. Check the
+selected environment in ``frameit info``. Follow
+:doc:`../user_guide/fa_environment` for the native library as well as
+the Python package. Validate again, then try a small polar request.
+If you only need model-grid data, use a request without polar products.
+
+.. _e1005:
+
+E1005: The Zarr writer needs a supported version
+-----------------------------------------------------------
+
+Check the xarray and Zarr versions in the same Python that runs FrameIt.
+The writer needs xarray 2026.9.0 or later and Zarr 3.4.2 through 3.x.
+Follow :ref:`sharded-zarr-output` to set up the writer, or select NetCDF
+if that format meets your needs. Validate and try a small export in a
+new directory.
+
+.. _e1006:
+
+E1006: The selected NetCDF engine is not available
+-----------------------------------------------------------
+
+Read the engine name in the error. Check ``sources.<name>.reader.engine``
+for input, or ``output.writer.engine`` for output. In the same Python
+environment, try importing that engine: ``python -c 'import h5netcdf'``
+or ``python -c 'import netCDF4'``. Follow :doc:`../user_guide/fa_environment`
+rather than replacing the native HDF5 library on its own. Validate
+again with the required engine available.
+
+.. _w1001:
+
+W1001: The old FA backend name is no longer needed
+-----------------------------------------------------------
+
+An older caller passed ``native`` to the FA reader. FrameIt used
+EPyGrAM. Use ``epygram`` in that caller and keep the FA extra in the
+helper's environment. This warning does not say that decoding failed.

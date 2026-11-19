@@ -159,7 +159,8 @@ def test_projected_radius_default_matches_explicit(tmp_path, profile, source, fi
         assert entry["earth_radius_m"] == 6371229.
         assert (("default" in entry["earth_model_origin"]) == (radius is None))
         warnings = conf.simulation_parameter["request_plan"]["warnings"]
-        assert sum(f"sources.{source}" in warning and "6371229" in warning
+        assert sum(warning.startswith("[W1201]") and f"sources.{source}" in warning
+                   and "6371229" in warning
                    for warning in warnings) == (radius is None)
     defaulted, explicit = datasets
     xr.testing.assert_identical(defaulted[field], explicit[field])

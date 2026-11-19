@@ -7,11 +7,20 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from frameit.utils.diagnostics import format_message, tag_error
+
 log = logging.getLogger(__name__)
 
 
 def align_preceding_hour(inventories, reference, models, track_times=None):
     """Use the reference clock; require the unique mean over (T-1 hour, T]."""
+    try:
+        return _align_preceding_hour(inventories, reference, models, track_times)
+    except ValueError as exc:
+        raise tag_error(exc, "E1405")
+
+
+def _align_preceding_hour(inventories, reference, models, track_times):
     if (reference not in inventories or models.get(reference) != "AROME"
             or not any(model == "NEMO" for model in models.values())
             or any(model not in {"AROME", "NEMO"} for model in models.values())):
@@ -86,8 +95,9 @@ def align_preceding_hour(inventories, reference, models, track_times=None):
             for name, record in pairing.items():
                 mappings[name].append(record)
     if omitted:
-        log.warning("preceding_hour omits %d pairing(s): %s%s; missing sources and complete "
-                    "mapping recorded in time_alignment provenance", len(omitted),
+        log.warning(format_message(
+            "W1402", "preceding_hour omits %d pairing(s): %s%s; missing sources and complete "
+            "mapping recorded in time_alignment provenance"), len(omitted),
                     ", ".join(item["coupling_time"] for item in omitted[:10]),
                     " ..." if len(omitted) > 10 else "")
     if not selected:

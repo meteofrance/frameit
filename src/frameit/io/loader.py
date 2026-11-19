@@ -164,13 +164,15 @@ def inventory_source_files(source):
     import fnmatch
     import glob
 
+    from frameit.utils.diagnostics import tag_error
+
     entries, identities, excluded, overlaps, errors = [], {}, [], [], []
     patterns = [source["files"]] if isinstance(source["files"], str) else source["files"]
     for pattern in patterns:
         matches = (sorted(glob.glob(pattern, recursive=True))
                    if glob.has_magic(pattern) else [pattern])
         if not matches:
-            errors.append(f"{pattern}: no matching input file")
+            errors.append(("E1201", f"{pattern}: no matching input file"))
         for match in matches:
             path = Path(match).absolute()
             if any(fnmatch.fnmatch(str(path), rule) for rule in source.get("exclude", [])):
@@ -182,7 +184,8 @@ def inventory_source_files(source):
                     raise FileNotFoundError("missing or not a regular file")
                 stat = path.stat()
             except OSError as exc:
-                errors.append(f"{path}: {exc}")
+                code = "E1201" if isinstance(exc, FileNotFoundError) else "E1202"
+                errors.append((code, f"{path}: {exc}"))
                 continue
             identity = stat.st_dev, stat.st_ino
             if identity in identities:
@@ -201,9 +204,11 @@ def inventory_source_files(source):
                 identities[identity] = entry
                 entries.append(entry)
     if errors:
-        raise ValueError("\n".join(errors))
+        raise tag_error(ValueError("\n".join(message for _, message in errors)), errors[0][0])
     if not entries:
-        raise ValueError("No selected input files remain after sources.*.exclude")
+        raise tag_error(
+            ValueError("No selected input files remain after sources.*.exclude"), "E1201"
+        )
     return entries, excluded, overlaps
 
 
