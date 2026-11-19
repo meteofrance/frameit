@@ -18,9 +18,11 @@ E1302: FrameIt cannot select the named field
 
 Read the source, field, time, and file in the error. In inspection,
 check the field's exact name and native group. It must be present
-where the request needs it. If two fields share a name, use a selector
-that names the right group. Remove unintended duplicate requests.
-Do not substitute a different quantity. Validate again.
+where the request needs it. If two fields share a name, select the
+right group. If two files supply the same field at the same time,
+use ``files`` or ``exclude`` to keep the intended file. Inspect again
+to make sure this did not drop other records you need. Do not substitute
+a different quantity. Validate again.
 
 .. _e1303:
 

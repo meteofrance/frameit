@@ -341,8 +341,6 @@ def _execute_owned_simulation(config, options, input_files, progress, logs, leve
                         source=next(iter(config.sources)) if len(config.sources) == 1 else None)
         try:
             prepared_sources = bind_sources(config, execution_options=effective)
-        except PreflightError:
-            raise
         except ValueError as exc:
             raise ValueError(f"Cannot bind source requests to metadata: {exc}") from exc
 
@@ -484,7 +482,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
     runner = None
     failure = None
     log = logging.getLogger("frameit")
-    from frameit.core.run_state import checkpoint_run
+    from frameit.core.run_state import checkpoint_run, finalize_after
 
     def published(product):
         progress.update("computing/writing exports", published_products=1)
@@ -618,32 +616,29 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
         progress.reconcile_published(len(getattr(runner, "published_products", ())))
         progress.update("cleanup")
         try:
-            if runner is not None:
-                runner.close()
-            status["pending"].remove("cleanup")
+            with finalize_after(failure, "Input cleanup also failed"):
+                if runner is not None:
+                    runner.close()
+                status["pending"].remove("cleanup")
         except BaseException as exc:
-            if isinstance(exc, Exception):
-                tag_error(exc, "E1808")
-            if failure is None:
-                raise
-            message = format_message(primary_error_code(exc), "Input cleanup also failed")
-            failure.add_note(f"{message}: {type(exc).__name__}: {exc}")
-            log.exception("%s", message)
+            failure = exc
+            raise
         finally:
-            progress.update("finalizing execution records")
-            runtime["loaded_backends"] = _loaded_backend_versions()
-            if provenance is not None:
-                provenance.update(_run_provenance(config, options, status, runtime))
-                status["products"] = [
-                    _recorded_product(item, config.output_dir)
-                    for item in getattr(runner, "published_products", [])]
-                from frameit.io.fa_backend import collect_fa_diagnostics
+            with finalize_after(failure, "Finalizing execution records also failed"):
+                progress.update("finalizing execution records")
+                runtime["loaded_backends"] = _loaded_backend_versions()
+                if provenance is not None:
+                    provenance.update(_run_provenance(config, options, status, runtime))
+                    status["products"] = [
+                        _recorded_product(item, config.output_dir)
+                        for item in getattr(runner, "published_products", [])]
+                    from frameit.io.fa_backend import collect_fa_diagnostics
 
-                if provenance["fa_inputs"]:
-                    provenance["fa_decoder"] = collect_fa_diagnostics(
-                        config.output_dir, provenance["fa_inputs"])
-                for source in provenance["sources"].values():
-                    if source["fa_inputs"]:
-                        source["fa_decoder"] = collect_fa_diagnostics(
-                            config.output_dir, source["fa_inputs"])
-                checkpoint_run(config.output_dir, status, provenance)
+                    if provenance["fa_inputs"]:
+                        provenance["fa_decoder"] = collect_fa_diagnostics(
+                            config.output_dir, provenance["fa_inputs"])
+                    for source in provenance["sources"].values():
+                        if source["fa_inputs"]:
+                            source["fa_decoder"] = collect_fa_diagnostics(
+                                config.output_dir, source["fa_inputs"])
+                    checkpoint_run(config.output_dir, status, provenance)

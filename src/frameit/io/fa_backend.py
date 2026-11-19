@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from frameit.io.fa_contracts import PROTOCOL_VERSION, validate_descriptor
-from frameit.utils.diagnostics import format_message, tag_error
+from frameit.utils.diagnostics import CODE_TOPICS, format_message, tag_error
 
 log = logging.getLogger(__name__)
 _REQUEST_LOCK = threading.Lock()
@@ -118,7 +118,7 @@ def request_fa(request):
         if not payload["ok"]:
             _record_diagnostics(request, {"diagnostics": diagnostics, "error": payload["error"]})
             code = payload.get("code")
-            if code not in ("E1003", "E1008", "E1202", "E1205", "E1206"):
+            if not isinstance(code, str) or not code.startswith("E") or code not in CODE_TOPICS:
                 code = "E1003"
             raise tag_error(ValueError(
                 f"FA input {context}: {payload['error']}\n{diagnostics[-4000:]}"

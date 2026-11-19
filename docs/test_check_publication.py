@@ -21,7 +21,7 @@ class PublicationBoundaryTests(unittest.TestCase):
             guide = root / "troubleshooting"
             guide.mkdir()
             (guide / "start.html").write_text('<h2 id="e0999">E0999</h2>' * 2)
-            (guide / "codes.html").write_text('<a href="start.html#e0999">E0999</a>')
+            (guide / "codes.html").write_text('<main><a href="start.html#e0999">E0999</a></main>')
             (root / "troubleshooting.html").write_text("<h1>Troubleshooting</h1>")
             errors = check_artifact(root)
             self.assertTrue(any("E0999" in error and "one anchor" in error for error in errors))
@@ -34,7 +34,8 @@ class PublicationBoundaryTests(unittest.TestCase):
             guide.mkdir()
             (guide / 'start.html').write_text('<h2 id="e0999">E0999</h2>')
             (guide / 'other.html').write_text('<h2 id="different">Another entry</h2>')
-            (guide / 'codes.html').write_text('<a href="other.html#different">E0999</a>')
+            (guide / 'codes.html').write_text(
+                '<main><a href="other.html#different">E0999</a></main>')
             self.assertTrue(any('E0999' in error and 'index' in error
                                 for error in check_artifact(root)))
 
@@ -47,6 +48,37 @@ class PublicationBoundaryTests(unittest.TestCase):
             (guide / "codes.html").write_text('<a href="start.html#w9999">W9999</a>')
             self.assertIn("troubleshooting/start.html: unregistered diagnostic anchor w9999",
                           check_artifact(root))
+
+    def test_diagnostic_index_rejects_swapped_repairs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            guide = root / "troubleshooting"
+            guide.mkdir()
+            (guide / "start.html").write_text('<h2 id="e0001">E0001: Wrong option</h2>')
+            (guide / "run.html").write_text('<h2 id="e0002">E0002: Interrupted</h2>')
+            (guide / "codes.html").write_text(
+                '<nav><a href="start.html#e0001">E0001: Wrong option</a></nav>'
+                '<div role="main"><div>'
+                '<a href="run.html#e0002"><span>E0001: Wrong option</span></a>'
+                '<a href="start.html#e0001"><span>E0002: Interrupted</span></a>'
+                '</div></div>'
+            )
+            errors = check_artifact(root)
+            for code in ("E0001", "E0002"):
+                self.assertTrue(any(code in error and "index" in error for error in errors))
+
+    def test_code_index_checks_article_links_not_sidebar_headings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            guide = root / "troubleshooting"
+            guide.mkdir()
+            (guide / "start.html").write_text(
+                '<section id="e0999-unexpected"><h2 id="e0999">E0999: Unexpected</h2></section>')
+            (guide / "codes.html").write_text(
+                '<nav><a href="start.html#e0999-unexpected">E0999: Unexpected</a></nav>'
+                '<main><p><a href="start.html#e0999"><span>E0999: Unexpected</span></a></p></main>'
+            )
+            self.assertFalse(any("E0999" in error for error in check_artifact(root)))
 
     def test_combined_site_links_are_bounded(self):
         from check_publication import check_local_links

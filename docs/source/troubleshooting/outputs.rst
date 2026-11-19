@@ -83,8 +83,10 @@ E1808: Run records or cleanup did not finish
 
 Read the failed record or cleanup step in the error. The run is not
 complete even if some files were published. Keep the log and the last
-record. Check output access and make sure the old process has stopped
-before starting a new attempt.
+record. If another error stopped the run first, start with that code.
+A failed final write can leave the last saved state at ``running``.
+Check output access and make sure the old process has stopped before
+starting a new attempt.
 
 .. _e1809:
 

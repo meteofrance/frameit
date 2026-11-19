@@ -31,7 +31,7 @@ from frameit.testing.artifacts import (
     utc_now,
     write_summary,
 )
-from frameit.utils.diagnostics import format_message, tag_error
+from frameit.utils.diagnostics import UNEXPECTED_ERROR, format_message, tag_error
 
 
 @dataclass(frozen=True)
@@ -168,7 +168,8 @@ def _worker_entry(case: dict, log_path: str, completion_path: str, log_level: st
                 )
             atomic_json(Path(completion_path), metadata)
         except BaseException as exc:
-            tag_error(exc, "E1903")
+            if primary_error_code(exc) == UNEXPECTED_ERROR:
+                tag_error(exc, "E1903")
             traceback.print_exc()
             atomic_json(
                 Path(completion_path),

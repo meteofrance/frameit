@@ -435,21 +435,30 @@ class UniqueLoader(yaml.SafeLoader):
         return result
 
 
-def read_yaml(path):
-    return _read_yaml(path)[0]
+def read_yaml(path, *, error_code=None):
+    try:
+        return _read_yaml(path, error_code=error_code)[0]
+    except PreflightError as exc:
+        if error_code is not None:
+            tag_error(exc, error_code)
+        raise
 
 
-def _read_yaml(path):
+def _read_yaml(path, *, error_code=None):
     """Use one strict parse tree for values and authored marks."""
     path = Path(path)
     locations = {}
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise tag_error(exc, "E1101")
+        raise tag_error(exc, error_code or "E1101")
     except UnicodeError as exc:
-        raise tag_error(exc, "E1102")
-    loader = UniqueLoader(text)
+        raise tag_error(exc, error_code or "E1102")
+    try:
+        loader = UniqueLoader(text)
+    except yaml.reader.ReaderError as exc:
+        exc.name = str(path)
+        raise tag_error(exc, error_code or "E1102")
     loader.node_paths = {}
     loader.source_path = str(path.absolute())
     try:

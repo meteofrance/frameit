@@ -56,6 +56,26 @@ def test_aggregate_error_record_keeps_each_cause():
     assert "[E0001]" in str(original)
 
 
+def test_wrapped_preflight_error_keeps_both_repairs():
+    from frameit.cli import _failure_message
+    from frameit.core.reports import PreflightError, error_record
+
+    cause = PreflightError([
+        Diagnostic("sources.air.files", "no matching file", "file", None, [], code="E1201"),
+        Diagnostic("sources.sea", "unused source", "field", None, [], code="E1301"),
+    ])
+    wrapped = ValueError(f"Cannot bind source requests to metadata: {cause}")
+    wrapped.__cause__ = cause
+
+    record = error_record(wrapped)
+    assert (record["type"], record["code"]) == ("ValueError", "E1201")
+    assert [item["code"] for item in record["diagnostics"]] == ["E1201", "E1301"]
+    display = _failure_message(wrapped)
+    assert "Cannot bind source requests to metadata" in display
+    assert "troubleshooting/inputs.html#e1201" in display
+    assert "troubleshooting/fields.html#e1301" in display
+
+
 def test_invalid_matrix_plan_leaves_no_run_directory(tmp_path, capsys, caplog):
     from frameit.cli import main
 

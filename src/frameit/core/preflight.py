@@ -916,7 +916,8 @@ def inventory_source(conf, name, *, resources=None):
             except (OSError, ValueError, ImportError) as exc:
                 if isinstance(exc, OSError):
                     tag_error(exc, "E1202")
-                elif not isinstance(exc, PreflightError):
+                elif (isinstance(exc, ValueError) and not isinstance(exc, PreflightError)
+                      and getattr(exc, "frameit_code", None) is None):
                     tag_error(exc, "E1207")
                 diagnostics = exception_diagnostics(
                     exc, path=f"sources.{name}.files",
@@ -1096,7 +1097,7 @@ def inventory_source(conf, name, *, resources=None):
                     "make inputs unambiguous upstream.")
         providers[key] = record["locator"]
     if errors:
-        raise ValueError("\n".join(errors))
+        raise tag_error(ValueError("\n".join(errors)), "E1302")
     selected.sort(key=lambda r: (r["time"], r["name"], r["field_id"], str(r["level"])))
     selected_times = set(times)
     selected_cycles = {r["cycle"] for r in selected}

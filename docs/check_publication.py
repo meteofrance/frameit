@@ -94,14 +94,39 @@ class _HTMLLinks(HTMLParser):
         super().__init__()
         self.anchors = Counter()
         self.links = []
+        self.article_links = []
+        self._main_tag = None
+        self._main_depth = 0
+        self._href = None
+        self._label = []
         self.feed(path.read_text(encoding="utf-8"))
 
     def handle_starttag(self, tag, attrs):
+        if self._main_tag is None and (tag == "main" or ("role", "main") in attrs):
+            self._main_tag = tag
+        if tag == self._main_tag:
+            self._main_depth += 1
+        if tag == "a" and self._main_depth:
+            self._href = dict(attrs).get("href")
+            self._label.clear()
         for name, value in attrs:
             if value and (name == "id" or (tag == "a" and name == "name")):
                 self.anchors[value] += 1
             if name in {"href", "src"} and value is not None:
                 self.links.append((self.getpos()[0], name, value))
+
+    def handle_data(self, data):
+        if self._href is not None:
+            self._label.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._href is not None:
+            self.article_links.append((self._href, "".join(self._label).strip()))
+            self._href = None
+        if tag == self._main_tag:
+            self._main_depth -= 1
+            if not self._main_depth:
+                self._main_tag = None
 
 
 def check_local_links(artifact: Path, site_root: Path | None = None) -> list[str]:
@@ -156,7 +181,10 @@ def check_diagnostic_links(artifact: Path) -> list[str]:
     guide = artifact / "troubleshooting"
     pages = {path.name: _HTMLLinks(path) for path in guide.glob("*.html")}
     index = pages.get("codes.html")
-    links = {target for _, attribute, target in index.links if attribute == "href"} if index else set()
+    links = {}
+    for target, label in index.article_links if index else ():
+        if match := re.match(r"([EW][0-9]{4})\b", label):
+            links.setdefault(match[1], []).append(target)
     errors = []
     hub = artifact / "troubleshooting.html"
     bookmarks = _HTMLLinks(hub).anchors if hub.is_file() else {}
@@ -170,8 +198,8 @@ def check_diagnostic_links(artifact: Path) -> list[str]:
         page = f"{topic}.html"
         if [name for name, html in pages.items() for _ in range(html.anchors[anchor])] != [page]:
             errors.append(f"{code}: expected one anchor at troubleshooting/{page}#{anchor}")
-        if f"{page}#{anchor}" not in links:
-            errors.append(f"{code}: diagnostic index must link to {page}#{anchor}")
+        if links.get(code) != [f"{page}#{anchor}"]:
+            errors.append(f"{code}: diagnostic index must link once to {page}#{anchor}")
     for name, page in pages.items():
         for anchor in page.anchors:
             if re.fullmatch(r"[ew][0-9]{4}", anchor) and anchor.upper() not in codes:

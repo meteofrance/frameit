@@ -698,12 +698,19 @@ def test_field_policy_can_override_a_product_renormalization_policy():
 
 def test_unbound_execution_fails_before_claiming_output_or_loading_inputs(tmp_path):
     from frameit.core.execution import execute_simulation
+    from frameit.core.reports import PreflightError, error_record
 
     raw = document()
+    raw["sources"]["weather"]["files"] = str(tmp_path / "missing.nc")
     raw["output"] = {"directory": str(tmp_path / "output")}
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
-    with pytest.raises(ValueError, match="bind.*metadata"):
+    with pytest.raises(ValueError, match="Cannot bind source requests to metadata") as exc:
         execute_simulation(conf)
+    assert type(exc.value) is ValueError
+    assert isinstance(exc.value.__cause__, PreflightError)
+    record = error_record(exc.value)
+    assert record["code"] == "E1201"
+    assert [item["code"] for item in record["diagnostics"]] == ["E1201"]
     assert not conf.output_dir.exists()
 
 

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from frameit.core.reports import error_record
+from frameit.core.reports import error_record, primary_error_code
 from frameit.utils.atomic import write_yaml_atomic
 from frameit.utils.diagnostics import format_message, tag_error
 
@@ -23,10 +24,26 @@ def write_run_record(path, value, *, overwrite=True):
         raise tag_error(exc, "E1808")
 
 
+@contextmanager
+def finalize_after(failure, message):
+    """Report a finalization failure without replacing an active run error."""
+    try:
+        yield
+    except BaseException as exc:
+        if isinstance(exc, Exception):
+            tag_error(exc, "E1808")
+        if failure is None:
+            raise
+        message = format_message(primary_error_code(exc), message)
+        failure.add_note(f"{message}: {type(exc).__name__}: {exc}")
+        logging.getLogger("frameit").exception("%s", message)
+
+
 def checkpoint_run(root, status, provenance=None):
     """Persist last-known facts, without a cross-record transaction or heartbeat."""
     root = Path(root)
     status["updated_at"] = utc_now()
+    failure = None
     try:
         if provenance is not None:
             for key in ("state", "request_record", "planned_products", "products", "pending",
@@ -35,6 +52,7 @@ def checkpoint_run(root, status, provenance=None):
                     provenance[key] = status[key]
             write_run_record(root / "run-provenance.yaml", provenance)
     except BaseException as exc:
+        failure = exc
         if status["state"] in {"completed", "incomplete"}:
             status.update(
                 state=("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
@@ -44,7 +62,8 @@ def checkpoint_run(root, status, provenance=None):
             )
         raise
     finally:
-        write_run_record(root / "run-status.yaml", status)
+        with finalize_after(failure, "Writing run status also failed"):
+            write_run_record(root / "run-status.yaml", status)
 
 
 def _recognized_record(path):
@@ -96,7 +115,7 @@ def read_run_status(root):
             "records or remove a lock to infer completion."
         ), "E1807")
     try:
-        status = read_yaml(path)
+        status = read_yaml(path, error_code="E1807")
     except (OSError, ValueError) as exc:
         raise tag_error(ValueError(f"Cannot read required record {path}: {exc}"), "E1807") from exc
     if not (
@@ -130,12 +149,7 @@ def read_run_status(root):
     else:
         notes.append(format_message("W1801", "Optional provenance record unavailable."))
     # Checkpoint files are not a cross-record transaction; refuse a torn read.
-    try:
-        current = read_yaml(path)
-    except (OSError, ValueError) as exc:
-        raise tag_error(ValueError(
-            f"Could not read required record {path} again. Retry status: {exc}"
-        ), "E1809") from exc
+    current = read_yaml(path, error_code="E1809")
     if current != status:
         raise tag_error(ValueError(
             f"Required record {path} changed during reading. Retry status; "
@@ -171,6 +185,7 @@ def owned_run(root, *, overwrite, initial, request=None, provenance=None):
         ), "E1801") from exc
     except OSError as exc:
         raise tag_error(exc, "E1803")
+    failure = None
     try:
         with stream:
             stream.write(f"pid: {os.getpid()}\n")
@@ -204,17 +219,21 @@ def owned_run(root, *, overwrite, initial, request=None, provenance=None):
             checkpoint_run(root, status, provenance)
             yield status
         except BaseException as exc:
-            status.update(
-                state=("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
-                       else "failed"),
-                error=error_record(exc),
-            )
+            failure = exc
+            with finalize_after(exc, "Preparing the run failure record also failed"):
+                status.update(
+                    state=("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
+                           else "failed"),
+                    error=error_record(exc),
+                )
             raise
         finally:
-            status["finished_at"] = utc_now()
-            checkpoint_run(root, status, provenance)
+            with finalize_after(failure, "Finalizing run records also failed"):
+                status["finished_at"] = utc_now()
+                checkpoint_run(root, status, provenance)
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
-        try:
+        with finalize_after(failure, "Releasing the run lock also failed"):
             lock.unlink()
-        except OSError as exc:
-            raise tag_error(exc, "E1808")

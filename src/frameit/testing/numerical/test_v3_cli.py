@@ -161,6 +161,31 @@ def test_json_failures_are_one_document_with_repairs_and_nonzero(
     assert not (tmp_path / "output").exists()
 
 
+def test_forbidden_yaml_character_is_reported_as_yaml_in_json(tmp_path, capsys):
+    path = tmp_path / "bad.yaml"
+    path.write_bytes(b"schema_version: 3\nsources: \x00\n")
+    code, out, _ = invoke(capsys, "validate", path, "--schema-only", "--json")
+    assert code == 1
+    error, = envelope(out, "validate", "error")["errors"]
+    assert error["help"] == "troubleshooting/configuration.html#e1102"
+    assert "bad.yaml" in error["message"]
+
+
+@pytest.mark.parametrize("command", ["inspect", "validate"])
+def test_competing_file_providers_link_to_field_selection(tmp_path, capsys, command):
+    source = create_first_run_input(tmp_path / "input.nc")
+    (tmp_path / "copy.nc").write_bytes(source.read_bytes())
+    path, raw = case(tmp_path)
+    raw["sources"]["weather"]["files"] = ["input.nc", "copy.nc"]
+    path.write_text(yaml.safe_dump(raw))
+    code, out, _ = invoke(capsys, command, path, "--json")
+    assert code == 1
+    error, = envelope(out, command, "error")["errors"]
+    assert error["help"] == "troubleshooting/fields.html#e1302"
+    assert "input.nc" in error["message"] and "copy.nc" in error["message"]
+    assert not (tmp_path / "out").exists()
+
+
 @pytest.mark.parametrize("command", [("run",), ("validate",), ("config", "show", "--effective")])
 def test_overwrite_flags_are_exclusive(tmp_path, capsys, command):
     code, out, err = invoke(capsys, *command, "--overwrite", "--no-overwrite")
@@ -188,6 +213,26 @@ def test_required_startup_import_failure_reports_a_code(monkeypatch, capsys):
     code, out, err = invoke(capsys, "--help")
     assert code == 1 and not out
     assert "[E1001]" in err and "No module named 'yaml'" in err
+
+
+@pytest.mark.parametrize("command,module", [("run", "pyproj"), ("validate", "numpy")])
+def test_required_import_at_command_boundary_reports_e1001(tmp_path, command, module):
+    path, _ = case(tmp_path)
+    result = subprocess.run([sys.executable, "-c", """
+import sys
+from frameit.cli import main
+command, module, path = sys.argv[1:]
+sys.modules[module] = None
+main([command, path, *(["--json"] if command == "validate" else [])])
+""", command, module, str(path)], capture_output=True, text=True, timeout=20)
+    assert result.returncode == 1
+    if command == "validate":
+        error, = envelope(result.stdout, command, "error")["errors"]
+        assert error["help"] == "troubleshooting/start.html#e1001"
+    else:
+        assert not result.stdout
+        assert "[E1001]" in result.stderr and "troubleshooting/start.html#e1001" in result.stderr
+    assert not (tmp_path / "out").exists()
 
 
 def test_starter_failures_explain_the_cause_without_changing_the_file(tmp_path, capsys, caplog):
@@ -457,6 +502,7 @@ def test_missing_or_unrecognized_status_is_actionable_and_never_creates_root(
     assert code == 1
     assert "run-status.yaml" in out + err + caplog.text
     assert "[E1807]" in out + err + caplog.text
+    assert "troubleshooting/outputs.html#e1807" in out + err + caplog.text
     assert "record" in (out + err + caplog.text).lower()
     if contents is None:
         assert not root.exists()
@@ -488,13 +534,34 @@ def test_status_read_that_changes_reports_e1809(tmp_path, capsys, caplog, monkey
     original = configuration.read_yaml
     reads = iter(("first", "second"))
 
-    def advancing(path):
-        return {**original(path), "updated_at": next(reads)}
+    def advancing(path, **kwargs):
+        return {**original(path, **kwargs), "updated_at": next(reads)}
 
     monkeypatch.setattr(configuration, "read_yaml", advancing)
     code, out, err = invoke(capsys, "status", tmp_path)
     assert code == 1 and not out
     assert "[E1809]" in err + caplog.text
+
+
+def test_disappearing_status_keeps_file_not_found_type(tmp_path, monkeypatch):
+    from frameit.core import configuration, run_state
+
+    path = tmp_path / "run-status.yaml"
+    path.write_text(yaml.safe_dump({
+        "schema_version": 1, "state": "running", "started_at": "first", "products": [],
+    }))
+    original = configuration.read_yaml
+
+    def disappear_after_first_snapshot(path, **kwargs):
+        initial = original(path, **kwargs)
+        path.unlink()
+        return initial
+
+    monkeypatch.setattr(configuration, "read_yaml", disappear_after_first_snapshot)
+    with pytest.raises(FileNotFoundError) as exc:
+        run_state.read_run_status(tmp_path)
+    assert exc.value.frameit_code == "E1809"
+    assert exc.value.filename == str(path)
 
 
 @pytest.mark.parametrize("number", [errno.ENOSPC, errno.EDQUOT])
@@ -767,6 +834,40 @@ def test_final_record_failure_is_not_current_success_or_persisted_checkpoint(
     else:
         assert "observed_owner_state: failed" in out
     assert not (conf.output_dir / ".frameit-run.lock").exists()
+
+
+@pytest.mark.parametrize("during", ["execution_checkpoint", "owned_run"])
+def test_failed_finalization_does_not_replace_cancellation(tmp_path, monkeypatch, capsys, during):
+    from frameit.core import run_state
+    from frameit.utils.diagnostics import tag_error
+
+    create_first_run_input(tmp_path / "input.nc")
+    path, _ = case(tmp_path)
+    original = run_state.write_yaml_atomic
+    interrupted = False
+
+    def cancel(*args, **kwargs):
+        nonlocal interrupted
+        interrupted = True
+        raise tag_error(SystemExit(143), "E0002")
+
+    def writing(path, value, **kwargs):
+        if (interrupted and Path(path).name == "run-status.yaml"
+                and (during == "execution_checkpoint" or value["state"] == "interrupted")):
+            raise PermissionError("test: cannot finish writing status")
+        return original(path, value, **kwargs)
+
+    monkeypatch.setattr("frameit.core.runner.FrameitRunner.run", cancel)
+    monkeypatch.setattr(run_state, "write_yaml_atomic", writing)
+    code, out, _ = invoke(capsys, "run", path, "--log-level", "ERROR")
+    assert code == 143 and out.startswith("Run state: interrupted")
+    assert "code: E0002" in out
+    assert "final record persistence is not verified" in " ".join(out.split())
+    root = tmp_path / "out"
+    assert yaml.safe_load((root / "run-status.yaml").read_text())["state"] == "running"
+    assert not (root / ".frameit-run.lock").exists()
+    log, = (root / "logs").glob("*.log")
+    assert "[E1808]" in log.read_text()
 
 
 @pytest.mark.parametrize("boundary", ["locked", "initial_record"])

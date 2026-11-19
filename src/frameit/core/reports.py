@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from frameit.utils.diagnostics import (
     CODE_TOPICS,
+    UNEXPECTED_ERROR,
     diagnostic_path,
     exception_code,
     format_message,
@@ -73,14 +74,25 @@ def blocked_check(path, prerequisites, message):
 
 def _metadata_view(value):
     """Copy metadata only; large coordinate arrays are described, never computed."""
-    import cftime
-    import numpy as np
-    import xarray as xr
-
+    if value is None or type(value) in (str, int, bool):
+        return value
+    if type(value) is float:
+        return value if math.isfinite(value) else {"nonfinite": str(value)}
     if isinstance(value, dict):
         return {str(key): _metadata_view(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_metadata_view(item) for item in value]
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, bytes):
+        return {"hex": value.hex()}
+    # Plain metadata, including startup failures, requires no scientific imports.
+    import cftime
+    import numpy as np
+    import xarray as xr
+
     if isinstance(value, (xr.Dataset, xr.DataArray)):
         return {"dimensions": dict(value.sizes), "attributes": _metadata_view(value.attrs)}
     if isinstance(value, np.ndarray):
@@ -94,12 +106,6 @@ def _metadata_view(value):
         return str(value)
     if isinstance(value, np.generic):
         return _metadata_view(value.item())
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, date):
-        return value.isoformat()
-    if isinstance(value, bytes):
-        return {"hex": value.hex()}
     if isinstance(value, float) and not math.isfinite(value):
         return {"nonfinite": str(value)}
     return value
@@ -114,17 +120,31 @@ def _diagnostic_item(error, conf=None):
     })
 
 
+def preflight_diagnostics(exc: BaseException) -> list[Diagnostic]:
+    """Find structured causes beneath wrappers that do not own a diagnosis."""
+    seen = set()
+    cause = exc
+    while cause is not None and id(cause) not in seen:
+        code = getattr(cause, "frameit_code", UNEXPECTED_ERROR)
+        if isinstance(code, str) and code != UNEXPECTED_ERROR and code in CODE_TOPICS:
+            break
+        if isinstance(cause, PreflightError) and cause.diagnostics:
+            return cause.diagnostics
+        seen.add(id(cause))
+        cause = cause.__cause__
+    return []
+
+
 def primary_error_code(exc: BaseException) -> str:
-    if isinstance(exc, PreflightError) and exc.diagnostics:
-        return exc.diagnostics[0].code
-    return exception_code(exc)
+    diagnostics = preflight_diagnostics(exc)
+    return diagnostics[0].code if diagnostics else exception_code(exc)
 
 
 def error_record(exc: BaseException) -> dict:
     """Keep the cause codes when reporting or recording a failed run."""
     record = {"type": type(exc).__name__, "message": str(exc), "code": primary_error_code(exc)}
-    if isinstance(exc, PreflightError) and exc.diagnostics:
-        record["diagnostics"] = [_diagnostic_item(error) for error in exc.diagnostics]
+    if diagnostics := preflight_diagnostics(exc):
+        record["diagnostics"] = [_diagnostic_item(error) for error in diagnostics]
     return record
 
 

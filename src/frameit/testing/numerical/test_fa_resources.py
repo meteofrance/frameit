@@ -104,6 +104,23 @@ def test_missing_fa_interpreter_has_an_environment_code(tmp_path):
     assert getattr(exc.value, "frameit_code", None) == "E1003"
 
 
+@pytest.mark.parametrize("reported,expected", [
+    ("E1702", "E1702"), ("E1810", "E1810"), ("E0999", "E0999"),
+    ("W1301", "E1003"), (["E1702"], "E1003"),
+])
+def test_fa_parent_keeps_worker_error_codes(monkeypatch, reported, expected):
+    def response(argv, **kwargs):
+        (Path(argv[-1]) / "response.json").write_text(json.dumps({
+            "ok": False, "error": "test: decoder failed", "code": reported,
+        }))
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", response)
+    with pytest.raises(ValueError, match="decoder failed") as exc:
+        request_fa({"operation": "inspect", "path": "surface.fa"})
+    assert exc.value.frameit_code == expected
+
+
 @pytest.mark.parametrize("shape,code", [
     ([1001, 1001], "E1008"), ([8, 8], "E1008"), ([-1, 2], "E1003"),
     ([True, 2], "E1003"), ([1, 1, 1], "E1003"),

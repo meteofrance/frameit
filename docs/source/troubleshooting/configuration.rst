@@ -24,8 +24,9 @@ E1102: FrameIt could not parse the YAML
 Open the YAML at the line and column in the error. Check indentation,
 quotes, and brackets on that line and the line above it. Use spaces,
 not tabs, for indentation. The file must contain one set of named
-settings, not a list or an empty document. Save the file as UTF-8 and
-run schema-only validation again.
+settings, not a list or an empty document. If the error names a forbidden
+character, remove it at the reported position. Save the file as UTF-8
+and run schema-only validation again.
 
 .. _e1103:
 

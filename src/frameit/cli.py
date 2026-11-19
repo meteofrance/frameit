@@ -52,10 +52,10 @@ from frameit.utils.diagnostics import (  # noqa: E402
 
 
 def _failure_message(exc: Exception) -> str:
-    from frameit.core.reports import PreflightError
+    from frameit.core.reports import preflight_diagnostics
 
-    if isinstance(exc, PreflightError) and exc.diagnostics:
-        paths = dict.fromkeys(diagnostic_path(error.code) for error in exc.diagnostics)
+    if diagnostics := preflight_diagnostics(exc):
+        paths = dict.fromkeys(diagnostic_path(error.code) for error in diagnostics)
         return str(exc) + "\nTroubleshooting: " + ", ".join(paths)
     return format_help(exception_code(exc), str(exc))
 
@@ -335,8 +335,13 @@ def _report_failure(exc, command):
 
 
 def _collect_report(path, *, command, schema_only=False, overrides=None):
-    from frameit.core.preflight import collect_preflight
-    from frameit.utils.logging import frameit_logging_scope
+    try:
+        from yaml import YAMLError
+
+        from frameit.core.preflight import collect_preflight
+        from frameit.utils.logging import frameit_logging_scope
+    except ImportError as exc:
+        return _report_failure(tag_error(exc, "E1001"), command)
 
     try:
         request = _load_config(path, overrides or {})
@@ -344,7 +349,7 @@ def _collect_report(path, *, command, schema_only=False, overrides=None):
             for handler in logging.getLogger("frameit").handlers:
                 handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
             return collect_preflight(request, command=command, schema_only=schema_only)
-    except (OSError, ValueError, ImportError) as exc:
+    except (OSError, ValueError, ImportError, YAMLError) as exc:
         return _report_failure(exc, command)
 
 
@@ -417,7 +422,10 @@ def _cmd_info(short: bool) -> int:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    from frameit.core.execution import ExecutionOptions, execute_simulation
+    try:
+        from frameit.core.execution import ExecutionOptions, execute_simulation
+    except ImportError as exc:
+        raise tag_error(exc, "E1001")
 
     conf = _load_config(args.config, _operational_overrides(args))
     options = ExecutionOptions.from_config(

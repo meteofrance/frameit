@@ -128,7 +128,7 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
 
     from frameit.core.execution import ExecutionOptions, execute_simulation
     from frameit.core.preflight import collect_preflight
-    from frameit.core.reports import PreflightError
+    from frameit.core.reports import error_record
 
     source, _ = native_vortex(n=9)
     source = source.drop_vars([n for n in ("BETA", "RPK", "LON0") if n in source])
@@ -163,9 +163,9 @@ def test_missing_mnh_projection_headers_export_and_provenance(tmp_path, frame, r
         error, = collect_preflight(request).errors
         assert error.code == "E1306"
         assert "BETA, RPK, LON0" in error.message
-        with pytest.raises(PreflightError) as exc:
+        with pytest.raises(ValueError, match="Cannot bind source requests to metadata") as exc:
             execute_simulation(request)
-        assert exc.value.diagnostics[0].code == "E1306"
+        assert error_record(exc.value)["diagnostics"][0]["code"] == "E1306"
         assert not request.output_dir.exists()
     conf = SimulationConfig.from_mapping_with_model_preset(raw)
     result = execute_simulation(conf, ExecutionOptions(synchronous_export=True))
