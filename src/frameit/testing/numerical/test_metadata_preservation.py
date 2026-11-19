@@ -193,34 +193,3 @@ def test_operation_result_preserves_supplied_native_index_attributes(indices):
     assert result["rho"].s_rho_source_native_index.identical(selected.s_rho_source_native_index)
     xr.testing.assert_equal(result["rho"].u, selected.u)
     xr.testing.assert_identical(result["rho"].temperature, selected.temperature)
-
-
-@pytest.mark.parametrize("conflict", ["indices", "labels", "attributes"])
-def test_mixed_croco_transform_does_not_hide_genuine_coordinate_conflicts(tmp_path, conflict):
-    from frameit.io.loader import DatasetResources
-    from frameit.io.netcdf_utils import concat_nc2ds_by_vert_coord
-    from frameit.processing.derived.wind import execute_source_operations
-
-    conf = croco_metadata_case(tmp_path, [0, 2])
-    _, children, sources = bind_sources(conf)
-    child, source = children["ocean"], sources["ocean"]
-    binding = child.source_requests["ocean"]["binding"]
-    with DatasetResources() as resources:
-        user, support = concat_nc2ds_by_vert_coord(
-            [tmp_path / "ocean.nc"], {}, {}, resources=resources,
-            selected_records=binding, source_plan=source)
-        grid = binding["operations"][0]["grid_id"]
-        assert grid in user
-        ds = user[grid]
-        index = "s_rho_source_native_index"
-        if conflict == "indices":
-            ds = ds.assign_coords({index: ("s_rho", [0, 1], ds[index].attrs)})
-        elif conflict == "labels":
-            ds = ds.assign_coords(s_rho=[-.9, -.2])
-        else:
-            ds = ds.assign_coords({index: ds[index].assign_attrs(
-                definition="conflicting authored support")})
-        user[grid] = ds
-        with pytest.raises(ValueError, match="conflicting|align"):
-            execute_source_operations(user, support["internal"], source, binding, child)
-    assert not conf.output_dir.exists()

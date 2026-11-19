@@ -18,6 +18,7 @@ import pytest
 
 from frameit.core.execution import ExecutionOptions, execute_simulation
 from frameit.testing.numerical.test_v3_run_state import (
+    _exercise_parent_retention_boundary,
     gate_second_product,
     ordinary_reader,
     record,
@@ -542,12 +543,8 @@ assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
 ])
 def test_a1_terminal_count_matches_retained_publications(tmp_path, monkeypatch, fmt, boundary):
     """A missed callback cannot remove a retained product from the terminal count."""
-    from frameit.testing.numerical.test_v3_run_state import (
-        test_parent_retention_boundary_preserves_each_actual_product_once as retention_case,
-    )
-
     reporters, messages = observe(monkeypatch)
-    retention_case(tmp_path, monkeypatch, fmt, boundary)
+    _exercise_parent_retention_boundary(tmp_path, monkeypatch, fmt, boundary)
     stopped(reporters)
     root = tmp_path / "out"
     status = record(root, "run-status.yaml")

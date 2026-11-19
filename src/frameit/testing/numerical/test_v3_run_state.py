@@ -810,12 +810,7 @@ def test_request_context_preserves_positional_constructor_and_keyword_copy(tmp_p
     assert context["overrides"] == {}
 
 
-@pytest.mark.parametrize("fmt", ["netcdf", "zarr"])
-@pytest.mark.parametrize("boundary", [
-    "before_retention", "callback_entry", "callback_error", "callback_signal",
-])
-def test_parent_retention_boundary_preserves_each_actual_product_once(
-        tmp_path, monkeypatch, fmt, boundary):
+def _exercise_parent_retention_boundary(tmp_path, monkeypatch, fmt, boundary):
     from collections import Counter
 
     import frameit.io.netcdf_export as exporter

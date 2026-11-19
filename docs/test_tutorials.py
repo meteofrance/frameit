@@ -104,17 +104,21 @@ def test_downloadable_task_executes_and_plots_without_supplied_data(
         elif name == "analytic-moving":
             assert data.sizes["time"] == 2
             assert data.speed.attrs["units"] == "m s-1"
-    plot = work / f"plot_{script}.py"
-    shutil.copyfile(ROOT / "example/plots" / plot.name, plot)
-    figure = work / f"{name}.svg"
-    args = [sys.executable, str(plot), str(path), str(figure)]
+    plot_inputs = [path]
     if name == "coupled-inputs":
         water = next(item for item in status["products"] if item.get("source") == "ocean")
         water_path = directory / water["path"]
         with xr.open_dataset(water_path) as ocean:
             assert ocean.sizes["time"] == 3
             assert ocean.temp.attrs["units"] == "K"
-        args.insert(-1, str(water_path))
+        plot_inputs.append(water_path)
+    if interface != "cli":
+        return  # The scripts consume the products, not the interface that created them.
+
+    plot = work / f"plot_{script}.py"
+    shutil.copyfile(ROOT / "example/plots" / plot.name, plot)
+    figure = work / f"{name}.svg"
+    args = [sys.executable, str(plot), *map(str, plot_inputs), str(figure)]
     run = subprocess.run(args, cwd=work, capture_output=True, text=True, timeout=30,
                          env={**os.environ, "MPLBACKEND": "Agg"})
     assert run.returncode == 0, run.stdout + run.stderr
