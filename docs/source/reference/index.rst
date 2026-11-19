@@ -18,7 +18,6 @@ For a worked run, start with the :doc:`task guides <../task_guides/index>`.
    :maxdepth: 1
 
    ../user_guide/configuration_file
-   all_keys
    inputs
    ../user_guide/output_files
    tracking
@@ -26,4 +25,3 @@ For a worked run, start with the :doc:`task guides <../task_guides/index>`.
    analytical_inputs
    vertical_levels
    concepts
-   ../troubleshooting

@@ -11,6 +11,21 @@ Troubleshooting
   :doc:`saved run status <troubleshooting/outputs>`. Then check the
   :doc:`fields <troubleshooting/fields>` or :doc:`polar values <troubleshooting/polar>`.
 
+.. toctree::
+   :maxdepth: 1
+
+   troubleshooting/codes
+   troubleshooting/start
+   troubleshooting/configuration
+   reference/all_keys
+   troubleshooting/inputs
+   troubleshooting/fields
+   troubleshooting/time
+   troubleshooting/regions
+   troubleshooting/polar
+   troubleshooting/run
+   troubleshooting/outputs
+
 Quick checks
 ------------
 
@@ -25,20 +40,6 @@ Quick checks
    and read ``frameit status path/to/run``. Replace ``path/to/run``
    with your output directory. Validation is not proof that the
    result is scientifically valid.
-
-.. toctree::
-   :maxdepth: 1
-
-   troubleshooting/codes
-   troubleshooting/start
-   troubleshooting/configuration
-   troubleshooting/inputs
-   troubleshooting/fields
-   troubleshooting/time
-   troubleshooting/regions
-   troubleshooting/polar
-   troubleshooting/run
-   troubleshooting/outputs
 
 Configuration fails before inputs open
 --------------------------------------

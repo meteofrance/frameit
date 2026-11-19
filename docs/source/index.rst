@@ -6,5 +6,6 @@ FrameIt |release| documentation
 
    getting_started/index
    task_guides/index
+   troubleshooting
    reference/index
    developper/index
