@@ -531,8 +531,10 @@ assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
     captured = capsys.readouterr()
     assert not captured.out and "Run incomplete" in captured.err
     text = Path(result.log_path).read_text()
-    terminal = [line for line in text.splitlines() if "Progress | Run incomplete" in line]
+    terminal = [line for line in text.splitlines()
+                if "Progress | " in line and "Run incomplete" in line]
     assert len(terminal) == 1 and "published products=2" in terminal[0]
+    assert "[W1501]" in terminal[0]
     assert "prepared sources=1" in terminal[0] and "completed tracking operations=1" in terminal[0]
     assert "Run complete" not in text
 

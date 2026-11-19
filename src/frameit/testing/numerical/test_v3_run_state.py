@@ -117,7 +117,9 @@ def test_early_failure_keeps_captured_request_and_original_bases(
     root = conf.output_dir
     status = record(root, "run-status.yaml")
     assert status["state"] == "failed"
-    assert status["error"] == {"type": "RuntimeError", "message": "before source processing"}
+    assert status["error"] == {
+        "type": "RuntimeError", "message": "before source processing", "code": "E0999",
+    }
     assert status["pending"] == ["processing", "publication"]
     assert status["products"] == []
     assert status["finished_at"] and status["updated_at"] >= status["started_at"]
@@ -507,11 +509,15 @@ def test_checkpoint_failure_does_not_erase_the_original_processing_error(tmp_pat
 
     monkeypatch.setattr("frameit.core.runner.FrameitRunner.run", fail_processing)
     monkeypatch.setattr(run_state, "write_yaml_atomic", fail_record)
-    with pytest.raises(OSError, match="secondary checkpoint failure"):
+    with pytest.raises(RuntimeError, match="original processing failure") as exc:
         execute_simulation(conf)
+    assert any("[E1808]" in note and "secondary checkpoint failure" in note
+               for note in exc.value.__notes__)
     status = record(conf.output_dir, "run-status.yaml")
     assert status["state"] == "failed"
-    assert status["error"] == {"type": "RuntimeError", "message": "original processing failure"}
+    assert status["error"] == {
+        "type": "RuntimeError", "message": "original processing failure", "code": "E0999",
+    }
     assert status["products"] == [] and status["pending"] == ["processing", "publication"]
 
 
