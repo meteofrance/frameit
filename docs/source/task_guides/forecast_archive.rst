@@ -10,28 +10,19 @@ Identify the forecast
 A forecast's start is its **cycle**. Its **lead** is the time since that
 start. A sample's **valid time** is the time it describes.
 
-.. list-table:: Files in ``forecast-archive/`` on 1 January 2000
-   :header-rows: 1
+In these files, ``time`` is the forecast start, ``step`` is the lead, and
+``valid_time`` is the sample time. Copy this into ``inspect_forecast_archive.py``
+and run ``python inspect_forecast_archive.py`` to read them before choosing a
+cycle.
 
-   * - File
-     - Cycle
-     - Lead
-     - Valid time
-   * - ``z-earlier.nc``
-     - 00:00
-     - 1 h
-     - 01:00
-   * - ``a-later.nc``
-     - 00:00
-     - 2 h
-     - 02:00
-   * - ``b-other-cycle.nc``
-     - 01:00
-     - 1 h
-     - 02:00
+.. literalinclude:: ../../../example/tutorials/inspect_forecast_archive.py
+   :language: python
 
-Two cycles describe 02:00. They are not the same forecast. FrameIt uses the
-decoded times, not the names or order of the files.
+Optional: :download:`script file <../../../example/tutorials/inspect_forecast_archive.py>`.
+
+On 1 January 2000, ``z-earlier.nc`` and ``a-later.nc`` start at 00:00.
+``b-other-cycle.nc`` starts at 01:00. Both cycles describe 02:00. They are
+not the same forecast. Use the decoded times, not the names of the files.
 
 Save :download:`forecast-archive.yaml <../../../example/tutorials/forecast-archive.yaml>`:
 
@@ -88,6 +79,10 @@ The output has valid times 01:00 and 02:00, in that order. Its
 ``forecast_reference_time`` is 00:00 and ``step`` holds the 1 h and 2 h leads.
 Pressure is 100100 Pa at 01:00 and 100200 Pa at 02:00. The 101200 Pa sample
 from the other cycle is not present.
+
+In ``results/forecast-archive/run-provenance.yaml``, check
+``binding.atmosphere.files``. It lists ``z-earlier.nc`` and ``a-later.nc``,
+not ``b-other-cycle.nc``.
 
 Copy this into ``plot_forecast_archive.py``:
 

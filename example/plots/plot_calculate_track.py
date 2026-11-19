@@ -26,7 +26,9 @@ with xr.open_dataset(args.track) as track, xr.open_dataset(args.reference) as re
     ax.set(xlabel="Longitude (°E)", ylabel="Latitude (°N)",
            title="Calculated and known positions")
     ax.set_xticks(reference.longitude.values)
-    ax.set_ylim(float(track.latitude.min()) - .1, float(track.latitude.max()) + .1)
+    bottom = min(float(track.latitude.min()), float(reference.latitude.min()))
+    top = max(float(track.latitude.max()), float(reference.latitude.max()))
+    ax.set_ylim(bottom - .1, top + .1)
     ax.yaxis.set_major_locator(LinearLocator(3))
     ax.xaxis.set_major_formatter(FormatStrFormatter("%.1f"))
     ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))

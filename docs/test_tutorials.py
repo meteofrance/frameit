@@ -127,6 +127,10 @@ def test_downloadable_task_executes_and_plots_without_supplied_data(
             assert data.sizes["time"] == 2
             assert data.speed.attrs["units"] == "m s-1"
     plot_inputs = [path]
+    if name == "forecast-archive":
+        provenance = yaml.safe_load((directory / "run-provenance.yaml").read_text())
+        selected = provenance["binding"]["atmosphere"]["files"]
+        assert {Path(file).name for file in selected} == {"z-earlier.nc", "a-later.nc"}
     if name == "calculate-track":
         assert {p["role"] for p in status["products"]} == {"track", "model_grid"}
         crop = next(p["path"] for p in status["products"] if p["role"] == "model_grid")
@@ -218,6 +222,22 @@ def test_polar_coverage_checks_missing_wind_and_valid_category_zero(tmp_path):
     assert "Valid water code 0 is present: True" in check.stdout
 
 
+def test_forecast_archive_inventory_shows_cycle_lead_and_valid_time(tmp_path):
+    from frameit.testing.documentation_example import create_task_fixtures
+
+    work = tmp_path / "tutorial-data"
+    create_task_fixtures(work)
+    script = ROOT / "example/tutorials/inspect_forecast_archive.py"
+    result = subprocess.run([sys.executable, str(script)], cwd=work,
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert set(result.stdout.splitlines()[1:]) == {
+        "z-earlier.nc | 2000-01-01T00:00 | 1 | 2000-01-01T01:00",
+        "a-later.nc | 2000-01-01T00:00 | 2 | 2000-01-01T02:00",
+        "b-other-cycle.nc | 2000-01-01T01:00 | 1 | 2000-01-01T02:00",
+    }
+
+
 def test_forecast_archive_requires_explicit_cycle(tmp_path):
     import yaml
 
@@ -299,44 +319,62 @@ def test_table_track_file_works_and_missing_middle_position_fails(tmp_path):
     assert "E1404" in report and "01:00" in report
 
 
-@pytest.mark.parametrize("representation", ["native", "earth"])
-def test_staggered_winds_export_uses_requested_locations_and_directions(tmp_path, representation):
+def test_staggered_winds_export_uses_requested_locations_and_directions(tmp_path):
     from frameit.core.execution import execute_simulation
     from frameit.core.settings_class import SimulationConfig
     from frameit.testing.documentation_example import create_task_fixtures
 
     work = tmp_path / "tutorial-data"
     paths = create_task_fixtures(work)
-    name = f"staggered-winds-{representation}"
-    config = work / f"{name}.yaml"
-    shutil.copyfile(ROOT / "example/tutorials" / config.name, config)
     source = paths["staggered-winds.mesonh"]
     before = source.read_bytes()
-    result = execute_simulation(SimulationConfig.from_yaml_with_model_preset(config))
-    assert result.ok
-    product, = result.products
-    assert product["role"] == "model_grid"
-    with xr.open_dataset(product["path"]) as data:
-        np.testing.assert_array_equal(data.level, [5.])
-        assert data.UT.attrs["units"] == data.VT.attrs["units"] == "m s-1"
-        if representation == "native":
-            assert data.UT.dims == ("time", "level", "y", "x_u")
-            assert data.VT.dims == ("time", "level", "y_v", "x")
-            assert data.UT.attrs["standard_name"] == "x_wind"
-            assert data.VT.attrs["standard_name"] == "y_wind"
-            u = 10 + (data.latitude_u + 20) * 111
-            expected = xr.broadcast(u, data.UT)[0].transpose(*data.UT.dims)
-            np.testing.assert_allclose(data.UT, expected, rtol=0, atol=1e-9)
-            np.testing.assert_array_equal(data.VT, 0.)
-        else:
-            assert data.UT.dims == data.VT.dims == ("time", "level", "y", "x")
-            assert data.UT.attrs["standard_name"] == "eastward_wind"
-            assert data.VT.attrs["standard_name"] == "northward_wind"
-            assert data.VT.attrs["wind_reference_frame"] == "earth"
-            np.testing.assert_allclose(data.UT, 0., rtol=0, atol=1e-9)
-            np.testing.assert_allclose(data.VT.isel(time=0, level=0, y=1),
-                                       [9., 10., 11.], rtol=0, atol=1e-9)
+    products = {}
+    for representation in ("native", "earth"):
+        name = f"staggered-winds-{representation}"
+        config = work / f"{name}.yaml"
+        shutil.copyfile(ROOT / "example/tutorials" / config.name, config)
+        result = execute_simulation(SimulationConfig.from_yaml_with_model_preset(config))
+        assert result.ok
+        product, = result.products
+        assert product["role"] == "model_grid"
+        products[representation] = product["path"]
+    with (xr.open_dataset(products["native"]) as native,
+          xr.open_dataset(products["earth"]) as earth,
+          xr.open_dataset(source) as original):
+        for data in (native, earth):
+            np.testing.assert_array_equal(data.level, [5.])
+            assert data.UT.attrs["units"] == data.VT.attrs["units"] == "m s-1"
+        assert native.UT.dims == ("time", "level", "y", "x_u")
+        assert native.VT.dims == ("time", "level", "y_v", "x")
+        assert native.UT.attrs["standard_name"] == "x_wind"
+        assert native.VT.attrs["standard_name"] == "y_wind"
+        u = 10 + (native.latitude_u + 20) * 111
+        expected = xr.broadcast(u, native.UT)[0].transpose(*native.UT.dims)
+        np.testing.assert_allclose(native.UT, expected, rtol=0, atol=1e-9)
+        np.testing.assert_array_equal(native.VT, 0.)
+        indices = {dim: native[f"{dim}_source_native_index"].isel(time=0).values
+                   for dim in ("nj_v", "ni_v")}
+        for coord in ("latitude_v", "longitude_v"):
+            np.testing.assert_array_equal(native[coord].isel(time=0),
+                                          original[coord].isel(indices))
+        assert earth.UT.dims == earth.VT.dims == ("time", "level", "y", "x")
+        assert earth.UT.attrs["standard_name"] == "eastward_wind"
+        assert earth.VT.attrs["standard_name"] == "northward_wind"
+        assert earth.VT.attrs["wind_reference_frame"] == "earth"
+        np.testing.assert_allclose(earth.UT, 0., rtol=0, atol=1e-9)
+        np.testing.assert_allclose(earth.VT.isel(time=0, level=0, y=1),
+                                   [9., 10., 11.], rtol=0, atol=1e-9)
     assert source.read_bytes() == before
+    script = ROOT / "example/tutorials/check_staggered_winds.py"
+    check = subprocess.run([sys.executable, str(script)], cwd=work,
+                           capture_output=True, text=True, timeout=30)
+    assert check.returncode == 0, check.stdout + check.stderr
+    assert "Native UT x (m): [-1500.0, -500.0, 500.0]" in check.stdout
+    assert "Native VT y (m): [-1500.0, -500.0, 500.0]" in check.stdout
+    assert "Mass x (m): [-1000.0, 0.0, 1000.0]" in check.stdout
+    assert "Mass y (m): [-1000.0, 0.0, 1000.0]" in check.stdout
+    assert "Eastward (m/s): [0.0, 0.0]" in check.stdout
+    assert "Northward (m/s): [10.0, 11.0]" in check.stdout
 
 
 def test_calculate_track_reports_seed_with_no_pressure_candidate(tmp_path):
@@ -356,6 +394,27 @@ def test_calculate_track_reports_seed_with_no_pressure_candidate(tmp_path):
     assert run.returncode != 0
     assert "initial guess search circle contains no finite MSLP" in run.stderr
     assert not list((work / raw["output"]["directory"] / "products").glob("*.nc"))
+
+
+def test_calculate_track_plot_keeps_both_latitudes_visible(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    known = tmp_path / "known.nc"
+    calculated = tmp_path / "calculated.nc"
+    for path, latitude in ((known, -20.), (calculated, -19.85)):
+        xr.Dataset({
+            "longitude": ("time", [60., 60.1]),
+            "latitude": ("time", [latitude] * 2),
+        }, coords={"time": np.arange(2)}).to_netcdf(path)
+    script = ROOT / "example/plots/plot_calculate_track.py"
+    figure = tmp_path / "comparison.svg"
+    monkeypatch.setattr(sys, "argv", [str(script), str(calculated), str(known), str(figure)])
+    try:
+        runpy.run_path(str(script), run_name="__main__")
+        bottom, top = plt.gcf().axes[0].get_ylim()
+        assert bottom <= -20. < -19.85 <= top
+    finally:
+        plt.close("all")
 
 
 @pytest.mark.parametrize("script,field", [

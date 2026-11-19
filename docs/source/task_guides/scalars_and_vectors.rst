@@ -82,10 +82,10 @@ See :doc:`../reference/vertical_levels` for selection on destination grids.
 Compare two wind representations
 --------------------------------
 
-Use ``staggered-winds/mesonh.nc`` for this separate exercise. In the fixture,
-``UT`` points along the grid's x direction and is stored on x faces.
-``VT`` points along y and is stored on y faces. The two components are
-not at the same points.
+Use ``staggered-winds/mesonh.nc`` for this separate exercise. The input
+``standard_name`` labels ``x_wind`` and ``y_wind`` tell you that ``UT`` and
+``VT`` point along the grid axes. ``UT`` is stored on x faces and ``VT`` on
+y faces. The two components are not at the same points.
 
 First, save and run
 :download:`staggered-winds-native.yaml <../../../example/tutorials/staggered-winds-native.yaml>`.
@@ -111,23 +111,23 @@ It keeps the same crop and level but requests two changes:
    frameit run staggered-winds-native.yaml
    frameit run staggered-winds-earth.yaml
 
-In the native file, ``UT`` has axis ``x_u`` and ``VT`` has axis ``y_v``.
-The x faces at −500 and +500 m carry ``UT`` values 9.5 and 10.5 m/s.
-At the centre between them, the grid components are (10, 0) m/s.
-After rotation, they are (0, 10) m/s eastward and northward.
+Copy this into ``check_staggered_winds.py`` and run
+``python check_staggered_winds.py``:
 
-Both variables in the second file use ``y, x``. Check the centre and the
-next x point:
+.. literalinclude:: ../../../example/tutorials/check_staggered_winds.py
+   :language: python
 
-.. code-block:: python
+Optional: :download:`script file <../../../example/tutorials/check_staggered_winds.py>`.
 
-   import xarray as xr
+In the native file, ``x_u`` and ``y_v`` are index axes. The script reads
+the face locations in metres from ``ni_u_source_coordinate`` and
+``nj_v_source_coordinate``. Both print −1500, −500 and +500 m. In the
+second file both winds use ``y, x``, with mass points at −1000, 0 and +1000 m.
 
-   path = "results/staggered-winds-earth/products/staggered-winds-earth.atmosphere.model_grid.nc"
-   with xr.open_dataset(path) as data:
-       wind = data[["UT", "VT"]].isel(time=0, level=0, y=1, x=[1, 2])
-       print(wind.UT.values.round(9))  # [0. 0.], eastward in m/s
-       print(wind.VT.values.round(9))  # [10. 11.], northward in m/s
+The x faces at −500 and +500 m carry ``UT`` values 9.5 and 10.5 m/s. At
+the centre between them, the grid components are (10, 0) m/s. The script
+shows (0, 10) m/s eastward and northward at that point after rotation.
+At the next x point it shows (0, 11) m/s.
 
 The quarter-turn is set by this fixture, not a Meso-NH default. The
 transforms change sample locations and component directions. They do not
