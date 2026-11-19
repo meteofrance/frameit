@@ -140,6 +140,11 @@ Keep these four records with the data:
   ``products`` lists observed complete publications; ``pending`` lists unresolved
   processing, publication or cleanup.
 
+New failure records include an ``error.code`` beside the error type and
+message. Older records may not have a code. Look up a code in
+:doc:`../troubleshooting/codes`. The code explains the failure; it does not
+change which products were published.
+
 When centre association is used, status ``time_alignment`` mirrors the provenance
 record, including excluded times. Unmapped GRIB headers remain inspectable under
 ``sources.<id>.unmapped_grib_records`` in provenance, with native attributes and

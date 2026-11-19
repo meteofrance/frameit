@@ -14,6 +14,8 @@ from dataclasses import replace
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from frameit.utils.diagnostics import tag_error
+
 NATIVE_THREAD_VARIABLES = (
     "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS",
     "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
@@ -40,9 +42,11 @@ def cpu_budget():
         try:
             count = int(allocated)
         except ValueError as exc:
-            raise ValueError("SLURM_CPUS_PER_TASK must be a positive integer") from exc
+            raise tag_error(ValueError(
+                "SLURM_CPUS_PER_TASK must be a positive integer"
+            ), "E1701") from exc
         if count < 1:
-            raise ValueError("SLURM_CPUS_PER_TASK must be a positive integer")
+            raise tag_error(ValueError("SLURM_CPUS_PER_TASK must be a positive integer"), "E1701")
         limits["slurm_cpus_per_task"] = count
     return max(1, min(limits.values())), limits
 
@@ -57,24 +61,24 @@ def resolve_execution_resources(options):
     available, limits = cpu_budget()
     cpus = options.cpus if options.cpus is not None else available
     if cpus > available:
-        raise ValueError(
+        raise tag_error(ValueError(
             f"resources.cpus={cpus} exceeds the available CPU limit ({available}); "
             "reduce resources.cpus or request a larger allocation"
-        )
+        ), "E1701")
     dask_workers = 1 if options.dask_scheduler == "synchronous" else (options.dask_workers or 1)
     per_process = dask_workers * options.native_threads
     if per_process > cpus:
-        raise ValueError(
+        raise tag_error(ValueError(
             f"Dask workers × native threads ({per_process}) exceeds CPU budget ({cpus})"
-        )
+        ), "E1701")
     export_workers = (1 if options.synchronous_export
                       else (options.max_workers or cpus // per_process))
     if export_workers * per_process > cpus:
-        raise ValueError(
+        raise tag_error(ValueError(
             f"Export workers × Dask workers × native threads ({export_workers * per_process}) "
             f"exceeds CPU budget ({cpus}); reduce resources.export_workers, "
             "resources.compute_workers or resources.native_threads"
-        )
+        ), "E1701")
     origins = dict(options.setting_sources)
     for key, value in (
         ("cpus", options.cpus), ("compute_workers", options.dask_workers),
@@ -169,7 +173,7 @@ def termination_scope():
         return
 
     def terminate(signum, _frame):
-        raise SystemExit(128 + signum)
+        raise tag_error(SystemExit(128 + signum), "E0002")
 
     previous = signal.signal(signal.SIGTERM, terminate)
     try:

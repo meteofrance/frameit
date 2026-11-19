@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from threading import Event, Lock, Thread
 
+from frameit.utils.diagnostics import format_message
+
 _DEFAULT_THIRD_PARTY_LEVELS: dict[str, int] = {
     "pyproj": logging.WARNING,
     "xesmf": logging.WARNING,
@@ -92,9 +94,10 @@ class _QuietProgress:
                 self._thread.join()
             self._thread = None
 
-    def finish(self, state):
+    def finish(self, state, *, code=None):
         self.stop()
-        self.update(f"Run {state}")
+        message = f"Run {state}"
+        self.update(format_message(code, message) if code is not None else message)
         level = (logging.INFO if state == "complete" else
                  logging.WARNING if state == "incomplete" else logging.ERROR)
         self._report(force=True, level=level)

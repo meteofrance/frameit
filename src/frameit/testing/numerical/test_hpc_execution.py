@@ -86,9 +86,10 @@ def test_thread_scope_restores_environment_and_dask(monkeypatch):
 def test_exclusive_run_ownership_and_early_no_clobber(tmp_path, monkeypatch):
     root = tmp_path / "out"
     with owned_run(root, overwrite=False, initial={}) as status:
-        with pytest.raises(FileExistsError, match="locked"):
+        with pytest.raises(FileExistsError, match="locked") as exc:
             with owned_run(root, overwrite=True, initial={}):
                 pytest.fail("A second owner entered the directory")
+        assert exc.value.frameit_code == "E1801"
         status["state"] = "completed"
     original = (root / "run-status.yaml").read_bytes()
     dataset(tmp_path)
@@ -98,8 +99,9 @@ def test_exclusive_run_ownership_and_early_no_clobber(tmp_path, monkeypatch):
     monkeypatch.setattr("frameit.core.execution._execute_simulation", lambda *a, **k: pytest.fail(
         "No-clobber must fail before processing"
     ))
-    with pytest.raises(FileExistsError, match="Existing run artifacts"):
+    with pytest.raises(FileExistsError, match="Existing run artifacts") as exc:
         execute_simulation(conf)
+    assert exc.value.frameit_code == "E1802"
     assert (root / "run-status.yaml").read_bytes() == original
     assert not (root / ".frameit-run.lock").exists()
 
@@ -230,7 +232,9 @@ def test_cli_keeps_checkout_under_local_in_parent_and_spawn(tmp_path, layout, cu
     for root in (selected, competitor):
         package = root / "frameit"
         package.mkdir(parents=True)
-        for name in ("__init__.py", "_version.py", "cli.py"):
+        (package / "utils").mkdir()
+        (package / "utils/__init__.py").write_text("")
+        for name in ("__init__.py", "_version.py", "cli.py", "utils/diagnostics.py"):
             (package / name).write_bytes((source / name).read_bytes())
 
     import_directory = selected
@@ -419,7 +423,7 @@ main(['run', sys.argv[1], '--output-directory', sys.argv[2], '--no-overwrite'])
     assert not (root / ".frameit-run.lock").exists()
 
 
-def test_incomplete_tracking_is_explicit_and_strict_policy_fails(tmp_path, monkeypatch):
+def test_incomplete_tracking_is_explicit_and_strict_policy_fails(tmp_path, monkeypatch, capsys):
     from frameit.core.runner import FrameitRunner
 
     dataset(tmp_path)
@@ -446,6 +450,10 @@ def test_incomplete_tracking_is_explicit_and_strict_policy_fails(tmp_path, monke
         status = yaml.safe_load((root / "run-status.yaml").read_text())
         assert status["state"] == ("failed" if strict else "incomplete")
         assert status["tracking_complete"] is False
+        if strict:
+            assert status["error"]["code"] == "E1504"
+        else:
+            assert "[W1501]" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("kill", [False, True], ids=["sigterm", "sigkill"])
@@ -486,6 +494,10 @@ main(['run', sys.argv[1], '--output-directory', sys.argv[2], '--no-overwrite'])
         assert process.returncode == (-signal.SIGKILL if kill else 143), stderr
         status = yaml.safe_load((root / "run-status.yaml").read_text())
         assert status["state"] == ("running" if kill else "interrupted")
+        if kill:
+            assert "error" not in status
+        else:
+            assert status["error"]["code"] == "E0002"
         assert (root / ".frameit-run.lock").exists() == kill
     finally:
         if process.poll() is None:

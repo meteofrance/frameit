@@ -1,5 +1,6 @@
 """Public v3 commands on small instructional inputs; no producer qualification."""
 
+import errno
 import hashlib
 import json
 import subprocess
@@ -455,6 +456,7 @@ def test_missing_or_unrecognized_status_is_actionable_and_never_creates_root(
     code, out, err = invoke(capsys, "status", root)
     assert code == 1
     assert "run-status.yaml" in out + err + caplog.text
+    assert "[E1807]" in out + err + caplog.text
     assert "record" in (out + err + caplog.text).lower()
     if contents is None:
         assert not root.exists()
@@ -471,8 +473,50 @@ def test_status_does_not_mix_a_different_provenance_checkpoint(tmp_path, capsys)
         "warnings": ["STALE-PROVENANCE-MUST-NOT-BE-CURRENT"]}))
     code, out, _ = invoke(capsys, "status", tmp_path)
     assert code == 1 and "checkpoint" in out.lower()
+    assert "[W1801]" in out
     assert "STALE-PROVENANCE" not in out
     assert "unavailable" in out.lower() and "not a liveness" in out
+
+
+def test_status_read_that_changes_reports_e1809(tmp_path, capsys, caplog, monkeypatch):
+    from frameit.core import configuration
+
+    path = tmp_path / "run-status.yaml"
+    path.write_text(yaml.safe_dump({
+        "schema_version": 1, "state": "running", "started_at": "first", "products": [],
+    }))
+    original = configuration.read_yaml
+    reads = iter(("first", "second"))
+
+    def advancing(path):
+        return {**original(path), "updated_at": next(reads)}
+
+    monkeypatch.setattr(configuration, "read_yaml", advancing)
+    code, out, err = invoke(capsys, "status", tmp_path)
+    assert code == 1 and not out
+    assert "[E1809]" in err + caplog.text
+
+
+@pytest.mark.parametrize("number", [errno.ENOSPC, errno.EDQUOT])
+def test_output_filesystem_exhaustion_keeps_its_code(
+        tmp_path, capsys, monkeypatch, number):
+    from frameit.core import run_state
+
+    create_first_run_input(tmp_path / "input.nc")
+    path, _ = case(tmp_path)
+    original = run_state.write_yaml_atomic
+
+    def writing(path, value, **kwargs):
+        if Path(path).name == "run-request.yaml":
+            raise OSError(number, "test filesystem limit")
+        return original(path, value, **kwargs)
+
+    monkeypatch.setattr(run_state, "write_yaml_atomic", writing)
+    code, out, _ = invoke(capsys, "run", path)
+    assert code == 1 and "code: E1810" in out
+    status = yaml.safe_load((tmp_path / "out/run-status.yaml").read_text())
+    assert status["state"] == "failed" and status["products"] == []
+    assert status["error"]["code"] == "E1810"
 
 
 def test_failed_run_never_presents_an_old_or_concurrent_inventory_as_current(
@@ -712,6 +756,7 @@ def test_final_record_failure_is_not_current_success_or_persisted_checkpoint(
     code, out, _ = invoke(capsys, "run", path, "--log-level", "ERROR")
     assert code == 1 and out.startswith("Run state: failed")
     assert "owner-attested" in out.lower() and "B2 final checkpoint stopped" in out
+    assert "code: E1808" in out
     assert "persistence" in out.lower() and "not verified" in out.lower()
     assert "Run state: completed" not in out
     for source in ("weather", "water"):
@@ -752,6 +797,7 @@ def test_real_unowned_failure_keeps_old_records_out_of_summary(
     code, out, _ = invoke(capsys, "run", path, "--overwrite", "--log-level", "ERROR")
     assert code == 1 and "inventory unavailable" in out.lower()
     assert "owner-attested" not in out.lower() and "STALE-ATTEMPT" not in out
+    assert f"code: {'E1801' if boundary == 'locked' else 'E1808'}" in out
     if boundary == "locked":
         assert record.read_bytes() == original_bytes
     else:
@@ -788,6 +834,7 @@ def test_summary_failure_never_replaces_the_primary_owned_exception(
     assert observed.value is failure
     status = yaml.safe_load((tmp_path / "out/run-status.yaml").read_text())
     assert status["state"] == "failed"
+    assert status["error"]["code"] == "E0999"
     if boundary == "attachment":
         assert "inventory unavailable" in capsys.readouterr().out.lower()
 

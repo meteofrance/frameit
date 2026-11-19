@@ -91,8 +91,9 @@ def test_inactive_pools_do_not_consume_budget_and_nested_scope_restores(allocati
 def test_v3_budget_rejected_before_output_side_effects(tmp_path, allocation):
     scene().to_netcdf(tmp_path / "input.nc")
     conf = configuration(tmp_path, resources={"cpus": 5})
-    with pytest.raises(ValueError, match="resources.cpus"):
+    with pytest.raises(ValueError, match="resources.cpus") as exc:
         execute_simulation(conf)
+    assert exc.value.frameit_code == "E1701"
     assert not conf.output_dir.exists()
 
 
@@ -222,6 +223,8 @@ def test_v3_export_failure_retains_only_actual_complete_products(
     assert status["state"] == "failed"
     for record in (status, provenance):
         assert [p["role"] for p in record["products"]] == ["model_grid"]
+        assert record["error"]["code"] == "E1806"
+        assert "task11 synthetic writer failure" in record["error"]["message"]
     with xr.open_dataset(conf.output_dir / status["products"][0]["path"]) as saved:
         np.testing.assert_array_equal(saved.q, scene().q)
     assert not (conf.output_dir / "products/analysis.weather.polar.nc").exists()

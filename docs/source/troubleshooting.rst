@@ -15,6 +15,8 @@ configuration and logs with the attempt. Use the matching section below.
    troubleshooting/time
    troubleshooting/regions
    troubleshooting/polar
+   troubleshooting/run
+   troubleshooting/outputs
 
 Configuration fails before inputs open
 --------------------------------------

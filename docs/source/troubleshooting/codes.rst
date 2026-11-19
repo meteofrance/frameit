@@ -12,6 +12,7 @@ HTML build. If a code is not listed, find the symptom in
 :doc:`../troubleshooting`.
 
 * :ref:`e0001`
+* :ref:`e0002`
 * :ref:`e0999`
 * :ref:`e1001`
 * :ref:`e1002`
@@ -51,10 +52,23 @@ HTML build. If a code is not listed, find the symptom in
 * :ref:`e1501`
 * :ref:`e1502`
 * :ref:`e1503`
+* :ref:`e1504`
 * :ref:`e1601`
 * :ref:`e1602`
 * :ref:`e1603`
 * :ref:`e1604`
+* :ref:`e1701`
+* :ref:`e1702`
+* :ref:`e1801`
+* :ref:`e1802`
+* :ref:`e1803`
+* :ref:`e1804`
+* :ref:`e1805`
+* :ref:`e1806`
+* :ref:`e1807`
+* :ref:`e1808`
+* :ref:`e1809`
+* :ref:`e1810`
 * :ref:`w1001`
 * :ref:`w1201`
 * :ref:`w1202`
@@ -65,6 +79,8 @@ HTML build. If a code is not listed, find the symptom in
 * :ref:`w1304`
 * :ref:`w1401`
 * :ref:`w1402`
+* :ref:`w1501`
 * :ref:`w1502`
 * :ref:`w1505`
 * :ref:`w1601`
+* :ref:`w1801`

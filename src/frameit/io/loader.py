@@ -44,6 +44,8 @@ class DatasetResources:
         return self._netcdf[key]
 
     def close_from(self, start=0):
+        from frameit.utils.diagnostics import exception_code, format_message, tag_error
+
         datasets = self._datasets[start:]
         del self._datasets[start:]
         failure = None
@@ -52,7 +54,8 @@ class DatasetResources:
             try:
                 dataset.close()
             except Exception as error:
-                log.exception("Failed to close a loaded dataset")
+                tag_error(error, "E1808")
+                log.exception(format_message(exception_code(error), "Failed to close a loaded dataset"))
                 if failure is None:
                     failure = error
                 else:

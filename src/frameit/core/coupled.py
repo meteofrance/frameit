@@ -611,7 +611,8 @@ def prepare_sources(conf, *, check_output=True, execution_options=None, resource
         while not parent.exists():
             parent = parent.parent
         if not parent.is_dir() or not os.access(parent, os.W_OK):
-            raise ValueError(f"Unwritable output destination: {conf.output_dir}")
+            raise tag_error(ValueError(f"Unwritable output destination: {conf.output_dir}"),
+                            "E1803")
     reference = children[conf.tracking_source]
     conf.resolution = reference.resolution
     conf.grid_geometry = {
@@ -737,7 +738,8 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
         while not destination.exists():
             destination = destination.parent
         if not destination.is_dir() or not os.access(destination, os.W_OK):
-            raise ValueError(f"Unwritable output destination: {conf.output_dir}")
+            raise tag_error(ValueError(f"Unwritable output destination: {conf.output_dir}"),
+                            "E1803")
     request_plan["sources"] = deepcopy(plans)
     from frameit.io.fa_contracts import FA_DEFAULT_RADIUS_M, FA_DEFAULT_RADIUS_ORIGIN
 

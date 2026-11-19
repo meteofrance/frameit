@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from frameit.utils.diagnostics import (
+    CODE_TOPICS,
     UNEXPECTED_ERROR,
     diagnostic_path,
     exception_code,
@@ -114,11 +115,16 @@ def _diagnostic_item(error, conf=None):
     })
 
 
+def primary_error_code(exc: BaseException) -> str:
+    if isinstance(exc, PreflightError) and exc.diagnostics:
+        return exc.diagnostics[0].code
+    return exception_code(exc)
+
+
 def error_record(exc: BaseException) -> dict:
     """Keep the cause codes when reporting or recording a failed run."""
-    record = {"type": type(exc).__name__, "message": str(exc), "code": exception_code(exc)}
+    record = {"type": type(exc).__name__, "message": str(exc), "code": primary_error_code(exc)}
     if isinstance(exc, PreflightError) and exc.diagnostics:
-        record["code"] = exc.diagnostics[0].code
         record["diagnostics"] = [_diagnostic_item(error) for error in exc.diagnostics]
     return record
 
@@ -226,13 +232,18 @@ def render_run_summary(facts, *, root, recorded=False):
     label = "Last-recorded state" if recorded else "Run state"
     lines = [f"{label}: {state}", f"Run directory: {root}"]
     if state == "incomplete":
-        lines.append("Accepted incomplete tracking; this is not a complete trajectory.")
+        warning = "Accepted incomplete tracking; this is not a complete trajectory."
+        lines.append(warning if recorded else format_message("W1501", warning))
     if recorded:
         lines.append("Recorded metadata only; not a liveness or payload integrity check.")
     if state in {"failed", "interrupted", "running"}:
         lines.append("Use a fresh attempt directory for retries. A recorded running state does not "
                      "show whether its process is alive. Confirm the owner has stopped before "
                      "removing a stale lock; no automatic repair is performed.")
+    error = facts.get("error")
+    code = error.get("code") if isinstance(error, dict) else None
+    if isinstance(code, str) and code in CODE_TOPICS:
+        lines.append(f"Troubleshooting: {diagnostic_path(code)}")
     lines.append("Products list completed publications; planned_products are not completions.")
     lines.append(yaml.safe_dump(
         _metadata_view(facts), sort_keys=False, allow_unicode=True).rstrip())

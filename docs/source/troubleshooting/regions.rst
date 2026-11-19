@@ -34,6 +34,26 @@ of metadata does not check the actual pressure or wind values.
 If validation passes but tracking fails, check the named sample and
 the method's limits. Try a small run with valid inputs.
 
+.. _e1504:
+
+E1504: The request requires a complete track
+----------------------------------------------------------------------
+
+Read why the tracker stopped. The strict policy stopped the run
+before export. Check the inputs and the failed time for that method.
+Use a new attempt directory after fixing the cause. Accept a shorter
+track only if your analysis can use the part that remains.
+
+.. _w1501:
+
+W1501: The run kept a shorter track than requested
+----------------------------------------------------------------------
+
+The run can exit zero and still be ``incomplete``. Compare the
+retained times with the requested times. Read the termination reason
+in ``run-status.yaml``. Use the published part only if those samples
+are enough for your analysis. Do not treat the track as complete.
+
 .. _w1502:
 
 W1502: The experimental vortex tracker stopped early

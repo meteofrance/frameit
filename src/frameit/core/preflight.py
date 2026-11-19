@@ -1525,14 +1525,18 @@ def describe_v3_resources(conf, sources, execution_options=None):
                           f"{item['source']}.{product}" if item["source"] else "track"]}
         unknown = set(requested) - applicable
         if unknown:
-            raise ValueError(f"Unknown {product} processing chunks dimensions: {sorted(unknown)}")
+            raise tag_error(ValueError(
+                f"Unknown {product} processing chunks dimensions: {sorted(unknown)}"
+            ), "E1805")
     field_keys = [key for key in dimensions if key != "track"] or list(dimensions)
     storage_chunks = (options.zarr_chunk_size if options.engine == "zarr"
                       else options.netcdf_chunk_size)
     for setting, sizes in (("chunks", storage_chunks), ("shards", options.zarr_shard_size)):
         unknown = set(sizes) - {dim for key in field_keys for dim in dimensions[key]}
         if unknown:
-            raise ValueError(f"Unknown output writer {setting} dimensions: {sorted(unknown)}")
+            raise tag_error(ValueError(
+                f"Unknown output writer {setting} dimensions: {sorted(unknown)}"
+            ), "E1805")
         layouts["writer"][setting] = {
             key: {dim: size for dim, size in sizes.items() if dim in dimensions[key]}
             for key in field_keys}
@@ -2302,7 +2306,8 @@ def preflight(conf, *, input_files=None, check_output=True, execution_options=No
         while not destination.exists():
             destination = destination.parent
         if not destination.is_dir() or not os.access(destination, os.W_OK):
-            raise ValueError(f"Unwritable output destination: {conf.output_dir}")
+            raise tag_error(ValueError(f"Unwritable output destination: {conf.output_dir}"),
+                            "E1803")
     from frameit.core.execution import ExecutionOptions
     from frameit.io.netcdf_export import _sanitize_filename_token
 

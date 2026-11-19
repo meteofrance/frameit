@@ -438,7 +438,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                        ("institution", "metadata.institution")):
         if getattr(args, attr) is not None:
             options.setting_sources[path] = "cli"
-    from frameit.core.reports import render_run_summary
+    from frameit.core.reports import error_record, render_run_summary
     from frameit.core.runtime import termination_scope
 
     try:
@@ -453,7 +453,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 print(render_run_summary({
                     "state": ("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
                               else "failed"),
-                    "error": {"type": type(exc).__name__, "message": str(exc)},
+                    "error": error_record(exc),
                     "current_attempt": (
                         "Inventory unavailable; no owning final facts were returned. "
                         "On-disk status may belong to an earlier or concurrent attempt. "
@@ -636,6 +636,7 @@ def main(argv: list[str] | None = None) -> None:
         else:
             code = 2
     except KeyboardInterrupt:
+        logging.getLogger("frameit").error("%s", _with_help("E0002", "FrameIt was interrupted"))
         code = 130
     except (ValueError, FileNotFoundError, FileExistsError) as exc:
         logging.getLogger("frameit").error("%s", _failure_message(exc))

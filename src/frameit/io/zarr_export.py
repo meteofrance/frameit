@@ -39,7 +39,9 @@ def validate_zarr_sizes(chunk_size, shard_size):
                 raise ValueError(f"output.{name}: dimensions need positive integer sizes")
     for dim in chunk_size.keys() & shard_size.keys():
         if shard_size[dim] % chunk_size[dim]:
-            raise ValueError(f"Zarr shard size for {dim} must be a multiple of chunk size")
+            raise tag_error(ValueError(
+                f"Zarr shard size for {dim} must be a multiple of chunk size"
+            ), "E1805")
 
 
 def _spatial_block_dims(ds):

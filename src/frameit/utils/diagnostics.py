@@ -1,7 +1,10 @@
 """Stable IDs for errors and warnings that FrameIt reports."""
 
+import errno
+
 CODE_TOPICS: dict[str, str] = {
     "E0001": "start",
+    "E0002": "run",
     "E0999": "start",
     "E1001": "start",
     "E1002": "start",
@@ -41,10 +44,23 @@ CODE_TOPICS: dict[str, str] = {
     "E1501": "regions",
     "E1502": "regions",
     "E1503": "regions",
+    "E1504": "regions",
     "E1601": "polar",
     "E1602": "polar",
     "E1603": "polar",
     "E1604": "polar",
+    "E1701": "run",
+    "E1702": "run",
+    "E1801": "outputs",
+    "E1802": "outputs",
+    "E1803": "outputs",
+    "E1804": "outputs",
+    "E1805": "outputs",
+    "E1806": "outputs",
+    "E1807": "outputs",
+    "E1808": "outputs",
+    "E1809": "outputs",
+    "E1810": "outputs",
     "W1001": "start",
     "W1201": "inputs",
     "W1202": "inputs",
@@ -55,9 +71,11 @@ CODE_TOPICS: dict[str, str] = {
     "W1304": "fields",
     "W1401": "time",
     "W1402": "time",
+    "W1501": "regions",
     "W1502": "regions",
     "W1505": "regions",
     "W1601": "polar",
+    "W1801": "outputs",
 }
 
 UNEXPECTED_ERROR = "E0999"
@@ -79,15 +97,16 @@ def tag_error[ExcT: BaseException](exc: ExcT, code: str) -> ExcT:
         raise ValueError(f"Expected an error code, not {code}")
     if exception_code(exc) != UNEXPECTED_ERROR or getattr(exc, "frameit_code", None) == code:
         return exc
-    if getattr(exc, "frameit_code", None) == UNEXPECTED_ERROR:
-        exc.__notes__.remove(format_message(UNEXPECTED_ERROR, "FrameIt diagnostic"))
+    prior_note = format_message(UNEXPECTED_ERROR, "FrameIt diagnostic")
+    if prior_note in getattr(exc, "__notes__", ()):
+        exc.__notes__.remove(prior_note)
     exc.frameit_code = code
     exc.add_note(note)
     return exc
 
 
 def exception_code(exc: BaseException) -> str:
-    """Read codes from the failure and its explicit causes, not from message text."""
+    """Read owned codes or explicit resource failures, not message text."""
     seen = set()
     cause = exc
     while cause is not None and id(cause) not in seen:
@@ -96,5 +115,11 @@ def exception_code(exc: BaseException) -> str:
         if isinstance(code, str) and code.startswith("E") and code in CODE_TOPICS:
             if code != UNEXPECTED_ERROR:
                 return code
+        if isinstance(cause, KeyboardInterrupt):
+            return "E0002"
+        if isinstance(cause, MemoryError):
+            return "E1702"
+        if isinstance(cause, OSError) and cause.errno in (errno.ENOSPC, errno.EDQUOT):
+            return "E1810"
         cause = cause.__cause__
     return UNEXPECTED_ERROR

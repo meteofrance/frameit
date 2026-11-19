@@ -7,11 +7,20 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from frameit.core.reports import error_record
 from frameit.utils.atomic import write_yaml_atomic
+from frameit.utils.diagnostics import format_message, tag_error
 
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def write_run_record(path, value, *, overwrite=True):
+    try:
+        write_yaml_atomic(path, value, overwrite=overwrite)
+    except Exception as exc:
+        raise tag_error(exc, "E1808")
 
 
 def checkpoint_run(root, status, provenance=None):
@@ -24,18 +33,18 @@ def checkpoint_run(root, status, provenance=None):
                         "updated_at", "error", "tracking_complete", "tracking_termination_reason"):
                 if key in status:
                     provenance[key] = status[key]
-            write_yaml_atomic(root / "run-provenance.yaml", provenance)
+            write_run_record(root / "run-provenance.yaml", provenance)
     except BaseException as exc:
         if status["state"] in {"completed", "incomplete"}:
             status.update(
                 state=("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
                        else "failed"),
                 pending=["cleanup"],
-                error={"type": type(exc).__name__, "message": str(exc)},
+                error=error_record(exc),
             )
         raise
     finally:
-        write_yaml_atomic(root / "run-status.yaml", status)
+        write_run_record(root / "run-status.yaml", status)
 
 
 def _recognized_record(path):
@@ -81,13 +90,15 @@ def read_run_status(root):
     root = Path(root)
     path = root / "run-status.yaml"
     if path.is_symlink() or not path.is_file():
-        raise ValueError(f"Missing or unsafe required record: {path}. "
-                         "Select a run directory containing run-status.yaml; do not recreate "
-                         "records or remove a lock to infer completion.")
+        raise tag_error(ValueError(
+            f"Missing or unsafe required record: {path}. "
+            "Select a run directory containing run-status.yaml; do not recreate "
+            "records or remove a lock to infer completion."
+        ), "E1807")
     try:
         status = read_yaml(path)
     except (OSError, ValueError) as exc:
-        raise ValueError(f"Cannot read required record {path}: {exc}") from exc
+        raise tag_error(ValueError(f"Cannot read required record {path}: {exc}"), "E1807") from exc
     if not (
         type(status.get("schema_version")) is int and status["schema_version"] == 1
         and status.get("state") in {"running", "completed", "incomplete", "failed", "interrupted"}
@@ -95,9 +106,10 @@ def read_run_status(root):
         and all(isinstance(item, dict) and isinstance(item.get("path"), str)
                 for item in status["products"])
     ):
-        raise ValueError(f"Unrecognized required record: {path}. "
-                         "Use the original version-1 run-status.yaml, "
-                         "not an effective configuration.")
+        raise tag_error(ValueError(
+            f"Unrecognized required record: {path}. Use the original version-1 run-status.yaml, "
+            "not an effective configuration."
+        ), "E1807")
     notes = []
     provenance = None
     optional = root / "run-provenance.yaml"
@@ -110,16 +122,25 @@ def read_run_status(root):
             ):
                 provenance = candidate
             else:
-                notes.append("Provenance checkpoint does not match authoritative status; "
-                             "its supplemental facts are unavailable.")
+                notes.append(format_message(
+                    "W1801", "Provenance checkpoint does not match authoritative status; "
+                    "its supplemental facts are unavailable."))
         except (OSError, ValueError) as exc:
-            notes.append(f"Optional provenance record unavailable: {exc}")
+            notes.append(format_message("W1801", f"Optional provenance record unavailable: {exc}"))
     else:
-        notes.append("Optional provenance record unavailable.")
+        notes.append(format_message("W1801", "Optional provenance record unavailable."))
     # Checkpoint files are not a cross-record transaction; refuse a torn read.
-    if read_yaml(path) != status:
-        raise ValueError(f"Required record {path} changed during reading. Retry status; "
-                         "no current-attempt inventory was inferred.")
+    try:
+        current = read_yaml(path)
+    except (OSError, ValueError) as exc:
+        raise tag_error(ValueError(
+            f"Could not read required record {path} again. Retry status: {exc}"
+        ), "E1809") from exc
+    if current != status:
+        raise tag_error(ValueError(
+            f"Required record {path} changed during reading. Retry status; "
+            "no current-attempt inventory was inferred."
+        ), "E1809")
     return {
         **status,
         "planned_products": status.get("planned_products"),
@@ -136,15 +157,20 @@ def read_run_status(root):
 def owned_run(root, *, overwrite, initial, request=None, provenance=None):
     """Claim a directory before logging/processing; never steal an existing lock."""
     root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise tag_error(exc, "E1803")
     lock = root / ".frameit-run.lock"
     try:
         stream = lock.open("x", encoding="utf-8")
     except FileExistsError as exc:
-        raise FileExistsError(
+        raise tag_error(FileExistsError(
             f"Run directory is locked: {root}. Use a fresh attempt directory. "
             "Remove a stale .frameit-run.lock only after confirming its owner has stopped."
-        ) from exc
+        ), "E1801") from exc
+    except OSError as exc:
+        raise tag_error(exc, "E1803")
     try:
         with stream:
             stream.write(f"pid: {os.getpid()}\n")
@@ -156,14 +182,16 @@ def owned_run(root, *, overwrite, initial, request=None, provenance=None):
             if products.exists() and (not products.is_dir() or any(products.iterdir())):
                 existing.append(products)
             if existing:
-                raise FileExistsError(
+                raise tag_error(FileExistsError(
                     f"Existing run artifacts with overwrite=False: {existing[0]}; "
                     "use a fresh attempt directory"
-                )
+                ), "E1802")
         else:
             for path in existing:
                 if not _recognized_record(path):
-                    raise ValueError(f"Refusing to replace an unrecognized run record: {path}")
+                    raise tag_error(ValueError(
+                        f"Refusing to replace an unrecognized run record: {path}"
+                    ), "E1802")
         status = {
             "schema_version": 1, "state": "running", "started_at": utc_now(),
             "finished_at": None, "products": [], **initial,
@@ -172,18 +200,21 @@ def owned_run(root, *, overwrite, initial, request=None, provenance=None):
             status["request_record"] = "run-request.yaml"
         try:
             if request is not None:
-                write_yaml_atomic(root / "run-request.yaml", request, overwrite=overwrite)
+                write_run_record(root / "run-request.yaml", request, overwrite=overwrite)
             checkpoint_run(root, status, provenance)
             yield status
         except BaseException as exc:
             status.update(
                 state=("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
                        else "failed"),
-                error={"type": type(exc).__name__, "message": str(exc)},
+                error=error_record(exc),
             )
             raise
         finally:
             status["finished_at"] = utc_now()
             checkpoint_run(root, status, provenance)
     finally:
-        lock.unlink()
+        try:
+            lock.unlink()
+        except OSError as exc:
+            raise tag_error(exc, "E1808")

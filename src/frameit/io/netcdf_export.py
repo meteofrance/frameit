@@ -20,6 +20,7 @@ import xarray as xr
 
 from frameit._version import __version__ as frameit_version
 from frameit.utils.atomic import atomic_output
+from frameit.utils.diagnostics import exception_code, format_message, tag_error
 
 logger = logging.getLogger(__name__)
 
@@ -872,7 +873,8 @@ def write_dataset_netcdf(
     validate_zarr_sizes(chunk_size or {}, {})
     unknown = set(chunk_size or {}) - set(ds.dims)
     if unknown:
-        raise ValueError(f"Unknown output chunk dimensions: {sorted(unknown)}")
+        raise tag_error(ValueError(f"Unknown output chunk dimensions: {sorted(unknown)}"),
+                        "E1805")
     if engine not in {"netcdf4", "h5netcdf"} or fmt != "NETCDF4":
         raise ValueError("NetCDF output requires netcdf4 or h5netcdf and NETCDF4 format")
     if type(compress_level) is not int or not 0 <= compress_level <= 9:
@@ -881,8 +883,9 @@ def write_dataset_netcdf(
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if path.exists() and not overwrite:
-        logger.error("Refusing to overwrite existing file (overwrite=False): %s", str(path))
-        raise FileExistsError(f"File exists and overwrite=False: {path}")
+        logger.error(format_message(
+            "E1802", "Refusing to overwrite existing file (overwrite=False): %s"), str(path))
+        raise tag_error(FileExistsError(f"File exists and overwrite=False: {path}"), "E1802")
 
     logger.debug(
         "Writing NetCDF: %s (product_type=%s, group=%s, engine=%s, fmt=%s,"
@@ -992,7 +995,7 @@ def _export_pool(group_count, max_workers, dask_scheduler, dask_workers, native_
         cpus = min(cpus, active["cpu_budget"])
     per_process = (1 if dask_scheduler == "synchronous" else dask_workers) * native_threads
     if per_process > cpus:
-        raise ValueError("Export thread counts exceed CPU budget")
+        raise tag_error(ValueError("Export thread counts exceed CPU budget"), "E1701")
     workers = min(max_workers or cpus // per_process, group_count, cpus // per_process)
     return ProcessPoolExecutor(
         max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
@@ -1128,7 +1131,9 @@ def write_group_dict(
         out_path = out_dir / fn
         if out_path in destinations:
             kind = "Zarr" if engine == "zarr" else "NetCDF"
-            raise ValueError(f"Group names map to the same {kind} destination: {out_path}")
+            raise tag_error(ValueError(
+                f"Group names map to the same {kind} destination: {out_path}"
+            ), "E1805")
         destinations.add(out_path)
 
         logger.debug(
@@ -1179,8 +1184,10 @@ def write_group_dict(
                 path = future.result()
                 written.append(path)
                 logger.debug("NetCDF written: %s", path)
-            except Exception:
-                logger.exception("Failed to write group=%s.", group_name)
+            except Exception as exc:
+                tag_error(exc, "E1802" if isinstance(exc, FileExistsError) else "E1806")
+                logger.exception(
+                    format_message(exception_code(exc), "Failed to write group=%s."), group_name)
                 raise
 
     logger.debug("Group dictionary written: n_files=%s.", len(written))
@@ -1308,10 +1315,13 @@ def export_outputs(
         unknown = (set(sizes) | set(zarr_shard_size or {})) - {
             dim for dataset in field_datasets or [runner.track] for dim in dataset.dims}
         if unknown:
-            raise ValueError(f"Unknown output writer dimensions: {sorted(unknown)}")
+            raise tag_error(ValueError(f"Unknown output writer dimensions: {sorted(unknown)}"),
+                            "E1805")
         for item, destination in zip(planned, destinations, strict=True):
             if destination.exists() and not overwrite:
-                raise FileExistsError(f"File exists and overwrite=False: {destination}")
+                raise tag_error(FileExistsError(
+                    f"File exists and overwrite=False: {destination}"
+                ), "E1802")
             if destination.exists() and overwrite:
                 try:
                     if destination.is_dir():
@@ -1329,7 +1339,9 @@ def export_outputs(
                 except (OSError, ValueError):
                     owned = False
                 if not owned:
-                    raise ValueError(f"Refusing to replace an unrelated product: {destination}")
+                    raise tag_error(ValueError(
+                        f"Refusing to replace an unrelated product: {destination}"
+                    ), "E1802")
         tasks = []
         for item, destination in zip(planned, destinations, strict=True):
             source, product = item["source"], item["product"]

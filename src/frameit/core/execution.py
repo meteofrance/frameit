@@ -7,7 +7,9 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from frameit.core.reports import error_record, primary_error_code
 from frameit.core.settings_class import SimulationConfig
+from frameit.utils.diagnostics import format_message, tag_error
 from frameit.utils.logging import frameit_logging_scope
 
 DEFAULT_INSTITUTION = ""
@@ -109,20 +111,21 @@ class ExecutionOptions:
         object.__setattr__(self, "zarr_chunk_size", self.zarr_chunk_size.copy())
         object.__setattr__(self, "zarr_shard_size", self.zarr_shard_size.copy())
         if self.engine not in {"netcdf4", "h5netcdf", "zarr"}:
-            raise ValueError("output.backend must be netcdf4, h5netcdf or zarr")
+            raise tag_error(ValueError("output.backend must be netcdf4, h5netcdf or zarr"),
+                            "E1805")
         if not 0 <= int(self.compress_level) <= 9:
-            raise ValueError("compress_level must be in [0, 9]")
+            raise tag_error(ValueError("compress_level must be in [0, 9]"), "E1805")
         for name in ("max_workers", "dask_workers", "native_threads", "cpus"):
             value = getattr(self, name)
             if (value is not None or name == "native_threads") and (
                 type(value) is not int or value < 1
             ):
-                raise ValueError(f"{name} must be a positive integer")
+                raise tag_error(ValueError(f"{name} must be a positive integer"), "E1701")
         for name in ("synchronous_export", "require_complete_tracking"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be a boolean")
         if self.dask_scheduler not in {"threads", "synchronous"}:
-            raise ValueError("dask_scheduler must be threads or synchronous")
+            raise tag_error(ValueError("dask_scheduler must be threads or synchronous"), "E1701")
 
 
 @dataclass
@@ -297,9 +300,10 @@ def execute_simulation(
             result = _execute_owned_simulation(config, options, input_files, progress, logs, level)
         except BaseException as exc:
             progress.finish("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
-                            else "failed")
+                            else "failed", code=primary_error_code(exc))
             raise
-        progress.finish("complete" if result.tracking_complete else "incomplete")
+        progress.finish("complete" if result.tracking_complete else "incomplete",
+                        code=None if result.tracking_complete else "W1501")
         return result
 
 
@@ -325,10 +329,10 @@ def _execute_owned_simulation(config, options, input_files, progress, logs, leve
             config.simulation_parameter["request_plan"]["products"])
         requested_format = "zarr" if requested.engine == "zarr" else "netcdf"
         if requested_format != config.yaml_config["output"]["format"]:
-            raise ValueError(
+            raise tag_error(ValueError(
                 "Execution engine conflicts with output.format; select the format "
                 "in the configuration before execution"
-            )
+            ), "E1805")
         from frameit.core.coupled import bind_sources
         from frameit.core.preflight import preflight_result
         from frameit.core.reports import PreflightError
@@ -370,11 +374,13 @@ def _execute_owned_simulation(config, options, input_files, progress, logs, leve
             "run-status.yaml", ".frameit-run.lock")]
         for target in targets:
             if target.exists() and any(path.exists() and target.samefile(path) for path in inputs):
-                raise ValueError(f"Output would replace a source input: {target}")
+                raise tag_error(ValueError(f"Output would replace a source input: {target}"),
+                                "E1804")
             if target.is_dir() and any(path.is_relative_to(target.resolve())
                                        for path in input_locations):
-                raise ValueError(
-                    f"Output would replace a directory containing a source input: {target}")
+                raise tag_error(ValueError(
+                    f"Output would replace a directory containing a source input: {target}"
+                ), "E1804")
     if requested.export_netcdf and requested.engine == "zarr":
         from frameit.io.zarr_export import check_zarr_dependencies
 
@@ -411,9 +417,12 @@ def _execute_owned_simulation(config, options, input_files, progress, logs, leve
                 from frameit.core.configuration import resolved_configuration
                 from frameit.utils.atomic import write_yaml_atomic
 
-                write_yaml_atomic(config.output_dir / "resolved-config.yaml",
-                                  resolved_configuration(config, effective),
-                                  overwrite=effective.overwrite)
+                try:
+                    write_yaml_atomic(config.output_dir / "resolved-config.yaml",
+                                      resolved_configuration(config, effective),
+                                      overwrite=effective.overwrite)
+                except Exception as exc:
+                    raise tag_error(exc, "E1808")
             with execution_scope(effective):
                 result = _execute_simulation(
                     config, effective, status, runtime, input_files=input_files,
@@ -446,7 +455,7 @@ def _execute_owned_simulation(config, options, input_files, progress, logs, leve
                     state=("interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit))
                            else "failed"),
                     observed_owner_state=owned_status["state"],
-                    error={"type": type(exc).__name__, "message": str(exc)},
+                    error=error_record(exc),
                     warnings=deepcopy(plan.get("warnings", [])),
                     exclusions={name: deepcopy(source.get("excluded_files", []))
                                 for name, source in plan.get("sources", {}).items()},
@@ -535,36 +544,41 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                 layouts=layouts)
             checkpoint_run(config.output_dir, status, provenance)
         if options.require_complete_tracking and not status["tracking_complete"]:
-            raise ValueError(
+            raise tag_error(ValueError(
                 "Tracking is incomplete; region.tracker.on_incomplete: error "
                 "or --require-complete-tracking requires a complete trajectory: "
                 + status["tracking_termination_reason"]
-            )
+            ), "E1504")
         exports = {}
         if options.export_netcdf:
             from frameit.io.netcdf_export import export_outputs
 
             progress.update("computing/writing exports")
-            with runner.timer.section("Netcdf export"):
-                exports = export_outputs(
-                    runner,
-                    institution=options.institution,
-                    out_dir=config.output_dir.resolve(),
-                    export_polar=options.export_polar,
-                    export_cart=options.export_cart,
-                    compress_level=options.compress_level,
-                    synchronous=options.synchronous_export,
-                    engine=options.engine, fmt=options.fmt, overwrite=options.overwrite,
-                    compress_coords=options.compress_coords,
-                    unlimited_time=options.unlimited_time,
-                    max_workers=options.max_workers,
-                    dask_scheduler=options.dask_scheduler, dask_workers=options.dask_workers,
-                    native_threads=options.native_threads,
-                    zarr_chunk_size=options.zarr_chunk_size,
-                    zarr_shard_size=options.zarr_shard_size,
-                    netcdf_chunk_size=options.netcdf_chunk_size,
-                    on_published=published,
-                )
+            try:
+                with runner.timer.section("Netcdf export"):
+                    exports = export_outputs(
+                        runner,
+                        institution=options.institution,
+                        out_dir=config.output_dir.resolve(),
+                        export_polar=options.export_polar,
+                        export_cart=options.export_cart,
+                        compress_level=options.compress_level,
+                        synchronous=options.synchronous_export,
+                        engine=options.engine, fmt=options.fmt, overwrite=options.overwrite,
+                        compress_coords=options.compress_coords,
+                        unlimited_time=options.unlimited_time,
+                        max_workers=options.max_workers,
+                        dask_scheduler=options.dask_scheduler, dask_workers=options.dask_workers,
+                        native_threads=options.native_threads,
+                        zarr_chunk_size=options.zarr_chunk_size,
+                        zarr_shard_size=options.zarr_shard_size,
+                        netcdf_chunk_size=options.netcdf_chunk_size,
+                        on_published=published,
+                    )
+            except FileExistsError as exc:
+                raise tag_error(exc, "E1802")
+            except Exception as exc:
+                raise tag_error(exc, "E1806")
             log.debug("Product export finished (engine=%s)", options.engine)
         else:
             log.info("Product export skipped (--no-export).")
@@ -598,7 +612,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
             status["products"] = [
                 _recorded_product(item, config.output_dir)
                 for item in runner.published_products]
-        log.exception("Simulation execution failed")
+        log.exception(format_message(primary_error_code(exc), "Simulation execution failed"))
         raise
     finally:
         progress.reconcile_published(len(getattr(runner, "published_products", ())))
@@ -608,10 +622,13 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                 runner.close()
             status["pending"].remove("cleanup")
         except BaseException as exc:
+            if isinstance(exc, Exception):
+                tag_error(exc, "E1808")
             if failure is None:
                 raise
-            failure.add_note(f"Input cleanup also failed: {type(exc).__name__}: {exc}")
-            log.exception("Input cleanup also failed")
+            message = format_message(primary_error_code(exc), "Input cleanup also failed")
+            failure.add_note(f"{message}: {type(exc).__name__}: {exc}")
+            log.exception("%s", message)
         finally:
             progress.update("finalizing execution records")
             runtime["loaded_backends"] = _loaded_backend_versions()
