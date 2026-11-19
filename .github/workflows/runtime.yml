@@ -33,6 +33,7 @@ jobs:
           src/frameit/testing/numerical/test_documentation_example.py
           src/frameit/testing/numerical/test_hpc_execution.py
           src/frameit/testing/numerical/test_logging.py
+          src/frameit/testing/numerical/test_diagnostic_codes.py
           src/frameit/testing/numerical/test_netcdf_assembly.py
           src/frameit/testing/numerical/test_nemo_netcdf.py
           src/frameit/testing/numerical/test_croco_netcdf.py

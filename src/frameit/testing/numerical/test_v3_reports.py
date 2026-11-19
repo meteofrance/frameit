@@ -76,6 +76,10 @@ def test_independent_file_causes_keep_locations_and_valid_source_metadata(tmp_pa
     assert clock["observed"] == {"clock": "time", "dtype": "float64"}
     assert clock["locations"][0]["line"] == 7
     for error in errors.values():
+        assert set(error) == {
+            "path", "message", "expected", "observed", "repairs", "locations", "contexts",
+            "code", "help",
+        }
         assert error["message"] and error["repairs"]
         assert all(isinstance(repair, str) for repair in error["repairs"])
         assert error["contexts"][0]["source"] in {"broken", "clock"}

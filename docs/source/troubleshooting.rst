@@ -4,6 +4,12 @@ Troubleshooting
 Start with the failing phase and source/field named in the error. Keep the
 configuration and logs with the attempt. Use the matching section below.
 
+.. toctree::
+   :maxdepth: 1
+
+   troubleshooting/codes
+   troubleshooting/start
+
 Configuration fails before inputs open
 --------------------------------------
 

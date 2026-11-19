@@ -15,6 +15,17 @@ from check_publication import check_artifact, check_text
 
 
 class PublicationBoundaryTests(unittest.TestCase):
+    def test_diagnostic_index_rejects_a_link_to_the_wrong_article(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            guide = root / 'troubleshooting'
+            guide.mkdir()
+            (guide / 'start.html').write_text('<h2 id="e0999">E0999</h2>')
+            (guide / 'other.html').write_text('<h2 id="different">Another entry</h2>')
+            (guide / 'codes.html').write_text('<a href="other.html#different">E0999</a>')
+            self.assertTrue(any('E0999' in error and 'index' in error
+                                for error in check_artifact(root)))
+
     def test_combined_site_links_are_bounded(self):
         from check_publication import check_local_links
 
@@ -282,7 +293,11 @@ class PublicationBoundaryTests(unittest.TestCase):
                 self.assertTrue(check_text(Path("topic.rst"), text))
 
     def test_stale_or_hidden_records_and_inventory_entries_fail(self):
-        with tempfile.TemporaryDirectory() as directory:
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "check_publication.check_diagnostic_links", return_value=[]
+        ):
             root = Path(directory)
             (root / "_sources").mkdir()
             (root / "_sources/index.rst.txt").write_text("Current user topics\n")

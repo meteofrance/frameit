@@ -6,9 +6,11 @@ import argparse
 import ast
 import math
 import re
+import runpy
 import sys
 import xml.etree.ElementTree as ET
 import zlib
+from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -81,14 +83,14 @@ def check_text(path: Path, text: str) -> list[str]:
 class _HTMLLinks(HTMLParser):
     def __init__(self, path: Path):
         super().__init__()
-        self.anchors = set()
+        self.anchors = Counter()
         self.links = []
         self.feed(path.read_text(encoding="utf-8"))
 
     def handle_starttag(self, tag, attrs):
         for name, value in attrs:
-            if name == "id" or (tag == "a" and name == "name"):
-                self.anchors.add(value)
+            if value and (name == "id" or (tag == "a" and name == "name")):
+                self.anchors[value] += 1
             if name in {"href", "src"} and value is not None:
                 self.links.append((self.getpos()[0], name, value))
 
@@ -136,8 +138,36 @@ def check_local_links(artifact: Path, site_root: Path | None = None) -> list[str
     return errors
 
 
+def check_diagnostic_links(artifact: Path) -> list[str]:
+    """Check code links against the source revision that built this HTML tree."""
+    registry = ROOT / "src/frameit/utils/diagnostics.py"
+    if not registry.is_file():
+        return []
+    codes = runpy.run_path(str(registry))["CODE_TOPICS"]
+    guide = artifact / "troubleshooting"
+    pages = {path.name: _HTMLLinks(path) for path in guide.glob("*.html")}
+    index = pages.get("codes.html")
+    links = {target for _, attribute, target in index.links if attribute == "href"} if index else set()
+    errors = []
+    for code, topic in codes.items():
+        if not re.fullmatch(r"[EW][0-9]{4}", code):
+            errors.append(f"Invalid FrameIt diagnostic ID: {code}")
+        anchor = code.lower()
+        page = f"{topic}.html"
+        if [name for name, html in pages.items() for _ in range(html.anchors[anchor])] != [page]:
+            errors.append(f"{code}: expected one anchor at troubleshooting/{page}#{anchor}")
+        if f"{page}#{anchor}" not in links:
+            errors.append(f"{code}: diagnostic index must link to {page}#{anchor}")
+    for name, page in pages.items():
+        for anchor in page.anchors:
+            if re.fullmatch(r"[ew][0-9]{4}", anchor) and anchor.upper() not in codes:
+                errors.append(f"troubleshooting/{name}: unregistered diagnostic anchor {anchor}")
+    return errors
+
+
 def check_artifact(artifact: Path, site_root: Path | None = None) -> list[str]:
     errors = check_local_links(artifact, site_root)
+    errors.extend(check_diagnostic_links(artifact))
     for name in ("index.html", "searchindex.js", "objects.inv", "_sources/index.rst.txt"):
         if not (artifact / name).is_file():
             errors.append(f"{artifact / name}: missing expected Sphinx product")

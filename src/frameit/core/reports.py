@@ -9,6 +9,13 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from frameit.utils.diagnostics import (
+    UNEXPECTED_ERROR,
+    diagnostic_path,
+    exception_code,
+    format_message,
+)
+
 if TYPE_CHECKING:
     from frameit.core.settings_class import SimulationConfig
 
@@ -22,6 +29,7 @@ class Diagnostic:
     repairs: list[str]
     locations: list[dict] = field(default_factory=list)
     contexts: list[dict] = field(default_factory=list)
+    code: str = field(default=UNEXPECTED_ERROR, kw_only=True)
 
 
 class PreflightError(ValueError):
@@ -35,7 +43,7 @@ class PreflightError(ValueError):
 
     def __str__(self):
         return "\n".join(
-            f"{error.path}: {error.message}"
+            format_message(error.code, f"{error.path}: {error.message}")
             + "".join(f"; {context}" for context in error.contexts)
             + "".join(f"; {mark['file']}: line {mark['line']}, column {mark['column']}"
                       for mark in error.locations)
@@ -55,7 +63,7 @@ def exception_diagnostics(exc, *, path, expected, observed, repairs):
     """Retain structured boundary facts; opaque adapter failures stay opaque."""
     if isinstance(exc, PreflightError):
         return exc.diagnostics
-    return [Diagnostic(path, str(exc), expected, observed, repairs)]
+    return [Diagnostic(path, str(exc), expected, observed, repairs, code=exception_code(exc))]
 
 
 def blocked_check(path, prerequisites, message):
@@ -97,6 +105,24 @@ def _metadata_view(value):
     return value
 
 
+def _diagnostic_item(error, conf=None):
+    return _metadata_view({
+        "code": error.code, "help": diagnostic_path(error.code),
+        "path": error.path, "message": error.message, "expected": error.expected,
+        "observed": error.observed, "repairs": error.repairs,
+        "locations": diagnostic_locations(error, conf), "contexts": error.contexts,
+    })
+
+
+def error_record(exc: BaseException) -> dict:
+    """Keep the cause codes when reporting or recording a failed run."""
+    record = {"type": type(exc).__name__, "message": str(exc), "code": exception_code(exc)}
+    if isinstance(exc, PreflightError) and exc.diagnostics:
+        record["code"] = exc.diagnostics[0].code
+        record["diagnostics"] = [_diagnostic_item(error) for error in exc.diagnostics]
+    return record
+
+
 def project_report(result):
     """Return the seven-key JSON-safe view without changing internal decoded facts."""
     from frameit.core.configuration import resolved_configuration, resolved_sources
@@ -115,14 +141,10 @@ def project_report(result):
             origins[f"inputs.sources.{name}.{key}"] = origin
     errors = []
     for error in result.errors:
-        item = _metadata_view({
-            "path": error.path, "message": error.message, "expected": error.expected,
-            "observed": error.observed, "repairs": error.repairs,
-            "locations": diagnostic_locations(error, conf), "contexts": error.contexts,
-        })
+        item = _diagnostic_item(error, conf)
         repeated = next((previous for previous in errors if all(
             previous[key] == item[key] for key in (
-                "path", "message", "expected", "observed", "repairs"))), None)
+                "code", "path", "message", "expected", "observed", "repairs"))), None)
         if repeated is None:
             errors.append(item)
         else:
@@ -180,7 +202,8 @@ def render_report(result):
         return str(value)
 
     for error in report["errors"]:
-        lines.append(f"Error at {error['path']}: {error['message']}")
+        lines.append(format_message(error["code"], f"Error at {error['path']}: {error['message']}"))
+        lines.append(f"  Troubleshooting: {error['help']}")
         for label, key in (("Expected", "expected"), ("Observed", "observed"),
                            ("Affected", "contexts"), ("Locations", "locations"),
                            ("Repairs", "repairs")):
