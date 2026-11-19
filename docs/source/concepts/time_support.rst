@@ -47,4 +47,5 @@ its sampling label. Check the
 Association does not widen source selections, change unrelated native extraction,
 fill fields, interpolate centres, deaccumulate energy or turn means into snapshots.
 Check ``cell_methods``, units, bounds and forecast identity with an ordinary
-reader, not the filename alone. See :doc:`../task_guides/coupled_inputs`.
+reader, not the filename alone. For a worked preceding-hour case, see
+:doc:`../task_guides/coupled_clocks`.

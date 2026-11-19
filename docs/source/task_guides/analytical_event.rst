@@ -70,11 +70,8 @@ Optional: :download:`script file <../../../example/plots/plot_analytical_event.p
    First retained atmospheric time, 01:00. Speed is calculated from the sampled
    Earth-relative components, without subtracting the centre's motion.
 
-For missing-data/category practice, the generated ``missing-data`` directory
-works with :download:`analytic-missing.yaml <../../../example/tutorials/analytic-missing.yaml>`.
-Its strict policy preserves gaps and nearest-neighbour sampling preserves valid
-category zero. Choose other policies scientifically, not to fill a figure.
-See :doc:`../concepts/missingness_and_status`.
+For a worked check of missing wind and a valid category zero, see
+:ref:`polar-coverage-check`.
 
 Adapt to real inputs
 ---------------------

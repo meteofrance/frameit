@@ -15,11 +15,14 @@ import xarray as xr
 ROOT = Path(__file__).resolve().parent.parent
 CASES = [
     ("fixed-region", "fixed_region", "model_grid"),
+    ("forecast-archive", "forecast_archive", "model_grid"),
     ("field-selection", "field_selection", "model_grid"),
     ("moving-region", "moving_region", "track"),
+    ("calculate-track", "calculate_track", "track"),
     ("scalars-and-vectors", "scalars_and_vectors", "model_grid"),
     ("polar-sampling", "polar_sampling", "polar"),
     ("coupled-inputs", "coupled_inputs", "model_grid"),
+    ("coupled-clocks", "coupled_clocks", "model_grid"),
     ("storage-and-resources", "storage_and_resources", "model_grid"),
     ("analytic-moving", "analytical_event", "polar"),
 ]
@@ -83,11 +86,26 @@ def test_downloadable_task_executes_and_plots_without_supplied_data(
         if name == "fixed-region":
             assert data.instructional_scalar.shape == (2, 5, 5)
             assert data.instructional_scalar.isel(time=0, y=2, x=2) == 0
+        elif name == "forecast-archive":
+            np.testing.assert_array_equal(data.time, np.array(
+                ["2000-01-01T01", "2000-01-01T02"], dtype="datetime64[ns]"))
+            assert data.forecast_reference_time.values == np.datetime64("2000-01-01T00")
+            np.testing.assert_array_equal(data.step, np.array([1, 2], dtype="timedelta64[h]"))
+            np.testing.assert_array_equal(data.prmsl[:, 0, 0], [100100., 100200.])
+            assert data.prmsl.attrs["cell_methods"] == "time: point"
+            assert data.prmsl.attrs["units"] == "Pa"
         elif name == "field-selection":
             np.testing.assert_array_equal(data.pressure, [850., 700.])
             assert data.pressure.attrs["units"] == "hPa"
         elif name == "moving-region":
             np.testing.assert_allclose(data.longitude, [60., 60.1, 60.2])
+        elif name == "calculate-track":
+            np.testing.assert_array_equal(data.time, np.array(
+                ["2000-01-01T00", "2000-01-01T01", "2000-01-01T02"], dtype="datetime64[ns]"))
+            np.testing.assert_allclose(data.longitude, [60., 60.1, 60.2], rtol=0, atol=1e-8)
+            np.testing.assert_allclose(data.latitude, [-20.] * 3, rtol=0, atol=1e-8)
+            np.testing.assert_array_equal(data.cx, [12, 14, 16])
+            np.testing.assert_array_equal(data.cy, [12, 12, 12])
         elif name == "scalars-and-vectors":
             np.testing.assert_allclose(data.speed, np.hypot(data.u, data.v), rtol=0, atol=1e-12)
         elif name == "polar-sampling":
@@ -97,6 +115,10 @@ def test_downloadable_task_executes_and_plots_without_supplied_data(
             assert data.sizes["time"] == 3
             np.testing.assert_array_equal(data.height, [10.])
             assert {"height.temperature", "u", "v"} <= data.data_vars.keys()
+        elif name == "coupled-clocks":
+            np.testing.assert_array_equal(data.time, np.array(
+                ["2000-01-01T06", "2000-01-01T08"], dtype="datetime64[ns]"))
+            assert data.prmsl.attrs["cell_methods"] == "time: point"
         elif name == "storage-and-resources":
             with xr.open_dataset(work / "first-run.nc") as original:
                 np.testing.assert_array_equal(
@@ -105,6 +127,17 @@ def test_downloadable_task_executes_and_plots_without_supplied_data(
             assert data.sizes["time"] == 2
             assert data.speed.attrs["units"] == "m s-1"
     plot_inputs = [path]
+    if name == "calculate-track":
+        assert {p["role"] for p in status["products"]} == {"track", "model_grid"}
+        crop = next(p["path"] for p in status["products"] if p["role"] == "model_grid")
+        with xr.open_dataset(directory / crop) as air:
+            assert set(air.data_vars) == {"prmsl"}
+            pressure = air.prmsl
+            np.testing.assert_array_equal(
+                pressure.isel({d: pressure.sizes[d] // 2 for d in pressure.dims[-2:]}),
+                [96000.] * 3)
+            assert pressure.attrs["units"] == "Pa"
+        plot_inputs.append(work / "data/track.nc")
     if name == "coupled-inputs":
         water = next(item for item in status["products"] if item.get("source") == "ocean")
         water_path = directory / water["path"]
@@ -112,6 +145,32 @@ def test_downloadable_task_executes_and_plots_without_supplied_data(
             assert ocean.sizes["time"] == 3
             assert ocean.temp.attrs["units"] == "K"
         plot_inputs.append(water_path)
+    if name == "coupled-clocks":
+        omitted, = status["time_alignment"]["omitted_pairings"]
+        assert np.datetime64(omitted["coupling_time"]) == np.datetime64("2000-01-01T07")
+        assert omitted["missing_sources"] == ["ocean"]
+        water = next(item for item in status["products"] if item.get("source") == "ocean")
+        water_path = directory / water["path"]
+        with (xr.open_dataset(water_path) as ocean,
+              xr.open_dataset(work / "coupled-clocks/nemo-t.nc") as original):
+            np.testing.assert_array_equal(ocean.time, np.array(
+                ["2000-01-01T05:30", "2000-01-01T07:30"], dtype="datetime64[ns]"))
+            np.testing.assert_array_equal(ocean.center_time, np.array(
+                ["2000-01-01T06", "2000-01-01T08"], dtype="datetime64[ns]"))
+            np.testing.assert_array_equal(ocean[ocean.time.attrs["bounds"]], original.time_bounds)
+            np.testing.assert_array_equal(ocean.deptht, [5.])
+            assert ocean.deptht.attrs["positive"] == "down"
+            field = ocean.votemper
+            assert field.attrs["cell_methods"] == "time: mean"
+            assert field.attrs["units"] == "K"
+            yd, xd = field.dims[-2:]
+            y, x = (next(coord.values for key, coord in field.coords.items()
+                         if key.endswith("_source_native_index") and coord.dims == ("time", dim))
+                    for dim in (yd, xd))
+            for t in range(2):
+                np.testing.assert_array_equal(
+                    field.isel(time=t), original.votemper.isel(time_counter=t, y=y[t], x=x[t]))
+        plot_inputs.extend([water_path, directory / "run-status.yaml"])
     if interface != "cli":
         return  # The scripts consume the products, not the interface that created them.
 
@@ -135,6 +194,168 @@ def test_downloadable_task_executes_and_plots_without_supplied_data(
                              env={**os.environ, "MPLBACKEND": "Agg"})
     assert refused.returncode != 0
     assert existing.read_bytes() == b"unrelated figure"
+
+
+def test_polar_coverage_checks_missing_wind_and_valid_category_zero(tmp_path):
+    from frameit.testing.documentation_example import create_task_fixtures
+
+    pytest.importorskip("xesmf")
+    work = tmp_path / "tutorial-data"
+    create_task_fixtures(work)
+    script = work / "check_polar_coverage.py"
+    shutil.copyfile(ROOT / "example/tutorials" / script.name, script)
+    shutil.copyfile(ROOT / "example/tutorials/analytic-missing.yaml", work / "analytic-missing.yaml")
+    run = subprocess.run(
+        [sys.executable, "-m", "frameit", "run", "analytic-missing.yaml"], cwd=work,
+        capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stdout + run.stderr
+    check = subprocess.run([sys.executable, str(script)], cwd=work,
+                           capture_output=True, text=True, timeout=30)
+    assert check.returncode == 0, check.stdout + check.stderr
+    assert "Wind at a mapped point is missing: True" in check.stdout
+    assert "Interpolation status: 2" in check.stdout
+    assert "Full ring is valid: False" in check.stdout
+    assert "Valid water code 0 is present: True" in check.stdout
+
+
+def test_forecast_archive_requires_explicit_cycle(tmp_path):
+    import yaml
+
+    from frameit.testing.documentation_example import create_task_fixtures
+
+    work = tmp_path / "tutorial-data"
+    create_task_fixtures(work)
+    raw = yaml.safe_load((ROOT / "example/tutorials/forecast-archive.yaml").read_text())
+    del raw["sources"]["atmosphere"]["time"]["cycle"]
+    config = work / "no-cycle.yaml"
+    config.write_text(yaml.safe_dump(raw))
+    run = subprocess.run(
+        [sys.executable, "-m", "frameit", "validate", str(config)], cwd=work,
+        capture_output=True, text=True, timeout=60)
+    assert run.returncode != 0
+    report = run.stdout + run.stderr
+    assert "E1403" in report and "time.cycle" in report
+    assert not (work / raw["output"]["directory"]).exists()
+
+
+def test_coupled_clocks_reject_exact_policy_for_half_hour_samples(tmp_path):
+    import yaml
+
+    from frameit.testing.documentation_example import create_task_fixtures
+
+    work = tmp_path / "tutorial-data"
+    create_task_fixtures(work)
+    raw = yaml.safe_load((ROOT / "example/tutorials/coupled-clocks.yaml").read_text())
+    del raw["region"]["sources_coupling_time_association"]
+    config = work / "exact-clocks.yaml"
+    config.write_text(yaml.safe_dump(raw))
+    run = subprocess.run(
+        [sys.executable, "-m", "frameit", "validate", str(config)], cwd=work,
+        capture_output=True, text=True, timeout=60)
+    assert run.returncode != 0
+    report = run.stdout + run.stderr
+    assert "E1404" in report and "05:30" in report
+    assert not (work / raw["output"]["directory"]).exists()
+
+
+def test_table_track_file_works_and_missing_middle_position_fails(tmp_path):
+    import yaml
+
+    from frameit.testing.documentation_example import create_task_fixtures
+
+    work = tmp_path / "tutorial-data"
+    paths = create_task_fixtures(work)
+    script = work / "write_table_track.py"
+    shutil.copyfile(ROOT / "example/tutorials" / script.name, script)
+    reference = paths["moving.track"]
+    before = reference.read_bytes()
+    run = subprocess.run([sys.executable, str(script)], cwd=work,
+                         capture_output=True, text=True, timeout=30)
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert reference.read_bytes() == before
+    raw = yaml.safe_load((ROOT / "example/tutorials/moving-region.yaml").read_text())
+    raw["run"]["name"] = "table-region"
+    raw["region"]["track"]["file"] = "./table-track.nc"
+    raw["output"]["directory"] = "./results/table-region"
+    config = work / "table-region.yaml"
+    config.write_text(yaml.safe_dump(raw))
+    run = subprocess.run(
+        [sys.executable, "-m", "frameit", "run", str(config)], cwd=work,
+        capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stdout + run.stderr
+    with (xr.open_dataset(reference) as expected,
+          xr.open_dataset(work / "results/table-region/products/table-region.track.nc") as track):
+        for name in ("time", "latitude", "longitude"):
+            np.testing.assert_array_equal(track[name], expected[name])
+    raw["region"]["track"]["file"] = "./table-track-gap.nc"
+    raw["output"]["directory"] = "./results/gap-region"
+    gap = work / "gap-region.yaml"
+    gap.write_text(yaml.safe_dump(raw))
+    validate = subprocess.run(
+        [sys.executable, "-m", "frameit", "validate", str(gap)], cwd=work,
+        capture_output=True, text=True, timeout=60)
+    assert validate.returncode != 0
+    report = validate.stdout + validate.stderr
+    assert "E1404" in report and "01:00" in report
+
+
+@pytest.mark.parametrize("representation", ["native", "earth"])
+def test_staggered_winds_export_uses_requested_locations_and_directions(tmp_path, representation):
+    from frameit.core.execution import execute_simulation
+    from frameit.core.settings_class import SimulationConfig
+    from frameit.testing.documentation_example import create_task_fixtures
+
+    work = tmp_path / "tutorial-data"
+    paths = create_task_fixtures(work)
+    name = f"staggered-winds-{representation}"
+    config = work / f"{name}.yaml"
+    shutil.copyfile(ROOT / "example/tutorials" / config.name, config)
+    source = paths["staggered-winds.mesonh"]
+    before = source.read_bytes()
+    result = execute_simulation(SimulationConfig.from_yaml_with_model_preset(config))
+    assert result.ok
+    product, = result.products
+    assert product["role"] == "model_grid"
+    with xr.open_dataset(product["path"]) as data:
+        np.testing.assert_array_equal(data.level, [5.])
+        assert data.UT.attrs["units"] == data.VT.attrs["units"] == "m s-1"
+        if representation == "native":
+            assert data.UT.dims == ("time", "level", "y", "x_u")
+            assert data.VT.dims == ("time", "level", "y_v", "x")
+            assert data.UT.attrs["standard_name"] == "x_wind"
+            assert data.VT.attrs["standard_name"] == "y_wind"
+            u = 10 + (data.latitude_u + 20) * 111
+            expected = xr.broadcast(u, data.UT)[0].transpose(*data.UT.dims)
+            np.testing.assert_allclose(data.UT, expected, rtol=0, atol=1e-9)
+            np.testing.assert_array_equal(data.VT, 0.)
+        else:
+            assert data.UT.dims == data.VT.dims == ("time", "level", "y", "x")
+            assert data.UT.attrs["standard_name"] == "eastward_wind"
+            assert data.VT.attrs["standard_name"] == "northward_wind"
+            assert data.VT.attrs["wind_reference_frame"] == "earth"
+            np.testing.assert_allclose(data.UT, 0., rtol=0, atol=1e-9)
+            np.testing.assert_allclose(data.VT.isel(time=0, level=0, y=1),
+                                       [9., 10., 11.], rtol=0, atol=1e-9)
+    assert source.read_bytes() == before
+
+
+def test_calculate_track_reports_seed_with_no_pressure_candidate(tmp_path):
+    import yaml
+
+    from frameit.testing.documentation_example import create_task_fixtures
+
+    work = tmp_path / "tutorial-data"
+    create_task_fixtures(work)
+    raw = yaml.safe_load((ROOT / "example/tutorials/calculate-track.yaml").read_text())
+    raw["region"]["tracker"]["initial_guess"]["longitude"] = 50
+    config = work / "bad-seed.yaml"
+    config.write_text(yaml.safe_dump(raw))
+    run = subprocess.run(
+        [sys.executable, "-m", "frameit", "run", str(config)], cwd=work,
+        capture_output=True, text=True, timeout=60)
+    assert run.returncode != 0
+    assert "initial guess search circle contains no finite MSLP" in run.stderr
+    assert not list((work / raw["output"]["directory"] / "products").glob("*.nc"))
 
 
 @pytest.mark.parametrize("script,field", [

@@ -79,9 +79,64 @@ Native index 1 is W=0.5 m s-1 at 500 m; its explicitly requested polar mass
 index 1 is W=1 m s-1 at 1000 m. Equal index numbers do not mean equal locations.
 See :doc:`../reference/vertical_levels` for selection on destination grids.
 
+Compare two wind representations
+--------------------------------
+
+Use ``staggered-winds/mesonh.nc`` for this separate exercise. In the fixture,
+``UT`` points along the grid's x direction and is stored on x faces.
+``VT`` points along y and is stored on y faces. The two components are
+not at the same points.
+
+First, save and run
+:download:`staggered-winds-native.yaml <../../../example/tutorials/staggered-winds-native.yaml>`.
+It copies the two components at their original locations.
+
+.. literalinclude:: ../../../example/tutorials/staggered-winds-native.yaml
+   :language: yaml
+
+Next, save and run
+:download:`staggered-winds-earth.yaml <../../../example/tutorials/staggered-winds-earth.yaml>`.
+It keeps the same crop and level but requests two changes:
+
+* ``sampling: mass`` places both components at the cell centres.
+* ``basis: earth`` expresses the vector as eastward and northward components.
+  The rotation uses ``angle`` in the input file. Here it is a quarter-turn.
+
+.. literalinclude:: ../../../example/tutorials/staggered-winds-earth.yaml
+   :language: yaml
+
+.. code-block:: bash
+
+   frameit inspect staggered-winds-earth.yaml
+   frameit run staggered-winds-native.yaml
+   frameit run staggered-winds-earth.yaml
+
+In the native file, ``UT`` has axis ``x_u`` and ``VT`` has axis ``y_v``.
+The x faces at −500 and +500 m carry ``UT`` values 9.5 and 10.5 m/s.
+At the centre between them, the grid components are (10, 0) m/s.
+After rotation, they are (0, 10) m/s eastward and northward.
+
+Both variables in the second file use ``y, x``. Check the centre and the
+next x point:
+
+.. code-block:: python
+
+   import xarray as xr
+
+   path = "results/staggered-winds-earth/products/staggered-winds-earth.atmosphere.model_grid.nc"
+   with xr.open_dataset(path) as data:
+       wind = data[["UT", "VT"]].isel(time=0, level=0, y=1, x=[1, 2])
+       print(wind.UT.values.round(9))  # [0. 0.], eastward in m/s
+       print(wind.VT.values.round(9))  # [10. 11.], northward in m/s
+
+The quarter-turn is set by this fixture, not a Meso-NH default. The
+transforms change sample locations and component directions. They do not
+subtract storm motion.
+
 Adapt to real inputs
 ---------------------
 
 Replace names and verify units, staggering and vector basis from producer
 metadata. Grid-relative winds need evidenced rotation; changing a label to
 ``earth`` is not a conversion. A W remap retains its physical quantity and units.
+See :ref:`E1306 <e1306>` if your Meso-NH rotation needs projection values.

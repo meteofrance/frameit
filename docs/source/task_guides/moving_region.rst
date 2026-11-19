@@ -71,9 +71,40 @@ Optional: :download:`script file <../../../example/plots/plot_moving_region.py>`
 
    Exported geographical positions, not native ``cx/cy`` indices.
 
+Write a track from a table
+--------------------------
+
+If your known positions are in a table, write them to a NetCDF file first.
+FrameIt needs one latitude and longitude for each time. This script uses
+the same three positions as the tutorial. It writes two new files and does
+not change ``data/track.nc``.
+
+Copy this into ``write_table_track.py`` and run ``python write_table_track.py``:
+
+.. literalinclude:: ../../../example/tutorials/write_table_track.py
+   :language: python
+
+Optional: :download:`script file <../../../example/tutorials/write_table_track.py>`.
+
+Copy ``moving-region.yaml`` to ``table-region.yaml``. In the copy, set:
+
+* ``run.name`` to ``table-region``;
+* ``region.track.file`` to ``./table-track.nc``;
+* ``output.directory`` to ``./results/table-region``.
+
+Run ``frameit run table-region.yaml``. The exported track has the same
+three times and positions as the first run.
+
+To see a missing-centre error, copy that request to ``gap-region.yaml``.
+Set ``region.track.file`` to ``./table-track-gap.nc`` and
+``output.directory`` to ``./results/gap-region``. Run
+``frameit validate gap-region.yaml``. It reports :ref:`E1404 <e1404>` because
+the new track has no position at 01:00.
+
 Adapt to real inputs
 ---------------------
 
-Replace the fields, trajectory and full crop widths. To calculate centres
-instead, replace ``track`` with an explicitly selected
-:doc:`atmospheric tracker <../reference/tracking>` and provide its required inputs.
+Replace the fields, trajectory and full crop widths. Check that the track
+times use the same convention as your data. Use geographical positions, not
+grid indices from another run. FrameIt does not fill gaps in the track.
+If you do not have a trajectory, see :doc:`calculate_track`.

@@ -1,0 +1,23 @@
+schema_version: 3
+run: {name: calculate-track}
+sources:
+  atmosphere:
+    model: arome
+    format: netcdf
+    files: ./calculated-track/atmosphere.nc
+    variables:
+      2d: [prmsl]  # Export pressure. The tracker also reads u10 and v10.
+    wind_pairs:
+      - {u: u10, v: v10, basis: earth}  # Already eastward and northward.
+region:
+  tracker:
+    method: pressure_wind
+    initial_guess: {latitude: -20, longitude: 60, search_radius_km: 20}
+    search_width_km: 60   # Full width of the pressure search.
+    refine_width_km: 20   # Full width of the wind search.
+  width_km: {x: 50, y: 50}  # Full widths of the output crop.
+products:
+  model_grid: true
+  track: true
+output: {directory: ./results/calculate-track}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

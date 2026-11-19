@@ -1,0 +1,17 @@
+schema_version: 3
+run: {name: staggered-winds-native}
+sources:
+  atmosphere:
+    model: mesonh
+    format: netcdf
+    files: ./staggered-winds/mesonh.nc
+    variables:
+      3d: [UT, VT]
+      levels: {indices: [1]}  # Keep the native level labelled 5 m.
+region:
+  center: {latitude: -20, longitude: 60}
+  width_km: {x: 2, y: 2}
+products:
+  model_grid: true
+output: {directory: ./results/staggered-winds-native}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

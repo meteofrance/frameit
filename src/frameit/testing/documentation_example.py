@@ -156,6 +156,117 @@ def create_tutorial_inputs(directory: Path, *, translating=False, missing=False)
     return paths
 
 
+def _create_forecast_archive(directory: Path) -> dict[str, Path]:
+    day = np.datetime64("2000-01-01", "ns")
+    distance = .01 * np.arange(-3, 4)
+    paths = {}
+    for name, hour, lead_hours, pressure in (
+        ("z-earlier", 0, 1, 100100.),
+        ("a-later", 0, 2, 100200.),
+        ("b-other-cycle", 1, 1, 101200.),
+    ):
+        cycle = day + np.timedelta64(hour, "h")
+        lead = np.timedelta64(lead_hours, "h")
+        data = xr.Dataset({
+            "prmsl": (("valid_time", "latitude", "longitude"), np.full((1, 7, 7), pressure),
+                      {"units": "Pa", "cell_methods": "valid_time: point",
+                       "standard_name": "air_pressure_at_mean_sea_level"}),
+        }, coords={
+            "valid_time": ("valid_time", [cycle + lead], {"standard_name": "time"}),
+            "time": ((), cycle, {"standard_name": "forecast_reference_time"}),
+            "step": ("valid_time", [lead], {"standard_name": "forecast_period"}),
+            "latitude": ("latitude", -20. + distance, {"units": "degrees_north"}),
+            "longitude": ("longitude", 60. + distance, {"units": "degrees_east"}),
+        }, attrs={"source": "Synthetic instructional forecast archive; not producer data"})
+        paths[f"forecast-archive.{name}"] = directory / f"{name}.nc"
+        clock = {"units": "hours since 2000-01-01", "calendar": "proleptic_gregorian"}
+        with atomic_output(paths[f"forecast-archive.{name}"], overwrite=False) as temporary:
+            data.to_netcdf(temporary, engine="netcdf4", encoding={"time": clock, "valid_time": clock})
+    return paths
+
+
+def _create_coupled_clocks(directory: Path) -> dict[str, Path]:
+    times = np.array(["2000-01-01T06", "2000-01-01T07", "2000-01-01T08"], dtype="datetime64[ns]")
+    attrs = {"source": "Synthetic instructional clocks; not a coupled simulation"}
+    t, j, i = np.indices((3, 9, 9))
+    air = xr.Dataset({
+        "prmsl": (("time", "latitude", "longitude"), 100000. + 100*t + 10*j + i,
+                  {"units": "Pa", "cell_methods": "time: point",
+                   "standard_name": "air_pressure_at_mean_sea_level"}),
+    }, coords={
+        "time": ("time", times, {"standard_name": "time"}),
+        "latitude": ("latitude", -20. + .05*np.arange(-4, 5), {"units": "degrees_north"}),
+        "longitude": ("longitude", 60. + .05*np.arange(-4, 5), {"units": "degrees_east"}),
+    }, attrs=attrs)
+    ends = times[[0, 2]]
+    bounds = ends[:, None] + np.array([-1, 0], dtype="timedelta64[h]")
+    offset = .08*np.arange(-3, 4)
+    lon, lat = np.meshgrid(60. + offset, -20. + offset)
+    t, j, i = np.indices((2, 7, 7))
+    ocean = xr.Dataset({
+        "votemper": (("time_counter", "deptht", "y", "x"), (290. + t + .1*j + .01*i)[:, None],
+                     {"units": "K", "cell_methods": "time: mean",
+                      "standard_name": "sea_water_potential_temperature"}),
+        "time_bounds": (("time_counter", "bounds"), bounds),
+    }, coords={
+        "time_counter": ("time_counter", ends - np.timedelta64(30, "m"),
+                         {"standard_name": "time", "bounds": "time_bounds"}),
+        "deptht": ("deptht", [5.], {"units": "m", "positive": "down"}),
+        "nav_lat": (("y", "x"), lat, {"units": "degrees_north"}),
+        "nav_lon": (("y", "x"), lon, {"units": "degrees_east"}),
+        "y": np.arange(7),
+        "x": np.arange(7),
+    }, attrs=attrs)
+    track = xr.Dataset(coords={
+        "time": ("time", times, {"standard_name": "time"}),
+        "latitude": ("time", [-20.] * 3, {"units": "degrees_north"}),
+        "longitude": ("time", [60., 60.05, 60.1], {"units": "degrees_east"}),
+    }, attrs=attrs)
+    clock = {"units": "minutes since 2000-01-01", "calendar": "proleptic_gregorian"}
+    paths = {}
+    for name, scene, times_to_encode in (
+        ("atmosphere", air, ("time",)),
+        ("nemo-t", ocean, ("time_counter", "time_bounds")),
+        ("track", track, ("time",)),
+    ):
+        path = directory / f"{name}.nc"
+        paths[f"coupled-clocks.{name}"] = path
+        with atomic_output(path, overwrite=False) as temporary:
+            scene.to_netcdf(temporary, engine="netcdf4",
+                            encoding={coord: clock for coord in times_to_encode})
+    return paths
+
+
+def _create_staggered_winds(path: Path) -> Path:
+    mass = 1000.*np.arange(-4., 5.)
+    faces = 1000.*np.arange(-4.5, 5.)
+    data = xr.Dataset({
+        "UT": (("time", "level", "nj_u", "ni_u"),
+               np.broadcast_to(10. + faces/1000., (1, 3, 9, 10)),
+               {"units": "m s-1", "standard_name": "x_wind", "grid": 2}),
+        "VT": (("time", "level", "nj_v", "ni_v"), np.zeros((1, 3, 10, 9)),
+               {"units": "m s-1", "standard_name": "y_wind", "grid": 3}),
+    }, coords={
+        "time": [np.datetime64("2000-01-01T00", "ns")],
+        "level": ("level", [-5., 5., 15.], {"units": "m", "c_grid_dynamic_range": "2:3"}),
+        "angle": ((), np.pi/2, {"units": "rad"}),
+    }, attrs={"source": "Synthetic instructional wind pair; not producer data"})
+    for suffix, x, y in (("", mass, mass), ("_u", faces, mass), ("_v", mass, faces)):
+        xi, yj = f"ni{suffix}", f"nj{suffix}"
+        xx, yy = np.meshgrid(x, y)
+        # The synthetic grid's x direction is north; its y direction is west.
+        data = data.assign_coords({
+            xi: (xi, x, {"units": "m"}),
+            yj: (yj, y, {"units": "m"}),
+            f"latitude{suffix}": ((yj, xi), -20. + xx/111000., {"units": "degrees_north"}),
+            f"longitude{suffix}": ((yj, xi), 60. - yy/(111000.*np.cos(np.deg2rad(20))),
+                                  {"units": "degrees_east"}),
+        })
+    with atomic_output(path, overwrite=False) as temporary:
+        data.to_netcdf(temporary, engine="netcdf4")
+    return path
+
+
 def create_task_fixtures(directory: Path) -> dict[str, Path]:
     """Generate every task-guide input locally, in a new directory only."""
     directory = Path(directory)
@@ -213,6 +324,11 @@ def create_task_fixtures(directory: Path) -> dict[str, Path]:
         formula="300 K - (0.006 K/m) z + (2 K) exp(-(r/40 km)^2) exp(-z/1000 m)")
     for name in ("u", "v"):
         coupled_air[name].attrs["sampling_height_m"] = 10.
+    calculated_air = coupled_air[["pressure", "u", "v"]].rename(
+        {"pressure": "prmsl", "u": "u10", "v": "v10"})
+    paths["calculated-track.atmosphere"] = directory / "calculated-track/atmosphere.nc"
+    with atomic_output(paths["calculated-track.atmosphere"], overwrite=False) as temporary:
+        calculated_air.to_netcdf(temporary, engine="netcdf4")
     with xr.open_dataset(paths["moving.ocean"]) as source:
         coupled_ocean = source.load().drop_dims("time")
     coupled_ocean = coupled_ocean.assign_coords(time=coupled_air.time)
@@ -240,6 +356,9 @@ def create_task_fixtures(directory: Path) -> dict[str, Path]:
         paths[f"coupled.{name}"] = directory / f"coupled-{name}.nc"
         with atomic_output(paths[f"coupled.{name}"], overwrite=False) as temporary:
             scene.to_netcdf(temporary, engine="netcdf4")
+    paths.update(_create_forecast_archive(directory / "forecast-archive"))
+    paths.update(_create_coupled_clocks(directory / "coupled-clocks"))
+    paths["staggered-winds.mesonh"] = _create_staggered_winds(directory / "staggered-winds/mesonh.nc")
     return paths
 
 

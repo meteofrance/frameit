@@ -1,0 +1,26 @@
+schema_version: 3
+run: {name: staggered-winds-earth}
+sources:
+  atmosphere:
+    model: mesonh
+    format: netcdf
+    files: ./staggered-winds/mesonh.nc
+    variables:
+      3d: [UT, VT]
+      levels: {indices: [1]}  # The same native level as in the first request.
+    wind_pairs:
+      - u: UT
+        v: VT
+        basis: grid  # These are x- and y-directed winds on input.
+        rotation: {method: coordinate, coordinate: angle}  # Read the fixture's angle.
+    transforms:
+      - fields: [UT, VT]
+        sampling: mass  # Put both components at the same points.
+        basis: earth    # Output eastward and northward components.
+region:
+  center: {latitude: -20, longitude: 60}
+  width_km: {x: 2, y: 2}
+products:
+  model_grid: true
+output: {directory: ./results/staggered-winds-earth}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

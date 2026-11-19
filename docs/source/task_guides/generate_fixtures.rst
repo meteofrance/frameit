@@ -35,15 +35,19 @@ Choose a new directory; existing directories are refused.
          paths = create_task_fixtures(Path("tutorial-data"))
          print(paths)
 
-The command creates fourteen small NetCDF files:
+The command creates twenty-two small NetCDF files:
 
 * ``first-run.nc``: dimensionless scalar, with a valid zero and a missing sample;
 * ``stationary/``: analytical atmosphere, ocean and stationary track;
 * ``data/``: the same formulas with a translating prescribed centre;
+* ``calculated-track/atmosphere.nc``: pressure and 10 m winds from the translating vortex;
+* ``forecast-archive/``: three pressure files from two forecast starts;
 * ``missing-data/``: explicit missing samples and categorical labels;
 * ``pressure.nc``: temperatures on pressure and height axes;
 * ``interfaces.nc``: native interface W and mass-level coordinates;
 * ``coupled-atmosphere.nc`` and ``coupled-ocean.nc``: three prescribed storm/cold-trail snapshots.
+* ``coupled-clocks/``: snapshots, hourly ocean means, and a track with centres on the hour.
+* ``staggered-winds/mesonh.nc``: winds on separate x and y faces, with a known rotation angle.
 
 Work inside ``tutorial-data`` for the remaining tasks. Copy each guide's YAML
 and plotting code into the named files there. Each task uses a separate results directory.

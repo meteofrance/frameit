@@ -4,7 +4,7 @@ Pressure-wind tracker
 Select ``region.tracker.method: pressure_wind`` to find an MSLP minimum, then
 refine it to a nearby 10-m wind-speed minimum at each selected time.
 The output ``cy(time)``/``cx(time)`` centres are native grid points, not continuous
-sub-grid estimates. For setup and run checks, use :doc:`../task_guides/moving_region`.
+sub-grid estimates. For a worked example, see :doc:`../task_guides/calculate_track`.
 
 Required input fields
 ---------------------

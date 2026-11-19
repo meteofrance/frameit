@@ -9,7 +9,8 @@ atmospheric centres, compare :doc:`../tracker/pressure_wind_tracker`,
 
 Each method lists its required inputs and limits. The beta
 :doc:`../tracker/utrack` adapter cannot execute current requests.
-For setup, use :doc:`../task_guides/moving_region`.
+For a worked calculation, see :doc:`../task_guides/calculate_track`.
+To use positions you already have, see :doc:`../task_guides/moving_region`.
 
 .. toctree::
    :maxdepth: 1

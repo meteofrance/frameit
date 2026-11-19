@@ -14,7 +14,24 @@ def test_fixture_command_creates_all_small_instructional_inputs(tmp_path):
         cwd=tmp_path, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     root = tmp_path / "tutorial-data"
-    assert len(list(root.rglob("*.nc"))) == 14
+    assert len(list(root.rglob("*.nc"))) == 22
+    with xr.open_dataset(root / "staggered-winds/mesonh.nc") as data:
+        np.testing.assert_array_equal(data.ni_u.values[[4, 5]], [-500., 500.])
+        np.testing.assert_array_equal(data.UT.values[0, 1, 4, [4, 5]], [9.5, 10.5])
+        assert data.angle.attrs["units"] == "rad"
+    with xr.open_dataset(root / "coupled-clocks/nemo-t.nc") as data:
+        np.testing.assert_array_equal(data.time_bounds, np.array(
+            [["2000-01-01T05", "2000-01-01T06"], ["2000-01-01T07", "2000-01-01T08"]],
+            dtype="datetime64[ns]"))
+        assert data.votemper.attrs["cell_methods"] == "time: mean"
+    with xr.open_dataset(root / "forecast-archive/b-other-cycle.nc") as data:
+        assert data.time.values == np.datetime64("2000-01-01T01")
+        assert data.valid_time.values[0] == np.datetime64("2000-01-01T02")
+        assert data.prmsl.values[0, 0, 0] == 101200.
+    with xr.open_dataset(root / "calculated-track/atmosphere.nc") as data:
+        assert set(data.data_vars) == {"prmsl", "u10", "v10"}
+        assert data.u10.attrs["sampling_height_m"] == 10.
+        assert data.v10.attrs["standard_name"] == "northward_wind"
     with xr.open_dataset(root / "pressure.nc") as data:
         assert data.temperature.dims == ("time", "isobaric", "latitude", "longitude")
         assert data.isobaric.attrs["units"] == "Pa"

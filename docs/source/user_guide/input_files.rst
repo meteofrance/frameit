@@ -101,7 +101,8 @@ exist. Quote timestamps in YAML. Empty selections fail.
 
 The source calendar is retained. If several forecast cycles exist, supply the
 exact reference time as ``time.cycle``. Do not treat equal valid timestamps as
-proof that cycles are equivalent.
+proof that cycles are equivalent. See :doc:`../task_guides/forecast_archive`
+for a worked selection.
 
 Forecast reference time, sample/valid time, interval bounds and sampling meaning
 remain distinct. Conflicting clocks or calendars fail, including when reference

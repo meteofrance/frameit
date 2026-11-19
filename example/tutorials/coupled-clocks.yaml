@@ -1,0 +1,23 @@
+schema_version: 3
+run: {name: coupled-clocks}
+sources:
+  atmosphere:
+    model: arome
+    format: netcdf
+    files: ./coupled-clocks/atmosphere.nc
+    variables: {2d: [prmsl]}  # Instantaneous pressure.
+  ocean:
+    model: nemo
+    format: netcdf
+    files: ./coupled-clocks/nemo-t.nc
+    variables:
+      3d: [votemper]  # Hourly mean potential temperature.
+      levels: {indices: [0]}  # The fixture has one depth, 5 m.
+region:
+  track: {file: ./coupled-clocks/track.nc}  # Centres are on the hour.
+  width_km: {x: 20, y: 20}
+  sources_coupling_time_association: preceding_hour  # Match each mean by its end time.
+products:
+  model_grid: true
+output: {directory: ./results/coupled-clocks}
+resources: {cpus: 1, scheduler: synchronous, synchronous_export: true}

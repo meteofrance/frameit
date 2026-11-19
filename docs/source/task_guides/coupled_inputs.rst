@@ -23,6 +23,7 @@ request selects its own surface rho index.
 A fixed centre covers each source's actual times. A supplied or calculated
 track instead needs centres at every required time under the default exact
 association. See :doc:`moving_region` and :doc:`../concepts/time_support`.
+To pair AROME snapshots with NEMO hourly means, see :doc:`coupled_clocks`.
 
 Run
 ----

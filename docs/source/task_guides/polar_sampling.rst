@@ -73,6 +73,31 @@ Optional: :download:`script file <../../../example/plots/plot_polar_sampling.py>
 Use the output's validity, support-fraction and interpolation-status variables
 when analysing missing samples; see :doc:`../concepts/missingness_and_status`.
 
+.. _polar-coverage-check:
+
+Check coverage before using a ring
+----------------------------------
+
+For this separate exercise, save
+:download:`analytic-missing.yaml <../../../example/tutorials/analytic-missing.yaml>`
+and run ``frameit run analytic-missing.yaml``. It uses a fixture with a missing
+wind sample. The strict policy leaves a target missing when a required source
+value is missing. The ``surface_type`` category uses nearest-neighbour sampling.
+
+Copy this into ``check_polar_coverage.py`` and run ``python check_polar_coverage.py``:
+
+.. literalinclude:: ../../../example/tutorials/check_polar_coverage.py
+   :language: python
+
+Optional: :download:`script file <../../../example/tutorials/check_polar_coverage.py>`.
+
+The script finds a point on mapped geometry where ``u`` is missing.
+Status ``2`` means that a contributing source value is missing. The
+valid-weight fraction is below 1; it is not a fraction of physical area.
+``u_full_ring_valid`` is false for this ring, so do not use it for a
+full-ring statistic. A valid ``surface_type`` value of ``0`` means water.
+It is not a missing value. Do not fill the wind gap with zero.
+
 Adapt to real inputs
 ---------------------
 

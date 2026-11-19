@@ -9,11 +9,14 @@ offers equivalent CLI/API execution and a standalone output plot.
 
    generate_fixtures
    fixed_region
+   forecast_archive
    field_selection
    moving_region
+   calculate_track
    scalars_and_vectors
    polar_sampling
    coupled_inputs
+   coupled_clocks
    storage_and_resources
    analytical_event
    ../getting_started/hpc
