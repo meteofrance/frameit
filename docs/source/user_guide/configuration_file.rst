@@ -56,7 +56,10 @@ document; logs go to standard error. An error report exits nonzero.
 and ``pending`` facts. Pending metadata is not a completed configuration choice.
 
 Errors identify keys/files, YAML locations, expected/observed facts and possible
-repairs. Blocked checks are not passes. Successful validation does not establish
+repairs. Each error has a ``code`` and a ``help`` path relative to the docs for
+that FrameIt version. Warnings remain strings and start with a code in brackets.
+Find a code in :doc:`../troubleshooting/codes`.
+Blocked checks are not passes. Successful validation does not establish
 scientific validity. See :doc:`../troubleshooting`.
 
 Authored and effective views

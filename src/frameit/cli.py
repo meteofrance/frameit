@@ -38,7 +38,32 @@ _sanitize_sys_path_user_site()
 import argparse  # noqa: E402
 import logging  # noqa: E402
 import platform  # noqa: E402
-from typing import Any  # noqa: E402
+from typing import Any, NoReturn  # noqa: E402
+
+from frameit.utils.diagnostics import (  # noqa: E402
+    diagnostic_path,
+    exception_code,
+    format_message,
+    tag_error,
+)
+
+
+def _with_help(code: str, message: str) -> str:
+    return f"{format_message(code, message)}\nTroubleshooting: {diagnostic_path(code)}"
+
+
+def _failure_message(exc: Exception) -> str:
+    from frameit.core.reports import PreflightError
+
+    if isinstance(exc, PreflightError) and exc.diagnostics:
+        paths = dict.fromkeys(diagnostic_path(error.code) for error in exc.diagnostics)
+        return str(exc) + "\nTroubleshooting: " + ", ".join(paths)
+    return _with_help(exception_code(exc), str(exc))
+
+
+class _FrameItArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> NoReturn:
+        super().error(_with_help("E0001", message))
 
 
 def _package_version(pkg_name: str) -> str | None:
@@ -83,7 +108,7 @@ def _operational_overrides(args):
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="frameit", description="FrameIt CLI", allow_abbrev=False)
+    p = _FrameItArgumentParser(prog="frameit", description="FrameIt CLI", allow_abbrev=False)
     sub = p.add_subparsers(dest="command", required=True)
 
     # run
@@ -285,9 +310,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _load_config(path, overrides):
-    from frameit.core.configuration import load_runtime
-    from frameit.core.settings_class import SimulationConfig
-    from frameit.io.loader import _apply_model_presets
+    try:
+        from frameit.core.configuration import load_runtime
+        from frameit.core.settings_class import SimulationConfig
+        from frameit.io.loader import _apply_model_presets
+    except ImportError as exc:
+        raise tag_error(exc, "E1001")
     from frameit.utils.logging import frameit_logging_scope
 
     runtime = load_runtime(path, launch_dir=Path.cwd(), overrides=overrides)
@@ -385,7 +413,9 @@ def _cmd_info(short: bool) -> int:
 
     critical_missing = [k for k in ("numpy", "xarray") if not modules[k]["ok"]]
     if critical_missing:
-        print(f"Overall: FAIL (missing critical modules: {', '.join(critical_missing)})")
+        print(_with_help(
+            "E1001", f"Overall: FAIL (missing critical modules: {', '.join(critical_missing)})"
+        ))
         return 1
 
     print("Overall: OK")
@@ -457,7 +487,7 @@ def _cmd_config(args):
             args.config, command="config show --effective", overrides=_operational_overrides(args)),
             json_output=args.json)
     if _operational_overrides(args):
-        raise ValueError("Operational overrides require config show --effective")
+        raise tag_error(ValueError("Operational overrides require config show --effective"), "E0001")
     from frameit.core.configuration import read_yaml
 
     authored = read_yaml(args.config)
@@ -535,7 +565,11 @@ def main(argv: list[str] | None = None) -> None:
         Always raised with exit code ``0`` on success, ``1`` on unhandled
         exception, or ``2`` for an unknown sub-command.
     """
-    parser = _build_parser()
+    try:
+        parser = _build_parser()
+    except ImportError as exc:
+        print(_with_help("E1001", str(exc)), file=sys.stderr)
+        raise SystemExit(1) from None
     args = parser.parse_args(argv)
 
     # Minimal fallback logging for unexpected errors before FrameIt logging is configured
@@ -604,12 +638,12 @@ def main(argv: list[str] | None = None) -> None:
     except KeyboardInterrupt:
         code = 130
     except (ValueError, FileNotFoundError, FileExistsError) as exc:
-        logging.getLogger("frameit").error("%s", exc)
+        logging.getLogger("frameit").error("%s", _failure_message(exc))
         code = 2 if args.command in (
             "prepare-ci-dataset", "run-matrix-test", "run-all-tests"
         ) else 1
-    except Exception:
-        logging.getLogger("frameit").exception("FrameIt CLI failed")
+    except Exception as exc:
+        logging.getLogger("frameit").exception("%s", _failure_message(exc))
         code = 1
 
     raise SystemExit(code)

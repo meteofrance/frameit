@@ -137,14 +137,15 @@ def test_schema_only_is_offline_with_operational_overrides(tmp_path, monkeypatch
 
 @pytest.mark.parametrize("command", [
     ("inspect",), ("validate",), ("config", "show", "--effective")])
-@pytest.mark.parametrize("contents", [
-    "schema_version: 3\nsources:\n  weather: {files: missing.nc, model: invented}\n",
-    "schema_version: 3\nsources: {}\nsources: {}\n",
-    "schema_version: 3\nsources: [\n",
-    None,
+@pytest.mark.parametrize("contents,expected", [
+    ("schema_version: 3\nsources:\n  weather: {files: missing.nc, model: invented}\n", "E1105"),
+    ("schema_version: 3\nsources: {}\nsources: {}\n", "E1103"),
+    ("schema_version: 3\nsources: [\n", "E1102"),
+    ('schema_version: "3"\nsources: {}\n', "E1104"),
+    (None, "E1101"),
 ])
 def test_json_failures_are_one_document_with_repairs_and_nonzero(
-        tmp_path, capsys, command, contents):
+        tmp_path, capsys, command, contents, expected):
     path = tmp_path / "bad.yaml"
     if contents is not None:
         path.write_text(contents)
@@ -152,6 +153,8 @@ def test_json_failures_are_one_document_with_repairs_and_nonzero(
     assert code == 1
     report = envelope(out, "config show --effective" if len(command) > 1 else command[0], "error")
     assert report["errors"][0]["repairs"]
+    assert report["errors"][0]["code"] == expected
+    assert report["errors"][0]["help"] == f"troubleshooting/configuration.html#{expected.lower()}"
     if contents is not None:
         assert report["errors"][0]["locations"]
     assert not (tmp_path / "output").exists()
@@ -161,6 +164,39 @@ def test_json_failures_are_one_document_with_repairs_and_nonzero(
 def test_overwrite_flags_are_exclusive(tmp_path, capsys, command):
     code, out, err = invoke(capsys, *command, "--overwrite", "--no-overwrite")
     assert code == 2 and not out and "not allowed" in err
+
+
+@pytest.mark.parametrize("args", [(), ("not-a-command",), ("run", "--bad-option"),
+                                  ("validate", "--overwrite", "--no-overwrite")])
+def test_argparse_error_is_coded_before_logging(capsys, args):
+    code, out, err = invoke(capsys, *args)
+    assert code == 2 and not out
+    assert "usage:" in err and "[E0001]" in err
+    assert "troubleshooting/start.html#e0001" in err
+    for command in ((), ("validate",)):
+        code, out, err = invoke(capsys, *command, "--help")
+        assert code == 0 and "usage:" in out and not err
+        assert "[E0001]" not in out
+
+
+def test_required_startup_import_failure_reports_a_code(monkeypatch, capsys):
+    def unavailable():
+        raise ModuleNotFoundError("No module named 'yaml'", name="yaml")
+
+    monkeypatch.setattr("frameit.cli._build_parser", unavailable)
+    code, out, err = invoke(capsys, "--help")
+    assert code == 1 and not out
+    assert "[E1001]" in err and "No module named 'yaml'" in err
+
+
+def test_starter_failures_explain_the_cause_without_changing_the_file(tmp_path, capsys, caplog):
+    path = tmp_path / "starter.yaml"
+    path.write_bytes(b"previous file")
+    code, _, err = invoke(capsys, "init", "arome", "--output", path)
+    assert code == 1 and "[E1106]" in err + caplog.text
+    assert path.read_bytes() == b"previous file"
+    code, _, err = invoke(capsys, "init", "nemo-native", "--tracking", "fixed_box")
+    assert code == 1 and "[E1107]" in err + caplog.text
 
 
 @pytest.mark.parametrize("args", [("run", "--dry-run"), ("config", "show", "--resolved")])

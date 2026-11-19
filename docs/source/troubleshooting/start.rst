@@ -25,3 +25,17 @@ not mean a run finished.
 If you report the error, give the command, the code, the output of
 ``frameit info --short``, and the relevant error lines. Remove private
 paths and secrets. Do not attach a whole input archive.
+
+.. _e1001:
+
+E1001: Required Python package did not load
+--------------------------------------------
+
+Read the package name in the error. If you use the reference install,
+run ``conda activate frameit_env``. Run ``python --version`` and
+``python -m pip check`` in that same shell. Follow
+:doc:`../getting_started/installation` if the environment is missing or
+points to the wrong checkout.
+
+Run ``frameit --help`` and ``frameit info`` again. An optional reader
+listed as missing is not an error unless your request needs it.

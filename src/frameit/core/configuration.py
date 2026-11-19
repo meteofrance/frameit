@@ -12,11 +12,16 @@ import math
 import os
 import re
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
 
 import yaml
 
-from frameit.core.reports import Diagnostic, PreflightError, exception_diagnostics
+from frameit.core import reports
+from frameit.core.reports import PreflightError, exception_diagnostics
+from frameit.utils.diagnostics import tag_error
+
+Diagnostic = partial(reports.Diagnostic, code="E1105")
 
 DEFAULTS = {
     "schema_version": 3,
@@ -425,7 +430,7 @@ class UniqueLoader(yaml.SafeLoader):
                     getattr(self, "node_paths", {}).get(id(key_node), "configuration"),
                     f"Duplicate key {key!r} at line {location['line']}",
                     "unique mapping keys", {"key": key},
-                    [f"Keep one {key} entry in this mapping."], locations=[location])])
+                    [f"Keep one {key} entry in this mapping."], locations=[location], code="E1103")])
             result[key] = self.construct_object(value_node, deep=deep)
         return result
 
@@ -438,7 +443,13 @@ def _read_yaml(path):
     """Use one strict parse tree for values and authored marks."""
     path = Path(path)
     locations = {}
-    loader = UniqueLoader(path.read_text(encoding="utf-8"))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise tag_error(exc, "E1101")
+    except UnicodeError as exc:
+        raise tag_error(exc, "E1102")
+    loader = UniqueLoader(text)
     loader.node_paths = {}
     loader.source_path = str(path.absolute())
     try:
@@ -472,6 +483,7 @@ def _read_yaml(path):
         raise PreflightError([Diagnostic(
             "configuration", f"Invalid YAML in {path}: {exc}", "valid YAML mapping syntax",
             {"problem": str(exc)}, ["Correct the YAML syntax at the reported location."],
+            code="E1102",
             locations=[{"file": str(path.absolute()), "line": mark.line + 1,
                         "column": mark.column + 1}] if mark else [],
         )]) from exc
@@ -481,6 +493,7 @@ def _read_yaml(path):
         raise PreflightError([Diagnostic(
             "configuration", f"{path}: expected a YAML mapping", "YAML mapping", data,
             ["Provide a mapping with schema_version: 3 and sources."],
+            code="E1102",
             locations=[{"file": str(path.absolute()), "line": node.start_mark.line + 1,
                         "column": node.start_mark.column + 1}] if node else [],
         )])
@@ -1579,13 +1592,22 @@ def _output(raw, base):
 
 def resolve_schema(raw, *, base_dir=None):
     """Return ``(document, source_requests, polar_fields)`` without opening inputs."""
+    try:
+        return _resolve_schema(raw, base_dir=base_dir)
+    except PreflightError:
+        raise
+    except ValueError as exc:
+        raise tag_error(exc, "E1105")
+
+
+def _resolve_schema(raw, *, base_dir=None):
     if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int or raw["schema_version"] != 3:
         raise PreflightError([Diagnostic(
             "schema_version",
             "Expected schema_version: 3 (a YAML integer, not a boolean or string)",
             {"type": "integer", "value": 3},
             raw.get("schema_version") if isinstance(raw, dict) else raw,
-            ["Use schema_version: 3 with an unquoted YAML integer."])])
+            ["Use schema_version: 3 with an unquoted YAML integer."], code="E1104")])
     _reject_nulls({key: value for key, value in raw.items() if key != "sources"})
     _keys(raw, set(DEFAULTS), "configuration", required={"sources"})
     base = Path(base_dir or Path.cwd()).resolve()
@@ -1622,6 +1644,8 @@ def resolve_schema(raw, *, base_dir=None):
             _reject_nulls(spec, f"sources.{name}")
             conf["sources"][name] = _source(spec, name, base)
         except ValueError as exc:
+            if not isinstance(exc, PreflightError):
+                tag_error(exc, "E1105")
             errors.extend(exception_diagnostics(
                 exc, path=f"sources.{name}", expected="valid source declaration", observed=spec,
                 repairs=[f"Correct sources.{name}: {exc}"]))
@@ -1969,6 +1993,7 @@ def load_runtime(path, *, launch_dir=None, overrides=None):
         matches = [(name, mark["line"]) for name, mark in locations.items() if name in message]
         if matches:
             message += "\n" + ", ".join(f"{name}: line {line}" for name, line in matches)
+        tag_error(exc, "E1105")
         raise ValueError(f"{path}: {message}") from exc
 
 
@@ -1986,15 +2011,19 @@ def write_template(name, path, *, tracking=None, coupling=None, force=False):
     from frameit.utils.atomic import atomic_output
 
     if not isinstance(name, str):
-        raise ValueError("Template selector must be a model or named workflow")
+        raise tag_error(ValueError("Template selector must be a model or named workflow"), "E1107")
     if name in TEMPLATES:
         if tracking is not None or coupling is not None:
-            raise ValueError("Named workflows reject tracking/coupling flags; select a model to compose")
+            raise tag_error(ValueError(
+                "Named workflows reject tracking/coupling flags; select a model to compose"
+            ), "E1107")
         resource = TEMPLATES[name]
     elif name in {"arome", "mesonh", "nemo", "croco"}:
         if coupling is not None:
             if (name, coupling) not in {("arome", "nemo"), ("mesonh", "croco")}:
-                raise ValueError("Starter coupling supports only arome+nemo or mesonh+croco")
+                raise tag_error(ValueError(
+                    "Starter coupling supports only arome+nemo or mesonh+croco"
+                ), "E1107")
             tracking = tracking or "fixed_box"
             allowed = {"fixed_box", "prescribed_track", "pressure_wind", "pressure_centroid"}
             resource = f"{name}-{coupling}"
@@ -2007,9 +2036,11 @@ def write_template(name, path, *, tracking=None, coupling=None, force=False):
             resource = (f"{name}-fixed-scalar" if atmospheric and tracking in {
                 "fixed_box", "prescribed_track"} else name)
         if tracking not in allowed:
-            raise ValueError(f"Unsupported starter tracking selection: {name}/{coupling}/{tracking}")
+            raise tag_error(ValueError(
+                f"Unsupported starter tracking selection: {name}/{coupling}/{tracking}"
+            ), "E1107")
     else:
-        raise ValueError(f"Unknown template selector: {name}")
+        raise tag_error(ValueError(f"Unknown template selector: {name}"), "E1107")
 
     text = resources.files("frameit").joinpath(f"templates/{resource}.yaml").read_text(encoding="utf-8")
     starter = yaml.safe_load(text)
@@ -2059,6 +2090,9 @@ def write_template(name, path, *, tracking=None, coupling=None, force=False):
                             "  ocean:\n", 1)
     path = Path(path)
     resolve_schema(yaml.safe_load(text), base_dir=path.absolute().parent)
-    with atomic_output(path, overwrite=force) as temporary:
-        temporary.write_text(text, encoding="utf-8")
+    try:
+        with atomic_output(path, overwrite=force) as temporary:
+            temporary.write_text(text, encoding="utf-8")
+    except FileExistsError as exc:
+        raise tag_error(exc, "E1106")
     return path

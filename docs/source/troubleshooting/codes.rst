@@ -13,3 +13,11 @@ HTML build. If a code is not listed, find the symptom in
 
 * :ref:`e0001`
 * :ref:`e0999`
+* :ref:`e1001`
+* :ref:`e1101`
+* :ref:`e1102`
+* :ref:`e1103`
+* :ref:`e1104`
+* :ref:`e1105`
+* :ref:`e1106`
+* :ref:`e1107`

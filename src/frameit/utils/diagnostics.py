@@ -3,6 +3,14 @@
 CODE_TOPICS: dict[str, str] = {
     "E0001": "start",
     "E0999": "start",
+    "E1001": "start",
+    "E1101": "configuration",
+    "E1102": "configuration",
+    "E1103": "configuration",
+    "E1104": "configuration",
+    "E1105": "configuration",
+    "E1106": "configuration",
+    "E1107": "configuration",
 }
 
 UNEXPECTED_ERROR = "E0999"
