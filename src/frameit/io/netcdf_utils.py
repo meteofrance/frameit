@@ -312,6 +312,41 @@ def input_chunk_plan(source, chunks):
     }
 
 
+def join_arome_tracking_shards(groups, native_grids):
+    """Assemble tracker samples whose inventoried grids differ only by lead values."""
+    from frameit.core.preflight import _metadata_id
+
+    shards = {}
+    for key, dataset in groups.items():
+        grid = native_grids[key[0] if isinstance(key, tuple) else key]
+        coordinates = grid["coordinates"]
+        leads = {name for name, coord in coordinates.items()
+                 if coord["attributes"].get("standard_name") == "forecast_period"
+                 and not coord["attributes"].get("bounds")
+                 and name in dataset.coords and dataset[name].dims == ("time",)}
+        identity = key if not leads else _metadata_id("tracking_", {
+            "dimensions": grid["dimensions"], "grid_mapping": grid["grid_mapping"],
+            "coordinates": {name: {k: v for k, v in coord.items()
+                                   if k != "values" or name not in leads}
+                            for name, coord in coordinates.items()},
+            "variables": {name: value.dims for name, value in dataset.variables.items()},
+        })
+        shards.setdefault(identity, []).append((key, dataset))
+    result = {}
+    for sequence in shards.values():
+        key, first = sequence[0]
+        if len(sequence) == 1:
+            result[key] = first
+            continue
+        combined = xr.concat([dataset for _, dataset in sequence], dim="time",
+                             coords="minimal", data_vars="all", compat="identical",
+                             join="exact", combine_attrs="override")
+        if not combined.get_index("time").is_unique:
+            raise ValueError("AROME tracker forecast shards overlap on the same sampling grid")
+        result[key] = combined.sortby("time")
+    return result
+
+
 def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
     """Keep bound product selections separate from internal native read stencils."""
     if binding.get("status") != "bound" or source is None:

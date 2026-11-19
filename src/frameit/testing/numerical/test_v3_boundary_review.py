@@ -532,6 +532,8 @@ def _native_altitude_request(tmp_path, paths, *, fmt="netcdf"):
 
 @pytest.mark.parametrize("fmt", ["netcdf", "zarr"])
 def test_altitude_formula_native_export_keeps_labels_and_interface_alt(tmp_path, fmt):
+    import yaml
+
     from frameit.core.preflight import collect_preflight
 
     scene = _native_altitude_scene()
@@ -543,7 +545,10 @@ def test_altitude_formula_native_export_keeps_labels_and_interface_alt(tmp_path,
     warnings = report.facts["sources"]["atmosphere"]["field_binding"]["warnings"]
     assert all(any(f"{dim} native labels" in warning and "ZTOP" in warning for warning in warnings)
                for dim in ("level", "level_w"))
-    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    result = execute_simulation(conf)
+    provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+    assert set(warnings) <= set(provenance["warnings"])
     product, = result.products
     opened = (xr.open_zarr(product["path"], decode_coords=False, consolidated=False)
               if fmt == "zarr" else xr.open_dataset(product["path"], decode_coords=False))
@@ -687,13 +692,19 @@ def test_altitude_optional_top_does_not_hide_required_terrain_of_same_name(tmp_p
     assert any("ZS" in error.message for error in report.errors), report.errors
 
 
-def test_altitude_formula_support_cannot_borrow_a_conflicting_calendar(tmp_path):
+@pytest.mark.parametrize("clock", ["time", "forecast_reference_time"])
+def test_altitude_formula_support_cannot_borrow_a_conflicting_calendar(tmp_path, clock):
     from frameit.core.preflight import collect_preflight
 
     scene = _native_altitude_scene()
     top = xr.Dataset({"ZTOP": ((), 20., {"units": "m"})}, coords={"time": scene.time.values})
-    scene.time.encoding["calendar"] = "standard"
-    top.time.encoding["calendar"] = "proleptic_gregorian"
+    if clock == "forecast_reference_time":
+        reference = scene.time.values[0]
+        scene = scene.assign_coords(forecast_reference_time=reference)
+        top = top.assign_coords(forecast_reference_time=reference)
+    scene.time.encoding["calendar"] = top.time.encoding["calendar"] = "standard"
+    scene[clock].encoding["calendar"] = "standard"
+    top[clock].encoding["calendar"] = "proleptic_gregorian"
     path, support = tmp_path / "fields.nc", tmp_path / "top.nc"
     scene.to_netcdf(path, engine="h5netcdf")
     top.to_netcdf(support, engine="h5netcdf")

@@ -1648,7 +1648,8 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
     generated = set(method_inputs) - declared.keys() - set(needed)
     needed = list(dict.fromkeys([*needed, *method_inputs]))
     resolved, pending = {}, list(needed)
-    clocks = {(r["time"], r["cycle"]): r.get("calendar") for r in source["records"]}
+    clocks = {(r["time"], r["cycle"]): (r.get("calendar"), r.get("reference_calendar"))
+              for r in source["records"]}
     while pending:
         name = pending.pop(0)
         if name in resolved:
@@ -1682,8 +1683,14 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
         field = source["fields"][field_id]
         for _, record in candidates:
             clock = record["time"], record["cycle"]
-            if clock in clocks and record.get("calendar") != clocks[clock]:
+            if clock not in clocks:
+                continue
+            calendar, reference_calendar = clocks[clock]
+            if record.get("calendar") != calendar:
                 raise ValueError(f"{context}: {name} has a conflicting calendar at {record['time']}")
+            if record.get("reference_calendar") != reference_calendar:
+                raise ValueError(f"{context}: {name} has a conflicting forecast reference calendar "
+                                 f"at {record['time']}")
         available = {(r["time"], r["cycle"], tuple(sorted(r.get("native_axes", {}).items())))
                      for _, r in candidates}
         axes = {entry[2] for entry in available}

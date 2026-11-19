@@ -346,6 +346,55 @@ def test_calculated_tracker_uses_atmosphere_and_actual_sparse_payload_reads(
         assert out.sizes["time"] == 2
 
 
+@pytest.mark.parametrize("lead_layout", ["scalar", "time", "shifted_grid"])
+def test_arome_tracker_joins_stationary_forecast_shards(tmp_path, lead_layout):
+    cycle = np.datetime64("2026-01-01")
+    leads = np.array([6, 12], dtype="timedelta64[h]")
+    dims = ("valid_time", "latitude", "longitude")
+    pressure = np.full((1, 7, 7), 100000.)
+    wind = np.full_like(pressure, 10.)
+    pressure[0, 3, 3], wind[0, 3, 3] = 95000., 0.
+    paths = []
+    for index, lead in enumerate(leads):
+        lead_attrs = {"standard_name": "forecast_period"}
+        shift = .02 if lead_layout == "shifted_grid" and index else 0.
+        scene = xr.Dataset({
+            "prmsl": (dims, pressure, {"units": "Pa"}),
+            "u10": (dims, wind, {"units": "m s-1", "standard_name": "eastward_wind"}),
+            "v10": (dims, wind, {"units": "m s-1", "standard_name": "northward_wind"}),
+        }, coords={
+            "valid_time": [cycle + lead],
+            "time": ((), cycle, {"standard_name": "forecast_reference_time"}),
+            "step": (((), lead, lead_attrs) if lead_layout == "scalar" else
+                     ("valid_time", [lead], lead_attrs)),
+            "latitude": ("latitude", -20. + (np.arange(7) - 3)*.01, {"units": "degrees_north"}),
+            "longitude": ("longitude", 60. + shift + (np.arange(7) - 3)*.01,
+                          {"units": "degrees_east"}),
+        })
+        path = tmp_path / f"lead-{index}.nc"
+        scene.to_netcdf(path, engine="h5netcdf")
+        paths.append(str(path))
+    conf = configuration(tmp_path, {"weather": {
+        "model": "arome", "files": paths, "variables": {"2d": ["prmsl"]}}},
+        region={"tracker": {"method": "pressure_wind"}},
+        products={"model_grid": True, "track": True})
+    if lead_layout == "shifted_grid":
+        with pytest.raises(ValueError, match="distinct fields share requested name"):
+            execute_simulation(conf)
+        return
+    result = execute_simulation(conf)
+    assert result.tracking_complete
+    with xr.open_dataset(next(p["path"] for p in result.products if p["role"] == "track")) as track:
+        np.testing.assert_array_equal(track.time, cycle + leads)
+        np.testing.assert_array_equal(track.latitude, [-20., -20.])
+        np.testing.assert_array_equal(track.longitude, [60., 60.])
+    with xr.open_dataset(next(p["path"] for p in result.products
+                              if p["role"] == "model_grid")) as native:
+        np.testing.assert_array_equal(native.time, cycle + leads)
+        np.testing.assert_array_equal(native.step, leads)
+        assert native.step.dims == ("time",)
+
+
 @pytest.mark.parametrize("crop", [False, True])
 def test_common_association_excludes_only_the_regional_operation(tmp_path, crop):
     sources = {

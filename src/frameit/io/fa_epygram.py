@@ -228,7 +228,7 @@ def geometry_contract(geometry, header, options):
     """
     from pyproj import CRS, Transformer
 
-    from frameit.io.fa_geometry import admitted_geometry
+    from frameit.io.fa_geometry import admitted_geometry, earth_model
 
     p, k, selected = admitted_geometry(header, options)
     ny, nx = header["KNLATI"], header["KNXLON"]
@@ -238,6 +238,7 @@ def geometry_contract(geometry, header, options):
     regular = p[1] == -9
     if geometry.name != ("regular_lonlat" if regular else "lambert"):
         raise ValueError("EPyGrAM geometry is outside the qualified regional family")
+    model = earth_model(options.get("earth_radius_m"), projected=not regular)
 
     def zone(name):
         corners = geometry.gimme_corners_ij(subzone=name)
@@ -264,10 +265,9 @@ def geometry_contract(geometry, header, options):
     if regular:
         mapping = {"grid_mapping_name": "latitude_longitude"}
     else:
-        radius = options["earth_radius_m"]
+        radius = model["radius_m"]
         if geometry.geoid != {"a": radius, "b": radius}:
-            raise ValueError(
-                "EPyGrAM geoid contradicts explicit sources.<id>.fa.earth_radius_m")
+            raise ValueError(f"EPyGrAM geoid contradicts the {model['origin']}")
         projection = geometry.projection
         if geometry.secant_projection or projection["rotation"].get("degrees") != 0:
             raise ValueError("Only unrotated spherical tangent Lambert FA is qualified")
@@ -297,16 +297,16 @@ def geometry_contract(geometry, header, options):
     difference[[0, 2]] = (difference[[0, 2]] + 180) % 360 - 180
     # Same original-header precision bound as the independently checked baseline.
     if not np.isfinite(difference).all() or np.max(np.abs(difference)) > 2.e-5:
-        raise ValueError("EPyGrAM geometry/declared Earth model contradicts encoded CI corners")
+        message = "EPyGrAM geometry contradicts encoded CI corners"
+        if not regular:
+            message += "; check sources.<id>.fa.earth_radius_m against the producer's projection"
+        raise ValueError(message)
     return {"schema_version": 1, "origin": "EPyGrAM-2.1.0 geometry/CRS/native zones",
             "native_shape": [ny, nx], "zones": zones,
             "x": np.asarray(x).tolist(), "y": np.asarray(y).tolist(), "crs": mapping,
             "axis_origin_translation": list(shift),
             "axis_origin_policy": "library CI centre translated to existing CF origin; no fitting",
-            "earth_model": {"radius_m": options.get("earth_radius_m"),
-                            "origin": ("explicit input.fa.earth_radius_m"
-                                       if options.get("earth_radius_m") is not None else
-                                       "unresolved; angular grid only, no library geoid adopted")},
+             "earth_model": model,
             "corner_check": "original encoded CI corners; 2e-5 degree header-precision bound"}
 
 

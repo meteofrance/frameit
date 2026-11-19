@@ -57,8 +57,8 @@ Named-source configuration
 
 This complete request copies mean sea-level pressure and one declared SURFEX
 quantity on their native grids. Paths and field meanings are illustrative.
-The spherical radius below is an example, not an Earth-model default; replace
-it only from producer evidence:
+The radius below repeats the documented default for supported tangent Lambert
+FA. Declare a different radius only from producer evidence:
 
 .. code-block:: yaml
 
@@ -191,12 +191,13 @@ errors need producer/upstream evidence, not relabelling or another transform lib
 See :doc:`fa_baseline` for all excluded layouts and operations.
 
 Geometry admits modern regular lon/lat and spherical tangent Lambert.
-Lambert requires explicit ``earth_radius_m``; ``subdomain: CI`` (default) retains
+Lambert uses the documented 6,371,229 m radius when ``earth_radius_m`` is
+omitted. ``subdomain: CI`` (default) retains
 central/intermediate points and ``C`` removes the declared I zone. Spectral extension
 points are excluded. Regular lon/lat permits CI only. Unsupported projections,
 dateline-crossing/polar grids and excessive spacing variation fail.
-:doc:`fa_geometry` defines the checks, zones and recorded library-to-CF translation;
-there is no fitted or guessed Earth model.
+:doc:`fa_geometry` explains the radius override, geometry checks, zones and
+recorded library-to-CF translation.
 
 Source ``reader.max_points`` defaults to 20,000,000 stored points and
 ``reader.timeout_seconds`` to 120 per transaction. Raise budgets explicitly after
@@ -235,8 +236,9 @@ also uses the native ``wfacies`` API and observed modern conventions; binary I/O
 is not presented as a peer-reviewed scientific diagnostic.
 
 **Inputs/conventions:** modern ``PSINLA`` radians, positive projected spacing in
-metres, one-based inclusive ``KNLOPA`` CI bounds, explicit radius and CI-centre
-geographical anchor. Only active header entries define geometry; unused work
+metres, one-based inclusive ``KNLOPA`` CI bounds, the resolved spherical radius
+from :doc:`fa_geometry`, and the CI-centre geographical anchor.
+Only active header entries define geometry; unused work
 buffers can contain NaNs/unrelated tails. Tangent-cone magnitude must match its
 reference latitude. Regular lon/lat uses native centre and angular increments.
 

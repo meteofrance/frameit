@@ -13,6 +13,8 @@ from copy import deepcopy
 
 PROTOCOL_VERSION = 1
 DESCRIPTOR_VERSION = 1
+FA_DEFAULT_RADIUS_M = 6_371_229.
+FA_DEFAULT_RADIUS_ORIGIN = "documented AROME/SURFEX FA default"
 SURFEX_LAYOUT = "arome-47-surfex-8.1-observed-v1"
 SPECTRAL_GATE = (
     "spectral-to-grid execution is gated: an encoding-qualified coefficient contract "

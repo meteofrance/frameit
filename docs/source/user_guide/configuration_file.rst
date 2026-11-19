@@ -288,7 +288,10 @@ A cube declares ``records``, ``vertical_position`` and ``sampling``; admitted
 wind cubes also declare ``vector_basis`` and ``component_scaling``.
 ``field_metadata.<cube-name>`` supplies its scientific declarations.
 FA-specific ``subdomain``, ``earth_radius_m`` and ``expected_source`` stay under
-``fa``. No record-name convention establishes vertical meaning.
+``fa``. Supported AROME and SURFEX tangent Lambert FA use 6,371,229 m when
+``earth_radius_m`` is omitted; declare the producer's radius for a nonstandard
+grid. See :doc:`fa_geometry` for the checks and provenance.
+No record-name convention establishes vertical meaning.
 The existing producer, encoding, scaling and spectral limits still apply.
 See :doc:`fa_inputs`, :doc:`fa_contracts` and :doc:`fa_atmosphere`.
 

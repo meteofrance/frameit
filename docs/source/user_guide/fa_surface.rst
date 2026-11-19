@@ -6,8 +6,9 @@ GRIB/NetCDF or admitted FA and dense AROME-47/SURFEX-8.1 FA can share geographic
 centres while retaining separate grids, clocks, masks, quantities and vertical axes.
 Each source must meet its own :doc:`adapter limits <fa_baseline>`.
 
-Verify paths, centres, Earth radius and field units/time against producer evidence.
-Example declarations are not defaults; ``allow_unscaled`` remains false.
+Verify paths, centres and field units/time against producer evidence.
+For a nonstandard projected source, explicitly declare the producer's Earth
+radius. Example field declarations are not defaults; ``allow_unscaled`` remains false.
 Use :doc:`../task_guides/coupled_inputs` for a worked run. Add polar sampling only
 when needed.
 

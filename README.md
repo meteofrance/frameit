@@ -80,9 +80,11 @@ Set `output.format: zarr` for `.zarr` stores instead of `.nc` files. See
   an explicit time association. See
   [coupled sources](https://meteofrance.github.io/frameit/user_guide/fa_inputs.html).
 - **Native FA:** EPyGrAM reads selected instantaneous AROME/SURFEX gridpoint
-  records and explicitly associated native cubes. Declare units, sampling and
-  projected Earth model from producer evidence. Unresolved scaling fails by
-  default. Spectral decoding and packed SURFEX reconstruction are unsupported.
+  records and explicitly associated native cubes. Declare units and sampling
+  from producer evidence. Supported projected grids default to a spherical
+  Earth radius of 6,371,229 m; declare the producer's radius for a nonstandard
+  grid. Unresolved scaling fails by default. Spectral decoding and packed
+  SURFEX reconstruction are unsupported.
   See [FA limits](https://meteofrance.github.io/frameit/user_guide/fa_baseline.html).
 - **Optional polar sampling:** continuous production fields default to bilinear
   point sampling, without an area-budget conservation guarantee. Proven categorical

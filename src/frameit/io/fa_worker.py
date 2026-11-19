@@ -19,6 +19,7 @@ import numpy as np
 
 from frameit.io.fa_contracts import (
     CUBE_VERTICAL_INTERPRETATION,
+    FA_DEFAULT_RADIUS_M,
     PROTOCOL_VERSION,
     SPECTRAL_GATE,
     SURFEX_METADATA,
@@ -198,7 +199,9 @@ def handle(request, destination):
         raise ValueError("Unknown FA backend")
     from frameit.io.fa_epygram import encoded_scaling, initialize, inspect_resource, read_values
 
-    epygram = initialize(destination, request.get("earth_radius_m"))
+    # EPyGrAM needs its geoid before opening; only qualified Lambert adopts the default.
+    radius = request.get("earth_radius_m")
+    epygram = initialize(destination, FA_DEFAULT_RADIUS_M if radius is None else radius)
     import falfilfa4py
 
     path = Path(request["path"])

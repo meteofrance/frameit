@@ -88,7 +88,8 @@ Other projections, global/reduced grids, other producers or plain LFI
    value references.
 
 Regular lon/lat FA supports the complete ``CI`` grid only. Spherical tangent
-Lambert supports selected ``CI`` or ``C`` zones with an explicit Earth radius;
+Lambert supports selected ``CI`` or ``C`` zones with the documented default
+Earth radius or a compatible explicit declaration;
 rotated, stretched, academic, secant/ellipsoidal, dateline-crossing and polar
 variants are not admitted. See :doc:`fa_geometry` for exact numerical choices.
 

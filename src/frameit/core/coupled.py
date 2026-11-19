@@ -658,6 +658,8 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
     from frameit.core.preflight import _required_dependencies, inventory_source
     from frameit.io.loader import _apply_model_presets
 
+    request_plan = conf.simulation_parameter["request_plan"]
+    request_plan["warnings"] = []
     dependencies, errors = _required_dependencies(conf, execution_options)
     children, plans, types = {}, {}, {}
     deferred = []
@@ -723,8 +725,18 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
             destination = destination.parent
         if not destination.is_dir() or not os.access(destination, os.W_OK):
             raise ValueError(f"Unwritable output destination: {conf.output_dir}")
-    request_plan = conf.simulation_parameter["request_plan"]
     request_plan["sources"] = deepcopy(plans)
+    from frameit.io.fa_contracts import FA_DEFAULT_RADIUS_M, FA_DEFAULT_RADIUS_ORIGIN
+
+    for name, source in plans.items():
+        if source["format"] == "fa" and any(
+            source["native_grids"][record["grid_id"]]["fa_geometry"]["fa_earth_model_origin"]
+            == FA_DEFAULT_RADIUS_ORIGIN for record in source["records"]
+        ):
+            request_plan["warnings"].append(
+                f"sources.{name}: using the documented FA default "
+                f"earth_radius_m={FA_DEFAULT_RADIUS_M:.0f} m; "
+                "declare fa.earth_radius_m if the producer used a different value.")
     request_plan["deferred_checks"] = [
         "Bind fields, levels, units and method dependencies against selected metadata.",
         "Check time associations, geometry, resources and decode-time eligibility.",
@@ -978,6 +990,10 @@ def run_native_sources(runner, *, benchmark=False):
             groups.setdefault(key, []).append(value)
         internal = {key: xr.merge(values, join="exact", compat="identical",
                                   combine_attrs="override") for key, values in groups.items()}
+        if plans[name]["model"] == "arome" and plans[name]["format"] == "netcdf":
+            from frameit.io.netcdf_utils import join_arome_tracking_shards
+
+            internal = join_arome_tracking_shards(internal, plans[name]["native_grids"])
         first_grid = next(iter(internal))
         geometry, settings = _region_grid(
             consumer.conf, plans[name],

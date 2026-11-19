@@ -1,9 +1,9 @@
 FA grids, domain selection and centres
 ======================================
 
-Choose ``fa.subdomain`` for the retained zone and, for projected inputs, declare
-the producer's ``fa.earth_radius_m``. The rules below determine sample locations,
-not field identity, scaling, vector basis or physical height.
+Choose ``fa.subdomain`` for the retained zone. For a nonstandard projected
+grid, declare the producer's ``fa.earth_radius_m``. These rules determine
+sample locations, not field identity, scaling, vector basis or physical height.
 See :doc:`fa_inputs` for a complete request and :doc:`fa_baseline` for compatibility.
 
 Supported grids and Earth model
@@ -16,10 +16,19 @@ Supported grids and Earth model
   The spectral extension is excluded. ``CIE`` storage bounds are retained as
   metadata, not offered as an output-zone selection.
 
-Projected FA requires explicit positive source ``fa.earth_radius_m`` based on
-producer evidence. The library geoid must match this radius; it is never fitted
-to encoded corners. An angular regular grid can leave the Earth model unresolved
-and does not thereby acquire the library's default geoid.
+If ``sources.<id>.fa.earth_radius_m`` is omitted for supported AROME or
+SURFEX tangent Lambert FA, FrameIt uses **6,371,229 m**, the spherical radius
+documented in the `AROME projection guide (section 4.3.1 D)
+<https://www.cnrm.meteo.fr/gmapdoc/IMG/pdf_PROJECTIONS_GB_72-1.pdf>`_ and
+`SURFEX v8.1 source <https://www.umr-cnrm.fr/surfex/data/BROWSER/doc_surf81/ini__csts_8F90_source.html#l00116>`_.
+FrameIt warns when it uses the default and records the value and origin in
+``run-provenance.yaml``.
+
+An explicit positive radius takes precedence. FrameIt checks the library
+geometry against the encoded grid corners with either radius. If they
+disagree, supply the producer's actual radius; FrameIt does not fit or try
+another value. Regular longitude/latitude grids do not acquire a default
+Earth model.
 
 Active modern header entries must be finite: ``KNLOPA[:8]`` has integral domain
 indices/nonnegative I-zone widths and one-based inclusive CI bounds;
@@ -103,7 +112,8 @@ Track and provenance interpretation
 Preflight/input records carry the source geometry and lookup convention.
 ``grid_geometry.index_lookup`` identifies the native point-selection method.
 ``geometry_contract`` and ``fa_geometry_origin`` / ``fa_earth_model_origin``
-retain library zones/CRS, origin translation and declared versus unresolved facts.
+retain library zones/CRS, origin translation and whether the radius was explicit,
+defaulted or unresolved.
 
 Cropped field products distinguish requested ``center_latitude``/
 ``center_longitude`` from ``grid_selected_latitude``/``grid_selected_longitude``.

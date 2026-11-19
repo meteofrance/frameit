@@ -5,11 +5,15 @@ from __future__ import annotations
 import copy
 import json
 import subprocess
+import sys
 
 import numpy as np
 import pytest
+import xarray as xr
+import yaml
 
 from frameit.core.coupled import bind_sources
+from frameit.core.execution import execute_simulation
 from frameit.core.preflight import preflight
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.fa_backend import inspect_fa, request_fa
@@ -81,8 +85,6 @@ def test_library_zones_cf_origin_and_snapping_against_snyder(tmp_path, latitude,
         "grid_mapping_name": "lambert_conformal_conic", "standard_parallel": header_latitude,
         "latitude_of_projection_origin": header_latitude, "longitude_of_central_meridian": 50.,
         "earth_radius": 6371229.}
-    import xarray as xr
-
     track = xr.Dataset({"lon": ("time", [float(ds.longitude[2, 2])]),
                         "lat": ("time", [float(ds.latitude[2, 2])])}, coords={"time": [0]})
     located = locate_track(track, ds, require_inside=True)
@@ -123,11 +125,89 @@ def test_regular_library_axes_are_angular_and_keep_orientation(tmp_path, directi
 
 
 @NATIVE
+@pytest.mark.parametrize(("profile", "source", "field"), [
+    ("arome_history", "atmosphere", "CLSTEMPERATURE"),
+    ("surfex_history", "surface", "SFX.T2M"),
+])
+def test_projected_radius_default_matches_explicit(tmp_path, profile, source, field):
+    path = write_grid(tmp_path, profile=profile, projection_latitude=-30.)
+    datasets = []
+    for radius, directory in ((None, "default"), (6371229., "explicit")):
+        raw = {
+            "schema_version": 3,
+            "sources": {source: {
+                "model": "arome", "format": "fa", "profile": profile, "files": [str(path)],
+                "reader": {"python_executable": EPYTHON},
+                "variables": {"2d": [field]},
+                "field_metadata": {field: {
+                    "units": "K", "kind": "continuous", "temporal_kind": "instantaneous"}},
+            }},
+            "resources": {"cpus": 1, "synchronous_export": True},
+            "output": {"directory": str(tmp_path / directory)},
+        }
+        if radius is not None:
+            raw["sources"][source]["fa"] = {"earth_radius_m": radius}
+        conf = SimulationConfig.from_mapping_with_model_preset(raw)
+        result = execute_simulation(conf)
+        product, = result.products
+        with xr.open_dataset(product["path"], decode_coords="all") as opened:
+            datasets.append(opened.load())
+            mapping = opened[field].encoding["grid_mapping"]
+            assert opened[mapping].attrs["earth_radius"] == 6371229.
+        recorded = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+        entry, = recorded["sources"][source]["fa_inputs"]
+        assert entry["earth_radius_m"] == 6371229.
+        assert (("default" in entry["earth_model_origin"]) == (radius is None))
+        warnings = conf.simulation_parameter["request_plan"]["warnings"]
+        assert sum(f"sources.{source}" in warning and "6371229" in warning
+                   for warning in warnings) == (radius is None)
+    defaulted, explicit = datasets
+    xr.testing.assert_identical(defaulted[field], explicit[field])
+    j, i = np.indices((9, 13))
+    np.testing.assert_array_equal(defaulted[field].values, (280. + 10*j + i)[None])
+
+
+@NATIVE
+@pytest.mark.parametrize("check", ["cli", "replaced_inventory"])
+def test_radius_default_warning_reports_only_current_use(tmp_path, check):
+    folder = tmp_path / "inputs"
+    folder.mkdir()
+    path = write_grid(folder, projection_latitude=-30.)
+    raw = single_fa_document(tmp_path, [path])
+    raw.pop("region")
+    raw["products"].pop("track")
+    raw["sources"]["surface"]["files"] = str(folder / "*.fa")
+    raw["sources"]["surface"]["reader"] = {"python_executable": EPYTHON}
+    expected = "using the documented FA default"
+    if check == "cli":
+        config = tmp_path / "run.yml"
+        config.write_text(yaml.safe_dump(raw))
+        result = subprocess.run([sys.executable, "-B", "-m", "frameit", "run", str(config)],
+                                capture_output=True, text=True, timeout=35)
+        assert result.returncode == 0, result.stderr
+        assert (result.stdout + result.stderr).count(expected) == 1
+    else:
+        conf = SimulationConfig.from_mapping_with_model_preset(raw)
+        assert any(expected in w for w in preflight(conf, check_output=False)["warnings"])
+        path.rename(tmp_path / "old-projected.fa")
+        write_grid(folder)
+        assert not any(expected in w for w in preflight(conf, check_output=False)["warnings"])
+
+
+@NATIVE
+def test_radius_default_rejects_nonstandard_grid_but_matching_override_works(tmp_path):
+    radius = 6_300_000.
+    path = write_grid(tmp_path, projection_latitude=-30., projection_radius_m=radius)
+    with pytest.raises(ValueError, match=r"contradicts encoded CI corners.*earth_radius_m"):
+        inspect_grid(path, {**OPTIONS, "earth_radius_m": None})
+    info = inspect_grid(path, {**OPTIONS, "earth_radius_m": radius})
+    assert info["geometry"]["epygram"]["crs"]["earth_radius"] == radius
+
+
+@NATIVE
 def test_geometry_earth_model_corners_and_full_native_budget_fail_closed(tmp_path):
     path = write_grid(tmp_path, projection_latitude=-30.)
-    with pytest.raises(ValueError, match=r"explicit sources\.<id>\.fa\.earth_radius_m"):
-        inspect_grid(path, {**OPTIONS, "earth_radius_m": None})
-    with pytest.raises(ValueError, match="contradicts encoded CI corners"):
+    with pytest.raises(ValueError, match=r"contradicts encoded CI corners.*earth_radius_m"):
         inspect_grid(path, {**OPTIONS, "earth_radius_m": 5000000.})
     with pytest.raises(ValueError, match=r"sources\.<id>\.reader\.max_points"):
         inspect_grid(path, {**OPTIONS, "max_points": 116})

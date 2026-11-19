@@ -179,7 +179,8 @@ def _decoded_clock(ds, path, *, model):
     samples = []
     for position in np.ndindex(values.shape):
         samples.append({"time": values[position], "calendar": calendar,
-                        "cycle": reference[position] if reference is not None else None,
+                         "cycle": reference[position] if reference is not None else None,
+                         **({"reference_calendar": reference_calendar} if reference is not None else {}),
                          "time_bounds": tuple(bounds[position]) if bounds is not None else None,
                           "clock": name, "temporal_names": sorted(set(candidates) | set(clock.dims)),
                           **({"scalar_dtcur_alias": True} if scalar_dtcur_alias else {}),
@@ -1546,6 +1547,7 @@ def open_metadata(files, conf, resources, *, chunks=None):
                 fa_geometries[signature] = fa_geometry(info["geometry"], conf.fa_options)
             datasets = [fa_metadata_dataset(info, conf.fa_options, fa_geometries[signature])]
             records = conf.simulation_parameter.setdefault("fa_inventory", [])
+            model = info["geometry"]["epygram"]["earth_model"]
             records.append({"source_id": path.name, "valid_time": info["valid_time"],
                             "reference_time": info["reference_time"],
                             "backend_versions": info["backend_versions"],
@@ -1556,7 +1558,8 @@ def open_metadata(files, conf, resources, *, chunks=None):
                             "producer_metadata": info["surfex_metadata"],
                             "profile": conf.fa_options["profile"],
                             "subdomain": conf.fa_options["subdomain"],
-                            "earth_radius_m": conf.fa_options["earth_radius_m"]})
+                            "earth_radius_m": model["radius_m"],
+                            "earth_model_origin": model["origin"]})
             records[-1]["horizontal_header_signature"] = signature
             records[-1]["grid_lookup"] = fa_geometries[signature].attrs["fa_grid_lookup"]
             records[-1]["geometry_contract"] = info["geometry"].get("epygram")

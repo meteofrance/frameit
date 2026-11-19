@@ -226,9 +226,15 @@ def _input_path_locations(paths):
 def _run_provenance(config, options, status, runtime):
     from frameit.core.configuration import resolved_sources
 
-    sources = config.simulation_parameter.get("request_plan", {}).get("sources", {})
+    plan = config.simulation_parameter.get("request_plan", {})
+    sources = plan.get("sources", {})
+    warnings = list(plan.get("warnings", ()))
+    for source in sources.values():
+        binding = source.get("requests", {}).get("binding") or {}
+        warnings.extend(binding.get("warnings", ()))
     return {
         "runtime": runtime, "execution_resources": status["resources"],
+        **({"warnings": list(dict.fromkeys(warnings))} if warnings else {}),
         "time_alignment": config.simulation_parameter.get("time_alignment", {}),
         "sources": config.simulation_parameter.get("source_provenance", {}),
         "binding": {name: {

@@ -2,8 +2,8 @@
 
     FA modern-header PSINLA angular parameters are radians. CI bounds in KNLOPA
     are one-based inclusive. The geographic anchor is at the centre of CI, not
-    the centre of CIE. Earth radius is an explicit user declaration, never inferred
-    from a filename. See the FA input method note for scope and verification.
+    the centre of CIE. For projected grids use the declared or documented model
+    radius, never a fit. See the FA geometry guide for scope and verification.
 """
 
 from __future__ import annotations
@@ -12,7 +12,17 @@ import numpy as np
 import xarray as xr
 from pyproj import CRS, Transformer
 
+from frameit.io.fa_contracts import FA_DEFAULT_RADIUS_M, FA_DEFAULT_RADIUS_ORIGIN
+
 NATIVE_LOOKUP = "fa_source_crs_native_axes_v1"
+
+
+def earth_model(radius, *, projected):
+    if radius is not None:
+        return {"radius_m": radius, "origin": "explicit input.fa.earth_radius_m"}
+    if projected:
+        return {"radius_m": FA_DEFAULT_RADIUS_M, "origin": FA_DEFAULT_RADIUS_ORIGIN}
+    return {"radius_m": None, "origin": "unresolved; angular grid only, no library geoid adopted"}
 
 
 def _regional_header(header):
@@ -67,10 +77,7 @@ def admitted_geometry(header, options):
         x0, x1, y0, y1 = 0, nx, 0, ny
     else:
         radius = options.get("earth_radius_m")
-        if radius is None:
-            raise ValueError(
-                "Projected FA requires an explicit sources.<id>.fa.earth_radius_m")
-        if not np.isfinite(radius) or radius <= 0:
+        if radius is not None and (not np.isfinite(radius) or radius <= 0):
             raise ValueError("FA earth_radius_m must be finite and positive")
         if not 0 < abs(p[1]) < 1 or int(header["PCODIL"]) == -1:
             raise ValueError("Only spherical tangent Lambert projected FA is supported")
@@ -126,7 +133,10 @@ def _library_grid(facts, options):
     shape = facts["native_shape"]
     if shape[0] * shape[1] > options.get("max_points", 20_000_000):
         raise ValueError("Native FA storage grid exceeds sources.<id>.reader.max_points")
-    if facts["earth_model"]["radius_m"] != options.get("earth_radius_m"):
+    mapping = facts["crs"]
+    regular = mapping["grid_mapping_name"] == "latitude_longitude"
+    expected = earth_model(options.get("earth_radius_m"), projected=not regular)
+    if facts["earth_model"]["radius_m"] != expected["radius_m"]:
         raise ValueError("FA library geometry conflicts with the declared Earth model")
     try:
         zone = facts["zones"][options["subdomain"]]
@@ -134,8 +144,6 @@ def _library_grid(facts, options):
         raise ValueError("FA subdomain is not qualified for this library geometry") from exc
     x0, x1, y0, y1 = zone
     x, y = np.asarray(facts["x"])[x0:x1], np.asarray(facts["y"])[y0:y1]
-    mapping = facts["crs"]
-    regular = mapping["grid_mapping_name"] == "latitude_longitude"
     if regular:
         longitude, latitude = x, y
     else:

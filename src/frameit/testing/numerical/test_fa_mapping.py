@@ -173,8 +173,9 @@ def test_regular_descending_axes_and_encoded_corner_contradiction():
     np.testing.assert_allclose(source.longitude, 50. + (np.arange(13) - 6) * .01)
     np.testing.assert_allclose(source.latitude, -30. - (np.arange(9) - 4) * .01)
     p[12] += .001
-    with pytest.raises(ValueError, match="contradicts encoded CI corners"):
+    with pytest.raises(ValueError, match="contradicts encoded CI corners") as error:
         geometry_contract(library, h, OPTIONS)
+    assert "earth_radius_m" not in str(error.value)
 
 
 def test_anisotropic_lookup_does_not_bypass_scalar_extraction_guards():

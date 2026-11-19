@@ -68,6 +68,9 @@ does not combine wind components with conflicting coordinate definitions, even
 when the coordinates use different names. If one component owns a scalar
 surface label, its partner must identify the same surface. A separate field
 referenced by a vertical formula stays a scientific input.
+When forecast times are split across files, the forecast period stays attached
+to its sample. Different lead times do not make an otherwise identical
+sampling grid a different tracker grid.
 
 For Meso-NH NetCDF, a native-level request can proceed if its declared altitude
 formula lacks the model-top operand (often ``ZTOP``) and no requested operation

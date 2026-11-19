@@ -21,7 +21,8 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
                   surface_pack=0, projected_spacing_m=1000., field_values=None,
                   atmospheric_fields=None, hybrid_header=None, surface_directory=None,
                   structural_overrides=None, ci_bounds=None, i_widths=(0, 0),
-                  projection_center=None, angular_steps_degrees=(.01064, .01),
+                  projection_center=None, projection_radius_m=6371229.,
+                  angular_steps_degrees=(.01064, .01),
                   encoded_scaling=None, omit_scaling_section=False):
     from falfilfa4py import FA, LFI
 
@@ -54,9 +55,9 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
         phi0, lam0 = np.deg2rad([projection_latitude, 50.])
         n = np.sin(phi0)
         f = np.cos(phi0) * np.tan(np.pi / 4 + phi0 / 2)**n / n
-        rho0 = 6371229. * f / np.tan(np.pi / 4 + phi0 / 2)**n
+        rho0 = projection_radius_m * f / np.tan(np.pi / 4 + phi0 / 2)**n
         anchor_lon, anchor_lat = np.deg2rad(projection_center or (50., projection_latitude))
-        anchor_rho = 6371229. * f / np.tan(np.pi / 4 + anchor_lat / 2)**n
+        anchor_rho = projection_radius_m * f / np.tan(np.pi / 4 + anchor_lat / 2)**n
         anchor_x = anchor_rho * np.sin(n * (anchor_lon - lam0))
         anchor_y = rho0 - anchor_rho * np.cos(n * (anchor_lon - lam0))
         xx = np.array([-1., 1.]) * (x1 - x0 - 1) * projected_spacing_m / 2
@@ -65,7 +66,7 @@ def write_fixture(path, *, hours=0, nx=9, ny=7, offset=0., profile="arome_histor
         rho = np.sign(n) * np.hypot(xx, rho0 - yy)
         theta = np.arctan2(np.sign(n) * xx, np.sign(n) * (rho0 - yy))
         corners_lon = lam0 + theta / n
-        corners_lat = 2 * np.arctan((6371229. * f / rho)**(1 / n)) - np.pi / 2
+        corners_lat = 2 * np.arctan((projection_radius_m * f / rho)**(1 / n)) - np.pi / 2
         p[1] = abs(n)
         p[2:6] = lam0, phi0, anchor_lon, anchor_lat
         p[6:10] = (projected_spacing_m, projected_spacing_m,

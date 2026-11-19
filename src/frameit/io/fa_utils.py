@@ -380,6 +380,7 @@ def _selected_fa(files, binding, source, conf, resources):
                 dataset.time.encoding["calendar"] = record["calendar"]
                 resources.add(dataset)
                 samples.setdefault(record["grid_id"], []).append(dataset)
+                model = grid["fa_header"]["epygram"]["earth_model"]
                 provenance.append({
                     "source_id": Path(record["locator"]["path"]).name,
                     "identity_strategy": "size_mtime_freshness",
@@ -387,7 +388,8 @@ def _selected_fa(files, binding, source, conf, resources):
                     "valid_time": str(record["time"]), "reference_time": str(record["cycle"]),
                     "profile": conf.fa_options["profile"],
                     "subdomain": conf.fa_options["subdomain"],
-                    "earth_radius_m": conf.fa_options["earth_radius_m"],
+                    "earth_radius_m": model["radius_m"],
+                    "earth_model_origin": model["origin"],
                     "expected_source": conf.fa_options["expected_source"],
                     "grid_lookup": grid["fa_geometry"]["fa_grid_lookup"],
                     "field_descriptors": json.loads(array.attrs["fa_native_record_descriptors"]),
@@ -487,13 +489,15 @@ def concat_fa2ds_by_vert_coord(
                 log.warning("%s: %s permits native identity-scaling fallback "
                             "by explicit declaration", path.name, name)
         parts.append(ds)
+        model = info["geometry"]["epygram"]["earth_model"]
         provenance.append({"source_id": path.name, "identity_strategy": "size_mtime_freshness",
                            "size_bytes": info["identity"][0], "mtime_ns": info["identity"][1],
                            "valid_time": info["valid_time"],
                            "reference_time": info["reference_time"],
                            "profile": wind_conf.fa_options["profile"],
                            "subdomain": wind_conf.fa_options["subdomain"],
-                           "earth_radius_m": wind_conf.fa_options["earth_radius_m"],
+                           "earth_radius_m": model["radius_m"],
+                           "earth_model_origin": model["origin"],
                            "horizontal_header_signature": signature,
                            "grid_lookup": geometry.attrs["fa_grid_lookup"],
                            "backend_versions": info["backend_versions"],
