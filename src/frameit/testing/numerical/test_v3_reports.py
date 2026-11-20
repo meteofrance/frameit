@@ -825,8 +825,8 @@ def test_fix1_owned_schema_facts_and_same_text_marks(
      "nonempty source-name mapping"),
     ("products: {model_grid: {fields: {missing: [temperature]}}}\n",
      "products.model_grid.fields.missing", "missing", {"sources": ["weather"]}),
-    ("products: {model_grid: {fields: {weather: [missing]}}}\n",
-     "products.model_grid.fields.weather", ["missing"], {"declared_fields": []}),
+     ("products: {model_grid: {fields: {weather: []}}}\n",
+      "products.model_grid.fields.weather", [], "nonempty list of names"),
     ("products: {polar: {radius_km: 2}}\n", "products.polar", {"radius_km": 2},
      {"requires_one_of": ["center", "track", "tracker"]}),
     ("region: {center: {latitude: 0, longitude: 0}}\nproducts:\n"
@@ -863,6 +863,22 @@ def test_fix1_other_owned_schema_controls_keep_rule_and_value(
     assert error["repairs"] and all(path in repair for repair in error["repairs"])
     assert error["locations"] and all(mark["file"] == str(document) for mark in error["locations"])
     assert report["data"]["configuration"] is None
+
+
+def test_product_only_field_existence_is_checked_by_input_validation(tmp_path):
+    v3_scene().to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
+    document = tmp_path / "request.yaml"
+    document.write_text(
+        "schema_version: 3\nsources: {weather: {model: mesonh, files: input.nc}}\n"
+        "products: {model_grid: {fields: {weather: [missing]}}}\n"
+        "output: {directory: output}\n"
+    )
+    assert project(collect(document, schema_only=True))["status"] == "ok"
+    report = project(collect(document))
+    error, = report["errors"]
+    assert error["code"] == "E1302"
+    assert error["observed"]["missing_fields"] == ["missing"]
+    assert not (tmp_path / "output").exists()
 
 
 @pytest.mark.parametrize("tail,path,observed,expected", [
