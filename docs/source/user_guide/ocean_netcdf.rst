@@ -343,6 +343,15 @@ sampled into polar auxiliaries: bilinear fractions must not be advertised as bin
 masks. Explicit polar requests for CROCO binary masks fail; use native masks or the
 per-field interpolation support/quality variables instead.
 
+Direct native polar sampling can use ``kind: continuous`` for the numeric
+history field ``zeta(time, eta_rho, xi_rho)`` when kind is unstated. The
+selected file must supply rho geography and its own static ``mask_rho``.
+If present, the standard name must agree with ``sea_surface_height`` or
+``sea_surface_height_above_mean_sea_level``. This matches the `CROCO v2.1.3
+history writer
+<https://gitlab.inria.fr/croco-ocean/croco/-/blob/ab63b583c9f9e1faceb838e7063b71f1ab9bd56f/OCEAN/def_his.F>`_;
+it does not establish a datum, infer units or relax existing mask checks.
+
 Polar CROCO outputs retain selected ``s_rho/s_w`` labels and original native
 indices, but archive ``formula_terms`` and the native vertical standard name as
 ``source_formula_terms/source_standard_name``. Interpolating bathymetry and sea

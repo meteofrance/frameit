@@ -465,6 +465,8 @@ def _netcdf_inventory(path, source, resources):
                 "field_id": field_id, "name": name, "grid_id": grid_id, "level": None,
                 "stored_dtype": np.dtype(var.encoding.get("dtype", var.dtype)).name,
                 "decoded_dtype": var.dtype.name,
+                **({"native_dimensions": list(var.dims)}
+                   if model == "croco" and name == "zeta" else {}),
                 "temporal_metadata": {k: var.attrs[k] for k in (
                     "cell_methods", "GRIB_stepType", "online_operation",
                     "interval_operation", "interval_write")

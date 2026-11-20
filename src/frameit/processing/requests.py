@@ -889,6 +889,10 @@ def source_field_metadata(source, field, *, record=None, polar_kind=False):
             evidence = mnh_wind10m_kind_evidence(source, record, result["attributes"])
         elif source["model"] == "arome" and source["format"] == "grib":
             evidence = record.get("grib_wind10m_kind")
+        elif source["model"] == "croco" and source["format"] == "netcdf":
+            from frameit.io.croco_utils import croco_zeta_kind_evidence
+
+            evidence = croco_zeta_kind_evidence(source, record, result["attributes"])
         if evidence:
             result["attributes"]["kind"] = "continuous"
             result["origins"]["kind"] = "documented_fallback"

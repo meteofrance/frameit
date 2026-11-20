@@ -202,7 +202,8 @@ def native_case(tmp_path, *, fields=None, products=None, fmt="netcdf", region=No
         products=products, output={"format": fmt})
 
 
-def test_croco_coexported_zeta_retains_own_metadata_with_polar(tmp_path):
+@pytest.mark.parametrize("explicit_zeta_kind", [True, False])
+def test_croco_coexported_zeta_retains_own_metadata_with_polar(tmp_path, explicit_zeta_kind):
     conf = native_case(
         tmp_path, fields={"2d": ["zeta"], "3d": ["temp", "salt"], "levels": {"indices": [0, 2]}},
         products={"model_grid": True, "track": True,
@@ -211,7 +212,8 @@ def test_croco_coexported_zeta_retains_own_metadata_with_polar(tmp_path):
                 "width_km": {"x": 4., "y": 4.}})
     raw = deepcopy(conf.yaml_config)
     raw["sources"]["ocean"]["field_metadata"] = {
-        name: {"kind": "continuous"} for name in ("temp", "salt", "zeta")}
+        name: {"kind": "continuous"}
+        for name in (("temp", "salt", "zeta") if explicit_zeta_kind else ("temp", "salt"))}
     result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
     assert result.ok, result
     products = {p["role"]: p["path"] for p in result.products}
@@ -219,7 +221,7 @@ def test_croco_coexported_zeta_retains_own_metadata_with_polar(tmp_path):
         assert grid.zeta.attrs["kind"] == "continuous"
         assert grid.zeta.attrs["units"] == "meter"
         assert json.loads(grid.zeta.attrs["frameit_metadata_origins"]) == {
-            "kind": "declaration", "units": "input"}
+            "kind": "declaration" if explicit_zeta_kind else "documented_fallback", "units": "input"}
         assert "eta: zeta" in grid.s_rho.attrs["formula_terms"]
         t = xr.DataArray([0., 1.], dims="time")
         zeta = t + .01 * grid.eta_rho_source_native_index + .001 * grid.xi_rho_source_native_index

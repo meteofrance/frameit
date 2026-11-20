@@ -58,6 +58,10 @@ codes in the selected field series. Gusts, other levels and other templates
 do not match. This checks the wire codes; it does not identify a forecast
 producer or resolve incompatible streams.
 
+CROCO ``zeta`` uses a separate history-writer match with native rho geography
+and a same-file static mask. See :doc:`ocean_netcdf`. There is no corresponding
+fallback for NEMO ``zos``.
+
 File inventory and ambiguity
 -----------------------------
 

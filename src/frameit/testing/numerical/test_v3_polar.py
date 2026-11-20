@@ -562,6 +562,85 @@ def test_arome_kind_fallback_rechecks_wire_header_before_payload(tmp_path, monke
                 next(iter(views["internal"].values())).load(scheduler="synchronous")
 
 
+def _croco_surface_scene():
+    from frameit.testing.numerical.test_croco_vectors import vector_scene
+
+    ds = vector_scene()[["zeta", "mask_rho", "scrum_time"]]
+    ds["zeta"] = ds.zeta.copy(deep=True)
+    ds.zeta.values[:, 3, 3] = [0., 2.]
+    ds.zeta.values[:, 3, 4] = [4., 6.]
+    ds.zeta.values[:, 3, 1] = 41.
+    ds.mask_rho.values[3, 1] = 0.
+    ds.zeta.values[:, 3, 5] = np.nan
+    return ds
+
+
+def test_croco_history_zeta_polar_kind_without_yaml(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+
+    from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
+
+    ds = _croco_surface_scene()
+    path = tmp_path / "history.nc"
+    ds.to_netcdf(path)
+    center = {"latitude": -20., "longitude": float(
+        ds.lon_rho[3, 3] + .25 * (ds.lon_rho[3, 4] - ds.lon_rho[3, 3]))}
+
+    @contextmanager
+    def guard():
+        with monkeypatch.context() as patch:
+            guard_netcdf_payloads(patch, {"zeta"})
+            yield
+
+    source = {"model": "croco", "files": str(path), "variables": {"2d": ["zeta"]}}
+    products = _compare_documented_kind(
+        tmp_path, source, "zeta", center, "croco.history.zeta.kind.v1", guard=guard)
+    polar, native = products["polar"], products["model_grid"]
+    np.testing.assert_allclose(polar.zeta.isel(radius=0, azimuth=0), [1., 3.], atol=2e-3, rtol=0)
+    assert (polar.zeta_interpolation_status == 2).any()
+    np.testing.assert_array_equal(native.zeta, ds.zeta)
+    np.testing.assert_array_equal(native.time, ds.time)
+    np.testing.assert_array_equal(native.scrum_time, ds.scrum_time)
+    assert native.zeta.attrs["units"] == "meter"
+
+    native_only = configuration(tmp_path, source=source, products={"model_grid": True})
+    _, children, _ = bind_sources(native_only)
+    record = children["atmosphere"].source_requests["atmosphere"]["binding"][
+        "products"]["model_grid"]["zeta"]["records"][0]
+    assert "field_metadata" not in record
+
+
+@pytest.mark.parametrize("problem", ["label", "later_layout", "split_mask"])
+def test_croco_zeta_fallback_requires_selected_history_and_its_own_mask(tmp_path, problem):
+    ds = _croco_surface_scene()
+    path = tmp_path / "history.nc"
+    source = {"model": "croco", "files": [str(path)], "variables": {"2d": ["zeta"]}}
+    if problem == "label":
+        ds.zeta.attrs["standard_name"] = "sea_surface_height_above_geoid"
+    elif problem == "later_layout":
+        later = ds.isel(time=[1])
+        later["zeta"] = later.zeta.transpose("eta_rho", "xi_rho", "time")
+        later.to_netcdf(tmp_path / "later.nc")
+        source["files"].append(str(tmp_path / "later.nc"))
+        ds = ds.isel(time=[0])
+    else:
+        ds[["mask_rho", "scrum_time"]].to_netcdf(tmp_path / "mask.nc")
+        source["files"].append(str(tmp_path / "mask.nc"))
+        ds = ds.drop_vars("mask_rho")
+        ds.attrs["CPP-options"] += " WET_DRY"
+    ds.to_netcdf(path)
+    declared = configuration(tmp_path, source={
+        **source, "field_metadata": {"zeta": {"kind": "continuous"}}})
+    bind_sources(declared)
+    conf = configuration(tmp_path, source=source)
+    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+        bind_sources(conf)
+    assert not conf.output_dir.exists()
+    if problem == "later_layout":
+        bind_sources(configuration(tmp_path, source={
+            **source, "time": {"values": ["2024-12-10T01:00:00"]}}))
+
+
 @pytest.mark.parametrize("guard", ["netcdf", "grib", "fa"])
 @pytest.mark.parametrize("damage", [
     "missing", "pending", "invalid", "unknown", "unbound", "geometry", "method",

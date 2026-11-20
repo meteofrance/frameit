@@ -32,6 +32,8 @@ Check whether the field holds values that can vary continuously or
 codes for categories. Get that information from the producer, flags,
 or field definition. Declare ``field_metadata.kind`` only when you
 know it. Do not pick a kind from a name or number type alone.
+See :doc:`../user_guide/input_files` for the documented matches that do not
+need a declaration.
 If you want nearest-neighbour samples of an unchanged floating-point field
 from Meso-NH or AROME NetCDF, set ``interpolation: nearest`` in its
 ``products.polar.field_options`` entry instead. Validate and check the
