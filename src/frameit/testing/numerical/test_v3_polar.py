@@ -252,6 +252,19 @@ def test_nearest_waiver_does_not_accept_a_later_wide_integer_record(tmp_path):
     assert not conf.output_dir.exists()
 
 
+def test_nearest_waiver_requires_numeric_decoded_samples(tmp_path):
+    ds = scene(hours=(0,))
+    ds.q.attrs = {"units": "seconds since 2024-01-01"}
+    ds.to_netcdf(tmp_path / "input.nc")
+    conf = configuration(tmp_path, products={"polar": {
+        "radius_km": 2.5, "azimuth_count": 8,
+        "field_options": {"atmosphere": {"q": {"interpolation": "nearest"}}},
+    }})
+    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+        bind_sources(conf)
+    assert not conf.output_dir.exists()
+
+
 @pytest.mark.parametrize(("product", "field"), [
     ("model_grid", "q"), ("polar", "q"), ("model_grid", "instrument.q"),
 ])
@@ -316,6 +329,130 @@ def test_product_selection_requires_a_declared_source_and_unique_native_field(tm
             **sources, "files": [str(tmp_path / name) for name in ("input.nc", "other.nc")],
         }, products={"model_grid": {"fields": {"atmosphere": ["q"]}}}))
     assert not (tmp_path / "output").exists()
+
+
+def _compare_documented_kind(tmp_path, source, field, center, rule, *, guard=None):
+    outputs = {}
+    products = {"model_grid": True, "polar": {"radius_km": 2.5, "azimuth_count": 8}}
+    for origin in ("declaration", "documented_fallback"):
+        conf = configuration(tmp_path, source={
+            **source, "field_metadata": (
+                {field: {"kind": "continuous"}} if origin == "declaration" else {}),
+        }, region={"center": center}, products=products, output_name=origin)
+        if guard is None:
+            _, children, _ = bind_sources(conf)
+        else:
+            with guard():
+                _, children, _ = bind_sources(conf)
+        assert not conf.output_dir.exists()
+        binding = children["atmosphere"].source_requests["atmosphere"]["binding"]
+        jobs = [job for job in binding["operation_plans"] if job["product"] == "polar"]
+        assert jobs and all(job["polar_options"][field]["kind_origin"] == origin for job in jobs)
+        if origin == "documented_fallback":
+            for descriptor in (binding["dependencies"][field],
+                               binding["products"]["model_grid"][field]):
+                assert all(r["field_metadata"]["evidence"]["kind"]["rule"] == rule
+                           for r in descriptor["records"])
+        result = execute_simulation(conf)
+        assert result.ok and {p["role"] for p in result.products} == {"model_grid", "polar"}
+        for product in result.products:
+            with xr.open_dataset(product["path"]) as saved:
+                assert saved[field].attrs["kind"] == "continuous"
+                assert json.loads(saved[field].attrs["frameit_metadata_origins"])["kind"] == origin
+                saved[field].attrs.pop("frameit_metadata_origins")
+                saved.attrs.pop("history")
+                outputs.setdefault(product["role"], []).append(saved.load())
+        provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+        records = provenance["sources"]["atmosphere"]["polar"]["records"]
+        assert records and all(r["options"][field]["interpolation"] == "bilinear" for r in records)
+        if origin == "documented_fallback":
+            assert all(r["input_metadata"][field]["evidence"]["kind"]["rule"] == rule
+                       for r in records)
+            resolved = yaml.safe_load((conf.output_dir / "resolved-config.yaml").read_text())
+            assert field not in resolved["sources"]["atmosphere"]["field_metadata"]
+    for pair in outputs.values():
+        xr.testing.assert_identical(*pair)
+    return {product: pair[1] for product, pair in outputs.items()}
+
+
+@pytest.mark.parametrize("field", ["UM10", "VM10"])
+def test_documented_mesonh_wind10m_kind_without_yaml(tmp_path, monkeypatch, field):
+    from contextlib import contextmanager
+
+    from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
+
+    ds = scene(hours=(0, 1)).rename(q=field)
+    ds[field].attrs = {"units": "m s-1"}
+    ds[field].values[:, 4, 4:6] = [3., 7.]
+    ds[field].values[:, 4, 2] = np.nan
+    ds.to_netcdf(tmp_path / "input.nc")
+    center = {"latitude": -20., "longitude": float(
+        ds.longitude[4, 4] + .25 * (ds.longitude[4, 5] - ds.longitude[4, 4]))}
+
+    @contextmanager
+    def guard():
+        with monkeypatch.context() as patch:
+            guard_netcdf_payloads(patch, {field})
+            yield
+
+    products = _compare_documented_kind(
+        tmp_path, {"variables": {"2d": [field]}}, field, center,
+        "mesonh.diag.wind10m.kind.v1", guard=guard)
+    np.testing.assert_allclose(products["polar"][field].isel(radius=0, azimuth=0),
+                               [4., 4.], atol=2e-3, rtol=0)
+    np.testing.assert_array_equal(products["model_grid"][field], ds[field])
+    np.testing.assert_array_equal(products["polar"].time, ds.time)
+
+    native_only = configuration(tmp_path, source={"variables": {"2d": [field]}},
+                                products={"model_grid": True})
+    _, children, _ = bind_sources(native_only)
+    record = children["atmosphere"].source_requests["atmosphere"]["binding"][
+        "products"]["model_grid"][field]["records"][0]
+    assert "field_metadata" not in record
+
+
+@pytest.mark.parametrize("problem", ["later_text", "label", "declared_label", "other_model"])
+def test_mesonh_kind_fallback_requires_each_admitted_native_record(tmp_path, problem):
+    ds = scene(hours=(0,)).rename(q="UM10")
+    ds.UM10.attrs = {"units": "m s-1"}
+    source = {"variables": {"2d": ["UM10"]}}
+    if problem == "label":
+        ds.UM10.attrs["standard_name"] = "air_temperature"
+    elif problem == "declared_label":
+        source["field_metadata"] = {"UM10": {"standard_name": "air_temperature"}}
+    elif problem == "other_model":
+        source["model"] = "arome"
+        ds = ds.rename(ni="x", nj="y").assign_attrs(model="AROME")
+    path = tmp_path / "input.nc"
+    ds.to_netcdf(path)
+    if problem == "later_text":
+        later = ds.assign_coords(time=ds.time + np.timedelta64(1, "h"))
+        later["UM10"] = later.UM10.copy(data=np.full(later.UM10.shape, "text"))
+        later.to_netcdf(tmp_path / "later.nc")
+        source["files"] = [str(path), str(tmp_path / "later.nc")]
+    conf = configuration(tmp_path, source=source)
+    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+        bind_sources(conf)
+    assert not conf.output_dir.exists()
+
+
+@pytest.mark.parametrize("observed", [False, True])
+def test_mesonh_kind_fallback_does_not_replace_flags_or_declared_kind(tmp_path, observed):
+    ds = scene(hours=(0,)).rename(q="UM10")
+    ds.UM10.attrs = {"units": "m s-1"}
+    source = {"variables": {"2d": ["UM10"]}}
+    if observed:
+        ds.UM10.attrs.update(flag_values=np.array([0., 7.]), flag_meanings="zero seven")
+    else:
+        source["field_metadata"] = {"UM10": {"kind": "categorical"}}
+    ds.to_netcdf(tmp_path / "input.nc")
+    conf = configuration(tmp_path, source=source)
+    _, children, _ = bind_sources(conf)
+    job, = children["atmosphere"].source_requests["atmosphere"]["binding"]["operation_plans"]
+    options = job["polar_options"]["UM10"]
+    assert options["kind_origin"] == ("input" if observed else "declaration")
+    assert options["kind"] == "categorical" and options["interpolation"] == "nearest_s2d"
+    assert not conf.output_dir.exists()
 
 
 @pytest.mark.parametrize("guard", ["netcdf", "grib", "fa"])

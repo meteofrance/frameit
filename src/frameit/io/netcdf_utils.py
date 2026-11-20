@@ -30,6 +30,33 @@ from frameit.utils.diagnostics import format_message
 logger = logging.getLogger(__name__)
 
 
+def numeric_kind_support(record):
+    """Keep nonnumeric decodes and wide integers out of new point-sampling paths."""
+    supported = {"int8", "int16", "int32", "uint8", "uint16", "uint32", "float32", "float64"}
+    return all(record.get(key) in supported for key in ("stored_dtype", "decoded_dtype"))
+
+
+def mnh_wind10m_kind_evidence(source, record, attrs):
+    """Recognize the documented native DIAG field, not an output alias or vector basis."""
+    from frameit.processing.wind_reference import _metadata_frames
+
+    name = record["locator"]["variable"]
+    grid = source["native_grids"][record["grid_id"]]
+    if (name not in {"UM10", "VM10"} or set(grid["dimensions"]) != {"nj", "ni"}
+            or not numeric_kind_support(record)):
+        return None
+    label = attrs.get("standard_name")
+    if label is not None and (
+            not isinstance(label, str) or not _metadata_frames({"standard_name": label}, name)):
+        return None
+    return {
+        "rule": "mesonh.diag.wind10m.kind.v1",
+        "reference": "Meso-NH 6.0 DIAG defaults, docs 061c0f29ea33fc374b318d77efcec2d29a12b12a",
+        "native_variable": name, "horizontal_dimensions": list(grid["dimensions"]),
+        "stored_dtype": record["stored_dtype"],
+    }
+
+
 def mnh_altitude_terms(name, dims, attrs):
     """Identify the exact native Meso-NH altitude terms, without using their values."""
     quantity = {"level": "altitude", "level_w": "altitude_at_w_location"}.get(name)

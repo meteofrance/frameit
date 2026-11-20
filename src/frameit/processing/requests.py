@@ -849,8 +849,8 @@ def source_field_declaration(source, field, *, record=None):
     return metadata
 
 
-def source_field_metadata(source, field, *, record=None):
-    """Resolve only this selected field's declaration and admitted SEA metadata."""
+def source_field_metadata(source, field, *, record=None, polar_kind=False):
+    """Resolve selected metadata; documented kind is opt-in by the bound consumer."""
     declaration = source.get("declaration", {})
     name, attrs = field["name"], field["attributes"]
     if record is not None:
@@ -863,7 +863,7 @@ def source_field_metadata(source, field, *, record=None):
         if name in SURFEX_FIELDS:
             attrs = surfex_metadata(source, {**field, "attributes": attrs})
             interpreted = True
-    if not metadata and not interpreted:
+    if not metadata and not interpreted and not polar_kind:
         return None
     temporal_names = {"time"}
     records = [record] if record is not None else source["record_inventory"]
@@ -881,6 +881,16 @@ def source_field_metadata(source, field, *, record=None):
         temporal_names=temporal_names)
     if interpreted:
         result["origins"]["units"] = attrs["surfex_units_source"]
+    if polar_kind and "kind" not in result["attributes"]:
+        evidence = None
+        if source["model"] == "mesonh" and source["format"] == "netcdf":
+            from frameit.io.netcdf_utils import mnh_wind10m_kind_evidence
+
+            evidence = mnh_wind10m_kind_evidence(source, record, result["attributes"])
+        if evidence:
+            result["attributes"]["kind"] = "continuous"
+            result["origins"]["kind"] = "documented_fallback"
+            result["evidence"] = {"kind": evidence}
     return result
 
 
