@@ -91,17 +91,18 @@ def require_executable_products(binding, source):
         raise ValueError(f"Polar plan evidence is missing or invalid: {exc}") from exc
 
 
-def polar_field_options(metadata, options, conf, context):
+def polar_field_options(metadata, options, conf, context, *, native_nearest=False):
     """Resolve methods from stored-value evidence, not field names or array dtype."""
     from frameit.utils.diagnostics import tag_error
 
     attrs, origins = metadata["attributes"], metadata["origins"]
     kind = attrs.get("kind")
-    if kind not in {"continuous", "categorical"}:
+    method = options.get("interpolation", "nearest" if kind == "categorical" else "bilinear")
+    if kind not in {"continuous", "categorical"} and not (
+            native_nearest and "kind" not in attrs and options.get("interpolation") == "nearest"):
         raise tag_error(ValueError(
             f"{context}: polar sampling needs proven kind; declare field_metadata.kind"
         ), "E1603")
-    method = options.get("interpolation", "nearest" if kind == "categorical" else "bilinear")
     if kind == "categorical" and method != "nearest":
         raise ValueError(f"{context}: categorical fields require nearest interpolation")
     policy = options.get("missing_data_policy", conf.polar_missing_data_policy)
@@ -112,7 +113,7 @@ def polar_field_options(metadata, options, conf, context):
 
     validate_mask_options(policy, minimum, conf.polar_weight_zero_tolerance)
     return {
-        "kind": kind, "kind_origin": origins["kind"],
+        **({"kind": kind, "kind_origin": origins["kind"]} if kind is not None else {}),
         "interpolation": "nearest_s2d" if method == "nearest" else method,
         "missing_data_policy": policy, "min_valid_weight_fraction": minimum,
         "sampling": options.get("sampling", "native"),

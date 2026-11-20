@@ -102,5 +102,6 @@ Adapt to real inputs
 ---------------------
 
 Replace the input and centre; choose radius and azimuth count for the intended
-analysis. Declare unresolved field kind and wind basis from input evidence.
-See :doc:`../reference/polar` for methods, budgets and limitations.
+analysis. Use input evidence for any required field kind and wind basis.
+See :doc:`../user_guide/configuration_file` for field options and
+:doc:`../reference/polar` for methods, budgets and limitations.

@@ -207,10 +207,19 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
                     record.get("observed_attributes", field["attributes"]), {},
                     f"polar.{name}", temporal_names=record.get("temporal_names", [record["clock"]]))
             if job["method"] != "polar_input" or name == job["inputs"]["field"]:
+                native_nearest = (
+                    source["model"] in {"mesonh", "arome"} and source["format"] == "netcdf"
+                    and not source["declaration"].get("interpretation")
+                    and job["method"] == "polar_input"
+                    and job["preparation"] == "native_samples" and job["basis"] == "native"
+                    and "units" not in job
+                    # Nearest still evaluates weights in floating point; do not widen integers.
+                    and record.get("stored_dtype") in {"float32", "float64"}
+                )
                 job["polar_options"][name] = polar_field_options(
                     metadata, {
                         "sampling": job["sampling"], **request["polar_options"].get(name, {})},
-                    conf, f"polar.{name}")
+                    conf, f"polar.{name}", native_nearest=native_nearest)
             job["polar_input_metadata"][name] = {
                 "attributes": {key: metadata["attributes"][key] for key in (
                     "units", "kind", "temporal_kind", "standard_name")

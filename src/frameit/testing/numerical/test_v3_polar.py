@@ -169,6 +169,89 @@ def test_polar_methods_require_kind_evidence_and_preview_without_payload(
     assert not conf.output_dir.exists()
 
 
+@pytest.mark.parametrize("model", ["mesonh", "arome"])
+def test_explicit_nearest_without_kind_preserves_native_samples(tmp_path, model):
+    ds = scene(hours=(0,))
+    ds.q.attrs.pop("kind")
+    ds.q.values[0, 4, 5] = 42.
+    ds.q.values[0, 4, 3] = np.nan
+    center = {"latitude": -20., "longitude": float(
+        ds.longitude[4, 4] + .2 * (ds.longitude[4, 5] - ds.longitude[4, 4]))}
+    if model == "arome":
+        ds = ds.rename(ni="x", nj="y").assign_attrs(model="AROME")
+    ds.to_netcdf(tmp_path / "input.nc")
+    products = {"polar": {
+        "radius_km": 2.5, "azimuth_count": 8,
+        "field_options": {"atmosphere": {"q": {"interpolation": "nearest"}}},
+    }}
+    outputs = []
+    for kind in ("continuous", None):
+        conf = configuration(
+            tmp_path, source={"model": model, "field_metadata": (
+                {"q": {"kind": kind}} if kind else {})}, products=products,
+            region={"center": center}, output_name=f"nearest-{kind}")
+        _, children, _ = bind_sources(conf)
+        assert not conf.output_dir.exists()
+        job, = children["atmosphere"].source_requests["atmosphere"]["binding"]["operation_plans"]
+        assert job["polar_options"]["q"]["interpolation"] == "nearest_s2d"
+        if kind is None:
+            assert "kind" not in job["polar_options"]["q"]
+            assert "kind" not in job["polar_input_metadata"]["q"]["origins"]
+        result = execute_simulation(conf)
+        assert result.ok and len(result.products) == 1
+        with xr.open_dataset(result.products[0]["path"]) as saved:
+            outputs.append(saved.load())
+            assert saved.q.attrs["units"] == "K"
+            assert saved.longitude.isel(radius=0, azimuth=0).item() > 60.
+            assert saved.q.isel(radius=0, azimuth=0).item() == 7.
+            assert saved.q.isel(radius=1, azimuth=2).item() == 42.
+            assert np.isnan(saved.q.isel(radius=1, azimuth=6).item())
+            assert saved.q_geometry_mapped.isel(radius=1, azimuth=6).item() == 1
+            assert saved.q_interpolation_status.isel(radius=1, azimuth=6).item() == 2
+            assert saved.q_support_fraction.isel(radius=1, azimuth=6).item() == 0
+    assert "kind" not in outputs[1].q.attrs
+    outputs[0].q.attrs.pop("kind")
+    outputs[0].q.attrs.pop("frameit_metadata_origins")
+    for out in outputs:
+        out.attrs.pop("history")
+    xr.testing.assert_identical(*outputs)
+
+
+@pytest.mark.parametrize("options", [
+    {"interpolation": "bilinear"},
+    {"interpolation": "nearest", "sampling": "mass"},
+    {"interpolation": "nearest", "units": "hPa"},
+])
+def test_polar_kind_still_required_for_bilinear_or_preparation(tmp_path, options):
+    ds = scene(hours=(0,))
+    ds.q.attrs = {"units": "Pa"}
+    ds.to_netcdf(tmp_path / "input.nc")
+    conf = configuration(tmp_path, products={"polar": {
+        "radius_km": 2.5, "azimuth_count": 8,
+        "field_options": {"atmosphere": {"q": options}},
+    }})
+    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+        bind_sources(conf)
+    assert not conf.output_dir.exists()
+
+
+def test_nearest_waiver_does_not_accept_a_later_wide_integer_record(tmp_path):
+    paths = []
+    for hour, dtype, value in ((0, "float64", 7.), (1, "int64", 2**53 + 1)):
+        ds = scene(hours=(hour,))
+        ds.q.attrs.pop("kind")
+        ds["q"] = ds.q.copy(data=np.full(ds.q.shape, value, dtype=dtype))
+        paths.append(str(tmp_path / f"{hour}.nc"))
+        ds.to_netcdf(paths[-1])
+    conf = configuration(tmp_path, source={"files": paths}, products={"polar": {
+        "radius_km": 2.5, "azimuth_count": 8,
+        "field_options": {"atmosphere": {"q": {"interpolation": "nearest"}}},
+    }})
+    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+        bind_sources(conf)
+    assert not conf.output_dir.exists()
+
+
 @pytest.mark.parametrize("guard", ["netcdf", "grib", "fa"])
 @pytest.mark.parametrize("damage", [
     "missing", "pending", "invalid", "unknown", "unbound", "geometry", "method",

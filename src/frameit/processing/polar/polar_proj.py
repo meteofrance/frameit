@@ -200,7 +200,7 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             settings.polar_min_valid_weight_fraction = options["min_valid_weight_fraction"]
             value = prepared[name]
             prepared_dtype = str(value.dtype)
-            promote = (options["kind"] == "continuous" and options["interpolation"] == "bilinear"
+            promote = (options["interpolation"] == "bilinear" and options["kind"] == "continuous"
                        and np.issubdtype(value.dtype, np.integer))
             if promote:
                 # The shared operator casts its numerator back to the evaluation dtype.

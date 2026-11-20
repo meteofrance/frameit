@@ -88,7 +88,8 @@ Set `output.format: zarr` for `.zarr` stores instead of `.nc` files. See
   See [FA limits](https://meteofrance.github.io/frameit/user_guide/fa_baseline.html).
 - **Optional polar sampling:** continuous production fields default to bilinear
   point sampling, without an area-budget conservation guarantee. Proven categorical
-  fields use nearest-neighbour sampling; unresolved kind fails. Shared
+  fields use nearest-neighbour sampling. Explicit nearest can also sample
+  unchanged floating-point Meso-NH or AROME NetCDF fields without `kind`. Shared
   targets are opt-in (`products.polar.shared_grid: true`); equal target coordinates do
   not imply equal source masks or quantities. Conservative, patch and additional
   vector-transport methods remain experimental.
