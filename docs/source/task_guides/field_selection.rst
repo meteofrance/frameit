@@ -16,6 +16,10 @@ A 2D field has no selectable vertical axis. Put fields with a vertical axis
 under ``3d``. The pressure request selects existing 850 and 700 hPa labels, in
 that order; the input coordinates are in Pa. This is selection, not interpolation.
 
+If you choose fields directly in ``products.model_grid.fields`` or
+``products.polar.fields``, do not repeat them in a source list. Keep any level
+selectors in ``variables`` and qualify names for groups with selected levels.
+
 .. _choose-one-level-strategy-per-group:
 
 Choose a level strategy

@@ -216,6 +216,60 @@ def test_grouped_netcdf_axes_keep_different_native_positions(tmp_path, monkeypat
     assert not any(name in {"T", "W"} for name, _ in reads)
 
 
+def test_product_only_group_reference_keeps_group_levels(tmp_path):
+    from frameit.core.coupled import bind_sources
+    from frameit.testing.numerical.test_request_selection import binding_scene
+
+    ds = binding_scene()
+    ds["Q"] = ds.T + 100.
+    path = tmp_path / "axes.nc"
+    ds.to_netcdf(path)
+    raw = {"schema_version": 3, "sources": {"atmosphere": {
+        "model": "mesonh", "files": str(path), "variables": {"3d": {
+            "level": {"names": ["T"], "levels": {"indices": [5, 0]}}}}}},
+        "products": {"model_grid": {"fields": {"atmosphere": ["level.Q"]}}},
+        "output": {"directory": str(tmp_path / "out")},
+        "resources": {"synchronous_export": True, "scheduler": "synchronous", "cpus": 1}}
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    _, children, _ = bind_sources(conf)
+    binding = children["atmosphere"].source_requests["atmosphere"]["binding"]
+    assert {r["locator"]["variable"] for r in binding["records"]} == {"Q"}
+    records = binding["products"]["model_grid"]["level.Q"]["records"]
+    assert all(r["source_positions"] == [5, 0] for r in records)
+    assert not conf.output_dir.exists()
+    result = execute_simulation(conf)
+    with xr.open_dataset(result.products[0]["path"]) as saved:
+        assert set(saved.data_vars) - {"level_bounds"} == {"level.Q"}
+        np.testing.assert_array_equal(saved.level, [50., 0.])
+        np.testing.assert_array_equal(saved["level.Q"], ds.Q.isel(level=[5, 0]))
+    raw["products"]["model_grid"]["fields"]["atmosphere"] = ["Q"]
+    raw["output"]["directory"] = str(tmp_path / "bare")
+    bare = SimulationConfig.from_mapping_with_model_preset(raw)
+    with pytest.raises(ValueError, match=r"use level\.Q.*group levels"):
+        bind_sources(bare)
+    assert not bare.output_dir.exists()
+
+
+def test_product_only_grib_levels_check_only_selected_providers(tmp_path):
+    path = write_messages(tmp_path / "input.grib", [
+        {"level": level} for level in (850, 850, 700)])
+    raw = grouped_document(tmp_path)
+    raw["sources"]["atmosphere"] = {
+        "model": "arome", "files": str(path), "variables": {"levels": {"values": [700]}},
+    }
+    raw["products"] = {"model_grid": {"fields": {"atmosphere": ["u"]}}}
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    inventory_source(conf, "atmosphere")
+    assert [r["level"] for r in bind_source(conf, "atmosphere")["records"]] == [700]
+
+    raw["sources"]["atmosphere"]["variables"]["levels"]["values"] = [850]
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    inventory_source(conf, "atmosphere")
+    with pytest.raises(ValueError, match="competing.*providers"):
+        bind_source(conf, "atmosphere")
+    assert not conf.output_dir.exists()
+
+
 @pytest.mark.parametrize("qualified", [False, True])
 def test_grouped_metadata_never_applies_a_bare_ambiguous_declaration(
         tmp_path, monkeypatch, qualified):

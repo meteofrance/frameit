@@ -252,6 +252,72 @@ def test_nearest_waiver_does_not_accept_a_later_wide_integer_record(tmp_path):
     assert not conf.output_dir.exists()
 
 
+@pytest.mark.parametrize(("product", "field"), [
+    ("model_grid", "q"), ("polar", "q"), ("model_grid", "instrument.q"),
+])
+def test_explicit_product_fields_need_no_source_list(tmp_path, monkeypatch, product, field):
+    from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
+
+    ds = scene()
+    ds["other"] = ds.q.copy()
+    ds.rename(q=field).to_netcdf(tmp_path / "input.nc")
+    spec = {"fields": {"atmosphere": [field]}}
+    if product == "polar":
+        spec.update(radius_km=2.5, azimuth_count=8)
+    original, reads, outputs, locators = H5NetCDFArrayWrapper.__getitem__, [], [], []
+
+    def read(array, key):
+        assert array.variable_name != "other"
+        if array.variable_name == field:
+            indices = np.atleast_1d(np.arange(array.shape[0])[key.tuple[0]]).tolist()
+            assert indices == [1]
+            reads.append(array.variable_name)
+        return original(array, key)
+
+    monkeypatch.setattr(H5NetCDFArrayWrapper, "__getitem__", read)
+    for listed in (True, False):
+        conf = configuration(tmp_path, source={
+            "variables": {"2d": [field]} if listed else {},
+            "time": {"values": ["2024-01-01T01:00:00"]},
+        }, products={product: spec}, output_name=f"selection-{listed}")
+        reads.clear()
+        _, children, _ = bind_sources(conf)
+        assert not reads and not conf.output_dir.exists()
+        request = children["atmosphere"].source_requests["atmosphere"]
+        assert request["fields"]["2d"] == ([field] if listed else [])
+        locators.append([r["locator"] for r in request["binding"]["records"]])
+        result = execute_simulation(conf)
+        assert reads and result.ok and [p["role"] for p in result.products] == [product]
+        with xr.open_dataset(result.products[0]["path"]) as saved:
+            assert {n for n in saved.data_vars if saved[n].attrs.get("frameit_role")
+                    != "interpolation_quality"} == {field}
+            np.testing.assert_allclose(saved[field], 7., atol=1e-10)
+            outputs.append(saved.load())
+    assert locators[0] == locators[1]
+    for out in outputs:
+        out.attrs.pop("history")
+    xr.testing.assert_identical(*outputs)
+
+
+def test_product_selection_requires_a_declared_source_and_unique_native_field(tmp_path):
+    sources = {"variables": {}}
+    with pytest.raises(ValueError, match="unknown source"):
+        configuration(tmp_path, source=sources, products={
+            "model_grid": {"fields": {"typo": ["q"]}}})
+    ds = scene()
+    ds.to_netcdf(tmp_path / "input.nc")
+    with pytest.raises(ValueError, match="absent.*unavailable"):
+        bind_sources(configuration(tmp_path, source=sources, products={
+            "model_grid": {"fields": {"atmosphere": ["absent"]}}}))
+    ds.q.attrs["units"] = "Pa"
+    ds.to_netcdf(tmp_path / "other.nc")
+    with pytest.raises(ValueError, match="distinct fields.*q"):
+        bind_sources(configuration(tmp_path, source={
+            **sources, "files": [str(tmp_path / name) for name in ("input.nc", "other.nc")],
+        }, products={"model_grid": {"fields": {"atmosphere": ["q"]}}}))
+    assert not (tmp_path / "output").exists()
+
+
 @pytest.mark.parametrize("guard", ["netcdf", "grib", "fa"])
 @pytest.mark.parametrize("damage", [
     "missing", "pending", "invalid", "unknown", "unbound", "geometry", "method",

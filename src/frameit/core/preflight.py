@@ -33,6 +33,7 @@ from frameit.io.loader import (
 from frameit.processing.requests import (
     bind_requests,
     field_candidates,
+    native_field_group,
     normalize_requests,
     selected_native_indices,
 )
@@ -945,6 +946,7 @@ def inventory_source(conf, name, *, resources=None):
     request = conf.source_requests[name]
     needed = {field for exports in request["exports"].values() for field in exports
               if field not in request["derived"]}
+    product_only = needed.difference(*request["fields"].values())
     needed.update(set(request["internal_inputs"]) - request["derived"].keys())
     declared_needed = set(needed)
     strict_inputs = set(request["internal_inputs"]) - request["derived"].keys()
@@ -1031,6 +1033,8 @@ def inventory_source(conf, name, *, resources=None):
             relevant, source.get("time", {}), f"sources.{name}")
     errors, providers, conflicts, allowed_gaps = [], {}, [], []
     required_ids = {ref: {r["field_id"] for _, r in candidates[ref]} for ref in required}
+    grouped_levels = {group for group, spec in request.get("groups", {}).items()
+                      if spec.get("levels")}
     for field_name in sorted(required):
         matching = [r for r in selected if r["field_id"] in required_ids[field_name]]
         identities = {r["field_id"] for r in matching}
@@ -1050,8 +1054,14 @@ def inventory_source(conf, name, *, resources=None):
             errors.append(f"sources.{name}: distinct fields share requested name {field_name!r}; "
                           f"conflicting fields {definitions}; "
                           "use an explicit vertical group; qualification must identify "
-                           "exactly one field. For files in the same group, "
-                           "select or regenerate a consistent sequence")
+                            "exactly one field. For files in the same group, "
+                            "select or regenerate a consistent sequence")
+        elif (matching and grouped_levels and field_name in product_only
+              and field_selection(request, field_name)[1] is None):
+            record = matching[0]
+            group = native_field_group(selection_source, fields[record["field_id"]], record)
+            if group in grouped_levels:
+                errors.append(f"sources.{name}: use {group}.{field_name} to retain group levels")
         available = {r["time"] for r in matching}
         from frameit.processing.requests import initial_gap_times
 
@@ -1076,7 +1086,7 @@ def inventory_source(conf, name, *, resources=None):
                                   if dependency_resolution == "pending_method_binding"
                                   else "pending_field_binding")
             elif fmt == "grib" and any(
-                    ref in (set(request["fields"]["3d"])
+                    ref in (product_only | set(request["fields"]["3d"])
                             | set(request["internal_inputs"]) - set(request["fields"]["2d"]))
                     and field_selection(request, ref)[2].keys() & {"indices", "values", "domain"}
                     for ref in references):

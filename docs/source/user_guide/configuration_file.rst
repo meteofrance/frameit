@@ -411,10 +411,12 @@ model-grid output only; an explicit empty mapping is invalid. List only requeste
 products. ``model_grid: true`` and ``track: true`` are complete requests.
 A centre provider alone does not request an exported trajectory.
 
-Field products reuse source ``variables`` and ``derived``. Optional product
-``fields`` maps source names to exact subsets of those requests. Unlisted sources
-and fields are excluded. Unknown references fail; internal inputs need not be
-exported.
+Without a product ``fields`` map, field products use source ``variables`` and
+``derived``. With a map, list exact input fields or defined derived results by
+source. An input field does not need to be repeated in ``variables``. Input-aware
+validation rejects missing or ambiguous fields. Use a qualified name to keep
+the levels declared for its group. Unlisted fields are not exported; required
+internal inputs can still be read.
 
 Polar geometry
 ~~~~~~~~~~~~~~~

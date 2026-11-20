@@ -1397,13 +1397,6 @@ def _products(raw, sources, region):
                         {"sources": sorted(sources)}, name,
                         [f"Use a declared source name for {path}.fields.{name}."])])
                 _names(names, f"{path}.fields.{name}")
-                available = _declared_fields(sources[name])
-                if not set(names) <= set(available):
-                    raise PreflightError([Diagnostic(
-                        f"{path}.fields.{name}",
-                        f"{path}.fields.{name}: unknown field/result; declare it in sources",
-                        {"declared_fields": available}, names,
-                        [f"Select declared fields/results in {path}.fields.{name}."])])
         for name, source in sources.items():
             for field in _product_fields(spec, sources, name):
                 method = source["derived"].get(field, {}).get("method")

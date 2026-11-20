@@ -117,7 +117,7 @@ region:
   width_km: {x: 400.0, y: 400.0} # Full widths along native grid directions.
 products:
   model_grid:
-    fields: {atmosphere: [sample_field, sample_cube]} # Optional exact subsets by source.
+    fields: {atmosphere: [sample_field, sample_cube]} # Exact input fields or derived results by source.
     processing:
       chunks: {}                 # Computation chunks, not input or storage chunks.
   polar:

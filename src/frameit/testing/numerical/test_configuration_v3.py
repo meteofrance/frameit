@@ -475,10 +475,10 @@ def test_track_and_polar_are_explicit_products_not_tracker_side_effects(tmp_path
 @pytest.mark.parametrize("products", [
     {}, {"model_grid": False}, {"track": False}, {"track": True},
     {"polar": {"radius_km": 100}}, {"model_grid": {"fields": {"absent": ["MSLP"]}}},
-    {"model_grid": {"fields": {"weather": ["absent"]}}}, {"model_grid": {"fields": {}}},
+    {"model_grid": {"fields": {}}},
     {"model_grid": {"fields": {"weather": ["MSLP", "MSLP"]}}},
 ])
-def test_product_requests_cannot_disable_products_guess_centres_or_reference_unknown_fields(products):
+def test_schema_rejects_invalid_product_shapes_centres_and_source_names(products):
     raw = document()
     raw["products"] = products
     with pytest.raises(ValueError, match="products"):
