@@ -9,6 +9,7 @@ import xarray as xr
 import yaml
 
 from frameit.core.configuration import to_runtime
+from frameit.core.coupled import bind_sources
 from frameit.core.execution import execute_simulation
 from frameit.core.settings_class import SimulationConfig
 from frameit.io.track_file import load_track_coordinates
@@ -117,6 +118,83 @@ def scalar_scene(path, *, model="mesonh", hours=(0, 1, 2), shift=0., angle=120.)
     })
     ds.to_netcdf(path)
     return {"model": model, "files": str(path), "variables": {"2d": ["scalar"]}}
+
+
+@pytest.mark.parametrize("model", ["mesonh", "croco", "nemo"])
+def test_full_native_copy_ignores_unused_fixed_centre(tmp_path, model):
+    from frameit.testing.numerical.test_croco_netcdf import croco_scene
+    from frameit.testing.numerical.test_nemo_netcdf import nemo_scene
+
+    path = tmp_path / "input.nc"
+    if model == "mesonh":
+        source = scalar_scene(path)
+    else:
+        fixture, field = (croco_scene, "temp") if model == "croco" else (nemo_scene, "votemper")
+        fixture().to_netcdf(path)
+        source = {"model": model, "files": str(path), "variables": {
+            "3d": [field], "levels": {"indices": [0]}}}
+    outputs = []
+    for region in (None, {"center": {"latitude": -20., "longitude": 160.}}):
+        conf = configuration(tmp_path, {"data": source}, region=region, output={
+            "directory": str(tmp_path / ("fixed" if region else "no-region"))})
+        report, _, _ = bind_sources(conf)
+        assert not conf.output_dir.exists()
+        result = execute_simulation(conf)
+        assert result.ok and len(result.products) == 1
+        with xr.open_dataset(result.products[0]["path"]) as saved:
+            outputs.append(saved.load())
+        if region:
+            facts = report["sources"]["data"]["region"]
+            assert facts["status"] == "unused"
+            assert facts["unused_settings"] == [
+                "region.center", "region.sources_coupling_time_association"]
+            assert report["products"][0]["time_association"] is None
+            provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+            assert provenance["sources"]["data"]["region"] == facts
+            resolved = yaml.safe_load((conf.output_dir / "resolved-config.yaml").read_text())
+            assert resolved["region"]["center"] == region["center"]
+    for out in outputs:
+        out.attrs.pop("history")
+    xr.testing.assert_identical(*outputs)
+
+
+@pytest.mark.parametrize("operation", ["crop", "polar"])
+def test_outside_fixed_centre_remains_invalid_for_active_sampling(tmp_path, operation):
+    source = scalar_scene(tmp_path / "weather.nc")
+    source["field_metadata"] = {"scalar": {"kind": "continuous"}}
+    region = {"center": {"latitude": -20., "longitude": 160.}}
+    if operation == "crop":
+        region["width_km"] = {"x": 2, "y": 2}
+    conf = configuration(tmp_path, {"weather": source}, region=region, products=(
+        {"polar": {"radius_km": 2.5, "azimuth_count": 8}} if operation == "polar" else None))
+    with pytest.raises(ValueError, match="outside"):
+        bind_sources(conf)
+    assert not conf.output_dir.exists()
+
+
+def test_disjoint_clocks_need_no_common_association_for_native_copies(tmp_path):
+    sources = {
+        "weather": scalar_scene(tmp_path / "weather.nc", hours=(0, 2)),
+        "water": scalar_scene(tmp_path / "water.nc", model="nemo", hours=(1, 3)),
+    }
+    region = {"center": {"latitude": -20., "longitude": 60.},
+              "sources_coupling_time_association": "common"}
+    tracked = configuration(tmp_path, sources, region=region,
+                            products={"model_grid": True, "track": True})
+    with pytest.raises(ValueError, match="no exact common timestamps"):
+        bind_sources(tracked)
+    assert not tracked.output_dir.exists()
+    conf = configuration(tmp_path, sources, region=region)
+    bind_sources(conf)
+    assert not conf.output_dir.exists()
+    result = execute_simulation(conf)
+    assert len(result.products) == 2
+    for product in result.products:
+        hours = [0, 2] if product["source"] == "weather" else [1, 3]
+        with xr.open_dataset(product["path"]) as saved:
+            np.testing.assert_array_equal(saved.time, np.datetime64("2000-01-01", "ns")
+                                          + np.array(hours, dtype="timedelta64[h]"))
+            assert "center_time" not in saved
 
 
 @pytest.mark.parametrize("partial", [False, True])

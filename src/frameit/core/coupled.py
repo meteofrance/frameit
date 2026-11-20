@@ -367,6 +367,26 @@ def _prepare_v3_regions(conf, children, plans):
     region = conf.yaml_config["region"]
     if not region:
         return
+    if ("center" in region and "width_km" not in region
+            and set(conf.yaml_config["products"]) == {"model_grid"}):
+        copies = [(request, set(request["exports"]["model_grid"]))
+                  for name, child in children.items()
+                  if (request := child.source_requests[name])["exports"].get("model_grid")]
+        if copies and all(fields.isdisjoint(
+                set(request["derived"]) |
+                {field for transform in request["transforms"] for field in transform["fields"]})
+                for request, fields in copies):
+            conf.tracking_method = None
+            for product in conf.simulation_parameter["request_plan"]["products"]:
+                product["time_association"] = None
+            for source in plans.values():
+                source["region"] = {
+                    "status": "unused", "centre_provider": "center",
+                    "reason": "full-domain native copies do not use a centre or shared clock",
+                    "unused_settings": ["region.center", "region.sources_coupling_time_association"],
+                    "associations": [], "grids": {},
+                }
+            return
     active = {name for name, child in children.items() if child.source_requests[name]["exports"]
               or plans[name].get("tracker_support") or plans[name].get("tracker_support_pending")}
     if not active:
@@ -1070,7 +1090,7 @@ def run_native_sources(runner, *, benchmark=False):
                 sequences = {}
                 for grid_id, ds in consumer.ds_user.items():
                     ds = ds.reset_coords([field for field in fields if field in ds.coords])
-                    if runner.conf.yaml_config["region"]:
+                    if child.x_boxsize_km and child.y_boxsize_km:
                         ds = _regional_dataset(ds, grid_id, child, plans[name], centres)
                     views = ([(None, ds)] if grid_id in layout else
                              [(field, ds.drop_vars(set(ds.data_vars) - {field}))
@@ -1148,7 +1168,7 @@ def run_native_sources(runner, *, benchmark=False):
                     for operation in source["requests"]["binding"].get("operations", [])],
                 "selected_times": [str(time) for time in source["selected_times"]]}
         for name, source in plans.items()})
-    if runner.conf.yaml_config["region"]:
+    if "region_alignment" in runner.conf.simulation_parameter:
         runner.conf.grid_geometry = {
             name: source["region"]["grids"] for name, source in plans.items()}
     if progress is not None:

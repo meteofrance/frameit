@@ -11,7 +11,7 @@ sources:
       2d: [MSLP]
 region:
   center: {latitude: -20., longitude: 60.}
-  # Illustrative full widths in km; adapt centre and available coverage.
+  # Full widths in km; omit for a full native copy without using the centre.
   width_km: {x: 100, y: 100}
 products:
   # Scalar extraction needs no winds or polar sampling.

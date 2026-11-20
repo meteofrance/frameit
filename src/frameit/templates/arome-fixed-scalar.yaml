@@ -14,7 +14,7 @@ sources:
 region:
   # Geographic degrees north/east; replace with an inspected point for real data.
   center: {latitude: -20., longitude: 60.}
-  # Full widths in km; this small box is for the instructional input.
+  # Full widths in km; omit for a full native copy without using the centre.
   width_km: {x: 4, y: 4}
 products:
   # No wind declarations, optional diagnostics or polar sampling are needed.

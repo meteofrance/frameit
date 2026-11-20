@@ -380,6 +380,11 @@ directions, not necessarily an east/north rectangle. Native samples are retained
 Partially covered crops are padded with missing values. A centre outside a
 required source footprint fails rather than moving.
 
+For full-domain native copies only, a fixed centre and its time-association
+setting are reported as unused. Each copy keeps its own selected times.
+A crop, polar product or requested track still uses the centre and its
+applicable checks.
+
 Calculated tracking uses the atmospheric source whatever its name.
 ``pressure_wind`` uses full ``search_width_km`` and ``refine_width_km`` values,
 defaulting to 200 and 100 km. ``on_incomplete`` defaults to ``error``;
