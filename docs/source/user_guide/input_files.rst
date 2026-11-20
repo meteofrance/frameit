@@ -45,10 +45,12 @@ See :doc:`configuration_file` and :doc:`../task_guides/field_selection`.
 When a direct native polar field needs a kind, FrameIt uses observed kind or
 categorical flags, then a valid YAML declaration. If none supplies kind, the
 record matches below establish ``continuous``. Input-aware validation shows
-:ref:`w1603` once per affected source and field. See the matched records and
-their evidence in ``run-provenance.yaml``. Native-only copies do not use these
-rules. A concurrent native export spanning matched and unmatched records
-does not label the whole variable with the fallback.
+:ref:`w1603` once per affected source and field in the plan. Times excluded
+from the polar operation do not need a polar kind. ``run-provenance.yaml``
+reports the evidence only for records actually sampled; an accepted short
+track may use fewer records than validation planned. Native-only copies do
+not use these rules. A concurrent native export spanning matched and
+unmatched records does not label the whole variable with the fallback.
 
 For direct native polar sampling of Meso-NH NetCDF, FrameIt can use
 ``kind: continuous`` for numeric ``UM10`` or ``VM10`` on the native ``nj``/``ni``

@@ -74,9 +74,9 @@ W1603: Input evidence established a missing polar kind
 ----------------------------------------------------------------------
 
 Check the named field and rule against :doc:`../user_guide/input_files`.
-FrameIt used ``continuous`` where neither the input kind nor YAML declared
-it. If the rule describes your data, no YAML change is needed. The run records
-the evidence for each affected sample in ``run-provenance.yaml``.
+The plan uses ``continuous`` where neither the input kind nor YAML declared
+it. If the rule describes your data, no YAML change is needed. After a run,
+``run-provenance.yaml`` reports the evidence for records actually sampled.
 
 Missing values in a polar result
 --------------------------------

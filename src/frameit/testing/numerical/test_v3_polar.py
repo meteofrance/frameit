@@ -868,6 +868,90 @@ def test_nemo_cf_kind_does_not_replace_known_kind(tmp_path, case):
     assert not conf.output_dir.exists()
 
 
+def test_common_polar_kind_ignores_an_unassociated_record(tmp_path):
+    ds = _nemo_cf_sea_height()
+    ds.isel(time_counter=[0]).to_netcdf(tmp_path / "first.nc")
+    later = ds.isel(time_counter=[1])
+    later["zos"] = later.zos.copy(data=np.full(later.zos.shape, 2**53 + 1, dtype="int64"))
+    later.to_netcdf(tmp_path / "later.nc")
+    scene(hours=(0,)).to_netcdf(tmp_path / "weather.nc")
+    request = {
+        "schema_version": 3, "run": {"name": "common-height"},
+        "sources": {
+            "water": {"model": "nemo", "files": ["first.nc", "later.nc"],
+                      "variables": {"2d": ["zos"]}},
+            "weather": {"model": "mesonh", "files": "weather.nc", "variables": {"2d": ["q"]}},
+        },
+        "region": {"center": {"latitude": -20., "longitude": 60.},
+                   "sources_coupling_time_association": "common"},
+        "products": {"polar": {"radius_km": 2.5, "azimuth_count": 8}},
+        "output": {"directory": "output"},
+        "resources": {"synchronous_export": True, "cpus": 1},
+    }
+    document = tmp_path / "request.yaml"
+    document.write_text(yaml.safe_dump(request))
+    completed = subprocess.run(
+        [sys.executable, "-B", "-m", "frameit", "validate", str(document), "--json"],
+        capture_output=True, text=True)
+    report = json.loads(completed.stdout)
+    assert completed.returncode == 0, report["errors"]
+    warnings = [w for w in report["warnings"] if w.startswith("[W1603]")]
+    assert len(warnings) == 1 and "sources.water.zos" in warnings[0]
+    assert completed.stdout.count("[W1603]") == 1
+    conf = SimulationConfig.from_yaml_with_model_preset(document)
+    assert not conf.output_dir.exists()
+    result = execute_simulation(conf)
+    product = next(p for p in result.products if p["source"] == "water")
+    with xr.open_dataset(product["path"]) as saved:
+        np.testing.assert_array_equal(saved.time, ds.time_counter[:1])
+        np.testing.assert_allclose(saved.zos, 7.)
+        assert saved.zos.attrs["kind"] == "continuous"
+
+
+def test_incomplete_track_does_not_publish_kind_from_an_absent_polar_sample(tmp_path):
+    from .test_multifield_vortex import vortex
+
+    weather, _ = vortex(n=81)
+    weather["MSLP"][1] = 101000.
+    weather.to_netcdf(tmp_path / "weather.nc")
+    ocean = _nemo_cf_sea_height().assign_coords(time_counter=weather.time.values)
+    reference = ocean.rename(zos="q")
+    reference.q.attrs = {"units": "1", "kind": "continuous"}
+    reference.to_netcdf(tmp_path / "ocean.nc")
+    ocean.isel(time_counter=[1]).to_netcdf(tmp_path / "later.nc")
+    conf = configuration(tmp_path, sources={
+        "weather": {"model": "mesonh", "files": str(tmp_path / "weather.nc"),
+                    "variables": {"2d": ["MSLP"]},
+                    "wind_pairs": [{"u": "UT_ZM", "v": "VT_ZM", "basis": "earth"},
+                                   {"u": "UM10", "v": "VM10", "basis": "earth"}]},
+        "water": {"model": "nemo", "files": [str(tmp_path / name) for name in ("ocean.nc", "later.nc")],
+                  "variables": {"2d": ["q", "zos"]}, "allow_initial_gaps": ["zos"]},
+    }, region={"tracker": {
+        "method": "multifield_vortex", "on_incomplete": "keep_prefix", "mnh_gravity_m_s2": 9.80665,
+        "seed": {"latitude": -20., "longitude": 60., "motion_u_m_s": 0, "motion_v_m_s": 0},
+    }}, products={"track": True, "polar": {"radius_km": 2.5, "azimuth_count": 8,
+                                         "fields": {"water": ["q", "zos"]}}})
+    report, _, _ = bind_sources(conf)
+    assert sum("[W1603]" in w for w in report["warnings"]) == 1
+    assert not conf.output_dir.exists()
+    result = execute_simulation(conf)
+    assert not result.tracking_complete
+    product = next(p for p in result.products if p["role"] == "polar")
+    with xr.open_dataset(product["path"]) as saved:
+        np.testing.assert_array_equal(saved.time, weather.time[:1])
+        assert saved.zos.isnull().all()
+        np.testing.assert_array_equal(saved.zos_interpolation_status, 2)
+        assert saved.q.attrs["kind"] == "continuous"
+        assert "kind" not in saved.zos.attrs
+        assert "kind" not in json.loads(saved.zos.attrs.get("frameit_metadata_origins", "{}"))
+    provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+    assert not any("[W1603]" in w for w in provenance.get("warnings", []))
+    absent, = [record for record in provenance["sources"]["water"]["polar"]["records"]
+               if record["field"] == "zos"]
+    assert absent["source_record_absent"]
+    assert "evidence" not in absent["input_metadata"].get("zos", {})
+
+
 @pytest.mark.parametrize("guard", ["netcdf", "grib", "fa"])
 @pytest.mark.parametrize("damage", [
     "missing", "pending", "invalid", "unknown", "unbound", "geometry", "method",

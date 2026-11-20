@@ -372,6 +372,19 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             sequence, coords="minimal", data_vars="all",
             compat="equals", join="exact", combine_attrs="override"))
     dataset = xr.merge(datasets, join="exact", compat="identical", combine_attrs="override")
+    if source.get("allowed_gaps"):
+        sampled_fields = {r["field"] for r in reports if not r.get("source_record_absent")}
+        for name in results.keys() - sampled_fields:
+            # An all-gap field must not inherit its template's inferred kind.
+            attrs = dataset[name].attrs
+            try:
+                origins = json.loads(attrs.get("frameit_metadata_origins", "{}"))
+            except (TypeError, ValueError):
+                continue
+            if isinstance(origins, dict) and origins.get("kind") == "documented_fallback":
+                attrs.pop("kind", None)
+                origins.pop("kind")
+                attrs["frameit_metadata_origins"] = json.dumps(origins, sort_keys=True)
     mapped = [dataset[f"{name}_geometry_mapped"] for name in results]
     dataset["geometry_mapped"] = xr.concat(mapped, dim="_field").all("_field").astype(
         np.uint8).assign_attrs(

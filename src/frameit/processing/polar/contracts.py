@@ -44,6 +44,7 @@ def require_executable_products(binding, source):
                 or not np.isfinite(plan["radial_step_km"]) or plan["radial_step_km"] <= 0
                 or plan["radial_step_km"] * 1000 < spacing.max() * (1 - 1e-12)):
             raise ValueError("Polar native-spacing evidence is missing")
+        associated = {r["source_time"] for r in source.get("region", {}).get("associations", ())}
         for job in jobs:
             sampled = ({job["inputs"]["field"]} if job["method"] == "polar_input"
                        else set(job["inputs"].values()))
@@ -81,6 +82,8 @@ def require_executable_products(binding, source):
                     if not any(matches):
                         raise ValueError("Polar input is outside the owning selected inventory")
             for options in job["polar_options"].values():
+                if options.get("gap_template") and job["context"][0] in associated:
+                    raise ValueError("A missing-kind polar gap template cannot sample values")
                 if options["interpolation"] not in {"bilinear", "nearest_s2d"}:
                     raise ValueError("Polar interpolation method is not executable")
                 from frameit.processing.polar.coverage import validate_mask_options
@@ -91,15 +94,17 @@ def require_executable_products(binding, source):
         raise ValueError(f"Polar plan evidence is missing or invalid: {exc}") from exc
 
 
-def polar_field_options(metadata, options, conf, context, *, native_nearest=False):
+def polar_field_options(metadata, options, conf, context, *, native_nearest=False,
+                        gap_template=False):
     """Resolve methods from stored-value evidence, not field names or array dtype."""
     from frameit.utils.diagnostics import tag_error
 
     attrs, origins = metadata["attributes"], metadata["origins"]
     kind = attrs.get("kind")
     method = options.get("interpolation", "nearest" if kind == "categorical" else "bilinear")
-    if kind not in {"continuous", "categorical"} and not (
-            native_nearest and "kind" not in attrs and options.get("interpolation") == "nearest"):
+    gap_template = gap_template and "kind" not in attrs
+    if kind not in {"continuous", "categorical"} and not (gap_template or (
+            native_nearest and "kind" not in attrs and options.get("interpolation") == "nearest")):
         raise tag_error(ValueError(
             f"{context}: polar sampling needs proven kind; declare field_metadata.kind"
         ), "E1603")
@@ -114,6 +119,7 @@ def polar_field_options(metadata, options, conf, context, *, native_nearest=Fals
     validate_mask_options(policy, minimum, conf.polar_weight_zero_tolerance)
     return {
         **({"kind": kind, "kind_origin": origins["kind"]} if kind is not None else {}),
+        **({"gap_template": True} if gap_template else {}),
         "interpolation": "nearest_s2d" if method == "nearest" else method,
         "missing_data_policy": policy, "min_valid_weight_fraction": minimum,
         "sampling": options.get("sampling", "native"),

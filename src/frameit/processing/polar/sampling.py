@@ -214,6 +214,7 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
 
     spacing, documented = [], {}
     for job in jobs:
+        sampled = job["context"][0] in sampled_times
         job["polar_geometry"] = polar_source_geometry(job, conf)
         evidence = job["polar_geometry"]["spacing"]
         spacing.append(max(evidence[axis]["spacing_m"] for axis in ("x", "y")))
@@ -250,19 +251,15 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
                 source, field, record=record) or resolve_field_metadata(
                     record.get("observed_attributes", field["attributes"]), {},
                     f"polar.{name}", temporal_names=record.get("temporal_names", [record["clock"]]))
-            effective = (complete_documented_polar_kind(source, record, metadata)
-                         if polar_kind else metadata)
-            if effective is not metadata and job["context"][0] in sampled_times:
-                metadata = effective
-                record["field_metadata"] = documented[metadata_key(record)] = effective
+            if polar_kind and sampled:
+                effective = complete_documented_polar_kind(source, record, metadata)
+                if effective is not metadata:
+                    metadata = record["field_metadata"] = documented[metadata_key(record)] = effective
             if job["method"] != "polar_input" or name == job["inputs"]["field"]:
                 job["polar_options"][name] = polar_field_options(
-                    effective, {"sampling": job["sampling"], **options},
-                    conf, f"polar.{name}", native_nearest=native_nearest)
-                if effective is not metadata:
-                    # An excluded job can supply a missing-output template, not a kind fact.
-                    job["polar_options"][name].pop("kind")
-                    job["polar_options"][name].pop("kind_origin")
+                    metadata, {"sampling": job["sampling"], **options},
+                    conf, f"polar.{name}", native_nearest=native_nearest,
+                    gap_template=direct and not sampled)
             job["polar_input_metadata"][name] = {
                 "attributes": {key: metadata["attributes"][key] for key in (
                     "units", "kind", "temporal_kind", "standard_name")
