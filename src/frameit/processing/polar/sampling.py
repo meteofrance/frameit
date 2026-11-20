@@ -195,6 +195,16 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
         return (record["field_id"], record["locator"]["path"], record["level"],
                 _sample_context(record))
 
+    grib_processes = {}
+    if source["format"] == "grib":
+        for job in jobs:
+            if job["method"] != "polar_input":
+                continue
+            for record in job["input_binding"]["dependencies"][job["inputs"]["field"]]["records"]:
+                if evidence := record.get("grib_wind10m_kind"):
+                    grib_processes.setdefault(record["field_id"], set()).add(
+                        tuple(evidence["process"].items()))
+
     spacing, documented = [], {}
     for job in jobs:
         job["polar_geometry"] = polar_source_geometry(job, conf)
@@ -219,8 +229,12 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
                 and all(record.get(key) in {"float32", "float64"}
                         for key in ("stored_dtype", "decoded_dtype"))
             )
-            polar_kind = (direct and source["model"] == "mesonh" and source["format"] == "netcdf"
-                          and not (native_nearest and options.get("interpolation") == "nearest"))
+            polar_kind = (direct and not (
+                native_nearest and options.get("interpolation") == "nearest") and (
+                (source["model"], source["format"]) == ("mesonh", "netcdf")
+                or (source["model"], source["format"]) == ("arome", "grib")
+                # Do not grant a fallback to a series with changing process evidence.
+                and len(grib_processes.get(record["field_id"], ())) == 1))
             metadata = record.get("field_metadata") or source_field_metadata(
                 source, field, record=record, polar_kind=polar_kind) or resolve_field_metadata(
                     record.get("observed_attributes", field["attributes"]), {},

@@ -455,6 +455,113 @@ def test_mesonh_kind_fallback_does_not_replace_flags_or_declared_kind(tmp_path, 
     assert not conf.output_dir.exists()
 
 
+def _write_arome_wind10m(path, *, component=2, headers=({}, {})):
+    ec = pytest.importorskip("eccodes")
+    with path.open("wb") as stream:
+        for hour, override in enumerate(headers):
+            handle = ec.codes_grib_new_from_samples("regular_ll_sfc_grib2")
+            try:
+                for key, value in {
+                    "centre": 85, "subCentre": 0, "tablesVersion": 15, "localTablesVersion": 0,
+                    "discipline": 0, "parameterCategory": 2, "parameterNumber": component,
+                    "productDefinitionTemplateNumber": 0, "typeOfFirstFixedSurface": 103,
+                    "scaleFactorOfFirstFixedSurface": 0, "scaledValueOfFirstFixedSurface": 10,
+                    "typeOfSecondFixedSurface": 255, "generatingProcessIdentifier": 204,
+                    "Ni": 7, "Nj": 7, "latitudeOfFirstGridPoint": -20_030_000,
+                    "latitudeOfLastGridPoint": -19_970_000, "longitudeOfFirstGridPoint": 59_970_000,
+                    "longitudeOfLastGridPoint": 60_030_000, "iDirectionIncrement": 10_000,
+                    "jDirectionIncrement": 10_000, "jScansPositively": 1,
+                    "dataDate": 20260101, "dataTime": 0, "forecastTime": hour,
+                    "bitmapPresent": 1, **override,
+                }.items():
+                    ec.codes_set_long(handle, key, value)
+                ec.codes_set_double(handle, "missingValue", 9999.)
+                values = np.tile([1., 9999., 2., 3., 7., 8., 9.], (7, 1))
+                ec.codes_set_values(handle, values.ravel())
+                ec.codes_write(handle, stream)
+            finally:
+                ec.codes_release(handle)
+    return path
+
+
+@pytest.mark.parametrize(("component", "field"), [(2, "u10"), (3, "v10")])
+def test_arome_grib2_wind10m_polar_kind(tmp_path, monkeypatch, component, field):
+    from contextlib import contextmanager
+
+    ec = pytest.importorskip("eccodes")
+    path = _write_arome_wind10m(tmp_path / "wind.grib2", component=component)
+    before = path.read_bytes()
+
+    @contextmanager
+    def guard():
+        with monkeypatch.context() as patch:
+            patch.setattr(ec, "codes_get_values", lambda *_: pytest.fail("scientific payload"))
+            yield
+
+    products = _compare_documented_kind(tmp_path, {
+        "model": "arome", "files": str(path), "variables": {"2d": [field]},
+    }, field, {"latitude": -20., "longitude": 60.0025},
+        "arome.grib2.wind10m.kind.v1", guard=guard)
+    polar = products["polar"]
+    np.testing.assert_allclose(polar[field].isel(radius=0, azimuth=0), [4., 4.], atol=2e-3, rtol=0)
+    assert (polar[f"{field}_interpolation_status"] == 2).any()
+    np.testing.assert_array_equal(polar.time, products["model_grid"].time)
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("header", [
+    {"tablesVersion": 16}, {"localTablesVersion": 1}, {"generatingProcessIdentifier": 254},
+])
+def test_arome_kind_fallback_cannot_use_another_messages_evidence(tmp_path, header):
+    path = _write_arome_wind10m(tmp_path / "wind.grib2", headers=({}, header))
+    source = {"model": "arome", "files": str(path), "variables": {"2d": ["u10"]}}
+    declared = configuration(tmp_path, source={
+        **source, "field_metadata": {"u10": {"kind": "continuous"}}})
+    _, _, plans = bind_sources(declared)
+    assert len(plans["atmosphere"]["records"]) == 2
+    conf = configuration(tmp_path, source=source)
+    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+        bind_sources(conf)
+    assert not conf.output_dir.exists()
+    bind_sources(configuration(tmp_path, source={
+        **source, "time": {"values": ["2026-01-01T00:00:00"]}}))
+
+
+@pytest.mark.parametrize("stage", ["reader", "payload"])
+def test_arome_kind_fallback_rechecks_wire_header_before_payload(tmp_path, monkeypatch, stage):
+    from contextlib import contextmanager
+
+    from frameit.io import grib_utils
+    from frameit.io.loader import DatasetResources
+
+    ec = pytest.importorskip("eccodes")
+    path = _write_arome_wind10m(tmp_path / "wind.grib2", headers=({},))
+    conf = configuration(tmp_path, source={
+        "model": "arome", "files": str(path), "variables": {"2d": ["u10"]}})
+    _, children, plans = bind_sources(conf)
+    source = plans["atmosphere"]
+    binding = children["atmosphere"].source_requests["atmosphere"]["binding"]
+    original = grib_utils._grib_message
+
+    @contextmanager
+    def different_wire(locator):
+        with original(locator) as handle:
+            ec.codes_set_long(handle, "tablesVersion", 16)
+            yield handle
+
+    monkeypatch.setattr(ec, "codes_get_values", lambda *_: pytest.fail("scientific payload"))
+    with DatasetResources() as resources:
+        if stage == "reader":
+            monkeypatch.setattr(grib_utils, "_grib_message", different_wire)
+            with pytest.raises(ValueError, match="header changed after inventory"):
+                grib_utils._selected_grib([path], binding, source, resources)
+        else:
+            _, views = grib_utils._selected_grib([path], binding, source, resources)
+            monkeypatch.setattr(grib_utils, "_grib_message", different_wire)
+            with pytest.raises(ValueError, match="message changed after binding"):
+                next(iter(views["internal"].values())).load(scheduler="synchronous")
+
+
 @pytest.mark.parametrize("guard", ["netcdf", "grib", "fa"])
 @pytest.mark.parametrize("damage", [
     "missing", "pending", "invalid", "unknown", "unbound", "geometry", "method",

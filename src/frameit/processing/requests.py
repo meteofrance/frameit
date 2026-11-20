@@ -887,6 +887,8 @@ def source_field_metadata(source, field, *, record=None, polar_kind=False):
             from frameit.io.netcdf_utils import mnh_wind10m_kind_evidence
 
             evidence = mnh_wind10m_kind_evidence(source, record, result["attributes"])
+        elif source["model"] == "arome" and source["format"] == "grib":
+            evidence = record.get("grib_wind10m_kind")
         if evidence:
             result["attributes"]["kind"] = "continuous"
             result["origins"]["kind"] = "documented_fallback"

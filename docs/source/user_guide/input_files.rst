@@ -51,6 +51,13 @@ does not establish units or vector basis, and excludes wide integer storage.
 It applies only when kind is needed and neither the input nor YAML supplies it.
 Check the matched record and rule in validation and ``run-provenance.yaml``.
 
+For direct native AROME GRIB2 point sampling, the same fallback matches WMO
+wind components 0/2/2 and 0/2/3 in master/local tables 15/0. It requires
+template 4.0, an exact single 10 m surface above ground, and unchanged process
+codes in the selected field series. Gusts, other levels and other templates
+do not match. This checks the wire codes; it does not identify a forecast
+producer or resolve incompatible streams.
+
 File inventory and ambiguity
 -----------------------------
 

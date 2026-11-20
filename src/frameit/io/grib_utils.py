@@ -71,7 +71,43 @@ def _grib_message(locator):
             ec.codes_release(handle)
 
 
-def _grib_header(handle):
+def grib_wind10m_kind_evidence(handle):
+    """Read wire codes for the documented GRIB2 10 m point wind, not decoder aliases."""
+    import eccodes as ec
+
+    def get(key):
+        return ec.codes_get_long(handle, key) if ec.codes_is_defined(handle, key) else None
+
+    wire = {
+        "edition": 2, "discipline": 0, "parameterCategory": 2, "tablesVersion": 15,
+        "localTablesVersion": 0, "productDefinitionTemplateNumber": 0,
+        "typeOfFirstFixedSurface": 103, "typeOfSecondFixedSurface": 255,
+    }
+    if any(get(key) != value for key, value in wire.items()):
+        return None
+    number = get("parameterNumber")
+    scale_key, value_key = "scaleFactorOfFirstFixedSurface", "scaledValueOfFirstFixedSurface"
+    if number not in {2, 3} or any(
+            not ec.codes_is_defined(handle, key) or ec.codes_is_missing(handle, key)
+            for key in (scale_key, value_key)):
+        return None
+    scale, value = get(scale_key), get(value_key)
+    # 10 m must be exact, independent of ecCodes' rounded level or scale convention.
+    if not -1 <= scale <= 8 or value != 10**(scale + 1):
+        return None
+    wire.update({"parameterNumber": number, scale_key: scale, value_key: value})
+    return {
+        "rule": "arome.grib2.wind10m.kind.v1",
+        "reference": "WMO GRIB2 table 4.2 (0/2), master 15; template 4.0; table 4.5",
+        "wire": wire,
+        "process": {key: get(key) for key in (
+            "centre", "subCentre", "significanceOfReferenceTime", "typeOfProcessedData",
+            "typeOfGeneratingProcess", "backgroundGeneratingProcessIdentifier",
+            "generatingProcessIdentifier")},
+    }
+
+
+def _grib_header(handle, *, documented_kind=False):
     """Retain selected-message identity for the later lazy read."""
     from datetime import datetime
 
@@ -88,6 +124,8 @@ def _grib_header(handle):
     header["cycle"] = np.datetime64(datetime(*(
         int(ec.codes_get(handle, key)) for key in (
             "year", "month", "day", "hour", "minute", "second"))), "ns")
+    if documented_kind:
+        header["grib_wind10m_kind"] = grib_wind10m_kind_evidence(handle)
     return header
 
 
@@ -96,7 +134,7 @@ def _grib_payload(locator, shape, header):
     import eccodes as ec
 
     with _grib_message(locator) as handle:
-        if _grib_header(handle) != header:
+        if _grib_header(handle, documented_kind="grib_wind10m_kind" in header) != header:
             raise ValueError(f"{locator['path']}: selected GRIB message changed after binding")
         values = ec.codes_get_values(handle)
         if ec.codes_get(handle, "bitmapPresent"):
@@ -130,8 +168,9 @@ def _selected_grib(files, binding, source, resources):
         locator = record["locator"]
         key = locator_key(locator)
         if key not in originals:
+            kind_evidence = record.get("field_metadata", {}).get("evidence", {}).get("kind")
             with _grib_message(locator) as handle:
-                header = _grib_header(handle)
+                header = _grib_header(handle, documented_kind=kind_evidence is not None)
                 expected = {
                     key.removeprefix("GRIB_"): value for key, value in {
                         **field["attributes"], **record["temporal_metadata"]}.items()}
@@ -141,6 +180,8 @@ def _selected_grib(files, binding, source, resources):
                     md5GridSection=grid["grib_grid_section"],
                     **record.get("ensemble_metadata", {}),
                 )
+                if kind_evidence is not None:
+                    expected["grib_wind10m_kind"] = kind_evidence
                 if any(header.get(key) != value for key, value in expected.items()):
                     raise ValueError(
                         f"{locator['path']}: selected GRIB header changed after inventory")
@@ -291,7 +332,11 @@ def _selected_grib(files, binding, source, resources):
                     coords["time_bounds"] = (("time", "nv"), [bounds[stamp] for stamp in times])
                     coords["time"][2]["bounds"] = "time_bounds"
                 attrs = dict(next(iter(samples.values())).attrs)
-                if metadata := descriptor.get("field_metadata"):
+                metadata = descriptor.get("field_metadata")
+                if all(record.get("field_metadata", {}).get("origins", {}).get("kind")
+                       == "documented_fallback" for record in records):
+                    metadata = records[0]["field_metadata"]
+                if metadata:
                     attrs.update(metadata["attributes"])
                     attrs["frameit_metadata_origins"] = json.dumps(
                         metadata["origins"], sort_keys=True)

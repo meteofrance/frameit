@@ -489,7 +489,7 @@ def _grib_source_inventory(path, source):
     except (ImportError, RuntimeError, OSError) as exc:
         raise tag_error(exc, "E1002")
 
-    from frameit.io.grib_utils import GRIB_PRESSURE_UNITS
+    from frameit.io.grib_utils import GRIB_PRESSURE_UNITS, grib_wind10m_kind_evidence
 
     model, evidence = _source_model(source, [], path, fmt="grib")
     fields, grids, records, horizontal = {}, {}, [], {}
@@ -574,12 +574,14 @@ def _grib_source_inventory(path, source):
                     "stepType", "startStep", "endStep", "stepUnits", "typeOfStatisticalProcessing")
                     if get(key) is not None}
                 bounds = endpoints if get("stepType") != "instant" else None
+                kind_evidence = grib_wind10m_kind_evidence(handle)
                 records.append({
                     "field_id": field_id, "name": name, "grid_id": grid_id,
                     "level": get("level"), "time": valid, "calendar": "proleptic_gregorian",
                     "cycle": cycle, "time_bounds": bounds, "clock": "GRIB_reference_plus_endStep",
                     "temporal_metadata": temporal, "native_axes": native_axes,
                     "ensemble_metadata": ensemble,
+                    **({"grib_wind10m_kind": kind_evidence} if kind_evidence else {}),
                     "locator": {"format": "grib", "path": str(path), "message_index": index,
                                 "offset": int(ec.codes_get_message_offset(handle)),
                                 "length": int(ec.codes_get_message_size(handle))}})
