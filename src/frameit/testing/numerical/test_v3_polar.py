@@ -331,6 +331,48 @@ def test_product_selection_requires_a_declared_source_and_unique_native_field(tm
     assert not (tmp_path / "output").exists()
 
 
+@pytest.mark.parametrize("case", ["literal", "collision", "duplicate"])
+def test_product_only_dotted_references_resolve_one_native_field(tmp_path, case):
+    ds = scene(hours=(0,)).assign_coords(level=("level", [42.], {"axis": "Z", "units": "m"}))
+    ds["anchor"] = ds.q.expand_dims(level=ds.level, axis=1)
+    if case != "duplicate":
+        ds["level.Q"] = ds.q.copy(data=np.full(ds.q.shape, 1030.))
+    if case != "literal":
+        ds["Q"] = ds.anchor.copy(data=np.full(ds.anchor.shape, 130.))
+    ds.drop_vars("q").to_netcdf(tmp_path / "input.nc")
+    conf = configuration(tmp_path, source={"variables": {"3d": {"level": {"names": ["anchor"]}}}},
+                         products={"polar": {"radius_km": 2.5, "azimuth_count": 8,
+                             "fields": {"atmosphere": (
+                                 ["Q", "level.Q"] if case == "duplicate" else ["level.Q"])}}})
+    if case != "literal":
+        message = "distinct fields.*level.Q" if case == "collision" else "duplicate field request"
+        with pytest.raises(ValueError, match=message):
+            bind_sources(conf)
+        assert not conf.output_dir.exists()
+        return
+    result = execute_simulation(conf)
+    with xr.open_dataset(result.products[0]["path"]) as saved:
+        assert "level" not in saved["level.Q"].dims
+        np.testing.assert_allclose(saved["level.Q"], 1030., atol=1e-10)
+
+
+def test_product_only_grib_wind10m_does_not_use_3d_height_selector(tmp_path):
+    from frameit.testing.numerical.test_v3_grib_reads import write_messages
+
+    surface = _write_arome_wind10m(tmp_path / "surface.grib2", headers=({},))
+    upper = write_messages(tmp_path / "height.grib2", [{"group": "heightAboveGround", "level": 20}])
+    conf = configuration(tmp_path, source={"model": "arome", "files": list(map(str, [surface, upper])),
+        "variables": {"3d": {"heightAboveGround": {"names": ["u"], "levels": {"values": [20]}}}}},
+        products={"model_grid": {"fields": {"atmosphere": ["u10"]}}})
+    result = execute_simulation(conf)
+    with xr.open_dataset(result.products[0]["path"]) as saved:
+        assert saved.u10.dims[0] == "time" and saved.u10.shape == (1, 7, 7)
+        assert saved.u10.values[0, 3, 3] == 3.
+    record, = conf.source_requests["atmosphere"]["binding"]["records"]
+    assert record["level"] == 10
+    assert conf.input_files == [str(surface)]
+
+
 def _compare_documented_kind(tmp_path, source, field, center, rule, *, guard=None):
     outputs = {}
     products = {"model_grid": True, "polar": {"radius_km": 2.5, "azimuth_count": 8}}
@@ -453,6 +495,74 @@ def test_mesonh_kind_fallback_does_not_replace_flags_or_declared_kind(tmp_path, 
     assert options["kind_origin"] == ("input" if observed else "declaration")
     assert options["kind"] == "categorical" and options["interpolation"] == "nearest_s2d"
     assert not conf.output_dir.exists()
+
+
+def test_kind_fallback_leaves_known_kind_and_clock_resolution_unchanged(tmp_path):
+    ds = scene(hours=(0,)).rename(time="valid_time")
+    ds.q.attrs.update(GRIB_stepType="max", cell_methods="time: maximum")
+    ds.to_netcdf(tmp_path / "input.nc")
+    conf = configuration(tmp_path)
+    result = execute_simulation(conf)
+    with xr.open_dataset(result.products[0]["path"]) as saved:
+        assert saved.q.attrs["kind"] == "continuous"
+        assert saved.q.attrs["cell_methods"] == "time: maximum"
+        np.testing.assert_array_equal(saved.time, ds.valid_time)
+
+
+@pytest.mark.parametrize("kept_hour", [0, 1])
+def test_documented_kind_stays_on_polar_associated_records(tmp_path, kept_hour):
+    ds = scene(hours=(0, 1)).rename(q="UM10")
+    ds.UM10.attrs = {"units": "m s-1"}
+    ds.to_netcdf(tmp_path / "input.nc")
+    ocean = scene(hours=(kept_hour,)).rename(
+        time="time_counter", nj="y", ni="x", latitude="nav_lat", longitude="nav_lon")
+    ocean.to_netcdf(tmp_path / "ocean.nc")
+    conf = configuration(tmp_path, sources={
+        "atmosphere": {"model": "mesonh", "files": str(tmp_path / "input.nc"),
+                       "variables": {"2d": ["UM10"]}},
+        "ocean": {"model": "nemo", "files": str(tmp_path / "ocean.nc"),
+                  "variables": {"2d": ["q"]}},
+    }, products={"model_grid": True, "polar": {"radius_km": 2.5, "azimuth_count": 8,
+        "fields": {"atmosphere": ["UM10"]}}}, region={
+            "center": {"latitude": -20., "longitude": 60.},
+            "sources_coupling_time_association": "common"})
+    _, children, _ = bind_sources(conf)
+    binding = children["atmosphere"].source_requests["atmosphere"]["binding"]
+    records = binding["products"]["model_grid"]["UM10"]["records"]
+    assert [("field_metadata" in r) for r in records] == [kept_hour == 0, kept_hour == 1]
+    result = execute_simulation(conf)
+    for product in (p for p in result.products if p["source"] == "atmosphere"):
+        with xr.open_dataset(product["path"]) as saved:
+            if product["role"] == "model_grid":
+                assert "kind" not in saved.UM10.attrs
+                np.testing.assert_array_equal(saved.time, ds.time)
+            else:
+                assert saved.UM10.attrs["kind"] == "continuous"
+                np.testing.assert_array_equal(saved.time, ds.time.isel(time=[kept_hour]))
+
+
+def test_absent_polar_sample_does_not_report_producer_kind_evidence(tmp_path):
+    ds = scene(hours=(0, 1))
+    ds.to_netcdf(tmp_path / "input.nc")
+    late = ds.isel(time=[1]).rename(q="UM10")
+    late.UM10.attrs = {"units": "m s-1"}
+    late.to_netcdf(tmp_path / "later.nc")
+    conf = configuration(tmp_path, source={
+        "files": [str(tmp_path / name) for name in ("input.nc", "later.nc")],
+        "variables": {"2d": ["q", "UM10"]}, "allow_initial_gaps": ["UM10"],
+    })
+    result = execute_simulation(conf)
+    with xr.open_dataset(result.products[0]["path"]) as saved:
+        assert saved.UM10.isel(time=0).isnull().all()
+        np.testing.assert_array_equal(saved.UM10_interpolation_status.isel(time=0), 2)
+    provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+    absent, observed = [r for r in provenance["sources"]["atmosphere"]["polar"]["records"]
+                        if r["field"] == "UM10"]
+    assert absent["source_record_absent"]
+    assert "evidence" not in absent["input_metadata"].get("UM10", {})
+    assert "kind_origin" not in absent["options"]["UM10"]
+    assert observed["input_metadata"]["UM10"]["evidence"]["kind"]["rule"] == (
+        "mesonh.diag.wind10m.kind.v1")
 
 
 def _write_arome_wind10m(path, *, component=2, headers=({}, {})):
@@ -610,13 +720,17 @@ def test_croco_history_zeta_polar_kind_without_yaml(tmp_path, monkeypatch):
     assert "field_metadata" not in record
 
 
-@pytest.mark.parametrize("problem", ["label", "later_layout", "split_mask"])
+@pytest.mark.parametrize("problem", ["label", "later_layout", "split_mask", "clock", "transform"])
 def test_croco_zeta_fallback_requires_selected_history_and_its_own_mask(tmp_path, problem):
     ds = _croco_surface_scene()
     path = tmp_path / "history.nc"
     source = {"model": "croco", "files": [str(path)], "variables": {"2d": ["zeta"]}}
     if problem == "label":
         ds.zeta.attrs["standard_name"] = "sea_surface_height_above_geoid"
+    elif problem == "clock":
+        ds = ds.drop_vars("time")
+    elif problem == "transform":
+        ds.attrs["Vtransform"] = "1"
     elif problem == "later_layout":
         later = ds.isel(time=[1])
         later["zeta"] = later.zeta.transpose("eta_rho", "xi_rho", "time")

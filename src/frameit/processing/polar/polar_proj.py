@@ -200,7 +200,7 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             settings.polar_min_valid_weight_fraction = options["min_valid_weight_fraction"]
             value = prepared[name]
             prepared_dtype = str(value.dtype)
-            promote = (options["interpolation"] == "bilinear" and options["kind"] == "continuous"
+            promote = (options["interpolation"] == "bilinear" and options.get("kind") == "continuous"
                        and np.issubdtype(value.dtype, np.integer))
             if promote:
                 # The shared operator casts its numerator back to the evaluation dtype.
@@ -335,6 +335,14 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
         if output_formatter is not None:
             result = output_formatter(result, job)
         results.setdefault(job["name"], []).append(result)
+        input_metadata = job["polar_input_metadata"]
+        if absent and (inferred := {name for name, value in options.items()
+                                    if value.get("kind_origin") == "documented_fallback"}):
+            input_metadata = {name: value for name, value in input_metadata.items()
+                              if name not in inferred}
+            options = {name: {k: v for k, v in value.items()
+                              if name not in inferred or k not in {"kind", "kind_origin"}}
+                       for name, value in options.items()}
         reports.append({
             "field": job["name"], "source_time": str(stamp),
             "method": job["method"], "inputs": job["inputs"],
@@ -342,11 +350,11 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             "native_axes": dict(job["context"][2]),
             "result_units": job["result_units"],
             "center_time": str(associations[stamp]), "grid_id": job["grid_id"],
-            "geometry": info["spacing"], "input_metadata": job["polar_input_metadata"],
+            "geometry": info["spacing"], "input_metadata": input_metadata,
             "levels": {key: vertical[key] for key in (
                 "dimension", "source_native_indices", "values", "units", "units_origin")}
             if vertical else None,
-            "options": job["polar_options"], "regrid_plan_signatures": signatures,
+            "options": options, "regrid_plan_signatures": signatures,
             "numeric_types": numeric_types,
             "source_finite_footprints": footprints,
             "rotation_coordinate": job["rotation_coordinate"],

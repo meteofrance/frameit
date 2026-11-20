@@ -1519,7 +1519,8 @@ def _variable_fields(variables):
 def field_selection(request, reference):
     """Keep a request key separate from its native field name and local selector."""
     group, separator, name = reference.partition(".")
-    if separator and group in request.get("groups", {}):
+    if (separator and group in request.get("groups", {})
+            and reference not in request.get("literal_product_fields", ())):
         return name, group, request["groups"][group].get("levels", {})
     return reference, None, request.get("levels", {})
 

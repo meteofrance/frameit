@@ -766,14 +766,15 @@ def native_field_group(source, field, record=None):
     return axis["dimension"] if axis else None
 
 
-def field_candidates(source, request, reference, records_by_name):
+def field_candidates(source, request, reference, records_by_name, *, include_literal=False):
     """Return original inventory positions, restricted only by explicit native identity."""
     name, group, _ = field_selection(request, reference)
     candidates = records_by_name.get(name, [])
     if group is None:
         return candidates
-    return [(index, record) for index, record in candidates
-            if native_field_group(source, source["fields"][record["field_id"]], record) == group]
+    qualified = [(index, record) for index, record in candidates
+                 if native_field_group(source, source["fields"][record["field_id"]], record) == group]
+    return qualified + records_by_name.get(reference, []) if include_literal else qualified
 
 
 def resolve_field_metadata(attributes, declaration, context, *, temporal_names=("time",)):
@@ -849,8 +850,8 @@ def source_field_declaration(source, field, *, record=None):
     return metadata
 
 
-def source_field_metadata(source, field, *, record=None, polar_kind=False):
-    """Resolve selected metadata; documented kind is opt-in by the bound consumer."""
+def source_field_metadata(source, field, *, record=None):
+    """Resolve only this selected field's declaration and admitted SEA metadata."""
     declaration = source.get("declaration", {})
     name, attrs = field["name"], field["attributes"]
     if record is not None:
@@ -863,7 +864,7 @@ def source_field_metadata(source, field, *, record=None, polar_kind=False):
         if name in SURFEX_FIELDS:
             attrs = surfex_metadata(source, {**field, "attributes": attrs})
             interpreted = True
-    if not metadata and not interpreted and not polar_kind:
+    if not metadata and not interpreted:
         return None
     temporal_names = {"time"}
     records = [record] if record is not None else source["record_inventory"]
@@ -881,23 +882,29 @@ def source_field_metadata(source, field, *, record=None, polar_kind=False):
         temporal_names=temporal_names)
     if interpreted:
         result["origins"]["units"] = attrs["surfex_units_source"]
-    if polar_kind and "kind" not in result["attributes"]:
-        evidence = None
-        if source["model"] == "mesonh" and source["format"] == "netcdf":
-            from frameit.io.netcdf_utils import mnh_wind10m_kind_evidence
-
-            evidence = mnh_wind10m_kind_evidence(source, record, result["attributes"])
-        elif source["model"] == "arome" and source["format"] == "grib":
-            evidence = record.get("grib_wind10m_kind")
-        elif source["model"] == "croco" and source["format"] == "netcdf":
-            from frameit.io.croco_utils import croco_zeta_kind_evidence
-
-            evidence = croco_zeta_kind_evidence(source, record, result["attributes"])
-        if evidence:
-            result["attributes"]["kind"] = "continuous"
-            result["origins"]["kind"] = "documented_fallback"
-            result["evidence"] = {"kind": evidence}
     return result
+
+
+def complete_documented_polar_kind(source, record, metadata):
+    """Fill only kind, without reinterpreting any existing record metadata."""
+    attrs = metadata["attributes"]
+    if "kind" in attrs:
+        return metadata
+    adapter = source["model"], source["format"]
+    evidence = None
+    if adapter == ("mesonh", "netcdf"):
+        from frameit.io.netcdf_utils import mnh_wind10m_kind_evidence
+
+        evidence = mnh_wind10m_kind_evidence(source, record, attrs)
+    elif adapter == ("arome", "grib"):
+        evidence = record.get("grib_wind10m_kind")
+    elif adapter == ("croco", "netcdf"):
+        from frameit.io.croco_utils import croco_zeta_kind_evidence
+
+        evidence = croco_zeta_kind_evidence(source, record, attrs)
+    return (dict(metadata, attributes=dict(attrs, kind="continuous"),
+                 origins=dict(metadata["origins"], kind="documented_fallback"),
+                 evidence={"kind": evidence}) if evidence else metadata)
 
 
 def sea_interpretation(records):
@@ -1180,6 +1187,8 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
     all_by_name = {}
     for i, record in enumerate(pool):
         all_by_name.setdefault(record["name"], []).append((i, record))
+    declared = {name for names in request["fields"].values() for name in names}
+    polar_native_ids = {}
     for (product, name), operation in active.items():
         wind = operation["method"] in {"wind_speed", "radial_wind", "tangential_wind"}
         loc = f"sources.{source['name']}.derived.{name}" if wind else name
@@ -1217,6 +1226,13 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
             if len({r["field_id"] for _, r in candidates}) != 1:
                 raise ValueError(
                     f"{loc}: input {field_name} missing or ambiguous in selected inventory")
+        if product == "polar" and operation["method"] == "polar_input":
+            field_id = by_name[name][0][1]["field_id"]
+            other = polar_native_ids.setdefault(field_id, name)
+            if other != name and {name, other} - declared:
+                raise tag_error(ValueError(
+                    f"polar.{name}: duplicate field request by resolved identity ({other}, {name})"
+                ), "E1302")
         if croco:
             native_pair = tuple(source["fields"][by_name[inputs[component]][0][1]["field_id"]][
                 "name"] if component in inputs else None for component in ("u", "v"))

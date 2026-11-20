@@ -678,6 +678,16 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     sequence, dim=concat_dim, data_vars="minimal" if static else "all",
                     coords=support_coords or "minimal",
                     compat="equals", join="exact", combine_attrs="override"))
+                if export_support and len(sequence) > 1:
+                    records = (r for r in descriptor["records"] if r["grid_id"] == grid_id)
+                    origins = next(records).get("field_metadata", {}).get("origins", {})
+                    if origins.get("kind") == "documented_fallback" and any(
+                            r.get("field_metadata", {}).get("origins", {}).get("kind")
+                            != "documented_fallback" for r in records):
+                        # A variable-wide attribute cannot describe only some native samples.
+                        combined[name].attrs.pop("kind", None)
+                        combined[name].attrs["frameit_metadata_origins"] = json.dumps(
+                            {k: v for k, v in origins.items() if k != "kind"}, sort_keys=True)
                 if not export_support and (attributes := tracker_support.get("projection_attributes")):
                     for key, value in attributes.items():
                         if any(key in ds.attrs and np.asarray(ds.attrs[key]).item() != value

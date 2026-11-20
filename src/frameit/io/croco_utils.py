@@ -57,7 +57,7 @@ def croco_zeta_kind_evidence(source, record, attrs):
     rho = ["eta_rho", "xi_rho"]
     grid = source["native_grids"][record["grid_id"]]["coordinates"]
     if (record["locator"]["variable"] != "zeta"
-            or record.get("native_dimensions") != ["time", *rho]
+            or not record.get("croco_zeta_history")
             or not numeric_kind_support(record)
             or any(grid.get(name, {}).get("dimensions") != rho
                    for name in ("lat_rho", "lon_rho"))):
@@ -69,7 +69,7 @@ def croco_zeta_kind_evidence(source, record, attrs):
     return {
         "rule": "croco.history.zeta.kind.v1",
         "reference": "CROCO v2.1.3 init_scalars.F and def_his.F, ab63b583c9f9e1faceb838e7063b71f1ab9bd56f",
-        "native_variable": "zeta", "dimensions": record["native_dimensions"],
+        "native_variable": "zeta", "dimensions": ["time", *rho], "Vtransform": 2,
         "stored_dtype": record["stored_dtype"], "static_mask": "mask_rho in the same history file",
     }
 
@@ -337,8 +337,7 @@ def validate_bound_support(source, binding, *, engine, resources=None):
         validate_croco_coefficients(static_snapshots(), support)
 
 
-def prepare_croco(ds: xr.Dataset, conf, *, native_axes=None) -> xr.Dataset:
-    """Validate native rho scalars and retain explicit sigma formula dependencies."""
+def _require_history_clock_and_transform(ds):
     if ds.attrs.get("type") != "CROCO history file":
         raise ValueError("CROCO currently requires the declared history file family")
     if "time" not in ds or ds.time.dims != ("time",) or not np.issubdtype(ds.time.dtype, np.datetime64):
@@ -366,6 +365,24 @@ def prepare_croco(ds: xr.Dataset, conf, *, native_axes=None) -> xr.Dataset:
         valid = False
     if not valid:
         raise ValueError("CROCO requires consistent explicit Vtransform=2 declarations")
+
+
+def croco_zeta_history_support(ds):
+    """Check only support owned by a potential kind fallback, not scientific values."""
+    if ("zeta" not in ds or ds.zeta.dims != ("time", "eta_rho", "xi_rho")
+            or ds.zeta.attrs.keys() & {"kind", "flag_values", "flag_masks", "flag_meanings"}):
+        return False
+    try:
+        _require_history_clock_and_transform(ds[
+            [name for name in ("time", "scrum_time", "Vtransform") if name in ds]])
+    except ValueError:
+        return False
+    return True
+
+
+def prepare_croco(ds: xr.Dataset, conf, *, native_axes=None) -> xr.Dataset:
+    """Validate native rho scalars and retain explicit sigma formula dependencies."""
+    _require_history_clock_and_transform(ds)
     result = ds.copy(deep=False)
     for axis in ("s_rho", "s_w"):
         if axis not in ds.dims:

@@ -31,6 +31,7 @@ from frameit.io.loader import (
     resolve_input_files,
 )
 from frameit.processing.requests import (
+    _field_axis,
     bind_requests,
     field_candidates,
     native_field_group,
@@ -310,7 +311,7 @@ def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None):
     return _metadata_id("grid_", grid), grid
 
 
-def _netcdf_inventory(path, source, resources):
+def _netcdf_inventory(path, source, resources, *, check_croco_zeta=False):
     from frameit.io.grib_utils import normalize_isobaric_coordinates
     from frameit.io.netcdf_utils import mnh_altitude_terms
 
@@ -339,6 +340,11 @@ def _netcdf_inventory(path, source, resources):
         raise
     except ValueError as exc:
         raise tag_error(exc, "E1401")
+    zeta_history = False
+    if model == "croco" and check_croco_zeta:
+        from frameit.io.croco_utils import croco_zeta_history_support
+
+        zeta_history = croco_zeta_history_support(ds)
     temporal_dims = {dim for sample in samples for dim in sample["indexers"]}
     altitude_axes = {name: terms for name in ("level", "level_w") if model == "mesonh"
                      and name in ds.coords
@@ -465,8 +471,7 @@ def _netcdf_inventory(path, source, resources):
                 "field_id": field_id, "name": name, "grid_id": grid_id, "level": None,
                 "stored_dtype": np.dtype(var.encoding.get("dtype", var.dtype)).name,
                 "decoded_dtype": var.dtype.name,
-                **({"native_dimensions": list(var.dims)}
-                   if model == "croco" and name == "zeta" else {}),
+                **({"croco_zeta_history": True} if zeta_history and name == "zeta" else {}),
                 "temporal_metadata": {k: var.attrs[k] for k in (
                     "cell_methods", "GRIB_stepType", "online_operation",
                     "interval_operation", "interval_write")
@@ -860,6 +865,9 @@ def _incomplete_mnh_altitude(fields, grids, selected, records, candidates):
 def inventory_source(conf, name, *, resources=None):
     """Populate a v3 source's metadata handoff without binding or processing fields."""
     source = conf.sources[name]
+    request = conf.source_requests[name]
+    check_croco_zeta = ("zeta" in request["exports"].get("polar", [])
+                        and "kind" not in source.get("field_metadata", {}).get("zeta", {}))
     entries, excluded, overlaps, errors = _source_file_entries(source, name)
     fields, grids, records, facts = {}, {}, [], []
     altitude_height_terms = set()
@@ -890,7 +898,7 @@ def inventory_source(conf, name, *, resources=None):
                     if dependency_error:
                         raise PreflightError([dependency_error])
                 if fmt == "netcdf":
-                    info = _netcdf_inventory(path, source, owned)
+                    info = _netcdf_inventory(path, source, owned, check_croco_zeta=check_croco_zeta)
                 elif fmt == "grib":
                     info = _grib_source_inventory(path, source)
                 else:
@@ -948,7 +956,7 @@ def inventory_source(conf, name, *, resources=None):
     fmt, model, physical, profile = next(iter(profiles))
     if source.get("interpretation") and (fmt != "netcdf" or model != "mesonh"):
         raise ValueError(f"sources.{name}.interpretation requires Meso-NH NetCDF")
-    request = conf.source_requests[name]
+    request.pop("literal_product_fields", None)
     needed = {field for exports in request["exports"].values() for field in exports
               if field not in request["derived"]}
     product_only = needed.difference(*request["fields"].values())
@@ -992,7 +1000,9 @@ def inventory_source(conf, name, *, resources=None):
     by_name = {}
     for index, record in enumerate(records):
         by_name.setdefault(record["name"], []).append((index, record))
-    candidates = {ref: field_candidates(selection_source, request, ref, by_name) for ref in needed}
+    candidates = {ref: field_candidates(
+        selection_source, request, ref, by_name, include_literal=ref in product_only)
+        for ref in needed}
     for ref, group in tracker_groups.items():
         if ref not in declared_needed:
             candidates[ref] = [(i, r) for i, r in candidates[ref]
@@ -1061,12 +1071,17 @@ def inventory_source(conf, name, *, resources=None):
                           "use an explicit vertical group; qualification must identify "
                             "exactly one field. For files in the same group, "
                             "select or regenerate a consistent sequence")
-        elif (matching and grouped_levels and field_name in product_only
-              and field_selection(request, field_name)[1] is None):
+        elif matching and field_name in product_only:
             record = matching[0]
-            group = native_field_group(selection_source, fields[record["field_id"]], record)
-            if group in grouped_levels:
-                errors.append(f"sources.{name}: use {group}.{field_name} to retain group levels")
+            if record["name"] == field_name and field_selection(request, field_name)[1] is not None:
+                request.setdefault("literal_product_fields", []).append(field_name)
+            if grouped_levels and field_selection(request, field_name)[1] is None:
+                field = fields[record["field_id"]]
+                group = native_field_group(selection_source, field, record)
+                if group in grouped_levels and (fmt != "grib" or _field_axis(
+                        selection_source, field, record, by_name) is not None):
+                    errors.append(
+                        f"sources.{name}: use {group}.{field_name} to retain group levels")
         available = {r["time"] for r in matching}
         from frameit.processing.requests import initial_gap_times
 
@@ -1146,6 +1161,9 @@ def inventory_source(conf, name, *, resources=None):
             "dependency_pending": "method dependency binding must decide relevance",
         }[entry["status"]]
     result = conf.simulation_parameter["request_plan"]["sources"][name]
+    result["requests"].pop("literal_product_fields", None)
+    if "literal_product_fields" in request:
+        result["requests"]["literal_product_fields"] = list(request["literal_product_fields"])
     result.update(model=model, physical_type=physical, format=fmt, profile=profile,
                   files=selected_paths, file_inventory=entries, excluded_files=excluded,
                   overlapping_patterns=overlaps, fields=fields, native_grids=grids,

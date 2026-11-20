@@ -154,13 +154,19 @@ def bind_polar_plan(source, request, binding, conf, *, radial_step_km=None):
 def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
     from frameit.processing.polar.contracts import polar_field_options, polar_source_geometry
     from frameit.processing.polar.polar_proj import require_polar_backend
-    from frameit.processing.requests import _sample_context, resolve_field_metadata, source_field_metadata
+    from frameit.processing.requests import (
+        _sample_context,
+        complete_documented_polar_kind,
+        resolve_field_metadata,
+        source_field_metadata,
+    )
 
     if not source.get("region", {}).get("associations"):
         binding["deferred_checks"].append(
             "Polar centre/time associations and regional geometry require method planning.")
         return
     require_polar_backend()
+    sampled_times = {a["source_time"] for a in source["region"]["associations"]}
     jobs = [job for job in binding["operation_plans"] if job["product"] == "polar"]
     components = [job for job in jobs if job["method"] in {"radial_wind", "tangential_wind"}]
     if components:
@@ -240,15 +246,22 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
                 masks = job["input_binding"]["dependencies"]["mask_rho"]["records"]
                 polar_kind = len(masks) == 1 and masks[0]["locator"]["path"] == record["locator"]["path"]
             metadata = record.get("field_metadata") or source_field_metadata(
-                source, field, record=record, polar_kind=polar_kind) or resolve_field_metadata(
+                source, field, record=record) or resolve_field_metadata(
                     record.get("observed_attributes", field["attributes"]), {},
                     f"polar.{name}", temporal_names=record.get("temporal_names", [record["clock"]]))
-            if "evidence" in metadata:
-                record["field_metadata"] = documented[metadata_key(record)] = metadata
+            effective = (complete_documented_polar_kind(source, record, metadata)
+                         if polar_kind else metadata)
+            if effective is not metadata and job["context"][0] in sampled_times:
+                metadata = effective
+                record["field_metadata"] = documented[metadata_key(record)] = effective
             if job["method"] != "polar_input" or name == job["inputs"]["field"]:
                 job["polar_options"][name] = polar_field_options(
-                    metadata, {"sampling": job["sampling"], **options},
+                    effective, {"sampling": job["sampling"], **options},
                     conf, f"polar.{name}", native_nearest=native_nearest)
+                if effective is not metadata:
+                    # An excluded job can supply a missing-output template, not a kind fact.
+                    job["polar_options"][name].pop("kind")
+                    job["polar_options"][name].pop("kind_origin")
             job["polar_input_metadata"][name] = {
                 "attributes": {key: metadata["attributes"][key] for key in (
                     "units", "kind", "temporal_kind", "standard_name")

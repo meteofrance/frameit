@@ -415,8 +415,9 @@ Without a product ``fields`` map, field products use source ``variables`` and
 ``derived``. With a map, list exact input fields or defined derived results by
 source. An input field does not need to be repeated in ``variables``. Input-aware
 validation rejects missing or ambiguous fields. Use a qualified name to keep
-the levels declared for its group. Unlisted fields are not exported; required
-internal inputs can still be read.
+the levels declared for its group. A product-only dotted name fails if it
+matches both a literal input name and a qualified group field. Unlisted fields
+are not exported; required internal inputs can still be read.
 
 Polar geometry
 ~~~~~~~~~~~~~~~

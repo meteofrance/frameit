@@ -48,8 +48,10 @@ mass grid. It matches the `Meso-NH 6.0 DIAG definition
 <https://github.com/JorisPianezze/mesonh_doc/blob/061c0f29ea33fc374b318d77efcec2d29a12b12a/docs/source/documentation/users_guide/executables_namelists/namelists/nam_diag_default.rst>`_.
 A supplied standard name must describe a horizontal wind component. The fallback
 does not establish units or vector basis, and excludes wide integer storage.
-It applies only when kind is needed and neither the input nor YAML supplies it.
-Check the matched record and rule in validation and ``run-provenance.yaml``.
+It applies only to records selected for polar sampling when neither the input
+nor YAML supplies the needed kind. Check the matched record and rule in
+validation and ``run-provenance.yaml``. A native export spanning matched and
+unmatched records does not label the whole variable with the fallback.
 
 For direct native AROME GRIB2 point sampling, the same fallback matches WMO
 wind components 0/2/2 and 0/2/3 in master/local tables 15/0. It requires

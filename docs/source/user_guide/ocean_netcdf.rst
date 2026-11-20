@@ -345,7 +345,8 @@ per-field interpolation support/quality variables instead.
 
 Direct native polar sampling can use ``kind: continuous`` for the numeric
 history field ``zeta(time, eta_rho, xi_rho)`` when kind is unstated. The
-selected file must supply rho geography and its own static ``mask_rho``.
+selected file must supply rho geography, native ``time(time)``,
+``Vtransform=2`` and its own static ``mask_rho``.
 If present, the standard name must agree with ``sea_surface_height`` or
 ``sea_surface_height_above_mean_sea_level``. This matches the `CROCO v2.1.3
 history writer

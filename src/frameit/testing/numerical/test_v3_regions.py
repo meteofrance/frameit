@@ -627,6 +627,7 @@ def test_preceding_hour_rejects_grib_atmosphere_before_binding_or_payloads(tmp_p
     ocean.to_netcdf(tmp_path / "water.nc", mode="w")
     conf = configuration(tmp_path, sources, region={
         "center": {"latitude": -20, "longitude": 60},
+        "width_km": {"x": 2, "y": 2},
         "sources_coupling_time_association": "preceding_hour"})
     reads = []
     original = ec.codes_get_values
