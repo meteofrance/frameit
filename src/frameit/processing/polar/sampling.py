@@ -236,8 +236,9 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
                 and all(record.get(key) in {"float32", "float64"}
                         for key in ("stored_dtype", "decoded_dtype"))
             )
-            polar_kind = (direct and adapter == ("mesonh", "netcdf")
-                          and not (native_nearest and options.get("interpolation") == "nearest"))
+            polar_kind = (
+                direct and adapter in {("mesonh", "netcdf"), ("nemo", "netcdf")}
+                and not (native_nearest and options.get("interpolation") == "nearest"))
             if direct and adapter == ("arome", "grib"):
                 # Do not grant a fallback to a series with changing process evidence.
                 polar_kind = len(grib_processes.get(record["field_id"], ())) == 1

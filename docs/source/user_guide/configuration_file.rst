@@ -447,10 +447,10 @@ Proven continuous fields default to bilinear interpolation; proven categorical
 fields use nearest-neighbour. Explicit ``interpolation: nearest`` does not
 require ``kind`` for direct 32- or 64-bit floating-point fields from Meso-NH or
 AROME NetCDF sampled without preparation, conversion or rotation. Otherwise,
-kind must be known. For direct native polar sampling of documented Meso-NH and
-AROME wind records and CROCO ``zeta``, FrameIt can supply ``continuous`` if the
-input and YAML both leave kind unstated. See :doc:`input_files` for the matches
-and limits.
+kind must be known. If the input and YAML both leave kind unstated, FrameIt
+supplies ``continuous`` for the direct native records matched in :doc:`input_files`.
+Input-aware validation reports each affected field with :ref:`w1603`. Unmatched
+fields still need a known kind.
 ``missing_data_policy`` defaults to ``strict``.
 Explicit ``renormalize`` requires ``min_valid_weight_fraction``. All-missing and
 unmapped points stay missing; real zeroes stay zero.

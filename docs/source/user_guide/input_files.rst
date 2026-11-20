@@ -42,16 +42,20 @@ such as CROCO masks and rotation angles. It does not prove decode-time scaling
 or scientific suitability.
 See :doc:`configuration_file` and :doc:`../task_guides/field_selection`.
 
+When a direct native polar field needs a kind, FrameIt uses observed kind or
+categorical flags, then a valid YAML declaration. If none supplies kind, the
+record matches below establish ``continuous``. Input-aware validation shows
+:ref:`w1603` once per affected source and field. See the matched records and
+their evidence in ``run-provenance.yaml``. Native-only copies do not use these
+rules. A concurrent native export spanning matched and unmatched records
+does not label the whole variable with the fallback.
+
 For direct native polar sampling of Meso-NH NetCDF, FrameIt can use
 ``kind: continuous`` for numeric ``UM10`` or ``VM10`` on the native ``nj``/``ni``
 mass grid. It matches the `Meso-NH 6.0 DIAG definition
 <https://github.com/JorisPianezze/mesonh_doc/blob/061c0f29ea33fc374b318d77efcec2d29a12b12a/docs/source/documentation/users_guide/executables_namelists/namelists/nam_diag_default.rst>`_.
 A supplied standard name must describe a horizontal wind component. The fallback
 does not establish units or vector basis, and excludes wide integer storage.
-It applies only to records selected for polar sampling when neither the input
-nor YAML supplies the needed kind. Check the matched record and rule in
-validation and ``run-provenance.yaml``. A native export spanning matched and
-unmatched records does not label the whole variable with the fallback.
 
 For direct native AROME GRIB2 point sampling, the same fallback matches WMO
 wind components 0/2/2 and 0/2/3 in master/local tables 15/0. It requires
@@ -61,8 +65,9 @@ do not match. This checks the wire codes; it does not identify a forecast
 producer or resolve incompatible streams.
 
 CROCO ``zeta`` uses a separate history-writer match with native rho geography
-and a same-file static mask. See :doc:`ocean_netcdf`. There is no corresponding
-fallback for NEMO ``zos``.
+and a same-file static mask. NEMO surface scalars, including ``zos``, use
+the observed CF sea-surface-height definition and compatible length units,
+not the short name. See :doc:`ocean_netcdf` for the ocean rules.
 
 File inventory and ambiguity
 -----------------------------

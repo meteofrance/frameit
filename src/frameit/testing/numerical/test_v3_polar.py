@@ -382,19 +382,24 @@ def _compare_documented_kind(tmp_path, source, field, center, rule, *, guard=Non
                 {field: {"kind": "continuous"}} if origin == "declaration" else {}),
         }, region={"center": center}, products=products, output_name=origin)
         if guard is None:
-            _, children, _ = bind_sources(conf)
+            report, children, _ = bind_sources(conf)
         else:
             with guard():
-                _, children, _ = bind_sources(conf)
+                report, children, _ = bind_sources(conf)
         assert not conf.output_dir.exists()
+        warnings = [w for w in report["warnings"] if w.startswith("[W1603]")]
         binding = children["atmosphere"].source_requests["atmosphere"]["binding"]
         jobs = [job for job in binding["operation_plans"] if job["product"] == "polar"]
         assert jobs and all(job["polar_options"][field]["kind_origin"] == origin for job in jobs)
         if origin == "documented_fallback":
+            warning, = warnings
+            assert f"sources.atmosphere.{field}" in warning and rule in warning
             for descriptor in (binding["dependencies"][field],
                                binding["products"]["model_grid"][field]):
                 assert all(r["field_metadata"]["evidence"]["kind"]["rule"] == rule
                            for r in descriptor["records"])
+        else:
+            assert not warnings
         result = execute_simulation(conf)
         assert result.ok and {p["role"] for p in result.products} == {"model_grid", "polar"}
         for product in result.products:
@@ -405,6 +410,7 @@ def _compare_documented_kind(tmp_path, source, field, center, rule, *, guard=Non
                 saved.attrs.pop("history")
                 outputs.setdefault(product["role"], []).append(saved.load())
         provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+        assert [w for w in provenance.get("warnings", []) if w.startswith("[W1603]")] == warnings
         records = provenance["sources"]["atmosphere"]["polar"]["records"]
         assert records and all(r["options"][field]["interpolation"] == "bilinear" for r in records)
         if origin == "documented_fallback":
@@ -753,6 +759,113 @@ def test_croco_zeta_fallback_requires_selected_history_and_its_own_mask(tmp_path
     if problem == "later_layout":
         bind_sources(configuration(tmp_path, source={
             **source, "time": {"values": ["2024-12-10T01:00:00"]}}))
+
+
+def _nemo_cf_sea_height(field="zos"):
+    ds = scene(hours=(0, 1)).rename(
+        q=field, time="time_counter", nj="y", ni="x", latitude="nav_lat", longitude="nav_lon")
+    ds[field].attrs = {"standard_name": "sea_surface_height_above_geoid", "units": "cm"}
+    return ds
+
+
+@pytest.mark.parametrize("field", ["zos", "ssh_export"])
+def test_nemo_cf_sea_height_kind_without_yaml(tmp_path, monkeypatch, field):
+    from contextlib import contextmanager
+
+    from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
+
+    ds = _nemo_cf_sea_height(field)
+    ds[field].values[:, 4, 4:6] = [[0., 4.], [2., 6.]]
+    ds[field].values[:, 4, 2] = np.nan
+    ds.to_netcdf(tmp_path / "input.nc")
+    center = {"latitude": -20., "longitude": float(
+        ds.nav_lon[4, 4] + .25 * (ds.nav_lon[4, 5] - ds.nav_lon[4, 4]))}
+
+    @contextmanager
+    def guard():
+        with monkeypatch.context() as patch:
+            guard_netcdf_payloads(patch, {field})
+            yield
+
+    source = {"model": "nemo", "variables": {"2d": [field]}}
+    products = _compare_documented_kind(
+        tmp_path, source, field, center,
+        "nemo.cf.sea_surface_height_above_geoid.kind.v1", guard=guard)
+    polar, native = products["polar"], products["model_grid"]
+    np.testing.assert_allclose(polar[field].isel(radius=0, azimuth=0), [1., 3.], atol=2e-3, rtol=0)
+    assert (polar[field + "_interpolation_status"] == 2).any()
+    np.testing.assert_array_equal(native[field], ds[field])
+    for saved in (polar, native):
+        np.testing.assert_array_equal(saved.time, ds.time_counter)
+        assert saved[field].attrs["units"] == "cm"
+        assert saved[field].attrs["standard_name"] == "sea_surface_height_above_geoid"
+
+    native_only = configuration(tmp_path, source=source, products={"model_grid": True})
+    report, children, _ = bind_sources(native_only)
+    records = children["atmosphere"].source_requests["atmosphere"]["binding"][
+        "products"]["model_grid"][field]["records"]
+    assert all("field_metadata" not in record for record in records)
+    assert not any(w.startswith("[W1603]") for w in report["warnings"])
+
+
+@pytest.mark.parametrize("problem", [
+    "name_only", "other_quantity", "wrong_units", "yaml_label", "later_wide_integer", "depth",
+])
+def test_nemo_cf_kind_requires_evidence_on_each_admitted_scalar(tmp_path, problem):
+    ds = _nemo_cf_sea_height()
+    path = tmp_path / "input.nc"
+    source = {"model": "nemo", "files": [str(path)], "variables": {"2d": ["zos"]}}
+    if problem in {"name_only", "yaml_label"}:
+        label = ds.zos.attrs.pop("standard_name")
+        if problem == "yaml_label":
+            source["field_metadata"] = {"zos": {"standard_name": label}}
+    elif problem == "other_quantity":
+        ds.zos.attrs["standard_name"] = "sea_binary_mask"
+    elif problem == "wrong_units":
+        ds.zos.attrs["units"] = "1"
+    elif problem == "depth":
+        ds["zos"] = ds.zos.expand_dims({"deptht": [5.]}, axis=1)
+        ds.deptht.attrs.update(units="m", positive="down")
+        source["variables"] = {"3d": ["zos"]}
+    else:
+        later = ds.isel(time_counter=[1])
+        later["zos"] = later.zos.copy(data=np.full(later.zos.shape, 2**53 + 1, dtype="int64"))
+        later.to_netcdf(tmp_path / "later.nc")
+        source["files"].append(str(tmp_path / "later.nc"))
+        ds = ds.isel(time_counter=[0])
+    ds.to_netcdf(path)
+
+    conf = configuration(tmp_path, source=source)
+    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+        bind_sources(conf)
+    assert not conf.output_dir.exists()
+
+
+@pytest.mark.parametrize("case", ["observed", "flags", "declared", "conflict"])
+def test_nemo_cf_kind_does_not_replace_known_kind(tmp_path, case):
+    ds = _nemo_cf_sea_height()
+    source = {"model": "nemo", "variables": {"2d": ["zos"]}}
+    if case == "observed":
+        ds.zos.attrs["kind"] = "continuous"
+    if case in {"flags", "conflict"}:
+        ds.zos.attrs.update(flag_values=np.array([0., 7.]), flag_meanings="zero seven")
+    if case in {"declared", "conflict"}:
+        source["field_metadata"] = {"zos": {"kind": (
+            "continuous" if case == "conflict" else "categorical")}}
+    ds.to_netcdf(tmp_path / "input.nc")
+    conf = configuration(tmp_path, source=source)
+    if case == "conflict":
+        with pytest.raises(ValueError, match="contradicts input 'categorical'"):
+            bind_sources(conf)
+    else:
+        report, children, _ = bind_sources(conf)
+        assert not any(w.startswith("[W1603]") for w in report["warnings"])
+        jobs = children["atmosphere"].source_requests["atmosphere"]["binding"]["operation_plans"]
+        for job in jobs:
+            options = job["polar_options"]["zos"]
+            assert options["kind_origin"] == ("declaration" if case == "declared" else "input")
+            assert options["interpolation"] == ("bilinear" if case == "observed" else "nearest_s2d")
+    assert not conf.output_dir.exists()
 
 
 @pytest.mark.parametrize("guard", ["netcdf", "grib", "fa"])

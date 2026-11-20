@@ -937,9 +937,13 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
             layout = output_grid_layout(plans[product["source"]])
             product["stored_names"] = {name: name for name in product["fields"]}
             product["dimensions"], product["units"] = {}, {}
+            kind_rules = {}
             for job in binding["operation_plans"]:
                 if job["product"] != "polar":
                     continue
+                for field, metadata in job["polar_input_metadata"].items():
+                    if evidence := metadata.get("evidence", {}).get("kind"):
+                        kind_rules[field] = evidence["rule"]
                 horizontal = set(job["polar_geometry"]["horizontal_dimensions"].values())
                 native_axes = [dim for dim, _ in job["context"][2]]
                 dimensions = ["time", *native_axes, *[
@@ -953,6 +957,10 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                     raise ValueError(
                         f"polar.{job['name']}: incompatible selected sample dimensions")
                 product["units"][job["name"]] = job["result_units"]
+            report["warnings"].extend(format_message(
+                "W1603", f"sources.{product['source']}.{field}: using kind: continuous for "
+                f"polar samples with missing kind ({rule}).")
+                for field, rule in kind_rules.items())
         resource_plan = describe_v3_resources(conf, plans, execution_options)
         for name, child in children.items():
             product = resource_plan["layouts"]["products"].get(f"{name}.polar")

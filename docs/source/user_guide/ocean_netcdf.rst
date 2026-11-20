@@ -67,6 +67,16 @@ and loading; no automatic Celsius/Kelvin or other ocean quantity conversion is
 introduced. Native clocks are checked before selecting variables, including
 ``time_centered`` stored as an auxiliary data variable rather than a coordinate.
 
+For direct native polar sampling, an admitted numeric surface field can use
+``kind: continuous`` when its file declares the CF standard name
+`sea_surface_height_above_geoid
+<https://vocab.nerc.ac.uk/standard_name/sea_surface_height_above_geoid/>`_
+and a supported length unit such as ``m`` or ``cm``. The field must sample
+native ``time_counter`` on ``(y, x)`` with its own ``nav_lat`` and ``nav_lon``.
+Wide integer values are excluded. The name ``zos`` alone is not enough.
+:ref:`w1603` identifies the completion in validation. It does not identify the
+producer or datum, convert units, infer a wet mask, or establish a time statistic.
+
 Broader real-data qualification remains open. Native components have the separate
 limits below.
 

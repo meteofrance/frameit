@@ -101,5 +101,6 @@ Warnings
 * :ref:`w1507`
 * :ref:`w1601`
 * :ref:`w1602`
+* :ref:`w1603`
 * :ref:`w1801`
 * :ref:`w1901`

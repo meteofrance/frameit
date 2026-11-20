@@ -68,6 +68,16 @@ the warning against the input grid. For current YAML, use
 ``products.polar.radial_step_km`` if you need to set the step.
 Read :ref:`e1601` before choosing a smaller step.
 
+.. _w1603:
+
+W1603: Input evidence established a missing polar kind
+----------------------------------------------------------------------
+
+Check the named field and rule against :doc:`../user_guide/input_files`.
+FrameIt used ``continuous`` where neither the input kind nor YAML declared
+it. If the rule describes your data, no YAML change is needed. The run records
+the evidence for each affected sample in ``run-provenance.yaml``.
+
 Missing values in a polar result
 --------------------------------
 

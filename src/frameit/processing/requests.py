@@ -902,6 +902,11 @@ def complete_documented_polar_kind(source, record, metadata):
         from frameit.io.croco_utils import croco_zeta_kind_evidence
 
         evidence = croco_zeta_kind_evidence(source, record, attrs)
+    elif adapter == ("nemo", "netcdf") and all(
+            metadata["origins"].get(key) == "input" for key in ("standard_name", "units")):
+        from frameit.io.nemo_utils import nemo_sea_height_kind_evidence
+
+        evidence = nemo_sea_height_kind_evidence(source, record, attrs)
     return (dict(metadata, attributes=dict(attrs, kind="continuous"),
                  origins=dict(metadata["origins"], kind="documented_fallback"),
                  evidence={"kind": evidence}) if evidence else metadata)
