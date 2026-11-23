@@ -1351,7 +1351,8 @@ def bind_source(conf, name, *, representations=None, required_inputs=(), resourc
                              representations=representations, required_inputs=required_inputs)
                if representations is not None else
                 bind_source_operations(
-                    {**source, "name": name}, request, conf, required_inputs=required_inputs))
+                    {**source, "name": name}, request, conf, required_inputs=required_inputs,
+                    layout_for=layout_for))
     if source["model"] == "croco" and source["format"] == "netcdf":
         from frameit.io.croco_utils import validate_bound_support
 

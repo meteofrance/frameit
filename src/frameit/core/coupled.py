@@ -851,10 +851,10 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
         deferred = [check for check in exc.deferred_checks if check["path"] != "plan"]
     layouts = {}
 
-    def layout_for(name, *, regional=False):
+    def layout_for(name, *, regional=False, source_view=None):
         from frameit.io.netcdf_export import output_grid_layout
 
-        source = plans[name]
+        source = plans[name] if source_view is None else source_view
         # Only CROCO's independently cropped faces need a separate naming view.
         regional = regional and source["model"] == "croco"
         key = name, regional

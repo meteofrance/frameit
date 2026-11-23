@@ -280,10 +280,11 @@ def test_croco_face_aliases_preserve_c3_selection_guard(tmp_path, monkeypatch):
         "s_w": {"names": ["tracer_w"], "levels": {"indices": [1]}},
     }})
     guard_netcdf_payloads(monkeypatch, {"temp", "u", "v", "tracer_w", "zeta", "h"})
-    _, _, sources = bind_sources(conf)
+    _, children, sources = bind_sources(conf)
     source = sources["ocean"]
     compatibility = output_grid_layout(source)
     regional = output_grid_layout(source, regional=True)
+    assert children["ocean"]._bound_output_layouts["model_grid"] == regional
     for name in ("s_rho.temp", "s_rho.u", "s_rho.v"):
         grid = model_grid_id(source, name)
         assert compatibility[grid]["dimensions"]["s_rho"] == "s_rho"

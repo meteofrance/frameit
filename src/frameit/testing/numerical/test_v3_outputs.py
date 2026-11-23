@@ -56,8 +56,15 @@ def mnh_scene():
     return xr.Dataset(fields, coords=coords)
 
 
-def _grouped_polar_case(tmp_path):
-    mnh_scene()[["T"]].to_netcdf(tmp_path / "input.nc")
+def _grouped_polar_case(tmp_path, *, moving=False):
+    scene = mnh_scene()[["T"]]
+    if moving:
+        longitude = np.stack([scene.longitude.values, scene.longitude.values + .01])
+        scene = scene.assign_coords(longitude=(
+            ("time", "nj", "ni"), longitude, scene.longitude.attrs))
+    scene.to_netcdf(tmp_path / "input.nc")
+    products = {} if moving else {"model_grid": True}
+    products["polar"] = {"fields": {"sample": ["level.T"]}, "radius_km": 1., "azimuth_count": 8}
     return configuration(
         tmp_path, "mesonh", {},
         sources={"sample": {
@@ -67,17 +74,17 @@ def _grouped_polar_case(tmp_path):
         }},
         region={"center": {"latitude": -19.5, "longitude": 61.},
                 "width_km": {"x": 2., "y": 2.}},
-        products={"model_grid": True, "polar": {"fields": {"sample": ["level.T"]},
-                                               "radius_km": 1., "azimuth_count": 8}},
+        products=products,
     )
 
 
-def test_binding_reuses_final_output_layout(tmp_path, monkeypatch):
+@pytest.mark.parametrize("moving", [False, True])
+def test_binding_reuses_final_output_layout(tmp_path, monkeypatch, moving):
     from frameit.core.coupled import bind_sources
     from frameit.io import netcdf_export
     from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
 
-    conf = _grouped_polar_case(tmp_path)
+    conf = _grouped_polar_case(tmp_path, moving=moving)
     guard_netcdf_payloads(monkeypatch, {"T"})
     build = netcdf_export.output_grid_layout
     calls = []
@@ -87,29 +94,40 @@ def test_binding_reuses_final_output_layout(tmp_path, monkeypatch):
         return build(source, regional=regional)
 
     monkeypatch.setattr(netcdf_export, "output_grid_layout", observe)
-    report, _, _ = bind_sources(conf)
-    dims = {"model_grid": ["time", "level", "y", "x"],
-            "polar": ["time", "level", "radius", "azimuth"]}
+    report, children, sources = bind_sources(conf)
+    dims = {"polar": ["time", "level", "radius", "azimuth"]}
+    if not moving:
+        dims["model_grid"] = ["time", "level", "y", "x"]
     assert {product["product"]: product["dimensions"]["level.T"]
             for product in report["products"]} == dims
     for product, expected in dims.items():
         assert report["layouts"]["products"][f"sample.{product}"][
             "applicable_dimensions"] == sorted(expected)
     assert not conf.output_dir.exists()
-    assert len(calls) == 2  # One for grouped validation, one for all finalized previews.
+    layouts = children["sample"]._bound_output_layouts
+    assert layouts == dict.fromkeys(dims, build(sources["sample"]))
+    if moving:
+        facts, = layouts["polar"].values()
+        assert facts["fields"] == ["T", "level.T"]
+    assert calls == [False]
 
 
 def test_rebinding_uses_changed_grid_and_clock(tmp_path):
     from frameit.core.coupled import bind_sources
+    from frameit.io.netcdf_export import output_grid_layout
 
     conf = _grouped_polar_case(tmp_path)
     _, _, first = bind_sources(conf)
     scene = mnh_scene()[["T"]].isel(time=[1])
-    scene.assign_coords(longitude=scene.longitude + .25).to_netcdf(tmp_path / "input.nc")
-    report, _, second = bind_sources(conf)
+    longitude = (scene.longitude + .25).expand_dims(time=scene.time).assign_attrs(
+        scene.longitude.attrs)
+    scene.assign_coords(longitude=longitude).to_netcdf(tmp_path / "input.nc")
+    report, children, second = bind_sources(conf)
     assert set(first["sample"]["native_grids"]).isdisjoint(second["sample"]["native_grids"])
     assert second["sample"]["selected_times"] == [np.datetime64("2026-01-01T01")]
     assert report["products"][0]["dimensions"]["level.T"] == ["time", "level", "y", "x"]
+    assert children["sample"]._bound_output_layouts["model_grid"] == output_grid_layout(
+        second["sample"])
 
 
 def test_execution_does_not_rebuild_bound_output_layouts(tmp_path, monkeypatch):

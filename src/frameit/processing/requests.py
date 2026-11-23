@@ -1114,7 +1114,8 @@ def _grid_from_geometry(geometry, dimensions, *, rotation_coordinate=None):
     return {"dimensions": dict(dimensions), "coordinates": coords, "grid_mapping": None}
 
 
-def bind_source_operations(source, request, conf, *, representations=None, required_inputs=()):
+def bind_source_operations(source, request, conf, *, representations=None, required_inputs=(),
+                           layout_for=None):
     """Bind explicit result preparation separately from native exports and trackers.
 
     Every operation's input binding is produced by ``bind_requests`` on actual
@@ -1549,9 +1550,12 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
     if request.get("groups"):
         from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
 
-        layout = output_grid_layout({
+        # Prepared grids and trajectory aliases are complete; publication preserves them.
+        source_view = {
             **source, "representation_grids": binding["representation_grids"],
-            "requests": {**request, "binding": binding}})
+            "requests": {**request, "binding": binding}}
+        layout = (output_grid_layout(source_view) if layout_for is None
+                  else layout_for(source["name"], source_view=source_view))
         selections = {}
         for product, fields in binding["products"].items():
             for name, descriptor in fields.items():
