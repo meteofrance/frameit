@@ -296,7 +296,7 @@ def prepare_source_operation(operation, internal, source, conf):
         record = descriptor["records"][0]
         key = (record["grid_id"], name)
         native = (internal.get((*key, _sample_context(record)))
-                  if operation["product"] == "polar" else None)
+                  if operation.get("product") == "polar" else None)
         if native is None:
             native = internal[key] if key in internal else internal[record["grid_id"]]
         value = native[name]
