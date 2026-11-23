@@ -95,9 +95,9 @@ def polar_field_options(metadata, options, conf, context):
     """Resolve interpolation without requiring or inferring field kind."""
     attrs, origins = metadata["attributes"], metadata["origins"]
     kind = attrs.get("kind")
-    if not isinstance(kind, str) or kind not in {"continuous", "categorical"}:
-        kind = None
     # Missing kind is intentional: bilinear is a method default, not a classification.
+    if "kind" in attrs and (not isinstance(kind, str) or kind not in {"continuous", "categorical"}):
+        raise ValueError(f"{context}: invalid kind {kind!r}; use continuous or categorical")
     method = options.get("interpolation", "nearest" if kind == "categorical" else "bilinear")
     if kind == "categorical" and method != "nearest":
         raise ValueError(f"{context}: categorical fields require nearest interpolation")

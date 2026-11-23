@@ -1144,7 +1144,8 @@ def run_native_sources(runner, *, benchmark=False):
 
                 layout = consumer.conf._bound_output_layouts["polar"]
                 dataset, polar_report = execute_source_polar(
-                    consumer.ds_tracker.get("internal", {}), plans[name], binding,
+                    consumer.ds_tracker.get("internal", {}) | consumer.ds_tracker.get(
+                        "polar_samples", {}), plans[name], binding,
                     consumer.conf, centres, layout=layout,
                     output_formatter=partial(format_polar_output, layout=layout))
                 runner.field_products[(name, "polar")] = dataset.assign_attrs(

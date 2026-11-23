@@ -327,7 +327,9 @@ performs its own grid lookup. Common time labels do not imply that ocean and
 atmospheric grids, masks, temperatures or flux definitions are interchangeable.
 
 CROCO rho scalar polar fields use the declared static water mask, without requiring
-current companions or angle. Supported current analysis requires explicit
+current companions or angle. Each sampled field's file must declare ``MASKING``
+without ``WET_DRY`` in ``CPP-options``, even when the mask is in a separate file.
+Supported current analysis requires explicit
 ``products.polar.field_options.ocean.<field>: {sampling: mass, basis: earth}``
 and the pair/rotation declaration above. Those options prepare the pair before
 sampling even when model-grid output remains native. Unsupported native-face

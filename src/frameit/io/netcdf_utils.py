@@ -356,6 +356,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
             "NetCDF selected_records requires bound requests and owning source metadata")
     from frameit.io.grib_utils import normalize_isobaric_coordinates
     from frameit.processing.polar.contracts import require_executable_products
+    from frameit.processing.requests import _sample_context
 
     require_executable_products(binding, source)
     layout = source.setdefault("reader_layout", input_chunk_plan(source, chunks))
@@ -374,6 +375,9 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
         cartesian_vertical_velocity="interfaces", compute_polar_proj=False,
     )
     samples_by_record = {}
+    polar_samples = {}
+    polar_inputs = {name for job in binding.get("operation_plans", []) if job["product"] == "polar"
+                    for name in job["input_binding"]["dependencies"]}
     records = binding["records"]
     tracker_support = source.get("tracker_support", {})
     omit_dtcur = (any(record.get("scalar_dtcur_alias") for record in records)
@@ -651,6 +655,13 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                     sequence, dim=concat_dim, data_vars="minimal" if static else "all",
                     coords=support_coords or "minimal",
                     compat="equals", join="exact", combine_attrs="override"))
+                if not export_support and name in polar_inputs and any(
+                        ds[name].dtype != combined[name].dtype for ds in sequence):
+                    # A sample outside the polar clock must not coerce a sampled field's dtype.
+                    records = (r for r in descriptor["records"] if r["grid_id"] == grid_id)
+                    for record, ds in zip(records, sequence, strict=True):
+                        if ds[name].dtype != combined[name].dtype:
+                            polar_samples[grid_id, name, _sample_context(record)] = ds
                 if not export_support and (attributes := tracker_support.get("projection_attributes")):
                     for key, value in attributes.items():
                         if any(key in ds.attrs and np.asarray(ds.attrs[key]).item() != value
@@ -673,10 +684,11 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                          merge_internal_stencils(datasets, vertical_dims))
                 for grid_id, datasets in by_grid.items()}
 
-    return (
-        groups(binding["products"].get("model_grid", {}), export_support=True),
-        {"internal": groups(binding["dependencies"])} if binding["dependencies"] else {},
-    )
+    user = groups(binding["products"].get("model_grid", {}), export_support=True)
+    support = {"internal": groups(binding["dependencies"])} if binding["dependencies"] else {}
+    if polar_samples:
+        support["polar_samples"] = polar_samples
+    return user, support
 
 
 @managed_loading

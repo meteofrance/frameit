@@ -201,24 +201,25 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
         spacing.append(max(evidence[axis]["spacing_m"] for axis in ("x", "y")))
         job["polar_options"] = {}
         job["polar_input_metadata"] = {}
+        numeric_inputs = {name for role, name in job["inputs"].items() if role in {"field", "u", "v"}}
         for name in set(job["inputs"].values()):
             descriptor = job["input_binding"]["dependencies"][name]
             record = descriptor["records"][0]
             field = source["fields"][record["field_id"]]
+            # GRIB and FA decode to float64. NetCDF can vary even within one series.
+            if sampled and source["format"] == "netcdf" and name in numeric_inputs:
+                stored, decoded = record["stored_dtype"], record["decoded_dtype"]
+                # Even nearest uses floating-point weights and cannot preserve wide integers.
+                if stored not in _POLAR_DTYPES or decoded not in _POLAR_DTYPES:
+                    raise ValueError(
+                        f"polar.{name}: unsupported numeric dtype "
+                        f"(stored {stored}, decoded {decoded}); "
+                        "use 32/64-bit floats or integers no wider than 32 bits")
             metadata = record.get("field_metadata") or source_field_metadata(
                 source, field, record=record) or resolve_field_metadata(
                     record.get("observed_attributes", field["attributes"]), {},
                     f"polar.{name}", temporal_names=record.get("temporal_names", [record["clock"]]))
             if job["method"] != "polar_input" or name == job["inputs"]["field"]:
-                # The GRIB and FA readers already supply float64 physical fields.
-                if sampled and source["format"] == "netcdf":
-                    stored, decoded = record["stored_dtype"], record["decoded_dtype"]
-                    # Even nearest uses floating-point weights and cannot preserve wide integers.
-                    if stored not in _POLAR_DTYPES or decoded not in _POLAR_DTYPES:
-                        raise ValueError(
-                            f"polar.{name}: unsupported numeric dtype "
-                            f"(stored {stored}, decoded {decoded}); "
-                            "use 32/64-bit floats or integers no wider than 32 bits")
                 job["polar_options"][name] = polar_field_options(
                     metadata, {"sampling": job["sampling"],
                                **request["polar_options"].get(name, {})},

@@ -168,6 +168,17 @@ def test_polar_methods_use_optional_kind_and_preview_without_payload(
     assert not conf.output_dir.exists()
 
 
+def test_polar_rejects_present_malformed_categorical_kind(tmp_path):
+    ds = scene(hours=(0,))
+    ds.q.attrs["kind"] = "categorical "
+    ds.q.values[0, 4, 4:6] = [0., 2.]
+    ds.to_netcdf(tmp_path / "input.nc")
+    conf = configuration(tmp_path)
+    with pytest.raises(ValueError, match=r"polar\.q: invalid kind.*categorical"):
+        bind_sources(conf)
+    assert not conf.output_dir.exists()
+
+
 @pytest.mark.parametrize("model", ["mesonh", "arome"])
 def test_explicit_nearest_without_kind_preserves_native_samples(tmp_path, model):
     ds = scene(hours=(0,))
@@ -712,6 +723,32 @@ def test_croco_history_zeta_polar_optional_kind(tmp_path, monkeypatch):
     assert "field_metadata" not in record
 
 
+@pytest.mark.parametrize("declared", [False, True])
+@pytest.mark.parametrize("wet_dry", [False, True])
+def test_croco_polar_checks_science_file_with_separate_mask(tmp_path, declared, wet_dry):
+    ds = _croco_surface_scene()
+    first, later, mask = (tmp_path / f"{name}.nc" for name in ("first", "later", "mask"))
+    ds.isel(time=[0]).to_netcdf(first)
+    second = ds.isel(time=[1])
+    second[["mask_rho", "scrum_time"]].to_netcdf(mask)
+    second.drop_vars("mask_rho").assign_attrs(
+        {"CPP-options": "MASKING WET_DRY" if wet_dry else "MASKING"}).to_netcdf(later)
+    conf = configuration(tmp_path, source={
+        "model": "croco", "files": list(map(str, (first, later, mask))),
+        "variables": {"2d": ["zeta"]},
+        "field_metadata": {"zeta": {"kind": "continuous"}} if declared else {},
+    })
+    if wet_dry:
+        with pytest.raises(ValueError, match=r"later\.nc.*WET_DRY"):
+            bind_sources(conf)
+        assert not conf.output_dir.exists()
+    else:
+        bind_sources(conf)
+        result = execute_simulation(conf)
+        with xr.open_dataset(result.products[0]["path"]) as saved:
+            np.testing.assert_allclose(saved.zeta.isel(radius=0, azimuth=0), [0., 2.])
+
+
 @pytest.mark.parametrize("problem", ["label", "later_layout"])
 def test_croco_zeta_polar_does_not_require_kind_matching_labels_or_layout(tmp_path, problem):
     ds = _croco_surface_scene()
@@ -841,11 +878,12 @@ def test_nemo_polar_respects_known_kind(tmp_path, case):
     assert not conf.output_dir.exists()
 
 
-def test_common_polar_dtype_check_ignores_an_unassociated_record(tmp_path):
+@pytest.mark.parametrize("unsampled", [2**53 + 1, "text"])
+def test_common_polar_dtype_check_ignores_an_unassociated_record(tmp_path, unsampled):
     ds = _nemo_cf_sea_height()
     ds.isel(time_counter=[0]).to_netcdf(tmp_path / "first.nc")
     later = ds.isel(time_counter=[1])
-    later["zos"] = later.zos.copy(data=np.full(later.zos.shape, 2**53 + 1, dtype="int64"))
+    later["zos"] = later.zos.copy(data=np.full(later.zos.shape, unsampled))
     later.to_netcdf(tmp_path / "later.nc")
     scene(hours=(0,)).to_netcdf(tmp_path / "weather.nc")
     request = {
@@ -1630,6 +1668,31 @@ def test_polar_preparation_uses_each_records_rotation_and_typed_provenance(tmp_p
         assert record["input_metadata"]["UT"]["origins"]["kind"] == "declaration"
         assert record["geometry"]["x"]["spacing_m"] == 1000.
     assert hashlib.sha256((tmp_path / "input.nc").read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize("value", [2**53 + 1, "text"])
+def test_polar_rejects_unsupported_dtype_in_unexported_wind_companion(tmp_path, value):
+    from frameit.testing.numerical.test_grid_representations import native_scene
+
+    paths = []
+    for hour in (0, 1):
+        ds = native_scene(hour).assign_coords(angle=xr.DataArray(.25, attrs={"units": "rad"}))
+        if hour:
+            ds["VT"] = ds.VT.copy(data=np.full(ds.VT.shape, value))
+        path = tmp_path / f"{hour}.nc"
+        ds.to_netcdf(path)
+        paths.append(str(path))
+    conf = configuration(tmp_path, source={
+        "files": paths, "variables": {"3d": ["UT"], "levels": {"indices": [2]}},
+        "wind_pairs": [{"u": "UT", "v": "VT", "basis": "grid",
+                        "rotation": {"method": "coordinate", "coordinate": "angle"}}],
+    }, products={"polar": {
+        "radius_km": 2.5, "azimuth_count": 8,
+        "field_options": {"atmosphere": {"UT": {"sampling": "mass", "basis": "earth"}}},
+    }})
+    with pytest.raises(ValueError, match=r"polar\.VT: unsupported numeric dtype"):
+        bind_sources(conf)
+    assert not conf.output_dir.exists()
 
 
 @pytest.mark.parametrize("mass", [False, True])

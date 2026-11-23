@@ -277,7 +277,7 @@ def prepare_source_operation(operation, internal, source, conf):
     import json
     from copy import copy
 
-    from frameit.processing.requests import source_field_metadata
+    from frameit.processing.requests import _sample_context, source_field_metadata
     from frameit.processing.wind_collocation import collocate_mnh_component
 
     geometry = xr.Dataset(coords={
@@ -295,7 +295,10 @@ def prepare_source_operation(operation, internal, source, conf):
         descriptor = operation["input_binding"]["dependencies"][name]
         record = descriptor["records"][0]
         key = (record["grid_id"], name)
-        native = internal[key] if key in internal else internal[record["grid_id"]]
+        native = (internal.get((*key, _sample_context(record)))
+                  if operation["product"] == "polar" else None)
+        if native is None:
+            native = internal[key] if key in internal else internal[record["grid_id"]]
         value = native[name]
         native_view = native
         if "time" in value.dims:

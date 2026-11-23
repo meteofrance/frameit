@@ -50,10 +50,14 @@ def _velocity(da):
     return convert_units(value, "velocity")
 
 
-def _static_wet_mask(ds):
-    options = str(ds.attrs.get("CPP-options", "")).split()
+def _require_static_masking(attrs, context="CROCO analysis"):
+    options = str(attrs.get("CPP-options", "")).split()
     if "MASKING" not in options or "WET_DRY" in options:
-        raise ValueError("CROCO analysis requires explicit static MASKING without WET_DRY")
+        raise ValueError(f"{context} requires explicit static MASKING without WET_DRY")
+
+
+def _static_wet_mask(ds):
+    _require_static_masking(ds.attrs)
     if "mask_rho" not in ds or ds.mask_rho.dims != ("eta_rho", "xi_rho"):
         raise ValueError("CROCO analysis requires static mask_rho")
     mask = ds.mask_rho
@@ -255,9 +259,16 @@ def validate_bound_support(source, binding, *, engine, resources=None):
                 positions.setdefault(vertical["dimension"], set()).update(
                     record["source_positions"])
     support, angles = set(), []
+    polar_paths = set()
+    sampled_times = {r["source_time"] for r in source.get("region", {}).get("associations", ())}
     for operation in binding.get("operation_plans", []):
         support.update(name for name in operation["inputs"].values()
                        if name in {"mask_rho", "mask_u", "mask_v"})
+        if operation["product"] == "polar" and operation["context"][0] in sampled_times:
+            for role, name in operation["inputs"].items():
+                if role in {"field", "u", "v"}:
+                    polar_paths.update(record["locator"]["path"] for record in (
+                        operation["input_binding"]["dependencies"][name]["records"]))
         if operation["preparation"] == "croco_midpoint_both_valid_then_rho_angle":
             support.add("angle")
             coordinate = operation["geometry"]["coordinates"]["angle"]
@@ -302,6 +313,9 @@ def validate_bound_support(source, binding, *, engine, resources=None):
             paths = dict.fromkeys(record["locator"]["path"] for record in binding["records"])
             for path in paths if support else ():
                 original = registry.open_netcdf(path, engine=engine, chunks=None)
+                if path in polar_paths:
+                    # A mask donor's build options cannot establish the science file's policy.
+                    _require_static_masking(original.attrs, f"{path}: CROCO polar sampling")
                 snapshot = original[sorted(support & set(original.variables))]
                 if "mask_rho" in snapshot:
                     _static_wet_mask(snapshot)
