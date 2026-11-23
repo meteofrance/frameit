@@ -11,7 +11,7 @@ import json
 import sys
 from collections import OrderedDict
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 
 import numpy as np
@@ -19,6 +19,7 @@ import xarray as xr
 
 from frameit.processing.polar.contracts import _validate_cells, target_locstream
 from frameit.processing.polar.coverage import SupportedRegridder, validate_mask_options
+from frameit.processing.polar.regional_window import RegionalWindow, _has_inside_matches
 from frameit.processing.polar.sampling import validate_axes
 
 DEFAULT_CACHE_SIZE = 8
@@ -66,6 +67,52 @@ def _hash_array(digest, name, values):
     array = np.ascontiguousarray(values)
     digest.update(json.dumps((name, array.shape, array.dtype.str)).encode())
     digest.update(memoryview(array).cast("B"))
+
+
+def _can_build_window(geometry, options, factory):
+    versions = options["backend"]
+    if (options["method"] != "bilinear" or options["periodic"]
+            or options["extrap_method"] is not None or geometry.source_mask is not None
+            or geometry.source_lon.size < 4096 or versions.get("xesmf") != "0.9.2"
+            or versions.get("esmpy", versions.get("ESMF")) != "8.9.1"):
+        return False
+    import xesmf
+
+    esmf = xesmf.backend.ESMF
+    return (factory is xesmf.frontend.Regridder and xesmf.__version__ == "0.9.2"
+            and esmf.__version__ == "8.9.1" and esmf.pet_count() == 1)
+
+
+def _restore_window_columns(backend, local, targets, window, shape, zero_tolerance):
+    import sparse
+
+    weights = backend.weights.data
+    rows, columns = weights.coords
+    ny, nx = backend.shape_in
+    y, x = np.divmod(columns, nx)
+    positive = weights.data > 0
+    usable = weights.data > zero_tolerance
+    # An unrepresented target or a nonzero stencil at an artificial edge needs the full search.
+    if (not np.isfinite(weights.data).all() or np.any(weights.data < 0)
+            or np.unique(rows[usable]).size != weights.shape[0]
+            or np.any(positive & ((y == 0) | (y == ny - 1) | (x == 0) | (x == nx - 1)))):
+        return None
+    # A clipped quad has fewer than four positive coefficients. Outside-only
+    # ties depend on tree traversal, unlike in-cell ties (lowest element ID).
+    stencil_size = np.bincount(rows[positive], minlength=weights.shape[0])
+    clipped = positive & (stencil_size[rows] != 4)
+    if clipped.any() and not _has_inside_matches(
+            local.lon.values, local.lat.values, targets.lon.values, targets.lat.values,
+            rows[clipped], y[clipped], x[clipped]):
+        return None
+    columns = (y + window[0].start) * shape[1] + x + window[1].start
+    backend.shape_in = shape
+    backend.n_in = shape[0] * shape[1]
+    backend.filename = backend._get_default_filename()
+    backend.weights = xr.DataArray(sparse.COO(
+        (rows, columns), weights.data, shape=(weights.shape[0], backend.n_in)),
+        dims=backend.weights.dims)
+    return backend
 
 
 @dataclass(frozen=True)
@@ -151,9 +198,11 @@ class PolarRegridPlan:
     geometry: RegridGeometry
     supported: SupportedRegridder
     construction_s: float | None
+    _window_index: RegionalWindow | None = field(default=None, repr=False, compare=False)
 
     @classmethod
-    def build(cls, geometry: RegridGeometry, *, regridder_factory=None, profile=True):
+    def build(cls, geometry: RegridGeometry, *, regridder_factory=None, profile=True,
+              _window_index=None):
         validate_execution_options(0, 0, {}, profile)
         if regridder_factory is None:
             import xesmf
@@ -164,32 +213,57 @@ class PolarRegridPlan:
                              "lat": (("y_box", "x_box"), geometry.source_lat)})
         targets = target_locstream(geometry.target_lon, geometry.target_lat)
         options = geometry.provenance
-        backend = regridder_factory(
-            source, targets, options["method"], locstream_out=True, unmapped_to_nan=False,
-            input_dims=("y_box", "x_box"), periodic=options["periodic"],
-            extrap_method=options["extrap_method"],
-        )
-        if options["method"] == "nearest_s2d":
-            import sparse
 
-            footprint = regridder_factory(
-                source, targets, "bilinear", locstream_out=True, unmapped_to_nan=False,
+        def build_backend(grid, method, extrap_method):
+            return regridder_factory(
+                grid, targets, method, locstream_out=True, unmapped_to_nan=False,
                 input_dims=("y_box", "x_box"), periodic=options["periodic"],
-                extrap_method=None)
-            inside = np.asarray(
-                footprint.weights.data.to_scipy_sparse().tocsr().sum(axis=1)).ravel() > 0
-            weights = backend.weights.data
-            keep = inside[weights.coords[0]]
-            # ESMF nearest otherwise extrapolates. Use the same spherical cell
-            # footprint as bilinear, not a different planar boundary convention.
-            backend.weights = xr.DataArray(sparse.COO(
-                weights.coords[:, keep], weights.data[keep], shape=weights.shape),
-                dims=backend.weights.dims)
-        supported = SupportedRegridder(
-            backend, zero_tolerance=options["zero_weight_tolerance"],
-            source_mask=geometry.source_mask,
-        )
-        return cls(geometry, supported, perf_counter() - started if profile else None)
+                extrap_method=extrap_method)
+
+        def validate_weights(backend):
+            return SupportedRegridder(
+                backend, zero_tolerance=options["zero_weight_tolerance"],
+                source_mask=geometry.source_mask)
+
+        supported, index = None, None
+        if _can_build_window(geometry, options, regridder_factory):
+            index = _window_index or RegionalWindow.capture(
+                geometry.source_lon, geometry.source_lat)
+            if index is not None and (window := index.find(
+                    geometry.target_lon, geometry.target_lat)) is not None:
+                lon, lat = geometry.source_lon[window], geometry.source_lat[window]
+                # shortcut: avoid the window plumbing for marginal reductions.
+                if lon.size * 2 < source.lon.size:
+                    # xESMF transposes these arrays for the Fortran grid.
+                    local = xr.Dataset({
+                        "lon": (("y_box", "x_box"), np.ascontiguousarray(lon)),
+                        "lat": (("y_box", "x_box"), np.ascontiguousarray(lat)),
+                    })
+                    try:
+                        backend = _restore_window_columns(
+                            build_backend(local, "bilinear", None), local, targets,
+                            window, geometry.source_lon.shape, options["zero_weight_tolerance"])
+                        if backend is not None:
+                            supported = validate_weights(backend)
+                    except (ValueError, RuntimeError):
+                        # Let the original full builder supply the authoritative diagnostic.
+                        pass
+        if supported is None:
+            backend = build_backend(source, options["method"], options["extrap_method"])
+            if options["method"] == "nearest_s2d":
+                import sparse
+
+                footprint = build_backend(source, "bilinear", None)
+                inside = np.asarray(
+                    footprint.weights.data.to_scipy_sparse().tocsr().sum(axis=1)).ravel() > 0
+                weights = backend.weights.data
+                keep = inside[weights.coords[0]]
+                # ESMF nearest otherwise extrapolates. Keep the same spherical cell footprint.
+                backend.weights = xr.DataArray(sparse.COO(
+                    weights.coords[:, keep], weights.data[keep], shape=weights.shape),
+                    dims=backend.weights.dims)
+            supported = validate_weights(backend)
+        return cls(geometry, supported, perf_counter() - started if profile else None, index)
 
     @property
     def signature(self):
@@ -208,6 +282,8 @@ class PolarRegridPlan:
             total += weights.data.nbytes + weights.coords.nbytes
         for weights in (self.supported.weights, self.supported.presence_weights):
             total += weights.data.nbytes + weights.indices.nbytes + weights.indptr.nbytes
+        if self._window_index is not None:
+            total += self._window_index.nbytes
         return total
 
     def source_support(self, halo):
@@ -295,7 +371,12 @@ class PolarRegridPlanCache:
             self._plans.move_to_end(geometry.signature)
             return self._plans[geometry.signature]
         self.counters["misses"] += 1
-        plan = PolarRegridPlan.build(geometry, regridder_factory=factory, profile=profile)
+        index = next((plan._window_index for plan in reversed(self._plans.values())
+                      if plan._window_index is not None
+                      and np.array_equal(geometry.source_lon, plan.geometry.source_lon)
+                      and np.array_equal(geometry.source_lat, plan.geometry.source_lat)), None)
+        plan = PolarRegridPlan.build(
+            geometry, regridder_factory=factory, profile=profile, _window_index=index)
         self.counters["builds"] += 1
         if profile:
             self.counters["construction_s"] += plan.construction_s

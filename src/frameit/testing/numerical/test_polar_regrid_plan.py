@@ -4,10 +4,11 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from frameit.processing.polar import PolarRegridPlanCache
+from frameit.processing.polar import PolarRegridPlan, PolarRegridPlanCache
 from frameit.processing.polar.contracts import finite_source_footprint
 from frameit.processing.polar.polar_grid import PolarLonLatGrid
 from frameit.processing.polar.polar_proj import polar_project
+from frameit.processing.polar.regrid_plan import RegridGeometry
 from frameit.testing.numerical.test_polar_contracts import polar_settings, source_scene
 
 
@@ -16,6 +17,148 @@ def plan_inputs():
     _, grid, _ = finite_source_footprint(source.isel(time=0, drop=True), "longitude", "latitude")
     target = PolarLonLatGrid.from_conf(polar_settings()).build(source).isel(time=0, drop=True)
     return source, grid, target
+
+
+def regional_inputs(*, dateline=False, skewed=False):
+    source = source_scene(nx=111, ny=83, times=(0,), longitude=179.98 if dateline else 60.)
+    if dateline:
+        lon = source.longitude + .02 * np.sin(source.y_box / 10)
+        lat = source.latitude + .02 * np.sin(source.x_box / 12)
+        source = source.assign_coords(longitude=(lon + 180) % 360 - 180, latitude=lat)
+        source = source.isel(x_box=slice(None, None, -1))
+    if skewed:
+        source = source.assign_coords(longitude=source.longitude + .06 * source.y_box)
+    _, grid, _ = finite_source_footprint(source.isel(time=0, drop=True), "longitude", "latitude")
+    target = PolarLonLatGrid.from_conf(polar_settings()).build(source).isel(time=0, drop=True)
+    return source, grid, target
+
+
+def observe_esmf_shapes(monkeypatch):
+    import xesmf
+
+    original = xesmf.Regridder.__init__
+    shapes = []
+
+    def observed(self, source, *args, **kwargs):
+        shapes.append(source.lon.shape)
+        return original(self, source, *args, **kwargs)
+
+    monkeypatch.setattr(xesmf.Regridder, "__init__", observed)
+    return shapes
+
+
+@pytest.fixture
+def reference_esmf():
+    import xesmf
+    from xesmf.backend import ESMF
+
+    if (xesmf.__version__, ESMF.__version__) != ("0.9.2", "8.9.1") or ESMF.pet_count() != 1:
+        pytest.skip("Regional windows require the reference single-PET xESMF/ESMF stack")
+    return xesmf
+
+
+@pytest.mark.parametrize("dateline", [False, True])
+@pytest.mark.filterwarnings("error:Input array is not F_CONTIGUOUS:UserWarning")
+def test_windowed_bilinear_keeps_full_grid_weights_and_quality(monkeypatch, dateline, reference_esmf):
+    source, grid, target = regional_inputs(dateline=dateline)
+    shapes = observe_esmf_shapes(monkeypatch)
+    # The custom factory forces the unchanged full-grid path but calls the same ESMF.
+    reference = PolarRegridPlan.build(
+        RegridGeometry.capture(grid, target),
+        regridder_factory=lambda *a, **k: reference_esmf.Regridder(*a, **k))
+    plan = PolarRegridPlanCache().get(grid, target)
+    assert shapes[0] == grid.lon.shape and len(shapes) == 2
+    assert np.prod(shapes[1]) < grid.lon.size / 4, "ESMF still builds on the full domain"
+    assert plan.signature == reference.signature
+    assert plan.source_support(1) == reference.source_support(1)
+    assert plan.supported.operator.filename == reference.supported.operator.filename
+    weights, expected = plan.supported.weights, reference.supported.weights
+    assert weights.shape == expected.shape
+    for attr in ("indptr", "indices", "data"):
+        np.testing.assert_array_equal(getattr(weights, attr), getattr(expected, attr))
+
+    field = source.q.isel(time=0, drop=True).where(source.x_box != 0).chunk({"x_box": 12})
+    for policy in ("strict", "renormalize"):
+        actual = plan.apply(field, policy=policy, source_halo_points=1)
+        expected = reference.apply(field, policy=policy, source_halo_points=1)
+        assert (expected[2].compute() == 2).any()
+        for value, truth in zip(actual, expected, strict=True):
+            xr.testing.assert_identical(value.compute(), truth.compute())
+
+
+def test_window_lookup_reuse_requires_exact_source_geography(monkeypatch, reference_esmf):
+    _, grid, target = regional_inputs()
+    shapes = observe_esmf_shapes(monkeypatch)
+    cache = PolarRegridPlanCache()
+    first = cache.get(grid, target)
+    moved = target.assign(lon=target.lon + .007)
+    second = cache.get(grid.copy(deep=True), moved)
+    changed = grid.copy(deep=True)
+    changed.lon.values[0, 0] += .0001
+    third = cache.get(changed, moved)
+    assert cache.get(grid, target) is first
+    assert len({plan.signature for plan in (first, second, third)}) == 3
+    assert not np.array_equal(first.supported.weights.data, second.supported.weights.data)
+    assert len(shapes) == 3 and all(np.prod(shape) < grid.lon.size / 4 for shape in shapes)
+    assert first._window_index is not None and second._window_index is first._window_index
+    assert third._window_index is not first._window_index
+
+
+@pytest.mark.parametrize("lon_step, require_full_grid", [(.04, False), (.002, True)])
+def test_windowed_stencils_at_a_native_node_and_shared_edge(
+        monkeypatch, reference_esmf, lon_step, require_full_grid):
+    _, grid, _ = regional_inputs()
+    grid = grid.assign(lon=60. + (grid.lon - 60.) * (lon_step / .04))
+    # A native node repeated at the centre, and positions on either side of
+    # the meridian through a shared edge, one to a few longitude ulps away.
+    lon = np.stack((np.full(8, 60.), 60. + np.spacing(60.) * np.arange(-2, 6)))
+    lat = np.broadcast_to(np.array([[-20.], [-19.98]]), lon.shape)
+    target = xr.Dataset({
+        "lon": (("rr", "theta_deg"), lon),
+        "lat": (("rr", "theta_deg"), lat),
+    }, coords={"rr": [0., 5.], "theta_deg": np.arange(0., 360., 45.)})
+    geometry = RegridGeometry.capture(grid, target)
+    shapes = observe_esmf_shapes(monkeypatch)
+    plan = PolarRegridPlan.build(geometry)
+    assert np.prod(shapes[0]) < grid.lon.size / 4
+    assert (grid.lon.shape in shapes) == require_full_grid
+    full = PolarRegridPlan.build(
+        geometry, regridder_factory=lambda *a, **k: reference_esmf.Regridder(*a, **k))
+    for attr in ("indices", "indptr", "data"):
+        np.testing.assert_array_equal(getattr(plan.supported.weights, attr),
+                                      getattr(full.supported.weights, attr))
+
+
+@pytest.mark.parametrize("case", [
+    "edge", "skewed", "nearest", "static_mask", "backend", "actual_backend", "multi_pet",
+])
+def test_unqualified_windows_keep_the_full_grid_builder(monkeypatch, case):
+    _, grid, target = regional_inputs(skewed=case == "skewed")
+    options = {}
+    if case == "edge":
+        target = target.assign(lon=target.lon - .04 * 55)
+    elif case == "nearest":
+        options["method"] = "nearest_s2d"
+    elif case == "static_mask":
+        mask = np.ones(grid.lon.shape, dtype=np.uint8)
+        mask[41, 56] = 0
+        options["source_mask"] = mask
+    elif case == "backend":
+        options["backend"] = {"xesmf": "unverified"}
+    elif case == "actual_backend":
+        from xesmf.backend import ESMF
+
+        monkeypatch.setattr(ESMF, "__version__", "unverified")
+        options["backend"] = {"xesmf": "0.9.2", "esmpy": "8.9.1"}
+    elif case == "multi_pet":
+        from xesmf.backend import ESMF
+
+        monkeypatch.setattr(ESMF, "pet_count", lambda: 2)
+    shapes = observe_esmf_shapes(monkeypatch)
+    plan = PolarRegridPlanCache().get(grid, target, **options)
+    assert shapes == [grid.lon.shape] * (2 if case == "nearest" else 1)
+    if case in {"edge", "static_mask"}:
+        assert 0 < plan.supported.mapped.sum() < target.lon.size
 
 
 def test_sparse_operator_constant_preservation_nonnegative_weights_and_linearity():
