@@ -41,6 +41,151 @@ def record(root, name):
     return yaml.safe_load((root / name).read_text())
 
 
+def observe_checkpoint_writes(monkeypatch, observe):
+    original_open = Path.open
+
+    def opening(path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        if path.suffix == ".partial" and stream.writable():
+            write = stream.write
+            stream.write = lambda text: observe(stream, write, text)
+        return stream
+
+    monkeypatch.setattr(Path, "open", opening)
+
+
+@pytest.mark.parametrize("portable", [False, True], ids=["installed-emitter", "python-emitter"])
+def test_checkpoint_streams_safe_yaml_before_publication(tmp_path, monkeypatch, portable):
+    from frameit.core.configuration import read_yaml
+    from frameit.utils.atomic import write_yaml_atomic
+
+    if portable:
+        monkeypatch.delattr(yaml, "CSafeDumper", raising=False)
+    path = tmp_path / "run-provenance.yaml"
+    path.write_text("state: running\n")
+    chunks = []
+
+    def observe(stream, write, text):
+        if not chunks:
+            assert Path(stream.name).parent == tmp_path and path.read_text() == "state: running\n"
+        chunks.append(len(text))
+        return write(text)
+
+    observe_checkpoint_writes(monkeypatch, observe)
+    levels = [1, -0.0, None]
+    value = {"units": "m s⁻¹", "label": "mesuré 🌀", "run": "001", "day": "2022-02-01",
+             "levels": levels, "again": levels, "notes": ["x" * 32] * 2000}
+    write_yaml_atomic(path, value)
+    assert sum(n > 0 for n in chunks) > 1
+    for loaded in (record(tmp_path, path.name), read_yaml(path)):
+        assert loaded == value and list(loaded) == list(value)
+        assert loaded["again"] is loaded["levels"]
+        assert np.signbit(loaded["levels"][1])
+
+
+def test_checkpoint_preserves_escaped_filesystem_name(tmp_path):
+    from frameit.utils.atomic import write_yaml_atomic
+
+    path = tmp_path / "run-request.yaml"
+    value = {"prefix": "a" * 32768, "source": os.fsdecode(b"input-\x80.nc")}
+    write_yaml_atomic(path, value)
+    assert record(tmp_path, path.name) == value
+
+
+def test_checkpoint_keeps_the_registered_safe_scalar_policy(tmp_path, monkeypatch):
+    from frameit.utils.atomic import write_yaml_atomic
+
+    monkeypatch.setattr(yaml.SafeDumper, "yaml_representers",
+                        dict(yaml.SafeDumper.yaml_representers))
+    yaml.SafeDumper.add_representer(float, lambda dumper, x: dumper.represent_str(format(x, ".3f")))
+    path = tmp_path / "run-provenance.yaml"
+    write_yaml_atomic(path, {"threshold": 1.5})
+    assert record(tmp_path, path.name) == {"threshold": "1.500"}
+
+
+def test_checkpoint_encoding_retry_does_not_consume_metadata_twice(tmp_path, monkeypatch):
+    from frameit.utils.atomic import write_yaml_atomic
+
+    policy = yaml.representer.SafeRepresenter
+    monkeypatch.setattr(policy, "yaml_representers", dict(policy.yaml_representers))
+    policy.add_representer(type(iter([])), lambda dumper, values: dumper.represent_list(list(values)))
+    path = tmp_path / "run-request.yaml"
+    source = os.fsdecode(b"input-\x80.nc")
+    write_yaml_atomic(path, {"levels": iter([850, 500]), "source": source})
+    assert record(tmp_path, path.name) == {"levels": [850, 500], "source": source}
+
+
+def test_checkpoint_accepts_registered_numpy_string(tmp_path, monkeypatch):
+    from frameit.utils.atomic import write_yaml_atomic
+
+    policy = yaml.representer.SafeRepresenter
+    monkeypatch.setattr(policy, "yaml_representers", dict(policy.yaml_representers))
+    policy.add_representer(np.str_, policy.represent_str)
+    path = tmp_path / "run-provenance.yaml"
+    write_yaml_atomic(path, {"station": np.str_("001")})
+    assert record(tmp_path, path.name) == {"station": "001"}
+
+
+def test_checkpoint_honors_safe_alias_policy(tmp_path, monkeypatch):
+    from frameit.utils.atomic import write_yaml_atomic
+
+    monkeypatch.setattr(yaml.SafeDumper, "ignore_aliases", lambda self, value: True)
+    shared = [1, 2]
+    path = tmp_path / "run-status.yaml"
+    write_yaml_atomic(path, {"a": shared, "b": shared})
+    loaded = record(tmp_path, path.name)
+    assert loaded == {"a": [1, 2], "b": [1, 2]} and loaded["a"] is not loaded["b"]
+
+
+def test_checkpoint_keeps_custom_safe_resolver(tmp_path, monkeypatch):
+    import re
+
+    from frameit.utils.atomic import write_yaml_atomic
+
+    class RecordLoader(yaml.SafeLoader):
+        pass
+
+    monkeypatch.setattr(yaml.SafeDumper, "yaml_implicit_resolvers",
+                        deepcopy(yaml.SafeDumper.yaml_implicit_resolvers))
+    for policy in (RecordLoader, yaml.SafeDumper):
+        policy.add_implicit_resolver("tag:yaml.org,2002:null", re.compile("^MISSING$"), ["M"])
+    path = tmp_path / "run-provenance.yaml"
+    write_yaml_atomic(path, {"source": "MISSING"})
+    assert yaml.load(path.read_text(), Loader=RecordLoader) == {"source": "MISSING"}
+
+
+def test_invalid_checkpoint_preserves_last_complete_record(tmp_path):
+    from frameit.utils.atomic import write_yaml_atomic
+
+    path = tmp_path / "run-status.yaml"
+    path.write_text("state: running\n")
+    with pytest.raises(FileExistsError):
+        write_yaml_atomic(path, {"bad": object()}, overwrite=False)
+    with pytest.raises(yaml.representer.RepresenterError):
+        write_yaml_atomic(path, {"bad": object()})
+    assert path.read_text() == "state: running\n"
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_partial_checkpoint_stream_is_never_published(tmp_path, monkeypatch):
+    from frameit.utils.atomic import write_yaml_atomic
+
+    path = tmp_path / "run-status.yaml"
+    path.write_text("state: running\n")
+
+    def fail_write(stream, write, text):
+        write("state: completed\n")
+        stream.flush()
+        assert record(tmp_path, path.name) == {"state": "running"}
+        raise OSError("checkpoint write interrupted")
+
+    observe_checkpoint_writes(monkeypatch, fail_write)
+    with pytest.raises(OSError, match="checkpoint write interrupted"):
+        write_yaml_atomic(path, {"state": "completed"})
+    assert list(tmp_path.iterdir()) == [path]
+    assert record(tmp_path, path.name) == {"state": "running"}
+
+
 @pytest.mark.parametrize("constructor", [
     "yaml", "preset_yaml", "public_yaml", "mapping", "preset_mapping",
 ])

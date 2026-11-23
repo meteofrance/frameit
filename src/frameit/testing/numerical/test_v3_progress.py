@@ -289,12 +289,13 @@ def test_quiet_lazy_preparation_has_source_but_no_completed_values(
         attempt = pool.submit(execute_simulation, conf)
         try:
             assert ready.wait(10)
-            text = notice(messages, "preparing lazy source views/calculations")
-            assert "source=weather" in text
+            # An earlier notice for this operation may predate selection of the first source.
+            weather = "preparing lazy source views/calculations | source=weather |"
+            text = notice(messages, weather)
             assert "prepared sources=0" in text and "published products=0" in text
             assert not reads
             before = (conf.output_dir / "run-status.yaml").read_bytes()
-            notice(messages, "preparing lazy source views/calculations")
+            notice(messages, weather)
             assert (conf.output_dir / "run-status.yaml").read_bytes() == before
         finally:
             release.set()

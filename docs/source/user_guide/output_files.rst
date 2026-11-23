@@ -140,6 +140,9 @@ Keep these four records with the data:
   ``products`` lists observed complete publications; ``pending`` lists unresolved
   processing, publication or cleanup.
 
+When comparing run records, compare the parsed YAML values. Quoting and
+Unicode escapes can differ depending on the installed YAML emitter.
+
 New failure records include an ``error.code`` beside the error type and
 message. Older records may not have a code. Look up a code in
 :doc:`../troubleshooting/codes`. The code explains the failure; it does not

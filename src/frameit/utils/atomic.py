@@ -45,10 +45,32 @@ def atomic_output(path, *, overwrite=True):
 def write_yaml_atomic(path, value, *, overwrite=True):
     import yaml
 
-    with atomic_output(path, overwrite=overwrite) as temporary:
-        temporary.write_text(
-            yaml.safe_dump(value, sort_keys=False, allow_unicode=True), encoding="utf-8"
-        )
+    emitter = getattr(yaml, "CSafeDumper", None)
+    with atomic_output(path, overwrite=overwrite) as temporary, temporary.open(
+        "w", encoding="utf-8"
+    ) as stream:
+        resolver = ("yaml_implicit_resolvers", "yaml_path_resolvers", "resolve",
+                    "descend_resolver", "ascend_resolver")
+        if emitter is None or any(
+            getattr(emitter, name) is not getattr(yaml.SafeDumper, name) for name in resolver
+        ):
+            yaml.safe_dump(value, stream, sort_keys=False, allow_unicode=True)
+            return
+
+        # SafeDumper owns representation and aliases; custom representers may consume their input.
+        representer = yaml.SafeDumper(stream, sort_keys=False, allow_unicode=True)
+        try:
+            node = representer.represent_data(value)
+        finally:
+            representer.dispose()
+        del representer
+        try:
+            yaml.serialize(node, stream, Dumper=emitter, allow_unicode=True)
+        except (UnicodeEncodeError, TypeError):
+            # LibYAML rejects surrogate-escaped paths and some str subclasses. Reuse the same nodes.
+            stream.seek(0)
+            stream.truncate()
+            yaml.serialize(node, stream, Dumper=yaml.SafeDumper, allow_unicode=True)
 
 
 @contextmanager
