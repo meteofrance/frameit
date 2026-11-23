@@ -53,6 +53,10 @@ from frameit.utils.units import UNITS, convert_units, unit_key
 
 def _metadata_id(prefix, value):
     """Hash coordinate/identity metadata only, never scientific field contents."""
+    return prefix + hashlib.sha256(_metadata_json(value).encode()).hexdigest()
+
+
+def _metadata_json(value):
     def encode(item):
         if isinstance(item, np.ndarray):
             return item.tolist()
@@ -60,8 +64,7 @@ def _metadata_id(prefix, value):
             return str(item) if item.dtype.kind in "mM" else item.item()
         return str(item)
 
-    encoded = json.dumps(value, default=encode, sort_keys=True, separators=(",", ":"))
-    return prefix + hashlib.sha256(encoded.encode()).hexdigest()
+    return json.dumps(value, default=encode, sort_keys=True, separators=(",", ":"))
 
 
 def _source_model(source, datasets, path, *, fmt):
@@ -243,7 +246,29 @@ def _cf_coordinate_metadata(ds, *, model):
     return metadata
 
 
-def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None):
+def _same_native_grid(grid, previous):
+    """Prove the inputs to the canonical grid digest are unchanged."""
+    def metadata(item):
+        return {**item, "coordinates": {
+            name: {key: value for key, value in coord.items() if key != "values"}
+            for name, coord in item["coordinates"].items()}}
+
+    if _metadata_json(metadata(grid)) != _metadata_json(metadata(previous)):
+        return False
+    for name, coord in grid["coordinates"].items():
+        values = coord["values"]
+        earlier = previous["coordinates"][name]["values"]
+        # shortcut: compare plain numeric arrays only; other dtypes use the canonical encoder.
+        if values.dtype.kind not in "biuf" or values.itemsize > 8 or values.dtype != earlier.dtype:
+            return False
+        # Numeric equality would merge signed zeros despite their different JSON.
+        bits = np.dtype((np.void, values.itemsize))
+        if not np.array_equal(values.view(bits), earlier.view(bits)):
+            return False
+    return True
+
+
+def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None, *, previous=None):
     spatial = tuple(dim for dim in variable.dims if dim not in temporal_dims)
     # Auxiliary arrays can be scientific support, even when xarray calls them coordinates.
     names = set(spatial)
@@ -308,10 +333,12 @@ def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None):
                 "role": "coordinate_metadata"}
     grid = {"dimensions": {dim: ds.sizes[dim] for dim in spatial}, "coordinates": coordinates,
             "grid_mapping": mapping}
+    if previous is not None and _same_native_grid(grid, previous[1]):
+        return previous[0], grid
     return _metadata_id("grid_", grid), grid
 
 
-def _netcdf_inventory(path, source, resources, *, check_croco_zeta=False):
+def _netcdf_inventory(path, source, resources, *, check_croco_zeta=False, previous_grids=None):
     from frameit.io.grib_utils import normalize_isobaric_coordinates
     from frameit.io.netcdf_utils import mnh_altitude_terms
 
@@ -384,7 +411,9 @@ def _netcdf_inventory(path, source, resources, *, check_croco_zeta=False):
                str(var.attrs.get("coordinates", var.encoding.get("coordinates", ""))),
                var.attrs.get("grid_mapping"))
         if key not in cache:
-            cache[key] = _native_grid(ds, var, temporal_dims | time_names, coordinate_metadata)
+            previous = previous_grids.get(key) if previous_grids is not None else None
+            cache[key] = _native_grid(
+                ds, var, temporal_dims | time_names, coordinate_metadata, previous=previous)
         grid_id, grid = cache[key]
         # Provenance is outside the geometry hash and the clean cached grid.
         if grid_id not in grids:
@@ -477,8 +506,11 @@ def _netcdf_inventory(path, source, resources, *, check_croco_zeta=False):
                     "interval_operation", "interval_write")
                     if k in var.attrs},
                 "locator": {"format": "netcdf", "path": str(path), "variable": name,
-                            "indexers": indexers,
-                            "coordinate_indexers": dict(sample["indexers"])}})
+                             "indexers": indexers,
+                             "coordinate_indexers": dict(sample["indexers"])}})
+    if previous_grids is not None:
+        previous_grids.clear()
+        previous_grids.update(cache)
     return {"model": model,
              "physical_type": "ocean" if model in {"nemo", "croco"} else "atmosphere",
              "dataset_attributes": dataset_attributes,
@@ -870,6 +902,7 @@ def inventory_source(conf, name, *, resources=None):
                         and "kind" not in source.get("field_metadata", {}).get("zeta", {}))
     entries, excluded, overlaps, errors = _source_file_entries(source, name)
     fields, grids, records, facts = {}, {}, [], []
+    previous_grids = {} if len(entries) > 1 else None
     altitude_height_terms = set()
     with (DatasetResources() if resources is None else nullcontext(resources)) as owned:
         for entry in entries:
@@ -898,7 +931,8 @@ def inventory_source(conf, name, *, resources=None):
                     if dependency_error:
                         raise PreflightError([dependency_error])
                 if fmt == "netcdf":
-                    info = _netcdf_inventory(path, source, owned, check_croco_zeta=check_croco_zeta)
+                    info = _netcdf_inventory(path, source, owned, check_croco_zeta=check_croco_zeta,
+                                             previous_grids=previous_grids)
                 elif fmt == "grib":
                     info = _grib_source_inventory(path, source)
                 else:

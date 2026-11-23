@@ -295,6 +295,88 @@ def guard_netcdf_payloads(monkeypatch, forbidden_names):
     return reads
 
 
+@pytest.mark.parametrize("kind,expected_hashes", [("numeric", 1), ("labels", 3), ("nan_bits", 3)])
+def test_v3_reuses_exact_netcdf_grid_fingerprint(tmp_path, monkeypatch, kind, expected_hashes):
+    from frameit.core import preflight as metadata
+
+    paths = []
+    for hour in range(3):
+        scene = v3_scene(hours=(hour,))
+        missing = -np.nan if kind == "nan_bits" and hour == 1 else np.nan
+        scene = scene.assign_coords(longitude=(
+            "x", [60., missing, 62.], scene.longitude.attrs))
+        scene.longitude.encoding["_FillValue"] = None
+        if kind == "labels":
+            scene = scene.assign_coords(x=["west", "middle", "east"])
+        path = tmp_path / f"sample-{hour}.nc"
+        scene.to_netcdf(path, engine="h5netcdf")
+        paths.append(path)
+    guard_netcdf_payloads(monkeypatch, {"temperature"})
+    control = metadata.inventory_source(v3_config(tmp_path, paths[:1]), "weather")
+    grid_id, = control["native_grids"]
+    canonical_id = metadata._metadata_id
+    hashes = []
+
+    def observe(prefix, value):
+        result = canonical_id(prefix, value)
+        if prefix == "grid_":
+            hashes.append(result)
+        return result
+
+    monkeypatch.setattr(metadata, "_metadata_id", observe)
+    conf = v3_config(tmp_path, paths)
+    source = metadata.inventory_source(conf, "weather")
+    assert set(source["native_grids"]) == {grid_id}
+    assert [record["grid_id"] for record in source["records"]] == [grid_id] * 3
+    grid = source["native_grids"][grid_id]
+    providers = grid["coordinate_providers"]["longitude"]
+    assert [provider["path"] for provider in providers] == list(map(str, paths))
+    for hour, provider in enumerate(providers):
+        sample, = provider["samples"]
+        assert sample["time"] == np.datetime64(f"2026-01-01T0{hour}:00", "ns")
+        assert not sample["indexers"] and sample["coordinate_indexers"] == {"time": 0}
+    assert hashes == [grid_id] * expected_hashes
+    hashes.clear()
+    metadata.inventory_source(conf, "weather")
+    assert hashes == [grid_id] * expected_hashes
+
+
+@pytest.mark.parametrize("change", [
+    "coordinates", "signed_zero", "dtype", "attributes", "axes", "bounds", "missing_bounds",
+])
+def test_v3_repeated_netcdf_grid_checks_changed_coordinates(tmp_path, monkeypatch, change):
+    first, second = (v3_scene(hours=(hour,)) for hour in (0, 1))
+    if change in {"coordinates", "dtype"}:
+        first = first.assign_coords(longitude=("x", [60., 61., 62.], first.longitude.attrs))
+        values = [60., 61., 63.] if change == "coordinates" else np.array(
+            [60., 61., 62.], dtype=np.float32)
+        second = second.assign_coords(longitude=("x", values, second.longitude.attrs))
+    elif change == "signed_zero":
+        second = second.assign_coords(x=("x", [-0., 1., 2.], second.x.attrs))
+    elif change == "attributes":
+        first.longitude.attrs["producer_code"] = 1
+        second.longitude.attrs["producer_code"] = 1.
+    elif change == "axes":
+        first = first.assign_coords(longitude=(
+            ("y", "x"), np.full((2, 3), 60.), first.longitude.attrs))
+        second = second.assign_coords(longitude=(
+            ("x", "y"), np.full((3, 2), 60.), second.longitude.attrs))
+    else:
+        first.x.attrs["bounds"] = second.x.attrs["bounds"] = "x_bounds"
+        first = first.assign_coords(x_bounds=(("x", "nv"), [[-.5, .5], [.5, 1.5], [1.5, 2.5]]))
+        if change == "bounds":
+            second = second.assign_coords(
+                x_bounds=(("x", "nv"), [[-.5, .5], [.5, 1.5], [1.5, 2.75]]))
+    paths = [tmp_path / "first.nc", tmp_path / "second.nc"]
+    for scene, path in zip((first, second), paths, strict=True):
+        scene.to_netcdf(path, engine="h5netcdf")
+    guard_netcdf_payloads(monkeypatch, {"temperature"})
+    match = ("x bounds.*missing bounds variable" if change == "missing_bounds"
+             else "distinct fields share requested name 'temperature'")
+    with pytest.raises(ValueError, match=match):
+        preflight(v3_config(tmp_path, paths), check_output=False)
+
+
 @pytest.mark.parametrize("case", [
     "complementary", "height", "height_alias", "different_surface", "unlabelled_surface",
     "lead", "lead_alias", "duplicate", "flag",
