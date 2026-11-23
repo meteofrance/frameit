@@ -304,7 +304,7 @@ class PolarRegridPlan:
                 "nonzero_source_points": int(np.unique(indices).size)}
 
     def apply(self, field, mask=None, *, policy="strict", minimum_support=.5, output_chunks=None,
-              source_halo_points=None):
+              source_halo_points=None, read_window=None):
         shape = tuple(field.sizes.get(dim) for dim in ("y_box", "x_box"))
         if shape != self.geometry.source_lon.shape:
             raise ValueError("Field shape does not match the plan's source geometry")
@@ -325,6 +325,8 @@ class PolarRegridPlan:
             supported.weights = supported.weights[:, positions]
             supported.presence_weights = supported.presence_weights[:, positions]
             field = field.isel(y_box=y, x_box=x)
+            if read_window is not None:
+                field = read_window(field, y=y, x=x)
             if mask is not None:
                 mask = mask.isel(y_box=y, x_box=x)
         return supported.apply(

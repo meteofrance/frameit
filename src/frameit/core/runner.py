@@ -193,6 +193,13 @@ class FrameitRunner:
 
                 reader_options = {"engine": self.conf.netcdf_engine,
                                   "chunks": self.conf.netcdf_chunks}
+                if (source["model"] == "mesonh" and not self.conf.netcdf_chunks
+                        and not source.get("allowed_gaps") and not binding.get("interpretation")
+                        and (self.conf.x_boxsize_km or "polar" in binding["products"])):
+                    from frameit.io.regional_reads import RegionalReads
+
+                    self.regional_reads = RegionalReads()
+                    reader_options["regional_reads"] = self.regional_reads
             elif self.conf.file_type == "grib":
                 from frameit.io.grib_utils import concat_grib2ds_by_vert_coord as load
             elif self.conf.file_type == "fa":
@@ -208,7 +215,8 @@ class FrameitRunner:
             from frameit.processing.derived.wind import execute_source_operations
 
             user = execute_source_operations(
-                user, tracker.get("internal", {}), source, binding, self.conf)
+                user, tracker.get("internal", {}), source, binding, self.conf,
+                regional_reads=getattr(self, "regional_reads", None))
             return user, tracker, files
         files = self.find_files()
         if self.conf.infer_grid_geometry and self.preflight_report is None:

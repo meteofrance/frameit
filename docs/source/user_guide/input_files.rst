@@ -148,6 +148,12 @@ their supported NetCDF encodings. It is independent of ``output.writer.engine``.
 a whole axis. Start with automatic layouts and measure wall time, peak memory
 and output agreement before changing them.
 
+With automatic Meso-NH NetCDF reads, a tracked box can fetch just its native
+rectangle at each time. Polar fields can use their own interpolation stencil
+and halo, including the adjacent faces needed for mass-point winds. Explicit
+reader chunks use the requested layout instead. Tracking and geometry checks
+can still need a wider area; the output size is not a disk-read or memory bound.
+
 Native GRIB extraction reads only the selected encoded messages, using their
 inventoried locations. It needs no disk index. Each requested message is decoded
 as a whole horizontal field, even if a later operation uses a smaller area;

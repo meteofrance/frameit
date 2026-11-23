@@ -1112,7 +1112,9 @@ def run_native_sources(runner, *, benchmark=False):
                 for grid_id, ds in consumer.ds_user.items():
                     ds = ds.reset_coords([field for field in fields if field in ds.coords])
                     if child.x_boxsize_km and child.y_boxsize_km:
-                        ds = _regional_dataset(ds, grid_id, child, plans[name], centres)
+                        ds = _regional_dataset(
+                            ds, grid_id, child, plans[name], centres,
+                            regional_reads=getattr(consumer, "regional_reads", None))
                     views = ([(None, ds)] if grid_id in layout else
                              [(field, ds.drop_vars(set(ds.data_vars) - {field}))
                               for field in ds.data_vars])
@@ -1147,7 +1149,8 @@ def run_native_sources(runner, *, benchmark=False):
                     consumer.ds_tracker.get("internal", {}) | consumer.ds_tracker.get(
                         "polar_samples", {}), plans[name], binding,
                     consumer.conf, centres, layout=layout,
-                    output_formatter=partial(format_polar_output, layout=layout))
+                    output_formatter=partial(format_polar_output, layout=layout),
+                    regional_reads=getattr(consumer, "regional_reads", None))
                 runner.field_products[(name, "polar")] = dataset.assign_attrs(
                     source_id=name, source_model=plans[name]["model"],
                     source_format=plans[name]["format"])
@@ -1199,7 +1202,9 @@ def run_native_sources(runner, *, benchmark=False):
     return RunResult(ok=True, n_files=len(files), output_dir=runner.output_dir, files=files)
 
 
-def _regional_dataset(dataset, grid_id, conf, source, centres):
+def _regional_dataset(dataset, grid_id, conf, source, centres, *, regional_reads=None):
+    from functools import partial
+
     from frameit.processing.extraction import extract_data
 
     if not (conf.x_boxsize_km and conf.y_boxsize_km):
@@ -1237,7 +1242,8 @@ def _regional_dataset(dataset, grid_id, conf, source, centres):
                 and set(dataset[name].dims) - horizontal - {"time"}]
             dataset = dataset.reset_coords(support_fields)
         track, cropped = extract_data(
-            settings, {grid_id: dataset}, geometry, track, native_winds=True)
+            settings, {grid_id: dataset}, geometry, track, native_winds=True,
+            read_box=partial(regional_reads.box, grid_id) if regional_reads else None)
         dataset = cropped[grid_id]
         if support_fields:
             dataset = dataset.set_coords(support_fields)

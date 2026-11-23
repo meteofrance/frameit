@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from copy import copy
+from functools import partial
 from time import perf_counter
 from typing import Any
 
@@ -96,7 +97,7 @@ def verify_polar_target(dataset, plan, conf, source, centres):
 
 
 def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache=None,
-                         output_formatter=None, layout=None):
+                         output_formatter=None, layout=None, regional_reads=None):
     """Execute only declared v3 results on each source's associated native sample clock."""
     from frameit.processing.derived.wind import polar_wind_components, prepare_source_operation
     from frameit.processing.polar.contracts import require_executable_products
@@ -141,7 +142,8 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
                 xr.Dataset(coords={"time": [stamp]}), track=track,
                 track_centres_authoritative=True)
         target = targets[stamp]
-        prepared, arrays, native_views, _ = prepare_source_operation(job, internal, source, conf)
+        prepared, arrays, native_views, _ = prepare_source_operation(
+            job, internal, source, conf, regional_reads=regional_reads)
         if job["method"] == "polar_input" and ("units" in job or job["pair"]):
             from frameit.processing.requests import _operation_units
 
@@ -211,6 +213,9 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
                               if options.get("kind") == "continuous"
                               else "integer_to_float64_for_bilinear")
             sample_source = prepared.assign({name: value}) if promote else prepared
+            read_window = (
+                regional_reads.polar_reader(job, stamp) if regional_reads is not None
+                and not absent and not promote and job["method"] == "polar_input" else None)
             numeric_types[name] = {
                 "prepared_dtype": prepared_dtype, "evaluation_dtype": str(value.dtype),
                 "conversion": conversion}
@@ -219,7 +224,7 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
                 continue
             piece, weights, footprint = _sample_piece(
                 sample_source, [name], (), target.isel(time=0, drop=True),
-                settings, options["interpolation"], cache, geometry_cache)
+                settings, options["interpolation"], cache, geometry_cache, read_window=read_window)
             pieces[name] = piece
             signatures.append(weights.signature)
             footprints.append(footprint)
@@ -486,7 +491,8 @@ def _broadcast_auxiliary(value, grid):
     return xr.broadcast(value.reset_coords(drop=True), grid.lon)[0]
 
 
-def _sample_piece(source, names, pair, geometry, conf, method, plan_cache, source_geometry_cache):
+def _sample_piece(source, names, pair, geometry, conf, method, plan_cache, source_geometry_cache,
+                  *, read_window=None):
     geography = source.isel(time=0, drop=True) if "time" in source.dims else source
     timing = ({"profile": conf.polar_profile}
               if getattr(conf, "schema_version", None) == 3 else {})
@@ -536,6 +542,7 @@ def _sample_piece(source, names, pair, geometry, conf, method, plan_cache, sourc
             raise ValueError(f"Polar field {name} must be numerical")
         sampled[name], support[name], status[name] = plan_cache.apply(
             plan, field, joint if joint is not None and name in pair else None,
+            **({"read_window": partial(read_window, footprint=footprint)} if read_window else {}),
             **application_options,
         )
     transformed = {}

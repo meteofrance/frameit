@@ -125,7 +125,7 @@ def normalize_native_wind_units(ds: xr.Dataset, conf: Any, group: str) -> xr.Dat
     return qualify_overridden_wind_metadata(out, conf)
 
 
-def normalize_winds(ds: xr.Dataset, conf: Any, group: str) -> xr.Dataset:
+def normalize_winds(ds: xr.Dataset, conf: Any, group: str, *, angle_for=None) -> xr.Dataset:
     """Convert every present declared mass-point pair to physical east/north m/s.
 
     Unknown fields and absent pairs do not create dependencies. A lone member
@@ -154,7 +154,7 @@ def normalize_winds(ds: xr.Dataset, conf: Any, group: str) -> xr.Dataset:
         method = "none"
         angle = None
         if frame == "grid":
-            angle = rotation_angle(ds, conf, pair)
+            angle = (angle_for or rotation_angle)(ds, conf, pair)
             method = pair["rotation"]["method"]
             if pair.get("declaration") == "legacy_scalar":
                 method = "legacy_grid_rotation_coordinate"
@@ -272,7 +272,51 @@ def add_speed_from_uv_dict(
     return out
 
 
-def prepare_source_operation(operation, internal, source, conf):
+def _wind_window(bounds, *, reads, components, operation, geometry, settings, angle):
+    """Use the original native brackets and full-domain rotation on this rectangle."""
+    from frameit.processing.requests import _operation_units
+    from frameit.processing.wind_collocation import collocate_mnh_component, staggered_support
+
+    target = geometry.isel(bounds)
+    fields = {}
+    for name, (value, record) in components.items():
+        native = {}
+        for mass, selection in bounds.items():
+            if mass in value.dims:
+                native[mass] = selection
+                continue
+            axis = next((d for d in (mass + "_u", mass + "_v") if d in value.dims), None)
+            if axis is None:
+                return None
+            brackets = staggered_support(value[axis], target[mass])
+            indices = [i for pair in brackets.values() for i in pair]
+            # Even an exact hit needs a monotone two-point coordinate for the interpolator.
+            lo = min(min(indices, default=0), value.sizes[axis] - 2)
+            native[axis] = slice(lo, max(max(indices, default=0) + 1, lo + 2))
+        vertical = record["vertical"]
+        block = reads.raw(("native", record["grid_id"], name, record["time"]), native,
+                          levels=vertical and vertical["source_native_indices"])
+        if block is None:
+            return None
+        like = value.isel(native)
+        if "time" in like.dims and "time" not in block.dims:
+            block = block.set_dims({"time": 1, **block.sizes})
+        if block.sizes != like.sizes or block.dtype != like.dtype:
+            return None
+        field = like.copy(data=block.transpose(*like.dims).data)
+        fields[name] = collocate_mnh_component(field, target, settings)
+    ds = xr.Dataset(fields, attrs=geometry.attrs)
+    ds = ds.assign_coords({n: c for n, c in target.coords.items() if set(c.dims) <= set(ds.dims)})
+    result = normalize_winds(ds, settings, "operation", angle_for=lambda *_: angle.isel(
+        {d: s for d, s in bounds.items() if d in angle.dims}))
+    name = operation["inputs"]["field"]
+    units = operation.get("units") or components[name][0].attrs.get("units")
+    value = (_operation_units(result[name], units, model=operation["model"])
+             if units else result[name])
+    return value.variable
+
+
+def prepare_source_operation(operation, internal, source, conf, *, regional_reads=None):
     """Prepare this one actual sample, independently of every exported representation."""
     import json
     from copy import copy
@@ -291,6 +335,7 @@ def prepare_source_operation(operation, internal, source, conf):
     arrays = {}
     native_views = []
     input_names = set(operation["inputs"].values())
+    components = {}
     for name in operation["input_binding"]["dependencies"]:
         descriptor = operation["input_binding"]["dependencies"][name]
         record = descriptor["records"][0]
@@ -328,6 +373,8 @@ def prepare_source_operation(operation, internal, source, conf):
             attrs["frameit_metadata_origins"] = json.dumps(metadata["origins"], sort_keys=True)
         native_views.append(native_view)
         value = value.reset_coords(drop=True).assign_attrs(attrs)
+        if regional_reads is not None and name in input_names:
+            components[name] = value, record
         if (name in input_names and operation.get("input_sampling", {}).get(
                 name, operation["sampling"]) == "mass"
                 and operation["model"] == "mesonh"):
@@ -368,11 +415,31 @@ def prepare_source_operation(operation, internal, source, conf):
             settings.name_lat_dim, settings.name_lon_dim = "y", "x"
         settings.velocity_aliases = {
             "u_velocity": operation["inputs"]["u"], "v_velocity": operation["inputs"]["v"]}
-        prepared = normalize_winds(prepared, settings, "operation")
+        if (regional_reads is not None and not operation["context"][2]
+                and operation["sampling"] == "mass"
+                and (operation["pair"].get("rotation") or {}).get("method") == "geolocation"
+                and operation["method"] in {"transform", "polar_input"}):
+            from functools import partial
+
+            angle = None
+
+            def capture_angle(ds, conf, pair):
+                nonlocal angle
+                angle = rotation_angle(ds, conf, pair)
+                return angle
+
+            prepared = normalize_winds(prepared, settings, "operation", angle_for=capture_angle)
+            key = operation["product"], operation["grid_id"], operation["name"], operation["context"][0]
+            regional_reads.preparations[key] = (
+                partial(_wind_window, components=components, operation=operation,
+                        geometry=geometry, settings=settings, angle=angle)
+                if angle is not None and key not in regional_reads.preparations else None)
+        else:
+            prepared = normalize_winds(prepared, settings, "operation")
     return prepared, arrays, native_views, geometry
 
 
-def execute_source_operations(user, internal, source, binding, conf):
+def execute_source_operations(user, internal, source, binding, conf, *, regional_reads=None):
     """Execute only bound model-grid results, on separate native input views."""
     import json
 
@@ -383,7 +450,7 @@ def execute_source_operations(user, internal, source, binding, conf):
     rotation_coordinates = {}
     for operation in binding.get("operations", []):
         prepared, arrays, native_views, geometry = prepare_source_operation(
-            operation, internal, source, conf)
+            operation, internal, source, conf, regional_reads=regional_reads)
         if operation["method"] == "wind_speed":
             u, v = align_wind_pair(*(prepared[operation["inputs"][key]] for key in ("u", "v")))
             value = np.hypot(u, v).assign_attrs(

@@ -459,6 +459,7 @@ def _extract_box_for_dataset(
     x_box_km: xr.DataArray,
     y_box_km: xr.DataArray,
     track_box: xr.Dataset,
+    read_box=None,
 ) -> xr.Dataset:
     """
     Extract a time-varying cyclone-centred box from a single Dataset.
@@ -526,6 +527,8 @@ def _extract_box_for_dataset(
         # x_idx: (time, x_box), y_idx: (time, y_box)
         # da:   (..., y_dim, x_dim)
         da_box = da.isel(indexers)
+        if read_box is not None:
+            da_box = read_box(da, indexers, da_box)
 
         # Application du masque NaN pour les points hors domaine
         mask = mask_box
@@ -767,7 +770,7 @@ def _native_axis_indexer(ds, dim, mass_dim, axis, track_box, conf):
 
 
 def _extract_native_box(ds, x_idx, y_idx, mask_box, conf, x_box, y_box,
-                        x_box_km, y_box_km, track_box):
+                        x_box_km, y_box_km, track_box, read_box=None):
     """Crop native values and geography together on each labelled source grid.
 
     Output uses x_u_box/y_u_box and x_v_box/y_v_box for aliases (even when
@@ -789,6 +792,8 @@ def _extract_native_box(ds, x_idx, y_idx, mask_box, conf, x_box, y_box,
     for name, da in ds.variables.items():
         value = cropped[name]
         relevant = [dim for dim in da.dims if dim in masks]
+        if relevant and name in ds.data_vars and read_box is not None:
+            value = read_box(ds[name], {dim: indexers[dim] for dim in relevant}, value)
         # Drop automatically attached source coordinates before constructing the
         # result: each coordinate is independently cropped/masked below.
         clean = xr.DataArray(value.variable)
@@ -822,6 +827,7 @@ def extract_data(
     track_ds: xr.Dataset,
     *,
     native_winds: bool = False,
+    read_box=None,
 ):
     """
     High-level extraction: compute box bounds and crop all user datasets.
@@ -956,5 +962,6 @@ def extract_data(
             x_box_km=x_box_km,
             y_box_km=y_box_km,
             track_box=track_box,
+            read_box=read_box,
         )
     return track_box, extracted

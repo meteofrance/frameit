@@ -349,12 +349,13 @@ def join_arome_tracking_shards(groups, native_grids):
     return result
 
 
-def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
+def _selected_netcdf(files, binding, source, resources, *, engine, chunks, regional_reads=None):
     """Keep bound product selections separate from internal native read stencils."""
     if binding.get("status") != "bound" or source is None:
         raise ValueError(
             "NetCDF selected_records requires bound requests and owning source metadata")
     from frameit.io.grib_utils import normalize_isobaric_coordinates
+    from frameit.io.regional_reads import contiguous_positions
     from frameit.processing.polar.contracts import require_executable_products
     from frameit.processing.requests import _sample_context
 
@@ -426,14 +427,15 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
         )
         if name != variable:
             dataset[name].attrs["source_variable_name"] = variable
-        indexers = {dim: [position] for dim, position in
-                    locator["coordinate_indexers"].items() if dim in dataset.dims}
-        indexers.update({dim: [position] for dim, position in locator["indexers"].items()
-                         if dim in original[variable].dims})
+        indexers = {dim: contiguous_positions([position]) for dim, position in
+                     locator["coordinate_indexers"].items() if dim in dataset.dims}
+        indexers.update({dim: contiguous_positions([position])
+                         for dim, position in locator["indexers"].items()
+                          if dim in original[variable].dims})
         vertical = record["vertical"]
         if vertical is not None:
             dim = vertical["dimension"]
-            indexers[dim] = record["source_positions"]
+            indexers[dim] = contiguous_positions(record["source_positions"])
             index = f"{dim}_source_native_index"
             if variable == index and variable in original.coords:
                 dataset = dataset.set_coords(name)
@@ -605,6 +607,9 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks):
                                 {"units": "1"})})
                 # Chunk the selected backend view, not a full-file Dask array.
                 # Otherwise a retained time chunk can read excluded scientific samples.
+                if regional_reads is not None:
+                    regional_reads.remember("model_grid" if export_support else "native",
+                                            name, record, dataset[name].variable)
                 dataset = dataset.chunk({dim: size for dim, size in (chunks or {}).items()
                                           if dim in dataset.dims})
                 application = {
@@ -713,6 +718,7 @@ def concat_nc2ds_by_vert_coord(
     file_layout="time_series",
     selected_records=None,
     source_plan=None,
+    regional_reads=None,
 ) -> tuple[dict[str, xr.Dataset], dict[str, dict[str, xr.Dataset]]]:
     """
     Open the NetCDF files once then apply two independent requests.
@@ -735,7 +741,7 @@ def concat_nc2ds_by_vert_coord(
     if selected_records is not None:
         return _selected_netcdf(
             files, selected_records, source_plan, resources,
-            engine=engine, chunks=chunks,
+            engine=engine, chunks=chunks, regional_reads=regional_reads,
         )
 
     # Normalise the user request
