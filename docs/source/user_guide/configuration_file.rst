@@ -443,14 +443,18 @@ quantities and time-association choices remain distinct.
 Interpolation and field options
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Proven continuous fields default to bilinear interpolation; proven categorical
-fields use nearest-neighbour. Explicit ``interpolation: nearest`` does not
-require ``kind`` for direct 32- or 64-bit floating-point fields from Meso-NH or
-AROME NetCDF sampled without preparation, conversion or rotation. Otherwise,
-kind must be known. If the input and YAML both leave kind unstated, FrameIt
-supplies ``continuous`` for the direct native records matched in :doc:`input_files`.
-Input-aware validation reports each affected field with :ref:`w1603`. Unmatched
-fields still need a known kind.
+Polar sampling does not require or fill in ``kind``. Numeric fields default to
+bilinear interpolation unless the input metadata, categorical flags or a field
+declaration identifies them as categorical. Known categories require
+nearest-neighbour. For unlabeled category codes, select ``interpolation: nearest``
+explicitly to avoid blending categories. The selected method is recorded even
+when ``kind`` is absent. Native FA still has its own :doc:`input contract <fa_inputs>`.
+
+Sampled NetCDF fields must use 32- or 64-bit floating-point or integer types up
+to 32 bits, in storage and after decoding. Wider integers can lose precision
+even in nearest-neighbour sampling. Bilinear evaluates integer fields in
+float64 to retain fractional results; it does not change model-grid values.
+
 ``missing_data_policy`` defaults to ``strict``.
 Explicit ``renormalize`` requires ``min_valid_weight_fraction``. All-missing and
 unmapped points stay missing; real zeroes stay zero.

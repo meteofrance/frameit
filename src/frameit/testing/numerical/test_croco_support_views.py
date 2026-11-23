@@ -218,10 +218,11 @@ def test_croco_coexported_zeta_retains_own_metadata_with_polar(tmp_path, explici
     assert result.ok, result
     products = {p["role"]: p["path"] for p in result.products}
     with xr.open_dataset(products["model_grid"]) as grid, xr.open_dataset(products["polar"]) as polar:
-        assert grid.zeta.attrs["kind"] == "continuous"
         assert grid.zeta.attrs["units"] == "meter"
-        assert json.loads(grid.zeta.attrs["frameit_metadata_origins"]) == {
-            "kind": "declaration" if explicit_zeta_kind else "documented_fallback", "units": "input"}
+        for product in (grid, polar):
+            assert product.zeta.attrs.get("kind") == ("continuous" if explicit_zeta_kind else None)
+            origins = json.loads(product.zeta.attrs.get("frameit_metadata_origins", "{}"))
+            assert origins.get("kind") == ("declaration" if explicit_zeta_kind else None)
         assert "eta: zeta" in grid.s_rho.attrs["formula_terms"]
         t = xr.DataArray([0., 1.], dims="time")
         zeta = t + .01 * grid.eta_rho_source_native_index + .001 * grid.xi_rho_source_native_index

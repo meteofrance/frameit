@@ -810,18 +810,6 @@ def _select_times(tree, times):
     return {key: _select_times(value, times) for key, value in tree.items()}
 
 
-def _polar_kind_warnings(source, samples):
-    rules = {}
-    for inputs in samples:
-        for field, metadata in inputs.items():
-            if evidence := metadata.get("evidence", {}).get("kind"):
-                rules[field] = evidence["rule"]
-    return [format_message(
-        "W1603", f"sources.{source}.{field}: using kind: continuous for "
-        f"polar samples with missing kind ({rule}).")
-        for field, rule in rules.items()]
-
-
 def bind_sources(conf, *, check_output=True, execution_options=None, resources=None):
     """Prepare actual consumers once, then copy their bound snapshots to the parent."""
     from frameit.core.preflight import (
@@ -966,8 +954,6 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
             binding = bindings[name]
             product["stored_names"] = {name: name for name in product["fields"]}
             product["dimensions"], product["units"] = {}, {}
-            associated = {record["source_time"]
-                          for record in plans[name]["region"]["associations"]}
             jobs = [job for job in binding["operation_plans"] if job["product"] == "polar"]
             for job in jobs:
                 horizontal = set(job["polar_geometry"]["horizontal_dimensions"].values())
@@ -983,10 +969,6 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                     raise ValueError(
                         f"polar.{job['name']}: incompatible selected sample dimensions")
                 product["units"][job["name"]] = job["result_units"]
-            # Planned kind completions belong to validation, not the executed run manifest.
-            report["warnings"] = [*report["warnings"], *_polar_kind_warnings(
-                name, (job["polar_input_metadata"] for job in jobs
-                       if job["context"][0] in associated))]
         resource_plan = describe_v3_resources(
             conf, plans, execution_options, output_layouts=output_layouts)
         for name, child in children.items():
@@ -1169,10 +1151,6 @@ def run_native_sources(runner, *, benchmark=False):
                     source_id=name, source_model=plans[name]["model"],
                     source_format=plans[name]["format"])
                 plans[name]["polar"] = polar_report
-                sampled = (record["input_metadata"] for record in polar_report["records"]
-                           if not record.get("source_record_absent"))
-                runner.conf.simulation_parameter["request_plan"]["warnings"].extend(
-                    _polar_kind_warnings(name, sampled))
                 shared = runner.conf.simulation_parameter.get("common_polar_target")
                 if shared is not None:
                     from frameit.processing.polar.polar_proj import verify_polar_target

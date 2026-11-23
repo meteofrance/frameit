@@ -86,11 +86,11 @@ Set `output.format: zarr` for `.zarr` stores instead of `.nc` files. See
   grid. Unresolved scaling fails by default. Spectral decoding and packed
   SURFEX reconstruction are unsupported.
   See [FA limits](https://meteofrance.github.io/frameit/user_guide/fa_baseline.html).
-- **Optional polar sampling:** continuous production fields default to bilinear
-  point sampling, without an area-budget conservation guarantee. Proven categorical
-  fields use nearest-neighbour sampling. Explicit nearest can also sample
-  unchanged floating-point Meso-NH or AROME NetCDF fields without `kind`. Shared
-  targets are opt-in (`products.polar.shared_grid: true`); equal target coordinates do
+- **Optional polar sampling:** numeric fields default to bilinear point sampling
+  without an area-budget conservation guarantee. `kind` is not required. Known
+  categorical fields use nearest-neighbour; select nearest explicitly for unlabeled
+  category codes. Shared targets are opt-in (`products.polar.shared_grid: true`);
+  equal target coordinates do
   not imply equal source masks or quantities. Conservative, patch and additional
   vector-transport methods remain experimental.
 - **Ocean inputs:** regional NEMO supports native scalars and separate components;

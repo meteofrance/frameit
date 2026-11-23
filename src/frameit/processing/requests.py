@@ -885,33 +885,6 @@ def source_field_metadata(source, field, *, record=None):
     return result
 
 
-def complete_documented_polar_kind(source, record, metadata):
-    """Fill only kind, without reinterpreting any existing record metadata."""
-    attrs = metadata["attributes"]
-    if "kind" in attrs:
-        return metadata
-    adapter = source["model"], source["format"]
-    evidence = None
-    if adapter == ("mesonh", "netcdf"):
-        from frameit.io.netcdf_utils import mnh_wind10m_kind_evidence
-
-        evidence = mnh_wind10m_kind_evidence(source, record, attrs)
-    elif adapter == ("arome", "grib"):
-        evidence = record.get("grib_wind10m_kind")
-    elif adapter == ("croco", "netcdf"):
-        from frameit.io.croco_utils import croco_zeta_kind_evidence
-
-        evidence = croco_zeta_kind_evidence(source, record, attrs)
-    elif adapter == ("nemo", "netcdf") and all(
-            metadata["origins"].get(key) == "input" for key in ("standard_name", "units")):
-        from frameit.io.nemo_utils import nemo_sea_height_kind_evidence
-
-        evidence = nemo_sea_height_kind_evidence(source, record, attrs)
-    return (dict(metadata, attributes=dict(attrs, kind="continuous"),
-                 origins=dict(metadata["origins"], kind="documented_fallback"),
-                 evidence={"kind": evidence}) if evidence else metadata)
-
-
 def sea_interpretation(records):
     """Retain selected snapshot evidence separately from representative field metadata."""
     evidence = {}

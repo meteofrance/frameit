@@ -1,5 +1,7 @@
 # Default polar kind from selected input evidence
 
+Superseded by [optional polar kind](2026-11-23-optional-polar-kind-design.md).
+
 Fill a missing polar `kind` by default only when admitted input evidence
 identifies a continuous quantity. Do not add a YAML setting. Resolve observed
 kind and categorical flags, then valid field declarations, before applying

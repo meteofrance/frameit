@@ -14,6 +14,7 @@ import numpy as np
 from frameit.utils.diagnostics import tag_error
 
 DEFAULT_MAX_POLAR_POINTS = 2_000_000
+_POLAR_DTYPES = {"int8", "int16", "int32", "uint8", "uint16", "uint32", "float32", "float64"}
 
 
 def validate_sampling_options(count, step_deg, max_points):
@@ -154,12 +155,7 @@ def bind_polar_plan(source, request, binding, conf, *, radial_step_km=None):
 def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
     from frameit.processing.polar.contracts import polar_field_options, polar_source_geometry
     from frameit.processing.polar.polar_proj import require_polar_backend
-    from frameit.processing.requests import (
-        _sample_context,
-        complete_documented_polar_kind,
-        resolve_field_metadata,
-        source_field_metadata,
-    )
+    from frameit.processing.requests import resolve_field_metadata, source_field_metadata
 
     if not source.get("region", {}).get("associations"):
         binding["deferred_checks"].append(
@@ -197,22 +193,7 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
                 raise ValueError(
                     f"sources.{source['name']}.derived.{job['name']}: alias collides with "
                     "generated polar coordinates or quality variables; choose another output alias")
-    def metadata_key(record):
-        return (record["field_id"], record["locator"]["path"], record["level"],
-                _sample_context(record))
-
-    adapter = source["model"], source["format"]
-    grib_processes = {}
-    if source["format"] == "grib":
-        for job in jobs:
-            if job["method"] != "polar_input":
-                continue
-            for record in job["input_binding"]["dependencies"][job["inputs"]["field"]]["records"]:
-                if evidence := record.get("grib_wind10m_kind"):
-                    grib_processes.setdefault(record["field_id"], set()).add(
-                        tuple(evidence["process"].items()))
-
-    spacing, documented = [], {}
+    spacing = []
     for job in jobs:
         sampled = job["context"][0] in sampled_times
         job["polar_geometry"] = polar_source_geometry(job, conf)
@@ -224,69 +205,44 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
             descriptor = job["input_binding"]["dependencies"][name]
             record = descriptor["records"][0]
             field = source["fields"][record["field_id"]]
-            options = request["polar_options"].get(name, {})
-            direct = (
-                job["method"] == "polar_input" and name == job["inputs"]["field"]
-                and job["preparation"] == "native_samples" and job["basis"] == "native"
-                and "units" not in job and not source["declaration"].get("interpretation")
-                and len(descriptor["records"]) == 1
-            )
-            native_nearest = (
-                direct and source["model"] in {"mesonh", "arome"} and source["format"] == "netcdf"
-                # Nearest still evaluates weights in floating point; do not widen integers.
-                and all(record.get(key) in {"float32", "float64"}
-                        for key in ("stored_dtype", "decoded_dtype"))
-            )
-            polar_kind = (
-                direct and adapter in {("mesonh", "netcdf"), ("nemo", "netcdf")}
-                and not (native_nearest and options.get("interpolation") == "nearest"))
-            if direct and adapter == ("arome", "grib"):
-                # Do not grant a fallback to a series with changing process evidence.
-                polar_kind = len(grib_processes.get(record["field_id"], ())) == 1
-            elif direct and adapter == ("croco", "netcdf"):
-                # A borrowed mask cannot prove the science file's build supports static masking.
-                masks = job["input_binding"]["dependencies"]["mask_rho"]["records"]
-                polar_kind = len(masks) == 1 and masks[0]["locator"]["path"] == record["locator"]["path"]
             metadata = record.get("field_metadata") or source_field_metadata(
                 source, field, record=record) or resolve_field_metadata(
                     record.get("observed_attributes", field["attributes"]), {},
                     f"polar.{name}", temporal_names=record.get("temporal_names", [record["clock"]]))
-            if polar_kind and sampled:
-                effective = complete_documented_polar_kind(source, record, metadata)
-                if effective is not metadata:
-                    metadata = record["field_metadata"] = documented[metadata_key(record)] = effective
             if job["method"] != "polar_input" or name == job["inputs"]["field"]:
+                # The GRIB and FA readers already supply float64 physical fields.
+                if sampled and source["format"] == "netcdf":
+                    stored, decoded = record["stored_dtype"], record["decoded_dtype"]
+                    # Even nearest uses floating-point weights and cannot preserve wide integers.
+                    if stored not in _POLAR_DTYPES or decoded not in _POLAR_DTYPES:
+                        raise ValueError(
+                            f"polar.{name}: unsupported numeric dtype "
+                            f"(stored {stored}, decoded {decoded}); "
+                            "use 32/64-bit floats or integers no wider than 32 bits")
                 job["polar_options"][name] = polar_field_options(
-                    metadata, {"sampling": job["sampling"], **options},
-                    conf, f"polar.{name}", native_nearest=native_nearest,
-                    gap_template=direct and not sampled)
+                    metadata, {"sampling": job["sampling"],
+                               **request["polar_options"].get(name, {})},
+                    conf, f"polar.{name}")
             job["polar_input_metadata"][name] = {
                 "attributes": {key: metadata["attributes"][key] for key in (
                     "units", "kind", "temporal_kind", "standard_name")
                     if key in metadata["attributes"]},
                 "origins": metadata["origins"],
-                **({"evidence": metadata["evidence"]} if "evidence" in metadata else {}),
             }
         if job["method"] in {"radial_wind", "tangential_wind"}:
             loc = f"sources.{source['name']}.derived.{job['name']}"
             u, v = (job["polar_options"][job["inputs"][key]] for key in ("u", "v"))
-            if any(options["kind"] != "continuous" for options in (u, v)):
-                raise ValueError(f"{loc}: polar wind components require continuous inputs")
+            if any(options.get("kind") == "categorical" for options in (u, v)):
+                raise ValueError(f"{loc}: polar wind components cannot use categorical inputs")
             if any(options["missing_data_policy"] != "strict" for options in (u, v)):
                 raise ValueError(f"{loc}: polar wind components require strict shared stencils")
             different = [key for key in (
-                "kind", "interpolation", "missing_data_policy",
+                "interpolation", "missing_data_policy",
                 "min_valid_weight_fraction", "sampling")
                 if u[key] != v[key]]
             if different:
                 raise ValueError(
                     f"{loc}: paired polar inputs require matching effective {', '.join(different)}")
-    if documented:
-        for fields in (*binding["products"].values(), binding["dependencies"]):
-            for descriptor in fields.values():
-                for record in descriptor["records"]:
-                    if metadata := documented.get(metadata_key(record)):
-                        record["field_metadata"] = metadata
     if conf.polar_source_halo_points < 1:
         raise ValueError(
             "Polar source halo is insufficient: at least one native neighbour is required")

@@ -216,12 +216,12 @@ def test_component_alias_with_unused_quality_suffix_remains_valid(tmp_path, monk
 
 @pytest.mark.parametrize("alias", METHODS)
 @pytest.mark.parametrize("problem,error", [
-    ("matching", None), ("origins", None), ("nearest", None),
+    ("matching", None), ("origins", None), ("nearest", None), ("missing_kind", None),
     ("renormalize", r"derived.*strict"),
     ("interpolation", r"derived.*interpolation"),
     ("sampling", r"derived.*sampling"),
     ("threshold", r"min_valid_weight_fraction"),
-    ("categorical", r"derived.*continuous"),
+    ("categorical", r"derived.*categorical"),
     ("temporal", r"temporal"),
     ("basis", r"wind.*metadata|basis|reference"),
     ("rotation", r"rotation"),
@@ -233,8 +233,9 @@ def test_component_pair_options_are_strict_and_compatible(tmp_path, monkeypatch,
     ds = wind_scene(hours=(1,))
     raw = component_document(tmp_path, aliases=(alias,))
     source, polar = raw["sources"]["atmosphere"], raw["products"]["polar"]
-    if problem == "origins":
+    if problem in {"origins", "missing_kind"}:
         ds.V.attrs.pop("kind")
+    if problem == "origins":
         source["field_metadata"] = {"V": {"kind": "continuous"}}
     elif problem == "nearest":
         polar["field_options"] = {"atmosphere": {
@@ -274,7 +275,8 @@ def test_component_pair_options_are_strict_and_compatible(tmp_path, monkeypatch,
         assert set(binding["products"]["polar"]) == {alias}
         job, = binding["operation_plans"]
         options = job["polar_options"]
-        assert {o["kind"] for o in options.values()} == {"continuous"}
+        assert options["U"]["kind"] == "continuous"
+        assert options["V"].get("kind") == (None if problem == "missing_kind" else "continuous")
         assert {o["missing_data_policy"] for o in options.values()} == {"strict"}
         assert job["pair"] and set(job["input_binding"]["dependencies"]) == {"U", "V"}
         if problem == "origins":
@@ -462,7 +464,6 @@ def test_explicit_components_use_joint_source_support(tmp_path, monkeypatch, cas
         monkeypatch.setattr(xe, "Regridder", prescribed)
     source = component_source()
     source["variables"] = {"2d": ["U", "V", "q"]}
-    source["field_metadata"] = {"V": {"kind": "continuous"}}
     source["derived"]["speed"] = {"method": "wind_speed", "inputs": {"u": "U", "v": "V"}}
     conf = configuration(tmp_path, source=source, products={
         "polar": {"radius_km": 10. if case == "native" else 2.5, "azimuth_count": 8}})

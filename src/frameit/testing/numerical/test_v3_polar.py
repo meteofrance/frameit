@@ -135,11 +135,11 @@ def test_polar_only_without_width_reads_selected_payload_and_real_sampler(tmp_pa
 
 
 @pytest.mark.parametrize("kind", [None, "continuous", "categorical"])
-def test_polar_methods_require_kind_evidence_and_preview_without_payload(
+def test_polar_methods_use_optional_kind_and_preview_without_payload(
         tmp_path, monkeypatch, kind):
     from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
 
-    ds = scene()
+    ds = scene(hours=(0,))
     ds.q.attrs = {"units": "1"}
     if kind == "categorical":
         ds.q.attrs.update(flag_values=np.array([0., 7.]), flag_meanings="zero seven")
@@ -154,18 +154,17 @@ def test_polar_methods_require_kind_evidence_and_preview_without_payload(
     conf = configuration(tmp_path, source={
         "field_metadata": {"q": {"kind": kind}} if kind == "continuous" else {},
     })
+    _, children, _ = bind_sources(conf)
+    binding = children["atmosphere"].source_requests["atmosphere"]["binding"]
+    assert binding["polar_plan"]["status"] == "bound"
+    job, = binding["operation_plans"]
+    options = job["polar_options"]["q"]
+    assert options["interpolation"] == ("nearest_s2d" if kind == "categorical" else "bilinear")
     if kind is None:
-        with pytest.raises(ValueError, match="kind"):
-            bind_sources(conf)
+        assert "kind" not in options and "kind_origin" not in options
     else:
-        _, children, _ = bind_sources(conf)
-        binding = children["atmosphere"].source_requests["atmosphere"]["binding"]
-        assert binding["polar_plan"]["status"] == "bound"
-        job = binding["operation_plans"][0]
-        assert job["polar_options"]["q"]["interpolation"] == (
-            "nearest_s2d" if kind == "categorical" else "bilinear")
-        assert job["polar_options"]["q"]["kind_origin"] == (
-            "input" if kind == "categorical" else "declaration")
+        assert options["kind"] == kind
+        assert options["kind_origin"] == ("input" if kind == "categorical" else "declaration")
     assert not conf.output_dir.exists()
 
 
@@ -222,7 +221,7 @@ def test_explicit_nearest_without_kind_preserves_native_samples(tmp_path, model)
     {"interpolation": "nearest", "sampling": "mass"},
     {"interpolation": "nearest", "units": "hPa"},
 ])
-def test_polar_kind_still_required_for_bilinear_or_preparation(tmp_path, options):
+def test_polar_optional_kind_for_bilinear_or_preparation(tmp_path, options):
     ds = scene(hours=(0,))
     ds.q.attrs = {"units": "Pa"}
     ds.to_netcdf(tmp_path / "input.nc")
@@ -230,12 +229,17 @@ def test_polar_kind_still_required_for_bilinear_or_preparation(tmp_path, options
         "radius_km": 2.5, "azimuth_count": 8,
         "field_options": {"atmosphere": {"q": options}},
     }})
-    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
-        bind_sources(conf)
-    assert not conf.output_dir.exists()
+    result = execute_simulation(conf)
+    with xr.open_dataset(result.products[0]["path"]) as saved:
+        assert "kind" not in saved.q.attrs
+        assert saved.q.attrs["units"] == options.get("units", "Pa")
+        assert saved.q.attrs["polar_interpolation"] == (
+            "bilinear" if options["interpolation"] == "bilinear" else "nearest_s2d")
+        np.testing.assert_allclose(saved.q, .07 if "units" in options else 7.)
 
 
-def test_nearest_waiver_does_not_accept_a_later_wide_integer_record(tmp_path):
+@pytest.mark.parametrize("kind", [None, "continuous"])
+def test_polar_rejects_a_later_wide_integer_record(tmp_path, kind):
     paths = []
     for hour, dtype, value in ((0, "float64", 7.), (1, "int64", 2**53 + 1)):
         ds = scene(hours=(hour,))
@@ -243,16 +247,17 @@ def test_nearest_waiver_does_not_accept_a_later_wide_integer_record(tmp_path):
         ds["q"] = ds.q.copy(data=np.full(ds.q.shape, value, dtype=dtype))
         paths.append(str(tmp_path / f"{hour}.nc"))
         ds.to_netcdf(paths[-1])
-    conf = configuration(tmp_path, source={"files": paths}, products={"polar": {
+    source = {"files": paths, "field_metadata": {"q": {"kind": kind}} if kind else {}}
+    conf = configuration(tmp_path, source=source, products={"polar": {
         "radius_km": 2.5, "azimuth_count": 8,
         "field_options": {"atmosphere": {"q": {"interpolation": "nearest"}}},
     }})
-    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+    with pytest.raises(ValueError, match=r"\[E1602\].*q.*int64"):
         bind_sources(conf)
     assert not conf.output_dir.exists()
 
 
-def test_nearest_waiver_requires_numeric_decoded_samples(tmp_path):
+def test_polar_rejects_nonnumeric_decoded_samples(tmp_path):
     ds = scene(hours=(0,))
     ds.q.attrs = {"units": "seconds since 2024-01-01"}
     ds.to_netcdf(tmp_path / "input.nc")
@@ -260,7 +265,7 @@ def test_nearest_waiver_requires_numeric_decoded_samples(tmp_path):
         "radius_km": 2.5, "azimuth_count": 8,
         "field_options": {"atmosphere": {"q": {"interpolation": "nearest"}}},
     }})
-    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+    with pytest.raises(ValueError, match=r"\[E1602\].*q.*datetime64"):
         bind_sources(conf)
     assert not conf.output_dir.exists()
 
@@ -373,58 +378,43 @@ def test_product_only_grib_wind10m_does_not_use_3d_height_selector(tmp_path):
     assert conf.input_files == [str(surface)]
 
 
-def _compare_documented_kind(tmp_path, source, field, center, rule, *, guard=None):
+def _compare_optional_kind(tmp_path, source, field, center, *, guard):
     outputs = {}
     products = {"model_grid": True, "polar": {"radius_km": 2.5, "azimuth_count": 8}}
-    for origin in ("declaration", "documented_fallback"):
+    for origin in ("declaration", None):
         conf = configuration(tmp_path, source={
             **source, "field_metadata": (
-                {field: {"kind": "continuous"}} if origin == "declaration" else {}),
-        }, region={"center": center}, products=products, output_name=origin)
-        if guard is None:
+            {field: {"kind": "continuous"}} if origin else {}),
+        }, region={"center": center}, products=products, output_name=origin or "unlabeled")
+        with guard():
             report, children, _ = bind_sources(conf)
-        else:
-            with guard():
-                report, children, _ = bind_sources(conf)
         assert not conf.output_dir.exists()
-        warnings = [w for w in report["warnings"] if w.startswith("[W1603]")]
+        assert not any(w.startswith("[W1603]") for w in report["warnings"])
         binding = children["atmosphere"].source_requests["atmosphere"]["binding"]
         jobs = [job for job in binding["operation_plans"] if job["product"] == "polar"]
-        assert jobs and all(job["polar_options"][field]["kind_origin"] == origin for job in jobs)
-        if origin == "documented_fallback":
-            warning, = warnings
-            assert f"sources.atmosphere.{field}" in warning and rule in warning
-            for descriptor in (binding["dependencies"][field],
-                               binding["products"]["model_grid"][field]):
-                assert all(r["field_metadata"]["evidence"]["kind"]["rule"] == rule
-                           for r in descriptor["records"])
-        else:
-            assert not warnings
+        assert jobs and all(job["polar_options"][field].get("kind_origin") == origin for job in jobs)
         result = execute_simulation(conf)
         assert result.ok and {p["role"] for p in result.products} == {"model_grid", "polar"}
         for product in result.products:
             with xr.open_dataset(product["path"]) as saved:
-                assert saved[field].attrs["kind"] == "continuous"
-                assert json.loads(saved[field].attrs["frameit_metadata_origins"])["kind"] == origin
-                saved[field].attrs.pop("frameit_metadata_origins")
+                assert saved[field].attrs.get("kind") == ("continuous" if origin else None)
+                origins = saved[field].attrs.pop("frameit_metadata_origins", "{}")
+                assert json.loads(origins).get("kind") == origin
+                saved[field].attrs.pop("kind", None)
                 saved.attrs.pop("history")
                 outputs.setdefault(product["role"], []).append(saved.load())
         provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
-        assert [w for w in provenance.get("warnings", []) if w.startswith("[W1603]")] == warnings
+        assert not any(w.startswith("[W1603]") for w in provenance.get("warnings", []))
         records = provenance["sources"]["atmosphere"]["polar"]["records"]
         assert records and all(r["options"][field]["interpolation"] == "bilinear" for r in records)
-        if origin == "documented_fallback":
-            assert all(r["input_metadata"][field]["evidence"]["kind"]["rule"] == rule
-                       for r in records)
-            resolved = yaml.safe_load((conf.output_dir / "resolved-config.yaml").read_text())
-            assert field not in resolved["sources"]["atmosphere"]["field_metadata"]
+        assert all(r["input_metadata"][field]["origins"].get("kind") == origin for r in records)
     for pair in outputs.values():
         xr.testing.assert_identical(*pair)
     return {product: pair[1] for product, pair in outputs.items()}
 
 
 @pytest.mark.parametrize("field", ["UM10", "VM10"])
-def test_documented_mesonh_wind10m_kind_without_yaml(tmp_path, monkeypatch, field):
+def test_mesonh_wind10m_polar_optional_kind(tmp_path, monkeypatch, field):
     from contextlib import contextmanager
 
     from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
@@ -443,9 +433,8 @@ def test_documented_mesonh_wind10m_kind_without_yaml(tmp_path, monkeypatch, fiel
             guard_netcdf_payloads(patch, {field})
             yield
 
-    products = _compare_documented_kind(
-        tmp_path, {"variables": {"2d": [field]}}, field, center,
-        "mesonh.diag.wind10m.kind.v1", guard=guard)
+    products = _compare_optional_kind(
+        tmp_path, {"variables": {"2d": [field]}}, field, center, guard=guard)
     np.testing.assert_allclose(products["polar"][field].isel(radius=0, azimuth=0),
                                [4., 4.], atol=2e-3, rtol=0)
     np.testing.assert_array_equal(products["model_grid"][field], ds[field])
@@ -460,7 +449,7 @@ def test_documented_mesonh_wind10m_kind_without_yaml(tmp_path, monkeypatch, fiel
 
 
 @pytest.mark.parametrize("problem", ["later_text", "label", "declared_label", "other_model"])
-def test_mesonh_kind_fallback_requires_each_admitted_native_record(tmp_path, problem):
+def test_mesonh_polar_checks_later_dtype_not_field_label(tmp_path, problem):
     ds = scene(hours=(0,)).rename(q="UM10")
     ds.UM10.attrs = {"units": "m s-1"}
     source = {"variables": {"2d": ["UM10"]}}
@@ -479,13 +468,16 @@ def test_mesonh_kind_fallback_requires_each_admitted_native_record(tmp_path, pro
         later.to_netcdf(tmp_path / "later.nc")
         source["files"] = [str(path), str(tmp_path / "later.nc")]
     conf = configuration(tmp_path, source=source)
-    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+    if problem == "later_text":
+        with pytest.raises(ValueError, match=r"\[E1602\].*UM10.*numeric"):
+            bind_sources(conf)
+    else:
         bind_sources(conf)
     assert not conf.output_dir.exists()
 
 
 @pytest.mark.parametrize("observed", [False, True])
-def test_mesonh_kind_fallback_does_not_replace_flags_or_declared_kind(tmp_path, observed):
+def test_mesonh_polar_respects_flags_or_declared_kind(tmp_path, observed):
     ds = scene(hours=(0,)).rename(q="UM10")
     ds.UM10.attrs = {"units": "m s-1"}
     source = {"variables": {"2d": ["UM10"]}}
@@ -503,7 +495,7 @@ def test_mesonh_kind_fallback_does_not_replace_flags_or_declared_kind(tmp_path, 
     assert not conf.output_dir.exists()
 
 
-def test_kind_fallback_leaves_known_kind_and_clock_resolution_unchanged(tmp_path):
+def test_polar_keeps_known_kind_and_clock_resolution(tmp_path):
     ds = scene(hours=(0,)).rename(time="valid_time")
     ds.q.attrs.update(GRIB_stepType="max", cell_methods="time: maximum")
     ds.to_netcdf(tmp_path / "input.nc")
@@ -516,7 +508,7 @@ def test_kind_fallback_leaves_known_kind_and_clock_resolution_unchanged(tmp_path
 
 
 @pytest.mark.parametrize("kept_hour", [0, 1])
-def test_documented_kind_stays_on_polar_associated_records(tmp_path, kept_hour):
+def test_polar_does_not_label_coexported_records(tmp_path, kept_hour):
     ds = scene(hours=(0, 1)).rename(q="UM10")
     ds.UM10.attrs = {"units": "m s-1"}
     ds.to_netcdf(tmp_path / "input.nc")
@@ -535,19 +527,18 @@ def test_documented_kind_stays_on_polar_associated_records(tmp_path, kept_hour):
     _, children, _ = bind_sources(conf)
     binding = children["atmosphere"].source_requests["atmosphere"]["binding"]
     records = binding["products"]["model_grid"]["UM10"]["records"]
-    assert [("field_metadata" in r) for r in records] == [kept_hour == 0, kept_hour == 1]
+    assert all("field_metadata" not in r for r in records)
     result = execute_simulation(conf)
     for product in (p for p in result.products if p["source"] == "atmosphere"):
         with xr.open_dataset(product["path"]) as saved:
+            assert "kind" not in saved.UM10.attrs
             if product["role"] == "model_grid":
-                assert "kind" not in saved.UM10.attrs
                 np.testing.assert_array_equal(saved.time, ds.time)
             else:
-                assert saved.UM10.attrs["kind"] == "continuous"
                 np.testing.assert_array_equal(saved.time, ds.time.isel(time=[kept_hour]))
 
 
-def test_absent_polar_sample_does_not_report_producer_kind_evidence(tmp_path):
+def test_initial_gaps_stay_missing_when_polar_kind_is_unlabeled(tmp_path):
     ds = scene(hours=(0, 1))
     ds.to_netcdf(tmp_path / "input.nc")
     late = ds.isel(time=[1]).rename(q="UM10")
@@ -561,14 +552,15 @@ def test_absent_polar_sample_does_not_report_producer_kind_evidence(tmp_path):
     with xr.open_dataset(result.products[0]["path"]) as saved:
         assert saved.UM10.isel(time=0).isnull().all()
         np.testing.assert_array_equal(saved.UM10_interpolation_status.isel(time=0), 2)
+        assert "kind" not in saved.UM10.attrs
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
     absent, observed = [r for r in provenance["sources"]["atmosphere"]["polar"]["records"]
                         if r["field"] == "UM10"]
     assert absent["source_record_absent"]
-    assert "evidence" not in absent["input_metadata"].get("UM10", {})
-    assert "kind_origin" not in absent["options"]["UM10"]
-    assert observed["input_metadata"]["UM10"]["evidence"]["kind"]["rule"] == (
-        "mesonh.diag.wind10m.kind.v1")
+    assert not observed.get("source_record_absent")
+    for record in (absent, observed):
+        assert record["options"]["UM10"]["interpolation"] == "bilinear"
+        assert "kind" not in record["options"]["UM10"]
 
 
 def _write_arome_wind10m(path, *, component=2, headers=({}, {})):
@@ -601,7 +593,7 @@ def _write_arome_wind10m(path, *, component=2, headers=({}, {})):
 
 
 @pytest.mark.parametrize(("component", "field"), [(2, "u10"), (3, "v10")])
-def test_arome_grib2_wind10m_polar_kind(tmp_path, monkeypatch, component, field):
+def test_arome_grib2_wind10m_polar_optional_kind(tmp_path, monkeypatch, component, field):
     from contextlib import contextmanager
 
     ec = pytest.importorskip("eccodes")
@@ -614,10 +606,9 @@ def test_arome_grib2_wind10m_polar_kind(tmp_path, monkeypatch, component, field)
             patch.setattr(ec, "codes_get_values", lambda *_: pytest.fail("scientific payload"))
             yield
 
-    products = _compare_documented_kind(tmp_path, {
+    products = _compare_optional_kind(tmp_path, {
         "model": "arome", "files": str(path), "variables": {"2d": [field]},
-    }, field, {"latitude": -20., "longitude": 60.0025},
-        "arome.grib2.wind10m.kind.v1", guard=guard)
+    }, field, {"latitude": -20., "longitude": 60.0025}, guard=guard)
     polar = products["polar"]
     np.testing.assert_allclose(polar[field].isel(radius=0, azimuth=0), [4., 4.], atol=2e-3, rtol=0)
     assert (polar[f"{field}_interpolation_status"] == 2).any()
@@ -628,30 +619,26 @@ def test_arome_grib2_wind10m_polar_kind(tmp_path, monkeypatch, component, field)
 @pytest.mark.parametrize("header", [
     {"tablesVersion": 16}, {"localTablesVersion": 1}, {"generatingProcessIdentifier": 254},
 ])
-def test_arome_kind_fallback_cannot_use_another_messages_evidence(tmp_path, header):
+def test_arome_polar_does_not_require_kind_matching_wire_codes(tmp_path, header):
     path = _write_arome_wind10m(tmp_path / "wind.grib2", headers=({}, header))
     source = {"model": "arome", "files": str(path), "variables": {"2d": ["u10"]}}
-    declared = configuration(tmp_path, source={
-        **source, "field_metadata": {"u10": {"kind": "continuous"}}})
-    _, _, plans = bind_sources(declared)
-    assert len(plans["atmosphere"]["records"]) == 2
     conf = configuration(tmp_path, source=source)
-    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
-        bind_sources(conf)
+    _, children, plans = bind_sources(conf)
+    assert len(plans["atmosphere"]["records"]) == 2
+    jobs = children["atmosphere"].source_requests["atmosphere"]["binding"]["operation_plans"]
+    assert all("kind" not in job["polar_options"]["u10"] for job in jobs)
     assert not conf.output_dir.exists()
-    bind_sources(configuration(tmp_path, source={
-        **source, "time": {"values": ["2026-01-01T00:00:00"]}}))
 
 
 @pytest.mark.parametrize("stage", ["reader", "payload"])
-def test_arome_kind_fallback_rechecks_wire_header_before_payload(tmp_path, monkeypatch, stage):
+def test_arome_polar_rechecks_selected_field_before_payload(tmp_path, monkeypatch, stage):
     from contextlib import contextmanager
 
     from frameit.io import grib_utils
     from frameit.io.loader import DatasetResources
 
     ec = pytest.importorskip("eccodes")
-    path = _write_arome_wind10m(tmp_path / "wind.grib2", headers=({},))
+    path = _write_arome_wind10m(tmp_path / "wind.grib2", headers=({"uvRelativeToGrid": 0},))
     conf = configuration(tmp_path, source={
         "model": "arome", "files": str(path), "variables": {"2d": ["u10"]}})
     _, children, plans = bind_sources(conf)
@@ -660,20 +647,20 @@ def test_arome_kind_fallback_rechecks_wire_header_before_payload(tmp_path, monke
     original = grib_utils._grib_message
 
     @contextmanager
-    def different_wire(locator):
+    def different_header(locator):
         with original(locator) as handle:
-            ec.codes_set_long(handle, "tablesVersion", 16)
+            ec.codes_set_long(handle, "uvRelativeToGrid", 1)
             yield handle
 
     monkeypatch.setattr(ec, "codes_get_values", lambda *_: pytest.fail("scientific payload"))
     with DatasetResources() as resources:
         if stage == "reader":
-            monkeypatch.setattr(grib_utils, "_grib_message", different_wire)
+            monkeypatch.setattr(grib_utils, "_grib_message", different_header)
             with pytest.raises(ValueError, match="header changed after inventory"):
                 grib_utils._selected_grib([path], binding, source, resources)
         else:
             _, views = grib_utils._selected_grib([path], binding, source, resources)
-            monkeypatch.setattr(grib_utils, "_grib_message", different_wire)
+            monkeypatch.setattr(grib_utils, "_grib_message", different_header)
             with pytest.raises(ValueError, match="message changed after binding"):
                 next(iter(views["internal"].values())).load(scheduler="synchronous")
 
@@ -691,7 +678,7 @@ def _croco_surface_scene():
     return ds
 
 
-def test_croco_history_zeta_polar_kind_without_yaml(tmp_path, monkeypatch):
+def test_croco_history_zeta_polar_optional_kind(tmp_path, monkeypatch):
     from contextlib import contextmanager
 
     from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
@@ -709,8 +696,7 @@ def test_croco_history_zeta_polar_kind_without_yaml(tmp_path, monkeypatch):
             yield
 
     source = {"model": "croco", "files": str(path), "variables": {"2d": ["zeta"]}}
-    products = _compare_documented_kind(
-        tmp_path, source, "zeta", center, "croco.history.zeta.kind.v1", guard=guard)
+    products = _compare_optional_kind(tmp_path, source, "zeta", center, guard=guard)
     polar, native = products["polar"], products["model_grid"]
     np.testing.assert_allclose(polar.zeta.isel(radius=0, azimuth=0), [1., 3.], atol=2e-3, rtol=0)
     assert (polar.zeta_interpolation_status == 2).any()
@@ -726,39 +712,25 @@ def test_croco_history_zeta_polar_kind_without_yaml(tmp_path, monkeypatch):
     assert "field_metadata" not in record
 
 
-@pytest.mark.parametrize("problem", ["label", "later_layout", "split_mask", "clock", "transform"])
-def test_croco_zeta_fallback_requires_selected_history_and_its_own_mask(tmp_path, problem):
+@pytest.mark.parametrize("problem", ["label", "later_layout"])
+def test_croco_zeta_polar_does_not_require_kind_matching_labels_or_layout(tmp_path, problem):
     ds = _croco_surface_scene()
     path = tmp_path / "history.nc"
     source = {"model": "croco", "files": [str(path)], "variables": {"2d": ["zeta"]}}
     if problem == "label":
         ds.zeta.attrs["standard_name"] = "sea_surface_height_above_geoid"
-    elif problem == "clock":
-        ds = ds.drop_vars("time")
-    elif problem == "transform":
-        ds.attrs["Vtransform"] = "1"
-    elif problem == "later_layout":
+    else:
         later = ds.isel(time=[1])
         later["zeta"] = later.zeta.transpose("eta_rho", "xi_rho", "time")
         later.to_netcdf(tmp_path / "later.nc")
         source["files"].append(str(tmp_path / "later.nc"))
         ds = ds.isel(time=[0])
-    else:
-        ds[["mask_rho", "scrum_time"]].to_netcdf(tmp_path / "mask.nc")
-        source["files"].append(str(tmp_path / "mask.nc"))
-        ds = ds.drop_vars("mask_rho")
-        ds.attrs["CPP-options"] += " WET_DRY"
     ds.to_netcdf(path)
-    declared = configuration(tmp_path, source={
-        **source, "field_metadata": {"zeta": {"kind": "continuous"}}})
-    bind_sources(declared)
     conf = configuration(tmp_path, source=source)
-    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
-        bind_sources(conf)
+    _, children, _ = bind_sources(conf)
+    jobs = children["atmosphere"].source_requests["atmosphere"]["binding"]["operation_plans"]
+    assert jobs and all("kind" not in job["polar_options"]["zeta"] for job in jobs)
     assert not conf.output_dir.exists()
-    if problem == "later_layout":
-        bind_sources(configuration(tmp_path, source={
-            **source, "time": {"values": ["2024-12-10T01:00:00"]}}))
 
 
 def _nemo_cf_sea_height(field="zos"):
@@ -769,7 +741,7 @@ def _nemo_cf_sea_height(field="zos"):
 
 
 @pytest.mark.parametrize("field", ["zos", "ssh_export"])
-def test_nemo_cf_sea_height_kind_without_yaml(tmp_path, monkeypatch, field):
+def test_nemo_cf_sea_height_polar_optional_kind(tmp_path, monkeypatch, field):
     from contextlib import contextmanager
 
     from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
@@ -788,9 +760,7 @@ def test_nemo_cf_sea_height_kind_without_yaml(tmp_path, monkeypatch, field):
             yield
 
     source = {"model": "nemo", "variables": {"2d": [field]}}
-    products = _compare_documented_kind(
-        tmp_path, source, field, center,
-        "nemo.cf.sea_surface_height_above_geoid.kind.v1", guard=guard)
+    products = _compare_optional_kind(tmp_path, source, field, center, guard=guard)
     polar, native = products["polar"], products["model_grid"]
     np.testing.assert_allclose(polar[field].isel(radius=0, azimuth=0), [1., 3.], atol=2e-3, rtol=0)
     assert (polar[field + "_interpolation_status"] == 2).any()
@@ -811,7 +781,7 @@ def test_nemo_cf_sea_height_kind_without_yaml(tmp_path, monkeypatch, field):
 @pytest.mark.parametrize("problem", [
     "name_only", "other_quantity", "wrong_units", "yaml_label", "later_wide_integer", "depth",
 ])
-def test_nemo_cf_kind_requires_evidence_on_each_admitted_scalar(tmp_path, problem):
+def test_nemo_polar_checks_dtype_not_scalar_kind_evidence(tmp_path, problem):
     ds = _nemo_cf_sea_height()
     path = tmp_path / "input.nc"
     source = {"model": "nemo", "files": [str(path)], "variables": {"2d": ["zos"]}}
@@ -836,13 +806,16 @@ def test_nemo_cf_kind_requires_evidence_on_each_admitted_scalar(tmp_path, proble
     ds.to_netcdf(path)
 
     conf = configuration(tmp_path, source=source)
-    with pytest.raises(ValueError, match=r"\[E1603\].*kind"):
+    if problem == "later_wide_integer":
+        with pytest.raises(ValueError, match=r"\[E1602\].*zos.*int64"):
+            bind_sources(conf)
+    else:
         bind_sources(conf)
     assert not conf.output_dir.exists()
 
 
 @pytest.mark.parametrize("case", ["observed", "flags", "declared", "conflict"])
-def test_nemo_cf_kind_does_not_replace_known_kind(tmp_path, case):
+def test_nemo_polar_respects_known_kind(tmp_path, case):
     ds = _nemo_cf_sea_height()
     source = {"model": "nemo", "variables": {"2d": ["zos"]}}
     if case == "observed":
@@ -868,7 +841,7 @@ def test_nemo_cf_kind_does_not_replace_known_kind(tmp_path, case):
     assert not conf.output_dir.exists()
 
 
-def test_common_polar_kind_ignores_an_unassociated_record(tmp_path):
+def test_common_polar_dtype_check_ignores_an_unassociated_record(tmp_path):
     ds = _nemo_cf_sea_height()
     ds.isel(time_counter=[0]).to_netcdf(tmp_path / "first.nc")
     later = ds.isel(time_counter=[1])
@@ -895,9 +868,6 @@ def test_common_polar_kind_ignores_an_unassociated_record(tmp_path):
         capture_output=True, text=True)
     report = json.loads(completed.stdout)
     assert completed.returncode == 0, report["errors"]
-    warnings = [w for w in report["warnings"] if w.startswith("[W1603]")]
-    assert len(warnings) == 1 and "sources.water.zos" in warnings[0]
-    assert completed.stdout.count("[W1603]") == 1
     conf = SimulationConfig.from_yaml_with_model_preset(document)
     assert not conf.output_dir.exists()
     result = execute_simulation(conf)
@@ -905,10 +875,10 @@ def test_common_polar_kind_ignores_an_unassociated_record(tmp_path):
     with xr.open_dataset(product["path"]) as saved:
         np.testing.assert_array_equal(saved.time, ds.time_counter[:1])
         np.testing.assert_allclose(saved.zos, 7.)
-        assert saved.zos.attrs["kind"] == "continuous"
+        assert "kind" not in saved.zos.attrs
 
 
-def test_incomplete_track_does_not_publish_kind_from_an_absent_polar_sample(tmp_path):
+def test_incomplete_track_keeps_an_unlabeled_polar_gap(tmp_path):
     from .test_multifield_vortex import vortex
 
     weather, _ = vortex(n=81)
@@ -931,8 +901,7 @@ def test_incomplete_track_does_not_publish_kind_from_an_absent_polar_sample(tmp_
         "seed": {"latitude": -20., "longitude": 60., "motion_u_m_s": 0, "motion_v_m_s": 0},
     }}, products={"track": True, "polar": {"radius_km": 2.5, "azimuth_count": 8,
                                          "fields": {"water": ["q", "zos"]}}})
-    report, _, _ = bind_sources(conf)
-    assert sum("[W1603]" in w for w in report["warnings"]) == 1
+    bind_sources(conf)
     assert not conf.output_dir.exists()
     result = execute_simulation(conf)
     assert not result.tracking_complete
@@ -945,11 +914,10 @@ def test_incomplete_track_does_not_publish_kind_from_an_absent_polar_sample(tmp_
         assert "kind" not in saved.zos.attrs
         assert "kind" not in json.loads(saved.zos.attrs.get("frameit_metadata_origins", "{}"))
     provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
-    assert not any("[W1603]" in w for w in provenance.get("warnings", []))
     absent, = [record for record in provenance["sources"]["water"]["polar"]["records"]
                if record["field"] == "zos"]
     assert absent["source_record_absent"]
-    assert "evidence" not in absent["input_metadata"].get("zos", {})
+    assert "kind" not in absent["input_metadata"]["zos"]["attributes"]
 
 
 @pytest.mark.parametrize("guard", ["netcdf", "grib", "fa"])
@@ -2144,8 +2112,10 @@ def review_shared_configuration(tmp_path, polar, *, fine_hours=(0, 1), damage=No
             ("weather", "mesonh", 1000., fine_hours), ("water", "nemo", 3000., (0, 1))):
         ds = scene(hours=hours, spacing=spacing)
         ds.q.values[:] = 7. if name == "weather" else 11.
-        if name == "weather" and damage == "kind":
+        if name == "weather":
             ds.q.attrs.pop("kind")
+            if damage == "dtype":
+                ds["q"] = ds.q.copy(data=np.full(ds.q.shape, 2**53 + 1, dtype="int64"))
         if name == "weather" and damage == "geometry":
             ds.longitude.values[4, 4] = np.nan
         if model == "nemo":
@@ -2262,7 +2232,7 @@ assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
         assert [hashlib.sha256(path.read_bytes()).hexdigest() for path in paths] == hashes
 
 
-@pytest.mark.parametrize("damage", ["step", "kind", "geometry", "method", "halo", "pending"])
+@pytest.mark.parametrize("damage", ["step", "dtype", "geometry", "method", "halo", "pending"])
 def test_review_shared_preparation_failures_never_gain_clearance(tmp_path, monkeypatch, damage):
     from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
 
@@ -2296,7 +2266,7 @@ def test_review_shared_preparation_failures_never_gain_clearance(tmp_path, monke
 
     monkeypatch.setattr(preflight, "bind_source", bind)
     monkeypatch.setattr(H5NetCDFArrayWrapper, "__getitem__", no_payload)
-    message = {"step": "finer", "kind": "kind", "geometry": "coordinates",
+    message = {"step": "finer", "dtype": "int64", "geometry": "coordinates",
                "method": "nearest", "halo": "halo", "pending": "Unresolved"}[damage]
     with pytest.raises(ValueError, match=message):
         execute_simulation(conf)
@@ -2342,14 +2312,14 @@ def test_review_shared_failed_rebind_revokes_previous_owner_clearance(tmp_path, 
     assert [hashlib.sha256(path.read_bytes()).hexdigest() for path in paths] == hashes
 
 
-def test_review_integer_continuous_bilinear_preserves_fractions_and_native_exports(
+def test_polar_integers_without_kind_preserve_fractions_and_native_exports(
         tmp_path, monkeypatch):
     from frameit.processing.polar.regrid_plan import PolarRegridPlan
 
     ds = scene(hours=(0,)).isel(nj=slice(2, 7), ni=slice(2, 7))
     ramp = np.broadcast_to(np.arange(5, dtype=np.int32), (1, 5, 5)).copy()
     dims = ("time", "nj", "ni")
-    ds["q"] = (dims, ramp, {"kind": "continuous", "units": "K"})
+    ds["q"] = (dims, ramp, {"units": "K"})
     ds["negative"] = (dims, -ramp, {"kind": "continuous", "units": "1"})
     ds["floating32"] = (dims, ramp.astype(np.float32), {"kind": "continuous", "units": "K"})
     masked = ramp.astype(np.float64)
@@ -2396,6 +2366,7 @@ xr.open_dataset(sys.argv[3]) as source:
     np.testing.assert_array_equal(native.masked, source.masked)
     np.testing.assert_array_equal(np.isnan(native.masked), np.isnan(source.masked))
     assert polar.q.dtype == polar.negative.dtype == np.dtype('float64')
+    assert 'kind' not in polar.q.attrs and 'kind' not in native.q.attrs
     assert polar.floating32.dtype == np.dtype('float32')
     assert polar.masked.dtype == np.dtype('float64')
     missing = np.zeros((1,2,4), dtype=bool)
@@ -2414,8 +2385,10 @@ xr.open_dataset(sys.argv[3]) as source:
         facts = json.loads(polar[name].attrs['polar_numeric_types'])[name]
         assert facts['evaluation_dtype'] == evaluation
         assert facts['prepared_dtype'] == str(source[name].dtype)
-        assert facts['conversion'] == ('integer_to_float64_for_continuous_bilinear'
-                                       if name in {'q','negative'} else 'none')
+        assert facts['conversion'] == {
+            'q':'integer_to_float64_for_bilinear',
+            'negative':'integer_to_float64_for_continuous_bilinear',
+        }.get(name, 'none')
 assert not any(n == 'frameit' or n.startswith('frameit.') for n in sys.modules)
 """, products["polar"], products["model_grid"], str(path)], capture_output=True, text=True)
         assert reader.returncode == 0, reader.stdout + reader.stderr

@@ -34,19 +34,7 @@ Select a common polar target
 ----------------------------
 
 Start with the complete ``atmosphere``/``surface`` request in :doc:`fa_inputs`.
-That native-copy request does not need an interpolation kind for pressure.
-For this polar example, add the following inside ``sources.atmosphere`` to
-declare continuous interpolation where the input leaves kind unresolved.
-Verify the selected pressure quantity first; the declaration is not inferred
-from its name and cannot replace contradictory source metadata:
-
-.. code-block:: yaml
-
-   field_metadata:
-     prmsl:
-       kind: continuous
-
-Then add this top-level polar product and supply a region centre provider as
+Add this top-level polar product and supply a region centre provider as
 described in :doc:`../task_guides/coupled_inputs`. It requests only the two fields:
 
 .. code-block:: yaml
@@ -107,11 +95,12 @@ and coordinates. Unsupported combinations of native grids still fail.
 Model-grid products retain their separately requested native/transformed
 representations. Available inputs do not enable unrequested diagnostics.
 
-Continuous production polar sampling defaults to bilinear point interpolation,
+Numeric polar fields default to bilinear point interpolation,
 without an area-budget conservation guarantee or automatic experimental-method
 switch. Proven categorical fields select nearest-neighbour; the public override
 is ``interpolation: nearest``, not the backend name ``nearest_s2d``.
-Unresolved kind and inapplicable methods fail. Source support labels, masks, IEEE NaNs,
+The FA input declaration still requires ``kind``; polar does not require it for
+the GRIB fields. Source support labels, masks, IEEE NaNs,
 extension zones and valid zeroes must not be equated or silently filled.
 See :doc:`output_files` for ordinary readers and per-product atomic publication.
 

@@ -11,35 +11,6 @@ COMPONENT_STANDARD_NAMES = {
     "surface_downward_y_stress"}
 
 
-def nemo_sea_height_kind_evidence(source, record, attrs):
-    """Classify a selected CF sea-height scalar without identifying its writer."""
-    from frameit.io.netcdf_utils import numeric_kind_support
-    from frameit.utils.units import UNITS
-
-    standard_name, units = attrs.get("standard_name"), attrs.get("units")
-    grid = source["native_grids"][record["grid_id"]]
-    if (standard_name != "sea_surface_height_above_geoid"
-            or not isinstance(units, str) or units.strip() not in UNITS["distance"][1]
-            or record["clock"] != "time_counter" or not isinstance(record["time"], np.datetime64)
-            or record["locator"]["indexers"].keys() != {"time_counter"}
-            or grid["dimensions"].keys() != {"y", "x"}
-            or not numeric_kind_support(record)):
-        return None
-    coordinates = grid["coordinates"]
-    for name in ("nav_lat", "nav_lon"):
-        coordinate = coordinates.get(name, {})
-        if (coordinate.get("dimensions") != ["y", "x"]
-                or not coordinate["attributes"].get("units")):
-            return None
-    return {
-        "rule": "nemo.cf.sea_surface_height_above_geoid.kind.v1",
-        "reference": "https://vocab.nerc.ac.uk/standard_name/sea_surface_height_above_geoid/",
-        "standard_name": standard_name, "units": units,
-        "native_variable": record["locator"]["variable"],
-        "stored_dtype": record["stored_dtype"],
-    }
-
-
 def prepare_nemo(ds: xr.Dataset, conf) -> xr.Dataset:
     """Validate stored sampling and retain source-local axes/support unchanged."""
     requested = {name for spec in getattr(conf, "requested_variables_user", {}).values()

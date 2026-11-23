@@ -201,15 +201,19 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             settings.polar_min_valid_weight_fraction = options["min_valid_weight_fraction"]
             value = prepared[name]
             prepared_dtype = str(value.dtype)
-            promote = (options["interpolation"] == "bilinear" and options.get("kind") == "continuous"
-                       and np.issubdtype(value.dtype, np.integer))
+            promote = (options["interpolation"] == "bilinear"
+                        and np.issubdtype(value.dtype, np.integer))
+            conversion = "none"
             if promote:
                 # The shared operator casts its numerator back to the evaluation dtype.
                 value = value.astype(np.float64)
+                conversion = ("integer_to_float64_for_continuous_bilinear"
+                              if options.get("kind") == "continuous"
+                              else "integer_to_float64_for_bilinear")
             sample_source = prepared.assign({name: value}) if promote else prepared
             numeric_types[name] = {
                 "prepared_dtype": prepared_dtype, "evaluation_dtype": str(value.dtype),
-                "conversion": "integer_to_float64_for_continuous_bilinear" if promote else "none"}
+                "conversion": conversion}
             if paired:
                 prepared = sample_source
                 continue
@@ -336,14 +340,6 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
         if output_formatter is not None:
             result = output_formatter(result, job)
         results.setdefault(job["name"], []).append(result)
-        input_metadata = job["polar_input_metadata"]
-        if absent and (inferred := {name for name, value in options.items()
-                                    if value.get("kind_origin") == "documented_fallback"}):
-            input_metadata = {name: value for name, value in input_metadata.items()
-                              if name not in inferred}
-            options = {name: {k: v for k, v in value.items()
-                              if name not in inferred or k not in {"kind", "kind_origin"}}
-                       for name, value in options.items()}
         reports.append({
             "field": job["name"], "source_time": str(stamp),
             "method": job["method"], "inputs": job["inputs"],
@@ -351,7 +347,7 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             "native_axes": dict(job["context"][2]),
             "result_units": job["result_units"],
             "center_time": str(associations[stamp]), "grid_id": job["grid_id"],
-            "geometry": info["spacing"], "input_metadata": input_metadata,
+            "geometry": info["spacing"], "input_metadata": job["polar_input_metadata"],
             "levels": {key: vertical[key] for key in (
                 "dimension", "source_native_indices", "values", "units", "units_origin")}
             if vertical else None,
@@ -373,19 +369,6 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
             sequence, coords="minimal", data_vars="all",
             compat="equals", join="exact", combine_attrs="override"))
     dataset = xr.merge(datasets, join="exact", compat="identical", combine_attrs="override")
-    if source.get("allowed_gaps"):
-        sampled_fields = {r["field"] for r in reports if not r.get("source_record_absent")}
-        for name in results.keys() - sampled_fields:
-            # An all-gap field must not inherit its template's inferred kind.
-            attrs = dataset[name].attrs
-            try:
-                origins = json.loads(attrs.get("frameit_metadata_origins", "{}"))
-            except (TypeError, ValueError):
-                continue
-            if isinstance(origins, dict) and origins.get("kind") == "documented_fallback":
-                attrs.pop("kind", None)
-                origins.pop("kind")
-                attrs["frameit_metadata_origins"] = json.dumps(origins, sort_keys=True)
     mapped = [dataset[f"{name}_geometry_mapped"] for name in results]
     dataset["geometry_mapped"] = xr.concat(mapped, dim="_field").all("_field").astype(
         np.uint8).assign_attrs(

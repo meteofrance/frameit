@@ -50,30 +50,6 @@ def _velocity(da):
     return convert_units(value, "velocity")
 
 
-def croco_zeta_kind_evidence(source, record, attrs):
-    """Recognize only the history writer's own surface scalar on the rho grid."""
-    from frameit.io.netcdf_utils import numeric_kind_support
-
-    rho = ["eta_rho", "xi_rho"]
-    grid = source["native_grids"][record["grid_id"]]["coordinates"]
-    if (record["locator"]["variable"] != "zeta"
-            or not record.get("croco_zeta_history")
-            or not numeric_kind_support(record)
-            or any(grid.get(name, {}).get("dimensions") != rho
-                   for name in ("lat_rho", "lon_rho"))):
-        return None
-    label = attrs.get("standard_name")
-    if label is not None and (not isinstance(label, str) or label not in {
-            "sea_surface_height", "sea_surface_height_above_mean_sea_level"}):
-        return None
-    return {
-        "rule": "croco.history.zeta.kind.v1",
-        "reference": "CROCO v2.1.3 init_scalars.F and def_his.F, ab63b583c9f9e1faceb838e7063b71f1ab9bd56f",
-        "native_variable": "zeta", "dimensions": ["time", *rho], "Vtransform": 2,
-        "stored_dtype": record["stored_dtype"], "static_mask": "mask_rho in the same history file",
-    }
-
-
 def _static_wet_mask(ds):
     options = str(ds.attrs.get("CPP-options", "")).split()
     if "MASKING" not in options or "WET_DRY" in options:
@@ -365,19 +341,6 @@ def _require_history_clock_and_transform(ds):
         valid = False
     if not valid:
         raise ValueError("CROCO requires consistent explicit Vtransform=2 declarations")
-
-
-def croco_zeta_history_support(ds):
-    """Check only support owned by a potential kind fallback, not scientific values."""
-    if ("zeta" not in ds or ds.zeta.dims != ("time", "eta_rho", "xi_rho")
-            or ds.zeta.attrs.keys() & {"kind", "flag_values", "flag_masks", "flag_meanings"}):
-        return False
-    try:
-        _require_history_clock_and_transform(ds[
-            [name for name in ("time", "scrum_time", "Vtransform") if name in ds]])
-    except ValueError:
-        return False
-    return True
 
 
 def prepare_croco(ds: xr.Dataset, conf, *, native_axes=None) -> xr.Dataset:

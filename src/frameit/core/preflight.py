@@ -338,7 +338,7 @@ def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None, *, previ
     return _metadata_id("grid_", grid), grid
 
 
-def _netcdf_inventory(path, source, resources, *, check_croco_zeta=False, previous_grids=None):
+def _netcdf_inventory(path, source, resources, *, previous_grids=None):
     from frameit.io.grib_utils import normalize_isobaric_coordinates
     from frameit.io.netcdf_utils import mnh_altitude_terms
 
@@ -367,11 +367,6 @@ def _netcdf_inventory(path, source, resources, *, check_croco_zeta=False, previo
         raise
     except ValueError as exc:
         raise tag_error(exc, "E1401")
-    zeta_history = False
-    if model == "croco" and check_croco_zeta:
-        from frameit.io.croco_utils import croco_zeta_history_support
-
-        zeta_history = croco_zeta_history_support(ds)
     temporal_dims = {dim for sample in samples for dim in sample["indexers"]}
     altitude_axes = {name: terms for name in ("level", "level_w") if model == "mesonh"
                      and name in ds.coords
@@ -500,7 +495,6 @@ def _netcdf_inventory(path, source, resources, *, check_croco_zeta=False, previo
                 "field_id": field_id, "name": name, "grid_id": grid_id, "level": None,
                 "stored_dtype": np.dtype(var.encoding.get("dtype", var.dtype)).name,
                 "decoded_dtype": var.dtype.name,
-                **({"croco_zeta_history": True} if zeta_history and name == "zeta" else {}),
                 "temporal_metadata": {k: var.attrs[k] for k in (
                     "cell_methods", "GRIB_stepType", "online_operation",
                     "interval_operation", "interval_write")
@@ -528,7 +522,7 @@ def _grib_source_inventory(path, source):
     except (ImportError, RuntimeError, OSError) as exc:
         raise tag_error(exc, "E1002")
 
-    from frameit.io.grib_utils import GRIB_PRESSURE_UNITS, grib_wind10m_kind_evidence
+    from frameit.io.grib_utils import GRIB_PRESSURE_UNITS
 
     model, evidence = _source_model(source, [], path, fmt="grib")
     fields, grids, records, horizontal = {}, {}, [], {}
@@ -613,14 +607,12 @@ def _grib_source_inventory(path, source):
                     "stepType", "startStep", "endStep", "stepUnits", "typeOfStatisticalProcessing")
                     if get(key) is not None}
                 bounds = endpoints if get("stepType") != "instant" else None
-                kind_evidence = grib_wind10m_kind_evidence(handle)
                 records.append({
                     "field_id": field_id, "name": name, "grid_id": grid_id,
                     "level": get("level"), "time": valid, "calendar": "proleptic_gregorian",
                     "cycle": cycle, "time_bounds": bounds, "clock": "GRIB_reference_plus_endStep",
                     "temporal_metadata": temporal, "native_axes": native_axes,
                     "ensemble_metadata": ensemble,
-                    **({"grib_wind10m_kind": kind_evidence} if kind_evidence else {}),
                     "locator": {"format": "grib", "path": str(path), "message_index": index,
                                 "offset": int(ec.codes_get_message_offset(handle)),
                                 "length": int(ec.codes_get_message_size(handle))}})
@@ -898,8 +890,6 @@ def inventory_source(conf, name, *, resources=None):
     """Populate a v3 source's metadata handoff without binding or processing fields."""
     source = conf.sources[name]
     request = conf.source_requests[name]
-    check_croco_zeta = ("zeta" in request["exports"].get("polar", [])
-                        and "kind" not in source.get("field_metadata", {}).get("zeta", {}))
     entries, excluded, overlaps, errors = _source_file_entries(source, name)
     fields, grids, records, facts = {}, {}, [], []
     previous_grids = {} if len(entries) > 1 else None
@@ -931,8 +921,7 @@ def inventory_source(conf, name, *, resources=None):
                     if dependency_error:
                         raise PreflightError([dependency_error])
                 if fmt == "netcdf":
-                    info = _netcdf_inventory(path, source, owned, check_croco_zeta=check_croco_zeta,
-                                             previous_grids=previous_grids)
+                    info = _netcdf_inventory(path, source, owned, previous_grids=previous_grids)
                 elif fmt == "grib":
                     info = _grib_source_inventory(path, source)
                 else:

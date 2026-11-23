@@ -13,9 +13,10 @@ extraction cell. ``radius`` is in kilometres; ``azimuth`` runs clockwise from
 north in radians (0° north, 90° east, 180° south, 270° west).
 `xESMF <https://xesmf.readthedocs.io/>`_ samples them as a LocStream of points.
 
-Continuous fields default to bilinear sampling; categorical fields use
+Numeric fields default to bilinear sampling; known categorical fields use
 nearest-neighbour (``interpolation: nearest``, backend ``nearest_s2d``).
-Kind must be established from evidence. These are point samples, not area averages.
+``kind`` is optional. Select nearest for unlabeled codes that must not be
+blended. These are point samples, not area averages.
 
 Polar support is resolved independently of model-grid exports; no crop width or
 model-grid product is needed. Selected preparation happens before sparse selection
@@ -209,8 +210,8 @@ below-threshold support is rejected regardless of chunk/accumulation order.
 These fractions describe **interpolation-weight support**, not area coverage or
 conservation. The supported point methods are bilinear and nearest-neighbour
 (``nearest_s2d`` in the backend); negative-weight/high-order methods need a
-different support definition. Kind evidence selects the default method, not
-failure of another method. There is no nearest-neighbour fallback.
+different support definition. The method is set before sampling: failure
+of bilinear interpolation does not trigger a nearest-neighbour fallback.
 Nearest-neighbour does not accept partial-stencil renormalization.
 Nearest sampling is restricted to the ESMF spherical source-cell footprint,
 using an additional geometry-only bilinear weight build, not a planar
@@ -345,7 +346,7 @@ See :doc:`../task_guides/scalars_and_vectors` for base-component declarations.
 Selecting U/V alone does not request either component; selecting one component
 does not export its sibling, speed or internal-only inputs.
 
-Inputs require continuous-kind evidence, compatible velocity units, time support,
+Inputs cannot be categorical and require compatible velocity units, time support,
 levels, basis and rotation metadata. Existing preparation collocates admitted
 native grids, converts to m s-1 and rotates to physical east/north. Both inputs
 must then share the same grid, interpolation and sampling settings. A single

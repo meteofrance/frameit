@@ -704,9 +704,9 @@ spacing rules, numerical-API naming and origin conventions.
 Polar numeric types
 ''''''''''''''''''''
 
-A proven continuous field with integer prepared values is evaluated as float64
-for bilinear sampling. This preserves fractional results; it does not change
-native/model-grid exports. Floating inputs keep their prepared evaluation dtype.
+Bilinear sampling evaluates prepared integer values as float64, even when
+``kind`` is absent. This preserves fractional results without changing
+model-grid values. Floating inputs keep their prepared evaluation dtype.
 Nearest sampling retains label values rather than averaging them, although its
 stored output can use a floating dtype to represent missing data.
 
@@ -715,8 +715,8 @@ record give the prepared dtype, evaluation dtype and conversion. Prepared means
 after decoding and selected preparation, not necessarily the encoded storage
 type. A floating output dtype alone does not prove correct evaluation.
 Ordinary floating-point roundoff still applies. Float64 cannot exactly represent
-every integer beyond :math:`2^{53}`; no bitwise or large-integer exactness is
-promised.
+every integer beyond :math:`2^{53}`. Polar sampling rejects NetCDF fields with
+64-bit integer storage or decoded values; use model-grid output to keep them.
 
 Metadata and attributes
 -----------------------

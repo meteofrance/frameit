@@ -67,16 +67,6 @@ and loading; no automatic Celsius/Kelvin or other ocean quantity conversion is
 introduced. Native clocks are checked before selecting variables, including
 ``time_centered`` stored as an auxiliary data variable rather than a coordinate.
 
-For direct native polar sampling, an admitted numeric surface field can use
-``kind: continuous`` when its file declares the CF standard name
-`sea_surface_height_above_geoid
-<https://vocab.nerc.ac.uk/standard_name/sea_surface_height_above_geoid/>`_
-and a supported length unit such as ``m`` or ``cm``. The field must sample
-native ``time_counter`` on ``(y, x)`` with its own ``nav_lat`` and ``nav_lon``.
-Wide integer values are excluded. The name ``zos`` alone is not enough.
-:ref:`w1603` identifies the completion in validation. It does not identify the
-producer or datum, convert units, infer a wet mask, or establish a time statistic.
-
 Broader real-data qualification remains open. Native components have the separate
 limits below.
 
@@ -352,16 +342,6 @@ Native binary water masks are used before interpolation, but are not automatical
 sampled into polar auxiliaries: bilinear fractions must not be advertised as binary
 masks. Explicit polar requests for CROCO binary masks fail; use native masks or the
 per-field interpolation support/quality variables instead.
-
-Direct native polar sampling can use ``kind: continuous`` for the numeric
-history field ``zeta(time, eta_rho, xi_rho)`` when kind is unstated. The
-selected file must supply rho geography, native ``time(time)``,
-``Vtransform=2`` and its own static ``mask_rho``.
-If present, the standard name must agree with ``sea_surface_height`` or
-``sea_surface_height_above_mean_sea_level``. This matches the `CROCO v2.1.3
-history writer
-<https://gitlab.inria.fr/croco-ocean/croco/-/blob/ab63b583c9f9e1faceb838e7063b71f1ab9bd56f/OCEAN/def_his.F>`_;
-it does not establish a datum, infer units or relax existing mask checks.
 
 Polar CROCO outputs retain selected ``s_rho/s_w`` labels and original native
 indices, but archive ``formula_terms`` and the native vertical standard name as

@@ -580,9 +580,9 @@ region:
 - `shared_grid: true` opts into a common target. Otherwise resolve each source's grid.
   Automatic shared spacing uses the coarsest participating source. Keep source masks,
   vertical grids, quantities, and the explicit time-association policy distinct.
-- Default to bilinear interpolation for proven continuous fields and nearest-neighbour
-  for proven categorical fields. Evidence may be metadata or a declaration.
-  Unresolved kind fails; do not guess it from a name.
+- Default to bilinear for eligible numeric fields and nearest-neighbour for
+  known categorical fields. Absent `kind` is intentional: do not require
+  it or backfill it from producer names, headers or dtype.
 - `missing_data_policy` defaults to `strict`. Explicit `renormalize` requires a
   `min_valid_weight_fraction`. Entirely missing or unmapped points remain missing.
   Preserve valid zeroes and export mapping, support, and status information.

@@ -81,7 +81,7 @@ sources:
     #   vtan: {method: tangential_wind, inputs: {u: UT, v: VT}}
     # radial_wind/tangential_wind: experimental non-FA atmosphere only, not this FA example.
     # Select aliases only in products.polar.fields; explicitly filter model_grid fields.
-    # Both inputs need continuous kind, matching prepared grid/options and strict joint masks.
+    # Both inputs need matching prepared grid/options and strict joint masks, not a kind label.
 region:
   tracker:
     method: pressure_wind
@@ -131,7 +131,7 @@ products:
     field_options:
       atmosphere:
         sample_field:
-          interpolation: bilinear # bilinear | nearest; kind needs source evidence.
+          interpolation: bilinear # bilinear | nearest; use nearest for category codes.
           missing_data_policy: strict
           # sampling: native | mass, only where admitted.
           # units: K  # Exported base field only; compatible conversion before sampling.

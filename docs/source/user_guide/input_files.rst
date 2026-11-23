@@ -42,34 +42,10 @@ such as CROCO masks and rotation angles. It does not prove decode-time scaling
 or scientific suitability.
 See :doc:`configuration_file` and :doc:`../task_guides/field_selection`.
 
-When a direct native polar field needs a kind, FrameIt uses observed kind or
-categorical flags, then a valid YAML declaration. If none supplies kind, the
-record matches below establish ``continuous``. Input-aware validation shows
-:ref:`w1603` once per affected source and field in the plan. Times excluded
-from the polar operation do not need a polar kind. ``run-provenance.yaml``
-reports the evidence only for records actually sampled; an accepted short
-track may use fewer records than validation planned. Native-only copies do
-not use these rules. A concurrent native export spanning matched and
-unmatched records does not label the whole variable with the fallback.
-
-For direct native polar sampling of Meso-NH NetCDF, FrameIt can use
-``kind: continuous`` for numeric ``UM10`` or ``VM10`` on the native ``nj``/``ni``
-mass grid. It matches the `Meso-NH 6.0 DIAG definition
-<https://github.com/JorisPianezze/mesonh_doc/blob/061c0f29ea33fc374b318d77efcec2d29a12b12a/docs/source/documentation/users_guide/executables_namelists/namelists/nam_diag_default.rst>`_.
-A supplied standard name must describe a horizontal wind component. The fallback
-does not establish units or vector basis, and excludes wide integer storage.
-
-For direct native AROME GRIB2 point sampling, the same fallback matches WMO
-wind components 0/2/2 and 0/2/3 in master/local tables 15/0. It requires
-template 4.0, an exact single 10 m surface above ground, and unchanged process
-codes in the selected field series. Gusts, other levels and other templates
-do not match. This checks the wire codes; it does not identify a forecast
-producer or resolve incompatible streams.
-
-CROCO ``zeta`` uses a separate history-writer match with native rho geography
-and a same-file static mask. NEMO surface scalars, including ``zos``, use
-the observed CF sea-surface-height definition and compatible length units,
-not the short name. See :doc:`ocean_netcdf` for the ocean rules.
+Polar sampling does not add a ``kind`` attribute to unlabeled inputs or outputs.
+If a downstream tool needs this attribute, use a ``field_metadata`` declaration
+based on the producer's field definition. See :doc:`configuration_file` for the
+interpolation defaults and :doc:`fa_inputs` for native FA input declarations.
 
 File inventory and ambiguity
 -----------------------------

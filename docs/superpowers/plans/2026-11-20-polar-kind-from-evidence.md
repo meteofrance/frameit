@@ -1,5 +1,7 @@
 # Polar Kind from Evidence Implementation Plan
 
+> Historical plan; superseded by [optional polar kind](2026-11-23-optional-polar-kind.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan inline. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Default a missing polar kind from supported evidence, and report each completion.

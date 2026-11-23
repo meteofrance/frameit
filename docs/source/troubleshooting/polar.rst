@@ -21,23 +21,18 @@ Read the named fields, grids, or methods in the error. Check the
 requested geometry and interpolation against
 :doc:`../task_guides/polar_sampling`. A shared target needs compatible
 settings and centres. It does not make the source masks or physical
-quantities equal. Validate after fixing the specific conflict.
+quantities equal. If the error names an unsupported dtype, check the stored and
+decoded types. Use model-grid output for values that cannot be represented
+accurately by the polar sampler. Validate after fixing the specific conflict.
 
 .. _e1603:
 
-E1603: FrameIt does not know the field's sampling kind
+E1603: An older version required sampling kind
 ----------------------------------------------------------------------
 
-Check whether the field holds values that can vary continuously or
-codes for categories. Get that information from the producer, flags,
-or field definition. Declare ``field_metadata.kind`` only when you
-know it. Do not pick a kind from a name or number type alone.
-See :doc:`../user_guide/input_files` for the documented matches that do not
-need a declaration.
-If you want nearest-neighbour samples of an unchanged floating-point field
-from Meso-NH or AROME NetCDF, set ``interpolation: nearest`` in its
-``products.polar.field_options`` entry instead. Validate and check the
-chosen interpolation.
+Current polar sampling does not require ``kind``. If your input contains
+unlabeled category codes, set ``interpolation: nearest`` for that field in
+``products.polar.field_options`` and check the chosen method after validation.
 
 .. _e1604:
 
@@ -70,13 +65,12 @@ Read :ref:`e1601` before choosing a smaller step.
 
 .. _w1603:
 
-W1603: Input evidence established a missing polar kind
+W1603: An older version supplied a missing polar kind
 ----------------------------------------------------------------------
 
-Check the named field and rule against :doc:`../user_guide/input_files`.
-The plan uses ``continuous`` where neither the input kind nor YAML declared
-it. If the rule describes your data, no YAML change is needed. After a run,
-``run-provenance.yaml`` reports the evidence for records actually sampled.
+Current polar sampling no longer adds ``kind: continuous`` from producer
+matches. If another tool needs that attribute, declare it from the producer's
+field definition. The default interpolation is still bilinear for such fields.
 
 Missing values in a polar result
 --------------------------------
