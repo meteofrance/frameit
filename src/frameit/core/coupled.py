@@ -1161,6 +1161,9 @@ def run_native_sources(runner, *, benchmark=False):
 
                     verify_polar_target(
                         dataset, binding["polar_plan"], consumer.conf, plans[name], centres)
+            # Product graphs now own their bounded views; discard any unused full-grid templates.
+            if getattr(consumer, "regional_reads", None) is not None:
+                consumer.regional_reads = None
         shared = runner.conf.simulation_parameter.get("common_polar_target")
         if shared is not None:
             shared["verification"] = "exact_coordinates_at_associated_centres"

@@ -427,15 +427,15 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks, regio
         )
         if name != variable:
             dataset[name].attrs["source_variable_name"] = variable
-        indexers = {dim: contiguous_positions([position]) for dim, position in
+        indexers = {dim: contiguous_positions([position], dataset.sizes[dim]) for dim, position in
                      locator["coordinate_indexers"].items() if dim in dataset.dims}
-        indexers.update({dim: contiguous_positions([position])
+        indexers.update({dim: contiguous_positions([position], dataset.sizes[dim])
                          for dim, position in locator["indexers"].items()
                           if dim in original[variable].dims})
         vertical = record["vertical"]
         if vertical is not None:
             dim = vertical["dimension"]
-            indexers[dim] = contiguous_positions(record["source_positions"])
+            indexers[dim] = contiguous_positions(record["source_positions"], dataset.sizes[dim])
             index = f"{dim}_source_native_index"
             if variable == index and variable in original.coords:
                 dataset = dataset.set_coords(name)

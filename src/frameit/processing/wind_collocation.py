@@ -18,11 +18,13 @@ from frameit.processing.wind_reference import wind_pairs
 from frameit.utils.units import convert_units
 
 
-def staggered_support(source: xr.DataArray, target: xr.DataArray) -> dict[int, list[int]]:
+def staggered_support(
+    source: xr.DataArray, target: xr.DataArray, *, assumed_units: str | None = None
+) -> dict[int, list[int]]:
     """Required native brackets for each target; exact hits need only that sample."""
     if source.attrs.get("units") != target.attrs.get("units"):
-        source = convert_units(source, "distance")
-        target = convert_units(target, "distance")
+        source = convert_units(source, "distance", assumed=assumed_units)
+        target = convert_units(target, "distance", assumed=assumed_units)
     # The numerical helper is also the authority for monotonicity and boundaries.
     interpolate_staggered(xr.zeros_like(source), source.dims[0], target)
     values, points = np.asarray(source, float), np.asarray(target, float)

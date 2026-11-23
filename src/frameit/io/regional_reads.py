@@ -4,14 +4,20 @@
 
 """Window an already-bound NetCDF payload before turning it into Dask blocks."""
 
+import numpy as np
 import xarray as xr
 
 
-def contiguous_positions(positions):
-    """Keep order and dimensionality; never widen a sparse selection."""
-    if len(positions) and positions[0] >= 0 and all(
-            b == a + 1 for a, b in zip(positions, positions[1:])):
-        return slice(int(positions[0]), int(positions[-1]) + 1)
+def contiguous_positions(positions, size):
+    """Replace only equivalent in-bounds integer indices; slices silently clip."""
+    values = np.asarray(positions)
+    if values.size and values.ndim == 1 and values.dtype.kind in "iu":
+        start = int(values[0])
+        if start >= 0 and all(int(v) == start + i for i, v in enumerate(values)):
+            stop = start + len(values)
+            if stop > size:
+                raise IndexError(f"Bound native selection [{start}:{stop}] exceeds axis size {size}")
+            return slice(start, stop)
     return positions
 
 
@@ -43,12 +49,14 @@ class RegionalReads:
             dim, native = vertical
             if not set(levels) <= set(native):
                 return None
-            indexers[dim] = contiguous_positions([native.index(i) for i in levels])
+            indexers[dim] = contiguous_positions([native.index(i) for i in levels],
+                                                 variable.sizes[dim])
         # isel must precede chunk AND transpose: both can materialize a backend view.
         return variable.isel(indexers).chunk({})
 
     def window(self, key, bounds, like, *, rename=None, levels=None):
-        prepare = self.preparations.get(key)
+        # Each product consumes its per-time preparation once; don't retain the full angle.
+        prepare = self.preparations.pop(key, None)
         variable = prepare(bounds, reads=self) if prepare else self.raw(key, bounds, levels=levels)
         if variable is None:
             return None
@@ -84,16 +92,22 @@ class RegionalReads:
 
     def box(self, grid, value, indices, template):
         """Read each time's clipped rectangle, then gather any repeated edge indices."""
-        if value.chunks is None or not value.sizes.get("time") or "time" not in template.dims:
+        if value.chunks is None or "time" not in template.dims:
+            return template
+        clock = next(iter(indices.values())).time
+        if not clock.size:
             return template
         pieces = []
-        for i, stamp in enumerate(value.time.values):
+        for i, stamp in enumerate(clock.values):
             key = "model_grid", grid, value.name, stamp
             if self.samples.get(key) is None and not self.preparations.get(key):
                 return template
             offsets = {d: idx.isel(time=slice(i, i + 1)) for d, idx in indices.items()}
             bounds = {d: slice(int(idx.min()), int(idx.max()) + 1) for d, idx in offsets.items()}
-            like = value.isel(time=slice(i, i + 1), **bounds)
+            selection = dict(bounds)
+            if "time" in value.dims:
+                selection["time"] = slice(i, i + 1)
+            like = value.isel(selection)
             block = self.window(key, bounds, like)
             if block is None:
                 return template

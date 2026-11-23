@@ -40,7 +40,8 @@ def test_moving_layered_field_reads_only_its_native_window(tmp_path, monkeypatch
     def trace(array, key):
         result = original(array, key)
         if array.variable_name == "q":
-            reads.append((key, result.shape))
+            reads.append(tuple(tuple(np.atleast_1d(np.arange(n)[k]))
+                               for n, k in zip(array.shape, key, strict=True)))
         return result
 
     monkeypatch.setattr(H5NetCDFArrayWrapper, "_getitem", trace)
@@ -56,14 +57,35 @@ def test_moving_layered_field_reads_only_its_native_window(tmp_path, monkeypatch
         else:
             np.testing.assert_allclose(field.isel(time=0, radius=0, azimuth=0),
                                        values[0, [2, 0], 1, 2], atol=1e-8, rtol=0)
-    assert reads and all(s[-2] < 25 and s[-1] < 25 for _, s in reads), reads
+            assert np.isnan(field.isel(time=1, level=0, radius=0)).all()
+            np.testing.assert_array_equal(
+                saved["level.q_interpolation_status"].isel(time=1, level=0, radius=0), 2)
+    rectangles = ([(0, 5, 0, 6), (11, 18, 14, 21)] if product == "model_grid"
+                  else [(0, 6, 0, 7), (10, 19, 13, 22)])
+    # h5netcdf reads the two native levels in ascending order; output order is [2, 0].
+    assert sorted(reads) == [((t,), (0, 2), tuple(range(y0, y1)), tuple(range(x0, x1)))
+                             for t, (y0, y1, x0, x1) in enumerate(rectangles)]
 
 
-def test_rotated_mass_winds_read_both_native_face_stencils(tmp_path, monkeypatch):
+@pytest.mark.parametrize("missing_face_units", [False, True])
+def test_rotated_mass_winds_read_both_native_face_stencils(tmp_path, monkeypatch, missing_face_units):
+    import weakref
+
+    from frameit.io import netcdf_export
+    from frameit.processing.derived import wind
     from frameit.testing.numerical.test_grid_representations import native_scene
 
     ds = native_scene(units="km/h")
+    for suffix in ("", "_u", "_v"):
+        x, y = np.meshgrid(ds["ni" + suffix], ds["nj" + suffix])
+        ds["latitude" + suffix].values[:] = -20 + (x - 4e-6 * x * y) / 111000
+        ds["longitude" + suffix].values[:] = 60 - (y + 2e-6 * (x*x - y*y)) / (
+            111000 * np.cos(np.deg2rad(20)))
+    ds.VT.values[:] = 3.6 * (3 + np.asarray(ds.nj_v)[:, None] / 1000
+                             + np.asarray(ds.ni_v)[None, :] / 2500)
     ds.UT.values[:, :, 4, 5] = np.nan
+    if missing_face_units:
+        del ds.ni_u.attrs["units"]
     ds.to_netcdf(tmp_path / "input.nc")
     source = {"variables": {"3d": ["UT", "VT"]},
               "wind_pairs": [{"u": "UT", "v": "VT", "basis": "grid",
@@ -87,6 +109,20 @@ def test_rotated_mass_winds_read_both_native_face_stencils(tmp_path, monkeypatch
         return result
 
     monkeypatch.setattr(H5NetCDFArrayWrapper, "_getitem", trace)
+    angles, retained = [], []
+    angle, write = wind.rotation_angle, netcdf_export._write_product
+
+    def remember(*args):
+        result = angle(*args)
+        angles.append(weakref.ref(result))
+        return result
+
+    def at_export(*args):
+        retained.append(sum(ref() is not None for ref in angles))
+        return write(*args)
+
+    monkeypatch.setattr(wind, "rotation_angle", remember)
+    monkeypatch.setattr(netcdf_export, "_write_product", at_export)
     trial = execute_simulation(configuration(tmp_path, source=source, region=region,
                                              products=products))
     for a, b in zip(control.products, trial.products, strict=True):
@@ -96,3 +132,51 @@ def test_rotated_mass_winds_read_both_native_face_stencils(tmp_path, monkeypatch
             xr.testing.assert_identical(actual, expected)
     assert {name for name, _ in reads} == {"UT", "VT"}
     assert all(max(shape) < 9 for _, shape in reads), reads
+    assert angles and not any(retained), "full-domain rotation inputs retained through publication"
+
+
+@pytest.mark.parametrize("short_axis", ["time", "level"])
+def test_reopened_file_cannot_clip_a_bound_native_selection(tmp_path, short_axis):
+    from frameit.io.loader import DatasetResources
+    from frameit.testing.numerical.test_v3_netcdf_reads import _binding, _load
+    from frameit.testing.numerical.test_v3_operations import scene
+
+    ds = scene()
+    paths, binding, source = _binding(tmp_path, [ds], "mesonh", {"3d": ["U"]})
+    ds.isel({short_axis: slice(0, 2)}).to_netcdf(paths[0], engine="h5netcdf")
+    with DatasetResources() as resources, pytest.raises(IndexError):
+        groups, _ = _load(paths, binding, source, resources=resources)
+        for group in groups.values():
+            group.load()
+
+
+def test_static_native_field_reads_the_requested_box_at_each_time(tmp_path, monkeypatch):
+    from frameit.testing.numerical.test_v3_polar import scene
+
+    ds = scene(hours=(0, 1))
+    ds["topo"] = (("nj", "ni"), np.arange(81.).reshape(9, 9), {"units": "m"})
+    ds.to_netcdf(tmp_path / "input.nc")
+    xr.Dataset(coords={
+        "time": ds.time,
+        "latitude": ("time", [ds.latitude.values[4, 4], ds.latitude.values[5, 6]],
+                     {"units": "degrees_north"}),
+        "longitude": ("time", [ds.longitude.values[4, 4], ds.longitude.values[5, 6]],
+                      {"units": "degrees_east"}),
+    }).to_netcdf(tmp_path / "track.nc")
+    cfg = configuration(tmp_path, source={"variables": {"2d": ["q", "topo"]}},
+                        region={"track": {"file": str(tmp_path / "track.nc")},
+                                "width_km": {"x": 2, "y": 2}}, products={"model_grid": True})
+    original, reads = H5NetCDFArrayWrapper._getitem, []
+
+    def trace(array, key):
+        result = original(array, key)
+        if array.variable_name == "topo":
+            reads.append(result.shape)
+        return result
+
+    monkeypatch.setattr(H5NetCDFArrayWrapper, "_getitem", trace)
+    result = execute_simulation(cfg)
+    with xr.open_dataset(result.products[0]["path"]) as saved:
+        np.testing.assert_array_equal(saved.topo.isel(time=0), ds.topo[3:6, 3:6])
+        np.testing.assert_array_equal(saved.topo.isel(time=1), ds.topo[4:7, 5:8])
+    assert reads and set(reads) == {(3, 3)}

@@ -288,22 +288,18 @@ def _wind_window(bounds, *, reads, components, operation, geometry, settings, an
             axis = next((d for d in (mass + "_u", mass + "_v") if d in value.dims), None)
             if axis is None:
                 return None
-            brackets = staggered_support(value[axis], target[mass])
+            # The horizontal interpolator interprets an unlabelled MNH axis in metres.
+            brackets = staggered_support(value[axis], target[mass], assumed_units="m")
             indices = [i for pair in brackets.values() for i in pair]
             # Even an exact hit needs a monotone two-point coordinate for the interpolator.
             lo = min(min(indices, default=0), value.sizes[axis] - 2)
             native[axis] = slice(lo, max(max(indices, default=0) + 1, lo + 2))
         vertical = record["vertical"]
-        block = reads.raw(("native", record["grid_id"], name, record["time"]), native,
-                          levels=vertical and vertical["source_native_indices"])
-        if block is None:
+        field = reads.window(
+            ("native", record["grid_id"], name, record["time"]), native, value.isel(native),
+            levels=vertical and vertical["source_native_indices"])
+        if field is None:
             return None
-        like = value.isel(native)
-        if "time" in like.dims and "time" not in block.dims:
-            block = block.set_dims({"time": 1, **block.sizes})
-        if block.sizes != like.sizes or block.dtype != like.dtype:
-            return None
-        field = like.copy(data=block.transpose(*like.dims).data)
         fields[name] = collocate_mnh_component(field, target, settings)
     ds = xr.Dataset(fields, attrs=geometry.attrs)
     ds = ds.assign_coords({n: c for n, c in target.coords.items() if set(c.dims) <= set(ds.dims)})
