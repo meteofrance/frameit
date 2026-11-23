@@ -849,6 +849,19 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
         errors = list(exc.diagnostics)
         preparation_prerequisites = [error.path for error in errors]
         deferred = [check for check in exc.deferred_checks if check["path"] != "plan"]
+    layouts = {}
+
+    def layout_for(name, *, regional=False):
+        from frameit.io.netcdf_export import output_grid_layout
+
+        source = plans[name]
+        # Only CROCO's independently cropped faces need a separate naming view.
+        regional = regional and source["model"] == "croco"
+        key = name, regional
+        if key not in layouts:
+            layouts[key] = output_grid_layout(source, regional=regional)
+        return layouts[key]
+
     bindings = {}
     try:
         for name, child in children.items():
@@ -861,7 +874,8 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                     "Source binding requires its selected method dependencies."))
                 continue
             try:
-                binding = bindings[name] = bind_source(child, name, resources=resources)
+                binding = bindings[name] = bind_source(
+                    child, name, resources=resources, layout_for=layout_for)
                 if preparation_prerequisites:
                     deferred.append(blocked_check(
                         f"sources.{name}.execution", preparation_prerequisites,
@@ -924,7 +938,7 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                 resolve_polar_sampling(plans[name], bindings[name], child, radial_step_km=step)
             for name, child in participants.items():
                 bindings[name]["status"] = "bound"
-                _publish_source_binding(child, name, bindings[name])
+                _publish_source_binding(child, name, bindings[name], layout_for=layout_for)
             target = bindings[next(iter(participants))]["polar_plan"]
             conf.add_parameter("common_polar_target", {
                 "participants": list(participants), "radial_step_km": step,
@@ -933,24 +947,27 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                 "radius_km": target["radius_km"], "azimuth_degrees": target["azimuth_degrees"],
                 "verification": "pending_exact_output_coordinates"})
         _prepare_v3_regions(conf, children, plans)
+        output_layouts = {}
         for product in conf.simulation_parameter["request_plan"]["products"]:
-            if product["product"] == "model_grid":
+            kind = product["product"]
+            if kind not in {"model_grid", "polar"}:
+                continue
+            name = product["source"]
+            regional = kind == "model_grid" and bool(conf.x_boxsize_km and conf.y_boxsize_km)
+            layout = layout_for(name, regional=regional)
+            output_layouts.setdefault(name, {})[kind] = layout
+            if kind == "model_grid":
                 from frameit.core.preflight import describe_model_grid_output
 
-                name = product["source"]
-                describe_model_grid_output(
-                    plans[name], bindings[name], product,
-                    regional=bool(conf.x_boxsize_km and conf.y_boxsize_km))
-            if product["product"] != "polar":
+                describe_model_grid_output(plans[name], bindings[name], product, layout=layout)
                 continue
-            binding = children[product["source"]].source_requests[product["source"]]["binding"]
-            from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
+            from frameit.io.netcdf_export import _output_grid_facts
 
-            layout = output_grid_layout(plans[product["source"]])
+            binding = bindings[name]
             product["stored_names"] = {name: name for name in product["fields"]}
             product["dimensions"], product["units"] = {}, {}
             associated = {record["source_time"]
-                          for record in plans[product["source"]]["region"]["associations"]}
+                          for record in plans[name]["region"]["associations"]}
             jobs = [job for job in binding["operation_plans"] if job["product"] == "polar"]
             for job in jobs:
                 horizontal = set(job["polar_geometry"]["horizontal_dimensions"].values())
@@ -968,9 +985,10 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                 product["units"][job["name"]] = job["result_units"]
             # Planned kind completions belong to validation, not the executed run manifest.
             report["warnings"] = [*report["warnings"], *_polar_kind_warnings(
-                product["source"], (job["polar_input_metadata"] for job in jobs
-                                    if job["context"][0] in associated))]
-        resource_plan = describe_v3_resources(conf, plans, execution_options)
+                name, (job["polar_input_metadata"] for job in jobs
+                       if job["context"][0] in associated))]
+        resource_plan = describe_v3_resources(
+            conf, plans, execution_options, output_layouts=output_layouts)
         for name, child in children.items():
             product = resource_plan["layouts"]["products"].get(f"{name}.polar")
             if product is not None:
@@ -991,6 +1009,8 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
         conf.simulation_parameter.pop("common_polar_target", None)
         raise
     for name, child in children.items():
+        # Owned by the prepared child, not part of the report or provenance.
+        child._bound_output_layouts = output_layouts.get(name, {})
         conf.source_requests[name] = deepcopy(child.source_requests[name])
         conf.simulation_parameter["request_plan"]["sources"][name] = deepcopy(plans[name])
     conf.add_parameter("input_inventory", {
@@ -1095,15 +1115,17 @@ def run_native_sources(runner, *, benchmark=False):
     with runner.timer.section("extraction"):
         from frameit.io.netcdf_export import format_model_grid, output_grid_layout
 
-        layouts = {name: output_grid_layout(plans[name]) for name in consumers}
+        for name, child in children.items():
+            if not child._bound_output_layouts:
+                # Track-only consumers still validate the inventoried geography.
+                output_grid_layout(plans[name])
         for name, consumer in consumers.items():
             child = consumer.conf
             if "model_grid" in child.source_requests[name]["exports"]:
                 if progress is not None:
                     progress.update("preparing lazy model-grid product", source=name)
                 fields = child.source_requests[name]["exports"]["model_grid"]
-                layout = output_grid_layout(
-                    plans[name], regional=bool(child.x_boxsize_km and child.y_boxsize_km))
+                layout = child._bound_output_layouts["model_grid"]
                 sequences = {}
                 for grid_id, ds in consumer.ds_user.items():
                     ds = ds.reset_coords([field for field in fields if field in ds.coords])
@@ -1138,10 +1160,11 @@ def run_native_sources(runner, *, benchmark=False):
                 from frameit.io.netcdf_export import format_polar_output
                 from frameit.processing.polar.polar_proj import execute_source_polar
 
+                layout = consumer.conf._bound_output_layouts["polar"]
                 dataset, polar_report = execute_source_polar(
                     consumer.ds_tracker.get("internal", {}), plans[name], binding,
-                    consumer.conf, centres,
-                    output_formatter=partial(format_polar_output, layout=layouts[name]))
+                    consumer.conf, centres, layout=layout,
+                    output_formatter=partial(format_polar_output, layout=layout))
                 runner.field_products[(name, "polar")] = dataset.assign_attrs(
                     source_id=name, source_model=plans[name]["model"],
                     source_format=plans[name]["format"])

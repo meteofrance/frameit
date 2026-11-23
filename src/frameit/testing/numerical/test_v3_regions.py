@@ -374,6 +374,25 @@ def pressure_wind_scene(path):
     return declaration
 
 
+def test_tracker_only_still_rejects_ambiguous_output_geography(tmp_path):
+    path = tmp_path / "weather.nc"
+    source = pressure_wind_scene(path)
+    source["variables"] = {}
+    ds = xr.load_dataset(path)
+    dims = ("other_y", "other_x")
+    ds["unused"] = (dims, np.ones((2, 2)))
+    lat = np.array([[-20., -20.], [-19., -19.]])
+    attrs = {"standard_name": "latitude", "units": "degrees_north"}
+    ds.assign_coords(lat_a=(dims, lat, attrs), lat_b=(dims, lat, attrs)).to_netcdf(path)
+    conf = configuration(tmp_path, {"weather": source},
+                         region={"tracker": {"method": "pressure_wind"}},
+                         products={"track": True})
+    with pytest.raises(ValueError, match="ambiguous output latitude"):
+        execute_simulation(conf)
+    status = yaml.safe_load((conf.output_dir / "run-status.yaml").read_text())
+    assert status["state"] == "failed" and status["products"] == []
+
+
 @pytest.mark.parametrize("dependency_only", [False, True])
 def test_calculated_tracker_uses_atmosphere_and_actual_sparse_payload_reads(
         tmp_path, monkeypatch, dependency_only):

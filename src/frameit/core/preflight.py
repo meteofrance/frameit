@@ -1327,7 +1327,8 @@ def _required_dependencies(conf, execution_options=None):
     return facts, errors
 
 
-def bind_source(conf, name, *, representations=None, required_inputs=(), resources=None):
+def bind_source(conf, name, *, representations=None, required_inputs=(), resources=None,
+                layout_for=None):
     """Bind inventoried inputs using coordinate/static support, not scientific field payloads."""
     source = conf.simulation_parameter["request_plan"]["sources"][name]
     request = conf.source_requests[name]
@@ -1368,11 +1369,11 @@ def bind_source(conf, name, *, representations=None, required_inputs=(), resourc
     plan = conf.simulation_parameter["request_plan"]
     plan["warnings"] = list(dict.fromkeys([*plan["warnings"], *binding["warnings"]]))
     if binding["status"] == "bound":
-        _publish_source_binding(conf, name, binding)
+        _publish_source_binding(conf, name, binding, layout_for=layout_for)
     return binding
 
 
-def _publish_source_binding(conf, name, binding):
+def _publish_source_binding(conf, name, binding, *, layout_for=None):
     """Publish an already-finalized binding without rediscovery or a second bind."""
     if binding["status"] != "bound":
         raise ValueError("Cannot publish unfinished source binding")
@@ -1395,15 +1396,18 @@ def _publish_source_binding(conf, name, binding):
         n: list(s["files"]) for n, s in plan["sources"].items()})
     for product in plan["products"]:
         if product["source"] == name and product["product"] == "model_grid":
+            regional = bool(conf.x_boxsize_km and conf.y_boxsize_km)
             describe_model_grid_output(
-                source, binding, product, regional=bool(conf.x_boxsize_km and conf.y_boxsize_km))
+                source, binding, product, regional=regional,
+                layout=layout_for(name, regional=regional) if layout_for is not None else None)
 
 
-def describe_model_grid_output(source, binding, product, *, regional=False):
+def describe_model_grid_output(source, binding, product, *, regional=False, layout=None):
     """Preview the same exported axis names used by dataset assembly."""
     from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
 
-    layout = output_grid_layout(source, regional=regional)
+    if layout is None:
+        layout = output_grid_layout(source, regional=regional)
     product.update(stored_names={}, dimensions={}, units={})
     for name in product["fields"]:
         descriptor = binding["products"]["model_grid"][name]
@@ -1480,7 +1484,7 @@ def _describe_v3_unbound_resources(conf, execution_options=None):
             "setting_sources": resolved_sources(conf, options)}
 
 
-def describe_v3_resources(conf, sources, execution_options=None):
+def describe_v3_resources(conf, sources, execution_options=None, *, output_layouts=None):
     """Describe bounded concurrency and match layout namespaces on already-bound metadata."""
     from frameit.core.execution import ExecutionOptions
     from frameit.core.runtime import resolve_execution_resources
@@ -1533,9 +1537,10 @@ def describe_v3_resources(conf, sources, execution_options=None):
 
             source = sources[item["source"]]
             binding = source["requests"]["binding"]
-            layout = output_grid_layout(
-                source, regional=(item["product"] == "model_grid"
-                                  and bool(conf.x_boxsize_km and conf.y_boxsize_km)))
+            layout = (output_layouts[item["source"]][item["product"]]
+                      if output_layouts is not None else output_grid_layout(
+                          source, regional=(item["product"] == "model_grid"
+                                            and bool(conf.x_boxsize_km and conf.y_boxsize_km))))
             for descriptor in binding["products"][item["product"]].values():
                 for record in descriptor["records"]:
                     facts = _output_grid_facts(layout, record["selection_grid_id"],

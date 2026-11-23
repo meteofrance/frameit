@@ -56,6 +56,90 @@ def mnh_scene():
     return xr.Dataset(fields, coords=coords)
 
 
+def _grouped_polar_case(tmp_path):
+    mnh_scene()[["T"]].to_netcdf(tmp_path / "input.nc")
+    return configuration(
+        tmp_path, "mesonh", {},
+        sources={"sample": {
+            "model": "mesonh", "files": str(tmp_path / "input.nc"),
+            "variables": {"3d": {"level": {"names": ["T"]}}},
+            "field_metadata": {"level.T": {"units": "K", "kind": "continuous"}},
+        }},
+        region={"center": {"latitude": -19.5, "longitude": 61.},
+                "width_km": {"x": 2., "y": 2.}},
+        products={"model_grid": True, "polar": {"fields": {"sample": ["level.T"]},
+                                               "radius_km": 1., "azimuth_count": 8}},
+    )
+
+
+def test_binding_reuses_final_output_layout(tmp_path, monkeypatch):
+    from frameit.core.coupled import bind_sources
+    from frameit.io import netcdf_export
+    from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
+
+    conf = _grouped_polar_case(tmp_path)
+    guard_netcdf_payloads(monkeypatch, {"T"})
+    build = netcdf_export.output_grid_layout
+    calls = []
+
+    def observe(source, *, regional=False):
+        calls.append(regional)
+        return build(source, regional=regional)
+
+    monkeypatch.setattr(netcdf_export, "output_grid_layout", observe)
+    report, _, _ = bind_sources(conf)
+    dims = {"model_grid": ["time", "level", "y", "x"],
+            "polar": ["time", "level", "radius", "azimuth"]}
+    assert {product["product"]: product["dimensions"]["level.T"]
+            for product in report["products"]} == dims
+    for product, expected in dims.items():
+        assert report["layouts"]["products"][f"sample.{product}"][
+            "applicable_dimensions"] == sorted(expected)
+    assert not conf.output_dir.exists()
+    assert len(calls) == 2  # One for grouped validation, one for all finalized previews.
+
+
+def test_rebinding_uses_changed_grid_and_clock(tmp_path):
+    from frameit.core.coupled import bind_sources
+
+    conf = _grouped_polar_case(tmp_path)
+    _, _, first = bind_sources(conf)
+    scene = mnh_scene()[["T"]].isel(time=[1])
+    scene.assign_coords(longitude=scene.longitude + .25).to_netcdf(tmp_path / "input.nc")
+    report, _, second = bind_sources(conf)
+    assert set(first["sample"]["native_grids"]).isdisjoint(second["sample"]["native_grids"])
+    assert second["sample"]["selected_times"] == [np.datetime64("2026-01-01T01")]
+    assert report["products"][0]["dimensions"]["level.T"] == ["time", "level", "y", "x"]
+
+
+def test_execution_does_not_rebuild_bound_output_layouts(tmp_path, monkeypatch):
+    from frameit.core import coupled
+    from frameit.io import netcdf_export
+
+    conf = _grouped_polar_case(tmp_path)
+    bind = coupled.bind_sources
+    build = netcdf_export.output_grid_layout
+    after_binding = []
+    bound = False
+
+    def observe_binding(*args, **kwargs):
+        nonlocal bound
+        result = bind(*args, **kwargs)
+        bound = True
+        return result
+
+    def observe_layout(source, *, regional=False):
+        if bound:
+            after_binding.append(regional)
+        return build(source, regional=regional)
+
+    monkeypatch.setattr(coupled, "bind_sources", observe_binding)
+    monkeypatch.setattr(netcdf_export, "output_grid_layout", observe_layout)
+    result = execute_simulation(conf)
+    assert {item["product"] for item in result.products} == {"model_grid", "polar"}
+    assert after_binding == []
+
+
 @pytest.mark.parametrize("fmt", ["netcdf", "zarr"])
 def test_mixed_mnh_grids_keep_native_samples_and_c7_axes(tmp_path, fmt):
     source = mnh_scene()

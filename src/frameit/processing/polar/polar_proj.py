@@ -96,7 +96,7 @@ def verify_polar_target(dataset, plan, conf, source, centres):
 
 
 def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache=None,
-                         output_formatter=None):
+                         output_formatter=None, layout=None):
     """Execute only declared v3 results on each source's associated native sample clock."""
     from frameit.processing.derived.wind import polar_wind_components, prepare_source_operation
     from frameit.processing.polar.contracts import require_executable_products
@@ -108,7 +108,8 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
     started = perf_counter() if conf.polar_profile else None
     from frameit.io.netcdf_export import _output_grid_facts, output_grid_layout
 
-    layout = output_grid_layout(source)
+    if layout is None:
+        layout = output_grid_layout(source)
     plan = binding["polar_plan"]
     cache = plan_cache if plan_cache is not None else PolarRegridPlanCache(
         conf.polar_regrid_cache_size, conf.polar_regrid_cache_max_bytes)
