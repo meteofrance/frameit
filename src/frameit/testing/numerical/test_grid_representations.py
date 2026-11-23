@@ -143,6 +143,49 @@ def native_files(tmp_path):
     return tmp_path
 
 
+def test_wind_binding_checks_each_actual_geolocation_once_per_attempt(tmp_path, monkeypatch):
+    from frameit.processing import wind_reference
+
+    for hour in (0, 1):
+        native_scene(hour).to_netcdf(tmp_path / f"native{hour}.nc")
+    options = {"sampling": "mass", "basis": "earth"}
+    request = {
+        "schema_version": 3,
+        "sources": {"atmosphere": {
+            "model": "mesonh", "files": str(tmp_path / "native*.nc"),
+            "variables": {"3d": ["UT", "VT"]},
+            "wind_pairs": [{"u": "UT", "v": "VT", "basis": "grid",
+                            "rotation": {"method": "geolocation"}}],
+            "transforms": [{"fields": ["UT", "VT"], **options}]}},
+        "region": {"center": {"latitude": -20., "longitude": 60.}, "width_km": {"x": 2, "y": 2}},
+        "products": {"model_grid": True, "polar": {
+            "radius_km": 1, "radial_step_km": 1, "azimuth_count": 8,
+            "field_options": {"atmosphere": {"UT": options, "VT": options}}}},
+        "output": {"directory": str(tmp_path / "output")},
+    }
+    calls = []
+    angle = wind_reference.geolocation_rotation
+
+    def measured(ds, conf):
+        calls.append(float(ds.longitude[0, 0]))
+        return angle(ds, conf)
+
+    monkeypatch.setattr(wind_reference, "geolocation_rotation", measured)
+    for _ in range(2):
+        calls.clear()
+        conf = SimulationConfig.from_mapping_with_model_preset(request)
+        _, children, _ = bind_sources(conf)
+        assert len(set(calls)) == 1
+        assert len(calls) == 1
+        jobs = conf.source_requests["atmosphere"]["binding"]["operation_plans"]
+        faces = [j["geometry"]["coordinates"]["latitude_u"]["values"] for j in jobs]
+        # The parent snapshot should copy the single inventoried static face only once.
+        assert all(np.shares_memory(faces[0], face) for face in faces[1:])
+        child = children["atmosphere"].source_requests["atmosphere"]["binding"]
+        child_face = child["operation_plans"][0]["geometry"]["coordinates"]["latitude_u"]["values"]
+        assert not np.shares_memory(faces[0], child_face)
+
+
 def run_export(directory, horizontal="native", vertical="interfaces", *,
                polar=False, polar_vertical="mass", label="run"):
     transforms = [

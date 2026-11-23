@@ -269,14 +269,38 @@ def qualify_overridden_wind_metadata(ds: xr.Dataset, conf: Any) -> xr.Dataset:
     return out
 
 
+def _geolocation_names(conf):
+    return (getattr(conf, "name_lon_dim", "ni"), getattr(conf, "name_lat_dim", "nj"),
+            getattr(conf, "name_longitude", "longitude"), getattr(conf, "name_latitude", "latitude"))
+
+
+def _geolocation_validation_key(ds, conf):
+    """Fingerprint the four bound coordinates, never the wind fields or calculated angles."""
+    from hashlib import sha256
+
+    from dask.base import tokenize
+
+    # Transposing geography also validates its attached auxiliary dimensions.
+    if any(len(c.dims) != len(set(c.dims)) for c in ds.coords.values()):
+        return None
+    key = []
+    for name in _geolocation_names(conf):
+        if name not in ds.coords:
+            return None
+        coord = ds.coords[name]
+        if coord.chunks is not None or coord.dtype.kind not in "iuf":
+            return None
+        key.append((name, coord.dims, coord.shape, coord.dtype.str,
+                    tokenize(coord.attrs, coord.encoding),
+                    sha256(np.ascontiguousarray(coord.data)).digest()))
+    return tuple(key)
+
+
 def geolocation_rotation(ds: xr.Dataset, conf: Any) -> xr.DataArray:
     """Direction of positive native x, with signed monotone coordinate changes."""
     from pyproj import Geod
 
-    x = getattr(conf, "name_lon_dim", "ni")
-    y = getattr(conf, "name_lat_dim", "nj")
-    lon_name = getattr(conf, "name_longitude", "longitude")
-    lat_name = getattr(conf, "name_latitude", "latitude")
+    x, y, lon_name, lat_name = _geolocation_names(conf)
     if any(name not in ds for name in (x, y, lon_name, lat_name)):
         raise ValueError(
             "geolocation rotation requires labelled native axes and longitude/latitude"
@@ -420,7 +444,7 @@ def rotation_angle(ds: xr.Dataset, conf: Any, pair: dict) -> xr.DataArray:
     return angle
 
 
-def operation_pair(ds, source, names, conf):
+def operation_pair(ds, source, names, conf, *, validated_geolocations=None):
     """Resolve this actual sample's evidence before an explicit vector operation."""
     definitions = [p for p in source["declaration"].get("wind_pairs", [])
                    if (p["u"], p["v"]) == tuple(names)]
@@ -459,5 +483,10 @@ def operation_pair(ds, source, names, conf):
     except ValueError as exc:
         raise tag_error(exc, "E1307")
     if pair["reference_frame"] == "grid":
-        rotation_angle(ds, conf, pair)
+        key = (_geolocation_validation_key(ds, conf) if validated_geolocations is not None
+               and pair["rotation"].get("method") == "geolocation" else None)
+        if key is None or key not in validated_geolocations:
+            rotation_angle(ds, conf, pair)
+            if key is not None:
+                validated_geolocations.add(key)
     return pair

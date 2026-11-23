@@ -127,6 +127,48 @@ def test_unique_pair_alias_resolution_and_unrequested_pair_no_dependencies():
     xr.testing.assert_identical(normalize_winds(field(), conf, "level"), field())
 
 
+@pytest.mark.parametrize("change, error", [
+    ("longitude", "degenerate|too sharply|orthogonal|orientation"),
+    ("x_axis", "monotone"),
+    ("latitude_units", "unsupported angle units"),
+    ("packed_range", "packed validity"),
+    ("auxiliary_dims", "duplicate dimensions"),
+    ("basis", "Conflicting wind reference"),
+    ("method", "named coordinate"),
+])
+def test_cached_geometry_does_not_clear_an_invalid_wind_operation(change, error):
+    from frameit.processing.wind_reference import operation_pair
+
+    lon, lat = np.meshgrid([60., 60.01, 60.02], [-20., -19.99, -19.98])
+    ds = xr.Dataset({"u": (("nj", "ni"), lon * 0), "v": (("nj", "ni"), lat * 0)}, coords={
+        "ni": [0, 1, 2], "nj": [0, 1, 2],
+        "longitude": (("nj", "ni"), lon, {"units": "degrees_east"}),
+        "latitude": (("nj", "ni"), np.deg2rad(lat), {"units": "rad", "valid_min": -1.5}),
+    })
+    rotation = {"method": "geolocation"}
+    source = {"model": "mesonh", "declaration": {"wind_pairs": [
+        {"u": "u", "v": "v", "basis": "grid", "rotation": rotation}]}}
+    seen, conf = set(), settings()
+    operation_pair(ds, source, ("u", "v"), conf, validated_geolocations=seen)
+    if change == "longitude":
+        ds.longitude.values[1, 1] = ds.longitude.values[1, 0]
+    elif change == "x_axis":
+        ds = ds.assign_coords(ni=[0, 2, 1])
+    elif change == "latitude_units":
+        ds.latitude.attrs["units"] = "not-an-angle"
+    elif change == "packed_range":
+        ds.latitude.encoding["scale_factor"] = .1
+    elif change == "auxiliary_dims":
+        ds = ds.assign_coords(ni_source_native_index=(("nj", "ni", "ni"), np.zeros((3, 3, 3))))
+    elif change == "basis":
+        ds.u.attrs["wind_reference_frame"] = "earth"
+    else:
+        rotation.update(method="coordinate", coordinate="absent")
+    for verified in (None, seen, seen):
+        with pytest.raises(ValueError, match=error):
+            operation_pair(ds, source, ("u", "v"), conf, validated_geolocations=verified)
+
+
 def test_explicit_legacy_scalar_and_canonical_low_level_api():
     conf = SimpleNamespace(atm_model="MNH", wind_reference_frame="grid")
     ds = field().rename(angle="grid_rotation")

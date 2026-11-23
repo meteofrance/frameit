@@ -996,8 +996,10 @@ def _operation_geometry(source, records, operation, conf, *, wind_pair=()):
             value = xr.DataArray(xr.Variable(
                 descriptor["dimensions"], descriptor["values"], descriptor["attributes"]))
             indexers = record["locator"].get("coordinate_indexers", {})
-            value = value.isel({dim: i for dim, i in indexers.items() if dim in value.dims},
-                               drop=True)
+            selection = {dim: i for dim, i in indexers.items() if dim in value.dims}
+            # Empty isel makes a distinct view that deepcopy duplicates for every bound plan.
+            if selection:
+                value = value.isel(selection, drop=True)
             role = value.attrs.get("standard_name")
             if name == "meanSea" and value.attrs.get("units") == "1":
                 role = "meanSea"
@@ -1168,6 +1170,7 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
         all_by_name.setdefault(record["name"], []).append((i, record))
     declared = {name for names in request["fields"].values() for name in names}
     polar_native_ids = {}
+    validated_geolocations = set()
     for (product, name), operation in active.items():
         wind = operation["method"] in {"wind_speed", "radial_wind", "tangential_wind"}
         loc = f"sources.{source['name']}.derived.{name}" if wind else name
@@ -1376,7 +1379,8 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                 rotation_settings = copy(conf)
                 if source["format"] == "grib":
                     rotation_settings.name_lat_dim, rotation_settings.name_lon_dim = "y", "x"
-                pair = operation_pair(headers, source, (u, v), rotation_settings)
+                pair = operation_pair(headers, source, (u, v), rotation_settings,
+                                      validated_geolocations=validated_geolocations)
                 override = wind_frame_override(headers, pair, rotation_settings)
                 if override:
                     binding["warnings"].append(format_message("W1301", override))
