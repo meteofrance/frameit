@@ -244,6 +244,119 @@ def test_lru_eviction_disabled_cache_and_byte_budget():
     assert cache.statistics()["retained_bytes"] == 0
 
 
+def observe_cropped_operators(monkeypatch):
+    from frameit.processing.polar.coverage import SupportedRegridder
+
+    applied = []
+    original = SupportedRegridder.apply
+
+    def observe(self, *args, **kwargs):
+        applied.append((self.weights, self.presence_weights))
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(SupportedRegridder, "apply", observe)
+    return applied
+
+
+def test_cache_shares_cropped_weights_between_lazy_fields(monkeypatch):
+    source, grid, target = regional_inputs()
+    cache = PolarRegridPlanCache()
+    plan = cache.get(grid, target)
+    applied = observe_cropped_operators(monkeypatch)
+    field = xr.full_like(source.q.isel(time=0, drop=True), 7.).chunk()
+    missing = cache.apply(plan, field, xr.zeros_like(field, dtype=bool), source_halo_points=1)
+    valid = cache.apply(plan, field + 2, source_halo_points=np.int64(1))
+    wider = cache.apply(plan, field, source_halo_points=2)
+
+    for first, second, third in zip(*applied, strict=True):
+        assert first is second and first is not third
+        assert first.shape[1] < third.shape[1]
+        assert not any(getattr(first, key).flags.writeable for key in ("data", "indices", "indptr"))
+    assert np.isnan(missing[0].compute()).all()
+    np.testing.assert_array_equal(missing[1].compute(), 0.)
+    np.testing.assert_array_equal(missing[2].compute(), 2)
+    np.testing.assert_allclose(valid[0].compute(), 9., rtol=0, atol=1e-12)
+    np.testing.assert_array_equal(valid[1].compute(), 1.)
+    np.testing.assert_array_equal(valid[2].compute(), 0)
+    np.testing.assert_allclose(wider[0].compute(), 7., rtol=0, atol=1e-12)
+    for invalid in (True, 1.0, 0):
+        with pytest.raises(ValueError, match="halo"):
+            cache.apply(plan, field, source_halo_points=invalid)
+
+
+def test_cropped_weights_normalize_unsigned_halo_on_native_edge():
+    source, grid, target = plan_inputs()
+    cache = PolarRegridPlanCache()
+    plan = cache.get(grid, target.assign(lon=target.lon - .08))
+    field = source.q.isel(time=0, drop=True).chunk()
+    assert plan.source_support(1)["x_slice"][0] == 0
+    expected = plan.apply(field, source_halo_points=1)
+
+    for halo in (np.uint64(1), 1, np.uint64(1)):
+        for result, reference in zip(
+                cache.apply(plan, field, source_halo_points=halo), expected, strict=True):
+            xr.testing.assert_identical(result.compute(), reference.compute())
+
+
+@pytest.mark.parametrize("warm", [False, True])
+def test_cropped_weights_reject_duration_halo(warm):
+    source, grid, target = plan_inputs()
+    cache = PolarRegridPlanCache()
+    plan = cache.get(grid, target)
+    field = source.q.isel(time=0, drop=True)
+    if warm:
+        cache.apply(plan, field, source_halo_points=1)
+    with pytest.raises(ValueError, match="halo"):
+        cache.apply(plan, field, source_halo_points=np.timedelta64(1, "D"))
+
+
+def test_cropped_weights_do_not_displace_base_plans(monkeypatch):
+    source, grid, target = plan_inputs()
+    moved = target.assign(lon=target.lon + .001)
+    sizing = PolarRegridPlanCache()
+    limit = sizing.get(grid, target).estimated_bytes + sizing.get(grid, moved).estimated_bytes
+    cache = PolarRegridPlanCache(maxsize=2, max_bytes=limit)
+    plan = cache.get(grid, target)
+    field = source.q.isel(time=0, drop=True)
+    applied = observe_cropped_operators(monkeypatch)
+    cache.apply(plan, field, source_halo_points=1)
+    extra = sum(getattr(matrix, key).nbytes for matrix in applied[0]
+                for key in ("data", "indices", "indptr"))
+    assert cache.statistics()["retained_bytes"] == plan.estimated_bytes + extra
+
+    cache.get(grid, moved)
+    assert cache.get(grid, target) is plan
+    cache.apply(plan, field, source_halo_points=1)
+    cache.apply(plan, field, source_halo_points=1)
+    stats = cache.statistics()
+    assert stats["retained_bytes"] == stats["peak_retained_bytes"] == limit
+    assert stats["evictions"] == 0
+    assert applied[0][0] is not applied[1][0] and applied[1][0] is not applied[2][0]
+    cache.clear()
+    assert cache.statistics()["retained_bytes"] == 0
+
+
+def test_cropped_weights_leave_with_evicted_plan(monkeypatch):
+    source, grid, target = plan_inputs()
+    cache = PolarRegridPlanCache(maxsize=1)
+    plan = cache.get(grid, target)
+    field = xr.ones_like(source.q.isel(time=0, drop=True)).chunk()
+    applied = observe_cropped_operators(monkeypatch)
+    projected, _, _ = cache.apply(plan, field, source_halo_points=1)
+    cache.apply(plan, field, source_halo_points=1)
+    assert applied[0][0] is applied[1][0]
+
+    replacement = cache.get(grid, target.assign(lon=target.lon + .001))
+    assert cache.statistics()["retained_bytes"] == replacement.estimated_bytes
+    rebuilt = cache.get(grid, target)
+    cache.apply(rebuilt, field, source_halo_points=1)
+    cache.apply(plan, field, source_halo_points=1)
+    assert applied[2][0] is not applied[0][0] and applied[3][0] is not applied[2][0]
+    cache.clear()
+    applied.clear()
+    np.testing.assert_allclose(projected.compute(), 1., rtol=0, atol=1e-12)
+
+
 def three_groups(times=(0, 1)):
     source = source_scene(times=times)
     return {name: source.copy(deep=True).assign(q=source.q + offset).expand_dims(level=[1, 2])

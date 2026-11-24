@@ -12,6 +12,7 @@ import sys
 from collections import OrderedDict
 from copy import copy
 from dataclasses import dataclass, field
+from functools import partial
 from time import perf_counter
 
 import numpy as np
@@ -44,6 +45,15 @@ def validate_execution_options(cache_size, max_bytes, output_chunks, profile):
             )
     if not isinstance(profile, bool):
         raise ValueError("polar_profile must be boolean")
+
+
+def _source_halo(halo):
+    if isinstance(halo, (int, np.integer)) and not isinstance(halo, (bool, np.timedelta64)):
+        # Use Python integer arithmetic at native edges, even for unsigned inputs.
+        halo = int(halo)
+        if halo >= 1:
+            return halo
+    raise ValueError("Polar source halo is insufficient; use at least one native point")
 
 
 def backend_identity():
@@ -288,8 +298,7 @@ class PolarRegridPlan:
 
     def source_support(self, halo):
         """Bound every actual nonzero stencil, then add the declared native-point halo."""
-        if isinstance(halo, bool) or not isinstance(halo, (int, np.integer)) or halo < 1:
-            raise ValueError("Polar source halo is insufficient; use at least one native point")
+        halo = _source_halo(halo)
         shape = self.geometry.source_lon.shape
         indices = self.supported.weights.indices
         if indices.size:
@@ -300,11 +309,23 @@ class PolarRegridPlan:
         else:
             bounds = [(0, min(2, size)) for size in shape]
         return {"y_slice": list(bounds[0]), "x_slice": list(bounds[1]),
-                "original_shape": list(shape), "halo_points": int(halo),
+                "original_shape": list(shape), "halo_points": halo,
                 "nonzero_source_points": int(np.unique(indices).size)}
 
+    def _crop(self, halo):
+        support = self.source_support(halo)
+        y, x = (slice(*support[axis]) for axis in ("y_slice", "x_slice"))
+        positions = np.arange(self.geometry.source_lon.size).reshape(
+            self.geometry.source_lon.shape)[y, x].ravel()
+        supported = copy(self.supported)
+        supported.operator = copy(supported.operator)
+        supported.operator.shape_in = (y.stop - y.start, x.stop - x.start)
+        supported.weights = supported.weights[:, positions]
+        supported.presence_weights = supported.presence_weights[:, positions]
+        return y, x, supported
+
     def apply(self, field, mask=None, *, policy="strict", minimum_support=.5, output_chunks=None,
-              source_halo_points=None, read_window=None):
+              source_halo_points=None, read_window=None, _window_for=None):
         shape = tuple(field.sizes.get(dim) for dim in ("y_box", "x_box"))
         if shape != self.geometry.source_lon.shape:
             raise ValueError("Field shape does not match the plan's source geometry")
@@ -315,15 +336,7 @@ class PolarRegridPlan:
         rings = nr if rings == -1 else min(rings, nr)
         supported = self.supported
         if source_halo_points is not None:
-            support = self.source_support(source_halo_points)
-            y, x = (slice(*support[axis]) for axis in ("y_slice", "x_slice"))
-            positions = np.arange(self.geometry.source_lon.size).reshape(
-                self.geometry.source_lon.shape)[y, x].ravel()
-            supported = copy(supported)
-            supported.operator = copy(supported.operator)
-            supported.operator.shape_in = (y.stop - y.start, x.stop - x.start)
-            supported.weights = supported.weights[:, positions]
-            supported.presence_weights = supported.presence_weights[:, positions]
+            y, x, supported = (_window_for or self._crop)(source_halo_points)
             field = field.isel(y_box=y, x_box=x)
             if read_window is not None:
                 field = read_window(field, y=y, x=x)
@@ -354,6 +367,7 @@ class PolarRegridPlanCache:
         validate_execution_options(maxsize, max_bytes, {}, False)
         self.maxsize, self.max_bytes = int(maxsize), int(max_bytes)
         self._plans = OrderedDict()
+        self._windows = {}
         self._bytes = 0
         self.counters = dict(hits=0, misses=0, builds=0, evictions=0, oversized_plans=0,
                              signature_s=0., construction_s=0., application_s=0., applications=0)
@@ -384,23 +398,53 @@ class PolarRegridPlanCache:
             self.counters["construction_s"] += plan.construction_s
             self._timed_calls["construction_s"] += 1
         if self.maxsize and self.max_bytes:
-            if plan.estimated_bytes > self.max_bytes:
+            size = plan.estimated_bytes
+            if size > self.max_bytes:
                 self.counters["oversized_plans"] += 1
             else:
+                if self._bytes + size > self.max_bytes:
+                    # Optional crops must not displace reusable base plans.
+                    self._bytes -= sum(entry[2] for entry in self._windows.values())
+                    self._windows.clear()
                 while self._plans and (len(self._plans) >= self.maxsize or
-                                      self._bytes + plan.estimated_bytes > self.max_bytes):
-                    _, removed = self._plans.popitem(last=False)
+                                       self._bytes + size > self.max_bytes):
+                    key, removed = self._plans.popitem(last=False)
                     self._bytes -= removed.estimated_bytes
+                    window = self._windows.pop(key, None)
+                    if window is not None:
+                        self._bytes -= window[2]
                     self.counters["evictions"] += 1
                 self._plans[plan.signature] = plan
-                self._bytes += plan.estimated_bytes
+                self._bytes += size
                 self.peak_entries = max(self.peak_entries, len(self._plans))
                 self.peak_bytes = max(self.peak_bytes, self._bytes)
         return plan
 
+    def _window_for(self, plan, halo):
+        halo = _source_halo(halo)
+        entry = self._windows.get(plan.signature)
+        # shortcut: retain one halo per plan; expand only if repeated multi-halo use matters.
+        if entry is not None:
+            return entry[1] if halo == entry[0] else plan._crop(halo)
+        window = plan._crop(halo)
+        supported = window[2]
+        buffers = tuple(getattr(matrix, name)
+                        for matrix in (supported.weights, supported.presence_weights)
+                        for name in ("data", "indices", "indptr"))
+        size = sum(array.nbytes for array in buffers)
+        if self._bytes + size <= self.max_bytes:
+            for array in buffers:
+                array.setflags(write=False)
+            self._windows[plan.signature] = (halo, window, size)
+            self._bytes += size
+            self.peak_bytes = max(self.peak_bytes, self._bytes)
+        return window
+
     def apply(self, plan, field, mask=None, *, profile=True, **options):
         validate_execution_options(0, 0, {}, profile)
         started = perf_counter() if profile else None
+        if options.get("source_halo_points") is not None and self._plans.get(plan.signature) is plan:
+            options["_window_for"] = partial(self._window_for, plan)
         result = plan.apply(field, mask, **options)
         self.counters["applications"] += 1
         if profile:
@@ -424,4 +468,5 @@ class PolarRegridPlanCache:
 
     def clear(self):
         self._plans.clear()
+        self._windows.clear()
         self._bytes = 0
