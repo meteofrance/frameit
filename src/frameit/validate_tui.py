@@ -4,11 +4,12 @@ from collections import Counter
 from pathlib import Path
 from shlex import join
 
+from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import VerticalScroll
 from textual.widgets import Collapsible, Static, TabbedContent, TabPane
 
+from frameit.report_motion import ReportScroll
 from frameit.report_tui import ReportApp, _time_label, _yaml
 
 _DETAIL_LABELS = {
@@ -54,11 +55,16 @@ def _overview(report, config, schema_only, overrides, *, has_warnings):
     data = report["data"]
     configuration, plan = data["configuration"], data["plan"]
     prepared = plan.get("sources", {})
-    confirmed = report["status"] == "ok" and not schema_only
+    confirmed = (report["status"] == "ok" and not schema_only
+                 and not any(item["status"] == "blocked"
+                             for item in report.get("deferred_checks", ())))
     lines = []
     if report["errors"]:
         error = report["errors"][0]
         lines.extend((f"Fix first · [{error['code']}] {error['path']}", *error["repairs"], ""))
+    elif confirmed:
+        lines.extend(("Preflight only: metadata and required static support.",
+                      "Other value/mask checks are deferred to execution.", ""))
 
     unavailable = "Not confirmed" if configuration else "Unavailable"
     inputs = "Not checked (schema only)" if schema_only else unavailable
@@ -104,16 +110,20 @@ def _overview(report, config, schema_only, overrides, *, has_warnings):
     if not report["errors"]:
         if schema_only:
             lines.extend(("", "Next: validate without --schema-only."))
-        else:
+        elif confirmed:
             if has_warnings:
                 lines.extend(("", "See warnings in Findings."))
             lines.extend(("", f"Next: {_run_command(config, overrides)}"))
+        else:
+            lines.extend(("", "Next: review the blocking checks in Findings (2)."))
     return "\n".join(lines)
 
 
 class ValidationApp(ReportApp):
     TITLE = "FrameIt / validate"
     LOG_CONTEXT = "validation"
+    FINDINGS_HINT = "Findings (2) lists repairs and warnings."
+    SIDEBAR = ("#finding-list", "#finding-scroll")
     STAGES = {
         **ReportApp.STAGES,
         "binding": "Checking selected fields and methods",
@@ -152,43 +162,60 @@ class ValidationApp(ReportApp):
     def compose_view(self) -> ComposeResult:
         with TabbedContent(id="report-tabs", classes="report-body"):
             with TabPane("Overview", id="overview"):
-                with VerticalScroll(id="overview-scroll"):
+                with ReportScroll(id="overview-scroll"):
                     yield Static(id="summary", markup=False)
             with TabPane("Findings", id="findings"):
                 yield from self.compose_findings()
             with TabPane("Details", id="details"):
-                with VerticalScroll(id="details-scroll"):
+                with ReportScroll(id="details-scroll"):
                     for key, label in _DETAIL_LABELS.items():
                         yield Collapsible(
                             Static(id=f"detail-{key}-text", markup=False),
                             title=label, id=f"detail-{key}",
                             collapsed_symbol="›", expanded_symbol="⌄",
                         )
+
     def prepare_view(self, report: dict):
         data = report["data"]
+        plan = data["plan"]
+        first = {key: plan[key] for key in ("planned_products", "products") if key in plan}
+        data = dict(data, plan=first | plan)
         return {key: _yaml(data[key]) if data[key] else "Unavailable" for key in _DETAIL_LABELS}
 
     def show_report(self, report: dict, prepared) -> None:
-        verdict = ("Validation failed" if self.result_code else
-                   "Schema checks passed" if self.schema_only else "Validation passed")
+        blocked = any(level == "Blocked" for level, _ in self.findings)
+        verdict = (
+            "Validation failed" if self.result_code else "Validation incomplete" if blocked
+            else "Schema checks passed" if self.schema_only else "Validation passed")
         self.set_status(verdict)
         self.query_one("#summary", Static).update(
             _overview(report, self.config, self.schema_only, self.overrides,
                       has_warnings=any(level == "Warning" for level, _ in self.findings)))
         plan_title = _DETAIL_LABELS["plan"]
-        if self.result_code:
+        if self.result_code or blocked:
             plan_title = "Partial plan"
             if report["data"]["plan"].get("planned_products"):
                 plan_title += " · unconfirmed paths"
         for key, text in prepared.items():
             section = self.query_one(f"#detail-{key}", Collapsible)
             section.title = plan_title if key == "plan" else _DETAIL_LABELS[key]
-            section.collapsed = True
             self.query_one(f"#detail-{key}-text", Static).update(text)
-        self.action_view("overview")
+        if not self._has_report:
+            self.action_view("overview")
+
+    def _sidebar_available(self):
+        return (super()._sidebar_available()
+                and self.query_one("#report-tabs", TabbedContent).active == "findings")
+
+    @on(TabbedContent.TabActivated, "#report-tabs")
+    def _refresh_sidebar_binding(self):
+        self.screen.refresh_bindings()
 
     def action_view(self, view):
         if self.result_code is not None:
             self.query_one("#report-tabs", TabbedContent).active = view
-            target = "#finding-list" if view == "findings" else f"#{view}-scroll"
+            target = f"#{view}-scroll"
+            if view == "findings":
+                target = ("#finding-scroll" if self._sidebar_closed and self._wide_sidebar()
+                          else "#finding-list")
             self.query_one(target).focus()

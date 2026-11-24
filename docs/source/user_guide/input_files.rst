@@ -63,15 +63,26 @@ another file.
 
 * Use ``1`` for sources, ``2`` for the field table, ``3`` for field details and
   ``4`` for source tabs. In a small terminal these keys switch views. Use
-  Tab and the arrow keys to move within a view.
+  Tab and the arrow keys to move within a view. Press ``d`` for Diagnostics
+  directly, even when the tab is off screen.
+* When Sources is beside the field table, press ``b`` to hide or show it.
+  ``1`` opens Sources even if the sidebar is closed.
 * Use ``/`` to search fields by name, units or native group. Press Enter or
   Esc to return to the table. Use ``s`` to change the sort and ``f`` to filter
   by request status. A field can be present without being requested.
-* Use ``c`` to copy an available YAML selector. Paste it under the shown
-  source's ``variables`` without dropping your other selections. If the
-  terminal blocks clipboard access, the selector is still shown as text.
-* Press ``r`` to reread saved edits to the YAML, or ``q`` to quit. The
-  explorer never edits the YAML or writes products.
+* Use ``c`` to send an available YAML selector to the terminal clipboard, or
+  ``p`` to send the configuration path. Paste to verify delivery, then put
+  the selector under the shown source's ``variables`` without dropping your
+  other selections. If clipboard access is blocked, copy the visible YAML.
+* Press ``r`` to reread saved edits. The previous sample remains visible and
+  labelled while the check runs. If it is marked stale, refresh it before
+  using its selectors. ``Ctrl+C`` requests cancellation; a native read may
+  need to finish first. Press ``q`` to quit when idle. The explorer never
+  edits the YAML or writes products.
+
+Use Page Up and Page Down for long detail panels. To reduce motion or avoid
+the Braille mark in a terminal that cannot display it, see
+:ref:`terminal motion settings <terminal-motion>`.
 
 **Not seen in sample** does not mean missing from the source. The file's
 observed timestamps and cycles are separate from the YAML's requested time

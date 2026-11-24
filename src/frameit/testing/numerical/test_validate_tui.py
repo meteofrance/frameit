@@ -9,10 +9,12 @@ import sys
 import termios
 from functools import partial
 from threading import Event
+from time import monotonic
 
 import pytest
 import yaml
 from textual.geometry import Region
+from textual.worker import WorkerCancelled
 
 from frameit.cli import _collect_report
 from frameit.core.configuration import write_template
@@ -76,6 +78,8 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
             assert "scientific validity" not in summary
             assert all(label in summary for label in ("Inputs", "Selection", "Region", "Outputs"))
             if mode in {"full", "unused-centre"}:
+                assert "static support" in summary.splitlines()[0]
+                assert "value/mask checks" in summary.splitlines()[1]
                 assert "1 file scanned" in summary and "2 source times selected" in summary
                 assert "1 model-grid output field" in summary and "1 planned" in summary
                 assert "instructional_scalar" not in summary and ".model_grid.nc" not in summary
@@ -123,6 +127,7 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
                 assert "Partial plan" in plan.title
                 if mode == "unconfirmed":
                     assert "unconfirmed" in plan.title and ".model_grid.nc" in plan_text
+                    assert plan_text.startswith("planned_products:")
                 else:
                     assert "unconfirmed" not in plan.title
             else:
@@ -331,7 +336,8 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
                 await pilot.press("r")
                 assert calls == 2
                 assert "passed" not in _text(app, "#status")
-                assert not app.query_one("#report-tabs").display
+                assert app.query_one("#report-tabs").display
+                assert "previous report" in _text(app, "#status")
                 resume[4].set()
                 await app.workers.wait_for_complete()
                 await pilot.press("2")
@@ -346,30 +352,47 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize("while_busy", [True, False])
-def test_interruption_returns_130(tmp_path, while_busy):
+@pytest.mark.parametrize("mode", ["initial", "refresh", "idle"])
+def test_interruption_returns_130(tmp_path, mode):
     from frameit.validate_tui import ValidationApp
 
     release, started = Event(), Event()
     path = _case(tmp_path)
+    calls = 0
 
     def collect(*, progress):
-        started.set()
-        assert release.wait(10)
-        progress("metadata", "atmosphere", 0, 1)
-        return _collect_report(path, command="validate", schema_only=True)
+        nonlocal calls
+        calls += 1
+        if mode == "initial" or (mode == "refresh" and calls == 2):
+            started.set()
+            assert release.wait(10)
+            progress("metadata", "atmosphere", 0, 1)
+        return _collect_report(path, command="validate", progress=progress)
 
     async def exercise():
         app = ValidationApp(path, collect)
         async with app.run_test() as pilot:
             try:
-                assert await asyncio.to_thread(started.wait, 5)
-                if not while_busy:
-                    release.set()
+                if mode != "initial":
                     await app.workers.wait_for_complete()
                     await pilot.pause()
                     assert app.result_code == 0
+                if mode == "refresh":
+                    await pilot.press("r")
+                if mode != "idle":
+                    assert await asyncio.to_thread(started.wait, 5)
+                    worker = next(iter(app.workers))
                 await pilot.press("ctrl+c")
+                if mode != "idle":
+                    status = _text(app, "#status").lower()
+                    assert "cancellation requested" in status
+                    if mode == "refresh":
+                        assert "previous report" in status
+                        assert "frameit run" in _text(app, "#summary")
+                    release.set()
+                    with pytest.raises(WorkerCancelled):
+                        await worker.wait()
+                    await pilot.pause()
             finally:
                 release.set()
         assert app.return_value == 130
@@ -445,11 +468,42 @@ def test_findings_distinguish_discovery_notes_from_run_only_work(tmp_path):
     asyncio.run(exercise())
 
 
+def test_wide_finding_scrolls_to_yaml_location_and_help(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    request = yaml.safe_load(path.read_text())
+    request["sources"]["atmosphere"]["files"] = str(
+        tmp_path / ("nonexistent-" * 22) / "*.nc")
+    path.write_text(yaml.safe_dump(request))
+    collect = partial(_collect_report, path, command="validate")
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("2", "tab", "end")
+            await pilot.wait_for_scheduled_animations()
+            detail = app.query_one("#finding-scroll")
+            finding = app.query_one("#finding")
+            assert "YAML:" in str(finding.content) and "Troubleshooting:" in str(finding.content)
+            assert detail.has_focus and detail.scroll_y > 0
+            assert finding.region.bottom <= app.query_one("#findings-layout").region.bottom
+            await pilot.press("b")
+            await pilot.wait_for_scheduled_animations()
+            await pilot.press("end")
+            await pilot.wait_for_scheduled_animations()
+            assert finding.region.bottom <= app.query_one("#findings-layout").region.bottom
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="tests the Linux driver's PTY restoration")
 @pytest.mark.parametrize("command", ["validate", "inspect"])
 def test_sigterm_restores_tty_during_terminal_report(tmp_path, command):
     path = _case(tmp_path)
     master, terminal = pty.openpty()
+    termios.tcsetwinsize(terminal, (24, 80))
     ready_read, ready_write = os.pipe()
     resume_read, resume_write = os.pipe()
     original = termios.tcgetattr(terminal)
@@ -477,9 +531,14 @@ cli.main(args + (['--cpus', '1'] if args[0] == 'validate' else []))
                 assert not termios.tcgetattr(terminal)[3] & (termios.ICANON | termios.ECHO)
                 process.terminate()
                 os.write(resume_write, b"1")
-                assert process.wait(timeout=10) == 143
-                assert termios.tcgetattr(terminal) == original
+                # A terminal consumes output while the driver flushes on shutdown.
                 chunks = []
+                deadline = monotonic() + 10
+                while process.poll() is None and monotonic() < deadline:
+                    if select.select([master], [], [], 0.1)[0]:
+                        chunks.append(os.read(master, 65536))
+                assert process.returncode == 143
+                assert termios.tcgetattr(terminal) == original
                 while select.select([master], [], [], 0)[0]:
                     chunks.append(os.read(master, 65536))
                 assert b"\x1b[?1049l" in b"".join(chunks)

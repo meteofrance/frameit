@@ -11,11 +11,12 @@ from textual.content import Content
 from textual.widgets import DataTable, Input, OptionList, Static, TabbedContent, TabPane
 from textual.widgets.option_list import Option
 
+from frameit.report_motion import ReportScroll
 from frameit.report_tui import ReportApp, _time_label, _yaml
 
 _UNKNOWN = "Not reported"
 _REQUEST = {"requested": "Requested", "not_requested": "Not requested", "unresolved": "Unresolved"}
-_SORTS = {"Name": 0, "Units": 1, "Group": 3}
+_SORTS = {"Name": 0, "Units": 2, "Group": 4}
 _TABS = {
     "overview": "Overview", "coordinates": "Coordinates", "time": "Time", "grids": "Grids",
     "files": "Files", "origins": "Origins", "diagnostics": "Diagnostics",
@@ -117,10 +118,10 @@ def _field_cells(source, identity, field):
     attrs = field.get("attributes", {})
     name = field.get("name") or f"Unmapped ({attrs.get('GRIB_paramId') or 'unknown'})"
     dimensions = field.get("dimensions")
-    return (name, str(attrs.get("units") or _UNKNOWN),
-            _UNKNOWN if dimensions is None else ", ".join(dimensions) or "scalar",
-            field.get("group") or _UNKNOWN,
-            _REQUEST.get(source.get("request_status", {}).get(identity), _UNKNOWN))
+    request = _REQUEST.get(source.get("request_status", {}).get(identity), _UNKNOWN)
+    return (name, request, str(attrs.get("units") or _UNKNOWN),
+             _UNKNOWN if dimensions is None else ", ".join(dimensions) or "scalar",
+             field.get("group") or _UNKNOWN)
 
 
 class InspectionApp(ReportApp):
@@ -128,8 +129,8 @@ class InspectionApp(ReportApp):
     LOG_CONTEXT = "inspection"
     STAGES = {**ReportApp.STAGES, "metadata": "Reading sample metadata",
               "report": "Preparing sample report"}
-    HORIZONTAL_BREAKPOINTS = [(0, "-narrow"), (120, "-wide")]
-    VERTICAL_BREAKPOINTS = [(0, "-tiny"), (10, "-short"), (30, "-tall")]
+    FINDINGS_HINT = "Press d for Diagnostics."
+    SIDEBAR = ("#sources-pane", "#fields")
     BINDINGS = [
         Binding("1", "pane('sources-pane')", "Sources"),
         Binding("2", "pane('variables-pane')", "Fields"),
@@ -137,8 +138,9 @@ class InspectionApp(ReportApp):
         Binding("4", "pane('source-tabs')", "Tabs"),
         Binding("r", "refresh", "Refresh"),
         Binding("q", "quit", "Quit"),
+        Binding("d", "diagnostics", "Diagnostics", show=False),
         Binding("slash", "search", show=False),
-        Binding("escape", "leave_search", show=False),
+        Binding("escape", "leave_search", "Exit search"),
         Binding("s", "sort_fields", show=False),
         Binding("f", "filter_fields", show=False),
         Binding("c", "copy_selector", show=False),
@@ -160,6 +162,7 @@ class InspectionApp(ReportApp):
     Screen.-wide.-tall #inspect-upper { height: 3fr; display: block; }
     Screen.-wide.-tall #source-tabs { height: 2fr; display: block; }
     Screen.-wide.-tall #inspect-upper > Widget { display: block; }
+    Screen.-wide.-tall #inspect-upper > .sidebar-closed { display: none; }
     Screen.-wide.-tall #sources-pane { width: 23; border-right: solid $accent 30%; }
     Screen.-wide.-tall #field-scroll { width: 38; border-left: solid $accent 30%; }
     .pane-title { height: 1; text-style: bold; }
@@ -207,7 +210,7 @@ class InspectionApp(ReportApp):
                     yield Input(placeholder="Search name, units or group", id="field-search")
                     yield Static(id="field-message", markup=False)
                     yield DataTable(id="fields", cursor_type="row")
-                with VerticalScroll(id="field-scroll"):
+                with ReportScroll(id="field-scroll"):
                     yield Static("Field", classes="pane-title")
                     yield Static(id="copy-hint", markup=False)
                     yield Static(id="field-details", markup=False)
@@ -217,7 +220,7 @@ class InspectionApp(ReportApp):
                         if key == "diagnostics":
                             yield from self.compose_findings()
                         else:
-                            with VerticalScroll(id=f"source-{key}-scroll"):
+                            with ReportScroll(id=f"source-{key}-scroll"):
                                 yield Static(id=f"source-{key}", markup=False)
 
     def prepare_view(self, report: dict):
@@ -228,10 +231,21 @@ class InspectionApp(ReportApp):
         return sources, {name: _source_details(source, name, data["origins"])
                          for name, source in sources.items()}
 
+    def _scroll_anchor(self, widget):
+        if widget.id == "fields":
+            return self._source, self._field, self._visible
+        if widget.id == "sources":
+            return self._source, tuple(self._sources)
+        if widget.id == "field-scroll":
+            return self._source, self._field, self.query_one("#field-details", Static).content
+        if widget.id and widget.id.startswith("source-"):
+            return self._source, widget.query_one(Static).content
+        return super()._scroll_anchor(widget)
+
     def show_report(self, report: dict, prepared) -> None:
         self._sources, self._source_details = prepared
         verdict = "Inspection has errors" if self.result_code else "Sample inspected"
-        self.set_status(verdict)
+        self.set_status(verdict, hint="d Diagnostics" if self.result_code else None)
         listing = self.query_one("#sources", OptionList)
         listing.clear_options().add_options(
             Option(Content(f"{name}\n{_scope(source)}"), id=name)
@@ -243,12 +257,10 @@ class InspectionApp(ReportApp):
         if selected is not None:
             listing.highlighted = listing.get_option_index(selected)
         self._select_source(selected)
-        if readable:
+        if readable and not self._has_report:
             self.action_pane(self._pane)
-        else:
-            self.query_one("#source-tabs", TabbedContent).active = "diagnostics"
-            self._show_pane("source-tabs")
-            self.query_one("#finding-list", OptionList).focus()
+        elif not readable:
+            self.action_diagnostics()
 
     def _select_source(self, name):
         previous = self._field if name == self._source else None
@@ -281,14 +293,14 @@ class InspectionApp(ReportApp):
         rows = []
         for identity, field in source.get("fields", {}).items():
             cells = _field_cells(source, identity, field)
-            if status and cells[-1] != _REQUEST[status]:
+            if status and cells[1] != _REQUEST[status]:
                 continue
-            if search and not any(search in text.casefold() for text in cells[:4]):
+            if search and not any(search in text.casefold() for text in (cells[0], *cells[2:])):
                 continue
             rows.append((identity, cells))
         rows.sort(key=lambda row: (row[1][_SORTS[self._sort]].casefold(), row[1][0].casefold()))
         table = self.query_one("#fields", DataTable)
-        table.clear(columns=True).add_columns("Name", "Units", "Dims", "Group", "Request")
+        table.clear(columns=True).add_columns("Name", "Request", "Units", "Dims", "Group")
         self._visible = [identity for identity, _ in rows]
         for identity, cells in rows:
             table.add_row(*map(Text, cells), key=identity)
@@ -309,7 +321,8 @@ class InspectionApp(ReportApp):
     def _field_highlighted(self, event: DataTable.RowHighlighted):
         row = event.cursor_row
         if (self.result_code is not None and row == event.data_table.cursor_row
-                and row < len(self._visible) and self._visible[row] == event.row_key.value):
+                and row < len(self._visible) and self._visible[row] == event.row_key.value
+                and event.row_key.value != self._field):
             self._show_field(event.row_key.value)
 
     def _show_field(self, identity):
@@ -319,7 +332,7 @@ class InspectionApp(ReportApp):
         field = source.get("fields", {}).get(identity)
         lines = ["No field selected."]
         if field:
-            name, units, dims, group, status = _field_cells(source, identity, field)
+            name, status, units, dims, group = _field_cells(source, identity, field)
             lines = [name, f"Units: {units}", f"Request: {status}", ""]
             selector = next((s for s in source.get("available_selectors", ())
                              if s.get("field_id") == identity), None)
@@ -374,8 +387,15 @@ class InspectionApp(ReportApp):
             return False
         return super().check_action(action, parameters)
 
+    def _focus_sidebar_main(self):
+        self._show_pane("variables-pane")
+        super()._focus_sidebar_main()
+
     def action_pane(self, pane):
         if self.result_code is not None:
+            if (pane == "sources-pane" and self._sidebar_closed
+                    and self._sidebar_available()):
+                self.action_toggle_sidebar()
             self._show_pane(pane)
             self.query_one(_PANES[pane]).focus()
 
@@ -383,6 +403,12 @@ class InspectionApp(ReportApp):
         if self.result_code is not None:
             self._show_pane("variables-pane")
             self.query_one("#field-search", Input).focus()
+
+    def action_diagnostics(self):
+        if self.result_code is not None:
+            self.query_one("#source-tabs", TabbedContent).active = "diagnostics"
+            self._show_pane("source-tabs")
+            self.query_one("#finding-list", OptionList).focus()
 
     def action_leave_search(self):
         self.action_pane("variables-pane")
@@ -411,6 +437,9 @@ class InspectionApp(ReportApp):
             self.action_pane("variables-pane")
 
     def action_copy_selector(self):
+        if self.busy or self._stale:
+            self._notice("Selector not copied", "Use a fresh sample before copying.", "warning")
+            return
         if self.result_code is None:
             return
         source = self.query_one("#sources", OptionList).highlighted_option
@@ -421,5 +450,5 @@ class InspectionApp(ReportApp):
         if self._visible[row] != self._field:
             self._show_field(self._visible[row])
         if self._selector:
-            self.copy_to_clipboard(self._selector)
-            self.query_one("#copy-hint", Static).update("Copy request sent to terminal")
+            if self._send_copy(self._selector, "YAML selector", "Copy the visible YAML instead."):
+                self.query_one("#copy-hint", Static).update("Copy request sent to terminal")

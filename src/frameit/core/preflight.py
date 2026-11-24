@@ -920,7 +920,7 @@ def inventory_source(conf, name, *, resources=None, progress=None,
     source = conf.sources[name]
     request = conf.source_requests[name]
     if progress is not None:
-        progress("metadata", name, None, None)
+        progress("discovery", name, None, None)
     entries, excluded, overlaps, errors = _source_file_entries(
         source, name, sample_only=sample_only)
     discovered = entries

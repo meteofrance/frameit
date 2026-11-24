@@ -72,29 +72,51 @@ The terminal view is installed with FrameIt:
 
 In an interactive terminal, validation opens **Overview**, **Findings**, and
 **Details**. Press ``1``, ``2``, or ``3`` to switch tabs. After saving edits in
-another terminal, press ``r`` to recheck the same file, or ``q`` to quit and
-rerun from the shell. The interface does not edit the file or run processing.
-The ETA estimates the current source's metadata scan, not the time until
-validation finishes. If the estimate expires before another file is checked,
-only the file count and elapsed time remain. ``Ctrl+C`` interrupts validation;
-an active native read may need to finish before the process exits.
+another terminal, press ``r`` to recheck the same file. The previous report
+remains visible and labelled until the check returns. A stale report is not a
+successful recheck. Press ``q`` to quit when idle. ``p`` sends the configuration
+path to the terminal clipboard; paste to verify delivery. The interface does
+not edit the file or run processing.
+
+The progress bar counts files checked in the current source, not overall
+validation progress. Some stages have no known total. The ETA estimates only
+the current source's metadata scan. ``Ctrl+C`` requests cancellation; an active
+native read may need to finish before the process exits.
 
 **Overview** summarizes the checked inputs, selection, region and planned
 outputs. It shows the run command when input checks pass and the first fix
-when validation fails.
+when validation fails. Preflight checks metadata and can check required
+static support, such as an ocean mask. Other value and mask checks are
+deferred to execution.
 
 **Findings** includes warnings logged while reading metadata. Field discovery
 notes explain selector choices without implying that the current request
 failed. Items under **During run** are not counted as validation issues.
+On a wide terminal, press ``b`` in Findings to hide or show the list while
+keeping the selected finding open.
 
 In **Details**, press ``Tab`` to focus a section and ``Enter`` to expand or
-collapse it. Use the left and right arrows to scroll long lines. The effective
-configuration, setting origins and processing plan are read-only. Output paths
-from a failed check are marked as unconfirmed.
+collapse it. Use Page Up and Page Down for long panels, and left and right
+arrows for long lines. The processing plan starts with planned output paths
+and product selections. Output paths from a failed check are unconfirmed.
+The plan, effective configuration and setting origins are read-only.
 
 Use ``frameit validate frameit.yaml --cli`` for the text report even in a
 terminal. ``--json`` writes one JSON report. Redirected commands do not open
 the terminal view.
+
+.. _terminal-motion:
+
+For less motion in Inspect or Validate, set ``TEXTUAL_ANIMATIONS=basic`` for
+a static activity mark and a non-animated sidebar. To disable animations and
+smooth scrolling, run for example:
+
+.. code-block:: bash
+
+   TEXTUAL_ANIMATIONS=none TEXTUAL_SMOOTH_SCROLL=0 frameit validate frameit.yaml
+
+If the terminal cannot display Braille, set ``NO_COLOR=1`` to use text
+activity feedback. These settings do not change the check or its report.
 
 Authored and effective views
 ----------------------------

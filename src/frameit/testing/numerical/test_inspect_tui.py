@@ -62,7 +62,6 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
             table = app.query_one("#fields")
             assert all(app.query_one(selector).region.width > 0 for selector in (
                 "#sources", "#fields", "#field-details", "#source-tabs"))
-            assert table.ordered_columns[-1].content_width >= len("Not requested")
             assert table.max_scroll_x > 0
             viewport = table.scrollable_size
             assert "1 of 2 files inspected" in _text(app, "#source-scope")
@@ -123,9 +122,13 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
 
             await pilot.press("2")
             assert table.row_count == 1 and str(table.get_row_at(0)[0]) == "zeta"
+            request_value = str(table.get_row_at(0)[1])
             await pilot.press("slash", "q", "f", "s", "r", "3", "4")
             assert app.query_one("#field-search").value == "qfsr34"
             assert table.row_count == 0 and app.result_code == 0
+            assert any(key.key == "escape" and key.is_on_screen for key in app.query("FooterKey"))
+            assert str(table.ordered_columns[1].label) == "Request"
+            assert request_value == "Requested"
             await pilot.press("escape", "3")
             assert "No field selected" in _text(app, "#field-details")
             app.copy_to_clipboard("unchanged")
@@ -213,7 +216,8 @@ def test_explorer_refreshes_without_stale_selection(tmp_path):
                 await pilot.press("r")
                 assert await asyncio.to_thread(opened_second.wait, 5)
                 await pilot.pause()
-                assert not app.query_one("#explorer").display
+                assert app.query_one("#explorer").display
+                assert "previous report" in _text(app, "#status")
                 assert "0 of 1" in _text(app, "#status") and "ETA" not in _text(app, "#status")
                 await pilot.press("r", "c")
                 assert calls == 2
@@ -253,7 +257,10 @@ def test_explorer_keeps_ambiguous_rows_without_copy(tmp_path):
             await _ready(app, pilot)
             table = app.query_one("#fields")
             assert table.row_count == 2
-            assert all(str(table.get_row_at(row)[-1]) == "Unresolved" for row in (0, 1))
+            request_column = next(i for i, col in enumerate(table.ordered_columns)
+                                  if str(col.label) == "Request")
+            assert all(str(table.get_row_at(row)[request_column]) == "Unresolved"
+                       for row in (0, 1))
             await pilot.press("2", "down", "3", "c")
             assert not app.clipboard
             assert "No YAML selector" in _text(app, "#field-details")
@@ -298,6 +305,44 @@ def test_explorer_reports_a_decoded_clock_without_field_rows(tmp_path):
     asyncio.run(exercise())
 
 
+@pytest.mark.parametrize("replace", [False, True])
+def test_refresh_resets_scroll_for_changed_fields(tmp_path, replace):
+    names = ("b00",) if replace else (*[f"a{i:02d}" for i in range(20)], "z00")
+    for filename, fields in (("first.nc", ("z00",)), ("updated.nc", names)):
+        scene = v3_scene(names=fields, hours=(0,))
+        scene[fields[-1]].attrs["description"] = "\n".join(f"Details {i}" for i in range(20))
+        scene.to_netcdf(tmp_path / filename, engine="h5netcdf")
+    path = _case(tmp_path, {"weather": {"files": "first.nc"}})
+
+    async def exercise():
+        app = _app(path)
+        async with app.run_test(size=(52, 16)) as pilot:
+            await _ready(app, pilot)
+            table = app.query_one("#fields")
+            detail = app.query_one("#field-scroll")
+            if replace:
+                await pilot.press("3", "end")
+                await pilot.wait_for_scheduled_animations()
+                offset = detail.scroll_offset
+                assert offset.y > 0
+                await pilot.press("r")
+                await _ready(app, pilot)
+                assert detail.scroll_offset == offset
+            else:
+                await pilot.press("2")
+            path.write_text(path.read_text().replace("first.nc", "updated.nc"))
+            await pilot.press("r")
+            await _ready(app, pilot)
+            if replace:
+                assert _text(app, "#field-details").startswith("b00\n")
+                assert detail.scroll_offset.y == 0
+            else:
+                assert str(table.get_row_at(table.cursor_row)[0]) == "z00"
+                assert table.scroll_offset.y > 0
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.parametrize("malformed", [False, True])
 def test_explorer_diagnostics_leave_readable_sources(tmp_path, malformed):
     (tmp_path / "broken.nc").touch()
@@ -323,6 +368,9 @@ def test_explorer_diagnostics_leave_readable_sources(tmp_path, malformed):
                 await pilot.press("1", "up", "4")
                 assert "Sample failed" in _text(app, "#source-files")
                 assert "0 of 1 files inspected" in _text(app, "#source-scope")
+                await pilot.press("d")
+                assert app.query_one("#source-tabs").active == "diagnostics"
+                assert app.focused.id == "finding-list"
             await pilot.press("q")
         assert app.return_value == 1
 
