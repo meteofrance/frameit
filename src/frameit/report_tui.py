@@ -118,7 +118,20 @@ class ReportApp(App[int]):
     Screen.checking .report-body, Screen.checking Footer {{ display: none; }}
     TabbedContent, TabPane, VerticalScroll {{ height: 1fr; }}
     TabPane {{ padding: 0 1; }}
-    VerticalScroll:focus {{ scrollbar-color: $accent; }}
+    VerticalScroll, OptionList, DataTable {{
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+        scrollbar-color: $accent 55%;
+        scrollbar-color-hover: $accent 78%;
+        scrollbar-color-active: $accent;
+        scrollbar-background: transparent;
+        scrollbar-background-hover: transparent;
+        scrollbar-background-active: transparent;
+        scrollbar-corner-color: $background; /* Textual renders the corner opaque. */
+    }}
+    /* Textual's stable gutter only reserves vertical space. */
+    DataTable, #details-scroll {{ overflow-x: scroll; }}
+    #sources {{ scrollbar-size: 0 0; }}
     #finding-list {{ height: 2fr; min-height: 3; }}
     #finding-list:focus > .option-list--option-highlighted {{
         background: #102440;

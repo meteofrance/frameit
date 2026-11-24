@@ -134,7 +134,6 @@ class ValidationApp(ReportApp):
         color: $foreground;
         text-style: bold underline;
     }
-    #details-scroll { overflow-x: auto; }
     #details-scroll Collapsible {
         width: auto;
         min-width: 100%;

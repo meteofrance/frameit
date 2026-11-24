@@ -43,7 +43,7 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
     data = v3_scene(names=("alpha", "middle", "zeta"), hours=(0,)).reindex(x=x).assign_coords(
         longitude=("x", 60. + x / 100, {"units": "degrees_east"}),
         time=[cftime.Datetime360Day(2001, 2, 30)])
-    data["alpha"].attrs["units"] = "m s-1"
+    data["alpha"].attrs["units"] = "m s-1 " * 12
     data["zeta"].attrs["units"] = "Pa"
     data.to_netcdf(tmp_path / "sample.nc", engine="h5netcdf")
     (tmp_path / "later.nc").touch()
@@ -63,6 +63,8 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
             assert all(app.query_one(selector).region.width > 0 for selector in (
                 "#sources", "#fields", "#field-details", "#source-tabs"))
             assert table.ordered_columns[-1].content_width >= len("Not requested")
+            assert table.max_scroll_x > 0
+            viewport = table.scrollable_size
             assert "1 of 2 files inspected" in _text(app, "#source-scope")
             assert app.result_code == 0
             await pilot.press("1", "down")
@@ -77,6 +79,8 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
             assert app.focused.id == "field-scroll"
             await pilot.press("f", "3", "c")
             assert table.row_count == 1
+            assert table.max_scroll_x == 0
+            assert table.scrollable_size == viewport
             assert yaml.safe_load(app.clipboard) == {"2d": ["zeta"]}
             assert "sources.atmosphere.variables" in _text(app, "#field-details")
             await pilot.resize_terminal(52, 16)
@@ -120,6 +124,30 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
 
     asyncio.run(exercise())
     assert not (tmp_path / "not-created").exists()
+
+
+def test_explorer_scrolls_source_picker_without_a_bar(tmp_path):
+    from textual.events import MouseScrollDown
+
+    v3_scene(hours=(0,)).to_netcdf(tmp_path / "sample.nc", engine="h5netcdf")
+    path = _case(tmp_path, {f"source{i}": {"files": "sample.nc"} for i in range(12)})
+
+    async def exercise():
+        app = _app(path)
+        async with app.run_test(size=(52, 16)) as pilot:
+            await _ready(app, pilot)
+            await pilot.press("1")
+            sources = app.query_one("#sources")
+            assert sources.max_scroll_y > 0
+            assert sources.scrollbars_space == (0, 0)
+            x, y = sources.content_region.offset
+            app.post_message(MouseScrollDown(None, x, y, 0, 0, 0, False, False, False))
+            await pilot.pause()
+            assert sources.scroll_y > 0
+            await pilot.press("end")
+            assert "source11" in _text(app, "#source-scope")
+
+    asyncio.run(exercise())
 
 
 def test_explorer_refreshes_without_stale_selection(tmp_path):

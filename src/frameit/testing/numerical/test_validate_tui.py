@@ -165,13 +165,20 @@ def test_details_render_long_nested_yaml_lines_without_wrapping(tmp_path):
         app = ValidationApp(path, collect, schema_only=True)
         async with app.run_test(size=(52, 16)) as pilot:
             await app.workers.wait_for_complete()
-            await pilot.press("3", "tab", "enter")
+            await pilot.press("3")
             details = app.query_one("#details-scroll")
+            viewport = details.scrollable_size
+            await pilot.press("tab", "enter")
             config = app.query_one("#detail-configuration-text")
             line = f"  description: {description}"
             row = str(config.content).splitlines().index(line)
             assert config.render_line(row).text.rstrip() == line
             assert details.max_scroll_x > 0
+            assert details.scrollable_size == viewport
+            assert details.scrollbars_space == (1, 1)
+            corner = (details.vertical_scrollbar.region.x, details.horizontal_scrollbar.region.y)
+            background = app.screen.styles.background.rich_color
+            assert app.screen.get_style_at(*corner).bgcolor == background
             await pilot.press("right")
             await pilot.wait_for_scheduled_animations()
             assert details.scroll_x > 0
