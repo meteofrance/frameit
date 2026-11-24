@@ -1,4 +1,4 @@
-# Research console for experimental `frameit validate`
+# Research console for `frameit validate`
 
 The Batsirai trial made the verdict compete with raw paths, YAML and notes.
 Make the result easy to scan before asking the researcher to read the report.
@@ -15,11 +15,12 @@ stacked. Prefer A for narrow terminals and SSH.
 ## Views
 
 - **Overview:** Use a slim `FrameIt / validate` header with the configuration
-  name. Lead with the verdict and a short Inputs / Selection / Region /
+  filename. Lead with a plain verdict and a short Inputs / Selection / Region /
   Outputs summary. Show counts and the selected time span when available;
   keep full field lists and paths in Details. After a pass, show the next
   command with any operational overrides. On failure, surface the first
-  repair near the verdict and mark unconfirmed facts as such. No raw YAML.
+  fix near the verdict and mark unconfirmed facts as such. No raw YAML or
+  generic caveats; label what was checked, skipped, or left unconfirmed.
 - **Findings:** Keep errors, warnings, blocked checks, field discovery and
   run-only items distinct. Make each row distinguishable by code or subject;
   retain the full reason, repair, location and evidence in the selected detail.
@@ -36,8 +37,9 @@ stacked. Prefer A for narrow terminals and SSH.
 ## Boundaries and trial
 
 Keep the existing navy, teal, amber and error red (`#DA5656`) palette, with
-explicit labels and readable focus even without color. Use stock Textual
-widgets. Do not add a dependency, change report data or scientific behavior,
+explicit labels and readable focus even without color. Include the existing
+Textual interface in a standard install. Keep the import confined to
+interactive validation. Do not change report data or scientific behavior,
 or touch `inspect`, `--cli` or `--json`.
 
 Keep the current prototype as a baseline on `tmp/validate-tui`. Compare

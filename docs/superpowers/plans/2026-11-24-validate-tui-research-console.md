@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the experimental terminal view read like a compact preflight briefing.
+**Goal:** Ship a compact terminal validation view with FrameIt.
 
 **Architecture:** Keep the existing `ValidationApp`, worker, and shared report.
 Replace the presentation inside its three tabs and adjust which shortcuts the
@@ -16,7 +16,8 @@ footer advertises. Use stock Textual widgets instead of a separate display layer
 
 - Keep work local on `tmp/validate-tui`; `7422468` is the visual comparison
   baseline. Do not merge or push.
-- Use stock Textual widgets. Do not add a dependency, change report data or
+- Use stock Textual widgets. Promote Textual to a regular dependency in Task 2.
+  Do not change report data or
   scientific behavior, or touch `inspect`, `--cli` or `--json`.
 - Keep the existing palette, including error red `#DA5656`, and explicit labels.
 - Keep source fixtures read-only. Store captures outside the repository.
@@ -85,3 +86,23 @@ and three stock collapsibles `#detail-configuration`, `#detail-origins`, `#detai
   local preview URL. Check verdict, focus contrast and no written products.
 - [ ] Review the diff, stage only the console, tests, guide and spec/plan, and
   commit locally. Report observed checks and the comparison screenshots.
+
+### Task 2: Simplify the text and include the view by default
+
+**Files:** `src/frameit/validate_tui.py`,
+`src/frameit/testing/numerical/test_validate_tui.py`, `pyproject.toml`,
+`docs/test_release.py`, `docs/source/user_guide/configuration_file.rst`,
+`docs/source/getting_started/installation.rst`, `README.md`.
+
+- [ ] Update the Pilot assertions for a filename-only header, `Validation
+  passed`, `Fix first`, no generic caveat, and schema-only advice to validate
+  without `--schema-only`. Keep the assertions for unconfirmed paths.
+  Expect the updated tests to fail on the old copy.
+- [ ] In the existing release test, assert the wheel has an unconditional
+  `Requires-Dist: textual` requirement and contains `frameit/validate_tui.py`.
+  Expect the requirement check to fail before changing dependency metadata.
+- [ ] Change the TUI copy and move Textual into regular dependencies at the
+  verified version floor. Keep CLI dispatch and the text fallback unchanged.
+  Remove the experimental and extra-install instructions in the guide.
+- [ ] Run the targeted tests plus `docs/test_release.py`, build and inspect
+  a wheel, rebuild/check Sphinx, and refresh the app captures.

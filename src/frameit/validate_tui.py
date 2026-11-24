@@ -1,4 +1,4 @@
-"""Optional, read-only terminal view of the existing validation report."""
+"""Read-only terminal view of the validation report."""
 
 from asyncio import CancelledError
 from collections import Counter
@@ -77,7 +77,7 @@ def _count(count, label):
     return f"{count} {label}{'s' if count != 1 else ''}"
 
 
-def _region_label(region, sources):
+def _region_label(region, sources, *, model_grid):
     if sources and all("region.center" in source.get("region", {}).get("unused_settings", ())
                        for source in sources.values()):
         return "Full domain; configured centre unused"
@@ -89,8 +89,8 @@ def _region_label(region, sources):
         mode = "Fixed centre"
     else:
         return "Full domain"
-    width = region.get("width_km")
-    return f"{mode} · {width['x']:g} × {width['y']:g} km requested" if width else mode
+    width = region.get("width_km") if model_grid else None
+    return f"{mode} · {width['x']:g} × {width['y']:g} km crop requested" if width else mode
 
 
 def _overview(report, config, schema_only, overrides, *, has_warnings):
@@ -101,7 +101,7 @@ def _overview(report, config, schema_only, overrides, *, has_warnings):
     lines = []
     if report["errors"]:
         error = report["errors"][0]
-        lines.extend((f"First repair · [{error['code']}] {error['path']}", *error["repairs"], ""))
+        lines.extend((f"Fix first · [{error['code']}] {error['path']}", *error["repairs"], ""))
 
     unavailable = "Not confirmed" if configuration else "Unavailable"
     inputs = "Not checked (schema only)" if schema_only else unavailable
@@ -117,15 +117,21 @@ def _overview(report, config, schema_only, overrides, *, has_warnings):
                 first, last = _time_label(times[0]), _time_label(times[-1])
                 span = first if len(times) == 1 else f"{first} → {last}"
                 prefix = f"{name}: " if len(configuration["sources"]) > 1 else ""
-                time_rows.append(f"{prefix}{_count(len(times), 'selected time')} · {span}")
+                time_rows.append(f"{prefix}{_count(len(times), 'source time')} selected · {span}")
+                if associations := source.get("region", {}).get("associations"):
+                    matched = len({_time_label(entry["source_time"]) for entry in associations})
+                    if matched < len(times):
+                        time_rows.append(
+                            f"{prefix}{_count(matched, 'source time')} matched to centres")
         if data["inputs"]:
-            inputs = " · ".join([_count(len(data["inputs"]), "input file"), *source_labels])
+            inputs = " · ".join([f"{_count(len(data['inputs']), 'file')} scanned", *source_labels])
         fields = Counter()
         for product in plan.get("products", ()):
             if product["product"] != "track":
                 fields[product["product"].replace("_", "-")] += len(product["fields"])
         selection = " · ".join(_count(n, f"{kind} output field") for kind, n in fields.items() if n)
-        region = _region_label(configuration["region"], prepared)
+        region = _region_label(configuration["region"], prepared,
+                               model_grid=bool(fields["model-grid"]))
         if paths := plan.get("planned_products"):
             kinds = dict.fromkeys(product["product"].replace("_", " ")
                                   for product in plan.get("products", ()))
@@ -138,15 +144,13 @@ def _overview(report, config, schema_only, overrides, *, has_warnings):
     lines.append(f"{'Selection':<11}{selection_rows[0]}")
     lines.extend(f"{'':<11}{row}" for row in selection_rows[1:])
     lines.extend((f"{'Region':<11}{region}", f"{'Outputs':<11}{outputs}"))
-    if report["errors"]:
-        lines.extend(("", "See Findings for the report and repairs."))
-    elif schema_only:
-        lines.extend(("", "Next: input-aware validation. Inputs were not checked."))
-    else:
-        if has_warnings:
-            lines.extend(("", "Review warnings in Findings before running."))
-        lines.extend(("", f"Next: {_run_command(config, overrides)}"))
-    lines.extend(("", "Validation does not assess scientific validity."))
+    if not report["errors"]:
+        if schema_only:
+            lines.extend(("", "Next: validate without --schema-only."))
+        else:
+            if has_warnings:
+                lines.extend(("", "See warnings in Findings."))
+            lines.extend(("", f"Next: {_run_command(config, overrides)}"))
     return "\n".join(lines)
 
 
@@ -224,7 +228,6 @@ class ValidationApp(App[int]):
     #summary, #details-scroll {{ padding-top: 1; }}
     VerticalScroll:focus {{ scrollbar-color: $accent; }}
     #finding-list {{ height: 2fr; min-height: 3; }}
-    #finding-list > .option-list--option-highlighted,
     #finding-list:focus > .option-list--option-highlighted,
     #details-scroll CollapsibleTitle:focus {{
         background: #102440;
@@ -232,7 +235,15 @@ class ValidationApp(App[int]):
         text-style: bold underline;
     }}
     #finding-scroll {{ height: 3fr; }}
-    #details-scroll Collapsible {{ border: none; padding: 0 0 1 0; }}
+    #details-scroll {{ overflow-x: auto; }}
+    #details-scroll Collapsible {{
+        width: auto;
+        min-width: 100%;
+        border: none;
+        padding: 0 0 1 0;
+    }}
+    #details-scroll Contents, #details-scroll Contents Static {{ width: auto; }}
+    #details-scroll Contents Static {{ text-wrap: nowrap; }}
     """
 
     def __init__(self, config: Path, collect, *, schema_only=False, overrides=None):
@@ -247,10 +258,9 @@ class ValidationApp(App[int]):
         self.theme = _THEME.name
 
     def compose(self) -> ComposeResult:
-        mode = "Schema only" if self.schema_only else "Input-aware"
         with Horizontal(id="identity-bar"):
             yield Static(self.TITLE, id="identity", markup=False)
-            yield Static(f"{self.config.name} · {mode}", id="context", markup=False)
+            yield Static(self.config.name, id="context", markup=False)
         yield Static(id="status", markup=False)
         with TabbedContent(id="report-tabs"):
             with TabPane("Overview", id="overview"):
@@ -351,7 +361,7 @@ class ValidationApp(App[int]):
         ]
         counts = Counter(level for level, _ in self.findings)
         verdict = ("Validation failed" if self.result_code else
-                   "Schema checks passed" if self.schema_only else "Input-aware checks passed")
+                   "Schema checks passed" if self.schema_only else "Validation passed")
         labels = (("Error", "error"), ("Warning", "warning"), ("Blocked", "blocked"),
                   ("Field discovery", "field discovery note"))
         stats = [f"{count} {label}{'s' if count > 1 and level != 'Blocked' else ''}"
@@ -365,7 +375,7 @@ class ValidationApp(App[int]):
                       has_warnings=bool(warnings)))
         plan_title = _DETAIL_LABELS["plan"]
         if self.result_code:
-            plan_title = "Partial preflight facts"
+            plan_title = "Partial plan"
             if report["data"]["plan"].get("planned_products"):
                 plan_title += " · unconfirmed paths"
         for key, text in details.items():

@@ -59,18 +59,15 @@ Errors identify keys/files, YAML locations, expected/observed facts and possible
 repairs. Each error has a ``code`` and a ``help`` path relative to the docs for
 that FrameIt version. Warnings remain strings and start with a code in brackets.
 Find a code in :doc:`../troubleshooting/codes`.
-Blocked checks are not passes. Successful validation does not establish
-scientific validity. See :doc:`../troubleshooting`.
+For failed or blocked checks, see :doc:`../troubleshooting`.
 
-Experimental terminal view
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Terminal view
+~~~~~~~~~~~~~
 
-To try the optional interface, install the ``tui`` extra from the checkout in
-``frameit_env``:
+The terminal view is installed with FrameIt:
 
 .. code-block:: bash
 
-   python -m pip install -e '.[tui]'
    frameit validate frameit.yaml
 
 In an interactive terminal, validation opens **Overview**, **Findings**, and
@@ -83,20 +80,21 @@ only the file count and elapsed time remain. ``Ctrl+C`` interrupts validation;
 an active native read may need to finish before the process exits.
 
 **Overview** summarizes the checked inputs, selection, region and planned
-outputs. It shows the next command after input-aware validation passes, or
-the first repair if validation fails.
+outputs. It shows the run command when input checks pass and the first fix
+when validation fails.
 
 **Findings** includes warnings logged while reading metadata. Field discovery
 notes explain selector choices without implying that the current request
 failed. Items under **During run** are not counted as validation issues.
 
 In **Details**, press ``Tab`` to focus a section and ``Enter`` to expand or
-collapse it. The effective configuration, setting origins and processing
-plan are read-only. Output paths from a failed check are marked as unconfirmed.
+collapse it. Use the left and right arrows to scroll long lines. The effective
+configuration, setting origins and processing plan are read-only. Output paths
+from a failed check are marked as unconfirmed.
 
 Use ``frameit validate frameit.yaml --cli`` for the text report even in a
-terminal. ``--json`` still writes one JSON report. Without Textual, or when
-input or output is redirected, FrameIt does not open the interface.
+terminal. ``--json`` writes one JSON report. Redirected commands do not open
+the terminal view.
 
 Authored and effective views
 ----------------------------
@@ -449,8 +447,8 @@ A centre provider alone does not request an exported trajectory.
 
 Without a product ``fields`` map, field products use source ``variables`` and
 ``derived``. With a map, list exact input fields or defined derived results by
-source. An input field does not need to be repeated in ``variables``. Input-aware
-validation rejects missing or ambiguous fields. Use a qualified name to keep
+source. An input field does not need to be repeated in ``variables``. Validation
+with input files rejects missing or ambiguous fields. Use a qualified name to keep
 the levels declared for its group. A product-only dotted name fails if it
 matches both a literal input name and a qualified group field. Unlisted fields
 are not exported; required internal inputs can still be read.
@@ -464,7 +462,7 @@ Changing only the crop must not change polar sampling.
 See :doc:`../task_guides/polar_sampling` for a complete instructional request.
 
 Optional ``radial_step_km`` defaults to native source spacing and cannot be finer.
-Input-aware ``frameit validate`` rejects a smaller step and reports the minimum
+``frameit validate`` rejects a smaller step and reports the minimum
 for the selected files. Use at least that value, or omit the setting. Schema-only
 validation cannot determine it. A shared target uses the coarsest participating grid.
 ``azimuth_count`` is the only angular control. Omission chooses a count from

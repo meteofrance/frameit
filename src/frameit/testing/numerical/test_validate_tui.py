@@ -1,4 +1,4 @@
-"""Exercise the experimental terminal UI on instructional configurations."""
+"""Exercise the terminal UI on instructional configurations."""
 
 import asyncio
 import os
@@ -16,8 +16,6 @@ import yaml
 from frameit.cli import _collect_report
 from frameit.core.configuration import write_template
 from frameit.testing.documentation_example import create_first_run_input
-
-pytest.importorskip("textual")
 
 
 def _case(root):
@@ -59,25 +57,28 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert app.query_one("#report-tabs").active == "overview"
+            assert _text(app, "#context") == path.name
             summary = _text(app, "#summary")
+            assert "scientific validity" not in summary
             assert all(label in summary for label in ("Inputs", "Selection", "Region", "Outputs"))
             if mode in {"full", "unused-centre"}:
-                assert "1 input file" in summary and "2 selected times" in summary
+                assert "1 file scanned" in summary and "2 source times selected" in summary
                 assert "1 model-grid output field" in summary and "1 planned" in summary
                 assert "instructional_scalar" not in summary and ".model_grid.nc" not in summary
                 assert "frameit run " in summary and "--cpus=1" in summary
                 assert "--no-overwrite" in summary
-                assert "does not assess scientific validity" in summary
+                assert _text(app, "#status").startswith("Validation passed")
                 if mode == "unused-centre":
                     assert "Full domain; configured centre unused" in summary
                 else:
-                    assert "Fixed centre" in summary and "km requested" in summary
+                    assert "Fixed centre" in summary and "km crop requested" in summary
             elif mode == "schema":
-                assert "input-aware validation" in summary and "frameit run " not in summary
-                assert "not checked" in summary and ".model_grid.nc" not in summary
+                assert "validate without --schema-only" in summary
+                assert "frameit run " not in summary
+                assert "Not checked (schema only)" in summary and ".model_grid.nc" not in summary
             else:
-                assert "First repair" in summary and "frameit run " not in summary
-                assert summary.index("First repair") < summary.index("Inputs")
+                assert "Fix first" in summary and "frameit run " not in summary
+                assert summary.index("Fix first") < summary.index("Inputs")
                 if mode == "unconfirmed":
                     assert "Unconfirmed output paths" in summary and ".model_grid.nc" not in summary
                 elif mode == "malformed":
@@ -106,7 +107,7 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
             assert all(section.collapsed for section in (configuration, origins, plan))
             plan_text = _text(app, "#detail-plan-text")
             if mode in {"incomplete", "unconfirmed", "malformed"}:
-                assert "Partial preflight facts" in plan.title
+                assert "Partial plan" in plan.title
                 if mode == "unconfirmed":
                     assert "unconfirmed" in plan.title and ".model_grid.nc" in plan_text
                 else:
@@ -137,6 +138,35 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
     assert path.read_bytes() == original and not (tmp_path / "output").exists()
 
 
+def test_details_render_long_nested_yaml_lines_without_wrapping(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    raw = yaml.safe_load(path.read_text())
+    description = "instructional-" * 8
+    raw["run"]["description"] = description
+    path.write_text(yaml.safe_dump(raw))
+    collect = partial(_collect_report, path, command="validate", schema_only=True)
+
+    async def exercise():
+        app = ValidationApp(path, collect, schema_only=True)
+        async with app.run_test(size=(52, 16)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("3", "tab", "enter")
+            details = app.query_one("#details-scroll")
+            config = app.query_one("#detail-configuration-text")
+            line = f"  description: {description}"
+            row = str(config.content).splitlines().index(line)
+            assert config.render_line(row).text.rstrip() == line
+            assert details.max_scroll_x > 0
+            await pilot.press("right")
+            await pilot.wait_for_scheduled_animations()
+            assert details.scroll_x > 0
+            await pilot.press("q")
+
+    asyncio.run(exercise())
+
+
 def test_console_keeps_source_calendars_separate(tmp_path):
     from frameit.validate_tui import _overview
 
@@ -153,10 +183,39 @@ def test_console_keeps_source_calendars_separate(tmp_path):
     }}
 
     lines = _overview(report, tmp_path / "case.yaml", False, {}, has_warnings=False).splitlines()
-    air, sea = (next(line for line in lines if name in line and "selected times" in line)
+    air, sea = (next(line for line in lines if name in line and "times selected" in line)
                 for name in ("air", "sea"))
-    assert "2 selected times" in air and "2001-02-30 (360_day)" in air and "noleap" not in air
-    assert "3 selected times" in sea and "2001-03-30 (noleap)" in sea and "360_day" not in sea
+    assert "2 source times selected" in air and "noleap" not in air
+    assert "2001-02-01 (360_day)" in air and "2001-02-30 (360_day)" in air
+    assert "3 source times selected" in sea and "360_day" not in sea
+    assert "2001-03-01 (noleap)" in sea and "2001-03-30 (noleap)" in sea
+
+
+@pytest.mark.parametrize("product", ["model_grid", "polar"])
+def test_console_distinguishes_scanned_files_source_times_and_centre_matches(tmp_path, product):
+    from frameit.validate_tui import _overview
+
+    times = ["2022-02-01T00:00:00", "2022-02-01T01:00:00", "2022-02-01T02:00:00"]
+    report = {"status": "ok", "errors": [], "data": {
+        "configuration": {"sources": {"air": {"model": "arome"}}, "region": {
+            "track": {"file": "track.nc"}, "width_km": {"x": 200, "y": 200},
+            "sources_coupling_time_association": "common",
+        }},
+        "inputs": [{"source": "air", "path": f"air{i}.nc", "status": status}
+                   for i, status in enumerate(["selected"] * 3 + ["time_excluded"])],
+        "plan": {
+            "sources": {"air": {"selected_times": times, "region": {"associations": [
+                {"source_time": time, "coupling_time": time} for time in times[1:]
+            ]}}},
+            "products": [{"source": "air", "product": product, "fields": ["t"]}],
+            "planned_products": [f"air.{product}.nc"],
+        },
+    }}
+
+    summary = _overview(report, tmp_path / "case.yaml", False, {}, has_warnings=False)
+    assert "4 files scanned" in summary and "3 source times selected" in summary
+    assert "2 source times matched to centres" in summary
+    assert ("200 × 200 km crop requested" in summary) == (product == "model_grid")
 
 
 def test_live_scan_and_reload(tmp_path, monkeypatch):
@@ -314,9 +373,15 @@ def test_findings_distinguish_discovery_notes_from_run_only_work(tmp_path):
         async with app.run_test() as pilot:
             await app.workers.wait_for_complete()
             await pilot.pause()
-            assert _text(app, "#status") == "Input-aware checks passed · 2 field discovery notes"
+            assert _text(app, "#status") == "Validation passed · 2 field discovery notes"
             await pilot.press("2")
             listing = app.query_one("#finding-list")
+            style = "option-list--option-highlighted"
+            assert listing.get_component_styles(style).text_style.underline
+            await pilot.press("tab")
+            assert app.query_one("#finding-scroll").has_focus
+            assert not listing.get_component_styles(style).text_style.underline
+            await pilot.press("shift+tab")
             first, second = (str(listing.get_option_at_index(i).prompt) for i in range(2))
             assert first != second and all(" · t" in title for title in (first, second))
             assert "Field discovery · sources.atmosphere" in _text(app, "#finding")
