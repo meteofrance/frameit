@@ -204,8 +204,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     pins = sub.add_parser("inspect", allow_abbrev=False,
                           help="Inspect sources in a YAML request, including unfinished selections")
-    pins.add_argument("config", type=Path, help="The same YAML used by validate and run")
+    pins.add_argument(
+        "config", nargs="?", default=Path("frameit.yaml"), type=Path,
+        help="YAML file (default: frameit.yaml)",
+    )
     pins.add_argument("--json", action="store_true", help="Emit one structured metadata report")
+    pins.add_argument("--cli", action="store_true",
+                      help="Use the full text report instead of the TUI")
 
     capabilities_parser = sub.add_parser(
         "capabilities", allow_abbrev=False,
@@ -321,7 +326,7 @@ def _load_config(path, overrides):
         return SimulationConfig(**_apply_model_presets(runtime, strict_locked=True))
 
 
-def _report_failure(exc, command):
+def _report_failure(exc, command, *, sample_only=False):
     from frameit.core.reports import (
         PreflightResult,
         blocked_check,
@@ -331,12 +336,14 @@ def _report_failure(exc, command):
     errors = exception_diagnostics(
         exc, path="configuration", expected="valid v3 configuration",
         observed={"cause": str(exc)}, repairs=[f"Correct the reported prerequisite: {exc}"])
-    return PreflightResult(command, errors=errors, deferred_checks=[blocked_check(
+    deferred = [] if sample_only else [blocked_check(
         "plan", [error.path for error in errors],
-        "Dependent planning and execution are blocked until these errors are repaired.")])
+        "Dependent planning and execution are blocked until these errors are repaired.")]
+    return PreflightResult(command, errors=errors, deferred_checks=deferred)
 
 
-def _collect_report(path, *, command, schema_only=False, overrides=None, progress=None):
+def _collect_report(path, *, command, schema_only=False, overrides=None, progress=None,
+                    sample_only: bool = False):
     if progress is not None:
         progress("configuration", None, None, None)
     try:
@@ -345,7 +352,7 @@ def _collect_report(path, *, command, schema_only=False, overrides=None, progres
         from frameit.core.preflight import collect_preflight
         from frameit.utils.logging import frameit_logging_scope
     except ImportError as exc:
-        return _report_failure(tag_error(exc, "E1001"), command)
+        return _report_failure(tag_error(exc, "E1001"), command, sample_only=sample_only)
 
     try:
         request = _load_config(path, overrides or {})
@@ -353,9 +360,10 @@ def _collect_report(path, *, command, schema_only=False, overrides=None, progres
             for handler in logging.getLogger("frameit").handlers:
                 handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
             return collect_preflight(
-                request, command=command, schema_only=schema_only, progress=progress)
+                request, command=command, schema_only=schema_only, progress=progress,
+                sample_only=sample_only)
     except (OSError, ValueError, ImportError, YAMLError) as exc:
-        return _report_failure(exc, command)
+        return _report_failure(exc, command, sample_only=sample_only)
 
 
 def _run_report_app(build_app, *, cli_output: bool, json_output: bool) -> int | None:
@@ -539,7 +547,17 @@ def _cmd_config(args):
 
 
 def _cmd_inspect(args):
-    return _print_preflight(_collect_report(args.config, command="inspect"), json_output=args.json)
+    def build_app():
+        from frameit.inspect_tui import InspectionApp
+
+        return InspectionApp(args.config, partial(
+            _collect_report, args.config, command="inspect", sample_only=True))
+
+    code = _run_report_app(build_app, cli_output=args.cli, json_output=args.json)
+    if code is None:
+        return _print_preflight(
+            _collect_report(args.config, command="inspect"), json_output=args.json)
+    return code
 
 
 def _cmd_prepare_ci_dataset(args: argparse.Namespace) -> int:

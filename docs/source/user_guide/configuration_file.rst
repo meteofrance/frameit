@@ -115,7 +115,9 @@ sets, string keys, ``{"hex": "..."}`` for binary values and
 
 ``--effective`` adds metadata checks, resolved settings, origins, observed inputs,
 the plan and pending checks. Neither view rewrites the file. ``inspect`` accepts
-unfinished field selections and reports available selectors.
+unfinished field selections and reports available selectors. The
+:ref:`terminal explorer <inspect-sample>` samples one file per source;
+``inspect --cli`` and ``inspect --json`` report the full inventory.
 
 ``validate``, ``run`` and ``config show --effective`` accept
 ``--output-directory``, ``--cpus``, ``--overwrite`` or ``--no-overwrite``, and

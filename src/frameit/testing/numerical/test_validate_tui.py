@@ -409,7 +409,8 @@ def test_findings_distinguish_discovery_notes_from_run_only_work(tmp_path):
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="tests the Linux driver's PTY restoration")
-def test_sigterm_restores_tty_during_validation(tmp_path):
+@pytest.mark.parametrize("command", ["validate", "inspect"])
+def test_sigterm_restores_tty_during_terminal_report(tmp_path, command):
     path = _case(tmp_path)
     master, terminal = pty.openpty()
     ready_read, ready_write = os.pipe()
@@ -424,11 +425,12 @@ def gated(*args, **kwargs):
     os.read(int(sys.argv[3]), 1)
     return load(*args, **kwargs)
 cli._load_config = gated
-cli.main(['validate', sys.argv[1], '--cpus', '1'])
+args = [sys.argv[4], sys.argv[1]]
+cli.main(args + (['--cpus', '1'] if args[0] == 'validate' else []))
 """
     try:
         with subprocess.Popen(
-            [sys.executable, "-c", script, str(path), str(ready_write), str(resume_read)],
+            [sys.executable, "-c", script, str(path), str(ready_write), str(resume_read), command],
             stdin=terminal, stdout=terminal, stderr=terminal,
             pass_fds=(ready_write, resume_read), env={**os.environ, "TERM": "xterm-256color"},
         ) as process:

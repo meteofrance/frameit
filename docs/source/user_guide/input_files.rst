@@ -47,6 +47,38 @@ If a downstream tool needs this attribute, use a ``field_metadata`` declaration
 based on the producer's field definition. See :doc:`configuration_file` for the
 interpolation defaults and :doc:`fa_inputs` for native FA input declarations.
 
+.. _inspect-sample:
+
+Explore a sample in the terminal
+--------------------------------
+
+Run ``frameit inspect`` to open ``frameit.yaml`` in the current directory, or
+pass the path to a different YAML file. Field selections can be unfinished.
+The terminal explorer lists matching files but reads metadata from **one file
+per source**. It takes the first match in the declared path and glob order,
+with each glob sorted, after applying exclusions and removing file aliases.
+The Files tab names the sample and marks the other matches as not inspected.
+If the sample cannot be read, the explorer shows the error without trying
+another file.
+
+* Use ``1`` for sources, ``2`` for the field table, ``3`` for field details and
+  ``4`` for source tabs. In a small terminal these keys switch views. Use
+  Tab and the arrow keys to move within a view.
+* Use ``/`` to search fields by name, units or native group. Press Enter or
+  Esc to return to the table. Use ``s`` to change the sort and ``f`` to filter
+  by request status. A field can be present without being requested.
+* Use ``c`` to copy an available YAML selector. Paste it under the shown
+  source's ``variables`` without dropping your other selections. If the
+  terminal blocks clipboard access, the selector is still shown as text.
+* Press ``r`` to reread saved edits to the YAML, or ``q`` to quit. The
+  explorer never edits the YAML or writes products.
+
+**Not seen in sample** does not mean missing from the source. The file's
+observed timestamps and cycles are separate from the YAML's requested time
+window. Use ``frameit inspect frameit.yaml --cli`` for the full text report
+or ``--json`` for the full structured report. Redirected commands also use
+the full inventory. Use ``frameit validate`` to check the processing request.
+
 File inventory and ambiguity
 -----------------------------
 
@@ -86,9 +118,10 @@ destination axis's formula, not just the input axis's formula. A method that
 needs physical height requires valid altitude on its working grid or a complete
 supported formula.
 
-A matched file is skipped only when metadata proves that it supplies no requested
-field or required dependency. The reason is reported. An unreadable matched file
-fails; it is not treated as irrelevant. Calculation inputs must come from the
+A matched file is skipped by the full inventory only when metadata proves it
+supplies no requested field or required dependency. The reason is reported.
+An unreadable matched file fails; it is not treated as irrelevant.
+Calculation inputs must come from the
 selected inventory after exclusions, not another format or neighbouring stream.
 
 Source data are read-only. GRIB indexes belong in the run's ``cache/``, not

@@ -2,7 +2,7 @@ Times and paired sources
 =============================
 
 Look at the sample times, forecast cycles, and interval bounds shown
-by ``frameit inspect frameit.yaml``. A sample time labels a record.
+by ``frameit inspect frameit.yaml --cli``. A sample time labels a record.
 A cycle is when the forecast started. Bounds mark the start and end
 of an interval. They are not the same thing.
 

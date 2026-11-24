@@ -15,7 +15,7 @@ import yaml
 
 from frameit.cli import main
 from frameit.testing.documentation_example import create_first_run_input
-from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads
+from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads, v3_scene
 
 
 def invoke(capsys, *args):
@@ -191,9 +191,93 @@ def test_validate_selects_output_mode(
         assert outcome == prior
 
 
-def test_inspect_keeps_its_existing_options(capsys):
-    code, out, err = invoke(capsys, "inspect", "request.yaml", "--cli")
-    assert code == 2 and not out and "unrecognized arguments: --cli" in err
+@pytest.mark.parametrize(("flags", "term", "redirect", "textual", "ui"), [
+    ((), "xterm-256color", None, True, True),
+    (("--cli",), "xterm-256color", None, True, False),
+    (("--json",), "xterm-256color", None, True, False),
+    (("--cli", "--json"), "xterm-256color", None, True, False),
+    ((), "xterm-256color", "stdin", True, False),
+    ((), "xterm-256color", "stdout", True, False),
+    ((), "xterm-256color", "stderr", True, False),
+    ((), None, None, True, False),
+    ((), "", None, True, False),
+    ((), "dumb", None, True, False),
+    ((), "xterm-256color", None, False, False),
+])
+@pytest.mark.parametrize("valid", [True, False])
+def test_inspect_selects_output_mode(tmp_path, monkeypatch, capsys, flags, term, redirect,
+                                     textual, ui, valid):
+    from frameit.cli import _collect_report
+    from frameit.core.reports import project_report, render_report, serialize_report
+
+    path, raw = case(tmp_path)
+    raw["sources"]["weather"]["files"] = ["input.nc", "next.nc"]
+    for hour, file in enumerate(raw["sources"]["weather"]["files"]):
+        v3_scene(names=("instructional_scalar",), hours=(hour,), model="AROME").to_netcdf(
+            tmp_path / file, engine="h5netcdf")
+    path.write_text(yaml.safe_dump(raw) if valid else "sources: [\n")
+    full = _collect_report(path, command="inspect")
+    expected = (serialize_report(full) if "--json" in flags else render_report(full)) + "\n"
+    if valid:
+        assert len(full.facts["sources"]["weather"]["file_inventory"]) == 2
+    capsys.readouterr()
+
+    app_calls, imports = [], []
+
+    def app(config, collect):
+        def run():
+            report = project_report(collect())
+            app_calls.append((config, report))
+            return int(bool(report["errors"]))
+        return SimpleNamespace(run=run)
+
+    original_import = builtins.__import__
+
+    def load(name, *args, **kwargs):
+        if name == "frameit.inspect_tui":
+            imports.append(name)
+            if not textual:
+                raise ModuleNotFoundError("No module named 'textual'", name="textual")
+            return SimpleNamespace(InspectionApp=app)
+        return original_import(name, *args, **kwargs)
+
+    if term is None:
+        monkeypatch.delenv("TERM", raising=False)
+    else:
+        monkeypatch.setenv("TERM", term)
+    for stream in ("stdin", "stdout", "stderr"):
+        tty = stream != redirect
+        monkeypatch.setattr(getattr(sys, stream), "isatty", lambda tty=tty: tty)
+    monkeypatch.setattr(builtins, "__import__", load)
+
+    code, out, _ = invoke(capsys, "inspect", path, *flags)
+    assert code == (0 if valid else 1)
+    assert imports == (["frameit.inspect_tui"] if ui or not textual else [])
+    if ui:
+        assert not out
+        (config, report), = app_calls
+        assert config == path
+        if valid:
+            source = report["data"]["plan"]["sources"]["weather"]
+            assert source["sample"]["inspected"] == 1
+            assert len(source["record_inventory"]) == 1
+        else:
+            assert report["errors"][0]["code"] == "E1102"
+    else:
+        assert not app_calls and out == expected
+
+
+def test_inspect_defaults_to_frameit_yaml(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    code, out, _ = invoke(capsys, "inspect", "--json")
+    assert code == 1
+    assert envelope(out, "inspect", "error")["errors"][0]["code"] == "E1101"
+    assert "frameit.yaml" in out
+    path, _ = case(tmp_path)
+    path.rename(tmp_path / "frameit.yaml")
+    create_first_run_input(tmp_path / "input.nc")
+    assert invoke(capsys, "inspect", "--json") == invoke(
+        capsys, "inspect", "frameit.yaml", "--json")
 
 
 @pytest.mark.parametrize("command", [

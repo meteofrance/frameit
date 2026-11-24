@@ -47,7 +47,7 @@ class ReleaseTests(unittest.TestCase):
                               'testing/catalogs/science.yaml', 'testing/recipes/ci.yaml',
                               'testing/ci_dataset/manifest.json',
                               'testing/documentation_example.py', 'testing/datasets.py',
-                              'validate_tui.py'):
+                              'validate_tui.py', 'report_tui.py', 'inspect_tui.py'):
                 path = package / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / 'src/frameit' / relative, path)
@@ -83,7 +83,7 @@ class ReleaseTests(unittest.TestCase):
                                   'testing/catalogs/science.yaml', 'testing/recipes/ci.yaml',
                                   'testing/ci_dataset/manifest.json',
                                   'testing/documentation_example.py', 'testing/datasets.py',
-                                  'validate_tui.py', 'LICENSE'):
+                                  'validate_tui.py', 'report_tui.py', 'inspect_tui.py', 'LICENSE'):
                         self.assertTrue(any(p.endswith(asset) for p in names), asset)
             for asset in ('CITATION.cff', 'CHANGELOG.md'):
                 self.assertTrue(any(p.endswith('/' + asset) for p in source_names), asset)

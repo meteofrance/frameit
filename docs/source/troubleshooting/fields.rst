@@ -7,8 +7,9 @@ E1301: No field or track was selected for output
 ----------------------------------------------------------------------
 
 Run ``frameit inspect frameit.yaml``. It can list fields before you
-select any. Copy a selector for the field you want into that source's
-``variables``. If you want only a track, request a track product with
+select any. Use ``--cli`` if fields are spread across files. Copy a selector
+for the field you want into that source's ``variables``. If you want only a track,
+request a track product with
 a region that supplies centres. Run validation and check the product list.
 
 .. _e1302:
@@ -168,7 +169,7 @@ E1310: The selected field cannot feed the requested method
 
 Read the operation, field and reason in the validation report.
 Check the method's required inputs, grid and levels against
-``frameit inspect frameit.yaml``. Remove the operation only if you
+``frameit inspect frameit.yaml --cli``. Remove the operation only if you
 do not need it. Do not change the field's meaning to make it fit.
 Validate and check which method is now planned.
 
