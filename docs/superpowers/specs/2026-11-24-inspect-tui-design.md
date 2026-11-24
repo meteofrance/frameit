@@ -1,7 +1,6 @@
 # Terminal dataset explorer for `frameit inspect`
 
-**Status:** Layout A and interactive-only sampling chosen. Implementation awaits
-approval of this design.
+**Status:** Approved for implementation: layout A and interactive-only sampling.
 
 `inspect` helps a researcher see what is in their inputs and choose YAML
 selectors. `validate` checks the requested processing plan. The two commands
