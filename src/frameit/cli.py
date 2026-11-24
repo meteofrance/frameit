@@ -370,8 +370,14 @@ def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False, cli_o
             if exc.name != "textual":
                 raise
         else:
-            code = ValidationApp(
-                cfg_path, collect, schema_only=schema_only, overrides=overrides).run()
+            from signal import SIGTERM, signal
+
+            app = ValidationApp(cfg_path, collect, schema_only=schema_only, overrides=overrides)
+            previous = signal(SIGTERM, lambda *_: app.exit(128 + SIGTERM))
+            try:
+                code = app.run()
+            finally:
+                signal(SIGTERM, previous)
             return 1 if code is None else code
     return _print_preflight(collect(), json_output=json_output)
 

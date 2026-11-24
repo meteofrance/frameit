@@ -10,7 +10,7 @@ from textwrap import indent
 from time import monotonic
 
 import yaml
-from textual import on
+from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
@@ -61,8 +61,9 @@ def _run_command(config, overrides):
     return join([*args, str(config)])
 
 
-def _overview(report, config, schema_only, overrides):
+def _overview(report, config, schema_only, overrides, *, has_warnings):
     configuration, plan = (report["data"][key] for key in ("configuration", "plan"))
+    prepared = plan.get("sources", {})
     confirmed = report["status"] == "ok" and not schema_only
     lines = [f"Configuration: {config}", ""]
     if configuration is None:
@@ -70,7 +71,7 @@ def _overview(report, config, schema_only, overrides):
     else:
         lines.append("Resolved request" if confirmed else "Configured request (not fully checked)")
         for name, declared in configuration["sources"].items():
-            source = plan.get("sources", {}).get(name, {})
+            source = prepared.get(name, {})
             model = source.get("model") or declared.get("model") or "model not established"
             lines.append(f"  {name} ({model})")
             fields = dict.fromkeys(
@@ -90,8 +91,12 @@ def _overview(report, config, schema_only, overrides):
                 lines.append("    Selected times: unavailable")
         region = {key: value for key, value in configuration["region"].items()
                   if key != "sources_coupling_time_association"}
-        lines.append("  Region / tracking:\n" + indent(_yaml(region), "    ")
-                     if region else "  Region: full domain")
+        if prepared and all("region.center" in source.get("region", {}).get("unused_settings", ())
+                            for source in prepared.values()):
+            lines.append("  Full domain; configured centre unused")
+        else:
+            lines.append("  Region / tracking:\n" + indent(_yaml(region), "    ")
+                         if region else "  Region: full domain")
 
     if paths := plan.get("planned_products"):
         label = "Planned outputs (not written)" if confirmed else "Unconfirmed output paths"
@@ -107,7 +112,7 @@ def _overview(report, config, schema_only, overrides):
     elif schema_only:
         lines.extend(("", "Next: input-aware validation. Inputs were not checked."))
     else:
-        if report["warnings"]:
+        if has_warnings:
             lines.extend(("", "Review warnings in Findings before running."))
         lines.extend(("", f"Next: {_run_command(config, overrides)}"))
     lines.extend(("", "Execution and scientific validity were not checked."))
@@ -203,12 +208,15 @@ class ValidationApp(App[int]):
         yield Footer()
 
     def on_mount(self):
+        self.begin_capture_print(self, stdout=False)
         self._start_check()
         self.set_interval(1, self._tick)
 
     def _start_check(self):
         self.result_code = None
         self._started = self._scan_started = monotonic()
+        self._eta_at = None
+        self._runtime_warnings = []
         self._activity = _STAGES["configuration"]
         self.query_one("#report-tabs").display = False
         self.query_one("#status").set_classes("progress")
@@ -227,16 +235,26 @@ class ValidationApp(App[int]):
         progress("report", None, None, None)
         report = project_report(result)
         data = report["data"]
+        plan_label = ("Partial preflight facts (output paths are unconfirmed)"
+                      if report["errors"] else "Processing plan")
         details = "\n\n".join(
             f"{label}\n{_yaml(data[key]) if data[key] else 'Unavailable'}"
             for label, key in (("Effective configuration", "configuration"),
-                               ("Setting origins", "origins"), ("Processing plan", "plan"))
+                               ("Setting origins", "origins"), (plan_label, "plan"))
         )
         return report, details
+
+    def on_print(self, event: events.Print):
+        if self.result_code is None and event.stderr:
+            level, _, message = event.text.rstrip().partition(":")
+            if level == "WARNING" and message:
+                detail = message.partition(":")[2] or message
+                self._runtime_warnings.append(f"(validation log) {detail}")
 
     @on(_Progress)
     def _observe(self, event: _Progress):
         activity = _STAGES[event.stage]
+        self._eta_at = None
         if event.source is not None:
             activity += f" · {event.source}"
         if event.checked is not None:
@@ -244,16 +262,19 @@ class ValidationApp(App[int]):
             if event.checked == 0:
                 self._scan_started = event.at
             elif 2 <= event.checked < event.total:
-                remaining = ceil((event.at - self._scan_started) *
-                                 (event.total - event.checked) / event.checked)
-                activity += f" · ETA ~{_clock(remaining)} (this source)"
+                self._eta_at = event.at + ((event.at - self._scan_started) *
+                                           (event.total - event.checked) / event.checked)
         self._activity = activity
         self._tick()
 
     def _tick(self):
         if self.result_code is None:
-            elapsed = _clock(monotonic() - self._started)
-            self.query_one("#status", Static).update(f"{self._activity} · {elapsed} elapsed")
+            now = monotonic()
+            activity = self._activity
+            if self._eta_at is not None and now < self._eta_at:
+                activity += f" · ETA ~{_clock(ceil(self._eta_at - now))} (this source)"
+            elapsed = _clock(now - self._started)
+            self.query_one("#status", Static).update(f"{activity} · {elapsed} elapsed")
 
     def on_worker_state_changed(self, event: Worker.StateChanged):
         if event.state != WorkerState.SUCCESS:
@@ -261,9 +282,10 @@ class ValidationApp(App[int]):
         report, details = event.worker.result
         self.result_code = int(bool(report["errors"]))
         checks = report["deferred_checks"]
+        warnings = dict.fromkeys([*report["warnings"], *self._runtime_warnings])
         self.findings = [
             *(("Error", item) for item in report["errors"]),
-            *(("Warning", item) for item in report["warnings"]),
+            *(("Warning", item) for item in warnings),
             *(("Blocked", item) for item in checks if item["status"] == "blocked"),
             *(("Deferred", item) for item in checks if item["status"] != "blocked"),
         ]
@@ -278,7 +300,8 @@ class ValidationApp(App[int]):
         status.update(" · ".join([verdict, *stats]))
 
         self.query_one("#summary", Static).update(
-            _overview(report, self.config, self.schema_only, self.overrides))
+            _overview(report, self.config, self.schema_only, self.overrides,
+                      has_warnings=bool(warnings)))
         self.query_one("#report-details", Static).update(details)
         listing = self.query_one("#finding-list", OptionList)
         listing.clear_options().add_options(

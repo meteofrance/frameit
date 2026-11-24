@@ -78,7 +78,12 @@ In an interactive terminal, validation opens **Overview**, **Findings**, and
 another terminal, press ``r`` to recheck the same file, or ``q`` to quit and
 rerun from the shell. The interface does not edit the file or run processing.
 The ETA estimates the current source's metadata scan, not the time until
-validation finishes.
+validation finishes. If the estimate expires before another file is checked,
+only the file count and elapsed time remain. ``Ctrl+C`` interrupts validation;
+an active native read may need to finish before the process exits.
+
+**Findings** includes warnings logged while reading metadata. **Details** marks
+output paths from a failed check as unconfirmed.
 
 Use ``frameit validate frameit.yaml --cli`` for the text report even in a
 terminal. ``--json`` still writes one JSON report. Without Textual, or when

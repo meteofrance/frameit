@@ -1,6 +1,12 @@
 """Exercise the experimental terminal UI on instructional configurations."""
 
 import asyncio
+import os
+import pty
+import select
+import subprocess
+import sys
+import termios
 from functools import partial
 from threading import Event
 
@@ -23,7 +29,7 @@ def _text(app, selector):
     return str(app.query_one(selector).content)
 
 
-@pytest.mark.parametrize("mode", ["full", "schema", "incomplete", "unconfirmed"])
+@pytest.mark.parametrize("mode", ["full", "schema", "incomplete", "unconfirmed", "unused-centre"])
 def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
     from frameit.validate_tui import ValidationApp
 
@@ -35,6 +41,8 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
         raw["sources"]["atmosphere"]["transforms"] = [
             {"fields": ["instructional_scalar"], "units": "K"}
         ]
+    if mode == "unused-centre":
+        del raw["region"]["width_km"]
     path.write_text(yaml.safe_dump(raw))
     original = path.read_bytes()
     overrides = {"cpus": 1, "overwrite": False}
@@ -49,11 +57,13 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
             await pilot.pause()
             assert app.query_one("#report-tabs").active == "overview"
             summary = _text(app, "#summary")
-            if mode == "full":
+            if mode in {"full", "unused-centre"}:
                 assert "instructional_scalar" in summary and "2 selected times" in summary
                 assert "Planned outputs" in summary and ".model_grid.nc" in summary
                 assert "frameit run " in summary and "--cpus=1" in summary
                 assert "--no-overwrite" in summary and "not checked" in summary
+                if mode == "unused-centre":
+                    assert "Full domain; configured centre unused" in summary
             elif mode == "schema":
                 assert "input-aware validation" in summary and "frameit run " not in summary
                 assert "Planned outputs: unavailable" in summary
@@ -78,7 +88,13 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
             assert app.query_one("#report-tabs").active == "details"
             assert "Effective configuration" in _text(app, "#report-details")
             assert "Setting origins" in _text(app, "#report-details")
-            assert "Processing plan" in _text(app, "#report-details")
+            details_text = _text(app, "#report-details")
+            if mode in {"incomplete", "unconfirmed"}:
+                assert "Partial preflight facts" in details_text
+                if mode == "unconfirmed":
+                    assert "unconfirmed" in details_text and ".model_grid.nc" in details_text
+            else:
+                assert "Processing plan" in details_text
             details = app.query_one("#details-scroll")
             assert details.max_scroll_y > 0 and details.scroll_y == 0
             await pilot.press("end")
@@ -129,6 +145,12 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
                     status = _text(app, "#status")
                     assert expected in status
                     assert ("ETA ~00:08" in status) if index == 1 else ("ETA" not in status)
+                    if index == 1:
+                        clock[0] += 120
+                        async with asyncio.timeout(3):
+                            while "ETA" in _text(app, "#status"):
+                                await pilot.pause(0.05)
+                        assert "2 of 6 files checked" in _text(app, "#status")
                     clock[0] += 4
                     resume[index].set()
 
@@ -180,3 +202,73 @@ def test_interruption_does_not_return_a_pass(tmp_path):
         assert app.return_value == 130
 
     asyncio.run(exercise())
+
+
+def test_decoder_warning_is_visible_without_changing_report(tmp_path):
+    import h5netcdf
+
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    with h5netcdf.File(tmp_path / "data/first-run.nc", "r+") as fixture:
+        fixture.variables["instructional_scalar"].attrs.update(
+            _FillValue=-999.0, missing_value=-888.0)
+    collect = partial(_collect_report, path, command="validate", overrides={"cpus": 1})
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "warnings" in _text(app, "#status")
+            await pilot.press("2")
+            assert "multiple fill values" in _text(app, "#finding")
+            await pilot.press("q")
+        assert app.return_value == 0
+
+    assert collect().facts["warnings"] == []
+    asyncio.run(exercise())
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="tests the Linux driver's PTY restoration")
+def test_sigterm_restores_tty_during_validation(tmp_path):
+    path = _case(tmp_path)
+    master, terminal = pty.openpty()
+    ready_read, ready_write = os.pipe()
+    resume_read, resume_write = os.pipe()
+    original = termios.tcgetattr(terminal)
+    script = """
+import os, sys
+from frameit import cli
+load = cli._load_config
+def gated(*args, **kwargs):
+    os.write(int(sys.argv[2]), b'1')
+    os.read(int(sys.argv[3]), 1)
+    return load(*args, **kwargs)
+cli._load_config = gated
+cli.main(['validate', sys.argv[1], '--cpus', '1'])
+"""
+    try:
+        with subprocess.Popen(
+            [sys.executable, "-c", script, str(path), str(ready_write), str(resume_read)],
+            stdin=terminal, stdout=terminal, stderr=terminal,
+            pass_fds=(ready_write, resume_read), env={**os.environ, "TERM": "xterm-256color"},
+        ) as process:
+            try:
+                assert select.select([ready_read], [], [], 15)[0]
+                assert os.read(ready_read, 1) == b"1"
+                assert not termios.tcgetattr(terminal)[3] & (termios.ICANON | termios.ECHO)
+                process.terminate()
+                os.write(resume_write, b"1")
+                assert process.wait(timeout=10) == 143
+                assert termios.tcgetattr(terminal) == original
+                chunks = []
+                while select.select([master], [], [], 0)[0]:
+                    chunks.append(os.read(master, 65536))
+                assert b"\x1b[?1049l" in b"".join(chunks)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+    finally:
+        for fd in (master, terminal, ready_read, ready_write, resume_read, resume_write):
+            os.close(fd)
