@@ -29,7 +29,9 @@ def _text(app, selector):
     return str(app.query_one(selector).content)
 
 
-@pytest.mark.parametrize("mode", ["full", "schema", "incomplete", "unconfirmed", "unused-centre"])
+@pytest.mark.parametrize("mode", [
+    "full", "schema", "incomplete", "unconfirmed", "malformed", "unused-centre",
+])
 def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
     from frameit.validate_tui import ValidationApp
 
@@ -43,7 +45,8 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
         ]
     if mode == "unused-centre":
         del raw["region"]["width_km"]
-    path.write_text(yaml.safe_dump(raw))
+    text = "schema_version: 3\nsources: [\n" if mode == "malformed" else yaml.safe_dump(raw)
+    path.write_text(text)
     original = path.read_bytes()
     overrides = {"cpus": 1, "overwrite": False}
     schema_only = mode == "schema"
@@ -57,27 +60,35 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
             await pilot.pause()
             assert app.query_one("#report-tabs").active == "overview"
             summary = _text(app, "#summary")
+            assert all(label in summary for label in ("Inputs", "Selection", "Region", "Outputs"))
             if mode in {"full", "unused-centre"}:
-                assert "instructional_scalar" in summary and "2 selected times" in summary
-                assert "Planned outputs" in summary and ".model_grid.nc" in summary
+                assert "1 input file" in summary and "2 selected times" in summary
+                assert "1 model-grid output field" in summary and "1 planned" in summary
+                assert "instructional_scalar" not in summary and ".model_grid.nc" not in summary
                 assert "frameit run " in summary and "--cpus=1" in summary
                 assert "--no-overwrite" in summary
                 assert "does not assess scientific validity" in summary
                 if mode == "unused-centre":
                     assert "Full domain; configured centre unused" in summary
+                else:
+                    assert "Fixed centre" in summary and "km requested" in summary
             elif mode == "schema":
                 assert "input-aware validation" in summary and "frameit run " not in summary
-                assert "Planned outputs: unavailable" in summary
+                assert "not checked" in summary and ".model_grid.nc" not in summary
             else:
                 assert "First repair" in summary and "frameit run " not in summary
+                assert summary.index("First repair") < summary.index("Inputs")
                 if mode == "unconfirmed":
-                    assert "Unconfirmed output paths" in summary and ".model_grid.nc" in summary
+                    assert "Unconfirmed output paths" in summary and ".model_grid.nc" not in summary
+                elif mode == "malformed":
+                    assert "E1102" in summary
                 else:
                     assert "E1301" in summary
 
             overview = app.query_one("#overview-scroll")
-            assert overview.max_scroll_y > 0
             overview.scroll_end(animate=False)
+            await pilot.pause()
+            overview_y = overview.scroll_y
             await pilot.press("2")
             assert app.query_one("#report-tabs").active == "findings"
             if mode == "incomplete":
@@ -87,27 +98,65 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
                 assert "Blocked" in detail and "Prerequisites" in detail
             await pilot.press("3")
             assert app.query_one("#report-tabs").active == "details"
-            assert "Effective configuration" in _text(app, "#report-details")
-            assert "Setting origins" in _text(app, "#report-details")
-            details_text = _text(app, "#report-details")
-            if mode in {"incomplete", "unconfirmed"}:
-                assert "Partial preflight facts" in details_text
+            configuration, origins, plan = (
+                app.query_one(f"#detail-{key}") for key in ("configuration", "origins", "plan")
+            )
+            assert configuration.title == "Effective configuration"
+            assert origins.title == "Setting origins"
+            assert all(section.collapsed for section in (configuration, origins, plan))
+            plan_text = _text(app, "#detail-plan-text")
+            if mode in {"incomplete", "unconfirmed", "malformed"}:
+                assert "Partial preflight facts" in plan.title
                 if mode == "unconfirmed":
-                    assert "unconfirmed" in details_text and ".model_grid.nc" in details_text
+                    assert "unconfirmed" in plan.title and ".model_grid.nc" in plan_text
+                else:
+                    assert "unconfirmed" not in plan.title
             else:
-                assert "Processing plan" in details_text
+                assert plan.title == "Processing plan"
+                if mode in {"full", "unused-centre"}:
+                    assert "instructional_scalar" in plan_text and ".model_grid.nc" in plan_text
+
             details = app.query_one("#details-scroll")
-            assert details.max_scroll_y > 0 and details.scroll_y == 0
-            await pilot.press("end")
-            await pilot.pause(0.3)
-            assert details.scroll_y > 0
+            await pilot.press("tab", "enter")
+            assert not configuration.collapsed and origins.collapsed and plan.collapsed
+            config_text = _text(app, "#detail-configuration-text")
+            if mode == "malformed":
+                assert config_text == "Unavailable"
+            else:
+                assert "\n  atmosphere:\n" in config_text
+                assert details.max_scroll_y > 0
+                await pilot.press("end")
+                await pilot.wait_for_scheduled_animations()
+                assert details.scroll_y > 0
             await pilot.press("1")
-            assert overview.scroll_y > 0
+            assert overview.scroll_y == overview_y
             await pilot.press("q")
-        assert app.return_value == (1 if mode in {"incomplete", "unconfirmed"} else 0)
+        assert app.return_value == int(mode in {"incomplete", "unconfirmed", "malformed"})
 
     asyncio.run(exercise())
     assert path.read_bytes() == original and not (tmp_path / "output").exists()
+
+
+def test_console_keeps_source_calendars_separate(tmp_path):
+    from frameit.validate_tui import _overview
+
+    report = {"status": "ok", "errors": [], "data": {
+        "configuration": {"sources": {"air": {"model": "arome"}, "sea": {"model": "nemo"}},
+                          "region": {}},
+        "inputs": [{"source": "air", "path": "air.nc"}, {"source": "sea", "path": "sea.nc"}],
+        "plan": {"sources": {
+            "air": {"selected_times": [{"label": day, "calendar": "360_day"}
+                                       for day in ("2001-02-01", "2001-02-30")]},
+            "sea": {"selected_times": [{"label": day, "calendar": "noleap"}
+                                       for day in ("2001-03-01", "2001-03-15", "2001-03-30")]},
+        }},
+    }}
+
+    lines = _overview(report, tmp_path / "case.yaml", False, {}, has_warnings=False).splitlines()
+    air, sea = (next(line for line in lines if name in line and "selected times" in line)
+                for name in ("air", "sea"))
+    assert "2 selected times" in air and "2001-02-30 (360_day)" in air and "noleap" not in air
+    assert "3 selected times" in sea and "2001-03-30 (noleap)" in sea and "360_day" not in sea
 
 
 def test_live_scan_and_reload(tmp_path, monkeypatch):
@@ -138,11 +187,14 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
 
     async def exercise():
         app = validate_tui.ValidationApp(path, gated)
-        async with app.run_test() as pilot:
+        async with app.run_test(size=(52, 16)) as pilot:
             try:
                 for index, expected in enumerate(("0 of 6", "2 of 6", "0 of 1", "planned outputs")):
                     assert await asyncio.to_thread(ready[index].wait, 5)
                     await pilot.pause()
+                    assert not app.query_one("Footer").display
+                    assert "Ctrl+C" in _text(app, "#interrupt-hint")
+                    assert app.query_one("#interrupt-hint").display
                     status = _text(app, "#status")
                     assert expected in status
                     assert ("ETA ~00:08" in status) if index == 1 else ("ETA" not in status)
@@ -158,6 +210,11 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
                 await app.workers.wait_for_complete()
                 await pilot.pause()
                 assert "passed" in _text(app, "#status")
+                assert app.query_one("Footer").display
+                assert not app.query_one("#interrupt-hint").display
+                keys = app.query("FooterKey")
+                assert {key.key for key in keys} == {"1", "2", "3", "r", "q"}
+                assert all(0 < key.region.right <= app.size.width for key in keys)
 
                 path.write_text("schema_version: 3\nsources: [\n")
                 await pilot.press("r")
@@ -180,7 +237,8 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
     asyncio.run(exercise())
 
 
-def test_interruption_does_not_return_a_pass(tmp_path):
+@pytest.mark.parametrize("while_busy", [True, False])
+def test_interruption_returns_130(tmp_path, while_busy):
     from frameit.validate_tui import ValidationApp
 
     release, started = Event(), Event()
@@ -197,6 +255,11 @@ def test_interruption_does_not_return_a_pass(tmp_path):
         async with app.run_test() as pilot:
             try:
                 assert await asyncio.to_thread(started.wait, 5)
+                if not while_busy:
+                    release.set()
+                    await app.workers.wait_for_complete()
+                    await pilot.pause()
+                    assert app.result_code == 0
                 await pilot.press("ctrl+c")
             finally:
                 release.set()
@@ -238,11 +301,12 @@ def test_findings_distinguish_discovery_notes_from_run_only_work(tmp_path):
 
     def collect(*, progress):
         result = _collect_report(path, command="validate", overrides={"cpus": 1}, progress=progress)
-        result.deferred_checks.insert(0, {
+        note = {
             "path": "sources.atmosphere",
             "status": "unfinished-selection",
             "message": "t: native vertical group is ambiguous without an explicit selector.",
-        })
+        }
+        result.deferred_checks[0:0] = [note, note.copy()]
         return result
 
     async def exercise():
@@ -250,11 +314,14 @@ def test_findings_distinguish_discovery_notes_from_run_only_work(tmp_path):
         async with app.run_test() as pilot:
             await app.workers.wait_for_complete()
             await pilot.pause()
-            assert _text(app, "#status") == "Input-aware checks passed · 1 field discovery note"
+            assert _text(app, "#status") == "Input-aware checks passed · 2 field discovery notes"
             await pilot.press("2")
+            listing = app.query_one("#finding-list")
+            first, second = (str(listing.get_option_at_index(i).prompt) for i in range(2))
+            assert first != second and all(" · t" in title for title in (first, second))
             assert "Field discovery · sources.atmosphere" in _text(app, "#finding")
             assert "native vertical group is ambiguous" in _text(app, "#finding")
-            await pilot.press("down")
+            await pilot.press("down", "down")
             detail = _text(app, "#finding")
             assert "During run" in detail and "value/mask checks" in detail
             await pilot.press("q")

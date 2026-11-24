@@ -13,11 +13,11 @@ import yaml
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import VerticalScroll
+from textual.containers import Horizontal, VerticalScroll
 from textual.content import Content
 from textual.message import Message
 from textual.theme import Theme
-from textual.widgets import Footer, Header, OptionList, Static, TabbedContent, TabPane
+from textual.widgets import Collapsible, Footer, OptionList, Static, TabbedContent, TabPane
 from textual.worker import Worker, WorkerState, get_current_worker
 
 from frameit.core.reports import project_report
@@ -33,6 +33,11 @@ _CHECK_LABELS = {
     "unfinished-selection": "Field discovery",
     "execution-dependent": "During run",
     "schema-only": "Not checked in schema mode",
+}
+_DETAIL_LABELS = {
+    "configuration": "Effective configuration",
+    "origins": "Setting origins",
+    "plan": "Processing plan",
 }
 _TEAL, _AMBER, _RED, _SLATE = "#49C5BC", "#F5B55E", "#DA5656", "#A6B4C4"
 _THEME = Theme(
@@ -51,7 +56,9 @@ def _clock(seconds):
 
 
 def _time_label(time):
-    return f"{time['label']} ({time['calendar']})" if isinstance(time, dict) else str(time)
+    if isinstance(time, dict):
+        return f"{time['label']} ({time['calendar']})"
+    return str(time).removesuffix(".000000000")
 
 
 def _run_command(config, overrides):
@@ -66,54 +73,73 @@ def _run_command(config, overrides):
     return join([*args, str(config)])
 
 
+def _count(count, label):
+    return f"{count} {label}{'s' if count != 1 else ''}"
+
+
+def _region_label(region, sources):
+    if sources and all("region.center" in source.get("region", {}).get("unused_settings", ())
+                       for source in sources.values()):
+        return "Full domain; configured centre unused"
+    if tracker := region.get("tracker"):
+        mode = f"Tracker: {tracker['method']}"
+    elif "track" in region:
+        mode = "Prescribed track"
+    elif "center" in region:
+        mode = "Fixed centre"
+    else:
+        return "Full domain"
+    width = region.get("width_km")
+    return f"{mode} · {width['x']:g} × {width['y']:g} km requested" if width else mode
+
+
 def _overview(report, config, schema_only, overrides, *, has_warnings):
-    configuration, plan = (report["data"][key] for key in ("configuration", "plan"))
+    data = report["data"]
+    configuration, plan = data["configuration"], data["plan"]
     prepared = plan.get("sources", {})
     confirmed = report["status"] == "ok" and not schema_only
-    lines = [f"Configuration: {config}", ""]
-    if configuration is None:
-        lines.append("Configured request: unavailable")
-    else:
-        lines.append("Resolved request" if confirmed else "Configured request (not fully checked)")
-        for name, declared in configuration["sources"].items():
-            source = prepared.get(name, {})
-            model = source.get("model") or declared.get("model") or "model not established"
-            lines.append(f"  {name} ({model})")
-            fields = dict.fromkeys(
-                field for product in plan.get("products", ()) if product["source"] == name
-                for field in product["fields"])
-            if fields:
-                label = "Selected output fields" if confirmed else "Requested output fields"
-                lines.append(f"    {label}: {', '.join(fields)}")
-            elif declared.get("variables"):
-                lines.append("    Configured field selectors:")
-                lines.append(indent(_yaml(declared["variables"]), "      "))
-            if times := source.get("selected_times"):
-                first, last = _time_label(times[0]), _time_label(times[-1])
-                span = first if len(times) == 1 else f"{first} to {last}"
-                lines.append(f"    {len(times)} selected times: {span}")
-            else:
-                lines.append("    Selected times: unavailable")
-        region = {key: value for key, value in configuration["region"].items()
-                  if key != "sources_coupling_time_association"}
-        if prepared and all("region.center" in source.get("region", {}).get("unused_settings", ())
-                            for source in prepared.values()):
-            lines.append("  Full domain; configured centre unused")
-        else:
-            lines.append("  Region / tracking:\n" + indent(_yaml(region), "    ")
-                         if region else "  Region: full domain")
-
-    if paths := plan.get("planned_products"):
-        label = "Planned outputs (not written)" if confirmed else "Unconfirmed output paths"
-        lines.extend(("", label))
-        lines.extend(f"  {path}" for path in paths)
-    else:
-        lines.extend(("", "Planned outputs: unavailable"))
-
+    lines = []
     if report["errors"]:
         error = report["errors"][0]
-        lines.extend(("", f"First repair · [{error['code']}] {error['path']}",
-                      *error["repairs"]))
+        lines.extend((f"First repair · [{error['code']}] {error['path']}", *error["repairs"], ""))
+
+    unavailable = "Not confirmed" if configuration else "Unavailable"
+    inputs = "Not checked (schema only)" if schema_only else unavailable
+    selection, region, outputs = unavailable, unavailable, "Unavailable"
+    time_rows = []
+    if confirmed:
+        source_labels = []
+        for name, declared in configuration["sources"].items():
+            source = prepared.get(name, {})
+            model = source.get("model") or declared.get("model")
+            source_labels.append(f"{name} ({model})" if model else name)
+            if times := source.get("selected_times"):
+                first, last = _time_label(times[0]), _time_label(times[-1])
+                span = first if len(times) == 1 else f"{first} → {last}"
+                prefix = f"{name}: " if len(configuration["sources"]) > 1 else ""
+                time_rows.append(f"{prefix}{_count(len(times), 'selected time')} · {span}")
+        if data["inputs"]:
+            inputs = " · ".join([_count(len(data["inputs"]), "input file"), *source_labels])
+        fields = Counter()
+        for product in plan.get("products", ()):
+            if product["product"] != "track":
+                fields[product["product"].replace("_", "-")] += len(product["fields"])
+        selection = " · ".join(_count(n, f"{kind} output field") for kind, n in fields.items() if n)
+        region = _region_label(configuration["region"], prepared)
+        if paths := plan.get("planned_products"):
+            kinds = dict.fromkeys(product["product"].replace("_", " ")
+                                  for product in plan.get("products", ()))
+            outputs = f"{len(paths)} planned" + (f" · {', '.join(kinds)}" if kinds else "")
+    elif plan.get("planned_products"):
+        outputs = "Unconfirmed output paths in Details"
+
+    lines.append(f"{'Inputs':<11}{inputs}")
+    selection_rows = [row for row in [selection, *time_rows] if row] or ["Unavailable"]
+    lines.append(f"{'Selection':<11}{selection_rows[0]}")
+    lines.extend(f"{'':<11}{row}" for row in selection_rows[1:])
+    lines.extend((f"{'Region':<11}{region}", f"{'Outputs':<11}{outputs}"))
+    if report["errors"]:
+        lines.extend(("", "See Findings for the report and repairs."))
     elif schema_only:
         lines.extend(("", "Next: input-aware validation. Inputs were not checked."))
     else:
@@ -163,7 +189,7 @@ class _Progress(Message):
 
 
 class ValidationApp(App[int]):
-    TITLE = "FrameIt · Validate (experimental)"
+    TITLE = "FrameIt / validate"
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
         Binding("1", "view('overview')", "Overview"),
@@ -174,18 +200,39 @@ class ValidationApp(App[int]):
         Binding("ctrl+c", "interrupt", show=False, priority=True),
     ]
     CSS = f"""
-    Screen, Header, Footer {{ background: $background; color: $foreground; }}
-    #context, #status {{ height: auto; padding: 0 1; }}
-    #context {{ color: {_SLATE}; text-wrap: nowrap; text-overflow: ellipsis; }}
-    #status {{ text-style: bold; }}
+    Screen, Footer {{ background: $background; color: $foreground; }}
+    #identity-bar {{ height: 1; padding: 0 1; }}
+    #identity {{ width: auto; text-style: bold; }}
+    #context {{
+        width: 1fr;
+        padding-left: 1;
+        text-align: right;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+        color: {_SLATE};
+    }}
+    #status {{ height: auto; margin: 1 1 0 1; padding: 0 1; text-style: bold;
+        border-left: tall $accent; }}
     #status.progress {{ color: $accent; }}
-    #status.error {{ color: $error; }}
-    #status.warning {{ color: $warning; }}
+    #status.error {{ color: $error; border-left: tall $error; }}
+    #status.warning {{ color: $warning; border-left: tall $warning; }}
+    #interrupt-hint {{ display: none; dock: bottom; padding: 0 1; }}
+    Screen.checking #interrupt-hint {{ display: block; }}
+    Screen.checking #report-tabs, Screen.checking Footer {{ display: none; }}
     TabbedContent, TabPane, VerticalScroll {{ height: 1fr; }}
     TabPane {{ padding: 0 1; }}
+    #summary, #details-scroll {{ padding-top: 1; }}
     VerticalScroll:focus {{ scrollbar-color: $accent; }}
     #finding-list {{ height: 2fr; min-height: 3; }}
+    #finding-list > .option-list--option-highlighted,
+    #finding-list:focus > .option-list--option-highlighted,
+    #details-scroll CollapsibleTitle:focus {{
+        background: #102440;
+        color: $foreground;
+        text-style: bold underline;
+    }}
     #finding-scroll {{ height: 3fr; }}
+    #details-scroll Collapsible {{ border: none; padding: 0 0 1 0; }}
     """
 
     def __init__(self, config: Path, collect, *, schema_only=False, overrides=None):
@@ -201,21 +248,29 @@ class ValidationApp(App[int]):
 
     def compose(self) -> ComposeResult:
         mode = "Schema only" if self.schema_only else "Input-aware"
-        yield Header()
-        yield Static(f"{self.config.name} · {mode}", id="context", markup=False)
+        with Horizontal(id="identity-bar"):
+            yield Static(self.TITLE, id="identity", markup=False)
+            yield Static(f"{self.config.name} · {mode}", id="context", markup=False)
         yield Static(id="status", markup=False)
         with TabbedContent(id="report-tabs"):
             with TabPane("Overview", id="overview"):
                 with VerticalScroll(id="overview-scroll"):
                     yield Static(id="summary", markup=False)
             with TabPane("Findings", id="findings"):
-                yield OptionList(id="finding-list", markup=False)
+                yield OptionList(id="finding-list", markup=False, compact=True)
                 with VerticalScroll(id="finding-scroll"):
                     yield Static(id="finding", markup=False)
             with TabPane("Details", id="details"):
                 with VerticalScroll(id="details-scroll"):
-                    yield Static(id="report-details", markup=False)
-        yield Footer()
+                    for key, label in _DETAIL_LABELS.items():
+                        yield Collapsible(
+                            Static(id=f"detail-{key}-text", markup=False),
+                            title=label, id=f"detail-{key}",
+                            collapsed_symbol="›", expanded_symbol="⌄",
+                        )
+        yield Static(Content.assemble(("Ctrl+C", f"bold {_TEAL}"), " Interrupt"),
+                     id="interrupt-hint")
+        yield Footer(compact=True)
 
     def on_mount(self):
         self.begin_capture_print(self, stdout=False)
@@ -228,7 +283,7 @@ class ValidationApp(App[int]):
         self._eta_at = None
         self._runtime_warnings = []
         self._activity = _STAGES["configuration"]
-        self.query_one("#report-tabs").display = False
+        self.screen.add_class("checking")
         self.query_one("#status").set_classes("progress")
         self._tick()
         self.run_worker(self._validate, thread=True)
@@ -245,13 +300,7 @@ class ValidationApp(App[int]):
         progress("report", None, None, None)
         report = project_report(result)
         data = report["data"]
-        plan_label = ("Partial preflight facts (output paths are unconfirmed)"
-                      if report["errors"] else "Processing plan")
-        details = "\n\n".join(
-            f"{label}\n{_yaml(data[key]) if data[key] else 'Unavailable'}"
-            for label, key in (("Effective configuration", "configuration"),
-                               ("Setting origins", "origins"), (plan_label, "plan"))
-        )
+        details = {key: _yaml(data[key]) if data[key] else "Unavailable" for key in _DETAIL_LABELS}
         return report, details
 
     def on_print(self, event: events.Print):
@@ -314,17 +363,26 @@ class ValidationApp(App[int]):
         self.query_one("#summary", Static).update(
             _overview(report, self.config, self.schema_only, self.overrides,
                       has_warnings=bool(warnings)))
-        self.query_one("#report-details", Static).update(details)
+        plan_title = _DETAIL_LABELS["plan"]
+        if self.result_code:
+            plan_title = "Partial preflight facts"
+            if report["data"]["plan"].get("planned_products"):
+                plan_title += " · unconfirmed paths"
+        for key, text in details.items():
+            section = self.query_one(f"#detail-{key}", Collapsible)
+            section.title = plan_title if key == "plan" else _DETAIL_LABELS[key]
+            section.collapsed = True
+            self.query_one(f"#detail-{key}-text", Static).update(text)
         listing = self.query_one("#finding-list", OptionList)
         listing.clear_options().add_options(
-            Content.styled(_finding_title(level, item), {
+            Content.styled(f"{index:>2}  {_finding_title(level, item)}", {
                 "Error": f"bold {_RED}", "Warning": _AMBER,
             }.get(level, _SLATE))
-            for level, item in self.findings)
+            for index, (level, item) in enumerate(self.findings, start=1))
         listing.highlighted = 0 if self.findings else None
         first = _finding_detail(*self.findings[0]) if self.findings else "No findings."
         self.query_one("#finding", Static).update(first)
-        self.query_one("#report-tabs").display = True
+        self.screen.remove_class("checking")
         for scroll in self.query(VerticalScroll):
             scroll.scroll_home(animate=False)
         self.action_view("overview")
