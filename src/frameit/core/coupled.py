@@ -686,12 +686,22 @@ def prepare_sources(conf, *, check_output=True, execution_options=None, resource
     return plan, children, plans
 
 
+def _source_child(conf, name) -> SimulationConfig:
+    from frameit.core.configuration import _fa_runtime_options, _source_runtime
+    from frameit.io.loader import _apply_model_presets
+
+    runtime = _source_runtime(conf, name)
+    if not runtime["file_type"] and "profile" in conf.sources[name]:
+        runtime["file_type"] = "fa"
+        runtime["fa_options"] = _fa_runtime_options(conf.sources[name])
+    return SimulationConfig(**_apply_model_presets(runtime))
+
+
 def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, resources=None,
                         progress=None):
     """Independent metadata inventories; associations and payloads belong to later tasks."""
-    from frameit.core.configuration import _fa_runtime_options, _source_runtime, resolved_sources
+    from frameit.core.configuration import resolved_sources
     from frameit.core.preflight import _required_dependencies, inventory_source
-    from frameit.io.loader import _apply_model_presets
 
     request_plan = conf.simulation_parameter["request_plan"]
     request_plan["warnings"] = []
@@ -700,11 +710,7 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
     deferred = []
     for name in conf.sources:
         try:
-            runtime = _source_runtime(conf, name)
-            if not runtime["file_type"] and "profile" in conf.sources[name]:
-                runtime["file_type"] = "fa"
-                runtime["fa_options"] = _fa_runtime_options(conf.sources[name])
-            child = SimulationConfig(**_apply_model_presets(runtime))
+            child = _source_child(conf, name)
             children[name] = child
             source = inventory_source(child, name, resources=resources, progress=progress)
             physical = source["physical_type"]

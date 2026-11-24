@@ -886,13 +886,34 @@ def _incomplete_mnh_altitude(fields, grids, selected, records, candidates):
     return sorted(missing)
 
 
-def inventory_source(conf, name, *, resources=None, progress=None):
+def _source_origins(source, fmt, model, physical, profile, facts):
+    return {
+        "model": {"origin": "yaml" if ("model" in source or fmt == "fa"
+                                     and profile == "arome_history") else "input",
+                  "evidence": [item for fact in facts for item in fact[4]]},
+        "physical_type": {"origin": "input",
+                          "evidence": {"model": model, "format": fmt, "profile": profile}},
+        "format": {"origin": "yaml" if "format" in source else "input", "evidence": "file header"},
+    }
+
+
+def _provider_key(record):
+    return (record["field_id"], record["time"], record["cycle"], record["level"],
+            tuple(sorted(record.get("native_axes", {}).items())))
+
+
+def inventory_source(conf, name, *, resources=None, progress=None,
+                     sample_only: bool = False) -> dict:
     """Populate a v3 source's metadata handoff without binding or processing fields."""
     source = conf.sources[name]
     request = conf.source_requests[name]
     if progress is not None:
         progress("metadata", name, None, None)
     entries, excluded, overlaps, errors = _source_file_entries(source, name)
+    discovered = entries
+    if sample_only:
+        count = None if errors else len(entries)
+        entries = [] if errors else entries[:1]
     fields, grids, records, facts = {}, {}, [], []
     previous_grids = {} if len(entries) > 1 else None
     altitude_height_terms = set()
@@ -974,8 +995,19 @@ def inventory_source(conf, name, *, resources=None, progress=None):
                 errors.extend(diagnostics)
             if progress is not None:
                 progress("metadata", name, checked, len(entries))
+    result = conf.simulation_parameter["request_plan"]["sources"][name]
+    if sample_only:
+        sample = entries[0] if entries else None
+        for entry in discovered:
+            entry["status"] = ("sample_failed" if errors else "inspected") if entry is sample else (
+                "not_inspected")
+        result.update(sample={"path": sample["path"] if sample else None,
+                              "discovered": count, "inspected": int(bool(facts))},
+                      file_inventory=discovered, excluded_files=excluded,
+                      overlapping_patterns=overlaps, fields=fields, native_grids=grids,
+                      record_inventory=records)
     if errors:
-        raise PreflightError(errors)
+        raise PreflightError(errors, facts={"sources": {name: result}} if sample_only else None)
     profiles = {fact[:4] for fact in facts}
     if len(profiles) != 1:
         raise tag_error(ValueError(
@@ -983,6 +1015,20 @@ def inventory_source(conf, name, *, resources=None, progress=None):
             f"model/format/physical profiles: {profiles}"
         ), "E1203")
     fmt, model, physical, profile = next(iter(profiles))
+    if sample_only:
+        result.update(model=model, physical_type=physical, format=fmt, profile=profile,
+                      metadata_origins=_source_origins(
+                          source, fmt, model, physical, profile, facts))
+        seen, conflicts = set(), set()
+        for record in records:
+            key = _provider_key(record)
+            if key in seen:
+                conflicts.add(record["field_id"])
+            seen.add(key)
+        result["provider_conflicts"] = [{"field_id": identity} for identity in sorted(conflicts)]
+        _available_source_selectors(result, sample_only=True)
+        _sample_request_evidence(result, request, conf.yaml_config["products"], name)
+        return result
     if source.get("interpretation") and (fmt != "netcdf" or model != "mesonh"):
         raise ValueError(f"sources.{name}.interpretation requires Meso-NH NetCDF")
     request.pop("literal_product_fields", None)
@@ -1125,8 +1171,7 @@ def inventory_source(conf, name, *, resources=None, progress=None):
                           f"{sorted(set(times) - available)}; "
                           "dependencies cannot widen the inventory")
     for record in selected:
-        key = (record["field_id"], record["time"], record["cycle"], record["level"],
-               tuple(sorted(record.get("native_axes", {}).items())))
+        key = _provider_key(record)
         if key in providers:
             pending_status = None
             references = [ref for ref, ids in required_ids.items() if record["field_id"] in ids]
@@ -1189,7 +1234,6 @@ def inventory_source(conf, name, *, resources=None, progress=None):
             "irrelevant": "metadata proves no requested field or required dependency",
             "dependency_pending": "method dependency binding must decide relevance",
         }[entry["status"]]
-    result = conf.simulation_parameter["request_plan"]["sources"][name]
     result["requests"].pop("literal_product_fields", None)
     if "literal_product_fields" in request:
         result["requests"]["literal_product_fields"] = list(request["literal_product_fields"])
@@ -1212,14 +1256,7 @@ def inventory_source(conf, name, *, resources=None, progress=None):
             ("polar", "polar" in request["exports"]),
             ("tracker", tracker and physical == "atmosphere"))
         if pending]
-    result["metadata_origins"] = {
-        "model": {"origin": "yaml" if ("model" in source or fmt == "fa"
-                                     and profile == "arome_history") else "input",
-                  "evidence": [item for fact in facts for item in fact[4]]},
-        "physical_type": {"origin": "input",
-                          "evidence": {"model": model, "format": fmt, "profile": profile}},
-        "format": {"origin": "yaml" if "format" in source else "input", "evidence": "file header"},
-    }
+    result["metadata_origins"] = _source_origins(source, fmt, model, physical, profile, facts)
     if fmt != "fa":
         from frameit.processing.requests import sea_interpretation, source_field_metadata
 
@@ -1244,7 +1281,7 @@ def inventory_source(conf, name, *, resources=None, progress=None):
     return result
 
 
-def _available_source_selectors(source):
+def _available_source_selectors(source, *, sample_only=False):
     """Reuse the binder's axis evidence, without binding or checking scientific values."""
     from frameit.processing.requests import _field_axis, _vertical_axis, native_field_group
 
@@ -1254,16 +1291,22 @@ def _available_source_selectors(source):
         by_name.setdefault(field["name"], []).append((field_id, field))
     for index, record in enumerate(source["record_inventory"]):
         records_by_name.setdefault(record["name"], []).append((index, record))
+    conflicts = {item["field_id"] for item in source["provider_conflicts"]}
     for name, fields in by_name.items():
         if name is None:
             continue
-        evidenced = []
+        evidenced, sample_groups = [], {}
         for field_id, field in fields:
             records = [(i, r) for i, r in records_by_name.get(name, [])
                        if r["field_id"] == field_id]
             if source["record_inventory"] and not records:
                 continue
             try:
+                example = records[0][1] if records else None
+                if sample_only:
+                    sample_groups[field_id] = native_field_group(source, field, example)
+                    if sample_groups[field_id] is not None:
+                        field.setdefault("group", sample_groups[field_id])
                 if source["format"] == "fa":
                     if field.get("dimensions") is None:
                         raise ValueError(f"{name}: native shape is unresolved")
@@ -1272,18 +1315,21 @@ def _available_source_selectors(source):
                     axis = _field_axis(source, field, records[0][1], records_by_name)
                 else:
                     axis = _vertical_axis(field, source["native_grids"][field["grid_id"]])
-                group = native_field_group(source, field, records[0][1] if records else None)
+                group = (sample_groups[field_id] if sample_only
+                         else native_field_group(source, field, example))
             except ValueError as exc:
                 source["selection_pending"].append(str(exc))
                 continue
             evidenced.append((field_id, axis, group))
         for field_id, axis, group in evidenced:
-            conflict = any(c["field_id"] == field_id for c in source["provider_conflicts"])
+            conflict = field_id in conflicts
             if len(fields) > 1:
-                matching = [entry for entry in evidenced if entry[2] == group]
+                groups = list(sample_groups.values()) if sample_only else [e[2] for e in evidenced]
                 if (axis is None or not group or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", group)
-                        or len(matching) != 1 or conflict):
+                        or groups.count(group) != 1 or conflict
+                        or sample_only and len(groups) != len(fields)):
                     source["selection_pending"].append(
+                        f"{name}: no unique selector in this sample." if sample_only else
                         f"{name}: select unambiguous files/exclude/time.cycle; "
                         "the native vertical group does not identify one available field.")
                     continue
@@ -1291,15 +1337,96 @@ def _available_source_selectors(source):
                             "variables": {"3d": {group: {"names": [name]}}}}
             elif conflict:
                 source["selection_pending"].append(
+                    f"{name}: competing providers in this sample." if sample_only else
                     f"{name}: select unambiguous files/exclude/time.cycle "
                     "before selecting this field.")
                 continue
             else:
                 selector = {
                     "field": name, "variables": {"3d" if axis is not None else "2d": [name]}}
+            if sample_only:
+                selector["field_id"] = field_id
             source["available_selectors"].append(selector)
-    if not source["selected_times"]:
+    if sample_only and not source["record_inventory"]:
+        source["selection_pending"].append("No decoded sample clock was reported.")
+    if not sample_only and not source["selected_times"]:
         source["selection_pending"].append("A decoded sample clock is required before execution.")
+
+
+def _sample_time_notes(records, selection):
+    notes = []
+    comparable = len({r["calendar"] for r in records}) == 1
+
+    def check(subject, labels, start, end):
+        seen = None
+        if labels and comparable:
+            example = next(iter(labels))
+            try:
+                first = _selection_stamp(start, example) if start is not None else None
+                last = first if start == end else (
+                    _selection_stamp(end, example) if end is not None else None)
+                seen = any((first is None or first <= label) and (last is None or label <= last)
+                           for label in labels)
+            except (ValueError, TypeError, OverflowError):
+                pass
+        if not seen:
+            notes.append({"subject": subject, "status": "not_reported" if seen is None else
+                          "not_seen"})
+
+    times = {r["time"] for r in records}
+    for value in selection.get("values", ()):
+        check(f"Requested time {value}", times, value, value)
+    if selection.keys() & {"start", "end"}:
+        check("Requested time window", times, selection.get("start"), selection.get("end"))
+    if "cycle" in selection:
+        value = selection["cycle"]
+        check(f"Requested cycle {value}", {r["cycle"] for r in records if r["cycle"] is not None},
+              value, value)
+    return notes
+
+
+def _sample_request_evidence(source, request, products, name):
+    from frameit.core.configuration import field_selection
+
+    examples = {r["field_id"]: r for r in source["record_inventory"]}
+    by_name = {}
+    for index, (identity, field) in enumerate(source["fields"].items()):
+        # Clockless fields still have an identity and grid, but not a sample record.
+        example = examples.get(identity, {"field_id": identity, "grid_id": field["grid_id"]})
+        by_name.setdefault(field["name"], []).append((index, example))
+    declared = set().union(*request["fields"].values())
+    explicit = {ref for product in products.values() if isinstance(product, dict)
+                for ref in product.get("fields", {}).get(name, ())}
+    requested, unresolved = set(), set()
+    missing, ambiguous = [], []
+    for ref in sorted((declared | explicit) - request["derived"].keys()):
+        include_literal = ref not in declared
+        try:
+            matches = field_candidates(source, request, ref, by_name,
+                                       include_literal=include_literal)
+        except ValueError:
+            native_name, _, _ = field_selection(request, ref)
+            matches = [*by_name.get(native_name, ()),
+                       *(by_name.get(ref, ()) if include_literal else ())]
+            ambiguous.append(ref)
+            unresolved.update(r["field_id"] for _, r in matches)
+            continue
+        identities = {r["field_id"] for _, r in matches}
+        if not identities:
+            missing.append(ref)
+        elif len(identities) == 1:
+            requested.update(identities)
+        else:
+            ambiguous.append(ref)
+            unresolved.update(identities)
+    source.update(
+        request_status={identity: "requested" if identity in requested else
+                        "unresolved" if identity in unresolved else "not_requested"
+                        for identity in source["fields"]},
+        missing_references=missing, unresolved_references=ambiguous,
+        time_notes=_sample_time_notes(source["record_inventory"], source["declaration"].get(
+            "time", {})),
+    )
 
 
 def _installed_dependency(path, module, repair, *, code):
@@ -2009,8 +2136,33 @@ def preflight_result(conf, facts, *, command="validate"):
     return result
 
 
+def _collect_source_samples(conf, *, resources, progress):
+    from frameit.core.coupled import _source_child
+
+    sources = {}
+    result = PreflightResult("inspect", conf=conf, facts={"sources": sources})
+    for name in conf.sources:
+        try:
+            sources[name] = inventory_source(
+                _source_child(conf, name), name, resources=resources, progress=progress,
+                sample_only=True)
+        except (OSError, ValueError, ImportError) as exc:
+            if isinstance(exc, PreflightError):
+                sources.update(exc.facts.get("sources", {}))
+            result.errors.extend(exception_diagnostics(
+                exc, path=f"sources.{name}", expected="readable sample metadata",
+                observed={"cause": str(exc)},
+                repairs=[f"Check the file or reader declared for sources.{name}: {exc}"]))
+        for message in sources.get(name, {}).get("selection_pending", ()):
+            result.deferred_checks.append({
+                "path": f"sources.{name}", "status": "unfinished-selection", "message": message,
+            })
+    return result
+
+
 def collect_preflight(request, *, command="validate", schema_only=False, check_output=True,
-                      execution_options=None, resources=None, progress=None):
+                      execution_options=None, resources=None, progress=None,
+                      sample_only: bool = False) -> PreflightResult:
     """Collect preflight facts once, optionally observing stage and file progress."""
     from frameit.core.configuration import resolved_configuration, resolved_sources
     from frameit.core.settings_class import SimulationConfig
@@ -2029,6 +2181,8 @@ def collect_preflight(request, *, command="validate", schema_only=False, check_o
                 "message": "Offline schema-only: inputs, dependencies "
                            "and execution were not checked.",
             }]
+        elif command == "inspect" and sample_only:
+            return _collect_source_samples(conf, resources=resources, progress=progress)
         else:
             if command == "inspect":
                 from frameit.core.coupled import prepare_sources
