@@ -280,6 +280,27 @@ def test_inspect_defaults_to_frameit_yaml(tmp_path, monkeypatch, capsys):
         capsys, "inspect", "frameit.yaml", "--json")
 
 
+def test_inspect_falls_back_without_textual_or_rich(tmp_path, monkeypatch, capsys):
+    create_first_run_input(tmp_path / "input.nc")
+    path, _ = case(tmp_path)
+    expected = invoke(capsys, "inspect", path, "--cli")[:2]
+    assert expected[0] == 0
+    monkeypatch.setenv("TERM", "xterm-256color")
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        monkeypatch.setattr(stream, "isatty", lambda: True)
+    monkeypatch.delitem(sys.modules, "frameit.inspect_tui", raising=False)
+    original = builtins.__import__
+
+    def load(name, *args, **kwargs):
+        package = name.partition(".")[0]
+        if package in {"textual", "rich"}:
+            raise ModuleNotFoundError(f"No module named {package!r}", name=package)
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", load)
+    assert invoke(capsys, "inspect", path)[:2] == expected
+
+
 @pytest.mark.parametrize("command", [
     ("inspect",), ("validate",), ("config", "show", "--effective")])
 @pytest.mark.parametrize("contents,expected", [

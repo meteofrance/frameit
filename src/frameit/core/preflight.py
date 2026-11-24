@@ -25,6 +25,7 @@ from frameit.core.reports import (
 )
 from frameit.io.loader import (
     DatasetResources,
+    _discover_source_files,
     discover_input_files,
     input_path_excluded,
     inventory_source_files,
@@ -510,17 +511,25 @@ def _netcdf_inventory(path, source, resources, *, previous_grids=None):
              "dataset_attributes": dataset_attributes,
              "altitude_height_terms": altitude_height_terms,
             "profile": None, "evidence": evidence, "fields": fields,
-            "native_grids": grids, "records": records}
+             "native_grids": grids, "records": records, "samples": samples}
 
 
-def _grib_source_inventory(path, source):
+def _grib_source_inventory(path, source, *, sample_only=False):
     """Scan each message once; message offsets are the future payload read boundary."""
-    from datetime import datetime
-
     try:
         import eccodes as ec
     except (ImportError, RuntimeError, OSError) as exc:
-        raise tag_error(exc, "E1002")
+        raise tag_error(exc, "E1002") from None
+    try:
+        return _read_grib_source(path, source, ec)
+    except ec.CodesInternalError as exc:
+        if not sample_only:
+            raise
+        raise OSError(f"{path}: cannot read GRIB metadata: {exc}") from exc
+
+
+def _read_grib_source(path, source, ec):
+    from datetime import datetime
 
     from frameit.io.grib_utils import GRIB_PRESSURE_UNITS
 
@@ -811,7 +820,7 @@ def _select_source_records(records, selection, context):
     return [r for r in records if r["time"] in selected_times], selected
 
 
-def _source_file_entries(source, name):
+def _source_file_entries(source, name, *, sample_only=False):
     """A failed pattern must not hide independent metadata errors in other patterns."""
     patterns = source["files"] if isinstance(source["files"], list) else [source["files"]]
 
@@ -822,6 +831,9 @@ def _source_file_entries(source, name):
             [f"Correct sources.{name}.files/exclude so required input files exist and match."],
             contexts=[{"source": name, "patterns": patterns}], code=exception_code(exc))
 
+    if sample_only:
+        entries, excluded, overlaps, error = _discover_source_files(source)
+        return entries, excluded, overlaps, [failure(error, patterns)] if error is not None else []
     try:
         entries, excluded, overlaps = inventory_source_files(source)
         return entries, excluded, overlaps, []
@@ -909,7 +921,8 @@ def inventory_source(conf, name, *, resources=None, progress=None,
     request = conf.source_requests[name]
     if progress is not None:
         progress("metadata", name, None, None)
-    entries, excluded, overlaps, errors = _source_file_entries(source, name)
+    entries, excluded, overlaps, errors = _source_file_entries(
+        source, name, sample_only=sample_only)
     discovered = entries
     if sample_only:
         count = None if errors else len(entries)
@@ -948,7 +961,7 @@ def inventory_source(conf, name, *, resources=None, progress=None,
                 if fmt == "netcdf":
                     info = _netcdf_inventory(path, source, owned, previous_grids=previous_grids)
                 elif fmt == "grib":
-                    info = _grib_source_inventory(path, source)
+                    info = _grib_source_inventory(path, source, sample_only=sample_only)
                 else:
                     info = _fa_source_inventory(path, source, conf)
                 facts.append((fmt, info["model"], info["physical_type"],
@@ -1019,6 +1032,8 @@ def inventory_source(conf, name, *, resources=None, progress=None,
         result.update(model=model, physical_type=physical, format=fmt, profile=profile,
                       metadata_origins=_source_origins(
                           source, fmt, model, physical, profile, facts))
+        if fmt == "netcdf":
+            result["sample_clock"] = info["samples"]
         seen, conflicts = set(), set()
         for record in records:
             key = _provider_key(record)
@@ -1347,7 +1362,7 @@ def _available_source_selectors(source, *, sample_only=False):
             if sample_only:
                 selector["field_id"] = field_id
             source["available_selectors"].append(selector)
-    if sample_only and not source["record_inventory"]:
+    if sample_only and not source.get("sample_clock", source["record_inventory"]):
         source["selection_pending"].append("No decoded sample clock was reported.")
     if not sample_only and not source["selected_times"]:
         source["selection_pending"].append("A decoded sample clock is required before execution.")
@@ -1383,6 +1398,25 @@ def _sample_time_notes(records, selection):
         check(f"Requested cycle {value}", {r["cycle"] for r in records if r["cycle"] is not None},
               value, value)
     return notes
+
+
+def _sample_selectors_in_context(source, request, by_name):
+    available = []
+    for selector in source["available_selectors"]:
+        ref = selector["field"]
+        groups = selector["variables"].get("3d")
+        context = ({**request, "groups": {**request.get("groups", {}), **groups}}
+                   if isinstance(groups, dict) else request)
+        try:
+            matches = {r["field_id"] for _, r in field_candidates(source, context, ref, by_name)}
+        except ValueError:
+            matches = set()
+        if matches == {selector["field_id"]}:
+            available.append(selector)
+        else:
+            source["selection_pending"].append(
+                f"{ref}: YAML selector does not identify this field under the declared groups.")
+    return available
 
 
 def _sample_request_evidence(source, request, products, name):
@@ -1424,8 +1458,9 @@ def _sample_request_evidence(source, request, products, name):
                         "unresolved" if identity in unresolved else "not_requested"
                         for identity in source["fields"]},
         missing_references=missing, unresolved_references=ambiguous,
-        time_notes=_sample_time_notes(source["record_inventory"], source["declaration"].get(
-            "time", {})),
+        time_notes=_sample_time_notes(source.get("sample_clock", source["record_inventory"]),
+                                      source["declaration"].get("time", {})),
+        available_selectors=_sample_selectors_in_context(source, request, by_name),
     )
 
 

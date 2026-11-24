@@ -204,6 +204,41 @@ def test_explorer_keeps_ambiguous_rows_without_copy(tmp_path):
     asyncio.run(exercise())
 
 
+def test_explorer_copies_current_row_before_highlight_event_is_handled(tmp_path):
+    v3_scene(names=("a", "z"), hours=(0,)).to_netcdf(tmp_path / "sample.nc", engine="h5netcdf")
+    path = _case(tmp_path, {"weather": {"files": "sample.nc"}})
+
+    async def exercise():
+        app = _app(path)
+        async with app.run_test() as pilot:
+            await _ready(app, pilot)
+            await pilot.press("2", "c")
+            assert yaml.safe_load(app.clipboard) == {"2d": ["a"]}
+            app.query_one("#fields").action_cursor_down()
+            app.action_copy_selector()
+            assert yaml.safe_load(app.clipboard) == {"2d": ["z"]}
+
+    asyncio.run(exercise())
+
+
+def test_explorer_reports_a_decoded_clock_without_field_rows(tmp_path):
+    v3_scene(hours=(0, 1)).drop_vars("temperature").to_netcdf(
+        tmp_path / "coordinates.nc", engine="h5netcdf")
+    path = _case(tmp_path, {"weather": {"files": "coordinates.nc"}})
+
+    async def exercise():
+        app = _app(path)
+        async with app.run_test(size=(52, 16)) as pilot:
+            await _ready(app, pilot)
+            assert app.query_one("#fields").row_count == 0
+            await pilot.press("4", "right", "right")
+            times = _text(app, "#source-time")
+            assert "Timestamps (2)" in times and "2026-01-01T01:00:00" in times
+            assert "No decoded sample clock" not in _text(app, "#finding")
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.parametrize("malformed", [False, True])
 def test_explorer_diagnostics_leave_readable_sources(tmp_path, malformed):
     (tmp_path / "broken.nc").touch()

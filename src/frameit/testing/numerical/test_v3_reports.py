@@ -381,6 +381,41 @@ def test_sample_inspection_without_clock(tmp_path):
     assert [note["status"] for note in source["time_notes"]] == ["not_reported"]
 
 
+def test_sample_inspection_omits_selector_redirected_by_a_declared_group(tmp_path):
+    ds = v3_scene(names=("level.u",), hours=(0,))
+    ds["u"] = (("time", "level", "y", "x"), np.ones((1, 2, 2, 3)), {"units": "m s-1"})
+    ds = ds.assign_coords(level=("level", [200., 400.], {"axis": "Z", "units": "m"}))
+    ds.to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
+    raw = request(tmp_path, {"weather": {
+        "files": str(tmp_path / "input.nc"), "variables": {"3d": {"level": {"names": ["u"]}}},
+    }})
+    report = project(collect(raw, command="inspect", sample_only=True))
+    assert not report["errors"]
+    source = report["data"]["plan"]["sources"]["weather"]
+    assert {field["name"] for field in source["fields"].values()} == {"level.u", "u"}
+    assert [entry["field"] for entry in source["available_selectors"]] == ["u"]
+    assert any("level.u" in item["message"] and "group" in item["message"]
+               for item in report["deferred_checks"])
+
+
+def test_sample_inspection_keeps_exclusions_after_discovery_error(tmp_path, monkeypatch):
+    for file in ("excluded.nc", "eligible.nc"):
+        (tmp_path / file).touch()
+    raw = request(tmp_path, {"weather": {
+        "files": [str(tmp_path / f) for f in ("excluded.nc", "eligible.nc", "absent.nc")],
+        "exclude": [str(tmp_path / "excluded.nc")],
+    }})
+    opened = _observe_sample_opens(monkeypatch)
+    report = project(collect(raw, command="inspect", sample_only=True))
+    assert not opened
+    error, = report["errors"]
+    assert error["code"] == "E1201" and "absent.nc" in error["message"]
+    source = report["data"]["plan"]["sources"]["weather"]
+    assert source["excluded_files"] == [str(tmp_path / "excluded.nc")]
+    entry, = source["file_inventory"]
+    assert entry["path"] == str(tmp_path / "eligible.nc") and entry["status"] == "not_inspected"
+
+
 def test_ambiguous_inspection_never_offers_unsupported_qualified_selectors(tmp_path):
     v3_scene().to_netcdf(tmp_path / "one.nc", engine="h5netcdf")
     v3_scene().assign_coords(x=[4., 5., 6.]).to_netcdf(

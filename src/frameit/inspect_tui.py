@@ -3,7 +3,6 @@
 from pathlib import Path
 from textwrap import indent
 
-from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -36,7 +35,7 @@ def _scope(source):
 
 def _time_details(source):
     clocks = {}
-    for record in source.get("record_inventory", ()):
+    for record in source.get("sample_clock", source.get("record_inventory", ())):
         calendar = record.get("calendar") or _UNKNOWN
         key = (record.get("clock") or _UNKNOWN, calendar,
                record.get("reference_calendar") or calendar)
@@ -272,6 +271,9 @@ class InspectionApp(ReportApp):
             self._select_source(event.option.id)
 
     def _populate_fields(self, previous):
+        # Load Rich only after Textual so a missing UI stack falls back to the text report.
+        from rich.text import Text
+
         source = self._sources.get(self._source, {})
         search = self.query_one("#field-search", Input).value.strip().casefold()
         status = self._filter
@@ -408,6 +410,15 @@ class InspectionApp(ReportApp):
             self.action_pane("variables-pane")
 
     def action_copy_selector(self):
-        if self.result_code is not None and self._selector:
+        if self.result_code is None:
+            return
+        source = self.query_one("#sources", OptionList).highlighted_option
+        row = self.query_one("#fields", DataTable).cursor_row
+        if source is None or source.id != self._source or not 0 <= row < len(self._visible):
+            return
+        # The table cursor can move before its queued RowHighlighted message is handled.
+        if self._visible[row] != self._field:
+            self._show_field(self._visible[row])
+        if self._selector:
             self.copy_to_clipboard(self._selector)
             self.query_one("#copy-hint", Static).update("Copy request sent to terminal")

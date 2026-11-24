@@ -290,6 +290,28 @@ def test_sample_inspection_selectors_keep_native_identity(tmp_path, monkeypatch)
     assert {r["field_id"] for _, r in matched} == {selector["field_id"]}
 
 
+def test_sample_inspection_reports_truncated_grib_without_hiding_other_sources(tmp_path):
+    from frameit.core.preflight import collect_preflight
+
+    ec = pytest.importorskip("eccodes")
+    valid = tmp_path / "good.grib"
+    broken = tmp_path / "truncated.grib"
+    _write_grib_vectors(ec, valid, [("isobaricInhPa", 850, 1, 0, 131)])
+    broken.write_bytes(valid.read_bytes()[:-5])
+    raw = {"schema_version": 3, "sources": {
+        "damaged": {"model": "arome", "files": [str(broken), str(valid)]},
+        "other": {"model": "arome", "files": str(valid)},
+    }, "resources": {"cpus": 1}}
+    result = collect_preflight(raw, command="inspect", sample_only=True)
+    error, = result.errors
+    assert error.code == "E1202"
+    assert error.contexts[-1]["source"] == "damaged" and error.contexts[-1]["file"] == str(broken)
+    sources = result.facts["sources"]
+    assert [entry["status"] for entry in sources["damaged"]["file_inventory"]] == [
+        "sample_failed", "not_inspected"]
+    assert sources["other"]["fields"]
+
+
 def v3_scene(*, names=("temperature",), hours=(0, 1, 2, 3), model="Meso-NH"):
     """Compact instructional metadata, not producer/scientific qualification."""
     times = np.datetime64("2026-01-01", "ns") + np.array(hours, dtype="timedelta64[h]")
