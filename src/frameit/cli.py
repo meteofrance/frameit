@@ -38,6 +38,7 @@ _sanitize_sys_path_user_site()
 import argparse  # noqa: E402
 import logging  # noqa: E402
 import platform  # noqa: E402
+from functools import partial  # noqa: E402
 from typing import Any  # noqa: E402
 
 from frameit.utils.diagnostics import (  # noqa: E402
@@ -170,6 +171,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--schema-only", action="store_true", help="Validate YAML without opening datasets"
     )
     pv.add_argument("--json", action="store_true", help="Emit one structured validation report")
+    pv.add_argument("--cli", action="store_true", help="Use the text report instead of the TUI")
     _operational_arguments(pv)
 
     from frameit.core.configuration import TEMPLATES
@@ -356,10 +358,22 @@ def _collect_report(path, *, command, schema_only=False, overrides=None, progres
         return _report_failure(exc, command)
 
 
-def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False, overrides=None) -> int:
-    return _print_preflight(_collect_report(
-        cfg_path, command="validate", schema_only=schema_only, overrides=overrides),
-        json_output=json_output)
+def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False, cli_output=False,
+                  overrides=None) -> int:
+    collect = partial(_collect_report, cfg_path, command="validate", schema_only=schema_only,
+                      overrides=overrides)
+    if (not (cli_output or json_output) and os.environ.get("TERM") not in (None, "", "dumb")
+            and all(stream.isatty() for stream in (sys.stdin, sys.stdout, sys.stderr))):
+        try:
+            from frameit.validate_tui import ValidationApp
+        except ModuleNotFoundError as exc:
+            if exc.name != "textual":
+                raise
+        else:
+            code = ValidationApp(
+                cfg_path, collect, schema_only=schema_only, overrides=overrides).run()
+            return 1 if code is None else code
+    return _print_preflight(collect(), json_output=json_output)
 
 
 def _print_preflight(result, *, json_output=False):
@@ -592,7 +606,7 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "validate":
             code = _cmd_validate(
                 args.config, schema_only=args.schema_only, json_output=args.json,
-                overrides=_operational_overrides(args))
+                cli_output=args.cli, overrides=_operational_overrides(args))
         elif args.command == "init":
             from frameit.core.configuration import write_template
 

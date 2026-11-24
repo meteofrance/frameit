@@ -1,5 +1,6 @@
 """Public v3 commands on small instructional inputs; no producer qualification."""
 
+import builtins
 import errno
 import hashlib
 import json
@@ -7,6 +8,7 @@ import subprocess
 import sys
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -134,6 +136,64 @@ def test_schema_only_is_offline_with_operational_overrides(tmp_path, monkeypatch
     report = envelope(out, "validate")
     assert report["data"]["configuration"]["resources"]["cpus"] == 2
     assert "dependencies" in report["deferred_checks"][0]["message"]
+
+
+@pytest.mark.parametrize("mode,flag,term,redirected,textual", [
+    ("app", (), "xterm-256color", False, True),
+    ("text", ("--cli",), "xterm-256color", False, True),
+    ("json", ("--json",), "xterm-256color", False, True),
+    ("json", ("--cli", "--json"), "xterm-256color", False, True),
+    ("text", (), "xterm-256color", True, True),
+    ("text", (), "dumb", False, True),
+    ("text", (), None, False, True),
+    ("fallback", (), "xterm-256color", False, False),
+])
+@pytest.mark.parametrize("valid", [True, False])
+def test_validate_selects_output_mode(
+        tmp_path, monkeypatch, capsys, mode, flag, term, redirected, textual, valid):
+    path, _ = case(tmp_path)
+    if not valid:
+        path.write_text("sources: [\n")
+    args = ("validate", path, "--schema-only", "--cpus", 2)
+    prior = invoke(capsys, *args, *(("--json",) if mode == "json" else ()))
+    assert prior[0] == (0 if valid else 1)
+    imports, app_calls = [], []
+
+    def app(config, collect, *, schema_only, overrides):
+        app_calls.append((config, schema_only, overrides))
+        return SimpleNamespace(run=lambda: int(bool(collect().errors)))
+
+    original_import = builtins.__import__
+
+    def load(name, *args, **kwargs):
+        if name == "frameit.validate_tui":
+            imports.append(name)
+            if not textual:
+                raise ModuleNotFoundError("No module named 'textual'", name="textual")
+            return SimpleNamespace(ValidationApp=app)
+        return original_import(name, *args, **kwargs)
+
+    if term is None:
+        monkeypatch.delenv("TERM", raising=False)
+    else:
+        monkeypatch.setenv("TERM", term)
+    for stream, tty in ((sys.stdin, True), (sys.stdout, True), (sys.stderr, not redirected)):
+        monkeypatch.setattr(stream, "isatty", lambda tty=tty: tty)
+    monkeypatch.setattr(builtins, "__import__", load)
+
+    outcome = invoke(capsys, *args, *flag)
+    assert imports == (["frameit.validate_tui"] if mode in {"app", "fallback"} else [])
+    if mode == "app":
+        assert app_calls == [(path, True, {"cpus": 2})]
+        assert outcome[:2] == (prior[0], "")
+    else:
+        assert not app_calls
+        assert outcome == prior
+
+
+def test_inspect_keeps_its_existing_options(capsys):
+    code, out, err = invoke(capsys, "inspect", "request.yaml", "--cli")
+    assert code == 2 and not out and "unrecognized arguments: --cli" in err
 
 
 @pytest.mark.parametrize("command", [

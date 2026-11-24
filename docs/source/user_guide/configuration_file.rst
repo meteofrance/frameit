@@ -62,6 +62,28 @@ Find a code in :doc:`../troubleshooting/codes`.
 Blocked checks are not passes. Successful validation does not establish
 scientific validity. See :doc:`../troubleshooting`.
 
+Experimental terminal view
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To try the optional interface, install the ``tui`` extra from the checkout in
+``frameit_env``:
+
+.. code-block:: bash
+
+   python -m pip install -e '.[tui]'
+   frameit validate frameit.yaml
+
+In an interactive terminal, validation opens **Overview**, **Findings**, and
+**Details**. Press ``1``, ``2``, or ``3`` to switch tabs. After saving edits in
+another terminal, press ``r`` to recheck the same file, or ``q`` to quit and
+rerun from the shell. The interface does not edit the file or run processing.
+The ETA estimates the current source's metadata scan, not the time until
+validation finishes.
+
+Use ``frameit validate frameit.yaml --cli`` for the text report even in a
+terminal. ``--json`` still writes one JSON report. Without Textual, or when
+input or output is redirected, FrameIt does not open the interface.
+
 Authored and effective views
 ----------------------------
 

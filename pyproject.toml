@@ -36,6 +36,7 @@ frameit = "frameit.cli:main"
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
+tui = ["textual"]
 zarr = ["zarr>=3.4.2,<4", "xarray>=2026.9.0"]
 grib = ["cfgrib", "eccodes"]
 polar = ["xesmf", "shapely>=2"]
