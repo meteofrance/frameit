@@ -187,6 +187,34 @@ def test_details_render_long_nested_yaml_lines_without_wrapping(tmp_path):
     asyncio.run(exercise())
 
 
+def test_details_thumb_is_draggable_with_only_one_clipped_column(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    raw = yaml.safe_load(path.read_text())
+    raw["run"]["description"] = "a" * 116 + "END"
+    path.write_text(yaml.safe_dump(raw))
+    collect = partial(_collect_report, path, command="validate", schema_only=True)
+
+    async def exercise():
+        app = ValidationApp(path, collect, schema_only=True)
+        async with app.run_test(size=(104, 92)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("3", "tab", "enter")
+            details = app.query_one("#details-scroll")
+            assert details.max_scroll_x > 1
+            await pilot.resize_terminal(app.size.width + details.max_scroll_x - 1, app.size.height)
+            assert (details.max_scroll_x, details.max_scroll_y) == (1, 0)
+            x, y = details.horizontal_scrollbar.region.offset
+            await pilot.mouse_down(offset=(x, y))
+            await pilot.hover(offset=(x + 2, y))
+            await pilot.wait_for_scheduled_animations()
+            await pilot.mouse_up(offset=(x + 2, y))
+            assert details.scroll_x == 1
+
+    asyncio.run(exercise())
+
+
 def test_console_keeps_source_calendars_separate(tmp_path):
     from frameit.validate_tui import _overview
 

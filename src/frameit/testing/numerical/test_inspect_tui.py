@@ -67,6 +67,15 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
             viewport = table.scrollable_size
             assert "1 of 2 files inspected" in _text(app, "#source-scope")
             assert app.result_code == 0
+            await pilot.resize_terminal(app.size.width + table.max_scroll_x - 1, app.size.height)
+            assert (table.max_scroll_x, table.max_scroll_y) == (1, 0)
+            x, y = table.horizontal_scrollbar.region.offset
+            await pilot.mouse_down(offset=(x, y))
+            await pilot.hover(offset=(x + 2, y))
+            await pilot.wait_for_scheduled_animations()
+            await pilot.mouse_up(offset=(x + 2, y))
+            assert table.scroll_x == 1
+            await pilot.resize_terminal(120, 30)
             await pilot.press("1", "down")
             assert app.focused.id == "sources"
             assert "other" in _text(app, "#source-scope")
@@ -124,6 +133,25 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
 
     asyncio.run(exercise())
     assert not (tmp_path / "not-created").exists()
+
+
+def test_explorer_shows_a_fitting_field_row_in_a_nine_row_terminal(tmp_path):
+    data = v3_scene(names=("a",), hours=(0,)).isel(time=0, drop=True)
+    data["a"].attrs["units"] = "K"
+    data.to_netcdf(tmp_path / "sample.nc", engine="h5netcdf")
+    path = _case(tmp_path, {"air": {"files": "sample.nc", "variables": {"2d": ["a"]}}})
+
+    async def exercise():
+        app = _app(path)
+        async with app.run_test(size=(52, 9)) as pilot:
+            await _ready(app, pilot)
+            await pilot.press("2")
+            table = app.query_one("#fields")
+            assert table.row_count == 1 and table.max_scroll_x == 0
+            assert table.scrollable_size.height > table.header_height
+            assert app.query_one("#field-controls").display
+
+    asyncio.run(exercise())
 
 
 def test_explorer_scrolls_source_picker_without_a_bar(tmp_path):

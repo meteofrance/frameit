@@ -129,8 +129,8 @@ class ReportApp(App[int]):
         scrollbar-background-active: transparent;
         scrollbar-corner-color: $background; /* Textual renders the corner opaque. */
     }}
-    /* Textual's stable gutter only reserves vertical space. */
-    DataTable, #details-scroll {{ overflow-x: scroll; }}
+    /* Set both axes so Textual counts the vertical gutter when sizing the horizontal thumb. */
+    DataTable, #details-scroll {{ overflow: scroll; }}
     #sources {{ scrollbar-size: 0 0; }}
     #finding-list {{ height: 2fr; min-height: 3; }}
     #finding-list:focus > .option-list--option-highlighted {{

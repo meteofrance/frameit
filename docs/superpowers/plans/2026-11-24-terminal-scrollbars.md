@@ -62,3 +62,11 @@
 - [x] Review `git diff --check`, record the documentation impact (appearance
   only, no change to commands or guidance), stage only the relevant files, and
   commit locally. Keep captures available; do not push.
+
+## Review follow-up
+
+Textual needs `overflow: scroll` on both the Variables table and Validate
+Details to size the horizontal thumb against the vertical gutter. Regressions
+check that the thumb can be dragged with exactly one clipped column and no
+vertical overflow. Below ten rows, Inspect omits the Variables heading to keep
+the field row visible without losing its controls or moving the gutter.

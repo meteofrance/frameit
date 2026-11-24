@@ -129,7 +129,7 @@ class InspectionApp(ReportApp):
     STAGES = {**ReportApp.STAGES, "metadata": "Reading sample metadata",
               "report": "Preparing sample report"}
     HORIZONTAL_BREAKPOINTS = [(0, "-narrow"), (120, "-wide")]
-    VERTICAL_BREAKPOINTS = [(0, "-short"), (30, "-tall")]
+    VERTICAL_BREAKPOINTS = [(0, "-tiny"), (10, "-short"), (30, "-tall")]
     BINDINGS = [
         Binding("1", "pane('sources-pane')", "Sources"),
         Binding("2", "pane('variables-pane')", "Fields"),
@@ -163,6 +163,7 @@ class InspectionApp(ReportApp):
     Screen.-wide.-tall #sources-pane { width: 23; border-right: solid $accent 30%; }
     Screen.-wide.-tall #field-scroll { width: 38; border-left: solid $accent 30%; }
     .pane-title { height: 1; text-style: bold; }
+    Screen.-tiny #variables-pane > .pane-title { display: none; }
     #sources, #fields { height: 1fr; }
     #sources:focus > .option-list--option-highlighted {
         background: #102440;
