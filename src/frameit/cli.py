@@ -334,7 +334,9 @@ def _report_failure(exc, command):
         "Dependent planning and execution are blocked until these errors are repaired.")])
 
 
-def _collect_report(path, *, command, schema_only=False, overrides=None):
+def _collect_report(path, *, command, schema_only=False, overrides=None, progress=None):
+    if progress is not None:
+        progress("configuration", None, None, None)
     try:
         from yaml import YAMLError
 
@@ -348,7 +350,8 @@ def _collect_report(path, *, command, schema_only=False, overrides=None):
         with frameit_logging_scope(None, level=request.log_level):
             for handler in logging.getLogger("frameit").handlers:
                 handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-            return collect_preflight(request, command=command, schema_only=schema_only)
+            return collect_preflight(
+                request, command=command, schema_only=schema_only, progress=progress)
     except (OSError, ValueError, ImportError, YAMLError) as exc:
         return _report_failure(exc, command)
 

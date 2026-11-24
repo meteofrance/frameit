@@ -886,16 +886,20 @@ def _incomplete_mnh_altitude(fields, grids, selected, records, candidates):
     return sorted(missing)
 
 
-def inventory_source(conf, name, *, resources=None):
+def inventory_source(conf, name, *, resources=None, progress=None):
     """Populate a v3 source's metadata handoff without binding or processing fields."""
     source = conf.sources[name]
     request = conf.source_requests[name]
+    if progress is not None:
+        progress("metadata", name, None, None)
     entries, excluded, overlaps, errors = _source_file_entries(source, name)
     fields, grids, records, facts = {}, {}, [], []
     previous_grids = {} if len(entries) > 1 else None
     altitude_height_terms = set()
+    if progress is not None:
+        progress("metadata", name, 0, len(entries))
     with (DatasetResources() if resources is None else nullcontext(resources)) as owned:
-        for entry in entries:
+        for checked, entry in enumerate(entries, 1):
             path = Path(entry["path"])
             try:
                 declared_format = source.get("format") or ("fa" if "profile" in source else None)
@@ -968,6 +972,8 @@ def inventory_source(conf, name, *, resources=None):
                     error.contexts.append({
                         "source": name, "file": str(path), "patterns": entry["patterns"]})
                 errors.extend(diagnostics)
+            if progress is not None:
+                progress("metadata", name, checked, len(entries))
     if errors:
         raise PreflightError(errors)
     profiles = {fact[:4] for fact in facts}
@@ -2004,8 +2010,8 @@ def preflight_result(conf, facts, *, command="validate"):
 
 
 def collect_preflight(request, *, command="validate", schema_only=False, check_output=True,
-                      execution_options=None, resources=None):
-    """Collect existing preflight facts once; failures never grant execution clearance."""
+                      execution_options=None, resources=None, progress=None):
+    """Collect preflight facts once, optionally observing stage and file progress."""
     from frameit.core.configuration import resolved_configuration, resolved_sources
     from frameit.core.settings_class import SimulationConfig
 
@@ -2033,9 +2039,11 @@ def collect_preflight(request, *, command="validate", schema_only=False, check_o
             else:
                 from frameit.core.coupled import bind_sources
 
+                if progress is not None:
+                    progress("metadata", None, None, None)
                 result.facts = bind_sources(
                     conf, check_output=check_output, execution_options=execution_options,
-                    resources=resources)[0]
+                    resources=resources, progress=progress)[0]
             return preflight_result(conf, result.facts, command=command)
     except (OSError, ValueError, ImportError) as exc:
         result.errors = exception_diagnostics(

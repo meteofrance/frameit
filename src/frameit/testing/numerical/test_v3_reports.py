@@ -579,6 +579,49 @@ def test_existing_planning_handlers_share_one_preflight_and_projection(
     ] * 3
 
 
+@pytest.mark.parametrize("broken", [False, True])
+def test_validation_progress_leaves_report_unchanged(tmp_path, monkeypatch, broken):
+    from frameit.cli import _collect_report
+
+    files = []
+    for hour in range(3):
+        path = tmp_path / f"hour-{hour}.nc"
+        files.append(str(path))
+        if broken and hour == 1:
+            path.write_bytes(b"not a dataset")
+        else:
+            v3_scene(hours=(hour,)).to_netcdf(path, engine="h5netcdf")
+    document = tmp_path / "request.yaml"
+    document.write_text(yaml.safe_dump(request(tmp_path, {
+        "weather": {"files": files, "variables": {"2d": ["temperature"]}},
+    })))
+    guard_netcdf_payloads(monkeypatch, {"temperature"})
+    events = []
+
+    def observe(*event):
+        events.append(event)
+
+    plain = project(_collect_report(document, command="validate"))
+    observed = project(_collect_report(document, command="validate", progress=observe))
+    assert observed == plain
+    stages = [stage for stage, *_ in events]
+    assert stages[0] == "configuration"
+    assert [event for event in events if event[2] is not None] == [
+        ("metadata", "weather", i, 3) for i in range(4)
+    ]
+    if broken:
+        assert observed["status"] == "error" and "plan" not in stages
+    else:
+        assert observed["status"] == "ok"
+        assert stages.index("metadata") < stages.index("binding") < stages.index("plan")
+    assert not (tmp_path / "output").exists()
+
+    events.clear()
+    schema = _collect_report(document, command="validate", schema_only=True, progress=observe)
+    assert project(schema)["status"] == "ok"
+    assert events == [("configuration", None, None, None)]
+
+
 def test_independent_null_source_and_invalid_source_are_both_reported(tmp_path):
     report = project(collect(request(tmp_path, {
         "a": {"files": None}, "b": {"files": "input.nc", "model": "guess"},
