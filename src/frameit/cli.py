@@ -358,28 +358,39 @@ def _collect_report(path, *, command, schema_only=False, overrides=None, progres
         return _report_failure(exc, command)
 
 
+def _run_report_app(build_app, *, cli_output: bool, json_output: bool) -> int | None:
+    if (cli_output or json_output or os.environ.get("TERM") in (None, "", "dumb")
+            or not all(stream.isatty() for stream in (sys.stdin, sys.stdout, sys.stderr))):
+        return None
+    try:
+        app = build_app()
+    except ModuleNotFoundError as exc:
+        if exc.name != "textual":
+            raise
+        return None
+
+    from signal import SIGTERM, signal
+
+    previous = signal(SIGTERM, lambda *_: app.exit(128 + SIGTERM))
+    try:
+        code = app.run()
+    finally:
+        signal(SIGTERM, previous)
+    return 1 if code is None else code
+
+
 def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False, cli_output=False,
                   overrides=None) -> int:
     collect = partial(_collect_report, cfg_path, command="validate", schema_only=schema_only,
                       overrides=overrides)
-    if (not (cli_output or json_output) and os.environ.get("TERM") not in (None, "", "dumb")
-            and all(stream.isatty() for stream in (sys.stdin, sys.stdout, sys.stderr))):
-        try:
-            from frameit.validate_tui import ValidationApp
-        except ModuleNotFoundError as exc:
-            if exc.name != "textual":
-                raise
-        else:
-            from signal import SIGTERM, signal
 
-            app = ValidationApp(cfg_path, collect, schema_only=schema_only, overrides=overrides)
-            previous = signal(SIGTERM, lambda *_: app.exit(128 + SIGTERM))
-            try:
-                code = app.run()
-            finally:
-                signal(SIGTERM, previous)
-            return 1 if code is None else code
-    return _print_preflight(collect(), json_output=json_output)
+    def build_app():
+        from frameit.validate_tui import ValidationApp
+
+        return ValidationApp(cfg_path, collect, schema_only=schema_only, overrides=overrides)
+
+    code = _run_report_app(build_app, cli_output=cli_output, json_output=json_output)
+    return _print_preflight(collect(), json_output=json_output) if code is None else code
 
 
 def _print_preflight(result, *, json_output=False):

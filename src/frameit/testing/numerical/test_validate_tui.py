@@ -28,6 +28,13 @@ def _text(app, selector):
     return str(app.query_one(selector).content)
 
 
+def test_validation_uses_shared_report_shell():
+    from frameit.report_tui import ReportApp
+    from frameit.validate_tui import ValidationApp
+
+    assert issubclass(ValidationApp, ReportApp)
+
+
 @pytest.mark.parametrize("mode", [
     "full", "schema", "incomplete", "unconfirmed", "malformed", "unused-centre",
 ])
@@ -225,11 +232,11 @@ def test_console_distinguishes_scanned_files_source_times_and_centre_matches(tmp
 
 
 def test_live_scan_and_reload(tmp_path, monkeypatch):
-    from frameit import validate_tui
+    from frameit import report_tui, validate_tui
 
     path = _case(tmp_path)
     clock = [100.0]
-    monkeypatch.setattr(validate_tui, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(report_tui, "monotonic", lambda: clock[0])
     collect = partial(_collect_report, path, command="validate", overrides={"cpus": 1})
     stages = [
         ("metadata", "atmosphere", 0, 6),
@@ -278,7 +285,7 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
                 assert app.query_one("Footer").display
                 assert not app.query_one("#interrupt-hint").display
                 keys = app.query("FooterKey")
-                assert {key.key for key in keys} == {"1", "2", "3", "r", "q"}
+                assert list(dict.fromkeys(key.key for key in keys)) == ["1", "2", "3", "r", "q"]
                 assert all(0 < key.region.right <= app.size.width for key in keys)
 
                 path.write_text("schema_version: 3\nsources: [\n")
