@@ -78,3 +78,14 @@ private `_QuarterRowThumb(ScrollBarRender)` with `__rich_console__(self, console
 - [x] Check Ruff and `git diff --check`, record the documentation impact
   (presentation only), and commit the scoped changes, spec, and plan locally.
   Do not push.
+
+## Visual follow-up
+
+- [x] Compare bottom-aligned, centered, and upper-quarter placements in
+  actual Batsirai screenshots of both views. The centered stroke separates
+  the scrollbar from the neighboring rows without the upper block's seams.
+- [x] Change the two one-column regressions to require `━` and verify that
+  both fail on the bottom-aligned renderer. Switch the painted glyph to
+  `━`, preserving the full-cell drag targets and styling.
+- [x] Rerun the same targeted tests and inspect matched captures of the
+  centered stroke before handover.

@@ -87,8 +87,8 @@ class _Progress(Message):
     at: float
 
 
-class _QuarterRowThumb(ScrollBarRender):
-    """Paint less of each horizontal thumb cell without changing its mouse target."""
+class _ThinHorizontalThumb(ScrollBarRender):
+    """Center the painted thumb without shrinking its mouse target."""
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
@@ -99,7 +99,7 @@ class _QuarterRowThumb(ScrollBarRender):
             for cell in console.render(bar, options):
                 # Only the native thumb has a foreground; keep its mouse action metadata.
                 if cell.style is not None and cell.style.color is not None:
-                    yield Segment("▂" * cell.cell_length, cell.style + paint, cell.control)
+                    yield Segment("━" * cell.cell_length, cell.style + paint, cell.control)
                 else:
                     yield cell
 
@@ -188,7 +188,7 @@ class ReportApp(App[int]):
 
     def on_mount(self):
         for widget in self.query("DataTable, #details-scroll"):
-            widget.horizontal_scrollbar.renderer = _QuarterRowThumb
+            widget.horizontal_scrollbar.renderer = _ThinHorizontalThumb
         self.begin_capture_print(self, stdout=False)
         self._start_check()
         self.set_interval(1, self._tick)

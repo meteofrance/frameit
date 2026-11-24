@@ -24,3 +24,10 @@ Compare matched Batsirai captures of the in-use views: Inspect dragging
 horizontally, and Validate scrolled vertically with its horizontal thumb at
 rest. Check that a one-column overflow is still draggable, that fitting
 content has no visible thumb, and that the table does not move when it fits.
+
+## Visual follow-up
+
+The lower-quarter block read like an underline for the tabs and footer in the
+actual captures. An inverted upper-quarter block left visible cell seams.
+Paint a thin centered `━` stroke instead. Its thickness depends on the
+terminal font; the colors, gutter and full-row mouse target do not change.

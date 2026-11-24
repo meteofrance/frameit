@@ -70,7 +70,7 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
             await pilot.resize_terminal(app.size.width + table.max_scroll_x - 1, app.size.height)
             assert (table.max_scroll_x, table.max_scroll_y) == (1, 0)
             bar = table.horizontal_scrollbar
-            assert "▂" in bar.render_line(0).text
+            assert "━" in bar.render_line(0).text
             x, y = bar.region.offset
             await pilot.mouse_down(offset=(x, y))
             await pilot.hover(offset=(x + 2, y))
