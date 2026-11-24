@@ -61,7 +61,8 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
                 assert "instructional_scalar" in summary and "2 selected times" in summary
                 assert "Planned outputs" in summary and ".model_grid.nc" in summary
                 assert "frameit run " in summary and "--cpus=1" in summary
-                assert "--no-overwrite" in summary and "not checked" in summary
+                assert "--no-overwrite" in summary
+                assert "does not assess scientific validity" in summary
                 if mode == "unused-centre":
                     assert "Full domain; configured centre unused" in summary
             elif mode == "schema":
@@ -220,13 +221,45 @@ def test_decoder_warning_is_visible_without_changing_report(tmp_path):
         async with app.run_test() as pilot:
             await app.workers.wait_for_complete()
             await pilot.pause()
-            assert "warnings" in _text(app, "#status")
+            assert "warning" in _text(app, "#status")
             await pilot.press("2")
             assert "multiple fill values" in _text(app, "#finding")
             await pilot.press("q")
         assert app.return_value == 0
 
     assert collect().facts["warnings"] == []
+    asyncio.run(exercise())
+
+
+def test_findings_distinguish_discovery_notes_from_run_only_work(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+
+    def collect(*, progress):
+        result = _collect_report(path, command="validate", overrides={"cpus": 1}, progress=progress)
+        result.deferred_checks.insert(0, {
+            "path": "sources.atmosphere",
+            "status": "unfinished-selection",
+            "message": "t: native vertical group is ambiguous without an explicit selector.",
+        })
+        return result
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert _text(app, "#status") == "Input-aware checks passed · 1 field discovery note"
+            await pilot.press("2")
+            assert "Field discovery · sources.atmosphere" in _text(app, "#finding")
+            assert "native vertical group is ambiguous" in _text(app, "#finding")
+            await pilot.press("down")
+            detail = _text(app, "#finding")
+            assert "During run" in detail and "value/mask checks" in detail
+            await pilot.press("q")
+        assert app.return_value == 0
+
     asyncio.run(exercise())
 
 

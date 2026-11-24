@@ -82,8 +82,10 @@ validation finishes. If the estimate expires before another file is checked,
 only the file count and elapsed time remain. ``Ctrl+C`` interrupts validation;
 an active native read may need to finish before the process exits.
 
-**Findings** includes warnings logged while reading metadata. **Details** marks
-output paths from a failed check as unconfirmed.
+**Findings** includes warnings logged while reading metadata. Field discovery
+notes explain selector choices without implying that the current request
+failed. Items under **During run** are not counted as validation issues.
+**Details** marks output paths from a failed check as unconfirmed.
 
 Use ``frameit validate frameit.yaml --cli`` for the text report even in a
 terminal. ``--json`` still writes one JSON report. Without Textual, or when

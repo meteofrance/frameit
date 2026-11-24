@@ -29,6 +29,11 @@ _STAGES = {
     "plan": "Checking planned outputs and resources",
     "report": "Preparing validation report",
 }
+_CHECK_LABELS = {
+    "unfinished-selection": "Field discovery",
+    "execution-dependent": "During run",
+    "schema-only": "Not checked in schema mode",
+}
 _TEAL, _AMBER, _RED, _SLATE = "#49C5BC", "#F5B55E", "#DA5656", "#A6B4C4"
 _THEME = Theme(
     name="frameit", primary=_TEAL, accent=_TEAL, warning=_AMBER, error=_RED,
@@ -115,7 +120,7 @@ def _overview(report, config, schema_only, overrides, *, has_warnings):
         if has_warnings:
             lines.extend(("", "Review warnings in Findings before running."))
         lines.extend(("", f"Next: {_run_command(config, overrides)}"))
-    lines.extend(("", "Execution and scientific validity were not checked."))
+    lines.extend(("", "Validation does not assess scientific validity."))
     return "\n".join(lines)
 
 
@@ -123,7 +128,12 @@ def _finding_title(level, item):
     if level == "Warning":
         return f"Warning {item}"
     code = f" [{item['code']}]" if level == "Error" else ""
-    return f"{level}{code} · {item['path']}"
+    title = f"{level}{code} · {item['path']}"
+    if level == "Field discovery":
+        field, separator, _ = item["message"].partition(":")
+        if separator:
+            title += f" · {field}"
+    return title
 
 
 def _finding_detail(level, item):
@@ -287,14 +297,16 @@ class ValidationApp(App[int]):
             *(("Error", item) for item in report["errors"]),
             *(("Warning", item) for item in warnings),
             *(("Blocked", item) for item in checks if item["status"] == "blocked"),
-            *(("Deferred", item) for item in checks if item["status"] != "blocked"),
+            *((_CHECK_LABELS.get(item["status"], "Not checked here"), item)
+              for item in checks if item["status"] != "blocked"),
         ]
         counts = Counter(level for level, _ in self.findings)
         verdict = ("Validation failed" if self.result_code else
                    "Schema checks passed" if self.schema_only else "Input-aware checks passed")
-        stats = [f"{counts[level]} {level.lower()}{suffix}" for level, suffix in
-                 (("Error", "s"), ("Warning", "s"), ("Blocked", ""), ("Deferred", ""))
-                 if counts[level]]
+        labels = (("Error", "error"), ("Warning", "warning"), ("Blocked", "blocked"),
+                  ("Field discovery", "field discovery note"))
+        stats = [f"{count} {label}{'s' if count > 1 and level != 'Blocked' else ''}"
+                 for level, label in labels if (count := counts[level])]
         status = self.query_one("#status", Static)
         status.set_classes("error" if self.result_code else "warning" if counts["Warning"] else "")
         status.update(" · ".join([verdict, *stats]))
@@ -306,8 +318,8 @@ class ValidationApp(App[int]):
         listing = self.query_one("#finding-list", OptionList)
         listing.clear_options().add_options(
             Content.styled(_finding_title(level, item), {
-                "Error": f"bold {_RED}", "Warning": _AMBER, "Blocked": _SLATE, "Deferred": _SLATE,
-            }[level])
+                "Error": f"bold {_RED}", "Warning": _AMBER,
+            }.get(level, _SLATE))
             for level, item in self.findings)
         listing.highlighted = 0 if self.findings else None
         first = _finding_detail(*self.findings[0]) if self.findings else "No findings."
