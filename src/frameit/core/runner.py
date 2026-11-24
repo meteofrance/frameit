@@ -5,6 +5,7 @@
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 import xarray as xr
@@ -67,6 +68,7 @@ class FrameitRunner:
         self.preflight_report = None
         self.preflight_result = None
         self.progress = None
+        self.angle_for = None
 
     def close(self):
         """Release original lazy input handles after computation/export."""
@@ -213,10 +215,12 @@ class FrameitRunner:
                 selected_records=binding, source_plan=source, **reader_options,
             )
             from frameit.processing.derived.wind import execute_source_operations
+            from frameit.processing.wind_reference import rotation_angle
 
+            self.angle_for = partial(rotation_angle, geolocation_cache={})
             user = execute_source_operations(
                 user, tracker.get("internal", {}), source, binding, self.conf,
-                regional_reads=getattr(self, "regional_reads", None))
+                regional_reads=getattr(self, "regional_reads", None), angle_for=self.angle_for)
             return user, tracker, files
         files = self.find_files()
         if self.conf.infer_grid_geometry and self.preflight_report is None:

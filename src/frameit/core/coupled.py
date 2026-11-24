@@ -1150,7 +1150,8 @@ def run_native_sources(runner, *, benchmark=False):
                         "polar_samples", {}), plans[name], binding,
                     consumer.conf, centres, layout=layout,
                     output_formatter=partial(format_polar_output, layout=layout),
-                    regional_reads=getattr(consumer, "regional_reads", None))
+                    regional_reads=getattr(consumer, "regional_reads", None),
+                    angle_for=consumer.angle_for)
                 runner.field_products[(name, "polar")] = dataset.assign_attrs(
                     source_id=name, source_model=plans[name]["model"],
                     source_format=plans[name]["format"])
@@ -1164,6 +1165,7 @@ def run_native_sources(runner, *, benchmark=False):
             # Product graphs now own their bounded views; discard any unused full-grid templates.
             if getattr(consumer, "regional_reads", None) is not None:
                 consumer.regional_reads = None
+            consumer.angle_for = None
         shared = runner.conf.simulation_parameter.get("common_polar_target")
         if shared is not None:
             shared["verification"] = "exact_coordinates_at_associated_centres"

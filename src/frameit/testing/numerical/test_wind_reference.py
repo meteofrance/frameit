@@ -21,6 +21,7 @@ from frameit.processing.wind_reference import (
     geolocation_rotation,
     inspect_wind_metadata,
     pair_definition,
+    rotation_angle,
     validate_pair_frame,
 )
 
@@ -149,7 +150,13 @@ def test_cached_geometry_does_not_clear_an_invalid_wind_operation(change, error)
     source = {"model": "mesonh", "declaration": {"wind_pairs": [
         {"u": "u", "v": "v", "basis": "grid", "rotation": rotation}]}}
     seen, conf = set(), settings()
-    operation_pair(ds, source, ("u", "v"), conf, validated_geolocations=seen)
+    pair = operation_pair(ds, source, ("u", "v"), conf, validated_geolocations=seen)
+    angles = {}
+    expected = rotation_angle(ds, conf, pair, geolocation_cache=angles)
+    relabelled = ds.assign_coords(sample="another sample", auxiliary=("ni", [4, 5, 6]))
+    xr.testing.assert_identical(rotation_angle(relabelled, conf, pair, geolocation_cache=angles),
+                                rotation_angle(relabelled, conf, pair))
+    assert "sample" not in expected.coords
     if change == "longitude":
         ds.longitude.values[1, 1] = ds.longitude.values[1, 0]
     elif change == "x_axis":
@@ -167,6 +174,9 @@ def test_cached_geometry_does_not_clear_an_invalid_wind_operation(change, error)
     for verified in (None, seen, seen):
         with pytest.raises(ValueError, match=error):
             operation_pair(ds, source, ("u", "v"), conf, validated_geolocations=verified)
+    with pytest.raises(ValueError, match=error):
+        normalize_winds(ds, settings({**pair, "group": "level"}), "level",
+                        angle_for=lambda *args: rotation_angle(*args, geolocation_cache=angles))
 
 
 def test_explicit_legacy_scalar_and_canonical_low_level_api():

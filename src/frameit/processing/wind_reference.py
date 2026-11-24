@@ -296,10 +296,7 @@ def _geolocation_validation_key(ds, conf):
     return tuple(key)
 
 
-def geolocation_rotation(ds: xr.Dataset, conf: Any) -> xr.DataArray:
-    """Direction of positive native x, with signed monotone coordinate changes."""
-    from pyproj import Geod
-
+def _geolocation_coordinates(ds, conf):
     x, y, lon_name, lat_name = _geolocation_names(conf)
     if any(name not in ds for name in (x, y, lon_name, lat_name)):
         raise ValueError(
@@ -312,7 +309,16 @@ def geolocation_rotation(ds: xr.Dataset, conf: Any) -> xr.DataArray:
     if not {x, y} <= set(lon.dims):
         raise ValueError("geolocation must span both native horizontal axes")
     dims = (*[d for d in lon.dims if d not in {x, y}], y, x)
-    lon, lat = (a.transpose(*dims) for a in (lon, lat))
+    return lon.transpose(*dims), lat.transpose(*dims)
+
+
+def geolocation_rotation(ds: xr.Dataset, conf: Any) -> xr.DataArray:
+    """Direction of positive native x, with signed monotone coordinate changes."""
+    from pyproj import Geod
+
+    lon, lat = _geolocation_coordinates(ds, conf)
+    dims = lon.dims
+    y, x = dims[-2:]
     lv, av = np.asarray(lon, float), np.asarray(lat, float)
     if not np.isfinite(lv).all() or not np.isfinite(av).all() or np.any(np.abs(av) >= 90):
         raise ValueError("geolocation rotation requires finite nonpolar geography")
@@ -414,7 +420,7 @@ def mesonh_projection_rotation(ds: xr.Dataset, conf: Any, rotation=None) -> xr.D
     return angle
 
 
-def rotation_angle(ds: xr.Dataset, conf: Any, pair: dict) -> xr.DataArray:
+def rotation_angle(ds: xr.Dataset, conf: Any, pair: dict, *, geolocation_cache=None) -> xr.DataArray:
     """Execute exactly the declared method; never select a fallback."""
     rotation = pair.get("rotation") or {}
     method = rotation.get("method")
@@ -426,7 +432,17 @@ def rotation_angle(ds: xr.Dataset, conf: Any, pair: dict) -> xr.DataArray:
         angle = convert_units(ds[name], "angle")
     elif method == "geolocation":
         try:
-            angle = geolocation_rotation(ds, conf)
+            key = (_geolocation_validation_key(ds, conf)
+                   if geolocation_cache is not None else None)
+            if key is not None and key in geolocation_cache:
+                # Only the angle is shared; labels and auxiliaries belong to this sample.
+                lon, _ = _geolocation_coordinates(ds, conf)
+                angle = xr.DataArray(geolocation_cache[key], coords=lon.coords)
+            else:
+                angle = geolocation_rotation(ds, conf)
+                if key is not None and angle.nbytes <= 8 * 1024**2:
+                    geolocation_cache.clear()
+                    geolocation_cache[key] = angle.variable
         except ValueError as exc:
             raise tag_error(exc, "E1307")
     elif method == "mesonh_projection":

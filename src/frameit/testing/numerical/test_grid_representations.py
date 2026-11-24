@@ -171,7 +171,7 @@ def test_wind_binding_checks_each_actual_geolocation_once_per_attempt(tmp_path, 
         return angle(ds, conf)
 
     monkeypatch.setattr(wind_reference, "geolocation_rotation", measured)
-    for _ in range(2):
+    for attempt in range(2):
         calls.clear()
         conf = SimulationConfig.from_mapping_with_model_preset(request)
         _, children, _ = bind_sources(conf)
@@ -184,6 +184,14 @@ def test_wind_binding_checks_each_actual_geolocation_once_per_attempt(tmp_path, 
         child = children["atmosphere"].source_requests["atmosphere"]["binding"]
         child_face = child["operation_plans"][0]["geometry"]["coordinates"]["latitude_u"]["values"]
         assert not np.shares_memory(faces[0], child_face)
+
+        calls.clear()
+        request["output"]["directory"] = str(tmp_path / f"run-{attempt}")
+        conf = SimulationConfig.from_mapping_with_model_preset(request)
+        result = execute_simulation(
+            conf, ExecutionOptions.from_config(conf, synchronous_export=True))
+        assert result.ok
+        assert len(calls) == 2  # Independent binding, then one angle across both products.
 
 
 def run_export(directory, horizontal="native", vertical="interfaces", *,

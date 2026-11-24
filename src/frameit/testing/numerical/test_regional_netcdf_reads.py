@@ -72,7 +72,7 @@ def test_rotated_mass_winds_read_both_native_face_stencils(tmp_path, monkeypatch
     import weakref
 
     from frameit.io import netcdf_export
-    from frameit.processing.derived import wind
+    from frameit.processing import wind_reference
     from frameit.testing.numerical.test_grid_representations import native_scene
 
     ds = native_scene(units="km/h")
@@ -110,18 +110,18 @@ def test_rotated_mass_winds_read_both_native_face_stencils(tmp_path, monkeypatch
 
     monkeypatch.setattr(H5NetCDFArrayWrapper, "_getitem", trace)
     angles, retained = [], []
-    angle, write = wind.rotation_angle, netcdf_export._write_product
+    angle, write = wind_reference.geolocation_rotation, netcdf_export._write_product
 
     def remember(*args):
         result = angle(*args)
-        angles.append(weakref.ref(result))
+        angles.append(weakref.ref(result.data))
         return result
 
     def at_export(*args):
         retained.append(sum(ref() is not None for ref in angles))
         return write(*args)
 
-    monkeypatch.setattr(wind, "rotation_angle", remember)
+    monkeypatch.setattr(wind_reference, "geolocation_rotation", remember)
     monkeypatch.setattr(netcdf_export, "_write_product", at_export)
     trial = execute_simulation(configuration(tmp_path, source=source, region=region,
                                              products=products))

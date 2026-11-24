@@ -312,7 +312,8 @@ def _wind_window(bounds, *, reads, components, operation, geometry, settings, an
     return value.variable
 
 
-def prepare_source_operation(operation, internal, source, conf, *, regional_reads=None):
+def prepare_source_operation(operation, internal, source, conf, *, regional_reads=None,
+                             angle_for=None):
     """Prepare this one actual sample, independently of every exported representation."""
     import json
     from copy import copy
@@ -421,7 +422,7 @@ def prepare_source_operation(operation, internal, source, conf, *, regional_read
 
             def capture_angle(ds, conf, pair):
                 nonlocal angle
-                angle = rotation_angle(ds, conf, pair)
+                angle = (angle_for or rotation_angle)(ds, conf, pair)
                 return angle
 
             prepared = normalize_winds(prepared, settings, "operation", angle_for=capture_angle)
@@ -431,11 +432,12 @@ def prepare_source_operation(operation, internal, source, conf, *, regional_read
                         geometry=geometry, settings=settings, angle=angle)
                 if angle is not None and key not in regional_reads.preparations else None)
         else:
-            prepared = normalize_winds(prepared, settings, "operation")
+            prepared = normalize_winds(prepared, settings, "operation", angle_for=angle_for)
     return prepared, arrays, native_views, geometry
 
 
-def execute_source_operations(user, internal, source, binding, conf, *, regional_reads=None):
+def execute_source_operations(user, internal, source, binding, conf, *, regional_reads=None,
+                              angle_for=None):
     """Execute only bound model-grid results, on separate native input views."""
     import json
 
@@ -446,7 +448,7 @@ def execute_source_operations(user, internal, source, binding, conf, *, regional
     rotation_coordinates = {}
     for operation in binding.get("operations", []):
         prepared, arrays, native_views, geometry = prepare_source_operation(
-            operation, internal, source, conf, regional_reads=regional_reads)
+            operation, internal, source, conf, regional_reads=regional_reads, angle_for=angle_for)
         if operation["method"] == "wind_speed":
             u, v = align_wind_pair(*(prepared[operation["inputs"][key]] for key in ("u", "v")))
             value = np.hypot(u, v).assign_attrs(

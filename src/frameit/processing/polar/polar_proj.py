@@ -97,7 +97,7 @@ def verify_polar_target(dataset, plan, conf, source, centres):
 
 
 def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache=None,
-                         output_formatter=None, layout=None, regional_reads=None):
+                         output_formatter=None, layout=None, regional_reads=None, angle_for=None):
     """Execute only declared v3 results on each source's associated native sample clock."""
     from frameit.processing.derived.wind import polar_wind_components, prepare_source_operation
     from frameit.processing.polar.contracts import require_executable_products
@@ -143,7 +143,7 @@ def execute_source_polar(internal, source, binding, conf, centres, *, plan_cache
                 track_centres_authoritative=True)
         target = targets[stamp]
         prepared, arrays, native_views, _ = prepare_source_operation(
-            job, internal, source, conf, regional_reads=regional_reads)
+            job, internal, source, conf, regional_reads=regional_reads, angle_for=angle_for)
         if job["method"] == "polar_input" and ("units" in job or job["pair"]):
             from frameit.processing.requests import _operation_units
 
