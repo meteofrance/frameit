@@ -12,6 +12,7 @@ from threading import Event
 
 import pytest
 import yaml
+from textual.geometry import Region
 
 from frameit.cli import _collect_report
 from frameit.core.configuration import write_template
@@ -48,6 +49,7 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
     original = path.read_bytes()
     overrides = {"cpus": 1, "overwrite": False}
     schema_only = mode == "schema"
+    failed = mode in {"incomplete", "unconfirmed", "malformed"}
     collect = partial(
         _collect_report, path, command="validate", schema_only=schema_only, overrides=overrides)
 
@@ -56,6 +58,11 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
         async with app.run_test(size=(52, 16)) as pilot:
             await app.workers.wait_for_complete()
             await pilot.pause()
+            verdict = ("Validation failed" if failed else
+                       "Schema checks passed" if schema_only else "Validation passed")
+            status = app.query_one("#status")
+            rendered = status.render_lines(Region(0, 0, status.region.width, 1))[0].text
+            assert rendered.lstrip().startswith(verdict)
             assert app.query_one("#report-tabs").active == "overview"
             assert _text(app, "#context") == path.name
             summary = _text(app, "#summary")
@@ -67,7 +74,6 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
                 assert "instructional_scalar" not in summary and ".model_grid.nc" not in summary
                 assert "frameit run " in summary and "--cpus=1" in summary
                 assert "--no-overwrite" in summary
-                assert _text(app, "#status").startswith("Validation passed")
                 if mode == "unused-centre":
                     assert "Full domain; configured centre unused" in summary
                 else:
@@ -132,7 +138,7 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
             await pilot.press("1")
             assert overview.scroll_y == overview_y
             await pilot.press("q")
-        assert app.return_value == int(mode in {"incomplete", "unconfirmed", "malformed"})
+        assert app.return_value == int(failed)
 
     asyncio.run(exercise())
     assert path.read_bytes() == original and not (tmp_path / "output").exists()

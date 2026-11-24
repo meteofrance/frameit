@@ -215,11 +215,10 @@ class ValidationApp(App[int]):
         text-overflow: ellipsis;
         color: {_SLATE};
     }}
-    #status {{ height: auto; margin: 1 1 0 1; padding: 0 1; text-style: bold;
-        border-left: tall $accent; }}
+    #status {{ height: auto; margin: 1 1 0 1; text-style: bold; }}
     #status.progress {{ color: $accent; }}
-    #status.error {{ color: $error; border-left: tall $error; }}
-    #status.warning {{ color: $warning; border-left: tall $warning; }}
+    #status.error {{ color: $error; }}
+    #status.warning {{ color: $warning; }}
     #interrupt-hint {{ display: none; dock: bottom; padding: 0 1; }}
     Screen.checking #interrupt-hint {{ display: block; }}
     Screen.checking #report-tabs, Screen.checking Footer {{ display: none; }}
