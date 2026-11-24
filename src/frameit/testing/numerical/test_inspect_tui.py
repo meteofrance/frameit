@@ -69,7 +69,9 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
             assert app.result_code == 0
             await pilot.resize_terminal(app.size.width + table.max_scroll_x - 1, app.size.height)
             assert (table.max_scroll_x, table.max_scroll_y) == (1, 0)
-            x, y = table.horizontal_scrollbar.region.offset
+            bar = table.horizontal_scrollbar
+            assert "▂" in bar.render_line(0).text
+            x, y = bar.region.offset
             await pilot.mouse_down(offset=(x, y))
             await pilot.hover(offset=(x + 2, y))
             await pilot.wait_for_scheduled_animations()
@@ -90,6 +92,7 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
             assert table.row_count == 1
             assert table.max_scroll_x == 0
             assert table.scrollable_size == viewport
+            assert not bar.render_line(0).text.strip()
             assert yaml.safe_load(app.clipboard) == {"2d": ["zeta"]}
             assert "sources.atmosphere.variables" in _text(app, "#field-details")
             await pilot.resize_terminal(52, 16)

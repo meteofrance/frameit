@@ -15,6 +15,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.content import Content
 from textual.message import Message
+from textual.scrollbar import ScrollBarRender
 from textual.theme import Theme
 from textual.widgets import Footer, OptionList, Static
 from textual.worker import Worker, WorkerState, get_current_worker
@@ -84,6 +85,23 @@ class _Progress(Message):
     checked: int | None
     total: int | None
     at: float
+
+
+class _QuarterRowThumb(ScrollBarRender):
+    """Paint less of each horizontal thumb cell without changing its mouse target."""
+
+    def __rich_console__(self, console, options):
+        from rich.segment import Segment
+        from rich.style import Style
+
+        paint = Style(bgcolor=console.get_style(self.style).bgcolor, reverse=False)
+        for bar in super().__rich_console__(console, options):
+            for cell in console.render(bar, options):
+                # Only the native thumb has a foreground; keep its mouse action metadata.
+                if cell.style is not None and cell.style.color is not None:
+                    yield Segment("▂" * cell.cell_length, cell.style + paint, cell.control)
+                else:
+                    yield cell
 
 
 class ReportApp(App[int]):
@@ -169,6 +187,8 @@ class ReportApp(App[int]):
             yield Static(id="finding", markup=False)
 
     def on_mount(self):
+        for widget in self.query("DataTable, #details-scroll"):
+            widget.horizontal_scrollbar.renderer = _QuarterRowThumb
         self.begin_capture_print(self, stdout=False)
         self._start_check()
         self.set_interval(1, self._tick)

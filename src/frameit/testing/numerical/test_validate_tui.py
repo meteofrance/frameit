@@ -205,7 +205,9 @@ def test_details_thumb_is_draggable_with_only_one_clipped_column(tmp_path):
             assert details.max_scroll_x > 1
             await pilot.resize_terminal(app.size.width + details.max_scroll_x - 1, app.size.height)
             assert (details.max_scroll_x, details.max_scroll_y) == (1, 0)
-            x, y = details.horizontal_scrollbar.region.offset
+            bar = details.horizontal_scrollbar
+            assert "▂" in bar.render_line(0).text
+            x, y = bar.region.offset
             await pilot.mouse_down(offset=(x, y))
             await pilot.hover(offset=(x + 2, y))
             await pilot.wait_for_scheduled_animations()
