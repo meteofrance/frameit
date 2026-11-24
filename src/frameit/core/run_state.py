@@ -17,9 +17,9 @@ def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def write_run_record(path, value, *, overwrite=True):
+def write_run_record(path, value, *, overwrite=True, **yaml_options):
     try:
-        write_yaml_atomic(path, value, overwrite=overwrite)
+        write_yaml_atomic(path, value, overwrite=overwrite, **yaml_options)
     except Exception as exc:
         raise tag_error(exc, "E1808")
 
@@ -39,7 +39,7 @@ def finalize_after(failure, message):
         logging.getLogger("frameit").exception("%s", message)
 
 
-def checkpoint_run(root, status, provenance=None):
+def checkpoint_run(root, status, provenance=None, *, stable_sources=None):
     """Persist last-known facts, without a cross-record transaction or heartbeat."""
     root = Path(root)
     status["updated_at"] = utc_now()
@@ -50,7 +50,8 @@ def checkpoint_run(root, status, provenance=None):
                         "updated_at", "error", "tracking_complete", "tracking_termination_reason"):
                 if key in status:
                     provenance[key] = status[key]
-            write_run_record(root / "run-provenance.yaml", provenance)
+            write_run_record(root / "run-provenance.yaml", provenance,
+                             **({} if stable_sources is None else {"stable": stable_sources}))
     except BaseException as exc:
         failure = exc
         if status["state"] in {"completed", "incomplete"}:

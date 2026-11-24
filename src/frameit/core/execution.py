@@ -484,10 +484,12 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
     log = logging.getLogger("frameit")
     from frameit.core.run_state import checkpoint_run, finalize_after
 
+    stable_sources = None
+
     def published(product):
         progress.update("computing/writing exports", published_products=1)
         status["products"].append(_recorded_product(product, config.output_dir))
-        checkpoint_run(config.output_dir, status, provenance)
+        checkpoint_run(config.output_dir, status, provenance, stable_sources=stable_sources)
 
     if options.benchmark:
         log.info("Benchmark: eager inputs; computation timed separately from I/O")
@@ -552,6 +554,9 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
             from frameit.io.netcdf_export import export_outputs
 
             progress.update("computing/writing exports")
+            # Source facts are unchanged during publication, not during finalization.
+            if provenance is not None and len(status.get("planned_products", ())) > 1:
+                stable_sources = {"value": provenance["sources"]}
             try:
                 with runner.timer.section("Netcdf export"):
                     exports = export_outputs(
@@ -577,6 +582,11 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                 raise tag_error(exc, "E1802")
             except Exception as exc:
                 raise tag_error(exc, "E1806")
+            finally:
+                if stable_sources is not None:
+                    # A traceback can keep the checkpoint callback's argument alive.
+                    stable_sources.clear()
+                stable_sources = None
             log.debug("Product export finished (engine=%s)", options.engine)
         else:
             log.info("Product export skipped (--no-export).")

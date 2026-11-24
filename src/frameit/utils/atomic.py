@@ -42,7 +42,29 @@ def atomic_output(path, *, overwrite=True):
         temporary.unlink(missing_ok=True)
 
 
-def write_yaml_atomic(path, value, *, overwrite=True):
+def _stock_yaml_policy(yaml):
+    from datetime import date, datetime
+
+    stock = yaml.representer.SafeRepresenter
+    dumper = yaml.SafeDumper
+    expected = {
+        type(None): stock.represent_none, str: stock.represent_str,
+        bytes: stock.represent_binary, bool: stock.represent_bool,
+        int: stock.represent_int, float: stock.represent_float,
+        list: stock.represent_list, tuple: stock.represent_list,
+        dict: stock.represent_dict, set: stock.represent_set,
+        date: stock.represent_date, datetime: stock.represent_datetime,
+        None: stock.represent_undefined,
+    }
+    actual = dumper.yaml_representers
+    return (dumper.ignore_aliases is stock.ignore_aliases
+            and dumper.represent_data is yaml.representer.BaseRepresenter.represent_data
+            and not dumper.yaml_multi_representers and len(actual) == len(expected)
+            and all(actual.get(kind) is function for kind, function in expected.items()))
+
+
+def write_yaml_atomic(path, value, *, overwrite=True, stable=None):
+    """Publish safe YAML, optionally memoizing a caller-owned unchanged subtree."""
     import yaml
 
     emitter = getattr(yaml, "CSafeDumper", None)
@@ -60,6 +82,14 @@ def write_yaml_atomic(path, value, *, overwrite=True):
         # SafeDumper owns representation and aliases; custom representers may consume their input.
         representer = yaml.SafeDumper(stream, sort_keys=False, allow_unicode=True)
         try:
+            if stable is not None and _stock_yaml_policy(yaml):
+                if "nodes" in stable:
+                    representer.represented_objects.update(stable["nodes"])
+                else:
+                    representer.represent_data(stable["value"])
+                    stable["nodes"] = representer.represented_objects.copy()
+                    # The memo is keyed by object identity, including representer temporaries.
+                    stable["owners"] = representer.object_keeper.copy()
             node = representer.represent_data(value)
         finally:
             representer.dispose()

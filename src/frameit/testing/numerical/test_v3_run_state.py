@@ -11,6 +11,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from functools import wraps
 from pathlib import Path
 
 import dask.array as da
@@ -90,6 +91,45 @@ def test_checkpoint_preserves_escaped_filesystem_name(tmp_path):
     value = {"prefix": "a" * 32768, "source": os.fsdecode(b"input-\x80.nc")}
     write_yaml_atomic(path, value)
     assert record(tmp_path, path.name) == value
+
+
+def test_reused_checkpoint_subtree_keeps_cross_record_aliases_on_encoding_retry(tmp_path):
+    from frameit.utils.atomic import write_yaml_atomic
+
+    shared = {"source": os.fsdecode(b"input-\x80.nc")}
+    sources = {"atmosphere": shared}
+    memo = {"value": sources}
+    value = {"shared": shared, "sources": sources, "products": []}
+    fast, ordinary = tmp_path / "cached.yaml", tmp_path / "ordinary.yaml"
+    for field in ("q", "v"):
+        value["products"].append({"name": field, "origin": shared})
+        write_yaml_atomic(fast, value, stable=memo)
+        write_yaml_atomic(ordinary, value)
+        assert fast.read_bytes() == ordinary.read_bytes()
+        saved = record(tmp_path, fast.name)
+        assert saved["shared"] is saved["sources"]["atmosphere"]
+        assert saved["products"][-1]["origin"] is saved["shared"]
+
+
+def test_reused_checkpoint_subtree_does_not_reorder_a_wrapped_safe_representer(
+        tmp_path, monkeypatch):
+    from frameit.utils.atomic import write_yaml_atomic
+
+    original = yaml.SafeDumper.yaml_representers[dict]
+
+    @wraps(original)
+    def mark_first(writer, value):
+        if not hasattr(writer, "represented_root"):
+            writer.represented_root = True
+            value = {**value, "document_root": True}
+        return original(writer, value)
+
+    monkeypatch.setitem(yaml.SafeDumper.yaml_representers, dict, mark_first)
+    value = {"sources": {"atmosphere": {"model": "mesonh"}}, "products": []}
+    memo = {"value": value["sources"]}
+    path = tmp_path / "cached.yaml"
+    write_yaml_atomic(path, value, stable=memo)
+    assert record(tmp_path, path.name) == {**value, "document_root": True}
 
 
 def test_checkpoint_keeps_the_registered_safe_scalar_policy(tmp_path, monkeypatch):
@@ -364,6 +404,50 @@ def two_sources(tmp_path, fmt, synchronous):
     return SimulationConfig(**to_runtime(raw, base_dir=tmp_path))
 
 
+@pytest.mark.parametrize("dumper", ["builtin", "custom", "python"])
+def test_publication_reuses_source_facts_without_changing_checkpoints(
+        tmp_path, monkeypatch, dumper):
+    import frameit.core.run_state as run_state
+
+    if dumper == "python":
+        monkeypatch.delattr(yaml, "CSafeDumper", raising=False)
+    elif dumper == "custom":
+        encode_string = yaml.SafeDumper.yaml_representers[str]
+        monkeypatch.setitem(yaml.SafeDumper.yaml_representers, str,
+                            lambda writer, value: encode_string(writer, value))
+    conf = two_sources(tmp_path, "netcdf", True)
+    original_mapping = yaml.SafeDumper.represent_mapping
+    original_write = run_state.write_yaml_atomic
+    source_representations, publication_counts = [], []
+    checking = False
+
+    def counted_mapping(dumper, tag, mapping, **kwargs):
+        if not checking and mapping is conf.simulation_parameter.get("source_provenance"):
+            source_representations.append(mapping)
+        return original_mapping(dumper, tag, mapping, **kwargs)
+
+    def verified_write(path, value, **kwargs):
+        nonlocal checking
+        result = original_write(path, value, **kwargs)
+        if path.name == "run-provenance.yaml" and value.get("sources"):
+            publication_counts.append(len(value["products"]))
+            checking = True
+            try:
+                ordinary = tmp_path / "ordinary.yaml"
+                original_write(ordinary, value)
+                assert path.read_bytes() == ordinary.read_bytes()
+            finally:
+                checking = False
+        return result
+
+    monkeypatch.setattr(yaml.SafeDumper, "represent_mapping", counted_mapping)
+    monkeypatch.setattr(run_state, "write_yaml_atomic", verified_write)
+    assert execute_simulation(conf).ok
+    assert publication_counts == [0, 1, 2, 2, 2]
+    reuse = dumper == "builtin" and hasattr(yaml, "CSafeDumper")
+    assert len(source_representations) == (4 if reuse else 5)
+
+
 def gated_values(values, ready, release, outcome):
     """A real writer waits on bounded IPC, then fails or completes its real data."""
     ready.set()
@@ -549,9 +633,12 @@ def test_failed_checkpoint_never_claims_success_or_loses_completed_products(
     conf = two_sources(tmp_path, "netcdf", synchronous)
     original_write = run_state.write_yaml_atomic
     failed = False
+    memos = []
 
     def fail_once(path, value, **kwargs):
         nonlocal failed
+        if kwargs.get("stable") is not None:
+            memos.append(kwargs["stable"])
         if (Path(path).name == "run-status.yaml" and value["products"] and not failed):
             failed = True
             raise OSError("publication checkpoint failed")
@@ -560,6 +647,7 @@ def test_failed_checkpoint_never_claims_success_or_loses_completed_products(
     monkeypatch.setattr(run_state, "write_yaml_atomic", fail_once)
     with pytest.raises(OSError, match="publication checkpoint failed"):
         execute_simulation(conf)
+    assert memos and not any(memos)
     status = record(conf.output_dir, "run-status.yaml")
     assert status["state"] == "failed"
     assert status["error"]["message"] == "publication checkpoint failed"
