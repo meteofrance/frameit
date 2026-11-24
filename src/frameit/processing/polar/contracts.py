@@ -44,6 +44,7 @@ def require_executable_products(binding, source):
                 or not np.isfinite(plan["radial_step_km"]) or plan["radial_step_km"] <= 0
                 or plan["radial_step_km"] * 1000 < spacing.max() * (1 - 1e-12)):
             raise ValueError("Polar native-spacing evidence is missing")
+        checked_geometry = set()
         for job in jobs:
             sampled = ({job["inputs"]["field"]} if job["method"] == "polar_input"
                        else set(job["inputs"].values()))
@@ -53,11 +54,13 @@ def require_executable_products(binding, source):
                     or products["polar"][job["name"]].get("execution") != "bound_polar_sampling"):
                 raise ValueError("Polar preparation or interpolation evidence is incomplete")
             geometry = job["polar_geometry"]
-            lon, lat = np.asarray(geometry["longitude"]), np.asarray(geometry["latitude"])
-            if (lon.shape != lat.shape or lon.ndim != 2 or min(lon.shape) < 2
-                    or not np.isfinite(lon).all() or not np.isfinite(lat).all()):
-                raise ValueError("Polar prepared geometry is invalid")
-            _validate_cells(lon, lat)
+            if id(geometry) not in checked_geometry:
+                lon, lat = np.asarray(geometry["longitude"]), np.asarray(geometry["latitude"])
+                if (lon.shape != lat.shape or lon.ndim != 2 or min(lon.shape) < 2
+                        or not np.isfinite(lon).all() or not np.isfinite(lat).all()):
+                    raise ValueError("Polar prepared geometry is invalid")
+                _validate_cells(lon, lat)
+                checked_geometry.add(id(geometry))
             for name, descriptor in job["input_binding"]["dependencies"].items():
                 if not descriptor["records"]:
                     raise ValueError(f"Polar input {name} has no bound native support")

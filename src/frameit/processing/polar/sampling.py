@@ -153,6 +153,7 @@ def bind_polar_plan(source, request, binding, conf, *, radial_step_km=None):
 
 
 def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
+    from frameit.core.preflight import _same_native_grid
     from frameit.processing.polar.contracts import polar_field_options, polar_source_geometry
     from frameit.processing.polar.polar_proj import require_polar_backend
     from frameit.processing.requests import resolve_field_metadata, source_field_metadata
@@ -193,10 +194,15 @@ def _bind_polar_plan(source, request, binding, conf, *, radial_step_km):
                 raise ValueError(
                     f"sources.{source['name']}.derived.{job['name']}: alias collides with "
                     "generated polar coordinates or quality variables; choose another output alias")
-    spacing = []
+    spacing, prepared_grids = [], {}
     for job in jobs:
         sampled = job["context"][0] in sampled_times
-        job["polar_geometry"] = polar_source_geometry(job, conf)
+        # Native grid IDs alone need not distinguish the actual selected sample geometry.
+        key, grid = job["grid_id"], job["grid"]
+        previous = prepared_grids.get(key)
+        if previous is None or not _same_native_grid(grid, previous[0]):
+            previous = prepared_grids[key] = grid, polar_source_geometry(job, conf)
+        job["polar_geometry"] = previous[1]
         evidence = job["polar_geometry"]["spacing"]
         spacing.append(max(evidence[axis]["spacing_m"] for axis in ("x", "y")))
         job["polar_options"] = {}

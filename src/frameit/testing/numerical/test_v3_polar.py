@@ -49,6 +49,61 @@ def configuration(tmp_path, *, source=None, products=None, region=None, sources=
     }))
 
 
+def test_polar_binding_reuses_identical_geometry_within_each_snapshot(tmp_path):
+    ds = scene(hours=(0, 1))
+    ds["other"] = ds.q.copy()
+    ds.to_netcdf(tmp_path / "input.nc")
+    conf = configuration(tmp_path, source={"variables": {"2d": ["q", "other"]}})
+    _, children, _ = bind_sources(conf)
+
+    def coordinates(config):
+        jobs = config.source_requests["atmosphere"]["binding"]["operation_plans"]
+        return [job["polar_geometry"]["longitude"] for job in jobs]
+
+    child = coordinates(children["atmosphere"])
+    parent = coordinates(conf)
+    assert len(child) == len(parent) == 4
+    for group in (child, parent):
+        assert all(np.shares_memory(group[0], values) for values in group)
+    assert not np.shares_memory(child[0], parent[0])
+
+
+def test_polar_binding_checks_changed_geometry_even_with_the_same_inventory_id(tmp_path):
+    from frameit.processing.polar.sampling import bind_polar_plan
+
+    scene(hours=(0, 1)).to_netcdf(tmp_path / "input.nc")
+    conf = configuration(tmp_path)
+    _, children, sources = bind_sources(conf)
+    child = children["atmosphere"]
+    request = child.source_requests["atmosphere"]
+    binding = request["binding"]
+    first, second = binding["operation_plans"]
+    assert first["grid_id"] == second["grid_id"]
+
+    second["grid"] = deepcopy(second["grid"])
+    coords = second["grid"]["coordinates"]
+    coords["longitude"]["values"] += .25
+    coords["ni"]["attributes"]["units"] = "cm"
+    bind_polar_plan(sources["atmosphere"], request, binding, child)
+    original, changed = (job["polar_geometry"] for job in (first, second))
+    np.testing.assert_allclose(changed["longitude"] - original["longitude"], .25)
+    assert changed["spacing"]["x"]["spacing_m"] == 10.
+
+    second["grid"] = deepcopy(first["grid"])
+    coords = second["grid"]["coordinates"]
+    for name in ("longitude", "latitude"):
+        # Same shape and physical byte order; different values on each named axis.
+        values = np.ascontiguousarray(first["grid"]["coordinates"][name]["values"])
+        first["grid"]["coordinates"][name]["values"] = values
+        coords[name]["values"] = np.asfortranarray(values.T)
+    bind_polar_plan(sources["atmosphere"], request, binding, child)
+    original, changed = (job["polar_geometry"] for job in (first, second))
+    np.testing.assert_allclose(changed["longitude"], original["longitude"].T)
+    coords["longitude"]["attributes"]["units"] = "m"
+    with pytest.raises(ValueError, match="unsupported angle units"):
+        bind_polar_plan(sources["atmosphere"], request, binding, child)
+
+
 def ordinary_reader(path, *, fields, values=None, origin_values=None, variable_attributes=None):
     subprocess.run([sys.executable, "-c", """
 import json, sys
