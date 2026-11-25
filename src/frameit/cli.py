@@ -370,7 +370,7 @@ def _collect_report(path, *, command, schema_only=False, overrides=None, progres
         return _report_failure(exc, command, sample_only=sample_only)
 
 
-def _run_report_app(build_app, *, cli_output: bool, json_output: bool) -> int | None:
+def _run_report_app(build_app, *, cli_output: bool, json_output: bool, live=False) -> int | None:
     if (cli_output or json_output or os.environ.get("TERM") in (None, "", "dumb")
             or not all(stream.isatty() for stream in (sys.stdin, sys.stdout, sys.stderr))):
         return None
@@ -381,13 +381,29 @@ def _run_report_app(build_app, *, cli_output: bool, json_output: bool) -> int | 
             raise
         return None
 
-    from signal import SIGTERM, signal
+    import signal
 
-    previous = signal(SIGTERM, lambda *_: app.exit(128 + SIGTERM))
+    signals = [signal.SIGTERM]
+    hangup = getattr(signal, "SIGHUP", None)
+    if live and hangup is not None and signal.getsignal(hangup) != signal.SIG_IGN:
+        signals.append(hangup)
+
+    def quit_report(signum, frame):
+        if signum == hangup:
+            lost_outputs = [fd for fd in (1, 2) if not os.isatty(fd)]
+            if lost_outputs:
+                # A closed PTY cannot accept Textual's final writes or Python's flush.
+                with open(os.devnull, "w") as sink:
+                    for fd in lost_outputs:
+                        os.dup2(sink.fileno(), fd)
+        app.exit(128 + signum)
+
+    previous = {sig: signal.signal(sig, quit_report) for sig in signals}
     try:
         code = app.run()
     finally:
-        signal(SIGTERM, previous)
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
     return 1 if code is None else code
 
 
@@ -402,7 +418,7 @@ def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False, cli_o
         return ValidationApp(cfg_path, collect, schema_only=schema_only, overrides=overrides,
                              isolate=True)
 
-    code = _run_report_app(build_app, cli_output=cli_output, json_output=json_output)
+    code = _run_report_app(build_app, cli_output=cli_output, json_output=json_output, live=True)
     return _print_preflight(collect(), json_output=json_output) if code is None else code
 
 
@@ -594,7 +610,7 @@ def _cmd_inspect(args):
         return InspectionApp(config, partial(
             _collect_report, config, command="inspect", sample_only=True), isolate=True)
 
-    code = _run_report_app(build_app, cli_output=args.cli, json_output=args.json)
+    code = _run_report_app(build_app, cli_output=args.cli, json_output=args.json, live=True)
     if code is None:
         return _print_preflight(
             _collect_report(config, command="inspect"), json_output=args.json)

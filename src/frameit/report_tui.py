@@ -622,7 +622,7 @@ class ReportApp(App[int]):
         self._sync_activity()
 
     def on_worker_state_changed(self, event: Worker.StateChanged):
-        if event.worker is not self._worker or event.state in {
+        if not self.is_running or event.worker is not self._worker or event.state in {
                 WorkerState.PENDING, WorkerState.RUNNING}:
             return
         self._worker = None

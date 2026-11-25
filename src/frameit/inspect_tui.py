@@ -511,6 +511,7 @@ class InspectionApp(ReportApp):
     @on(Input.Changed, "#field-search")
     def _search_changed(self, event: Input.Changed):
         if self.result_code is not None and event.value == event.input.value:
+            self._sync_selected_field()
             self._populate_fields(self._field, search_only=True)
 
     @on(Input.Submitted, "#field-search")

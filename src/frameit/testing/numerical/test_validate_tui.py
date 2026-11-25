@@ -4,6 +4,7 @@ import asyncio
 import os
 import pty
 import select
+import signal
 import subprocess
 import sys
 import termios
@@ -647,9 +648,11 @@ def test_keys_buffered_after_refresh_do_not_change_the_restored_finding(tmp_path
     asyncio.run(exercise())
 
 
-def test_decoder_warning_is_visible_without_changing_report(tmp_path):
+@pytest.mark.parametrize("isolate", [False, True])
+def test_decoder_warning_is_visible_without_changing_report(tmp_path, isolate):
     import h5netcdf
 
+    from frameit.core.reports import project_report
     from frameit.validate_tui import ValidationApp
 
     path = _case(tmp_path)
@@ -657,19 +660,23 @@ def test_decoder_warning_is_visible_without_changing_report(tmp_path):
         fixture.variables["instructional_scalar"].attrs.update(
             _FillValue=-999.0, missing_value=-888.0)
     collect = partial(_collect_report, path, command="validate", overrides={"cpus": 1})
+    expected = project_report(collect())
 
     async def exercise():
-        app = ValidationApp(path, collect)
+        app = ValidationApp(path, collect, isolate=isolate)
+        if isolate:
+            app._reader.start()  # As in the foreground driver, before stderr is captured.
         async with app.run_test() as pilot:
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert "warning" in _text(app, "#status")
             await pilot.press("2")
             assert "multiple fill values" in _text(app, "#finding")
+            assert app._report == expected
             await pilot.press("q")
         assert app.return_value == 0
 
-    assert collect().facts["warnings"] == []
+    assert expected["warnings"] == []
     asyncio.run(exercise())
 
 
@@ -1041,23 +1048,30 @@ def test_refresh_retains_finding_when_only_authored_line_numbers_move(tmp_path):
 
 @pytest.mark.skipif(sys.platform != "linux", reason="tests the Linux driver's PTY restoration")
 @pytest.mark.parametrize("command", ["validate", "inspect"])
-def test_sigterm_restores_tty_during_terminal_report(tmp_path, command):
+@pytest.mark.parametrize("shutdown", ["SIGTERM", "SIGHUP", "terminal-close"])
+def test_signal_restores_tty_and_reaps_decoder_during_terminal_report(tmp_path, command, shutdown):
+    from frameit.testing.numerical.test_report_process import _wait_stopped
+
     path = _case(tmp_path)
-    (tmp_path / "gate-next").touch()
+    hangup = shutdown == "terminal-close"
+    signum = signal.SIGHUP if hangup else getattr(signal, shutdown)
     master, terminal = pty.openpty()
     termios.tcsetwinsize(terminal, (24, 80))
     original = termios.tcgetattr(terminal)
     script = """
-import sys
+import fcntl, sys, termios
 from functools import partial
 from pathlib import Path
 from frameit import cli
 from frameit.testing.numerical.test_report_process import gated_cli_report
+if sys.argv[3] == "terminal-close":
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 cli._collect_report = partial(gated_cli_report, Path(sys.argv[1]).parent)
 args = [sys.argv[2], sys.argv[1]]
 cli.main(args + (['--cpus', '1'] if args[0] == 'validate' else []))
 """
     chunks = []
+    reader_pid = decoder_pid = None
 
     def read_output():
         if select.select([master], [], [], 0.05)[0]:
@@ -1065,34 +1079,49 @@ cli.main(args + (['--cpus', '1'] if args[0] == 'validate' else []))
 
     try:
         with subprocess.Popen(
-            [sys.executable, "-c", script, str(path), command],
+            [sys.executable, "-c", script, str(path), command, shutdown],
             stdin=terminal, stdout=terminal, stderr=terminal,
-            env={**os.environ, "TERM": "xterm-256color"},
+            env={**os.environ, "TERM": "xterm-256color"}, start_new_session=hangup,
         ) as process:
             try:
                 deadline = monotonic() + 10
-                while not (started := list(tmp_path.glob("entered-*"))) and monotonic() < deadline:
+                while not (started := [f for f in tmp_path.glob("entered-*") if f.stat().st_size]
+                           ) and monotonic() < deadline:
                     read_output()
                 assert started, b"".join(chunks)[-1500:].decode(errors="replace")
                 reader_pid = int(started[0].name.split("-")[-1])
+                decoder_pid = int(started[0].read_text())
                 assert reader_pid != process.pid
                 assert not termios.tcgetattr(terminal)[3] & (termios.ICANON | termios.ECHO)
-                process.terminate()
-                # A terminal consumes output while the driver flushes on shutdown.
-                deadline = monotonic() + 10
-                while process.poll() is None and monotonic() < deadline:
-                    read_output()
-                assert process.returncode == 143
-                assert termios.tcgetattr(terminal) == original
+                if hangup:
+                    os.close(master)
+                    master = None
+                    process.wait(timeout=10)
+                else:
+                    process.send_signal(signum)
+                    # A terminal consumes output while the driver flushes on shutdown.
+                    deadline = monotonic() + 10
+                    while process.poll() is None and monotonic() < deadline:
+                        read_output()
+                assert process.returncode == 128 + signum
                 with pytest.raises(ProcessLookupError):
                     os.kill(reader_pid, 0)
-                while select.select([master], [], [], 0)[0]:
-                    chunks.append(os.read(master, 65536))
-                assert b"\x1b[?1049l" in b"".join(chunks)
+                _wait_stopped(decoder_pid)
+                assert not list(tmp_path.glob("decoder-scratch-*"))
+                assert (tmp_path / "raw-stdin").read_text() == "False"
+                if not hangup:
+                    assert termios.tcgetattr(terminal) == original
+                    while select.select([master], [], [], 0)[0]:
+                        chunks.append(os.read(master, 65536))
+                    assert b"\x1b[?1049l" in b"".join(chunks)
             finally:
-                (tmp_path / "release").touch()
                 if process.poll() is None:
                     process.kill()
+                for pid in (decoder_pid, reader_pid):
+                    if pid is not None and pid != process.pid:
+                        with suppress(ProcessLookupError):
+                            os.kill(pid, signal.SIGKILL)
     finally:
         for fd in (master, terminal):
-            os.close(fd)
+            if fd is not None:
+                os.close(fd)

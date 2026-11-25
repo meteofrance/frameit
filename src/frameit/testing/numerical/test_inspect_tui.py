@@ -191,12 +191,45 @@ def test_search_reuses_unchanged_rows_and_only_builds_the_latest_query(tmp_path,
             await pilot.pause()
             assert cleared == ["temp"] and "1 of 2 fields" in _text(app, "#field-controls")
             assert "temperature" in _text(app, "#field-details")
-            data["temperature"].attrs["units"] = "degC"
-            data.to_netcdf(sample, engine="h5netcdf")
+            identities = list(app._visible)
+            config = yaml.safe_load(path.read_text())
+            config["sources"]["air"]["variables"] = {"2d": ["temperature"]}
+            path.write_text(yaml.safe_dump(config))
             await pilot.press("r")
             await _ready(app, pilot)
-            assert str(table.get_row_at(0)[2]) == "degC"
+            assert app._visible == identities and str(table.get_row_at(0)[3]) == "Requested"
             assert cleared == ["temp", "temperature"]
+
+    asyncio.run(exercise())
+
+
+def test_search_preserves_current_duplicate_field_before_highlight_is_delivered(tmp_path):
+    from textual.widgets import DataTable
+
+    from frameit.core.reports import project_report
+    from frameit.inspect_tui import InspectionApp
+
+    v3_scene(names=("pressure", "temperature", "temperature_other"), hours=(0,)).to_netcdf(
+        tmp_path / "sample.nc", engine="h5netcdf")
+    path = _case(tmp_path, {"air": {"files": "sample.nc"}})
+    report = project_report(_collect_report(path, command="inspect", sample_only=True))
+    fields = report["data"]["plan"]["sources"]["air"]["fields"]
+    second = next(identity for identity, field in fields.items()
+                  if field["name"] == "temperature_other")
+    fields[second].update(name="temperature", group="second")
+
+    async def exercise():
+        app = InspectionApp(path, None, saved_report=report)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.press("2")
+            table = app.query_one("#fields", DataTable)
+            with table.prevent(DataTable.RowHighlighted):
+                table.move_cursor(row=table.get_row_index(second), animate=False)
+            app.query_one("#field-search").value = "temp"
+            await pilot.pause()
+            assert table.row_count == 2
+            assert table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value == second
+            assert "Native group: second" in _text(app, "#field-details")
 
     asyncio.run(exercise())
 

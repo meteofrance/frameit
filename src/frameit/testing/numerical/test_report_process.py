@@ -2,9 +2,13 @@
 
 import asyncio
 import os
+import signal
+import subprocess
 import sys
+from contextlib import suppress
 from functools import partial
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Barrier, Thread
 from time import monotonic, sleep
 
@@ -53,12 +57,46 @@ def test_isolated_checks_reuse_one_reader_and_keep_the_projection(tmp_path, capf
             os.kill(first, 0)
 
 
+_WAITING_DECODER = """
+import os, signal, sys, time
+from pathlib import Path
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+Path(sys.argv[1]).write_text(str(os.getpid()))
+time.sleep(8)
+"""
+
+
+def _running(pid):
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except FileNotFoundError:
+        return False
+    return state not in {"Z", "X"}
+
+
+def _wait_stopped(pid):
+    deadline = monotonic() + 2
+    while _running(pid) and monotonic() < deadline:
+        sleep(.02)
+    assert not _running(pid), f"Decoder {pid} still running"
+
+
 def _faulty_check(crash, *, progress):
     if crash.exists():
+        ready = crash.with_name("decoder-ready")
+        decoder = subprocess.Popen(
+            [sys.executable, "-c", _WAITING_DECODER, str(ready)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        crash.write_text(str(decoder.pid))
+        deadline = monotonic() + 5
+        while not ready.exists() and monotonic() < deadline:
+            sleep(.02)
         os._exit(7)
     return PreflightResult("validate")
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="inspects a Linux decoder process")
 def test_a_crashed_reader_never_reports_success_and_can_be_restarted(tmp_path):
     from frameit.report_check import ReportProcess
 
@@ -68,10 +106,15 @@ def test_a_crashed_reader_never_reports_success_and_can_be_restarted(tmp_path):
     try:
         with pytest.raises(RuntimeError, match="Metadata helper"):
             reader.read(lambda *event: None, lambda: False, lambda warning: None)
+        pid = int(marker.read_text())
+        _wait_stopped(pid)
         marker.unlink()
         report = reader.read(lambda *event: None, lambda: False, lambda warning: None)
         assert report["status"] == "ok"
     finally:
+        if marker.exists() and (pid := marker.read_text()):
+            with suppress(ProcessLookupError):
+                os.kill(int(pid), signal.SIGKILL)
         reader.close()
 
 
@@ -163,5 +206,11 @@ def test_cancel_during_an_isolated_read_waits_and_restores_previous_report(tmp_p
 
 
 def gated_cli_report(root, config, *, progress, **options):
-    """Importable fixture for a real TTY child, not a parent-only monkeypatch."""
-    return _gated_check(Path(config), Path(root), progress=progress)
+    """Model the same subprocess.run + scratch directory lifetime as an FA request."""
+    (root / "raw-stdin").write_text(str(os.isatty(0)))
+    progress("metadata", "atmosphere", 0, 1)
+    with TemporaryDirectory(dir=root, prefix="decoder-scratch-") as scratch:
+        marker = root / f"entered-{os.getpid()}"
+        subprocess.run([sys.executable, "-c", _WAITING_DECODER, str(marker)],
+                       cwd=scratch, check=False)
+    return _collect_report(config, progress=progress, **options)

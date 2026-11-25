@@ -6,6 +6,8 @@ from asyncio import CancelledError
 from contextlib import redirect_stderr, suppress
 from io import TextIOBase
 from multiprocessing import get_context
+from multiprocessing.connection import wait
+from pickle import UnpicklingError
 from threading import Event, Lock
 from time import monotonic
 
@@ -40,11 +42,16 @@ class _Warnings(TextIOBase):
         return len(text)
 
 
+def _terminate(signum, frame):
+    raise SystemExit(128 + signum)
+
+
 def _serve(channel, collect):
     if os.name == "posix":
         os.setsid()  # Readers may launch their own native helper.
-    with open(os.devnull, "w") as quiet:
-        for descriptor in (1, 2):
+        signal.signal(signal.SIGTERM, _terminate)
+    with open(os.devnull, "r+") as quiet:
+        for descriptor in (0, 1, 2):
             os.dup2(quiet.fileno(), descriptor)
 
     sending = Lock()
@@ -78,6 +85,33 @@ def _serve(channel, collect):
                 send("report", report)
 
 
+def _signal_group(pid, signum):
+    try:
+        os.killpg(pid, signum)
+    except ProcessLookupError:
+        # The process may not have reached setsid yet.
+        with suppress(ProcessLookupError):
+            os.kill(pid, signum)
+
+
+def _stop_reader(process, *, grace):
+    # Keep the PID reserved until its group is stopped, even if the leader
+    # crashed and there are now only descendants left to stop.
+    sentinel = [process.sentinel]
+    if not wait(sentinel, grace):
+        if os.name == "posix":
+            _signal_group(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+        wait(sentinel, .5)
+    if os.name == "posix":
+        _signal_group(process.pid, signal.SIGKILL)
+    elif not wait(sentinel, 0):
+        process.kill()
+    process.join()
+    process.close()
+
+
 class ReportProcess:
     """One reusable child and at most one check in flight, owned by the app."""
 
@@ -105,16 +139,14 @@ class ReportProcess:
         with self._lock:
             if self._closing.is_set():
                 raise CancelledError
-            if self._process is not None and not self._process.is_alive():
-                self._channel.close()
-                self._process.close()
-                self._process = self._channel = None
+            if self._process is not None and wait([self._process.sentinel], 0):
+                self._retire()
             if self._process is None:
                 self._start()
-            return self._process, self._channel
+            return self._channel
 
     def read(self, notify, is_cancelled, warn):
-        process, channel = self.start()
+        channel = self.start()
         sent_cancel = False
         try:
             with self._lock:
@@ -140,33 +172,28 @@ class ReportProcess:
                     raise CancelledError
                 elif kind == "report":
                     return value
-        except (EOFError, OSError) as exc:
+        except (EOFError, OSError, UnpicklingError, ValueError) as exc:
             with self._lock:
                 if not self._closing.is_set():
-                    process.join(.25)
+                    self._retire()
                     raise RuntimeError(
-                        "Metadata helper stopped before returning a report.") from exc
+                        "Metadata helper stopped before returning a report") from exc
         raise CancelledError
+
+    def _retire(self, *, stop=False):
+        process, channel = self._process, self._channel
+        self._process = self._channel = None
+        if process is None:
+            return
+        if stop:
+            with suppress(OSError):
+                channel.send("stop")
+        try:
+            _stop_reader(process, grace=.25 if stop else 0)
+        finally:
+            channel.close()
 
     def close(self):
         self._closing.set()
         with self._lock:
-            process, channel = self._process, self._channel
-            self._process = self._channel = None
-            if process is None:
-                return
-            with suppress(OSError):
-                channel.send("stop")
-        # Quit can be forced by SIGTERM while a reader is still inside a native call.
-        process.join(.25)
-        if process.is_alive():
-            if os.name == "posix":
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    process.kill()
-            else:
-                process.kill()
-            process.join()
-        channel.close()
-        process.close()
+            self._retire(stop=True)

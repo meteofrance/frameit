@@ -29,7 +29,7 @@ def test_logo_jumps_to_elapsed_phase_without_repainting_the_same_frame(tmp_path,
         return PreflightResult("validate")
 
     async def exercise():
-        app = ValidationApp(tmp_path / "config.yaml", collect)
+        app = ValidationApp(tmp_path / "config.yaml", collect, schema_only=True)
         async with app.run_test(size=(80, 24)) as pilot:
             try:
                 await pilot.pause()
@@ -48,6 +48,7 @@ def test_logo_jumps_to_elapsed_phase_without_repainting_the_same_frame(tmp_path,
                 assert logo.content is frame
             finally:
                 finish.set()
+                await app.workers.wait_for_complete()
 
     asyncio.run(exercise())
 
