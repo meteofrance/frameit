@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.0rc4 — 2026-11-25 (development candidate)
+
+- Add interactive validation and dataset inspection, with portable reports and
+  a text alternative for batch workflows.
+- Fill qualified missing metadata from the bundled offline catalogue during
+  validation and execution, without editing input files or configuration.
+- Estimate peak and modeled median RSS before a run. The allocation advice
+  is 1.5 times the estimated peak, rounded up to a whole GiB; it is not a
+  scheduler measurement or a production memory limit.
+
+The configuration schema version stays at 3. This development candidate is
+not scientific sign-off or a stable release.
+
 ## 2.0.0rc3 — 2026-11-18 (development candidate)
 
 - Place the coupled-input task guide's wind reference arrow immediately above
