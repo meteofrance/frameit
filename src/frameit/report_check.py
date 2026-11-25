@@ -30,13 +30,13 @@ def collect_projection(collect, notify, is_cancelled):
 
 
 class _Warnings(TextIOBase):
-    def __init__(self, channel):
-        self.channel = channel
+    def __init__(self, send):
+        self.send = send
 
     def write(self, text):
         level, _, message = text.rstrip().partition(":")
         if level == "WARNING" and message:
-            self.channel.send(("warning", message.partition(":")[2] or message))
+            self.send("warning", message.partition(":")[2] or message)
         return len(text)
 
 
@@ -47,8 +47,15 @@ def _serve(channel, collect):
         for descriptor in (1, 2):
             os.dup2(quiet.fileno(), descriptor)
 
+    sending = Lock()
+
+    def send(kind, value):
+        # Reader libraries may log from other threads while a frame is being sent.
+        with sending:
+            channel.send((kind, value))
+
     def notify(*args):
-        channel.send(("progress", args))
+        send("progress", args)
 
     def cancelled():
         if channel.poll():
@@ -57,18 +64,18 @@ def _serve(channel, collect):
             return True
         return False
 
-    with channel, redirect_stderr(_Warnings(channel)), suppress(EOFError, BrokenPipeError):
+    with channel, redirect_stderr(_Warnings(send)), suppress(EOFError, BrokenPipeError):
         while (request := channel.recv()) != "stop":
             if request != "check":  # Cancellation may arrive just after a result was sent.
                 continue
             try:
                 report = collect_projection(collect, notify, cancelled)
             except CancelledError:
-                channel.send(("cancelled", None))
+                send("cancelled", None)
             except Exception as exc:
-                channel.send(("error", str(exc)))
+                send("error", str(exc))
             else:
-                channel.send(("report", report))
+                send("report", report)
 
 
 class ReportProcess:

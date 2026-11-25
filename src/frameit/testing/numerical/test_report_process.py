@@ -5,6 +5,7 @@ import os
 import sys
 from functools import partial
 from pathlib import Path
+from threading import Barrier, Thread
 from time import monotonic, sleep
 
 import pytest
@@ -69,6 +70,38 @@ def test_a_crashed_reader_never_reports_success_and_can_be_restarted(tmp_path):
             reader.read(lambda *event: None, lambda: False, lambda warning: None)
         marker.unlink()
         report = reader.read(lambda *event: None, lambda: False, lambda warning: None)
+        assert report["status"] == "ok"
+    finally:
+        reader.close()
+
+
+def _concurrent_warnings(*, progress):
+    progress("configuration", None, None, None)
+    ready = Barrier(4)
+
+    def warn(letter):
+        ready.wait(5)
+        print("WARNING:fixture:" + letter * 1_000_000, file=sys.stderr)
+
+    threads = [Thread(target=warn, args=(letter,)) for letter in "abc"]
+    for thread in threads:
+        thread.start()
+    ready.wait(5)
+    progress("metadata", "air", 0, 1)
+    for thread in threads:
+        thread.join(5)
+    return PreflightResult("validate")
+
+
+def test_reader_keeps_warning_messages_intact_while_threads_report_progress():
+    from frameit.report_check import ReportProcess
+
+    reader = ReportProcess(_concurrent_warnings)
+    warnings = []
+    try:
+        # Let the sender fill the real socket buffer before reading the larger messages.
+        report = reader.read(lambda *event: sleep(.1), lambda: False, warnings.append)
+        assert sorted(warnings) == [letter * 1_000_000 for letter in "abc"]
         assert report["status"] == "ok"
     finally:
         reader.close()
