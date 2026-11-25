@@ -51,6 +51,7 @@ The run layout is::
     <output_dir>/
         cache/       # GRIB index files
         products/    # Requested source/product .nc files or .zarr stores
+        records/trajectory.nc  # Exact centres, present when the run has centres
         logs/        # Simulation logs
         run-request.yaml      # Captured authored request, overrides and path bases
         resolved-config.yaml  # Effective schema-version-3 configuration
@@ -139,6 +140,19 @@ Keep these four records with the data:
   versions and selected Slurm metadata. ``planned_products`` is intent;
   ``products`` lists observed complete publications; ``pending`` lists unresolved
   processing, publication or cleanup.
+
+New v3 attempts share a ``run_attempt_id`` across their records and published
+products. ``run_context`` identifies the authored and effective scientific
+request. Provenance freezes the selected source files, clocks and effective
+metadata. Product metadata fingerprints detect ordinary file or header changes;
+they do not certify unchecked data values.
+
+When centres exist, the run saves ``records/trajectory.nc`` even with
+``--no-export``. It records the actual centre coordinates and times,
+distinguishes fixed, prescribed and calculated centres, and stores tracking
+status. The checksum and path are in ``run-status.yaml`` under ``records``,
+not ``products``. This internal record does not enable the optional public
+``products.track`` export. A full-domain run with no centres has no trajectory.
 
 When comparing run records, compare the parsed YAML values. Quoting and
 Unicode escapes can differ depending on the installed YAML emitter.

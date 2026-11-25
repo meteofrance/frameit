@@ -5,6 +5,9 @@ from pathlib import Path
 
 from frameit.utils.diagnostics import tag_error
 
+TRAJECTORY_RECORD = "records/trajectory.nc"
+
+
 @dataclass(frozen=True)
 class OutputPaths:
     root: Path
@@ -23,6 +26,16 @@ class OutputPaths:
     @property
     def logs(self) -> Path:
         return self.root / "logs"
+
+    def trajectory_record(self) -> Path:
+        path = self.root / TRAJECTORY_RECORD
+        if any(entry.is_symlink() for entry in (self.root, path.parent, path)):
+            raise tag_error(ValueError(f"Trajectory record path contains a symlink: {path}"),
+                            "E1805")
+        if path.parent.exists() and not path.parent.is_dir():
+            raise tag_error(ValueError(f"Trajectory record requires a directory: {path.parent}"),
+                            "E1805")
+        return path
 
     def planned_products(self, descriptors):
         """Resolve the common plan without sanitizing or inventing file names."""

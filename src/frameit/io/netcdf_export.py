@@ -1007,6 +1007,8 @@ def _export_pool(group_count, max_workers, dask_scheduler, dask_workers, native_
 def _write_product(item, dataset, destination, options):
     """Publish one v3 product and return only its actual reopened field/encoding facts."""
     source, product = item["source"], item["product"]
+    from frameit.core.run_context import product_identity
+
     engine = options["engine"]
     path = _write_dataset(dataset, destination, **options)
     fields = {name: {
@@ -1030,15 +1032,19 @@ def _write_product(item, dataset, destination, options):
             encoding["chunks"][name] = list(stored[name].chunks)
             encoding["shards"][name] = list(stored[name].shards or ())
         encoding["reader_requirements"] = "Zarr v3 with sharding_indexed codec"
+        identity = product_identity(path, representation=encoding["format"])
     else:
-        with xr.open_dataset(path, engine=engine, decode_times=False) as saved:
+        with xr.open_dataset(path, engine=engine, decode_cf=False, cache=False,
+                             create_default_indexes=False) as saved:
             encoding["unlimited_time"] = "time" in saved.encoding.get("unlimited_dims", ())
             encoding["chunks"] = {
                 name: list(value.encoding.get("chunksizes") or ())
                 for name, value in saved.variables.items()}
+            identity = product_identity(path, representation=encoding["format"], header=saved)
         encoding["reader_requirements"] = "NetCDF4/HDF5 reader"
     return {
         **item, "role": product, "group": None, "path": str(path.resolve()),
+        "identity": identity,
         "fields": fields,
         "dimensions": {name: value["dimensions"] for name, value in fields.items()},
         "units": {name: value["units"] for name, value in fields.items()},
@@ -1218,6 +1224,7 @@ def export_outputs(
     zarr_shard_size: dict[str, int] | None = None,
     netcdf_chunk_size: dict[str, int] | None = None,
     on_published: Callable[[dict], None] | None = None,
+    run_attempt_id: str | None = None,
 ) -> dict[str, Path | list[Path]]:
     """
     Export all FrameIt products using the selected NetCDF or Zarr engine.
@@ -1298,6 +1305,7 @@ def export_outputs(
     meta = build_metadata_from_conf(conf, frameit_version=frameit_version, institution=institution)
 
     if getattr(conf, "schema_version", None) == 3:
+        from frameit.io.trajectory import track_coordinates
         from frameit.io.zarr_export import validate_zarr_sizes
 
         results = {}
@@ -1345,15 +1353,14 @@ def export_outputs(
         tasks = []
         for item, destination in zip(planned, destinations, strict=True):
             source, product = item["source"], item["product"]
-            dataset = (runner.track.rename(lat="latitude", lon="longitude")
+            dataset = (track_coordinates(runner.track)
                        if product == "track" else runner.field_products[(source, product)])
             if product == "track":
-                dataset = dataset.copy(deep=False)
-                for name, units in (("latitude", "degrees_north"), ("longitude", "degrees_east")):
-                    dataset[name].attrs = dict(dataset[name].attrs, standard_name=name, units=units)
                 dataset.time.encoding = dict(dataset.time.encoding,
                     units="seconds since 1970-01-01", calendar=dataset.time.encoding.get(
-                        "calendar", "proleptic_gregorian"))
+                         "calendar", "proleptic_gregorian"))
+            if run_attempt_id is not None:
+                dataset = dataset.assign_attrs(run_attempt_id=run_attempt_id)
             writer = {
                 "metadata": meta, "product_type": product,
                 "engine": "netcdf4" if product == "track" and engine == "zarr" else engine,

@@ -42,6 +42,138 @@ def record(root, name):
     return yaml.safe_load((root / name).read_text())
 
 
+def fixed_document():
+    return {**document(), "region": {
+        "center": {"latitude": -20., "longitude": 60.},
+        "width_km": {"x": 8., "y": 8.},
+    }}
+
+
+@pytest.mark.parametrize("export", [True, False])
+def test_internal_trajectory_without_public_track(tmp_path, export):
+    path = create_first_run_input(tmp_path / "input.nc")
+    conf = SimulationConfig(**to_runtime(fixed_document(), base_dir=tmp_path))
+    execute_simulation(conf, ExecutionOptions.from_config(conf, export_netcdf=export))
+    root = conf.output_dir
+    status, request, provenance = (
+        record(root, name) for name in ("run-status.yaml", "run-request.yaml", "run-provenance.yaml")
+    )
+    attempt = status["run_attempt_id"]
+    assert provenance["run_attempt_id"] == request["run_attempt_id"] == attempt
+    assert status["run_context"] == provenance["run_context"]
+    assert request["run_context"]["projection_version"] == 1
+    assert "diagnostics" not in request["run_context"]["effective"]
+    assert status["records"] == provenance["records"]
+    entry, = status["records"]
+    assert (entry["role"], entry["path"]) == ("trajectory", "records/trajectory.nc")
+    track = root / entry["path"]
+    assert entry["sha256"] == hashlib.sha256(track.read_bytes()).hexdigest()
+    with xr.open_dataset(track) as ds:
+        np.testing.assert_array_equal(ds.latitude.values, [-20., -20.])
+        np.testing.assert_array_equal(ds.longitude.values, [60., 60.])
+        assert ds.latitude.dtype == ds.longitude.dtype == np.dtype("float64")
+        np.testing.assert_array_equal(ds.time.values, np.array(
+            ["2000-01-01T00:00", "2000-01-01T01:00"], dtype=ds.time.dtype))
+        assert ds.time.encoding["calendar"] == "proleptic_gregorian"
+        assert ds.attrs["run_attempt_id"] == attempt
+        assert ds.attrs["centre_origin"] == "fixed"
+    inventory = provenance["sources"]["weather"]["frozen_inventory"]
+    assert inventory["files"][0]["identity"]["mtime_ns"] == path.stat().st_mtime_ns
+    assert len(inventory["samples"]) == 2
+    if export:
+        product, = status["products"]
+        assert product["role"] == "model_grid"
+        assert product["identity"]["mtime_ns"] == (root / product["path"]).stat().st_mtime_ns
+        with xr.open_dataset(root / product["path"]) as ds:
+            assert ds.attrs["run_attempt_id"] == attempt
+    else:
+        assert status["products"] == []
+
+
+@pytest.mark.parametrize("conflict", ["unrelated", "input", "symlink", "hardlink"])
+def test_trajectory_record_ownership(tmp_path, conflict):
+    path = create_first_run_input(tmp_path / "input.nc")
+    root = tmp_path / "out"
+    (root / "records").mkdir(parents=True)
+    target = root / "records/trajectory.nc"
+    raw = fixed_document()
+    if conflict == "unrelated":
+        target.write_bytes(b"not a run record")
+    elif conflict == "input":
+        target.hardlink_to(path)
+        raw["sources"]["weather"]["files"] = str(target)
+    elif conflict == "symlink":
+        target.symlink_to(path)
+    else:
+        target.hardlink_to(path)
+    before = target.read_bytes()
+    conf = SimulationConfig(**to_runtime(raw, base_dir=tmp_path))
+    options = ExecutionOptions.from_config(conf, export_netcdf=False, overwrite=True)
+    with pytest.raises((OSError, ValueError), match=r"trajectory|[Ss]ymlink"):
+        execute_simulation(conf, options)
+    assert target.read_bytes() == before
+    assert not (root / "run-status.yaml").exists()
+    assert not (root / ".frameit-run.lock").exists()
+
+
+def test_trajectory_write_failure_blocks_parent_completion(tmp_path, monkeypatch):
+    create_first_run_input(tmp_path / "input.nc")
+    original = xr.Dataset.to_netcdf
+
+    def fail_trajectory(self, *args, **kwargs):
+        if self.attrs.get("centre_origin") == "fixed":
+            raise OSError("broken trajectory writer")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(xr.Dataset, "to_netcdf", fail_trajectory)
+    conf = SimulationConfig(**to_runtime(fixed_document(), base_dir=tmp_path))
+    with pytest.raises(OSError, match="broken trajectory writer"):
+        execute_simulation(conf, ExecutionOptions.from_config(conf, export_netcdf=False))
+    assert record(conf.output_dir, "run-status.yaml")["state"] == "failed"
+    assert not (conf.output_dir / "records/trajectory.nc").exists()
+
+
+def test_trajectory_overwrite_replaces_only_the_recognized_attempt(tmp_path):
+    create_first_run_input(tmp_path / "input.nc")
+    raw = fixed_document()
+    for attempt in range(3):
+        if attempt == 2:
+            del raw["region"]
+        conf = SimulationConfig(**to_runtime(raw, base_dir=tmp_path))
+        execute_simulation(conf, ExecutionOptions.from_config(
+            conf, export_netcdf=False, overwrite=bool(attempt)))
+        status = record(conf.output_dir, "run-status.yaml")
+        if attempt:
+            assert status["run_attempt_id"] != previous_id
+        previous_id = status["run_attempt_id"]
+        assert bool(status["records"]) == (attempt != 2)
+
+
+def test_authored_projection_preserves_omissions(tmp_path):
+    import importlib.util
+
+    assert importlib.util.find_spec("frameit.core.run_context") is not None
+    from frameit.core.run_context import project_base_request
+
+    path = create_first_run_input(tmp_path / "input.nc")
+    raw = fixed_document()
+    raw["sources"]["weather"]["time"] = {"stride": 1}
+
+    def project(doc, base=tmp_path):
+        return project_base_request(doc, base_dir=base, version=1)
+
+    authored = project(raw)
+    path.unlink()
+    assert project({**raw, "diagnostics": {"best_track": {}}, "output": {"directory": "new"},
+                    "resources": {"cpus": 2}, "logging": {"level": "ERROR"}}) == authored
+    assert project(raw, tmp_path / "moved") != authored
+    del raw["sources"]["weather"]["time"]
+    assert project(raw) != authored
+    clean = project(raw)
+    raw["sources"]["weather"]["files"] = "native-link/../input.nc"
+    assert project(raw) != clean
+
+
 def observe_checkpoint_writes(monkeypatch, observe):
     original_open = Path.open
 

@@ -366,7 +366,7 @@ def _execute_owned_simulation(config, options, input_files, progress, logs, leve
         if "track" in config.yaml_config["region"]:
             inputs.append(Path(config.yaml_config["region"]["track"]["file"]))
         input_locations = _input_path_locations(inputs)
-        targets = planned_paths
+        targets = [*planned_paths, OutputPaths(config.output_dir).trajectory_record()]
         targets += [config.output_dir / name for name in (
             "run-request.yaml", "resolved-config.yaml", "run-provenance.yaml",
             "run-status.yaml", ".frameit-run.lock")]
@@ -395,8 +395,16 @@ def _execute_owned_simulation(config, options, input_files, progress, logs, leve
     request = {"record_version": 1, **deepcopy(config.request_context),
                "requested_execution_options": asdict(requested), "runtime": deepcopy(runtime)}
     provenance = (_run_provenance(config, effective, initial, runtime)
-                  if config.schema_version == 3 else None)
+                   if config.schema_version == 3 else None)
     if provenance is not None:
+        from uuid import uuid4
+
+        from frameit.core.run_context import build_context
+
+        summary, context = build_context(request, config.yaml_config)
+        attempt = uuid4().hex
+        initial.update(run_attempt_id=attempt, run_context=summary, records=[])
+        request.update(run_attempt_id=attempt, run_context=context)
         provenance["layouts"] = prepared_sources[0].get("layouts")
     owned_status = None
     try:
@@ -536,6 +544,33 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                 status["common_polar_target"] = config.simulation_parameter[
                     "common_polar_target"]
         if config.schema_version == 3:
+            from frameit.core.run_context import freeze_source_inventory
+            from frameit.io.trajectory import write_trajectory_record
+
+            # Complete the existing source subtrees before memoizing any of them.
+            for name, entry in config.simulation_parameter.get("source_provenance", {}).items():
+                entry["frozen_inventory"] = freeze_source_inventory(
+                    runner.prepared_sources[2][name])
+            region = config.yaml_config["region"]
+            origin = next((kind for key, kind in (
+                ("center", "fixed"), ("track", "prescribed"), ("tracker", "calculated"))
+                if key in region), None)
+            if origin is not None and runner.track is not None and runner.track.sizes.get("time"):
+                intended = config.simulation_parameter.get("region_alignment", {}).get(
+                    "selected_times", runner.track.time.values)
+                status["records"].append(write_trajectory_record(
+                    config.output_dir, runner.track, attempt_id=status["run_attempt_id"],
+                    origin=origin, overwrite="retained_trajectory_record" in status,
+                    tracking_facts={
+                        "tracking_method": str(config.tracking_method),
+                        "tracking_version": runtime["frameit_version"],
+                        "tracking_complete": int(status["tracking_complete"]),
+                        "tracking_termination_reason": status["tracking_termination_reason"],
+                        "intended_time_count": len(intended),
+                        "intended_time_start": str(intended[0]) if len(intended) else "",
+                        "intended_time_end": str(intended[-1]) if len(intended) else "",
+                    }))
+                status.pop("retained_trajectory_record", None)
             provenance.update(_run_provenance(config, options, status, runtime))
             provenance.update(
                 input_inventory=[str(path) for path in result.files],
@@ -577,6 +612,7 @@ def _execute_simulation(config, options, status, runtime, *, input_files=None,
                         zarr_shard_size=options.zarr_shard_size,
                         netcdf_chunk_size=options.netcdf_chunk_size,
                         on_published=published,
+                        run_attempt_id=status.get("run_attempt_id"),
                     )
             except FileExistsError as exc:
                 raise tag_error(exc, "E1802")

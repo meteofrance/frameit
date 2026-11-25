@@ -46,7 +46,8 @@ def checkpoint_run(root, status, provenance=None, *, stable_sources=None):
     failure = None
     try:
         if provenance is not None:
-            for key in ("state", "request_record", "planned_products", "products", "pending",
+            for key in ("state", "request_record", "run_attempt_id", "run_context", "records",
+                        "planned_products", "products", "pending",
                         "updated_at", "error", "tracking_complete", "tracking_termination_reason"):
                 if key in status:
                     provenance[key] = status[key]
@@ -136,7 +137,9 @@ def read_run_status(root):
     if optional.is_file() and not optional.is_symlink():
         try:
             candidate = read_yaml(optional)
-            shared = ("updated_at", "state", "products", "pending")
+            shared = ("updated_at", "state", "products", "pending",
+                      *[key for key in ("run_attempt_id", "run_context", "records")
+                        if key in status or key in candidate])
             if status.get("updated_at") and all(
                 key in status and candidate.get(key) == status[key] for key in shared
             ):
@@ -168,6 +171,57 @@ def read_run_status(root):
     }
 
 
+def _previous_trajectory(root, *, overwrite):
+    from frameit.core.configuration import read_yaml
+    from frameit.core.run_context import file_sha256
+    from frameit.utils.output_paths import TRAJECTORY_RECORD, OutputPaths
+
+    path = OutputPaths(root).trajectory_record()
+    if not path.exists():
+        return None
+    status = root / "run-status.yaml"
+    if overwrite and path.is_file() and _recognized_record(status):
+        former = read_yaml(status, error_code="E1807")
+        retired = former.get("retained_trajectory_record")
+        if retired is None:
+            retired = next((entry for entry in former.get("records", [])
+                            if isinstance(entry, dict) and entry.get("role") == "trajectory"
+                            and entry.get("run_attempt_id") == former.get("run_attempt_id")), None)
+        if (isinstance(retired, dict) and retired.get("role") == "trajectory"
+                and retired.get("path") == TRAJECTORY_RECORD and retired.get("run_attempt_id")
+                and retired.get("sha256") == file_sha256(path)):
+            return retired
+    raise tag_error(FileExistsError(f"Refusing to replace an unrecognized trajectory record: {path}"),
+                    "E1802")
+
+
+@contextmanager
+def directory_lock(root, *, lock_name=".frameit-run.lock"):
+    """Lease an existing directory without writing any run records."""
+    root = Path(root)
+    lock = root / lock_name
+    try:
+        stream = lock.open("x", encoding="utf-8")
+    except FileExistsError as exc:
+        raise tag_error(FileExistsError(
+            f"Run directory is locked: {root}. Use a fresh attempt directory. "
+            f"Remove a stale {lock_name} only after confirming its owner has stopped."
+        ), "E1801") from exc
+    except OSError as exc:
+        raise tag_error(exc, "E1803")
+    failure = None
+    try:
+        with stream:
+            stream.write(f"pid: {os.getpid()}\n")
+        yield
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        with finalize_after(failure, "Releasing the run lock also failed"):
+            lock.unlink()
+
+
 @contextmanager
 def owned_run(root, *, overwrite, initial, request=None, provenance=None):
     """Claim a directory before logging/processing; never steal an existing lock."""
@@ -176,20 +230,7 @@ def owned_run(root, *, overwrite, initial, request=None, provenance=None):
         root.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise tag_error(exc, "E1803")
-    lock = root / ".frameit-run.lock"
-    try:
-        stream = lock.open("x", encoding="utf-8")
-    except FileExistsError as exc:
-        raise tag_error(FileExistsError(
-            f"Run directory is locked: {root}. Use a fresh attempt directory. "
-            "Remove a stale .frameit-run.lock only after confirming its owner has stopped."
-        ), "E1801") from exc
-    except OSError as exc:
-        raise tag_error(exc, "E1803")
-    failure = None
-    try:
-        with stream:
-            stream.write(f"pid: {os.getpid()}\n")
+    with directory_lock(root):
         existing = [root / name for name in (
             "run-request.yaml", "resolved-config.yaml", "run-provenance.yaml", "run-status.yaml",
         ) if (root / name).exists() or (root / name).is_symlink()]
@@ -212,8 +253,14 @@ def owned_run(root, *, overwrite, initial, request=None, provenance=None):
             "schema_version": 1, "state": "running", "started_at": utc_now(),
             "finished_at": None, "products": [], **initial,
         }
+        if "run_attempt_id" in initial:
+            retained = _previous_trajectory(root, overwrite=overwrite)
+            if retained:
+                # Do not misidentify an older record as this attempt's trajectory.
+                status["retained_trajectory_record"] = retained
         if request is not None:
             status["request_record"] = "run-request.yaml"
+        failure = None
         try:
             if request is not None:
                 write_run_record(root / "run-request.yaml", request, overwrite=overwrite)
@@ -232,9 +279,3 @@ def owned_run(root, *, overwrite, initial, request=None, provenance=None):
             with finalize_after(failure, "Finalizing run records also failed"):
                 status["finished_at"] = utc_now()
                 checkpoint_run(root, status, provenance)
-    except BaseException as exc:
-        failure = exc
-        raise
-    finally:
-        with finalize_after(failure, "Releasing the run lock also failed"):
-            lock.unlink()

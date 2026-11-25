@@ -11,6 +11,16 @@ source kind and selectors. A wind selector needs either ``speed`` or both
 ``u`` and ``v``. Run ``frameit validate frameit.yaml --schema-only --cli`` again
 after correcting the YAML.
 
+.. _e2002:
+
+E2002 — Parent cannot supply the diagnostic
+-------------------------------------------
+
+Check the parent with ``frameit status``. Use the matching completed directory
+with its original request and a saved trajectory. A completed full-domain run
+without centres cannot supply a trajectory. Do not change or recreate records
+to pass this check.
+
 .. _w2001:
 
 W2001 — Planned crop does not list a selected field

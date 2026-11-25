@@ -153,8 +153,10 @@ def test_full_native_copy_ignores_unused_fixed_centre(tmp_path, model):
             assert provenance["sources"]["data"]["region"] == facts
             resolved = yaml.safe_load((conf.output_dir / "resolved-config.yaml").read_text())
             assert resolved["region"]["center"] == region["center"]
+    assert outputs[0].attrs["run_attempt_id"] != outputs[1].attrs["run_attempt_id"]
     for out in outputs:
         out.attrs.pop("history")
+        out.attrs.pop("run_attempt_id")
     xr.testing.assert_identical(*outputs)
 
 

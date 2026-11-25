@@ -69,6 +69,7 @@ CODE_TOPICS: dict[str, str] = {
     "E1902": "run",
     "E1903": "run",
     "E2001": "diagnostics",
+    "E2002": "diagnostics",
     "W1001": "start",
     "W1201": "inputs",
     "W1202": "inputs",
