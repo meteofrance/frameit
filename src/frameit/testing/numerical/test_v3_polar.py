@@ -277,9 +277,14 @@ def test_explicit_nearest_without_kind_preserves_native_samples(tmp_path, model)
     assert "kind" not in outputs[1].q.attrs
     outputs[0].q.attrs.pop("kind")
     outputs[0].q.attrs.pop("frameit_metadata_origins")
-    for out in outputs:
-        out.attrs.pop("history")
-    xr.testing.assert_identical(*outputs)
+    _assert_identical_across_attempts(*outputs)
+
+
+def _assert_identical_across_attempts(first, second):
+    assert first.attrs.pop("run_attempt_id") != second.attrs.pop("run_attempt_id")
+    for dataset in (first, second):
+        dataset.attrs.pop("history")
+    xr.testing.assert_identical(first, second)
 
 
 @pytest.mark.parametrize("options", [
@@ -378,9 +383,7 @@ def test_explicit_product_fields_need_no_source_list(tmp_path, monkeypatch, prod
             np.testing.assert_allclose(saved[field], 7., atol=1e-10)
             outputs.append(saved.load())
     assert locators[0] == locators[1]
-    for out in outputs:
-        out.attrs.pop("history")
-    xr.testing.assert_identical(*outputs)
+    _assert_identical_across_attempts(*outputs)
 
 
 def test_product_selection_requires_a_declared_source_and_unique_native_field(tmp_path):
@@ -467,7 +470,6 @@ def _compare_optional_kind(tmp_path, source, field, center, *, guard):
                 origins = saved[field].attrs.pop("frameit_metadata_origins", "{}")
                 assert json.loads(origins).get("kind") == origin
                 saved[field].attrs.pop("kind", None)
-                saved.attrs.pop("history")
                 outputs.setdefault(product["role"], []).append(saved.load())
         provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
         assert not any(w.startswith("[W1603]") for w in provenance.get("warnings", []))
@@ -475,7 +477,7 @@ def _compare_optional_kind(tmp_path, source, field, center, *, guard):
         assert records and all(r["options"][field]["interpolation"] == "bilinear" for r in records)
         assert all(r["input_metadata"][field]["origins"].get("kind") == origin for r in records)
     for pair in outputs.values():
-        xr.testing.assert_identical(*pair)
+        _assert_identical_across_attempts(*pair)
     return {product: pair[1] for product, pair in outputs.items()}
 
 
@@ -1082,9 +1084,7 @@ def test_polar_support_and_coordinates_do_not_follow_export_crop(tmp_path):
             assert np.isfinite(saved.q).all()
         with xr.open_dataset(native["path"]) as saved:
             assert saved.q.shape[-2:] == ((3, 3) if width == 2 else (5, 5))
-    for out in outputs:
-        out.attrs.pop("history")
-    xr.testing.assert_identical(outputs[0], outputs[1])
+    _assert_identical_across_attempts(*outputs)
 
 
 def test_speed_samples_components_before_magnitude_and_keeps_inputs_internal(tmp_path, monkeypatch):
