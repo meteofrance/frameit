@@ -208,3 +208,38 @@ def test_budget_and_scope(tmp_path):
     assert "accumulator" in report["errors"][0]["message"]
     assert not (root / "diagnostics").exists()
     assert not (root / ".frameit-run.lock").exists()
+
+
+@pytest.mark.parametrize(
+    "cell_methods",
+    [
+        "time: mean within days time: mean over days",
+        "time: maximum time: mean",
+    ],
+)
+def test_compound_temporal_operators_are_not_ten_minute_scalar_means(cell_methods):
+    from types import SimpleNamespace
+
+    from frameit.diagnostics.sources import _semantics
+
+    attrs = {
+        "units": "m s-1",
+        "standard_name": "wind_speed",
+        "wind_reference_frame": "earth",
+        "cell_methods": cell_methods,
+    }
+    sample = {
+        "time": "2000-01-01T00:00",
+        "time_bounds": ("1999-12-31T23:50", "2000-01-01T00:00"),
+        "temporal_names": ("time",),
+    }
+    statistic, _, qualified, _ = _semantics(
+        "speed",
+        SimpleNamespace(name="wind"),
+        attrs,
+        10.0,
+        sample,
+        (),
+    )
+    assert not qualified
+    assert statistic == "unverified"

@@ -25,7 +25,8 @@ grids remain distinct; unresolved member or cycle choices are refused.
 ``require_10min`` requires a scalar mean over 600-second recorded bounds or
 explicitly compatible component-mean evidence. The magnitude of mean
 components is not a mean of scalar speed. Cadence or a CF sampling interval
-does not prove mean duration. ``native_proxy`` permits a known native
+does not prove mean duration. A compound or climatological aggregation is
+not treated as one 600-second mean. ``native_proxy`` permits a known native
 statistic in companion variables, not in strict RSMC columns. Optional gust
 requires evidence of 10 m height, a 3-second operator and a compatible
 reference interval. Unresolved equivalence leaves it missing; there is no

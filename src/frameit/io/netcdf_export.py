@@ -1007,7 +1007,7 @@ def _export_pool(group_count, max_workers, dask_scheduler, dask_workers, native_
 def _write_product(item, dataset, destination, options):
     """Publish one v3 product and return only its actual reopened field/encoding facts."""
     source, product = item["source"], item["product"]
-    from frameit.core.run_context import product_identity
+    from frameit.core.run_context import open_product_header, product_identity
 
     engine = options["engine"]
     path = _write_dataset(dataset, destination, **options)
@@ -1034,8 +1034,7 @@ def _write_product(item, dataset, destination, options):
         encoding["reader_requirements"] = "Zarr v3 with sharding_indexed codec"
         identity = product_identity(path, representation=encoding["format"])
     else:
-        with xr.open_dataset(path, engine=engine, decode_cf=False, cache=False,
-                             create_default_indexes=False) as saved:
+        with open_product_header(path, engine=engine) as saved:
             encoding["unlimited_time"] = "time" in saved.encoding.get("unlimited_dims", ())
             encoding["chunks"] = {
                 name: list(value.encoding.get("chunksizes") or ())

@@ -174,6 +174,23 @@ def test_authored_projection_preserves_omissions(tmp_path):
     assert project(raw) != clean
 
 
+def test_record_identity_preserves_extraction_with_older_xarray_open(tmp_path, monkeypatch):
+    """An older NetCDF opener without the index-control keyword can still publish."""
+    create_first_run_input(tmp_path / "input.nc")
+    actual = xr.open_dataset
+
+    def legacy_open(filename_or_obj, *args, **kwargs):
+        if "create_default_indexes" in kwargs:
+            raise TypeError("unexpected keyword argument 'create_default_indexes'")
+        return actual(filename_or_obj, *args, **kwargs)
+
+    monkeypatch.setattr(xr, "open_dataset", legacy_open)
+    conf = SimulationConfig(**to_runtime(document(), base_dir=tmp_path))
+    result = execute_simulation(conf, ExecutionOptions.from_config(conf))
+    assert result.ok
+    assert record(conf.output_dir, "run-status.yaml")["products"][0]["identity"]["structure_sha256"]
+
+
 def observe_checkpoint_writes(monkeypatch, observe):
     original_open = Path.open
 

@@ -6,6 +6,7 @@ import hashlib
 import json
 from copy import deepcopy
 from datetime import date
+from inspect import signature
 from math import isfinite
 from pathlib import Path
 
@@ -237,6 +238,18 @@ def _netcdf_structure(ds):
     )
 
 
+def open_product_header(path, *, engine=None):
+    """Use optional lazy-index controls without raising the base reader's version floor."""
+    import xarray as xr
+
+    indexes = (
+        {"create_default_indexes": False}
+        if "create_default_indexes" in signature(xr.open_dataset).parameters
+        else {}
+    )
+    return xr.open_dataset(path, engine=engine, decode_cf=False, cache=False, **indexes)
+
+
 def product_identity(path, *, representation, header=None, engine=None):
     """Metadata fingerprints; no payload reads or claims of content verification."""
     path = Path(path)
@@ -256,11 +269,7 @@ def product_identity(path, *, representation, header=None, engine=None):
         raise ValueError(f"Unsupported product identity representation: {representation!r}")
     stat = path.stat()
     if header is None:
-        import xarray as xr
-
-        with xr.open_dataset(
-            path, engine=engine, decode_cf=False, create_default_indexes=False, cache=False
-        ) as saved:
+        with open_product_header(path, engine=engine) as saved:
             signature = _netcdf_structure(saved)
     else:
         signature = _netcdf_structure(header)

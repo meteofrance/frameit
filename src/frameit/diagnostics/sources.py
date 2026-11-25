@@ -470,12 +470,14 @@ def _semantics(role, field, attrs, height, sample, wind_pairs):
     frame = next(iter(frames), "earth")
     if frame == "grid" and role in {"speed", "gust"}:
         raise _error(f"{field.name!r}: scalar magnitude requires an Earth-relative definition")
-    methods = sub(r"\([^)]*\)", "", str(attrs.get("cell_methods", "")))
-    methods = {
+    method_text = sub(r"\([^)]*\)", "", str(attrs.get("cell_methods", "")))
+    methods = [
         method
-        for axis, method in findall(r"(\w+)\s*:\s*(\w+)", methods)
+        for axis, method in findall(r"(\w+)\s*:\s*(\w+)", method_text)
         if axis in {*sample["temporal_names"], "time"}
-    }
+    ]
+    if len(methods) > 1 or methods and findall(r"\b(?:within|over)\s+\w+", method_text):
+        return "unverified", None, False, frame
     duration = None
     if bounds := sample["time_bounds"]:
         a, b = map(np.datetime64, bounds)
@@ -484,6 +486,8 @@ def _semantics(role, field, attrs, height, sample, wind_pairs):
         duration = float((b - a) / np.timedelta64(1, "s"))
     # CF cell_methods interval describes sample spacing, not the length of a mean.
     temporal = attrs.get("temporal_kind")
+    if (temporal, methods) in (("instantaneous", ["mean"]), ("mean", ["point"])):
+        raise _error(f"{field.name!r}: contradictory temporal operator metadata")
     if role == "gust":
         return (
             "producer_gust",
