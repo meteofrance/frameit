@@ -38,6 +38,7 @@ class File:
     identity: dict
     attempt: str | None = None
     decode_units: dict | None = None
+    packed_validity: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,7 @@ class FieldSample:
     metadata_evidence: dict
     scalar_coordinates: tuple
     native: dict | None = None
+    validity_limits: tuple[float | None, float | None] = (None, None)
 
 
 @dataclass(frozen=True)
@@ -232,7 +234,10 @@ def _source_files(parent, request):
 
         check_zarr_dependencies()
         units = check_layout(path)
-    file = File(path, encoding.get("engine"), representation, identity, attempt, units)
+    packed_validity = tuple(item.get("packed_validity_unresolved", ()))
+    file = File(
+        path, encoding.get("engine"), representation, identity, attempt, units, packed_validity
+    )
     return (file,), {}, cfg, evidence
 
 
@@ -498,13 +503,30 @@ def _semantics(role, field, attrs, height, sample, wind_pairs):
             and attrs.get("gust_reference_profile") == AGENCY_PROFILE_VERSION,
             frame,
         )
-    if "mean" in methods or temporal == "mean":
-        statistic = "mean_scalar_speed" if role == "speed" else "magnitude_of_mean_components"
+    derivation = attrs.get("derivation")
+    component_magnitude = role in {"u", "v"} or derivation in (
+        "magnitude_of_mean_components",
+        "magnitude_of_collocated_components",
+        "magnitude_of_sampled_components",
+        "magnitude_of_interpolated_collocated_components",
+    )
+    if (
+        role == "speed"
+        and not component_magnitude
+        and derivation
+        not in (
+            None,
+            "mean_scalar_speed",
+        )
+    ):
+        return "unverified", None, False, frame
+    if "mean" in methods or temporal == "mean" and not methods:
+        statistic = "magnitude_of_mean_components" if component_magnitude else "mean_scalar_speed"
         qualified = (
             "mean" in methods
             and duration == 600
             and (
-                role == "speed"
+                not component_magnitude
                 or attrs.get("sustained_wind_convention")
                 == "magnitude_of_mean_components_compatible_10min"
             )
@@ -603,8 +625,40 @@ def _decode_unit(da):
     return prod(shape) * (stored.itemsize + da.dtype.itemsize)
 
 
+def _validity_limits(field, file):
+    attrs = field.attrs
+    keys = attrs.keys() & {"valid_min", "valid_max", "valid_range"}
+    if not keys:
+        return None, None
+    packing = {"scale_factor", "add_offset", "_Unsigned"}
+    if field.name in file.packed_validity or packing & (attrs.keys() | field.encoding.keys()):
+        raise _error(f"{field.name!r}: packed validity limits have no admitted interpretation")
+
+    def bounds(key, shape):
+        value = np.asarray(attrs[key])
+        if value.shape != shape or value.dtype.kind not in "iuf" or not np.isfinite(value).all():
+            raise _error(f"{field.name!r}: invalid numeric {key} metadata")
+        return value
+
+    if "valid_range" in keys:
+        if len(keys) > 1:
+            raise _error(f"{field.name!r}: use either valid_range or valid_min/valid_max")
+        lower, upper = map(float, bounds("valid_range", (2,)))
+    else:
+        lower, upper = (
+            float(bounds(key, ())) if key in keys else None for key in ("valid_min", "valid_max")
+        )
+    if lower is not None and upper is not None and lower > upper:
+        raise _error(f"{field.name!r}: validity range minimum exceeds its maximum")
+    return lower, upper
+
+
 def _bind_field(ds, file, role, selector, sample, attrs, evidence, wind_pairs):
     field = ds[selector["field"]]
+    if role in {"u", "v"}:
+        from frameit.processing.derived.wind import require_collocated_location
+
+        require_collocated_location(field)
     clock_indices = dict(sample["indices"])
     if not set(field.dims).intersection(clock_indices) and role != "area":
         raise _error(
@@ -665,6 +719,7 @@ def _bind_field(ds, file, role, selector, sample, attrs, evidence, wind_pairs):
         str(field.dtype),
         evidence,
         scalar,
+        validity_limits=_validity_limits(field, file),
     )
 
 
@@ -984,7 +1039,13 @@ class _GroupView:
                 .transpose(*self.group.grid.dims)
                 .to_numpy()
             )
-            values[field.role] = data.astype("float64", copy=False) * field.factor
+            converted = data.astype("float64", copy=False) * field.factor
+            lower, upper = field.validity_limits
+            if lower is not None:
+                converted[data < lower] = np.nan
+            if upper is not None:
+                converted[data > upper] = np.nan
+            values[field.role] = converted
         return values
 
 

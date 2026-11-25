@@ -16,6 +16,8 @@ physical/basis metadata. ``level`` selects an exact physical value with
 units; ``group`` is for original selectors only. No storm motion is subtracted.
 Missing evidence leaves the affected metric unavailable; conflicting
 evidence, such as an explicitly different height, fails admission.
+Matching dimensions and coordinates do not override explicit staggered
+point locations. Select fields that are already verified as collocated.
 
 Each field sample must match the saved centre time exactly. The native and
 forecast-reference calendars must support the admitted Gregorian clock.
@@ -26,8 +28,10 @@ grids remain distinct; unresolved member or cycle choices are refused.
 explicitly compatible component-mean evidence. The magnitude of mean
 components is not a mean of scalar speed. Cadence or a CF sampling interval
 does not prove mean duration. A compound or climatological aggregation is
-not treated as one 600-second mean. ``native_proxy`` permits a known native
-statistic in companion variables, not in strict RSMC columns. Optional gust
+not treated as one 600-second mean. A stored scalar identified as the
+magnitude of mean components follows the component rule. ``native_proxy``
+permits a known native statistic in companion variables, not in strict
+RSMC columns. Optional gust
 requires evidence of 10 m height, a 3-second operator and a compatible
 reference interval. Unresolved equivalence leaves it missing; there is no
 gust factor.
@@ -55,6 +59,12 @@ pressure is the lowest admitted mean sea-level pressure in its own disc.
 Rim extrema or stronger winds outside the core are not strict comparisons.
 Incomplete support can leave a wind lower bound or pressure upper bound,
 not a resolved result. The centre never moves to the extremum.
+
+Samples outside the producer's inclusive ``valid_range`` or
+``valid_min``/``valid_max`` count as missing support, not physical zeros.
+Packed validity limits without an admitted interpretation are refused,
+including limits recorded as inherited from packed original fields in
+new model-grid products.
 
 Wind radii are the farthest native sample at or above 28, 34, 48 or 64 knots
 per compass quadrant. Bearing starts from geographic north, clockwise,

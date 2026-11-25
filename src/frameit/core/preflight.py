@@ -493,6 +493,8 @@ def _netcdf_inventory(path, source, resources, *, previous_grids=None, header_ob
             if name in SURFEX_FIELDS - {"FRAC_SEA"}:
                 field["dependencies"]["FRAC_SEA"] = "sea_support"
         packing = {k: var.encoding[k] for k in ("scale_factor", "add_offset") if k in var.encoding}
+        packed_validity = ((packing or "_Unsigned" in var.encoding)
+                           and var.attrs.keys() & {"valid_min", "valid_max", "valid_range"})
         for sample in samples:
             indexers = {dim: index for dim, index in sample["indexers"].items() if dim in var.dims}
             records.append({
@@ -502,6 +504,7 @@ def _netcdf_inventory(path, source, resources, *, previous_grids=None, header_ob
                 "stored_dtype": np.dtype(var.encoding.get("dtype", var.dtype)).name,
                 "decoded_dtype": var.dtype.name,
                 **({"packing": packing} if packing else {}),
+                **({"packed_validity": True} if packed_validity else {}),
                 "temporal_metadata": {k: var.attrs[k] for k in (
                     "cell_methods", "GRIB_stepType", "online_operation",
                     "interval_operation", "interval_write")

@@ -52,6 +52,18 @@ def normalize_velocity_units(da: xr.DataArray, conf: Any) -> xr.DataArray:
     return result
 
 
+def require_collocated_location(da: xr.DataArray) -> None:
+    """Do not treat explicit staggered locations as scalar sample points."""
+    if not da.attrs.get("wind_collocation") and (
+        any(dim.endswith(("_u", "_v")) for dim in da.dims)
+        or da.attrs.get("grid") in {2, 3, 5, 6, 7, 8}
+        or da.attrs.get("location") in {"u", "v", "face", "edge"}
+        or da.attrs.get("stagger") not in {None, "", "mass", "center"}
+        or any(c.attrs.get("c_grid_axis_shift", 0) != 0 for c in da.coords.values())
+    ):
+        raise ValueError("Wind components have unresolved native point location; collocate first")
+
+
 def align_wind_pair(u: xr.DataArray, v: xr.DataArray) -> tuple[xr.DataArray, xr.DataArray]:
     """Reject staggered/differently labelled pairs instead of broadcasting them."""
     if set(u.dims) != set(v.dims):
@@ -72,17 +84,7 @@ def align_wind_pair(u: xr.DataArray, v: xr.DataArray) -> tuple[xr.DataArray, xr.
                 or not u[name].variable.equals(v[name].variable)):
             raise ValueError(f"Wind components require identical coordinate {name!r}")
     for da in (u, v):
-        prepared = bool(da.attrs.get("wind_collocation"))
-        if not prepared and (
-            any(dim.endswith(("_u", "_v")) for dim in da.dims)
-            or da.attrs.get("grid") in {2, 3, 5, 6, 7, 8}
-            or da.attrs.get("location") in {"u", "v", "face", "edge"}
-            or da.attrs.get("stagger") not in {None, "", "mass", "center"}
-            or any(c.attrs.get("c_grid_axis_shift", 0) != 0 for c in da.coords.values())
-        ):
-            raise ValueError(
-                "Wind components have unresolved native point location; collocate first"
-            )
+        require_collocated_location(da)
     return xr.align(u, v.transpose(*u.dims), join="exact")
 
 

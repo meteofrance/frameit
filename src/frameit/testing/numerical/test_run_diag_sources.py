@@ -13,7 +13,7 @@ from frameit.testing.numerical.test_run_diag_configuration import request
 from frameit.testing.numerical.test_run_diag_lifecycle import run_diag, write_request
 
 
-def vortex_input(path, *, temporal="qualified", size=45, declared_height=10.0):
+def vortex_input(path, *, temporal="qualified", size=45, declared_height=10.0, edit_input=None):
     from pyproj import Geod
 
     lat = -20.0 + 0.05 * (np.arange(size) - size // 2)
@@ -77,6 +77,8 @@ def vortex_input(path, *, temporal="qualified", size=45, declared_height=10.0):
         var: {"units": "seconds since 2000-01-01", "calendar": "proleptic_gregorian"}
         for var in ("time", "time_bounds")
     }
+    if edit_input is not None:
+        edit_input(data)
     data.to_netcdf(path, engine="h5netcdf", encoding=encoding)
 
 
@@ -91,6 +93,7 @@ def vortex_parent(
     output_format="netcdf",
     declared_height=10.0,
     export_track=False,
+    edit_input=None,
 ):
     raw = request(kind=kind)
     raw["sources"]["weather"].update(
@@ -109,7 +112,13 @@ def vortex_parent(
     best["rmw"]["azimuth_sectors"] = 4
     best["search"]["wind_radii_radius_km"] = 80
     raw_source = tmp_path / "vortex.nc"
-    vortex_input(raw_source, temporal=temporal, size=size, declared_height=declared_height)
+    vortex_input(
+        raw_source,
+        temporal=temporal,
+        size=size,
+        declared_height=declared_height,
+        edit_input=edit_input,
+    )
     original = {key: val for key, val in raw.items() if key != "diagnostics"}
     conf = SimulationConfig(**to_runtime(original, base_dir=tmp_path))
     execute_simulation(conf, ExecutionOptions.from_config(conf))
@@ -195,6 +204,36 @@ def test_wind_and_gust_evidence(tmp_path):
     assert wind["averaging_seconds"] == 600
     assert wind["qualified"] is False
     assert np.hypot(np.mean([4.0, 0.0]), np.mean([0.0, 4.0])) < np.mean([4.0, 4.0])
+
+
+def test_wind_location_metadata_overrides_apparent_collocation(tmp_path):
+    def mark_staggered(ds):
+        for name in ("u", "v"):
+            ds[name].attrs.update(
+                location=name,
+                sustained_wind_convention="magnitude_of_mean_components_compatible_10min",
+            )
+
+    cfg, raw, _, root = vortex_parent(tmp_path, edit_input=mark_staggered)
+    raw["diagnostics"]["best_track"]["fields"]["wind"] = {"u": "u", "v": "v"}
+    write_request(cfg, raw)
+    report = run_diag(cfg, check=True)
+    assert report["status"] == "error" and report["errors"][0]["code"] == "E2003", report
+    assert "point location" in report["errors"][0]["message"]
+    assert not (root / "diagnostics").exists()
+
+
+@pytest.mark.parametrize("kind", ["original", "model_grid"])
+def test_packed_validity_metadata_fails_closed(tmp_path, kind):
+    def pack_wind(ds):
+        ds.wind10.attrs["valid_range"] = np.array([0, 600], dtype="int16")
+        ds.wind10.encoding.update(dtype="int16", scale_factor=0.1, _FillValue=np.int16(-32768))
+
+    cfg, _, _, root = vortex_parent(tmp_path, kind=kind, edit_input=pack_wind)
+    report = run_diag(cfg, check=True)
+    assert report["status"] == "error" and report["errors"][0]["code"] == "E2003", report
+    assert "packed" in report["errors"][0]["message"]
+    assert not (root / "diagnostics").exists()
 
 
 def test_budget_and_scope(tmp_path):

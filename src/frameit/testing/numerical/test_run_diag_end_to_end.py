@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from frameit.testing.numerical.test_run_diag_lifecycle import snapshot, write_request
+from frameit.testing.numerical.test_run_diag_lifecycle import run_diag, snapshot, write_request
 from frameit.testing.numerical.test_run_diag_sources import vortex_parent
 from frameit.testing.numerical.test_v3_run_state import record
 
@@ -101,6 +101,45 @@ def test_missing_wind_height_does_not_hide_available_pressure(tmp_path):
         reasons = ds.maximum_wind_reasons.attrs["flag_meanings"].split()
         mask = 1 << reasons.index("physical_definition_unverified")
         assert np.all(ds.maximum_wind_reasons.values & mask)
+
+
+@pytest.mark.parametrize("outside", ["high_core", "zero_wedge"])
+def test_declared_invalid_wind_is_missing_support(tmp_path, outside):
+    def invalid_wind(ds):
+        values = ds.wind10.values.copy()
+        if outside == "high_core":
+            values[:, 22, 22] = 200.0
+            ds.wind10.attrs["valid_range"] = [0.0, 60.0]
+        else:
+            values[:, 22:, 22:] = 0.0
+            ds.wind10.attrs.update(valid_min=1.0, valid_max=60.0)
+        ds.wind10.data = values
+
+    key = "ventmax" if outside == "high_core" else "extension_28kt_ne"
+    cfg, _, _, root = vortex_parent(tmp_path, kind="model_grid", edit_input=invalid_wind)
+    report = run_diag(cfg)
+    assert report["status"] == "ok", report["errors"]
+    (attempt,) = (root / "diagnostics").iterdir()
+    with (attempt / "best_track/rsmc_comparison.csv").open(newline="") as stream:
+        (row,) = csv.DictReader(stream, delimiter=";")
+    assert row[key] == ""
+    assert row["pression"] == "980"
+    assert row["extension_28kt_so"]
+
+
+def test_scalar_magnitude_of_mean_components_remains_a_proxy(tmp_path):
+    def mark_derived(ds):
+        ds.wind10.attrs["derivation"] = "magnitude_of_mean_components"
+
+    cfg, raw, _, root = vortex_parent(tmp_path, kind="model_grid", edit_input=mark_derived)
+    raw["diagnostics"]["best_track"]["wind_time_policy"] = "native_proxy"
+    write_request(cfg, raw)
+    report = run_diag(cfg)
+    assert report["status"] == "ok", report["errors"]
+    (attempt,) = (root / "diagnostics").iterdir()
+    with xr.open_dataset(attempt / "best_track/model_best_track.nc") as ds:
+        assert bool(ds.maximum_wind.isnull().all())
+        assert bool(ds.maximum_wind_native_proxy.notnull().all())
 
 
 def test_legacy_uses_only_a_recorded_public_track(tmp_path):

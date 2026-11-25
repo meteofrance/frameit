@@ -18,10 +18,10 @@ from frameit.processing.requests import resolve_field_metadata
 
 # Exact registered parameters and surfaces, not aliases derived from file names.
 PARAMETERS = {
-    (165, "heightAboveGround"): ("eastward_wind", 10),
-    (166, "heightAboveGround"): ("northward_wind", 10),
-    (207, "heightAboveGround"): ("wind_speed", 10),
-    (151, "meanSea"): ("air_pressure_at_mean_sea_level", None),
+    "u": (165, "heightAboveGround", "eastward_wind", 10),
+    "v": (166, "heightAboveGround", "northward_wind", 10),
+    "speed": (207, "heightAboveGround", "wind_speed", 10),
+    "pressure": (151, "meanSea", "air_pressure_at_mean_sea_level", None),
 }
 
 
@@ -82,6 +82,7 @@ def bind_messages(file, file_index, inventory, config, selectors, *, budget):
                     or header["md5GridSection"] != message["grid_section"]
                     or header["level"] != message["level"]
                     or header["paramId"] != attrs.get("GRIB_paramId")
+                    or header["typeOfLevel"] != group
                     or header["number"] != (message["axes"] or {}).get("number")
                 ):
                     raise _error("GRIB message contradicts its frozen physical/sample identity")
@@ -93,11 +94,13 @@ def bind_messages(file, file_index, inventory, config, selectors, *, budget):
                 radius = ec.codes_get_double(handle, "radius")
                 if not 6e6 < radius < 7e6 or ec.codes_get_long(handle, "earthIsOblate"):
                     raise _error("This GRIB diagnostic path requires a declared spherical Earth")
-            standard, height = PARAMETERS.get((header["paramId"], group), (None, None))
+            parameter = PARAMETERS.get(role)
+            if parameter is None or parameter[:2] != (header["paramId"], group):
+                raise _error(f"GRIB parameter {header['paramId']}/{group} not admitted for {role}")
+            _, _, standard, height = parameter
             if height is not None and message["level"] != height:
                 raise _error("GRIB wind surface does not establish 10 m height")
-            if standard is not None:
-                attrs = {**attrs, "standard_name": standard}
+            attrs = {**attrs, "standard_name": standard}
             # regular_ll geographic-axis components are collocated and orthonormal.
             if role in {"u", "v", "speed"}:
                 if header["uvRelativeToGrid"] not in {0, 1}:

@@ -71,11 +71,15 @@ def test_grib_message_once(tmp_path, monkeypatch):
             {"param": 165, "group": "heightAboveGround", "level": 10, "missing": False},
             {"param": 166, "group": "heightAboveGround", "level": 10, "missing": False},
             {"param": 151, "group": "meanSea", "level": 0, "missing": False},
+            {"param": 134, "group": "surface", "level": 0, "missing": False},
             {"param": 130, "group": "isobaric", "level": 850, "missing": False},
         ],
     )
     raw = request(kind="original")
     raw["sources"]["weather"].update(files=data.name, format="grib", variables={"2d": ["prmsl"]})
+    raw["sources"]["weather"]["field_metadata"] = {
+        "sp": {"standard_name": "air_pressure_at_mean_sea_level"},
+    }
     raw["region"] = {"center": {"latitude": -19.5, "longitude": 61.0}}
     raw["products"] = {"track": True, "model_grid": True}
     raw["resources"] = {"cpus": 1, "scheduler": "synchronous", "synchronous_export": True}
@@ -105,3 +109,10 @@ def test_grib_message_once(tmp_path, monkeypatch):
     assert report["status"] == "ok", report["errors"]
     assert sorted(seen) == [151, 165, 166]
     assert snapshot(conf.output_dir) == before
+
+    best["fields"]["sea_level_pressure"] = "sp"
+    write_request(cfg, raw)
+    report = run_diag(cfg, check=True)
+    assert report["status"] == "error" and report["errors"][0]["code"] == "E2003", report
+    assert "parameter" in report["errors"][0]["message"]
+    assert sorted(seen) == [151, 165, 166]

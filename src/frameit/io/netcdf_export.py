@@ -1360,6 +1360,12 @@ def export_outputs(
                          "calendar", "proleptic_gregorian"))
             if run_attempt_id is not None:
                 dataset = dataset.assign_attrs(run_attempt_id=run_attempt_id)
+                if product == "model_grid":
+                    plan = runner.prepared_sources[2][source]["requests"]["binding"]["products"]
+                    unresolved = [name for name, descriptor in plan["model_grid"].items()
+                                  if any(r.get("packed_validity") for r in descriptor["records"])]
+                    if unresolved:
+                        item = {**item, "packed_validity_unresolved": sorted(unresolved)}
             writer = {
                 "metadata": meta, "product_type": product,
                 "engine": "netcdf4" if product == "track" and engine == "zarr" else engine,
