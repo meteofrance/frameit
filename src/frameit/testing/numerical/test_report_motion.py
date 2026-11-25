@@ -50,7 +50,7 @@ def test_busy_feedback_resizes_and_stops(tmp_path, app_type, command):
                 assert await asyncio.to_thread(scanning.wait, 5)
                 await pilot.pause()
                 assert bar.display and (bar.progress, bar.total) == (1, 4)
-                assert "1 of 4 files checked" in _text(app, "#status")
+                assert "atmosphere · 1 of 4 files checked" in _text(app, "#operation-context")
                 finish.set()
                 await app.workers.wait_for_complete()
                 await pilot.pause()
@@ -135,7 +135,7 @@ def test_buffered_notices_do_not_stack_or_outlive_refresh(tmp_path, refresh):
                 else:
                     assert len(toasts) == 1
                     assert toasts[0].is_on_screen
-                    assert toasts[0].region == app.query_one("#identity-bar").region
+                    assert toasts[0].region.y > app.query_one("#identity-bar").region.bottom
                     assert "Configuration path" in str(toasts[0].render())
             finally:
                 release.set()
@@ -145,7 +145,7 @@ def test_buffered_notices_do_not_stack_or_outlive_refresh(tmp_path, refresh):
     asyncio.run(exercise())
 
 
-def test_blocked_validation_notifies_incomplete_not_success(tmp_path):
+def test_blocked_validation_keeps_one_incomplete_indicator_and_has_help(tmp_path):
     path = _case(tmp_path)
 
     def collect(*, progress):
@@ -163,9 +163,10 @@ def test_blocked_validation_notifies_incomplete_not_success(tmp_path):
             assert "Validation incomplete" in _text(app, "#status")
             assert "unconfirmed" in _text(app, "#summary").lower()
             assert "frameit run" not in _text(app, "#summary")
-            toast = app.query_one("Toast")
-            assert toast.has_class("-warning")
-            assert "Validation incomplete" in str(toast.render())
+            assert not app.query("Toast")
+            await pilot.press("question_mark")
+            assert "Copy evidence" in _text(app.screen, "#report-help")
+            await pilot.press("escape")
             await pilot.press("2")
             assert "Prerequisite pending." in _text(app, "#finding")
             await pilot.press("q")
@@ -199,7 +200,7 @@ def test_refresh_keeps_the_same_finding_and_reading_position(tmp_path):
         app = ValidationApp(path, collect, schema_only=True)
         async with app.run_test(size=(80, 24)) as pilot:
             await app.workers.wait_for_complete()
-            await pilot.press("2", "down", "tab", "pagedown")
+            await pilot.press("2", "down", "enter", "pagedown")
             await pilot.wait_for_scheduled_animations()
             detail = app.query_one("#finding-scroll")
             offset = detail.scroll_offset
@@ -258,7 +259,8 @@ def test_wide_sidebar_keeps_focus_and_recovers_on_resize(
 
     async def exercise():
         app = app_type(path, collect)
-        async with app.run_test(size=(120, 40)) as pilot:
+        width_for_sidebar = 150 if command == "inspect" else 120
+        async with app.run_test(size=(width_for_sidebar, 40)) as pilot:
             await app.workers.wait_for_complete()
             await pilot.press(key)
             sidebar = app.query_one(pane)
@@ -276,15 +278,15 @@ def test_wide_sidebar_keeps_focus_and_recovers_on_resize(
             await pilot.press("b")
             assert app.focused is content
             app.action_toggle_sidebar()
-            await pilot.resize_terminal(132, 44)
+            await pilot.resize_terminal(width_for_sidebar + 12, 44)
             await pilot.wait_for_scheduled_animations()
             assert sidebar.display and app.focused.id == focus
-            await pilot.resize_terminal(120, 40)
+            await pilot.resize_terminal(width_for_sidebar, 40)
             await pilot.press("b", "b", "b")
             await pilot.resize_terminal(80, 24)
             await pilot.press(key)
             assert sidebar.display and app.focused.id == focus
-            await pilot.resize_terminal(120, 40)
+            await pilot.resize_terminal(width_for_sidebar, 40)
             await pilot.wait_for_scheduled_animations()
             assert not sidebar.display and content.region.width > width
             assert app.focused is content

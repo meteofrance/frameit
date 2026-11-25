@@ -60,22 +60,18 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
         async with app.run_test(size=(120, 30)) as pilot:
             await _ready(app, pilot)
             table = app.query_one("#fields")
-            assert all(app.query_one(selector).region.width > 0 for selector in (
-                "#sources", "#fields", "#field-details", "#source-tabs"))
-            assert table.max_scroll_x > 0
+            assert all(app.query_one(selector).is_on_screen for selector in (
+                "#fields", "#field-details"))
+            assert not app.query_one("#sources").is_on_screen
+            assert not app.query_one("#source-tabs").display
+            assert [str(col.label) for col in table.ordered_columns] == [
+                "Name", "Group", "Units", "Request"]
+            assert table.max_scroll_x == 0
             viewport = table.scrollable_size
             assert "1 of 2 files inspected" in _text(app, "#source-scope")
             assert app.result_code == 0
-            await pilot.resize_terminal(app.size.width + table.max_scroll_x - 1, app.size.height)
-            assert (table.max_scroll_x, table.max_scroll_y) == (1, 0)
-            bar = table.horizontal_scrollbar
-            assert "━" in bar.render_line(0).text
-            x, y = bar.region.offset
-            await pilot.mouse_down(offset=(x, y))
-            await pilot.hover(offset=(x + 2, y))
-            await pilot.wait_for_scheduled_animations()
-            await pilot.mouse_up(offset=(x + 2, y))
-            assert table.scroll_x == 1
+            await pilot.resize_terminal(150, 40)
+            assert app.query_one("#sources").is_on_screen
             await pilot.resize_terminal(120, 30)
             await pilot.press("1", "down")
             assert app.focused.id == "sources"
@@ -91,7 +87,6 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
             assert table.row_count == 1
             assert table.max_scroll_x == 0
             assert table.scrollable_size == viewport
-            assert not bar.render_line(0).text.strip()
             assert yaml.safe_load(app.clipboard) == {"2d": ["zeta"]}
             assert "sources.atmosphere.variables" in _text(app, "#field-details")
             await pilot.resize_terminal(52, 16)
@@ -104,6 +99,12 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
             assert all(0 < keys[key].right <= 52 for key in ("r", "q"))
             assert "1 of 2 files inspected" in _text(app, "#source-scope")
 
+            await pilot.press("escape", "enter")
+            assert app.query_one("#field-scroll").has_focus
+            assert table.max_scroll_x == 0
+            assert _text(app, "#field-controls").startswith("1 of 3 fields")
+            assert app.query_one("#field-evidence").collapsed
+            assert "Identity:" not in _text(app, "#field-details")
             await pilot.press("4", "right", "right")
             tabs = app.query_one("#source-tabs")
             assert [pane.id for pane in tabs.query("TabPane")] == [
@@ -122,12 +123,12 @@ def test_explorer_browses_and_copies_at_both_sizes(tmp_path):
 
             await pilot.press("2")
             assert table.row_count == 1 and str(table.get_row_at(0)[0]) == "zeta"
-            request_value = str(table.get_row_at(0)[1])
+            request_value = str(table.get_row_at(0)[3])
             await pilot.press("slash", "q", "f", "s", "r", "3", "4")
             assert app.query_one("#field-search").value == "qfsr34"
             assert table.row_count == 0 and app.result_code == 0
             assert any(key.key == "escape" and key.is_on_screen for key in app.query("FooterKey"))
-            assert str(table.ordered_columns[1].label) == "Request"
+            assert str(table.ordered_columns[3].label) == "Request"
             assert request_value == "Requested"
             await pilot.press("escape", "3")
             assert "No field selected" in _text(app, "#field-details")
@@ -218,7 +219,8 @@ def test_explorer_refreshes_without_stale_selection(tmp_path):
                 await pilot.pause()
                 assert app.query_one("#explorer").display
                 assert "previous report" in _text(app, "#status")
-                assert "0 of 1" in _text(app, "#status") and "ETA" not in _text(app, "#status")
+                context = _text(app, "#operation-context")
+                assert "0 of 1" in context and "ETA" not in context
                 await pilot.press("r", "c")
                 assert calls == 2
                 release_second.set()
@@ -257,6 +259,9 @@ def test_explorer_keeps_ambiguous_rows_without_copy(tmp_path):
             await _ready(app, pilot)
             table = app.query_one("#fields")
             assert table.row_count == 2
+            rows = [table.get_row_at(row) for row in (0, 1)]
+            assert [str(row[0]) for row in rows] == ["u", "u"]
+            assert str(rows[0][1]) != str(rows[1][1])
             request_column = next(i for i, col in enumerate(table.ordered_columns)
                                   if str(col.label) == "Request")
             assert all(str(table.get_row_at(row)[request_column]) == "Unresolved"
@@ -283,6 +288,48 @@ def test_explorer_copies_current_row_before_highlight_event_is_handled(tmp_path)
             app.query_one("#fields").action_cursor_down()
             app.action_copy_selector()
             assert yaml.safe_load(app.clipboard) == {"2d": ["z"]}
+
+    asyncio.run(exercise())
+
+
+def test_draft_copies_qualified_selectors_without_applying_and_marks_stale_entries(tmp_path):
+    ec = pytest.importorskip("eccodes")
+    _write_grib_vectors(ec, tmp_path / "first.grib", [
+        ("isobaricInhPa", 850, 1, 0, 131), ("hybrid", 1, 0, 0, 131),
+        ("hybrid", 1, 0, 0, 132),
+    ])
+    _write_grib_vectors(ec, tmp_path / "later.grib", [("hybrid", 1, 0, 0, 132)])
+    path = _case(tmp_path, {"weather": {"model": "arome", "files": "first.grib"}})
+    original = path.read_bytes()
+
+    async def exercise():
+        app = _app(path)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _ready(app, pilot)
+            await pilot.press("2", "a", "down", "a", "v")
+            preview = _text(app.screen, "#draft-yaml")
+            expected = {"sources": {"weather": {"variables": {"3d": {
+                "hybrid": {"names": ["u"]}, "isobaric": {"names": ["u"]},
+            }}}}}
+            assert yaml.safe_load(preview) == expected
+            await pilot.press("c", "escape")
+            assert yaml.safe_load(app.clipboard) == expected
+            assert path.read_bytes() == original
+            assert "Not requested" in _text(app, "#field-details")
+            await pilot.press("down", "a", "v")
+            assert "Cannot combine" in _text(app.screen, "#draft-yaml")
+            await pilot.press("c")
+            assert yaml.safe_load(app.clipboard) == expected
+            await pilot.press("end", "delete", "escape")
+            updated = original.replace(b"first.grib", b"later.grib")
+            path.write_bytes(updated)
+            await pilot.press("r")
+            await _ready(app, pilot)
+            await pilot.press("v")
+            assert "2 need review" in _text(app.screen, "#draft-status")
+            assert "No current selectors" in _text(app.screen, "#draft-yaml")
+            await pilot.press("c", "escape")
+            assert yaml.safe_load(app.clipboard) == expected and path.read_bytes() == updated
 
     asyncio.run(exercise())
 
@@ -321,7 +368,7 @@ def test_refresh_resets_scroll_for_changed_fields(tmp_path, replace):
             table = app.query_one("#fields")
             detail = app.query_one("#field-scroll")
             if replace:
-                await pilot.press("3", "end")
+                await pilot.press("3", "tab", "enter", "end")
                 await pilot.wait_for_scheduled_animations()
                 offset = detail.scroll_offset
                 assert offset.y > 0

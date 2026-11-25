@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -19,6 +20,12 @@ from frameit.utils.diagnostics import (
 
 if TYPE_CHECKING:
     from frameit.core.settings_class import SimulationConfig
+
+REPORT_VERSION = 1
+_REPORT_KEYS = {"report_version", "command", "status", "data", "warnings", "errors",
+                "deferred_checks"}
+_DATA_KEYS = {"configuration", "origins", "inputs", "plan", "pending"}
+_TERMINAL_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\ud800-\udfff]")
 
 
 @dataclass
@@ -179,7 +186,8 @@ def project_report(result):
         "configuration", "setting_sources", "inputs", "warnings", "deferred_checks",
     }}
     return {
-        "report_version": 1, "command": result.command, "status": "error" if errors else "ok",
+        "report_version": REPORT_VERSION, "command": result.command,
+        "status": "error" if errors else "ok",
         "data": _metadata_view({
             "configuration": configuration, "origins": origins,
             "inputs": facts.get("inputs", []), "plan": plan,
@@ -191,12 +199,90 @@ def project_report(result):
 
 
 def serialize_report(result):
-    return json.dumps(project_report(result), indent=2, ensure_ascii=False, allow_nan=False)
+    return serialize_projection(project_report(result))
+
+
+def serialize_projection(report):
+    return json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False)
+
+
+def _validate_saved_values(value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            _validate_saved_values(key)
+            _validate_saved_values(child)
+    elif isinstance(value, list):
+        for child in value:
+            _validate_saved_values(child)
+    elif isinstance(value, str) and _TERMINAL_CONTROL.search(value):
+        raise ValueError("Saved report contains terminal control characters or invalid Unicode.")
+    elif isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("Saved report contains nonfinite JSON numbers.")
+
+
+def load_saved_report(path, command):
+    """Read a versioned public projection; none of its referenced files are opened."""
+    if not path.is_file():
+        raise ValueError("Expected a regular JSON report file.")
+    try:
+        with path.open(encoding="utf-8") as stream:
+            report = json.load(stream)
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ValueError(f"Invalid saved report JSON: {exc}") from None
+    if not isinstance(report, dict) or set(report) != _REPORT_KEYS:
+        raise ValueError("Not a complete FrameIt report envelope.")
+    if type(report["report_version"]) is not int or report["report_version"] != REPORT_VERSION:
+        raise ValueError(f"Unsupported report version (expected {REPORT_VERSION}).")
+    if report["command"] != command:
+        raise ValueError(f"Expected a saved {command} report; use its original command.")
+
+    data = report["data"]
+    if (not isinstance(data, dict) or set(data) != _DATA_KEYS
+            or (data["configuration"] is not None
+                and not isinstance(data["configuration"], dict))
+            or not all(isinstance(data[key], dict) for key in ("origins", "plan"))
+            or not all(isinstance(data[key], list) for key in ("inputs", "pending"))):
+        raise ValueError("Incomplete report data.")
+
+    def strings(value):
+        return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+    errors, warnings, checks = (report[key] for key in ("errors", "warnings", "deferred_checks"))
+    if (not all(isinstance(value, list) for value in (errors, checks)) or not strings(warnings)
+            or report["status"] != ("error" if errors else "ok")):
+        raise ValueError("Incomplete diagnostics or inconsistent report outcome.")
+    for item in errors:
+        if (not isinstance(item, dict) or not {"expected", "observed"} <= item.keys()
+                or not all(isinstance(item.get(key), str)
+                           for key in ("code", "path", "message", "help"))
+                or not strings(item.get("repairs"))
+                or not all(isinstance(item.get(key), list) for key in ("locations", "contexts"))):
+            raise ValueError("Incomplete diagnostic in saved report.")
+        for mark in item["locations"]:
+            if (not isinstance(mark, dict) or not isinstance(mark.get("file"), str)
+                    or not all(type(mark.get(key)) is int and mark[key] > 0
+                               for key in ("line", "column"))):
+                raise ValueError("Invalid diagnostic location in saved report.")
+        if not all(isinstance(context, dict) for context in item["contexts"]):
+            raise ValueError("Invalid diagnostic context in saved report.")
+    for item in checks:
+        if (not isinstance(item, dict)
+                or not all(isinstance(item.get(key), str) for key in ("path", "status", "message"))
+                or not strings(item.get("prerequisites", []))):
+            raise ValueError("Incomplete check in saved report.")
+    try:
+        _validate_saved_values(report)
+    except RecursionError:
+        raise ValueError("Saved report metadata is nested too deeply.") from None
+    return report
 
 
 def render_report(result):
     """Render the same public facts and repairs as readable, labelled text."""
-    report = project_report(result)
+    return render_projection(project_report(result))
+
+
+def render_projection(report):
     lines = [f"{'OK' if report['status'] == 'ok' else 'ERROR'}: {report['command']} "
              "(checks only; not scientific validity or completed execution)"]
 

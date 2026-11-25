@@ -61,10 +61,12 @@ The Files tab names the sample and marks the other matches as not inspected.
 If the sample cannot be read, the explorer shows the error without trying
 another file.
 
-* Use ``1`` for sources, ``2`` for the field table, ``3`` for field details and
-  ``4`` for source tabs. In a small terminal these keys switch views. Use
-  Tab and the arrow keys to move within a view. Press ``d`` for Diagnostics
-  directly, even when the tab is off screen.
+* Use ``1`` for sources, ``2`` for the field table and ``4`` for source
+  information. Open a field with Enter or ``3``; Esc returns to the table.
+  Field details show the full native group label and available selector.
+  **Technical field metadata** keeps full identifiers and attributes.
+  The Files tab shows basenames; expand **Exact file locations** for full
+  paths. Press ``d`` for Diagnostics and ``?`` for shortcuts.
 * When Sources is beside the field table, press ``b`` to hide or show it.
   ``1`` opens Sources even if the sidebar is closed.
 * Use ``/`` to search fields by name, units or native group. Press Enter or
@@ -74,6 +76,11 @@ another file.
   ``p`` to send the configuration path. Paste to verify delivery, then put
   the selector under the shown source's ``variables`` without dropping your
   other selections. If clipboard access is blocked, copy the visible YAML.
+* Use ``a`` to add or remove an offered selector in a draft for the current
+  source. Press ``v`` to review and copy the combined YAML. The draft does
+  not edit the configuration. If a refreshed sample no longer supports an
+  entry, review it separately; FrameIt excludes it from the copied draft.
+  Check the combined request with ``frameit validate`` before processing.
 * Press ``r`` to reread saved edits. The previous sample remains visible and
   labelled while the check runs. If it is marked stale, refresh it before
   using its selectors. ``Ctrl+C`` requests cancellation; a native read may
@@ -88,7 +95,8 @@ the Braille mark in a terminal that cannot display it, see
 observed timestamps and cycles are separate from the YAML's requested time
 window. Use ``frameit inspect frameit.yaml --cli`` for the full text report
 or ``--json`` for the full structured report. Redirected commands also use
-the full inventory. Use ``frameit validate`` to check the processing request.
+the full inventory. To export or revisit a sample, see
+:ref:`saving terminal reports <terminal-report-archives>`.
 
 File inventory and ambiguity
 -----------------------------

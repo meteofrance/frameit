@@ -7,6 +7,7 @@ from math import ceil
 from os import environ
 from pathlib import Path
 from sys import __stdout__
+from tempfile import NamedTemporaryFile
 from textwrap import indent
 from threading import Event
 from time import monotonic, time
@@ -20,12 +21,13 @@ from textual.content import Content
 from textual.css.scalar import Scalar
 from textual.message import Message
 from textual.notifications import Notify
+from textual.screen import ModalScreen
 from textual.scrollbar import ScrollBarRender
 from textual.theme import Theme
-from textual.widgets import Footer, OptionList, ProgressBar, Static
+from textual.widgets import Collapsible, Footer, Input, OptionList, ProgressBar, Static
 from textual.worker import Worker, WorkerState, get_current_worker
 
-from frameit.core.reports import project_report
+from frameit.core.reports import project_report, serialize_projection
 from frameit.report_motion import BrandActivity, ReportScroll
 
 _CHECK_LABELS = {
@@ -33,11 +35,13 @@ _CHECK_LABELS = {
     "execution-dependent": "During run",
     "schema-only": "Not checked in schema mode",
 }
-_TEAL, _AMBER, _RED, _SLATE = "#49C5BC", "#F5B55E", "#DA5656", "#A6B4C4"
 _THEME = Theme(
-    name="frameit", primary=_TEAL, accent=_TEAL, warning=_AMBER, error=_RED,
-    background="#000000", surface="#000000", panel="#000000", foreground="#E6EDF3",
+    name="frameit", primary="#4CC7C2", accent="#4CC7C2", warning="#F2AE3D",
+    success="#78C6A3", error="#F08080", foreground="#E6EDF3",
+    background="#000000", surface="#000000", panel="#000000",
+    variables={"text-muted": "#A5B0BD", "report-selection": "#0B2B29", "report-rule": "#33464D"},
 )
+_FINDING_STYLES = {"Error": "bold $error", "Warning": "$warning", "Blocked": "$text-muted"}
 
 
 def _yaml(value):
@@ -67,21 +71,163 @@ def _finding_title(level, item):
     return title
 
 
-def _finding_detail(level, item):
-    lines = [_finding_title(level, item)]
-    if level != "Warning":
-        lines.extend(("", item["message"]))
-        if level == "Error":
-            sections = (("Repair", "repairs"), ("Expected", "expected"), ("Observed", "observed"),
-                        ("Affected", "contexts"))
-            lines.extend(f"\n{label}:\n{indent(_yaml(item[key]), '  ')}"
-                         for label, key in sections if item[key] is not None and item[key] != [])
-            lines.extend(f"\nYAML: {mark['file']}:{mark['line']}:{mark['column']}"
-                         for mark in item["locations"])
-            lines.append(f"\nTroubleshooting: {item['help']}")
-        elif item.get("prerequisites"):
+def _finding_summary(level, item):
+    if level == "Warning":
+        return Content.styled("Warning", "bold $warning") + Content(f"\n{item}")
+    if level != "Error":
+        lines = [_finding_title(level, item), "", item["message"]]
+        if item.get("prerequisites"):
             lines.append("\nPrerequisites: " + ", ".join(item["prerequisites"]))
+        return Content("\n".join(lines))
+    title = _finding_title(level, item)
+    message = item["message"].split("\n", 1)[0]
+    observed = item["observed"]
+    if item["code"] == "E1201" and isinstance(observed, dict) and "files" in observed:
+        title = "No input files match\n" + title
+        message = "A file pattern or path did not select a required input."
+    elif len(message) > 160:
+        message = message[:157] + "…"
+    summary = Content.styled(title, "bold $error") + Content(f"\n\n{message}")
+    if repairs := item["repairs"]:
+        summary += Content.styled("\n\nRepair: ", "bold $accent") + Content("\n".join(repairs))
+    if marks := item["locations"]:
+        mark = marks[0]
+        label = f"{Path(mark['file']).name}:{mark['line']}:{mark['column']}"
+        more = f" (+{len(marks) - 1} more)" if len(marks) > 1 else ""
+        summary += Content.styled(f"\n\nLocation: {label}{more}", "$text-muted")
+    return summary
+
+
+def _finding_evidence(item):
+    lines = [f"Setting: {item['path']}", item["message"]]
+    sections = (("Expected", "expected"), ("Observed", "observed"), ("Affected", "contexts"))
+    lines.extend(f"\n{label}:\n{indent(_yaml(item[key]), '  ')}"
+                 for label, key in sections if item[key] is not None and item[key] != [])
+    lines.extend(f"\nYAML: {mark['file']}:{mark['line']}:{mark['column']}"
+                 for mark in item["locations"])
+    lines.append(f"\nTroubleshooting: {item['help']}")
     return "\n".join(lines)
+
+
+class _ReportHelp(ModalScreen):
+    BINDINGS = [
+        Binding("escape,question_mark", "dismiss", "Close help", show=False),
+    ]
+    DEFAULT_CSS = """
+    _ReportHelp { align: center middle; background: $background; }
+    _ReportHelp ReportScroll { width: 62; max-width: 100%; height: auto; max-height: 90%;
+                               background: $background; padding: 1 2; }
+    """
+
+    def __init__(self, bindings):
+        super().__init__()
+        keys = {"escape": "Esc", "slash": "/", "question_mark": "?", "ctrl+c": "Ctrl+C"}
+        self._text = "\n".join([
+            "FrameIt shortcuts · Esc to close", "", "Tab / Shift+Tab  Move focus",
+            "Enter  Open selection or toggle section", "Page Up / Down  Scroll details", "",
+            *(f"{keys.get(binding.key, binding.key):<8} {binding.description}"
+              for binding in bindings),
+        ])
+
+    def compose(self) -> ComposeResult:
+        with ReportScroll():
+            yield Static(self._text, id="report-help", markup=False)
+
+
+class EvidenceChoices(ModalScreen):
+    """Pick a report reference without leaving the current reading position."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Back", show=False)]
+    DEFAULT_CSS = """
+    EvidenceChoices { align: center middle; background: $background; }
+    EvidenceChoices Vertical { width: 76; max-width: 100%; height: 80%; padding: 1 2; }
+    EvidenceChoices OptionList { height: 1fr; }
+    """
+
+    def __init__(self, title, choices):
+        super().__init__()
+        self._title = title
+        self._choices = choices
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static(f"{self._title} · Enter open · Esc back", markup=False)
+            yield OptionList(*(label for label, _ in self._choices),
+                             id="related-options", markup=False, compact=True)
+
+    @on(OptionList.OptionSelected, "#related-options")
+    def _open_reference(self, event):
+        self.dismiss(self._choices[event.option_index][1])
+
+
+class _SaveReport(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss", "Cancel", show=False)]
+    DEFAULT_CSS = """
+    _SaveReport { align: center middle; background: $background; }
+    _SaveReport Vertical { width: 66; max-width: 100%; height: auto; padding: 1 2; }
+    #export-error { color: $error; }
+    """
+
+    def __init__(self, label, save):
+        super().__init__()
+        self._label = label
+        self._save = save
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static(f"Save current report · {self._label}", markup=False)
+            yield Static("Choose a new JSON path. Enter saves; Esc cancels. No files are replaced.",
+                         markup=False)
+            yield Input(placeholder="Path for the JSON report", id="export-path")
+            yield Static(id="export-error", markup=False)
+
+    @on(Input.Submitted, "#export-path")
+    def _save_to_path(self, event):
+        error = self.query_one("#export-error", Static)
+        if not event.value.strip():
+            error.update("Enter a destination path.")
+            return
+        try:
+            path = Path(event.value).expanduser().absolute()
+            self._save(path)
+        except FileExistsError:
+            error.update("Destination already exists. Choose a new path.")
+        except (OSError, ValueError, RuntimeError) as exc:
+            error.update(f"Cannot save report: {exc}")
+        else:
+            self.dismiss(path)
+
+
+class DisclosureScroll(ReportScroll):
+    """Keep the currently scrolled disclosure operable inside its own viewport."""
+
+    _pinned: Collapsible | None = None
+
+    def on_mount(self):
+        for attribute in ("scroll_y", "virtual_size"):
+            self.watch(self, attribute, self.update_heading, init=False)
+
+    @on(Collapsible.Toggled)
+    def update_heading(self):
+        self.call_after_refresh(self._pin_heading)
+
+    def _pin_heading(self):
+        top = self.scroll_offset.y
+        self._pinned = next((section for section in self.query(Collapsible)
+                             if not section.collapsed
+                             and section.virtual_region.y < top < section.virtual_region.bottom),
+                            None)
+        pinned = self.query_one(".pinned-heading", Static)
+        label = self._pinned.title if self._pinned is not None else ""
+        if pinned.content != label:
+            pinned.update(label, layout=False)
+            pinned.set_class(bool(label), "clickable")
+
+    @on(events.Click, ".pinned-heading")
+    def _collapse_pinned(self):
+        if not self.app.busy and (section := self._pinned) is not None and not section.collapsed:
+            section.collapsed = True
+            section.query_one("CollapsibleTitle").focus(scroll_visible=False)
 
 
 @dataclass
@@ -115,7 +261,6 @@ class _ThinThumb(ScrollBarRender):
 class ReportApp(App[int]):
     ENABLE_COMMAND_PALETTE = False
     LOG_CONTEXT = "report"
-    FINDINGS_HINT = "Review the report findings."
     SIDEBAR = None
     BRANDED_REFRESH = False
     HORIZONTAL_BREAKPOINTS = [(0, "-compact"), (68, "-narrow"), (120, "-wide")]
@@ -130,58 +275,62 @@ class ReportApp(App[int]):
         Binding("ctrl+c", "interrupt", show=False, priority=True),
         Binding("b", "toggle_sidebar", "Sidebar"),
         Binding("p", "copy_config_path", "Copy configuration path", show=False),
+        Binding("escape", "back", "Back"),
+        Binding("y", "copy_finding", "Copy evidence", show=False),
+        Binding("n", "filter_notes", "Field discovery notes", show=False),
+        Binding("question_mark", "report_help", "Help", show=False),
+        Binding("w", "save_report", "Save current report as JSON", show=False),
     ]
-    CSS = f"""
-    Screen, Footer {{ background: $background; color: $foreground; }}
-    #identity-bar {{ height: 1; padding: 0 1; }}
-    #identity {{ width: auto; text-style: bold; }}
-    #context {{
+    CSS = """
+    Screen, Footer { background: $background; color: $foreground; }
+    #identity-bar { height: 1; padding: 0 1; }
+    #identity { width: auto; text-style: bold; }
+    #help-key { width: auto; margin-left: 2; color: $accent; pointer: pointer; }
+    #context {
         width: 1fr;
         padding-left: 1;
         text-align: right;
         text-wrap: nowrap;
         text-overflow: ellipsis;
-        color: {_SLATE};
-    }}
-    #status {{ height: auto; margin: 1 1 0 1; text-style: bold; }}
-    #status.progress {{ color: $accent; }}
-    #status.error {{ color: $error; }}
-    #status.warning {{ color: $warning; }}
-    #report-feedback, #feedback-copy {{ height: auto; }}
-    #feedback-copy {{ width: 1fr; }}
-    #brand-activity {{ display: none; width: 20; height: 10; margin-right: 2; }}
-    Screen.starting #report-feedback {{ height: 1fr; align: center middle; }}
-    Screen.starting #feedback-copy {{
-        width: 44; max-width: 100%; height: 10; align: left middle;
-    }}
-    Screen.starting #status {{ margin: 0 1; }}
-    #work-progress, #local-activity {{ display: none; height: 1; margin: 0 1; }}
-    #local-activity {{ width: 12; }}
-    #work-progress Bar {{ width: 1fr; }}
-    #work-progress Bar > .bar--bar, #work-progress Bar > .bar--indeterminate {{
-        background: #31506a;
-    }}
-    #work-progress Bar > .bar--indeterminate {{ color: $accent 60%; }}
-    #work-progress Bar > .bar--complete {{ color: $accent; }}
-    Toast {{ width: 44; max-width: 100%; padding: 0 1; background: #102440; }}
-    Toast.-information {{ border-left: outer $accent; }}
-    Toast.-information .toast--title {{ color: $accent; }}
-    Toast.-warning {{ border-left: outer $warning; }}
-    Toast.-error {{ border-left: outer $error; }}
-    Screen.-compact ToastRack, Screen.-low ToastRack, Screen.-tiny ToastRack {{
-        dock: top; align: right top; margin: 0; scrollbar-size: 0 0;
-    }}
-    Screen.-compact Toast, Screen.-low Toast, Screen.-tiny Toast {{
+        color: $text-muted;
+    }
+    #status { height: auto; margin: 1 1 0 1; }
+    #status.progress { color: $accent; text-style: bold; }
+    #operation-context { display: none; height: auto; margin: 0 1; color: $text-muted; }
+    Screen.checking #operation-context { display: block; }
+    #report-feedback, #feedback-copy { height: auto; }
+    #feedback-copy { width: 1fr; }
+    #brand-activity { display: none; width: 20; height: 10; margin-right: 2; }
+    Screen.starting #report-feedback { height: 1fr; align: center middle; }
+    Screen.starting #feedback-copy {
+        width: 1fr; max-width: 44; height: 10; align: left middle;
+    }
+    Screen.starting #status { margin: 0 1; }
+    #work-progress, #local-activity { display: none; height: 1; margin: 0 1; }
+    #local-activity { width: 12; }
+    #work-progress Bar { width: 1fr; }
+    #work-progress Bar > .bar--bar, #work-progress Bar > .bar--indeterminate {
+        background: $report-rule;
+    }
+    #work-progress Bar > .bar--indeterminate { color: $accent 60%; }
+    #work-progress Bar > .bar--complete { color: $accent; }
+    Toast { width: 44; max-width: 100%; padding: 0 1; background: $report-selection; }
+    Toast.-information { border-left: outer $accent; }
+    Toast.-information .toast--title { color: $accent; }
+    Toast.-warning { border-left: outer $warning; }
+    Toast.-error { border-left: outer $error; }
+    ToastRack { scrollbar-size: 0 0; }
+    Screen.-compact Toast, Screen.-narrow Toast, Screen.-low Toast, Screen.-tiny Toast {
         width: 1fr; height: 1; margin: 0; text-wrap: nowrap; text-overflow: ellipsis;
-    }}
-    #interrupt-hint {{ display: none; dock: bottom; padding: 0 1; }}
-    Screen.checking #interrupt-hint {{ display: block; }}
-    Screen.starting .report-body, Screen.empty .report-body, Screen.checking Footer {{
+    }
+    #interrupt-hint { display: none; dock: bottom; padding: 0 1; }
+    Screen.checking #interrupt-hint { display: block; }
+    Screen.starting .report-body, Screen.empty .report-body, Screen.checking Footer {
         display: none;
-    }}
-    TabbedContent, TabPane, VerticalScroll {{ height: 1fr; }}
-    TabPane {{ padding: 0 1; }}
-    VerticalScroll, OptionList, DataTable {{
+    }
+    TabbedContent, TabPane, VerticalScroll { height: 1fr; }
+    TabPane { padding: 0 1; }
+    VerticalScroll, OptionList, DataTable {
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
         scrollbar-color: $accent 55%;
@@ -191,33 +340,58 @@ class ReportApp(App[int]):
         scrollbar-background-hover: transparent;
         scrollbar-background-active: transparent;
         scrollbar-corner-color: $background; /* Textual renders the corner opaque. */
-    }}
+    }
     /* Set both axes so Textual counts the vertical gutter when sizing the horizontal thumb. */
-    DataTable, #details-scroll {{ overflow: scroll; }}
-    #sources {{ scrollbar-size: 0 0; }}
-    #findings-layout {{ height: 1fr; }}
-    Screen.-wide.-tall #findings-layout {{ layout: horizontal; }}
-    Screen.-wide.-tall #findings-layout > Widget {{ height: 1fr; }}
-    Screen.-wide.-tall #finding-list {{
-        width: 32; margin-right: 1;
-    }}
-    Screen.-wide.-tall #finding-list.sidebar-closed {{ display: none; }}
-    #finding-list {{ height: 2fr; min-height: 3; }}
-    #finding-list:focus > .option-list--option-highlighted {{
-        background: #102440;
-        color: $foreground;
-        text-style: bold underline;
-    }}
-    #finding-scroll {{ height: 3fr; }}
+    DataTable, #details-scroll { overflow: scroll; }
+    #sources { scrollbar-size: 0 0; }
+    OptionList, DataTable { background: $background; background-tint: transparent;
+                            border-left: outer $background; }
+    OptionList:focus, DataTable:focus { border-left: outer $accent; }
+    OptionList > .option-list--option-highlighted, DataTable > .datatable--cursor {
+        background: $report-selection; color: $foreground; text-style: bold;
+    }
+    DataTable > .datatable--header { background-tint: transparent; color: $text-muted; }
+    Collapsible:focus-within { background-tint: transparent; }
+    CollapsibleTitle:focus { background: $report-selection; color: $accent; text-style: reverse; }
+    .pinned-heading {
+        dock: top; height: 1; padding: 0 1; color: $accent; text-style: bold;
+        text-wrap: nowrap; text-overflow: ellipsis; background: $background;
+    }
+    .pinned-heading.clickable { pointer: pointer; }
+    #findings-layout { height: 1fr; }
+    #finding-filter { height: auto; color: $text-muted; }
+    #finding-list, #finding-scroll { height: 1fr; }
+    #finding-scroll { display: none; border-left: outer $background; padding-left: 1; }
+    #finding-scroll:focus { border-left: outer $accent; }
+    #findings-layout.reading-finding #finding-scroll { display: block; }
+    #findings-layout.reading-finding #finding-list { display: none; }
+    Screen.-wide.-tall #findings-layout { layout: horizontal; }
+    Screen.-wide.-tall #findings-layout #finding-scroll { display: block; }
+    Screen.-wide.-tall #finding-list {
+        display: block; width: 32; margin-right: 1;
+    }
+    Screen.-wide.-tall #findings-layout.reading-finding #finding-list { display: block; }
+    Screen.-wide.-tall #finding-list.sidebar-closed { display: none; }
+    Screen.-wide.-tall #findings-layout.reading-finding #finding-list.sidebar-closed {
+        display: none;
+    }
+    #finding-evidence { border: none; padding: 0; margin-top: 1; }
+    #finding-actions { height: auto; color: $accent; margin-top: 1; }
     """
 
-    def __init__(self, config: Path, collect):
+    def __init__(self, config: Path, collect, *, saved_report=None):
         super().__init__()
         self.config = config
         self.collect = collect
+        self._saved_projection = saved_report
+        self.saved = saved_report is not None
         self.result_code = None
         self.findings = []
+        self._findings_visible = []
+        self._notes_only = False
+        self._report = None
         self._worker = None
+        self._runtime_warnings = []
         self._elapsed_timer = None
         self._notice_since = 0.0
         self._has_report = self._stale = False
@@ -234,12 +408,15 @@ class ReportApp(App[int]):
         with Horizontal(id="identity-bar"):
             yield Static(self.TITLE, id="identity", markup=False)
             context = Static(self.config.name, id="context", markup=False)
-            context.tooltip = "p · Copy configuration path"
+            if not self.saved:
+                context.tooltip = "p · Copy configuration path"
             yield context
+            yield Static("? Help", id="help-key", markup=False)
         with Horizontal(id="report-feedback"):
             yield BrandActivity(id="brand-activity")
             with Vertical(id="feedback-copy"):
                 yield Static(id="status", markup=False)
+                yield Static(id="operation-context", markup=False)
                 yield ProgressBar(total=1, show_percentage=False, show_eta=False,
                                   id="work-progress")
                 yield Static(id="local-activity", markup=False)
@@ -250,11 +427,26 @@ class ReportApp(App[int]):
     def compose_view(self) -> ComposeResult:
         raise NotImplementedError
 
+    @on(events.Click, "#help-key")
+    def action_report_help(self):
+        if not self.busy:
+            bindings = [*ReportApp.BINDINGS, *type(self).BINDINGS]
+            if self.saved:
+                live = {"refresh", "edit_config", "copy_config_path", "toggle_draft_field",
+                        "view_draft", "copy_selector", "show_changes"}
+                bindings = [binding for binding in bindings if binding.action not in live]
+            self.push_screen(_ReportHelp(bindings))
+
     def compose_findings(self) -> ComposeResult:
+        yield Static(id="finding-filter", markup=False)
         with Vertical(id="findings-layout"):
             yield OptionList(id="finding-list", markup=False, compact=True)
-            with ReportScroll(id="finding-scroll"):
+            with DisclosureScroll(id="finding-scroll"):
+                yield Static(id="finding-sticky", classes="pinned-heading", markup=False)
                 yield Static(id="finding", markup=False)
+                yield Static(id="finding-actions", markup=False)
+                yield Collapsible(Static(id="finding-evidence-text", markup=False),
+                                  title="Technical evidence", id="finding-evidence")
 
     def on_mount(self):
         for widget in self.query("VerticalScroll, OptionList, DataTable"):
@@ -262,8 +454,20 @@ class ReportApp(App[int]):
                 widget.vertical_scrollbar.renderer = _ThinThumb
         for widget in self.query("DataTable, #details-scroll"):
             widget.horizontal_scrollbar.renderer = _ThinThumb
-        self.begin_capture_print(self, stdout=False)
-        self._start_check()
+        if self.saved:
+            try:
+                report = self._saved_projection
+                self._accept_report(report, self.prepare_view(report))
+            except (KeyError, TypeError, ValueError, AttributeError, IndexError, RecursionError):
+                self.result_code = 1
+                self._report = None
+                self.screen.add_class("empty")
+                self.query_one("#status", Static).update(Content.styled(
+                    "Saved report could not be displayed: incomplete or invalid metadata. "
+                    "Use a JSON reader to inspect the file. q Quit.", "$error"))
+        else:
+            self.begin_capture_print(self, stdout=False)
+            self._start_check()
 
     @property
     def busy(self):
@@ -280,6 +484,7 @@ class ReportApp(App[int]):
         self._checked, self._total = 0, None
         self._runtime_warnings = []
         self._activity = self.STAGES["configuration"]
+        self._progress_context = ""
         self.screen.add_class("checking")
         self.screen.set_class(not self._has_report or self.BRANDED_REFRESH, "starting")
         self.query_one("#status").set_classes("progress")
@@ -324,18 +529,19 @@ class ReportApp(App[int]):
     def _observe(self, event: _Progress):
         if event.worker is not self._worker or self._cancel.is_set() or not self.is_running:
             return
-        activity = self.STAGES[event.stage]
+        context = []
         self._eta_at = None
         if event.source is not None:
-            activity += f" · {event.source}"
+            context.append(str(event.source))
         if event.checked is not None:
-            activity += f" · {event.checked} of {event.total} files checked"
+            context.append(f"{event.checked} of {event.total} files checked")
             if event.checked == 0:
                 self._scan_started = event.at
             elif 2 <= event.checked < event.total:
                 self._eta_at = event.at + ((event.at - self._scan_started) *
                                            (event.total - event.checked) / event.checked)
-        self._activity = activity
+        self._activity = self.STAGES[event.stage]
+        self._progress_context = " · ".join(context)
         self._checked, self._total = event.checked or 0, event.total
         self._sync_activity()
         self._tick()
@@ -343,16 +549,16 @@ class ReportApp(App[int]):
     def _tick(self):
         if self.busy and not self._cancel.is_set():
             now = monotonic()
-            activity = self._activity
+            context = [self._progress_context]
             if self._eta_at is not None and now < self._eta_at:
-                activity += f" · ETA ~{_clock(ceil(self._eta_at - now))} (this source)"
-            elapsed = _clock(now - self._started)
+                context.append(f"ETA ~{_clock(ceil(self._eta_at - now))} (this source)")
+            context.append(f"{_clock(now - self._started)} elapsed")
             if self._has_report and not self.BRANDED_REFRESH:
-                status = f"Refreshing (previous report shown)\n{activity} · {elapsed} elapsed"
+                prefix = "Refreshing (previous report shown)\n"
             else:
                 prefix = "Refreshing report\n" if self._has_report else ""
-                status = f"{prefix}{activity}\n{elapsed} elapsed"
-            self.query_one("#status", Static).update(status)
+            self.query_one("#status", Static).update(prefix + self._activity)
+            self.query_one("#operation-context", Static).update(" · ".join(filter(None, context)))
 
     async def on_resize(self, event: events.Resize):
         if self.busy:
@@ -371,8 +577,10 @@ class ReportApp(App[int]):
         graphical = (not self.no_color and encoding.lower().replace("-", "") == "utf8"
                      and environ.get("TERM") not in {"ansi", "linux", "vt100"})
         motion = active and graphical and self.animation_level == "full"
+        compact_refresh = self.BRANDED_REFRESH and self._has_report
         branded = (active and graphical and self.screen.has_class("starting")
-                   and size.width >= 68 and size.height >= 20)
+                   and size.width >= (44 if compact_refresh else 68)
+                   and size.height >= (14 if compact_refresh else 20))
         self.query_one(BrandActivity).set_active(branded)
         known = active and graphical and bool(self._total)
         bar = self.query_one("#work-progress", ProgressBar)
@@ -399,15 +607,20 @@ class ReportApp(App[int]):
         self.screen.remove_class("checking", "starting")
         hidden_view = self._hidden_view
         if self._cancel.is_set() or event.state == WorkerState.CANCELLED:
-            if hidden_view is None:
+            if hidden_view is None and not self.BRANDED_REFRESH:
                 self.exit(130)
             else:
                 self.result_code = 130
-                self._stale = True
+                self._stale = self._has_report
+                self.screen.set_class(not self._has_report, "empty")
                 status = self.query_one("#status", Static)
-                status.set_classes("warning")
-                status.update("Refresh cancelled · previous report shown")
-                self.call_after_refresh(self._restore_hidden_view)
+                status.set_classes("")
+                if hidden_view is not None:
+                    status.update(Content("Refresh cancelled · Previous report shown\n")
+                                  + self._settled_status)
+                    self.call_after_refresh(self._restore_hidden_view)
+                else:
+                    status.update("Check cancelled · no report yet. Press r to retry or q to quit.")
             return
         if event.state == WorkerState.ERROR:
             if self.result_code != 130:
@@ -415,22 +628,25 @@ class ReportApp(App[int]):
             self._stale = self._has_report
             self.screen.set_class(not self._has_report, "empty")
             status = self.query_one("#status", Static)
-            status.set_classes("error")
             problem = " ".join(str(event.worker.error).split())
             verdict = "Refresh failed · previous report is stale" if self._stale else "Check failed"
-            status.update(f"{verdict} · {problem}. Press r to retry.")
-            self._notice("Refresh failed" if self._stale else "Check failed",
-                         "Press r to retry.", "warning" if self._stale else "error")
+            content = Content.styled(f"{verdict} · {problem}. Press r to retry.", "$error")
+            if self._stale:
+                content += Content("\n") + self._settled_status
+            status.set_classes("")
+            status.update(content)
             if hidden_view is not None:
                 self.call_after_refresh(self._restore_hidden_view)
             return
-        report, prepared = event.worker.result
+        self._accept_report(*event.worker.result, hidden_view=hidden_view)
+
+    def _accept_report(self, report, prepared, *, hidden_view=None):
         self._stale = False
         self.screen.remove_class("empty")
         focused, offsets = hidden_view or self._view_state()
         listing = self.query_one("#finding-list", OptionList)
         old_index = listing.highlighted
-        previous = None if old_index is None else self.findings[old_index]
+        previous = self._current_finding()
         self.result_code = int(bool(report["errors"]))
         checks = report["deferred_checks"]
         warnings = dict.fromkeys([*report["warnings"], *self._runtime_warnings])
@@ -441,27 +657,14 @@ class ReportApp(App[int]):
             *((_CHECK_LABELS.get(item["status"], "Not checked here"), item)
               for item in checks if item["status"] != "blocked"),
         ]
-        retained = previous in self.findings
-        index = self.findings.index(previous) if retained else 0
-        with listing.prevent(OptionList.OptionHighlighted):
-            listing.set_options(
-                Content.styled(f"{number:>2}  {_finding_title(level, item)}", {
-                    "Error": f"bold {_RED}", "Warning": _AMBER,
-                }.get(level, _SLATE))
-                for number, (level, item) in enumerate(self.findings, start=1))
-            listing.highlighted = index if self.findings else None
-        detail = _finding_detail(*self.findings[index]) if self.findings else "No findings."
-        self.query_one("#finding", Static).update(detail)
-        if not retained:
-            self.query_one("#finding-scroll").scroll_home(animate=False)
-        refreshed = self._has_report
-        self.show_report(report, prepared)
+        previous_report, self._report = self._report, report
+        retained = self._list_findings(previous)
+        self.show_report(report, prepared, previous_report)
         self._has_report = True
         self.screen.refresh_bindings()
-        self._notify_result(refreshed)
         offsets = [(widget, offset, anchor) for widget, offset, anchor in offsets
                    if (retained or widget.id != "finding-scroll")
-                   and (index == old_index or widget is not listing)]
+                   and (listing.highlighted == old_index or widget is not listing)]
         if hidden_view is not None:
             self._hidden_view = focused, offsets
             self.call_after_refresh(self._restore_hidden_view)
@@ -490,21 +693,27 @@ class ReportApp(App[int]):
             if widget.is_on_screen and anchor == self._scroll_anchor(widget):
                 widget.scroll_to(x=x, y=y, animate=False, immediate=self.BRANDED_REFRESH)
 
-    def show_report(self, report: dict, prepared) -> None:
+    def show_report(self, report: dict, prepared, previous_report) -> None:
         raise NotImplementedError
 
-    def set_status(self, verdict, *, hint=None):
-        self._verdict = verdict
+    def set_status(self, verdict, *, hint=None, passed=False):
         counts = Counter(level for level, _ in self.findings)
         labels = (("Error", "error"), ("Warning", "warning"), ("Blocked", "blocked"),
                   ("Field discovery", "field discovery note"))
-        stats = [f"{count} {label}{'s' if count > 1 and level != 'Blocked' else ''}"
-                 for level, label in labels if (count := counts[level])]
+        parts = [Content.styled("Saved report", "bold $text-muted")] if self.saved else []
+        parts.append(Content.styled(verdict, "bold " + (
+            "$error" if self.result_code else "$success" if passed else "$foreground")))
+        if hint:
+            parts.append(Content.styled(hint, "$text-muted"))
+        for level, label in labels:
+            if count := counts[level]:
+                suffix = "s" if count > 1 and level != "Blocked" else ""
+                parts.append(Content.styled(f"{count} {label}{suffix}",
+                                            _FINDING_STYLES.get(level, "$text-muted")))
         status = self.query_one("#status", Static)
-        status.set_classes(
-            "error" if self.result_code else "warning" if counts["Warning"] or counts["Blocked"]
-            else "")
-        status.update(" · ".join(filter(None, (verdict, hint, *stats))))
+        status.set_classes("")
+        self._settled_status = Content(" · ").join(parts)
+        status.update(self._settled_status)
 
     def _clear_notices(self):
         self.clear_notifications()
@@ -519,22 +728,11 @@ class ReportApp(App[int]):
             self._clear_notices()
 
     def _notice(self, title, message, severity="information"):
-        if any(self.screen.has_class(mode) for mode in ("-compact", "-low", "-tiny")):
+        if any(self.screen.has_class(mode) for mode in ("-compact", "-narrow", "-low", "-tiny")):
             title, message = "", f"{title} · {message}"
         self.notify(message, title=title, severity=severity,
                     timeout={"information": 2.5, "warning": 4.5, "error": 7}[severity],
                     markup=False)
-
-    def _notify_result(self, refreshed):
-        if self.result_code:
-            self._notice(self._verdict, self.FINDINGS_HINT, "error")
-        elif any(level in {"Warning", "Blocked"} for level, _ in self.findings):
-            self._notice(self._verdict, self.FINDINGS_HINT, "warning")
-        elif refreshed or self.LOG_CONTEXT == "validation":
-            message = ("Inputs and execution were not checked."
-                       if getattr(self, "schema_only", False) else
-                       "Report reloaded." if refreshed else "No blocking diagnostics.")
-            self._notice(self._verdict, message)
 
     def _send_copy(self, text, title, fallback):
         try:
@@ -547,7 +745,30 @@ class ReportApp(App[int]):
 
     def action_copy_config_path(self):
         self._send_copy(str(self.config.absolute()), "Configuration path",
-                        "Use the path passed to FrameIt.")
+                         "Use the path passed to FrameIt.")
+
+    def _save_report(self, path):
+        if path.resolve() == self.config.resolve():
+            raise ValueError("Choose a path other than the active configuration or saved report.")
+        contents = serialize_projection(self._report)
+        # Publish a complete new file atomically, without replacing any existing entry.
+        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                prefix=".frameit-report-", delete_on_close=False) as stream:
+            stream.write(contents + "\n")
+            stream.close()
+            path.hardlink_to(stream.name)
+
+    def action_save_report(self):
+        if self.busy or self._report is None:
+            return
+        label = "Saved report" if self.saved else (
+            "Previous report" if self._stale else "Latest report")
+
+        def saved(path):
+            if path is not None:
+                self._notice("Report saved", str(path))
+
+        self.push_screen(_SaveReport(label, self._save_report), saved)
 
     def _wide_sidebar(self, size=None):
         size = self.size if size is None else size
@@ -558,8 +779,20 @@ class ReportApp(App[int]):
         return self.SIDEBAR is not None and self._has_report and self._wide_sidebar()
 
     def check_action(self, action, parameters):
+        if isinstance(self.screen, ModalScreen):
+            return False
+        if self.saved and action in {"refresh", "copy_config_path"}:
+            return False
+        if action == "save_report":
+            return self._report is not None and not self.busy
         if action == "toggle_sidebar":
             return self._sidebar_available()
+        if action in {"back", "copy_finding"}:
+            within_finding = not self.busy and self.query_one("#finding-scroll").has_focus_within
+            return within_finding and (action == "back" or self._current_finding() is not None)
+        if action == "filter_notes":
+            return (not self.busy and self.query_one("#findings-layout").has_focus_within
+                    and self.query_one("#finding-filter").display)
         return super().check_action(action, parameters)
 
     def _settle_sidebar(self, sidebar, wide):
@@ -576,7 +809,10 @@ class ReportApp(App[int]):
                 previous.focus()
 
     def _focus_sidebar_main(self):
-        self.query_one(self.SIDEBAR[1]).focus()
+        if self.SIDEBAR[1] == "#finding-scroll":
+            self._focus_finding(True)
+        else:
+            self.query_one(self.SIDEBAR[1]).focus()
 
     def action_toggle_sidebar(self):
         if not self._sidebar_available():
@@ -609,12 +845,90 @@ class ReportApp(App[int]):
     @on(OptionList.OptionHighlighted, "#finding-list")
     def _select_finding(self, event: OptionList.OptionHighlighted):
         if (self.result_code is not None and event.option is event.option_list.highlighted_option):
-            self.query_one("#finding", Static).update(
-                _finding_detail(*self.findings[event.option_index]))
+            self._present_finding(self._current_finding(), reset=True)
+
+    @on(OptionList.OptionSelected, "#finding-list")
+    def _open_finding(self):
+        if not self.busy:
+            self._focus_finding(True)
+
+    def _focus_finding(self, reading):
+        layout = self.query_one("#findings-layout")
+        layout.set_class(reading, "reading-finding")
+        target = self.query_one("#finding-scroll" if reading else "#finding-list")
+        # A terminal can deliver the tab shortcut and Enter in the same read.
+        self.screen.set_focus(target, scroll_visible=False)
+
+    def action_back(self):
+        if self._wide_sidebar() and self.SIDEBAR and self.SIDEBAR[0] == "#finding-list":
+            if self._sidebar_closed:
+                self.action_toggle_sidebar()
+        self._focus_finding(False)
+
+    def _current_finding(self):
+        index = self.query_one("#finding-list", OptionList).highlighted
+        return self._findings_visible[index] if index is not None else None
+
+    def _list_findings(self, previous):
+        listing = self.query_one("#finding-list", OptionList)
+        notes = sum(level == "Field discovery" for level, _ in self.findings)
+        self._notes_only = bool(notes and self._notes_only)
+        visible = [(level, item) for level, item in self.findings
+                   if not self._notes_only or level == "Field discovery"]
+        self._findings_visible = visible
+        retained = previous in visible
+        with listing.prevent(OptionList.OptionHighlighted):
+            listing.set_options(
+                Content.styled(f"{number:>2}  {_finding_title(level, item)}",
+                               _FINDING_STYLES.get(level, "$text-muted"))
+                for number, (level, item) in enumerate(visible, start=1))
+            listing.highlighted = (visible.index(previous) if retained else 0) if visible else None
+        filter_label = self.query_one("#finding-filter", Static)
+        filter_label.display = bool(notes)
+        shown = "Field discovery only" if self._notes_only else "All findings"
+        filter_label.update(f"{shown} · {notes} discovery · n Filter")
+        self._present_finding(self._current_finding(), reset=not retained)
+        return retained
+
+    def action_filter_notes(self):
+        previous = self._current_finding()
+        self._notes_only = not self._notes_only
+        self._list_findings(previous)
+
+    def _present_finding(self, finding, *, reset):
+        summary = self.query_one("#finding", Static)
+        actions = self.query_one("#finding-actions", Static)
+        disclosure = self.query_one("#finding-evidence", Collapsible)
+        hints = self.finding_actions(finding)
+        actions.display = bool(hints)
+        actions.update(hints)
+        if finding is not None:
+            level, item = finding
+            summary.update(_finding_summary(level, item))
+            disclosure.display = level == "Error"
+            if disclosure.display:
+                self.query_one("#finding-evidence-text", Static).update(_finding_evidence(item))
+        else:
+            summary.update("No findings.")
+            disclosure.display = False
+        if reset:
+            disclosure.collapsed = True
             self.query_one("#finding-scroll").scroll_home(animate=False)
+        self.screen.refresh_bindings()
+
+    def finding_actions(self, finding):
+        return "y Copy evidence" if finding is not None else ""
+
+    def action_copy_finding(self):
+        if finding := self._current_finding():
+            level, item = finding
+            text = str(_finding_summary(level, item))
+            if level == "Error":
+                text += "\n\n" + _finding_evidence(item)
+            self._send_copy(text, "Finding evidence", "Use the visible evidence instead.")
 
     def action_refresh(self) -> None:
-        if not self.busy:
+        if not self.busy and not self.saved:
             self._start_check()
 
     def action_quit(self):
@@ -631,3 +945,4 @@ class ReportApp(App[int]):
             if self._has_report and not self.BRANDED_REFRESH:
                 status = f"Previous report shown\n{status}"
             self.query_one("#status", Static).update(status)
+            self.query_one("#operation-context", Static).update("")

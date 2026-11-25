@@ -7,15 +7,16 @@ import select
 import subprocess
 import sys
 import termios
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from functools import partial
+from shlex import join
 from threading import Event
 from time import monotonic
 
 import pytest
 import yaml
 from textual import on
-from textual.events import MouseScrollDown
+from textual.events import Key, MouseScrollDown
 from textual.geometry import Region
 from textual.worker import Worker, WorkerCancelled, WorkerFailed, WorkerState
 
@@ -79,7 +80,8 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
             assert _text(app, "#context") == path.name
             summary = _text(app, "#summary")
             assert "scientific validity" not in summary
-            assert all(label in summary for label in ("Inputs", "Selection", "Region", "Outputs"))
+            labels = ("Inputs", "Selection", "Time", "Region", "Outputs")
+            assert all(label in summary for label in labels)
             if mode in {"full", "unused-centre"}:
                 assert "static support" in summary.splitlines()[0]
                 assert "value/mask checks" in summary.splitlines()[1]
@@ -130,13 +132,18 @@ def test_validation_tabs_show_only_supported_conclusions(tmp_path, mode):
                 assert "Partial plan" in plan.title
                 if mode == "unconfirmed":
                     assert "unconfirmed" in plan.title and ".model_grid.nc" in plan_text
-                    assert plan_text.startswith("planned_products:")
+                    assert "unconfirmed" in plan_text.lower()
                 else:
                     assert "unconfirmed" not in plan.title
             else:
                 assert plan.title == "Processing plan"
                 if mode in {"full", "unused-centre"}:
                     assert "instructional_scalar" in plan_text and ".model_grid.nc" in plan_text
+                    products = app.query_one("#plan-products")
+                    assert products.row_count == 1
+                    source, kind, count, destination = map(str, products.get_row_at(0))
+                    assert (source, kind, count) == ("atmosphere", "model grid", "1")
+                    assert "/" not in destination and destination.endswith(".model_grid.nc")
 
             details = app.query_one("#details-scroll")
             await pilot.press("tab", "enter")
@@ -390,14 +397,15 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
                     assert "Ctrl+C" in _text(app, "#interrupt-hint")
                     assert app.query_one("#interrupt-hint").display
                     status = _text(app, "#status")
-                    assert expected in status
-                    assert ("ETA ~00:08" in status) if index == 1 else ("ETA" not in status)
+                    context = _text(app, "#operation-context")
+                    assert expected in (status if index == 3 else context)
+                    assert ("ETA ~00:08" in context) if index == 1 else ("ETA" not in context)
                     if index == 1:
                         clock[0] += 120
                         async with asyncio.timeout(3):
-                            while "ETA" in _text(app, "#status"):
+                            while "ETA" in _text(app, "#operation-context"):
                                 await pilot.pause(0.05)
-                        assert "2 of 6 files checked" in _text(app, "#status")
+                        assert "2 of 6 files checked" in _text(app, "#operation-context")
                     clock[0] += 4
                     resume[index].set()
 
@@ -418,7 +426,7 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
                 assert "passed" not in _text(app, "#status")
                 assert not app.query_one("#report-tabs").display
                 assert "Refreshing" in _text(app, "#status")
-                assert app.query_one("#local-activity").loading
+                assert app.query_one("#brand-activity").display
                 resume[4].set()
                 await app.workers.wait_for_complete()
                 await pilot.press("2")
@@ -445,7 +453,7 @@ def test_validation_interruption_preserves_the_previous_view(tmp_path, mode):
     def collect(*, progress):
         nonlocal calls
         calls += 1
-        if mode == "initial" or (refresh and calls == 2):
+        if (mode == "initial" and calls == 1) or (refresh and calls == 2):
             started.set()
             assert release.wait(10)
             progress("metadata", "atmosphere", 0, 1)
@@ -482,16 +490,28 @@ def test_validation_interruption_preserves_the_previous_view(tmp_path, mode):
                     assert not app.query_one("#report-tabs").display
                     assert app.query_one("#brand-activity").display
                     await pilot.resize_terminal(52, 16)
+                    assert app.query_one("#brand-activity").display
                     await pilot.resize_terminal(120, 40)
                     await pilot.press("enter")
                 await pilot.press("ctrl+c")
                 if mode != "idle":
                     status = _text(app, "#status").lower()
                     assert "cancellation requested" in status
+                    await pilot.press("r")
+                    assert list(app.workers) == [worker]
                     release.set()
                     with pytest.raises(WorkerCancelled):
                         await worker.wait()
                     await pilot.pause()
+                    if mode == "initial":
+                        assert "cancelled" in _text(app, "#status").lower()
+                        assert "previous" not in _text(app, "#status").lower()
+                        assert not app.query_one("#report-tabs").display
+                        await pilot.press("r")
+                        await app.workers.wait_for_complete()
+                        await pilot.pause()
+                        assert app.result_code == 0
+                        await pilot.press("q")
                 if refresh:
                     tabs = app.query_one("#report-tabs")
                     assert tabs.display and tabs.active == "details"
@@ -517,7 +537,7 @@ def test_validation_interruption_preserves_the_previous_view(tmp_path, mode):
                     await pilot.press("q")
             finally:
                 release.set()
-        assert app.return_value == (0 if mode == "retry" else 130)
+        assert app.return_value == (0 if mode in {"initial", "retry"} else 130)
 
     asyncio.run(exercise())
 
@@ -628,19 +648,25 @@ def test_findings_distinguish_discovery_notes_from_run_only_work(tmp_path):
         async with app.run_test() as pilot:
             await app.workers.wait_for_complete()
             await pilot.pause()
-            assert _text(app, "#status") == "Validation passed · 2 field discovery notes"
+            assert _text(app, "#status") == (
+                "Validation passed · Metadata preflight · 2 field discovery notes")
             await pilot.press("2")
             listing = app.query_one("#finding-list")
             style = "option-list--option-highlighted"
-            assert listing.get_component_styles(style).text_style.underline
-            await pilot.press("tab")
-            assert app.query_one("#finding-scroll").has_focus
             assert not listing.get_component_styles(style).text_style.underline
-            await pilot.press("shift+tab")
+            focus = listing.styles.border_left
+            await pilot.press("enter")
+            assert app.query_one("#finding-scroll").has_focus
+            assert listing.styles.border_left != focus
+            await pilot.press("escape")
             first, second = (str(listing.get_option_at_index(i).prompt) for i in range(2))
             assert first != second and all(" · t" in title for title in (first, second))
             assert "Field discovery · sources.atmosphere" in _text(app, "#finding")
             assert "native vertical group is ambiguous" in _text(app, "#finding")
+            await pilot.press("n")
+            assert listing.option_count == 2
+            await pilot.press("n")
+            assert listing.option_count == 3
             await pilot.press("down", "down")
             detail = _text(app, "#finding")
             assert "During run" in detail and "value/mask checks" in detail
@@ -664,18 +690,248 @@ def test_wide_finding_scrolls_to_yaml_location_and_help(tmp_path):
         app = ValidationApp(path, collect)
         async with app.run_test(size=(120, 30)) as pilot:
             await app.workers.wait_for_complete()
-            await pilot.press("2", "tab", "end")
+            await pilot.press("2", "enter", "tab", "enter", "end")
             await pilot.wait_for_scheduled_animations()
             detail = app.query_one("#finding-scroll")
-            finding = app.query_one("#finding")
+            finding = app.query_one("#finding-evidence-text")
             assert "YAML:" in str(finding.content) and "Troubleshooting:" in str(finding.content)
-            assert detail.has_focus and detail.scroll_y > 0
+            assert detail.has_focus_within and detail.scroll_y > 0
             assert finding.region.bottom <= app.query_one("#findings-layout").region.bottom
             await pilot.press("b")
             await pilot.wait_for_scheduled_animations()
             await pilot.press("end")
             await pilot.wait_for_scheduled_animations()
             assert finding.region.bottom <= app.query_one("#findings-layout").region.bottom
+
+    asyncio.run(exercise())
+
+
+def test_compact_finding_shows_repair_before_long_evidence_and_returns_to_selection(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    request = yaml.safe_load(path.read_text())
+    pattern = str(tmp_path / ("unavailable-" * 25) / "*.nc")
+    request["sources"]["atmosphere"]["files"] = pattern
+    path.write_text(yaml.safe_dump(request))
+
+    def collect(*, progress):
+        result = _collect_report(path, command="validate", progress=progress)
+        result.deferred_checks.extend({
+            "path": f"check.{i}", "status": "execution-dependent",
+            "message": "This check requires execution.",
+        } for i in range(25))
+        return result
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("2")
+            listing = app.query_one("#finding-list")
+            reader = app.query_one("#finding-scroll")
+            assert listing.has_focus and not reader.display
+            await pilot.press("enter")
+            assert reader.has_focus and not listing.display
+            assert reader.region.width == app.query_one("#findings-layout").region.width
+            shown = _text(app, "#finding")
+            assert "No input files match" in shown and "Repair: Correct" in shown
+            assert "Location: config.yaml:" in shown and pattern not in shown
+            assert app.query_one("#finding").region.bottom <= reader.region.bottom
+            assert app.query_one("#finding-evidence").collapsed
+            await pilot.press("y")
+            assert pattern in app.clipboard and str(path) in app.clipboard
+            await pilot.press("escape")
+            assert listing.has_focus and listing.highlighted == 0
+            assert not reader.display
+            await pilot.press("end", "up")
+            await pilot.wait_for_scheduled_animations()
+            selection, offset = listing.highlighted, listing.scroll_offset
+            assert offset.y > 0
+            await pilot.press("enter", "escape")
+            assert listing.has_focus and listing.highlighted == selection
+            assert listing.scroll_offset == offset
+            await pilot.press("1")
+            app.post_message(Key("2", "2"))
+            app.post_message(Key("enter", "\r"))
+            await pilot.pause()
+            assert reader.has_focus
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("terminal_can_suspend", [True, False])
+def test_live_editor_repairs_only_the_active_config_and_preserves_context(
+        tmp_path, monkeypatch, terminal_can_suspend):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path).rename(tmp_path / "config [with spaces;].yaml")
+    good = "data/first-run.nc"
+    assert good in path.read_text()
+    path.write_text(path.read_text().replace(good, "missing.nc"))
+    editor = tmp_path / "editor with spaces.py"
+    editor.write_text(
+        "import pathlib, sys\n"
+        f"assert sys.argv[1:] == [{str(path)!r}]\n"
+        "p = pathlib.Path(sys.argv[1])\n"
+        f"p.write_text(p.read_text().replace('missing.nc', {good!r}))\n")
+    monkeypatch.setenv("VISUAL", join([sys.executable, str(editor)]))
+    collect = partial(_collect_report, path, command="validate")
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        if terminal_can_suspend:
+            # The headless driver has no terminal to hand to the real test editor process.
+            monkeypatch.setattr(app, "suspend", nullcontext)
+        async with app.run_test(size=(80, 24), notifications=True) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("2", "enter", "l")
+            assert app.clipboard.startswith(f"{path}:")
+            reader = app.query_one("#finding-scroll")
+            assert reader.has_focus and app.result_code == 1
+            await pilot.press("e")
+            assert reader.has_focus and app.result_code == 1
+            if terminal_can_suspend:
+                assert good in path.read_text()
+                assert "not revalidated" in _text(app, "#status").lower()
+                await pilot.press("r")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                assert "passed" in _text(app, "#status").lower()
+                assert app.query_one("#report-tabs").active == "findings"
+                async with asyncio.timeout(3):
+                    while not reader.has_focus:
+                        await pilot.pause()
+                assert app.result_code == 0
+            else:
+                assert "missing.nc" in path.read_text()
+                assert "Editor unavailable" in str(app.query_one("Toast").render())
+                assert app.clipboard.startswith(f"{path}:")
+
+    asyncio.run(exercise())
+
+
+def test_blocked_check_links_to_the_reported_cause_and_setting_origin(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    path.write_text(path.read_text().replace("data/first-run.nc", "not-found.nc"))
+    collect = partial(_collect_report, path, command="validate")
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("2", "down", "enter")
+            previous = _text(app, "#finding")
+            assert "Blocked" in previous and "sources.atmosphere.files" in previous
+            await pilot.press("g")
+            choices = app.screen.query_one("#related-options")
+            assert "E1201" in str(choices.get_option_at_index(0).prompt)
+            await pilot.press("enter")
+            assert "No input files match" in _text(app, "#finding")
+            await pilot.press("g")
+            choices = app.screen.query_one("#related-options")
+            while "Setting" not in str(choices.highlighted_option.prompt):
+                assert choices.highlighted < choices.option_count - 1
+                await pilot.press("down")
+            await pilot.press("enter")
+            assert app.query_one("#report-tabs").active == "details"
+            evidence = _text(app, "#detail-why-text")
+            assert "sources.atmosphere.files" in evidence and "authored" in evidence.lower()
+            await pilot.press("escape", "escape")
+            assert _text(app, "#finding") == previous
+            assert app.query_one("#finding-scroll").has_focus
+
+    asyncio.run(exercise())
+
+
+def test_planned_product_links_to_bound_field_and_back_to_its_uses(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    collect = partial(_collect_report, path, command="validate")
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("3")
+            await pilot.click("#detail-plan CollapsibleTitle", offset=(3, 0))
+            plan_body = app.query_one("#detail-plan-text").region
+            body_style = app.screen.get_style_at(plan_body.right - 2, plan_body.y + 1)
+            assert body_style.bgcolor.triplet == (0, 0, 0)
+            await pilot.press("g", "down", "enter")
+            evidence = _text(app, "#detail-why-text")
+            assert "Native field: instructional_scalar" in evidence
+            assert "Product uses: model_grid" in evidence
+            await pilot.press("g")
+            choices = app.screen.query_one("#related-options")
+            assert "atmosphere.model_grid" in str(choices.get_option_at_index(0).prompt)
+            await pilot.press("enter")
+            assert "instructional_scalar" in _text(app, "#detail-plan-text")
+            await pilot.press("escape")
+            assert _text(app, "#detail-why-text") == evidence
+
+    asyncio.run(exercise())
+
+
+def test_changes_compare_completed_failed_checks_and_skip_cancelled_attempts(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    valid = path.read_text()
+    first = valid.replace("data/first-run.nc", "absent-a.nc")
+    second = valid.replace("data/first-run.nc", "absent-b.nc")
+    path.write_text(first)
+    entered, release = Event(), Event()
+    calls = 0
+
+    def collect(*, progress):
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            entered.set()
+            assert release.wait(10)
+            progress("configuration", None, None, None)
+        return _collect_report(path, command="validate", progress=progress)
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test(size=(80, 24)) as pilot:
+            try:
+                await app.workers.wait_for_complete()
+                assert app.result_code == 1
+                path.write_text(second)
+                await pilot.press("r")
+                await app.workers.wait_for_complete()
+                await pilot.press("u")
+                assert app.result_code == 1
+                summary = _text(app, "#detail-changes-text")
+                assert "Newly reported" in summary and "absent-b.nc" in summary
+                assert "No longer reported" in summary and "absent-a.nc" in summary
+                assert "Resolved" not in summary and "sources.atmosphere.files" in summary
+                await pilot.press("g", "enter")
+                assert "absent-b.nc" in _text(app, "#finding-evidence-text")
+                await pilot.press("escape")
+                assert app.query_one("#report-tabs").active == "details"
+                path.write_text(valid)
+                await pilot.press("r")
+                assert await asyncio.to_thread(entered.wait, 5)
+                await pilot.press("ctrl+c")
+                release.set()
+                with suppress(WorkerCancelled):
+                    await app.workers.wait_for_complete()
+                await pilot.pause()
+                assert _text(app, "#detail-changes-text") == summary
+                await pilot.press("r")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                latest = _text(app, "#detail-changes-text")
+                assert "absent-b.nc" in latest and "absent-a.nc" not in latest
+                assert app.result_code == 0
+            finally:
+                release.set()
 
     asyncio.run(exercise())
 

@@ -1,5 +1,6 @@
 """Read-only terminal explorer for one metadata sample per configured source."""
 
+from collections import Counter
 from pathlib import Path
 from textwrap import indent
 
@@ -8,15 +9,26 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.content import Content
-from textual.widgets import DataTable, Input, OptionList, Static, TabbedContent, TabPane
+from textual.widgets import (
+    Collapsible,
+    DataTable,
+    Input,
+    OptionList,
+    Static,
+    TabbedContent,
+    TabPane,
+)
 from textual.widgets.option_list import Option
 
+from frameit.inspect_draft import DraftSelection
 from frameit.report_motion import ReportScroll
-from frameit.report_tui import ReportApp, _time_label, _yaml
+from frameit.report_tui import DisclosureScroll, ReportApp, _time_label, _yaml
 
 _UNKNOWN = "Not reported"
 _REQUEST = {"requested": "Requested", "not_requested": "Not requested", "unresolved": "Unresolved"}
-_SORTS = {"Name": 0, "Units": 2, "Group": 4}
+_SORTS = {"Name": 0, "Units": 2, "Group": 1}
+_GROUP_WIDTH = 8
+_FIELD_COLUMNS = (("Name", 11), ("Group", _GROUP_WIDTH), ("Units", 8), ("Request", 13))
 _TABS = {
     "overview": "Overview", "coordinates": "Coordinates", "time": "Time", "grids": "Grids",
     "files": "Files", "origins": "Origins", "diagnostics": "Diagnostics",
@@ -28,6 +40,8 @@ _PANES = {
 
 
 def _scope(source):
+    if "sample" not in source and "files" in source:
+        return f"{len(source['files'])} files reported · sampling scope not reported"
     sample = source.get("sample", {})
     checked, discovered = sample.get("inspected", 0), sample.get("discovered")
     return f"{checked} of {discovered} files inspected" if discovered is not None else (
@@ -46,7 +60,7 @@ def _time_details(source):
             cycles.add(_time_label(record["cycle"]))
         if record.get("time_bounds"):
             intervals.add(" → ".join(map(_time_label, record["time_bounds"])))
-    lines = ["Observed in sample"]
+    lines = ["Observed in sample" if "sample" in source else "Reported time metadata"]
     for (clock, calendar, reference), (times, cycles, intervals) in clocks.items():
         lines.extend(("", f"Clock: {clock} · Calendar: {calendar}"))
         for title, labels in ((f"Timestamps ({len(times)})", times),
@@ -65,9 +79,7 @@ def _time_details(source):
 def _source_details(source, name, origins):
     sample_path = source.get("sample", {}).get("path")
     fields = source.get("fields", {})
-    overview = [f"Source: {name}", f"Sample: {sample_path or _UNKNOWN}", _scope(source),
-                f"Model: {source.get('model') or _UNKNOWN}",
-                f"Format: {source.get('format') or _UNKNOWN}",
+    overview = [f"Sample file: {Path(sample_path).name if sample_path else _UNKNOWN}",
                 f"Physical type: {source.get('physical_type') or _UNKNOWN}"]
     if source.get("sample", {}).get("inspected"):
         overview.append(f"Native field entries: {len(fields)}")
@@ -91,11 +103,11 @@ def _source_details(source, name, origins):
 
     dispositions = {"inspected": "Inspected sample", "sample_failed": "Sample failed",
                     "not_inspected": "Not inspected"}
-    files = []
-    for entry in source.get("file_inventory", ()):
-        files.append(f"{dispositions[entry['status']]} · {entry['path']}")
-        files.extend(f"  Alias · {alias}" for alias in entry.get("aliases", ()))
-    files.extend(f"Excluded · {path}" for path in source.get("excluded_files", ()))
+    files = [(dispositions[entry["status"]], entry["path"])
+             for entry in source.get("file_inventory", ())]
+    files.extend(("Alias", alias) for entry in source.get("file_inventory", ())
+                 for alias in entry.get("aliases", ()))
+    files.extend(("Excluded", path) for path in source.get("excluded_files", ()))
     declarations = source.get("declaration", {}).get("field_metadata")
     setting_origins = {key: value for key, value in origins.items()
                        if key.startswith(f"sources.{name}.")}
@@ -104,7 +116,8 @@ def _source_details(source, name, origins):
         "coordinates": "\n\n".join(coordinates) or _UNKNOWN,
         "time": _time_details(source),
         "grids": "\n\n".join(grids) or _UNKNOWN,
-        "files": "\n".join(files) or _UNKNOWN,
+        "files": "\n".join(f"{label} · {Path(path).name}" for label, path in files) or _UNKNOWN,
+        "file_paths": "\n".join(f"{label} · {path}" for label, path in files) or _UNKNOWN,
         "origins": "\n\n".join((
             f"Observed origins\n{_yaml(source['metadata_origins'])}"
             if source.get("metadata_origins") else f"Observed origins\n{_UNKNOWN}",
@@ -117,11 +130,26 @@ def _source_details(source, name, origins):
 def _field_cells(source, identity, field):
     attrs = field.get("attributes", {})
     name = field.get("name") or f"Unmapped ({attrs.get('GRIB_paramId') or 'unknown'})"
-    dimensions = field.get("dimensions")
     request = _REQUEST.get(source.get("request_status", {}).get(identity), _UNKNOWN)
-    return (name, request, str(attrs.get("units") or _UNKNOWN),
-             _UNKNOWN if dimensions is None else ", ".join(dimensions) or "scalar",
-             field.get("group") or _UNKNOWN)
+    return name, field.get("group") or "Unknown", str(attrs.get("units") or _UNKNOWN), request
+
+
+def _row_groups(rows):
+    """Keep short labels distinct for repeated names, independent of order and filters."""
+    keys = {identity: (cells[0], cells[1] if len(cells[1]) <= _GROUP_WIDTH
+                          else cells[1][:_GROUP_WIDTH - 1] + "…")
+            for identity, cells in rows}
+    counts = Counter(keys.values())
+    seen = Counter()
+    groups = {}
+    for identity, key in sorted(keys.items()):
+        group = key[1]
+        if counts[key] > 1:
+            seen[key] += 1
+            suffix = f"·{seen[key]}"
+            group = group[:_GROUP_WIDTH - len(suffix)] + suffix
+        groups[identity] = group
+    return groups
 
 
 class InspectionApp(ReportApp):
@@ -134,16 +162,17 @@ class InspectionApp(ReportApp):
     BINDINGS = [
         Binding("1", "pane('sources-pane')", "Sources"),
         Binding("2", "pane('variables-pane')", "Fields"),
-        Binding("3", "pane('field-scroll')", "Detail"),
+        Binding("3", "pane('field-scroll')", "Field detail", show=False),
         Binding("4", "pane('source-tabs')", "Tabs"),
         Binding("r", "refresh", "Refresh"),
         Binding("q", "quit", "Quit"),
         Binding("d", "diagnostics", "Diagnostics", show=False),
-        Binding("slash", "search", show=False),
-        Binding("escape", "leave_search", "Exit search"),
-        Binding("s", "sort_fields", show=False),
-        Binding("f", "filter_fields", show=False),
-        Binding("c", "copy_selector", show=False),
+        Binding("slash", "search", "Search fields", show=False),
+        Binding("s", "sort_fields", "Sort fields", show=False),
+        Binding("f", "filter_fields", "Filter by request state", show=False),
+        Binding("c", "copy_selector", "Copy offered YAML selector", show=False),
+        Binding("a", "toggle_draft_field", "Add or remove field in draft", show=False),
+        Binding("v", "view_draft", "Review draft selection", show=False),
     ]
     CSS = ReportApp.CSS + """
     #explorer { height: 1fr; }
@@ -159,34 +188,25 @@ class InspectionApp(ReportApp):
     #inspect-upper.active-pane, #source-tabs.active-pane { display: block; }
     #inspect-upper > Widget { display: none; width: 1fr; height: 1fr; padding: 0 1; }
     #inspect-upper > .active-pane { display: block; }
-    Screen.-wide.-tall #inspect-upper { height: 3fr; display: block; }
-    Screen.-wide.-tall #source-tabs { height: 2fr; display: block; }
-    Screen.-wide.-tall #inspect-upper > Widget { display: block; }
-    Screen.-wide.-tall #inspect-upper > .sidebar-closed { display: none; }
-    Screen.-wide.-tall #sources-pane { width: 23; border-right: solid $accent 30%; }
-    Screen.-wide.-tall #field-scroll { width: 38; border-left: solid $accent 30%; }
+    Screen.-wide.-tall #inspect-upper.browsing-fields > #variables-pane,
+    Screen.-wide.-tall #inspect-upper.browsing-fields > #field-scroll,
+    Screen.three-pane #inspect-upper > Widget { display: block; }
+    Screen.three-pane #inspect-upper > .sidebar-closed { display: none; }
+    Screen.three-pane #sources-pane { width: 23; border-right: solid $report-rule; }
+    Screen.-wide.-tall #field-scroll { width: 45%; max-width: 65; border-left: solid $report-rule; }
     .pane-title { height: 1; text-style: bold; }
+    Screen.-compact #inspect-upper > #variables-pane { padding: 0; }
     Screen.-tiny #variables-pane > .pane-title { display: none; }
     #sources, #fields { height: 1fr; }
-    #sources:focus > .option-list--option-highlighted {
-        background: #102440;
-        color: $foreground;
-        text-style: bold underline;
-    }
-    #fields > .datatable--cursor {
-        background: #102440;
-        color: $foreground;
-        text-style: bold;
-    }
-    #fields:focus > .datatable--cursor { text-style: bold underline; }
     #field-search { height: 1; border: none; padding: 0 1; }
-    #field-search:focus { border: none; background: #102440; }
+    #field-search:focus { border: none; background: $report-selection; }
     #field-controls, #copy-hint { height: auto; color: $text-muted; }
     #field-message { height: auto; color: $text-muted; }
+    #field-evidence, #source-file-evidence { border: none; padding: 0; margin-top: 1; }
     """
 
-    def __init__(self, config: Path, collect):
-        super().__init__(config, collect)
+    def __init__(self, config: Path, collect, *, saved_report=None):
+        super().__init__(config, collect, saved_report=saved_report)
         self._sources = {}
         self._source_details = {}
         self._source = None
@@ -196,6 +216,9 @@ class InspectionApp(ReportApp):
         self._sort = "Name"
         self._filter = None
         self._selector = ""
+        self._offer = None
+        self._draft = {}
+        self._draft_source = None
 
     def compose_view(self) -> ComposeResult:
         with Vertical(id="explorer", classes="report-body"):
@@ -210,15 +233,25 @@ class InspectionApp(ReportApp):
                     yield Input(placeholder="Search name, units or group", id="field-search")
                     yield Static(id="field-message", markup=False)
                     yield DataTable(id="fields", cursor_type="row")
-                with ReportScroll(id="field-scroll"):
+                with DisclosureScroll(id="field-scroll"):
+                    yield Static(classes="pinned-heading", markup=False)
                     yield Static("Field", classes="pane-title")
                     yield Static(id="copy-hint", markup=False)
                     yield Static(id="field-details", markup=False)
+                    yield Collapsible(Static(id="field-evidence-text", markup=False),
+                                      title="Technical field metadata", id="field-evidence")
             with TabbedContent(id="source-tabs"):
                 for key, tab in _TABS.items():
                     with TabPane(tab, id=key):
                         if key == "diagnostics":
                             yield from self.compose_findings()
+                        elif key == "files":
+                            with DisclosureScroll(id="source-files-scroll"):
+                                yield Static(classes="pinned-heading", markup=False)
+                                yield Static(id="source-files", markup=False)
+                                yield Collapsible(Static(id="source-file-paths", markup=False),
+                                                  title="Exact file locations",
+                                                  id="source-file-evidence")
                         else:
                             with ReportScroll(id=f"source-{key}-scroll"):
                                 yield Static(id=f"source-{key}", markup=False)
@@ -237,21 +270,24 @@ class InspectionApp(ReportApp):
         if widget.id == "sources":
             return self._source, tuple(self._sources)
         if widget.id == "field-scroll":
-            return self._source, self._field, self.query_one("#field-details", Static).content
+            return (self._source, self._field, self.query_one("#field-details", Static).content,
+                    self.query_one("#field-evidence-text", Static).content)
         if widget.id and widget.id.startswith("source-"):
-            return self._source, widget.query_one(Static).content
+            return self._source, self._source_details.get(self._source, {})
         return super()._scroll_anchor(widget)
 
-    def show_report(self, report: dict, prepared) -> None:
+    def show_report(self, report: dict, prepared, _previous_report) -> None:
         self._sources, self._source_details = prepared
         verdict = "Inspection has errors" if self.result_code else "Sample inspected"
+        if self.saved and not self.result_code:
+            verdict = "Inspection recorded"
         self.set_status(verdict, hint="d Diagnostics" if self.result_code else None)
         listing = self.query_one("#sources", OptionList)
         listing.clear_options().add_options(
             Option(Content(f"{name}\n{_scope(source)}"), id=name)
             for name, source in self._sources.items())
         readable = [name for name, source in self._sources.items()
-                    if source.get("sample", {}).get("inspected")]
+                    if source.get("sample", {}).get("inspected") or source.get("fields")]
         selected = self._source if self._source in self._sources else (
             next(iter(readable or self._sources), None))
         if selected is not None:
@@ -263,11 +299,17 @@ class InspectionApp(ReportApp):
             self.action_diagnostics()
 
     def _select_source(self, name):
-        previous = self._field if name == self._source else None
+        same = name == self._source
+        previous = self._field if same else None
         self._source = name
         source = self._sources.get(name, {})
         path = source.get("sample", {}).get("path")
-        scope = f"{name} · {_scope(source)}" if name is not None else "No source metadata"
+        model = source.get("model") or source.get("declaration", {}).get("model")
+        format_ = source.get("format")
+        kind = " / ".join(item.upper() for item in (model, format_) if item)
+        scope = " · ".join(filter(None, (name, kind, _scope(source))))
+        if name is None:
+            scope = "No source metadata"
         if path:
             scope += f" · {Path(path).name}"
         self.query_one("#source-scope", Static).update(scope)
@@ -275,6 +317,9 @@ class InspectionApp(ReportApp):
         for key in _TABS.keys() - {"diagnostics"}:
             self.query_one(f"#source-{key}", Static).update(details.get(key, _UNKNOWN))
             self.query_one(f"#source-{key}-scroll", VerticalScroll).scroll_home(animate=False)
+        self.query_one("#source-file-paths", Static).update(details.get("file_paths", _UNKNOWN))
+        if not same:
+            self.query_one("#source-file-evidence", Collapsible).collapsed = True
         self._populate_fields(previous)
 
     @on(OptionList.OptionHighlighted, "#sources")
@@ -290,22 +335,25 @@ class InspectionApp(ReportApp):
         source = self._sources.get(self._source, {})
         search = self.query_one("#field-search", Input).value.strip().casefold()
         status = self._filter
-        rows = []
-        for identity, field in source.get("fields", {}).items():
-            cells = _field_cells(source, identity, field)
-            if status and cells[1] != _REQUEST[status]:
-                continue
-            if search and not any(search in text.casefold() for text in (cells[0], *cells[2:])):
-                continue
-            rows.append((identity, cells))
+        fields = [(identity, _field_cells(source, identity, field))
+                  for identity, field in source.get("fields", {}).items()]
+        self._groups = _row_groups(fields)
+        rows = [(identity, cells) for identity, cells in fields
+                if (not status or cells[3] == _REQUEST[status])
+                and (not search or any(search in text.casefold() for text in cells[:3]))]
         rows.sort(key=lambda row: (row[1][_SORTS[self._sort]].casefold(), row[1][0].casefold()))
         table = self.query_one("#fields", DataTable)
-        table.clear(columns=True).add_columns("Name", "Request", "Units", "Dims", "Group")
+        table.clear(columns=True)
+        for label, width in _FIELD_COLUMNS:
+            table.add_column(label, width=width)
         self._visible = [identity for identity, _ in rows]
-        for identity, cells in rows:
-            table.add_row(*map(Text, cells), key=identity)
+        for identity, (name, _, units, request) in rows:
+            table.add_row(*(Text(cell, no_wrap=True, overflow="ellipsis") for cell in (
+                name, self._groups[identity], "—" if units == _UNKNOWN else units, request)),
+                key=identity)
+        result = f"{len(rows)} of {len(fields)} fields"
         self.query_one("#field-controls", Static).update(
-            f"/ Search   s Sort: {self._sort}   f Filter: {_REQUEST.get(status, 'All')}")
+            f"{result}  / Search  s {self._sort}  f {_REQUEST.get(status, 'All')}")
         message = self.query_one("#field-message", Static)
         message.display = not rows
         if not rows:
@@ -325,49 +373,78 @@ class InspectionApp(ReportApp):
                 and event.row_key.value != self._field):
             self._show_field(event.row_key.value)
 
+    @on(DataTable.RowSelected, "#fields")
+    def _open_field(self):
+        self.action_pane("field-scroll")
+
     def _show_field(self, identity):
+        evidence = self.query_one("#field-evidence", Collapsible)
+        if identity != self._field:
+            evidence.collapsed = True
         self._field = identity
         self._selector = ""
+        self._offer = None
         source = self._sources.get(self._source, {})
         field = source.get("fields", {}).get(identity)
         lines = ["No field selected."]
+        technical = []
+        evidence.display = bool(field)
         if field:
-            name, status, units, dims, group = _field_cells(source, identity, field)
-            lines = [name, f"Units: {units}", f"Request: {status}", ""]
+            name, group, units, status = _field_cells(source, identity, field)
+            label = self._groups[identity]
+            dims = field.get("dimensions")
+            native = (field.get("native_descriptor") or {}).get("native", {})
+            shape = native.get("shape")
+            grid = source.get("native_grids", {}).get(field.get("grid_id"), {})
+            sizes = grid.get("dimensions", {})
+            if shape is None and dims is not None and sizes.keys() >= set(dims):
+                shape = [sizes[dim] for dim in dims]
+            lines = [name, f"Native group: {group}" + (f" (row {label})" if label != group else ""),
+                     f"Request: {status} · Units: {units}",
+                     f"Dimensions: {', '.join(dims) or 'scalar' if dims is not None else _UNKNOWN}",
+                     f"Shape: {shape if shape is not None else _UNKNOWN}", ""]
             selector = next((s for s in source.get("available_selectors", ())
                              if s.get("field_id") == identity), None)
             if selector is not None:
+                self._offer = selector
                 self._selector = _yaml(selector["variables"])
                 lines.extend((f"YAML selector · {selector['field']}",
                               f"Under sources.{self._source}.variables:",
                               indent(self._selector, "  ")))
             else:
-                lines.append("No YAML selector for this field in the sample.")
+                lines.append("No YAML selector reported for this field." if self.saved
+                             else "No YAML selector for this field in the sample.")
+                conflicts = source.get("provider_conflicts", ())
+                lines.append("Competing providers were reported for this entry." if any(
+                    item["field_id"] == identity for item in conflicts) else "Reason not reported.")
+            lines.extend(("", f"Scope: {_scope(source)}"))
             grids = ", ".join(field.get("grid_ids", ()))
             coords = ", ".join(field.get("coordinate_names", ()))
-            native = (field.get("native_descriptor") or {}).get("native", {})
-            shape = native.get("shape")
-            grid = source["native_grids"].get(field.get("grid_id"), {})
-            sizes = grid.get("dimensions", {})
-            if shape is None and field["dimensions"] is not None:
-                if sizes.keys() >= set(field["dimensions"]):
-                    shape = [sizes[dim] for dim in field["dimensions"]]
-            lines.extend(("", f"Dimensions: {dims}", f"Native group: {group}",
-                          f"Shape: {shape if shape is not None else _UNKNOWN}",
-                          f"Coordinates: {coords or _UNKNOWN}", f"Grids: {grids or _UNKNOWN}",
-                          f"Dtype: {field.get('dtype') or _UNKNOWN}",
-                          f"Role: {field.get('role') or _UNKNOWN}", f"Identity: {identity}"))
+            technical.extend((f"Coordinates: {coords or _UNKNOWN}", f"Grids: {grids or _UNKNOWN}",
+                              f"Dtype: {field.get('dtype') or _UNKNOWN}",
+                              f"Role: {field.get('role') or _UNKNOWN}", f"Identity: {identity}"))
             if "levels" in field:
-                lines.append(f"Native level labels: {field['levels']}")
+                technical.append(f"Native level labels: {field['levels']}")
             if attrs := field.get("attributes"):
-                lines.extend(("", "Observed attributes:", _yaml(attrs)))
-        self.query_one("#copy-hint", Static).update("c Copy YAML" if self._selector else "")
+                technical.extend(("", "Observed attributes:", _yaml(attrs)))
+        self._show_field_actions()
         self.query_one("#field-details", Static).update("\n".join(lines))
+        self.query_one("#field-evidence-text", Static).update("\n".join(technical))
         self.query_one("#field-scroll", VerticalScroll).scroll_home(animate=False)
+
+    def _wide_sidebar(self, size=None):
+        size = self.size if size is None else size
+        return size.width >= 140 and size.height >= 35
+
+    @on(events.Resize)
+    def _fit_inspection(self, event):
+        self.screen.set_class(self._wide_sidebar(event.size), "three-pane")
 
     def _show_pane(self, pane):
         self._pane = pane
-        self.query_one("#inspect-upper").set_class(pane != "source-tabs", "active-pane")
+        upper = self.query_one("#inspect-upper")
+        upper.set_class(pane != "source-tabs", "active-pane")
+        upper.set_class(pane in {"variables-pane", "field-scroll"}, "browsing-fields")
         for key in _PANES:
             self.query_one(f"#{key}").set_class(key == pane, "active-pane")
 
@@ -381,9 +458,15 @@ class InspectionApp(ReportApp):
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         in_search = isinstance(self.focused, Input)
-        if action == "leave_search":
-            return in_search
+        if action == "back" and in_search:
+            return True
+        if action == "back" and self.query_one("#field-scroll").has_focus_within:
+            return True
         if in_search and action != "interrupt":
+            return False
+        if action in {"toggle_draft_field", "view_draft"}:
+            return self._has_report and not self.busy and not self._stale and not self.saved
+        if self.saved and action == "copy_selector":
             return False
         return super().check_action(action, parameters)
 
@@ -408,10 +491,13 @@ class InspectionApp(ReportApp):
         if self.result_code is not None:
             self.query_one("#source-tabs", TabbedContent).active = "diagnostics"
             self._show_pane("source-tabs")
-            self.query_one("#finding-list", OptionList).focus()
+            self._focus_finding(False)
 
-    def action_leave_search(self):
-        self.action_pane("variables-pane")
+    def action_back(self):
+        if isinstance(self.focused, Input) or self.query_one("#field-scroll").has_focus_within:
+            self.action_pane("variables-pane")
+        else:
+            super().action_back()
 
     @on(Input.Changed, "#field-search")
     def _search_changed(self):
@@ -420,7 +506,7 @@ class InspectionApp(ReportApp):
 
     @on(Input.Submitted, "#field-search")
     def _search_submitted(self):
-        self.action_leave_search()
+        self.action_pane("variables-pane")
 
     def action_sort_fields(self):
         if self.result_code is not None:
@@ -437,18 +523,62 @@ class InspectionApp(ReportApp):
             self.action_pane("variables-pane")
 
     def action_copy_selector(self):
+        if self.saved:
+            return
         if self.busy or self._stale:
             self._notice("Selector not copied", "Use a fresh sample before copying.", "warning")
             return
-        if self.result_code is None:
-            return
+        if self._sync_selected_field() and self._selector:
+            if self._send_copy(self._selector, "YAML selector", "Copy the visible YAML instead."):
+                self.query_one("#copy-hint", Static).update("Copy request sent to terminal")
+
+    def _sync_selected_field(self):
         source = self.query_one("#sources", OptionList).highlighted_option
         row = self.query_one("#fields", DataTable).cursor_row
         if source is None or source.id != self._source or not 0 <= row < len(self._visible):
-            return
+            return False
         # The table cursor can move before its queued RowHighlighted message is handled.
         if self._visible[row] != self._field:
             self._show_field(self._visible[row])
+        return True
+
+    def _show_field_actions(self):
+        if self.saved:
+            return
+        actions = []
         if self._selector:
-            if self._send_copy(self._selector, "YAML selector", "Copy the visible YAML instead."):
-                self.query_one("#copy-hint", Static).update("Copy request sent to terminal")
+            actions.append("c Copy YAML")
+        staged = self._source == self._draft_source and self._field in self._draft
+        if staged:
+            mark = ("added, not applied" if self._draft[self._field] == self._offer
+                    else "needs review")
+            actions.extend((f"Draft: {mark}", "a Remove"))
+        elif self._selector:
+            actions.append("a Add to draft")
+        if self._draft:
+            actions.append("v Review draft")
+        self.query_one("#copy-hint", Static).update(" · ".join(actions))
+
+    def action_toggle_draft_field(self):
+        if self.busy or self._stale or self.saved or not self._sync_selected_field():
+            return
+        if self._draft and self._draft_source != self._source:
+            self._notice("Draft belongs to " + self._draft_source,
+                         "Review or clear it with v before adding from this source.", "warning")
+        elif identity := self._field:
+            if identity in self._draft:
+                del self._draft[identity]
+            elif self._offer is not None:
+                self._draft_source = self._source
+                self._draft[identity] = self._offer
+            else:
+                self._notice("No selector offered", "See field details for the available evidence.",
+                             "warning")
+            self._show_field_actions()
+
+    def action_view_draft(self):
+        if not self.busy and not self._stale and not self.saved:
+            source = self._draft_source if self._draft else self._source
+            offers = self._sources.get(source, {}).get("available_selectors", ())
+            self.push_screen(DraftSelection(source, self._draft, offers),
+                             lambda _: self._show_field_actions())

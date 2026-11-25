@@ -172,6 +172,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pv.add_argument("--json", action="store_true", help="Emit one structured validation report")
     pv.add_argument("--cli", action="store_true", help="Use the text report instead of the TUI")
+    pv.add_argument("--saved-report", type=Path,
+                    help="Open an existing validation JSON report without rechecking inputs")
     _operational_arguments(pv)
 
     from frameit.core.configuration import TEMPLATES
@@ -211,6 +213,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pins.add_argument("--json", action="store_true", help="Emit one structured metadata report")
     pins.add_argument("--cli", action="store_true",
                       help="Use the full text report instead of the TUI")
+    pins.add_argument("--saved-report", type=Path,
+                      help="Open an existing inspection JSON report without checking inputs")
 
     capabilities_parser = sub.add_parser(
         "capabilities", allow_abbrev=False,
@@ -406,6 +410,39 @@ def _print_preflight(result, *, json_output=False):
 
     print(serialize_report(result) if json_output else render_report(result))
     return int(bool(result.errors))
+
+
+def _cmd_saved_report(args):
+    from frameit.core.reports import load_saved_report, render_projection, serialize_projection
+
+    if (args.config != Path("frameit.yaml") or getattr(args, "schema_only", False)
+            or (args.command == "validate" and _operational_overrides(args))):
+        print("Use --saved-report without a YAML request or live check options.", file=sys.stderr)
+        return 1
+    path = args.saved_report
+    try:
+        report = load_saved_report(path, args.command)
+    except (OSError, ValueError) as exc:
+        print(f"Cannot open saved report: {exc}", file=sys.stderr)
+        return 1
+
+    def build_app():
+        if args.command == "inspect":
+            from frameit.inspect_tui import InspectionApp
+
+            return InspectionApp(path, None, saved_report=report)
+        from frameit.validate_tui import ValidationApp
+
+        return ValidationApp(path, None, saved_report=report)
+
+    code = _run_report_app(build_app, cli_output=args.cli, json_output=args.json)
+    if code is not None:
+        return code
+    if args.json:
+        print(serialize_projection(report))
+    else:
+        print("Saved report (recorded checks only)\n" + render_projection(report))
+    return int(bool(report["errors"]))
 
 
 def _cmd_info(short: bool) -> int:
@@ -636,7 +673,9 @@ def main(argv: list[str] | None = None) -> None:
                         format="%(levelname)s:%(name)s:%(message)s")
 
     try:
-        if args.command == "run":
+        if getattr(args, "saved_report", None) is not None:
+            code = _cmd_saved_report(args)
+        elif args.command == "run":
             code = _cmd_run(args)
         elif args.command == "validate":
             code = _cmd_validate(
