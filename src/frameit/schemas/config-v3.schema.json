@@ -66,6 +66,667 @@
       "additionalProperties": false,
       "minProperties": 1
     },
+    "diagnostics": {
+      "type": "object",
+      "properties": {
+        "best_track": {
+          "type": "object",
+          "properties": {
+            "agency_template": {
+              "const": "RSMC"
+            },
+            "input": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "original",
+                    "model_grid"
+                  ]
+                },
+                "source": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "source"
+              ]
+            },
+            "fields": {
+              "type": "object",
+              "properties": {
+                "wind": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "speed": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/text"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "field": {
+                                  "$ref": "#/$defs/text"
+                                },
+                                "level": {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "number"
+                                    },
+                                    "units": {
+                                      "$ref": "#/$defs/text"
+                                    }
+                                  },
+                                  "additionalProperties": false,
+                                  "required": [
+                                    "value",
+                                    "units"
+                                  ]
+                                },
+                                "group": {
+                                  "$ref": "#/$defs/text"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "required": [
+                                "field"
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "speed"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "u": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/text"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "field": {
+                                  "$ref": "#/$defs/text"
+                                },
+                                "level": {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "number"
+                                    },
+                                    "units": {
+                                      "$ref": "#/$defs/text"
+                                    }
+                                  },
+                                  "additionalProperties": false,
+                                  "required": [
+                                    "value",
+                                    "units"
+                                  ]
+                                },
+                                "group": {
+                                  "$ref": "#/$defs/text"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "required": [
+                                "field"
+                              ]
+                            }
+                          ]
+                        },
+                        "v": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/text"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "field": {
+                                  "$ref": "#/$defs/text"
+                                },
+                                "level": {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "number"
+                                    },
+                                    "units": {
+                                      "$ref": "#/$defs/text"
+                                    }
+                                  },
+                                  "additionalProperties": false,
+                                  "required": [
+                                    "value",
+                                    "units"
+                                  ]
+                                },
+                                "group": {
+                                  "$ref": "#/$defs/text"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "required": [
+                                "field"
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "u",
+                        "v"
+                      ]
+                    }
+                  ]
+                },
+                "sea_level_pressure": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/text"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "$ref": "#/$defs/text"
+                        },
+                        "level": {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "number"
+                            },
+                            "units": {
+                              "$ref": "#/$defs/text"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "value",
+                            "units"
+                          ]
+                        },
+                        "group": {
+                          "$ref": "#/$defs/text"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "field"
+                      ]
+                    }
+                  ]
+                },
+                "gust": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/text"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "$ref": "#/$defs/text"
+                        },
+                        "level": {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "number"
+                            },
+                            "units": {
+                              "$ref": "#/$defs/text"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "value",
+                            "units"
+                          ]
+                        },
+                        "group": {
+                          "$ref": "#/$defs/text"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "field"
+                      ]
+                    }
+                  ]
+                },
+                "cell_area": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/text"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "$ref": "#/$defs/text"
+                        },
+                        "level": {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "number"
+                            },
+                            "units": {
+                              "$ref": "#/$defs/text"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "value",
+                            "units"
+                          ]
+                        },
+                        "group": {
+                          "$ref": "#/$defs/text"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "field"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "wind",
+                "sea_level_pressure"
+              ]
+            },
+            "search": {
+              "type": "object",
+              "properties": {
+                "pressure_radius_km": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "maximum_wind_radius_km": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "wind_radii_radius_km": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "pressure_radius_km",
+                "maximum_wind_radius_km",
+                "wind_radii_radius_km"
+              ]
+            },
+            "rmw": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "const": "annular_mean_speed"
+                },
+                "radius_km": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "bin_width_km": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "azimuth_sectors": {
+                  "type": "integer",
+                  "minimum": 4,
+                  "default": 12
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "method",
+                "radius_km",
+                "bin_width_km"
+              ]
+            },
+            "wind_time_policy": {
+              "enum": [
+                "require_10min",
+                "native_proxy"
+              ],
+              "default": "require_10min"
+            },
+            "on_unavailable": {
+              "enum": [
+                "report",
+                "error"
+              ],
+              "default": "report"
+            },
+            "processing": {
+              "type": "object",
+              "properties": {
+                "working_memory_mib": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 256
+                },
+                "max_open_files": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 4
+                }
+              },
+              "additionalProperties": false,
+              "default": {
+                "working_memory_mib": 256,
+                "max_open_files": 4
+              }
+            },
+            "reference": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "$ref": "#/$defs/text"
+                },
+                "idswi": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "file",
+                "idswi"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "agency_template",
+            "input",
+            "fields",
+            "search",
+            "rmw"
+          ],
+          "if": {
+            "properties": {
+              "input": {
+                "properties": {
+                  "kind": {
+                    "const": "model_grid"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "fields": {
+                "type": "object",
+                "properties": {
+                  "wind": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "speed": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/text"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "field": {
+                                    "$ref": "#/$defs/text"
+                                  },
+                                  "level": {
+                                    "type": "object",
+                                    "properties": {
+                                      "value": {
+                                        "type": "number"
+                                      },
+                                      "units": {
+                                        "$ref": "#/$defs/text"
+                                      }
+                                    },
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "value",
+                                      "units"
+                                    ]
+                                  }
+                                },
+                                "additionalProperties": false,
+                                "required": [
+                                  "field"
+                                ]
+                              }
+                            ]
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "speed"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "u": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/text"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "field": {
+                                    "$ref": "#/$defs/text"
+                                  },
+                                  "level": {
+                                    "type": "object",
+                                    "properties": {
+                                      "value": {
+                                        "type": "number"
+                                      },
+                                      "units": {
+                                        "$ref": "#/$defs/text"
+                                      }
+                                    },
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "value",
+                                      "units"
+                                    ]
+                                  }
+                                },
+                                "additionalProperties": false,
+                                "required": [
+                                  "field"
+                                ]
+                              }
+                            ]
+                          },
+                          "v": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/text"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "field": {
+                                    "$ref": "#/$defs/text"
+                                  },
+                                  "level": {
+                                    "type": "object",
+                                    "properties": {
+                                      "value": {
+                                        "type": "number"
+                                      },
+                                      "units": {
+                                        "$ref": "#/$defs/text"
+                                      }
+                                    },
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "value",
+                                      "units"
+                                    ]
+                                  }
+                                },
+                                "additionalProperties": false,
+                                "required": [
+                                  "field"
+                                ]
+                              }
+                            ]
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "u",
+                          "v"
+                        ]
+                      }
+                    ]
+                  },
+                  "sea_level_pressure": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/text"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "$ref": "#/$defs/text"
+                          },
+                          "level": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "number"
+                              },
+                              "units": {
+                                "$ref": "#/$defs/text"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "value",
+                              "units"
+                            ]
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "field"
+                        ]
+                      }
+                    ]
+                  },
+                  "gust": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/text"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "$ref": "#/$defs/text"
+                          },
+                          "level": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "number"
+                              },
+                              "units": {
+                                "$ref": "#/$defs/text"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "value",
+                              "units"
+                            ]
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "field"
+                        ]
+                      }
+                    ]
+                  },
+                  "cell_area": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/text"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "$ref": "#/$defs/text"
+                          },
+                          "level": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "number"
+                              },
+                              "units": {
+                                "$ref": "#/$defs/text"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "value",
+                              "units"
+                            ]
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "field"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "wind",
+                  "sea_level_pressure"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
     "output": {
       "type": "object",
       "properties": {

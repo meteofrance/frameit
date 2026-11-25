@@ -634,6 +634,13 @@ Advanced polar ``processing`` keys are ``chunks``, ``max_target_points``,
 When false, optional polar timings and graph/RSS measurements are unmeasured;
 cache activity and retention counters remain available.
 
+Post-run diagnostics
+--------------------
+
+Omit ``diagnostics`` or set ``diagnostics: {}`` to leave post-run diagnostics
+off. Extraction validates this block but does not read its selected fields or
+compute its metrics. Adding it does not change the extraction request.
+
 .. _output-resources-and-metadata:
 
 Output

@@ -144,6 +144,7 @@ products:
       weight_zero_tolerance: 1.0e-14 # Numerical stencil-weight tolerance, not a field cutoff.
       profile: false             # Performance measurements, not extra diagnostics.
   track: true                    # Reusable NetCDF trajectory; never implied by a centre provider.
+diagnostics: {}                 # Post-run analysis is opt-in; extraction does not compute it.
 output:
   directory: ./output            # YAML-relative run root.
   format: netcdf                 # netcdf | zarr; one field format per run.

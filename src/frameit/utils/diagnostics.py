@@ -68,6 +68,7 @@ CODE_TOPICS: dict[str, str] = {
     "E1901": "run",
     "E1902": "run",
     "E1903": "run",
+    "E2001": "diagnostics",
     "W1001": "start",
     "W1201": "inputs",
     "W1202": "inputs",
@@ -93,6 +94,7 @@ CODE_TOPICS: dict[str, str] = {
     "W1603": "polar",
     "W1801": "outputs",
     "W1901": "run",
+    "W2001": "diagnostics",
 }
 
 UNEXPECTED_ERROR = "E0999"

@@ -2162,6 +2162,10 @@ def polar_sampling_plan(conf, time_count):
 def preflight_result(conf, facts, *, command="validate"):
     """Wrap already-produced facts, including execution's owning prepare/bind result."""
     result = PreflightResult(command, conf=conf, facts=facts)
+    if command == "validate" and conf.yaml_config.get("diagnostics"):
+        from frameit.diagnostics.catalog import preflight_advice
+
+        preflight_advice(result, products=conf.simulation_parameter["request_plan"]["products"])
     for name, source in facts.get("sources", {}).items():
         messages = list(source.get("selection_pending", []))
         if source.get("field_binding") is None:
@@ -2239,6 +2243,10 @@ def collect_preflight(request, *, command="validate", schema_only=False, check_o
                 "message": "Offline schema-only: inputs, dependencies "
                            "and execution were not checked.",
             }]
+            if conf.yaml_config.get("diagnostics"):
+                from frameit.diagnostics.catalog import preflight_advice
+
+                preflight_advice(result)
         elif command == "inspect" and sample_only:
             return _collect_source_samples(conf, resources=resources, progress=progress)
         else:

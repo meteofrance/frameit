@@ -23,6 +23,7 @@ Troubleshooting
    troubleshooting/time
    troubleshooting/regions
    troubleshooting/polar
+   troubleshooting/diagnostics
    troubleshooting/run
    troubleshooting/outputs
 

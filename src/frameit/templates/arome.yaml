@@ -25,6 +25,8 @@ region:
 products:
   # Polar sampling is disabled; available fields do not select extra processing.
   model_grid: true
+# Post-run diagnostics are off unless explicitly requested.
+# diagnostics: {}
 output:
   directory: ./output
   overwrite: false

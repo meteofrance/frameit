@@ -77,6 +77,7 @@ Errors
 * :ref:`e1901`
 * :ref:`e1902`
 * :ref:`e1903`
+* :ref:`e2001`
 
 Warnings
 --------
@@ -106,3 +107,4 @@ Warnings
 * :ref:`w1603`
 * :ref:`w1801`
 * :ref:`w1901`
+* :ref:`w2001`

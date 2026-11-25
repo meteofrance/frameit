@@ -29,6 +29,7 @@ DEFAULTS = {
     "sources": {},
     "region": {},
     "products": {"model_grid": True},
+    "diagnostics": {},
     "output": {"directory": "./output", "format": "netcdf", "overwrite": False, "writer": {}},
     "resources": {"scheduler": "threads", "native_threads": 1, "synchronous_export": False},
     "logging": {"level": "INFO"},
@@ -128,6 +129,8 @@ COMPRESSION_DEFAULTS = {"level": 1, "coordinates": False}
 
 def configuration_schema():
     """Build the v3 editor structure; input-dependent eligibility stays in preflight."""
+    from frameit.diagnostics.catalog import diagnostics_schema
+
     def ref(name):
         return {"$ref": f"#/$defs/{name}"}
 
@@ -302,10 +305,11 @@ def configuration_schema():
             "sources": mapping(ref("source"), minProperties=1,
                                propertyNames={"pattern": "^[A-Za-z][A-Za-z0-9_-]*$"}),
             "region": ref("region"),
-            "products": obj({
+             "products": obj({
                 "model_grid": {"anyOf": [{"const": True}, ref("model_grid")]},
                 "polar": ref("polar"), "track": {"anyOf": [{"const": True}, obj({})]}},
-                minProperties=1),
+                 minProperties=1),
+             "diagnostics": diagnostics_schema(),
             "output": obj({
                 "directory": text, "format": choice("output_format"), "overwrite": boolean,
                 "writer": ref("writer")}),
@@ -318,6 +322,8 @@ def configuration_schema():
 def capabilities():
     """Describe the current public structure and implemented paths, without native imports."""
     import importlib.util
+
+    from frameit.diagnostics.catalog import diagnostic_capabilities
 
     sources = {
         model: {
@@ -397,6 +403,7 @@ def capabilities():
             "track": {"dependencies": [], "limits": ["Requires a declared center/track/tracker."]},
         },
         "derived": list(V3_CHOICES["derived"]), "dependencies": dependencies,
+        "diagnostics": diagnostic_capabilities(),
         "installed_modules": {name: importlib.util.find_spec(name) is not None
                               for name in sorted({name for names in dependencies.values()
                                                   for name in names})},
@@ -1611,7 +1618,8 @@ def _resolve_schema(raw, *, base_dir=None):
             {"type": "integer", "value": 3},
             raw.get("schema_version") if isinstance(raw, dict) else raw,
             ["Use schema_version: 3 with an unquoted YAML integer."], code="E1104")])
-    _reject_nulls({key: value for key, value in raw.items() if key != "sources"})
+    _reject_nulls({key: value for key, value in raw.items()
+                   if key not in {"sources", "diagnostics"}})
     _keys(raw, set(DEFAULTS), "configuration", required={"sources"})
     base = Path(base_dir or Path.cwd()).resolve()
     conf = copy.deepcopy(DEFAULTS)
@@ -1656,7 +1664,11 @@ def _resolve_schema(raw, *, base_dir=None):
         raise PreflightError(errors)
     conf["region"] = _region(raw.get("region", {}), base)
     conf["products"] = _products(raw.get("products", DEFAULTS["products"]),
-                                conf["sources"], conf["region"])
+                                 conf["sources"], conf["region"])
+    if "diagnostics" in raw:
+        from frameit.diagnostics.catalog import resolve_diagnostics
+
+        conf["diagnostics"] = resolve_diagnostics(raw["diagnostics"], base_dir=base)
     conf["output"] = _output(raw.get("output", {}), base)
     resources = _keys(raw.get("resources", {}), V3_KEYS["resources"], "resources")
     resources = {**DEFAULTS["resources"], **resources}
