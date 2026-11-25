@@ -394,7 +394,7 @@ def memory_summary(estimate):
         return f"{units}.{hundredths:02d}"
 
     return [
-        "RAM estimate for frameit run (advisory, includes local workers):",
+        "RAM estimate (advisory, includes local workers):",
         f"Estimated peak RSS: {gibibytes(peak)} GiB",
         f"Estimated median RSS: {gibibytes(median)} GiB (modeled, not sampled)",
         f"Recommended allocation: {recommendation // (1024**3)} GiB (with headroom)",
