@@ -10,7 +10,8 @@ if needed, but keep the parent scientific request unchanged.
 ``--check`` checks the actual parent and selected inputs without creating a
 child attempt. It does not check all values, masks or search-disc coverage.
 Use ``--check --json`` for one structured report with facts under ``data.plan``.
-Select a relocated parent with ``--run-directory``.
+Select a relocated parent with ``--run-directory``. As with ``frameit run``,
+relative paths in a symlinked request are based on the YAML file it points to.
 
 * ``model_grid`` reads the recorded NetCDF or sharded Zarr v3 native-grid
   product, even if raw files are gone. It does not consult the metadata
@@ -31,7 +32,8 @@ cannot prove those bytes were the ones originally published.
 Each execution creates a new attempt under ``diagnostics/``. Use
 ``frameit status <attempt-directory>`` to read its state and products.
 A child is committed only when its completed status lists the actual files.
-A subsequent lock release failure cannot undo the commit. Do not remove a
+A failure or interruption after the completed receipt is published does
+not undo the commit. Check its inventory before retrying. Do not remove a
 lock unless its owner is confirmed to have stopped.
 
 The scientific catalog lists calculations. The offline metadata catalogue

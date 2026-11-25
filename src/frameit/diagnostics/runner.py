@@ -337,8 +337,9 @@ def run_diagnostics(config_path, *, run_directory=None, check=False):
     try:
         config_path = Path(config_path).absolute()
         raw, locations = _read_yaml(config_path)
+        base_dir = config_path.resolve().parent
         try:
-            config, _, _ = resolve_schema(raw, base_dir=config_path.parent)
+            config, _, _ = resolve_schema(raw, base_dir=base_dir)
         except ValueError as exc:
             for error in getattr(exc, "diagnostics", []):
                 if error.path in locations:
@@ -372,7 +373,7 @@ def run_diagnostics(config_path, *, run_directory=None, check=False):
                     parent = _admit_parent(
                         root,
                         raw,
-                        base_dir=config_path.parent,
+                        base_dir=base_dir,
                         source_name=best["input"]["source"],
                         source_kind=best["input"]["kind"],
                     )
@@ -395,7 +396,7 @@ def run_diagnostics(config_path, *, run_directory=None, check=False):
                                     "path": "diagnostics.best_track",
                                     "status": "execution-dependent",
                                     "message": "Payload support, reductions and publication "
-                                               "were not checked.",
+                                    "were not checked.",
                                 }
                             )
                             _recheck_parent(parent)
@@ -418,7 +419,7 @@ def run_diagnostics(config_path, *, run_directory=None, check=False):
                             {
                                 "record_version": 1,
                                 "diagnostics": raw["diagnostics"],
-                                "configuration_directory": str(config_path.parent),
+                                "configuration_directory": str(base_dir),
                             },
                             overwrite=False,
                         )
@@ -466,25 +467,42 @@ def run_diagnostics(config_path, *, run_directory=None, check=False):
             except BaseException as exc:
                 if status is not None and not committed:
                     with finalize_after(exc, "Writing diagnostic failure status also failed"):
-                        error = error_record(exc)
-                        if notes := getattr(exc, "__notes__", []):
-                            error["notes"] = list(notes)
-                        status.update(
-                            state=(
-                                "interrupted"
-                                if isinstance(exc, (KeyboardInterrupt, SystemExit))
-                                else "failed"
-                            ),
-                            error=error,
-                            products=[],
-                            finished_at=utc_now(),
-                        )
-                        write_run_record(status_path, status)
+                        if status["state"] == "completed":
+                            # Cancellation can arrive after rename but before the call returns.
+                            receipt = read_diagnostics_status(status_path.parent)
+                            if receipt.get("diagnostic_attempt_id") != status[
+                                "diagnostic_attempt_id"
+                            ] or receipt["state"] not in {"running", "completed"}:
+                                raise tag_error(
+                                    ValueError("Diagnostic receipt changed"), "E1809"
+                                ) from None
+                            committed = receipt["state"] == "completed"
+                        if not committed:
+                            error = error_record(exc)
+                            if notes := getattr(exc, "__notes__", []):
+                                error["notes"] = list(notes)
+                            status.update(
+                                state=(
+                                    "interrupted"
+                                    if isinstance(exc, (KeyboardInterrupt, SystemExit))
+                                    else "failed"
+                                ),
+                                error=error,
+                                products=[],
+                                finished_at=utc_now(),
+                            )
+                            write_run_record(status_path, status)
                 raise
-    except Exception as exc:
+    except (Exception, KeyboardInterrupt, SystemExit) as exc:
         if status_path is not None and committed:
             exc.add_note(f"Diagnostic products were already committed at {status_path.parent}.")
-            result.facts["message"] = f"Outputs were already committed at {status_path.parent}"
+            result.facts.update(
+                committed=True,
+                products=products,
+                scientific_summary=science,
+                warnings=warnings,
+                message=f"Outputs were already committed at {status_path.parent}",
+            )
         if primary_error_code(exc) == "E0999" and isinstance(exc, yaml.YAMLError):
             tag_error(exc, "E1102")
         result.errors = exception_diagnostics(
@@ -497,6 +515,9 @@ def run_diagnostics(config_path, *, run_directory=None, check=False):
         for error in result.errors:
             if not error.locations and error.path in locations:
                 error.locations.append(locations[error.path])
+        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+            exc._frameit_diag_report = result
+            raise
     return result
 
 

@@ -279,8 +279,17 @@ def publish_results(attempt, plan, results, *, reference=None, recheck=lambda: N
                 )
             )
             ticks = _new_table(ds, plan, attempt)
+
+            def csv_stream(path, name):
+                return writers.enter_context(
+                    _preserve_scope(
+                        path.open("w", encoding="utf-8", newline=""),
+                        f"Closing {name}",
+                    )
+                )
+
             projection = csv.DictWriter(
-                writers.enter_context(paths[1].open("w", encoding="utf-8", newline="")),
+                csv_stream(paths[1], names[1]),
                 fieldnames=rsmc.COLUMNS,
                 delimiter=";",
             )
@@ -288,7 +297,7 @@ def publish_results(attempt, plan, results, *, reference=None, recheck=lambda: N
             comparison = None
             if reference is not None:
                 comparison = csv.DictWriter(
-                    writers.enter_context(paths[2].open("w", encoding="utf-8", newline="")),
+                    csv_stream(paths[2], names[2]),
                     fieldnames=rsmc.COMPARISON_COLUMNS,
                     delimiter=";",
                 )

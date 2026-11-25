@@ -150,6 +150,100 @@ def test_relocated_parent_matches_the_authored_request(completed, lifecycle_doub
     assert snapshot(destination) == before
 
 
+def test_config_symlink_uses_target_directory(completed, lifecycle_doubles):
+    root, path, _ = completed
+    link = path.parent / "configs" / "linked.yaml"
+    link.parent.mkdir()
+    link.symlink_to(path)
+    moved = root.rename(root.with_name("moved"))
+    report = run_diag(link, run_directory=moved, check=True)
+    assert report["status"] == "ok", report["errors"]
+
+
+def test_csv_close_keeps_the_scientific_failure(tmp_path, monkeypatch):
+    from frameit.testing.numerical.test_run_diag_sources import vortex_parent
+
+    cfg, raw, _, root = vortex_parent(tmp_path, kind="model_grid", temporal="instantaneous")
+    raw["diagnostics"]["best_track"]["on_unavailable"] = "error"
+    write_request(cfg, raw)
+    actual = Path.open
+
+    @contextmanager
+    def failing_close(stream):
+        try:
+            with stream:
+                yield stream
+        finally:
+            raise OSError("CSV close fault")
+
+    def open_file(path, *args, **kwargs):
+        stream = actual(path, *args, **kwargs)
+        if path.parent.name == "best_track" and kwargs.get("newline") == "":
+            return failing_close(stream)
+        return stream
+
+    monkeypatch.setattr(Path, "open", open_file)
+    report = run_diag(cfg)
+    assert report["errors"][0]["code"] == "E2004"
+    (attempt,) = (root / "diagnostics").iterdir()
+    status = record(attempt, "diagnostics-status.yaml")
+    assert status["state"] == "failed" and status["products"] == []
+    assert status["error"]["code"] == "E2004"
+    assert any("CSV close fault" in note for note in status["error"]["notes"])
+
+
+@pytest.mark.parametrize("stage", ["before_replace", "after_replace", "lock_release"])
+def test_sigterm_reports_published_receipt(
+    completed, lifecycle_doubles, monkeypatch, capsys, stage
+):
+    import json
+    import os
+    import signal
+
+    from frameit.cli import main
+
+    root, path, _ = completed
+    before = snapshot(root)
+    if stage.endswith("replace"):
+        replace = os.replace
+
+        def replace_file(src, dst):
+            completed_receipt = (
+                Path(dst).name == "diagnostics-status.yaml"
+                and yaml.safe_load(Path(src).read_text())["state"] == "completed"
+            )
+            if completed_receipt and stage == "before_replace":
+                signal.raise_signal(signal.SIGTERM)
+            replace(src, dst)
+            if completed_receipt and stage == "after_replace":
+                signal.raise_signal(signal.SIGTERM)
+
+        monkeypatch.setattr(os, "replace", replace_file)
+    else:
+        unlink = Path.unlink
+
+        def release_child(path, *args, **kwargs):
+            unlink(path, *args, **kwargs)
+            if path.name == ".frameit-diagnostics.lock":
+                signal.raise_signal(signal.SIGTERM)
+
+        monkeypatch.setattr(Path, "unlink", release_child)
+
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as error:
+        main(["run-diag", str(path), "--json"])
+    assert error.value.code == 143
+    (attempt,) = (root / "diagnostics").iterdir()
+    status = record(attempt, "diagnostics-status.yaml")
+    published = stage != "before_replace"
+    assert status["state"] == ("completed" if published else "interrupted")
+    assert bool(status["products"]) == published
+    report = json.loads(capsys.readouterr().out)
+    assert report["errors"][0]["code"] == "E0002"
+    assert report["data"]["plan"]["committed"] == published
+    assert snapshot(root) == before
+
+
 @pytest.mark.parametrize("stage", ["runtime_cleanup", "lock_release"])
 def test_cleanup_before_and_release_after_commit(completed, lifecycle_doubles, monkeypatch, stage):
     from frameit.core.runtime import execution_scope

@@ -905,7 +905,7 @@ def test_yaml_report_locations_do_not_extend_the_frozen_run_request_record(tmp_p
     captured = yaml.safe_load((conf.output_dir / "run-request.yaml").read_text())
     assert set(captured) == {
         "record_version", "request_kind", "authored_configuration", "request_path", "path_bases",
-        "overrides", "requested_execution_options", "runtime",
+        "overrides", "requested_execution_options", "runtime", "run_attempt_id", "run_context",
     }
     assert captured["authored_configuration"] == raw
 

@@ -590,36 +590,44 @@ def _print_yaml(value):
 
 
 def _cmd_run_diag(args):
-    from frameit.core.reports import render_run_summary
     from frameit.core.runtime import termination_scope
     from frameit.diagnostics.runner import run_diagnostics
 
-    with termination_scope():
-        result = run_diagnostics(args.config, run_directory=args.run_directory, check=args.check)
-    if args.json or (args.check and "message" not in result.facts) or result.errors:
+    result = None
+    try:
+        with termination_scope():
+            result = run_diagnostics(args.config, run_directory=args.run_directory, check=args.check)
+            return _present_run_diag(result, args)
+    except BaseException as exc:
         try:
-            return _print_preflight(result, json_output=args.json)
-        except Exception as exc:
-            if result.facts.get("committed"):
-                exc.add_note("Diagnostic outputs already committed at "
-                             + result.facts["attempt_directory"])
-            raise
+            if interrupted := getattr(exc, "_frameit_diag_report", None):
+                _print_preflight(interrupted, json_output=args.json)
+            elif result is not None and result.facts.get("committed"):
+                print("Diagnostic outputs already committed at " + result.facts["attempt_directory"],
+                      file=sys.stderr)
+        except BaseException:
+            # A failed report must not replace the original failure or interruption.
+            pass
+        raise
+
+
+def _present_run_diag(result, args):
+    from frameit.core.reports import render_run_summary
+
+    if args.json or (args.check and "message" not in result.facts) or result.errors:
+        return _print_preflight(result, json_output=args.json)
     if message := result.facts.get("message"):
         print(message)
         return 0
     attempt = result.facts["attempt_directory"]
-    try:
-        print(render_run_summary({
-            "state": "completed", "products": result.facts["products"],
-            "warnings": result.facts["warnings"],
-        }, root=attempt))
-        counts = result.facts["scientific_summary"]["counts"]
-        print(f"Unavailable requested values: {counts.get('unavailable', 0)}; "
-              f"native proxy values: {counts.get('model_native_proxy', 0)}.")
-        print("CSV does not carry complete quality information; open the paired NetCDF.")
-    except Exception as exc:
-        raise tag_error(OSError(f"Outputs were already committed at {attempt}: {exc}"),
-                        "E1808") from exc
+    print(render_run_summary({
+        "state": "completed", "products": result.facts["products"],
+        "warnings": result.facts["warnings"],
+    }, root=attempt))
+    counts = result.facts["scientific_summary"]["counts"]
+    print(f"Unavailable requested values: {counts.get('unavailable', 0)}; "
+          f"native proxy values: {counts.get('model_native_proxy', 0)}.")
+    print("CSV does not carry complete quality information; open the paired NetCDF.")
     return 0
 
 
