@@ -164,7 +164,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pv = sub.add_parser("validate", allow_abbrev=False,
                         help="Check YAML, selected metadata, dependencies and the processing plan.")
     pv.add_argument(
-        "config", nargs="?", default=Path("frameit.yaml"), type=Path,
+        "config", nargs="?", type=Path,
         help="YAML file (default: frameit.yaml)",
     )
     pv.add_argument(
@@ -207,7 +207,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pins = sub.add_parser("inspect", allow_abbrev=False,
                           help="Inspect sources in a YAML request, including unfinished selections")
     pins.add_argument(
-        "config", nargs="?", default=Path("frameit.yaml"), type=Path,
+        "config", nargs="?", type=Path,
         help="YAML file (default: frameit.yaml)",
     )
     pins.add_argument("--json", action="store_true", help="Emit one structured metadata report")
@@ -415,7 +415,7 @@ def _print_preflight(result, *, json_output=False):
 def _cmd_saved_report(args):
     from frameit.core.reports import load_saved_report, render_projection, serialize_projection
 
-    if (args.config != Path("frameit.yaml") or getattr(args, "schema_only", False)
+    if (args.config is not None or getattr(args, "schema_only", False)
             or (args.command == "validate" and _operational_overrides(args))):
         print("Use --saved-report without a YAML request or live check options.", file=sys.stderr)
         return 1
@@ -441,7 +441,8 @@ def _cmd_saved_report(args):
     if args.json:
         print(serialize_projection(report))
     else:
-        print("Saved report (recorded checks only)\n" + render_projection(report))
+        print("Saved report (recorded checks only)\n" + render_projection(report).replace(
+            "\r\n", "\n"))
     return int(bool(report["errors"]))
 
 
@@ -584,16 +585,18 @@ def _cmd_config(args):
 
 
 def _cmd_inspect(args):
+    config = args.config or Path("frameit.yaml")
+
     def build_app():
         from frameit.inspect_tui import InspectionApp
 
-        return InspectionApp(args.config, partial(
-            _collect_report, args.config, command="inspect", sample_only=True))
+        return InspectionApp(config, partial(
+            _collect_report, config, command="inspect", sample_only=True))
 
     code = _run_report_app(build_app, cli_output=args.cli, json_output=args.json)
     if code is None:
         return _print_preflight(
-            _collect_report(args.config, command="inspect"), json_output=args.json)
+            _collect_report(config, command="inspect"), json_output=args.json)
     return code
 
 
@@ -679,7 +682,8 @@ def main(argv: list[str] | None = None) -> None:
             code = _cmd_run(args)
         elif args.command == "validate":
             code = _cmd_validate(
-                args.config, schema_only=args.schema_only, json_output=args.json,
+                args.config or Path("frameit.yaml"), schema_only=args.schema_only,
+                json_output=args.json,
                 cli_output=args.cli, overrides=_operational_overrides(args))
         elif args.command == "init":
             from frameit.core.configuration import write_template

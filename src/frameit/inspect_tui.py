@@ -21,6 +21,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from frameit.inspect_draft import DraftSelection
+from frameit.report_diff import source_identity
 from frameit.report_motion import ReportScroll
 from frameit.report_tui import DisclosureScroll, ReportApp, _time_label, _yaml
 
@@ -40,8 +41,8 @@ _PANES = {
 
 
 def _scope(source):
-    if "sample" not in source and "files" in source:
-        return f"{len(source['files'])} files reported · sampling scope not reported"
+    if "sample" not in source and (files := source.get("files")) is not None:
+        return f"{len(files)} files reported · sampling scope not reported"
     sample = source.get("sample", {})
     checked, discovered = sample.get("inspected", 0), sample.get("discovered")
     return f"{checked} of {discovered} files inspected" if discovered is not None else (
@@ -102,12 +103,16 @@ def _source_details(source, name, origins):
             coordinates.setdefault(f"{coordinate}\n{indent(_yaml(evidence), '  ')}", None)
 
     dispositions = {"inspected": "Inspected sample", "sample_failed": "Sample failed",
-                    "not_inspected": "Not inspected"}
-    files = [(dispositions[entry["status"]], entry["path"])
-             for entry in source.get("file_inventory", ())]
-    files.extend(("Alias", alias) for entry in source.get("file_inventory", ())
-                 for alias in entry.get("aliases", ()))
-    files.extend(("Excluded", path) for path in source.get("excluded_files", ()))
+                    "not_inspected": "Not inspected", "selected": "Selected",
+                    "time_excluded": "Outside selected time", "metadata_only": "Metadata only",
+                    "irrelevant": "Not selected", "dependency_pending": "Dependency pending"}
+    files = []
+    for entry in source.get("file_inventory", ()):
+        state = entry["status"]
+        label = dispositions.get(state, f"Recorded status: {state}")
+        files.append((label, entry["path"], entry.get("reason")))
+        files.extend(("Alias", path, None) for path in entry.get("aliases", ()))
+    files.extend(("Excluded", path, None) for path in source.get("excluded_files", ()))
     declarations = source.get("declaration", {}).get("field_metadata")
     setting_origins = {key: value for key, value in origins.items()
                        if key.startswith(f"sources.{name}.")}
@@ -116,8 +121,9 @@ def _source_details(source, name, origins):
         "coordinates": "\n\n".join(coordinates) or _UNKNOWN,
         "time": _time_details(source),
         "grids": "\n\n".join(grids) or _UNKNOWN,
-        "files": "\n".join(f"{label} · {Path(path).name}" for label, path in files) or _UNKNOWN,
-        "file_paths": "\n".join(f"{label} · {path}" for label, path in files) or _UNKNOWN,
+        "files": "\n".join(f"{label} · {Path(path).name}" for label, path, _ in files) or _UNKNOWN,
+        "file_paths": "\n".join(" · ".join(filter(None, (label, path, reason)))
+                                for label, path, reason in files) or _UNKNOWN,
         "origins": "\n\n".join((
             f"Observed origins\n{_yaml(source['metadata_origins'])}"
             if source.get("metadata_origins") else f"Observed origins\n{_UNKNOWN}",
@@ -550,7 +556,7 @@ class InspectionApp(ReportApp):
             actions.append("c Copy YAML")
         staged = self._source == self._draft_source and self._field in self._draft
         if staged:
-            mark = ("added, not applied" if self._draft[self._field] == self._offer
+            mark = ("added, not applied" if self._draft[self._field] == self._draft_entry()
                     else "needs review")
             actions.extend((f"Draft: {mark}", "a Remove"))
         elif self._selector:
@@ -558,6 +564,9 @@ class InspectionApp(ReportApp):
         if self._draft:
             actions.append("v Review draft")
         self.query_one("#copy-hint", Static).update(" · ".join(actions))
+
+    def _draft_entry(self):
+        return source_identity(self._sources.get(self._source, {})), self._offer
 
     def action_toggle_draft_field(self):
         if self.busy or self._stale or self.saved or not self._sync_selected_field():
@@ -570,7 +579,7 @@ class InspectionApp(ReportApp):
                 del self._draft[identity]
             elif self._offer is not None:
                 self._draft_source = self._source
-                self._draft[identity] = self._offer
+                self._draft[identity] = self._draft_entry()
             else:
                 self._notice("No selector offered", "See field details for the available evidence.",
                              "warning")
@@ -579,6 +588,5 @@ class InspectionApp(ReportApp):
     def action_view_draft(self):
         if not self.busy and not self._stale and not self.saved:
             source = self._draft_source if self._draft else self._source
-            offers = self._sources.get(source, {}).get("available_selectors", ())
-            self.push_screen(DraftSelection(source, self._draft, offers),
+            self.push_screen(DraftSelection(source, self._draft, self._sources.get(source, {})),
                              lambda _: self._show_field_actions())

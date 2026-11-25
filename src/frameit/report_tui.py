@@ -28,6 +28,7 @@ from textual.widgets import Collapsible, Footer, Input, OptionList, ProgressBar,
 from textual.worker import Worker, WorkerState, get_current_worker
 
 from frameit.core.reports import project_report, serialize_projection
+from frameit.report_diff import finding_key
 from frameit.report_motion import BrandActivity, ReportScroll
 
 _CHECK_LABELS = {
@@ -476,6 +477,10 @@ class ReportApp(App[int]):
     def _start_check(self):
         if self._has_report and self.BRANDED_REFRESH and self._hidden_view is None:
             self._hidden_view = self._view_state()
+        if self.BRANDED_REFRESH:
+            # Hiding is deferred until layout; buffered input must stop immediately.
+            self.query_one(".report-body").disabled = True
+            self.screen.set_focus(None, scroll_visible=False)
         self._notice_since = time()
         self._clear_notices()
         self._cancel.clear()
@@ -605,6 +610,8 @@ class ReportApp(App[int]):
         self._worker = None
         self._stop_feedback()
         self.screen.remove_class("checking", "starting")
+        if self.BRANDED_REFRESH:
+            self.query_one(".report-body").disabled = False
         hidden_view = self._hidden_view
         if self._cancel.is_set() or event.state == WorkerState.CANCELLED:
             if hidden_view is None and not self.BRANDED_REFRESH:
@@ -876,19 +883,24 @@ class ReportApp(App[int]):
         visible = [(level, item) for level, item in self.findings
                    if not self._notes_only or level == "Field discovery"]
         self._findings_visible = visible
-        retained = previous in visible
+        index = visible.index(previous) if previous in visible else None
+        if index is None and previous is not None:
+            key = finding_key(*previous)
+            matches = [i for i, finding in enumerate(visible) if finding_key(*finding) == key]
+            if len(matches) == 1:
+                index = matches[0]
         with listing.prevent(OptionList.OptionHighlighted):
             listing.set_options(
                 Content.styled(f"{number:>2}  {_finding_title(level, item)}",
                                _FINDING_STYLES.get(level, "$text-muted"))
                 for number, (level, item) in enumerate(visible, start=1))
-            listing.highlighted = (visible.index(previous) if retained else 0) if visible else None
+            listing.highlighted = (index or 0) if visible else None
         filter_label = self.query_one("#finding-filter", Static)
         filter_label.display = bool(notes)
         shown = "Field discovery only" if self._notes_only else "All findings"
         filter_label.update(f"{shown} · {notes} discovery · n Filter")
-        self._present_finding(self._current_finding(), reset=not retained)
-        return retained
+        self._present_finding(self._current_finding(), reset=index is None)
+        return index is not None
 
     def action_filter_notes(self):
         previous = self._current_finding()

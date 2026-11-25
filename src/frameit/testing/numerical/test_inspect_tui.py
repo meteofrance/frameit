@@ -334,6 +334,35 @@ def test_draft_copies_qualified_selectors_without_applying_and_marks_stale_entri
     asyncio.run(exercise())
 
 
+def test_draft_does_not_reuse_an_identical_field_from_a_different_model(tmp_path):
+    for name, model in (("arome.nc", "AROME"), ("mnh.nc", "Meso-NH")):
+        v3_scene(hours=(0,), model=model).to_netcdf(tmp_path / name, engine="h5netcdf")
+    path = _case(tmp_path, {"weather": {"model": "arome", "files": "arome.nc"}})
+
+    async def exercise():
+        app = _app(path)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _ready(app, pilot)
+            await pilot.press("2", "a", "v")
+            assert "1 current" in _text(app.screen, "#draft-status")
+            await pilot.press("escape")
+            config = yaml.safe_load(path.read_text())
+            config["sources"]["weather"].update(model="mesonh", files="mnh.nc")
+            path.write_text(yaml.safe_dump(config))
+            await pilot.press("r")
+            await _ready(app, pilot)
+            assert app.result_code == 0 and "MESONH" in _text(app, "#source-scope")
+            await pilot.press("v")
+            assert "1 need review" in _text(app.screen, "#draft-status")
+            await pilot.press("c")
+            assert app.clipboard == ""
+            await pilot.press("escape", "a", "a", "v", "c")
+            assert yaml.safe_load(app.clipboard) == {
+                "sources": {"weather": {"variables": {"2d": ["temperature"]}}}}
+
+    asyncio.run(exercise())
+
+
 def test_explorer_reports_a_decoded_clock_without_field_rows(tmp_path):
     v3_scene(hours=(0, 1)).drop_vars("temperature").to_netcdf(
         tmp_path / "coordinates.nc", engine="h5netcdf")

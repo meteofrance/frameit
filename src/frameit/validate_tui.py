@@ -292,12 +292,18 @@ class ValidationApp(ReportApp):
         self._show_product(plan)
 
     @on(DataTable.RowHighlighted, "#plan-products")
-    def _select_product(self, event):
-        key = event.row_key.value
-        if (key != self._product and key in self._products
-                and event.cursor_row == event.data_table.cursor_row):
+    def _select_product(self):
+        self._sync_product()
+
+    def _sync_product(self):
+        table = self.query_one("#plan-products", DataTable)
+        if not table.is_valid_coordinate(table.cursor_coordinate):
+            return None
+        key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+        if key != self._product:
             self._product = key
             self._show_product(self._report["data"]["plan"])
+        return self._products.get(key)
 
     def _show_product(self, plan):
         if item := self._products.get(self._product):
@@ -439,7 +445,7 @@ class ValidationApp(ReportApp):
             return []
         choices = [("Blocked · plan", ("finding", (level, item))) for level, item in self.findings
                    if level == "Blocked" and item["path"] == "plan"]
-        if not (product := self._products.get(self._product)):
+        if not (product := self._sync_product()):
             return choices
         name = product.get("source")
         source = self._report["data"]["plan"].get("sources", {}).get(name)
@@ -545,11 +551,10 @@ class ValidationApp(ReportApp):
         else:
             lines.extend(f"{label}: {source.get(key) or 'Not reported'}"
                          for label, key in (("Model", "model"), ("Format", "format")))
-            if "files" in source and "selected_times" in source:
-                lines.append(f"Selected files: {len(source['files'])}")
-                lines.append(f"Selected times: {len(source['selected_times'])}")
-            else:
-                lines.append("Selected coverage: Not reported")
+            for key, label in (("files", "files"), ("selected_times", "times")):
+                values = source.get(key)
+                lines.append(f"Selected {label}: {len(values) if values is not None
+                                                    else 'Not reported'}")
             if source.get("excluded_files"):
                 lines.extend(("", "Reported exclusions:", *source["excluded_files"],
                               "Matching exclusion rule: Not reported"))

@@ -7,6 +7,7 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
+from frameit.report_diff import source_identity
 from frameit.report_motion import ReportScroll
 from frameit.report_tui import _yaml
 
@@ -53,11 +54,13 @@ class DraftSelection(ModalScreen):
     #draft-actions { color: $accent; }
     """
 
-    def __init__(self, source, entries, current_offers):
+    def __init__(self, source, entries, metadata):
         super().__init__()
         self.source = source
         self.entries = entries
-        self.offers = {offer["field_id"]: offer for offer in current_offers if "field_id" in offer}
+        basis = source_identity(metadata)
+        self.offers = {offer["field_id"]: (basis, offer)
+                       for offer in metadata.get("available_selectors", ()) if "field_id" in offer}
         self._fragment = ""
 
     def compose(self) -> ComposeResult:
@@ -77,8 +80,9 @@ class DraftSelection(ModalScreen):
         listing = self.query_one("#draft-entries", OptionList)
         current = []
         rows = []
-        for identity, entry in self.entries.items():
-            matches = self.offers.get(identity) == entry
+        for identity, staged in self.entries.items():
+            _, entry = staged
+            matches = self.offers.get(identity) == staged
             if matches:
                 current.append(entry)
             status = "Added" if matches else "Needs review"

@@ -602,6 +602,50 @@ def test_revalidation_before_view_has_redrawn_keeps_cancelled_details_focus(tmp_
     asyncio.run(exercise())
 
 
+def test_keys_buffered_after_refresh_do_not_change_the_restored_finding(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    path.write_text(path.read_text().replace("data/first-run.nc", "absent.nc"))
+    started, release = Event(), Event()
+    calls = 0
+
+    def collect(*, progress):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            started.set()
+            assert release.wait(10)
+            progress("metadata", None, None, None)
+        return _collect_report(path, command="validate", progress=progress)
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test(size=(80, 24)) as pilot:
+            try:
+                await app.workers.wait_for_complete()
+                await pilot.press("2", "down")
+                listing = app.query_one("#finding-list")
+                assert listing.has_focus and listing.highlighted == 1
+                finding = _text(app, "#finding")
+                app.post_message(Key("r", "r"))
+                app.post_message(Key("down", None))
+                assert await asyncio.to_thread(started.wait, 5)
+                worker = next(iter(app.workers))
+                await pilot.press("ctrl+c")
+                release.set()
+                with pytest.raises(WorkerCancelled):
+                    await worker.wait()
+                async with asyncio.timeout(3):
+                    while not listing.has_focus:
+                        await pilot.pause()
+                assert listing.highlighted == 1 and _text(app, "#finding") == finding
+            finally:
+                release.set()
+
+    asyncio.run(exercise())
+
+
 def test_decoder_warning_is_visible_without_changing_report(tmp_path):
     import h5netcdf
 
@@ -876,6 +920,38 @@ def test_planned_product_links_to_bound_field_and_back_to_its_uses(tmp_path):
     asyncio.run(exercise())
 
 
+def test_related_evidence_uses_product_cursor_before_highlight_is_delivered(tmp_path):
+    from frameit.testing.numerical.test_nemo_netcdf import nemo_document, nemo_scene
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    sea = tmp_path / "ocean.nc"
+    nemo_scene().to_netcdf(sea, engine="h5netcdf")
+    request = yaml.safe_load(path.read_text())
+    request.pop("region")
+    request["sources"].update(nemo_document(tmp_path, [sea])["sources"])
+    path.write_text(yaml.safe_dump(request, sort_keys=False))
+    collect = partial(_collect_report, path, command="validate")
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("3")
+            await pilot.click("#detail-plan CollapsibleTitle", offset=(3, 0))
+            await pilot.press("tab")
+            table = app.query_one("#plan-products")
+            assert app.result_code == 0 and table.has_focus and table.row_count == 2
+            table.action_cursor_down()
+            app.action_related()
+            await pilot.pause()
+            choices = app.screen.query_one("#related-options")
+            assert str(choices.get_option_at_index(0).prompt) == "Source · ocean"
+            assert "votemper" in str(choices.get_option_at_index(1).prompt)
+
+    asyncio.run(exercise())
+
+
 def test_changes_compare_completed_failed_checks_and_skip_cancelled_attempts(tmp_path):
     from frameit.validate_tui import ValidationApp
 
@@ -932,6 +1008,32 @@ def test_changes_compare_completed_failed_checks_and_skip_cancelled_attempts(tmp
                 assert app.result_code == 0
             finally:
                 release.set()
+
+    asyncio.run(exercise())
+
+
+def test_refresh_retains_finding_when_only_authored_line_numbers_move(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    config = yaml.safe_load(path.read_text())
+    config["sources"]["atmosphere"]["files"] = ["absent-a.nc", "absent-b.nc"]
+    path.write_text(yaml.safe_dump(config))
+    collect = partial(_collect_report, path, command="validate")
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("2", "down", "enter")
+            evidence = _text(app, "#finding-evidence-text")
+            assert "absent-b.nc" in evidence
+            path.write_text("# Move the original line marks\n" + path.read_text())
+            await pilot.press("r")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            updated = _text(app, "#finding-evidence-text")
+            assert "absent-b.nc" in updated and updated != evidence
 
     asyncio.run(exercise())
 

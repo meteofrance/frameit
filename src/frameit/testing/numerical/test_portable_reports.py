@@ -7,7 +7,7 @@ import pytest
 from textual.widgets import Input
 
 from frameit.cli import _collect_report, main
-from frameit.core.reports import project_report
+from frameit.core.reports import load_saved_report, project_report
 from frameit.testing.numerical.test_validate_tui import _case, _text
 
 
@@ -50,8 +50,6 @@ def test_save_canonical_report_exclusively_and_browse_it_offline(tmp_path, comma
         assert config.read_bytes() == original and data.read_bytes() == payload
         assert archive.read_bytes() == saved
 
-        from frameit.core.reports import load_saved_report
-
         # Leave the archive as the only available source of facts.
         config.unlink()
         data.unlink()
@@ -89,15 +87,89 @@ def test_saved_report_cli_checks_version_shape_and_literal_data(tmp_path, monkey
     for invalid, message in (
             ({**report, "report_version": 9}, "Unsupported report version"),
             ({**report, "data": {}}, "Incomplete report data"),
+            ({**report, "deferred_checks": []}, "Inconsistent recorded checks"),
+            ({**report, "deferred_checks": [], "data": {**report["data"], "pending": []}},
+             "Missing recorded validation scope"),
             ({**report, "warnings": ["\x1b]52;bad"]}, "control characters")):
         archive.write_text(json.dumps(invalid))
         with pytest.raises(SystemExit) as outcome:
             main(["validate", "--saved-report", str(archive), "--json"])
         assert outcome.value.code == 1
         assert message in capsys.readouterr().err
-    report["warnings"].append("[bold reverse]not markup")
+    report["warnings"].append("[bold reverse]not markup\r\nordinary CRLF")
     archive.write_text(json.dumps(report))
     with pytest.raises(SystemExit) as outcome:
         main(["validate", "--saved-report", str(archive), "--json"])
     assert outcome.value.code == 0
     assert json.loads(capsys.readouterr().out) == report
+
+
+def test_saved_report_rejects_malformed_context_before_navigation(tmp_path):
+    config = _case(tmp_path)
+    config.write_text(config.read_text().replace("data/first-run.nc", "absent.nc"))
+    report = project_report(_collect_report(config, command="validate"))
+    invalid = {**report["errors"][0], "contexts": [{"source": ["atmosphere"]}]}
+    report["errors"].append(invalid)
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report))
+    with pytest.raises(ValueError, match="Invalid diagnostic context"):
+        load_saved_report(path, "validate")
+
+
+def test_saved_report_rejects_incomplete_binding_before_navigation(tmp_path):
+    config = _case(tmp_path)
+    report = project_report(_collect_report(config, command="validate"))
+    source = report["data"]["plan"]["sources"]["atmosphere"]
+    source["field_binding"]["products"]["model_grid"]["instructional_scalar"]["records"] = [{}]
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report))
+    with pytest.raises(ValueError, match="Invalid bound-field record"):
+        load_saved_report(path, "validate")
+
+
+def test_archive_rejects_incomplete_native_metadata_before_field_is_opened(tmp_path):
+    config = _case(tmp_path)
+    report = project_report(_collect_report(config, command="inspect", sample_only=True))
+    fields = report["data"]["plan"]["sources"]["atmosphere"]["fields"]
+    next(iter(fields.values()))["native_descriptor"] = {"native": ["not metadata"]}
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report))
+    with pytest.raises(ValueError, match="Invalid field metadata"):
+        load_saved_report(path, "inspect")
+
+
+def test_inspect_view_reopens_full_cli_inventory(tmp_path, capsys):
+    from frameit.inspect_tui import InspectionApp
+
+    config = _case(tmp_path)
+    archive = tmp_path / "inventory.json"
+    with pytest.raises(SystemExit) as outcome:
+        main(["inspect", str(config), "--json"])
+    assert outcome.value.code == 0
+    archive.write_text(capsys.readouterr().out)
+    report = load_saved_report(archive, "inspect")
+
+    async def exercise():
+        app = InspectionApp(archive, None, saved_report=report)
+        async with app.run_test(size=(80, 24)) as pilot:
+            assert app.result_code == 0 and app.query_one("#fields").row_count == 1
+            await pilot.press("4")
+            app.query_one("#source-tabs").active = "files"
+            await pilot.pause()
+            assert "Selected · first-run.nc" in _text(app, "#source-files")
+            assert "Inspected sample" not in _text(app, "#source-files")
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("command", ["inspect", "validate"])
+def test_saved_report_refuses_an_explicit_frameit_yaml(command, tmp_path, capsys):
+    config = _case(tmp_path)
+    archive = tmp_path / "archive.json"
+    report = project_report(_collect_report(config, command=command, sample_only=True))
+    archive.write_text(json.dumps(report))
+    with pytest.raises(SystemExit) as outcome:
+        main([command, "frameit.yaml", "--saved-report", str(archive), "--json"])
+    captured = capsys.readouterr()
+    assert outcome.value.code != 0
+    assert "without a YAML request" in captured.err

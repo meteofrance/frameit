@@ -134,8 +134,8 @@ archive with the command that produced it, for example:
    frameit inspect --saved-report inspected.json
 
 Saved reports show recorded evidence without opening the original YAML or
-datasets. Refresh and editing are unavailable. Use a separate live command to
-check current inputs.
+datasets. Do not pass a YAML path with ``--saved-report``. Refresh and editing
+are unavailable. Use a separate live command to check current inputs.
 
 Use ``frameit validate frameit.yaml --cli`` for the text report even in a
 terminal. ``--json`` writes one JSON report. Redirected commands do not open
