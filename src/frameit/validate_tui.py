@@ -149,6 +149,7 @@ class ValidationApp(ReportApp):
         text-wrap: nowrap;
         text-overflow: ellipsis;
     }
+    #details-sticky.clickable { pointer: pointer; }
     #details-scroll CollapsibleTitle:focus {
         background: #102440;
         color: $foreground;
@@ -168,6 +169,7 @@ class ValidationApp(ReportApp):
         super().__init__(config, collect)
         self.schema_only = schema_only
         self.overrides = overrides or {}
+        self._pinned_detail: Collapsible | None = None
 
     def compose_view(self) -> ComposeResult:
         with TabbedContent(id="report-tabs", classes="report-body"):
@@ -199,15 +201,24 @@ class ValidationApp(ReportApp):
     def _update_details_title(self):
         details = self.query_one("#details-scroll", ReportScroll)
         top = details.scroll_offset.y
+        self._pinned_detail = None
         label = ""
         for section in details.query(Collapsible):
             region = section.virtual_region
             if not section.collapsed and region.y < top < region.bottom:
+                self._pinned_detail = section
                 label = section.title
                 break
         pinned = self.query_one("#details-sticky", Static)
         if pinned.content != label:
             pinned.update(label, layout=False)
+            pinned.set_class(bool(label), "clickable")
+
+    @on(events.Click, "#details-sticky")
+    def _collapse_pinned_detail(self):
+        if not self.busy and (section := self._pinned_detail) is not None and not section.collapsed:
+            section.collapsed = True
+            section.query_one("CollapsibleTitle").focus(scroll_visible=False)
 
     def prepare_view(self, report: dict):
         data = report["data"]

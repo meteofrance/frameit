@@ -274,13 +274,25 @@ def test_details_pins_only_the_section_scrolled_under_the_top_edge(tmp_path):
             details.scroll_to(y=plan.virtual_region.y, animate=False)
             await pilot.pause()
             assert not _text(app, "#details-sticky")
+            await pilot.press("3")
+            assert details.has_focus
             details.scroll_to(y=plan.virtual_region.y + 3, animate=False)
             await pilot.pause()
             assert _text(app, "#details-sticky") == "Processing plan"
 
+            await pilot.click("#details-sticky", offset=(3, 0))
+            assert plan.collapsed
+            assert not app.query_one("#detail-configuration").collapsed
+            assert "Processing plan" not in _text(app, "#details-sticky")
+            heading = plan.query_one("CollapsibleTitle")
+            assert heading.has_focus
+            viewport_region = details.scrollable_content_region
+            assert viewport_region.y <= heading.region.y < viewport_region.bottom
+
+            await pilot.press("enter")
+            assert not plan.collapsed
             await pilot.press("enter")
             assert plan.collapsed
-            assert "Processing plan" not in _text(app, "#details-sticky")
             details.scroll_home(animate=False)
             await pilot.pause()
             assert not _text(app, "#details-sticky")

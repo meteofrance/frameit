@@ -100,10 +100,10 @@ keeping the selected finding open.
 In **Details**, press ``Tab`` to focus a section and ``Enter`` to expand or
 collapse it. Use Page Up and Page Down for long panels, and left and right
 arrows for long lines. The title of the expanded section stays visible above
-its contents as you scroll. The processing plan starts with planned output
-paths and product selections. Output paths from a failed check are
-unconfirmed. The plan, effective configuration and setting origins are
-read-only.
+its contents as you scroll. Click that title to collapse the section. The
+processing plan starts with planned output paths and product selections.
+Output paths from a failed check are unconfirmed. The plan, effective
+configuration and setting origins are read-only.
 
 Use ``frameit validate frameit.yaml --cli`` for the text report even in a
 terminal. ``--json`` writes one JSON report. Redirected commands do not open
