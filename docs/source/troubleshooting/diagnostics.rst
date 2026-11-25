@@ -21,6 +21,16 @@ with its original request and a saved trajectory. A completed full-domain run
 without centres cannot supply a trajectory. Do not change or recreate records
 to pass this check.
 
+.. _e2003:
+
+E2003 — Diagnostic input not admitted
+---------------------------------------------
+
+Check the selected source and exact field names, then check the metadata or
+memory requirement in the message. Use actual cell geography, physical units
+and the recorded input representation. If a recorded file has changed, use a
+new completed extraction rather than editing the saved identity.
+
 .. _w2001:
 
 W2001 — Planned crop does not list a selected field

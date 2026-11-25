@@ -18,10 +18,10 @@ def _portable(value):
         return {str(key): _portable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_portable(item) for item in value]
-    if isinstance(value, (str, int, bool)) or value is None:
+    if type(value) in (str, int, bool) or value is None:
         return value
     if isinstance(value, float):
-        return value if isfinite(value) else str(value)
+        return float(value) if isfinite(value) else str(value)
     if isinstance(value, bytes):
         return {"bytes_hex": value.hex()}
     if isinstance(value, date):
@@ -145,7 +145,7 @@ def _netcdf_structure(ds):
     })
 
 
-def product_identity(path, *, representation, header=None):
+def product_identity(path, *, representation, header=None, engine=None):
     """Metadata fingerprints; no payload reads or claims of content verification."""
     path = Path(path)
     if representation == "zarr3":
@@ -162,7 +162,7 @@ def product_identity(path, *, representation, header=None):
     if header is None:
         import xarray as xr
 
-        with xr.open_dataset(path, decode_cf=False, create_default_indexes=False,
+        with xr.open_dataset(path, engine=engine, decode_cf=False, create_default_indexes=False,
                              cache=False) as saved:
             signature = _netcdf_structure(saved)
     else:

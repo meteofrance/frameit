@@ -41,3 +41,34 @@ class DiagnosticPlan:
     request: dict
     facts: dict
     samples: tuple = ()
+    files: tuple = ()
+
+
+@dataclass(frozen=True)
+class Metric:
+    value: float | None = None
+    observed: float | None = None
+    bound: float | None = None
+    bound_kind: str = "none"
+    support: str = "not_evaluated"
+    comparability: str = "unavailable"
+    reasons: tuple[str, ...] = ()
+    location: tuple[float, float] | None = None
+    offset_m: float | None = None
+    ties: int = 0
+    valid_samples: int = 0
+    candidates: tuple[tuple[float, float], ...] = ()
+
+    @property
+    def qualified_value(self):
+        return self.value if self.comparability == "qualified" else None
+
+
+@dataclass(frozen=True)
+class DiagnosticResult:
+    centre: Centre
+    maximum_wind: Metric
+    central_pressure: Metric
+    gust: Metric
+    rmw: Metric
+    wind_radii: tuple[Metric, ...]

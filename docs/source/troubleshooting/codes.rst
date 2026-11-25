@@ -79,6 +79,7 @@ Errors
 * :ref:`e1903`
 * :ref:`e2001`
 * :ref:`e2002`
+* :ref:`e2003`
 
 Warnings
 --------
