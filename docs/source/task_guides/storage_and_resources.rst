@@ -40,6 +40,9 @@ for execution:
 Use **Recommended allocation** as a starting point. FrameIt rounds 1.5 times
 the estimated peak up to a whole GiB. It estimates peak RSS from the bound
 input sizes, processing and output buffers, and simultaneous local workers.
+Writer buffers include the bound ensemble dimensions. Polar interpolation can
+combine several reader chunks. If the stencil window is not known at validation,
+the estimate budgets the full prepared source plane.
 The reported median is the median of modeled typical phase budgets, not a
 sample across the runtime of a job. The estimate sums RSS across processes,
 which can count shared pages more than once. It is not Slurm's ``MaxRSS``.

@@ -20,8 +20,8 @@
 
 ## Review Focus
 
-- Unknown or contradictory per-file producer evidence cannot yield a shared YAML repair (Task 2).
-- An otherwise eligible value cannot be proposed if the actual unit consumer rejects it (Task 2).
+- Unknown or contradictory per-file producer evidence cannot yield an applied fallback (Task 2).
+- An otherwise eligible value cannot be applied if the actual unit consumer rejects it (Task 2).
 - Invalid hashes, row types or IDs and a corrupt/concurrently written cache cannot replace an original validation error (Tasks 1–2).
 - An unknown competing candidate or an existing conflicting unit/CF name cannot be treated as absent (Task 2).
 - Native eager decode, output workers and unbound/unknown shapes cannot look like zero memory (Task 3).

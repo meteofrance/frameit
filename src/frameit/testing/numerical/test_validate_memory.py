@@ -1,6 +1,7 @@
 """RAM planning uses bound sizes and execution settings, never field payloads."""
 
 import json
+from math import prod
 
 import numpy as np
 import pytest
@@ -8,9 +9,11 @@ import xarray as xr
 import yaml
 
 from frameit.cli import _cmd_validate
+from frameit.core.execution import execute_simulation
 from frameit.core.memory_estimate import estimate_run_memory
 from frameit.core.preflight import collect_preflight
 from frameit.core.reports import project_report, render_projection
+from frameit.core.settings_class import SimulationConfig
 from frameit.testing.numerical.test_inspect_metadata import guard_netcdf_payloads, v3_config
 from frameit.testing.numerical.test_v3_grib_reads import write_messages
 from frameit.testing.numerical.test_v3_operations import scene as vertical_scene
@@ -127,6 +130,19 @@ def test_polar_peak_grows_with_the_bound_target(tmp_path, monkeypatch):
     assert small["phases"]["polar"]["peak_rss_bytes"] < huge["phases"]["polar"]["peak_rss_bytes"]
 
 
+def test_polar_operator_can_assemble_more_than_one_reader_tile(tmp_path, monkeypatch):
+    ds = scene().interp(ni=np.linspace(-4000., 4000., 31), nj=np.linspace(-4000., 4000., 31))
+    ds.to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
+    raw = polar_config(
+        tmp_path, source={"reader": {"chunks": {"ni": 2, "nj": 2}}},
+        products={"polar": {"radius_km": 1.5, "azimuth_count": 8}},
+    )
+    guard_netcdf_payloads(monkeypatch, {"q"})
+    ram = _estimate(raw)
+    assert ram["inputs"]["atmosphere"]["largest_input_block_bytes"] == 2 * 2 * 8
+    assert ram["products"]["atmosphere.polar"]["largest_processing_block_bytes"] >= 31 * 31 * 8
+
+
 def test_grib_counts_full_decode_working_record_without_decoding(tmp_path, monkeypatch):
     file = write_messages(tmp_path / "wind.grib", [{"level": 850, "hour": 1}])
     monkeypatch.setattr("frameit.io.grib_utils._grib_payload",
@@ -134,6 +150,37 @@ def test_grib_counts_full_decode_working_record_without_decoding(tmp_path, monke
     request = v3_config(tmp_path, [file], model="arome", variables={"3d": ["u"]})
     ram = _estimate(request)
     assert ram["inputs"]["weather"]["largest_eager_native_record_bytes"] == 3 * 2 * 8
+
+
+@pytest.mark.parametrize("kind", ["model_grid", "polar"])
+def test_writer_block_counts_bound_grib_members(tmp_path, monkeypatch, kind):
+    file = write_messages(tmp_path / "wind.grib", [
+        {"level": level, "member": member}
+        for level in (850, 700) for member in (0, 1)
+    ])
+    raw = _request(tmp_path)
+    raw["sources"]["weather"] = {"model": "arome", "files": str(file), "variables": {"3d": ["u"]}}
+    if kind == "polar":
+        raw["region"] = {"center": {"longitude": 60., "latitude": -20.}}
+        raw["products"] = {"polar": {"radius_km": 2.5, "azimuth_count": 8}}
+    raw["output"]["writer"] = {"chunks": {"time": 1}}
+    with monkeypatch.context() as guarded:
+        guarded.setattr("frameit.io.grib_utils._grib_payload",
+                        lambda *args: pytest.fail("RAM planning decoded a GRIB payload"))
+        estimate = _estimate(raw)["products"][f"weather.{kind}"]["largest_writer_block_bytes"]
+        raw["output"]["writer"]["chunks"]["number"] = 1
+        per_member = _estimate(raw)["products"][f"weather.{kind}"]["largest_writer_block_bytes"]
+        del raw["output"]["writer"]["chunks"]["number"]
+
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    assert result.ok
+    with xr.open_dataset(result.products[0]["path"], engine="h5netcdf") as product:
+        assert product.u.sizes["number"] == 2
+        actual_chunk_bytes = prod(product.u.encoding["chunksizes"]) * product.u.dtype.itemsize
+    assert estimate == 2 * per_member
+    if kind == "model_grid":
+        assert actual_chunk_bytes == 2 * 2 * 3 * 2 * 8
+        assert estimate == actual_chunk_bytes
 
 
 def test_unavailable_estimate_does_not_change_validation_verdict(tmp_path):

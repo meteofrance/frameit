@@ -1,4 +1,4 @@
-# Validate: catalogue repairs and RAM planning
+# Validate: catalogue fallback and RAM planning
 
 `frameit validate` should help a researcher repair incomplete source metadata and
 size a later `frameit run` without launching that run. The supplied
@@ -32,8 +32,8 @@ After a successful bind, use selected sizes, dtypes, geometry, processing,
 writer buffers and resolved concurrency to estimate peak and typical RSS for
 the local run and workers. The typical estimate is a modeled median, not a
 time-sampled statistic. Recommend a rounded allocation with headroom; explain
-the principal unknowns or lack of a usable binding. Neither recommendation nor
-lookup affects execution.
+the principal unknowns or lack of a usable binding. The RAM recommendation does
+not change run settings.
 
 Both features add report-plan details without changing the version 1 envelope
 or exit codes. Text and the terminal view surface warnings and the RAM summary;
@@ -44,9 +44,10 @@ validation remains offline and does not load the catalogue or plan a workload.
 
 The body hash is `ff7b1e735ff50370addda7c5a4308ff6457d960ab0c50fdd841dcbef598b41ec`.
 In `frameit_env` on Linux x86-64 (Python 3.13.18, SQLite 3.54.1), opening into
-an empty cache took 0.78 s, reopening took 0.034 s, and 10,000 repeated exact
+an empty cache took 1.35 s; reopening and verifying its body and index took a
+median of 0.54 s (three opens). Within one verified connection, 10,000 repeated exact
 `mesonh`/`6.0.0`/`THT`/`mesonh_netcdf_variable` queries including JSON decoding
-had a median of 0.040 ms. SQLite used `field_lookup`. These timings concern the
+had a median of 0.039 ms. SQLite used `field_lookup`. These timings concern the
 catalogue only, not field validation or processing.
 
 ## Compact RAM check
@@ -58,8 +59,8 @@ The estimates used the same configurations, without reading the field values.
 
 | Run | Estimated peak / median | Sampled peak / median | Recommended |
 | --- | --- | --- | --- |
-| Synchronous model-grid NetCDF | 259 / 258 MiB | 212 / 175 MiB (56 samples) | 1 GiB |
-| Model grid and polar, two spawned export workers | 777 / 387 MiB | 677 / 281 MiB (147 samples) | 2 GiB |
+| Synchronous model-grid NetCDF | 259 / 258 MiB | 212 / 177 MiB (58 samples) | 1 GiB |
+| Model grid and polar, two spawned export workers | 777 / 387 MiB | 676 / 281 MiB (156 samples) | 2 GiB |
 
 The modeled and sampled medians are different statistics. Short peaks can be
 missed by sampling. These checks do not qualify large jobs, native decoder

@@ -140,6 +140,14 @@ def _writer_block(sizes, spatial, width, output, chunks, shards):
     return width * _block(sizes, storage)
 
 
+def _axis_sizes(records):
+    values = defaultdict(set)
+    for record in records:
+        for dim, value in record.get("native_axes", {}).items():
+            values[dim].add(value)
+    return {dim: len(coords) for dim, coords in values.items()}
+
+
 def _product_work(product, source, facts, layout):
     from frameit.io.netcdf_export import _output_grid_facts
 
@@ -150,6 +158,8 @@ def _product_work(product, source, facts, layout):
         return {"largest_writer_block_bytes": 16 * 8, "resident_product_bytes": times * 16 * 8,
                 "largest_processing_block_bytes": 0}
     binding = source["field_binding"]
+    native_axes = {name: _axis_sizes(item["records"])
+                   for name, item in binding["products"][kind].items()}
     key = f"{source_id}.{kind}"
     chunks = facts["layouts"]["writer"]["chunks"].get(key, {})
     shards = facts["layouts"]["writer"]["shards"].get(key, {})
@@ -169,17 +179,23 @@ def _product_work(product, source, facts, layout):
             shape = _sizes(job["grid"])
             if vertical := job["vertical"]:
                 shape[vertical["dimension"]] = len(vertical["positions"])
+            # Execution joins the cropped stencil plane into a block. Its exact window needs
+            # the interpolation weights, so budget the full prepared source extent per sample.
+            stencil = 8 * _block(shape, {"time": 1})
             for dim in job["polar_geometry"]["horizontal_dimensions"].values():
                 shape.pop(dim, None)
             axes = _output_grid_facts(layout, job["grid_id"], job["name"])["dimensions"]
             shape = {axes.get(dim, dim): size for dim, size in shape.items()}
             spatial = {"radius", "azimuth"}
             shape.update(time=len(times), radius=radii, azimuth=angles)
-            largest = max(largest, _writer_block(shape, spatial, 24, output, chunks, shards))
             # Sampling builds whole azimuth rings; final write chunks may be smaller.
             rings = processing_chunks.get("radius", min(32, radii))
-            processing_block = max(processing_block, 24 * _block(shape, {
-                **processing_chunks, "time": 1, "radius": rings, "azimuth": -1}))
+            rings_block = 24 * _block(shape, {
+                **processing_chunks, "time": 1, "radius": rings, "azimuth": -1})
+            processing_block = max(processing_block, stencil + rings_block)
+            shape.update({axes.get(dim, dim): size
+                          for dim, size in native_axes[job["name"]].items()})
+            largest = max(largest, _writer_block(shape, spatial, 24, output, chunks, shards))
     else:
         width_km = facts["configuration"].get("region", {}).get("width_km")
         for name in product["fields"]:
@@ -201,10 +217,10 @@ def _product_work(product, source, facts, layout):
                 shape = _sizes(grid)
                 if vertical := record["vertical"]:
                     shape[vertical["dimension"]] = len(vertical["positions"])
+                shape.update(native_axes[name])
                 axes = _output_grid_facts(layout, grid_id, name if descriptor.get("operation")
                                           else record["name"])
                 shape = {axes["dimensions"].get(dim, dim): size for dim, size in shape.items()}
-                shape.update(dict.fromkeys(record.get("native_axes", ()), 1))
                 shape["time"] = times
                 spatial = set(axes["horizontal"].values())
                 if width_km and spatial:
@@ -334,6 +350,7 @@ def estimate_run_memory(facts, *, output_layouts=None):
             "Fixed process overhead and buffer multipliers; not a measured or guaranteed limit.",
             "Native decode, backend chunk caches, graph reuse and codec workspace vary.",
             "Source reads may cover the full native grid before a crop or regrid.",
+            "Polar processing budgets a full prepared source plane when stencil sizes are unknown.",
             "Summed RSS can count shared pages twice and is not scheduler MaxRSS.",
         ],
     }
