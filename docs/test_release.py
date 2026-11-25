@@ -1,8 +1,5 @@
 """Source-checkout release gates; build only tiny synthetic distribution inputs."""
 
-from datetime import date
-from importlib.metadata import PackageNotFoundError
-from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -10,11 +7,15 @@ import tarfile
 import tempfile
 import tomllib
 import unittest
-from unittest.mock import patch
 import zipfile
+from datetime import date
+from email import message_from_bytes
+from importlib.metadata import PackageNotFoundError
+from pathlib import Path
+from unittest.mock import patch
 
 import yaml
-
+from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,9 +44,10 @@ class ReleaseTests(unittest.TestCase):
             package.mkdir(parents=True)
             (package / '__init__.py').write_text('')
             for relative in ('templates/arome.yaml', 'presets/AROME/model_name_map.yaml',
-                             'testing/catalogs/science.yaml', 'testing/recipes/ci.yaml',
-                             'testing/ci_dataset/manifest.json',
-                             'testing/documentation_example.py', 'testing/datasets.py'):
+                              'testing/catalogs/science.yaml', 'testing/recipes/ci.yaml',
+                              'testing/ci_dataset/manifest.json',
+                              'testing/documentation_example.py', 'testing/datasets.py',
+                              'validate_tui.py', 'report_tui.py', 'inspect_tui.py'):
                 path = package / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / 'src/frameit' / relative, path)
@@ -63,6 +65,15 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             with zipfile.ZipFile(next((root / 'dist').glob('*.whl'))) as wheel:
                 wheel_names = wheel.namelist()
+                metadata = next(name for name in wheel_names if name.endswith('/METADATA'))
+                requirements = [
+                    Requirement(value)
+                    for value in message_from_bytes(wheel.read(metadata)).get_all('Requires-Dist')
+                ]
+                self.assertTrue(
+                    any(req.name == 'textual' and req.marker is None for req in requirements),
+                    requirements,
+                )
             with tarfile.open(next((root / 'dist').glob('*.tar.gz'))) as source:
                 source_names = source.getnames()
             for name, names in (('wheel', wheel_names), ('sdist', source_names)):
@@ -72,7 +83,7 @@ class ReleaseTests(unittest.TestCase):
                                   'testing/catalogs/science.yaml', 'testing/recipes/ci.yaml',
                                   'testing/ci_dataset/manifest.json',
                                   'testing/documentation_example.py', 'testing/datasets.py',
-                                  'LICENSE'):
+                                  'validate_tui.py', 'report_tui.py', 'inspect_tui.py', 'LICENSE'):
                         self.assertTrue(any(p.endswith(asset) for p in names), asset)
             for asset in ('CITATION.cff', 'CHANGELOG.md'):
                 self.assertTrue(any(p.endswith('/' + asset) for p in source_names), asset)

@@ -1,9 +1,9 @@
 Input files and readers
 =============================
 
-Run ``frameit inspect frameit.yaml`` to list the files, fields and
-times FrameIt can see. Inspection does not prove that the data support
-every requested calculation.
+Run ``frameit inspect frameit.yaml --cli`` for the full inventory of files,
+fields and times. The :ref:`terminal explorer <inspect-sample>` inspects one
+file per source. Neither proves the data support every requested calculation.
 
 .. _e1201:
 

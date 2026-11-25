@@ -39,7 +39,8 @@ Useful commands
 
 .. code-block:: bash
 
-   # Inspect the sources selected in the request.
+   # Inspect the full source inventory.
+   frameit inspect region.yaml --cli
    frameit inspect region.yaml --json
    # Show the authored mapping, without adding defaults.
    frameit config show region.yaml
@@ -49,8 +50,9 @@ Useful commands
    frameit init --help
    frameit run --help
 
-Schema-only checks open no data. Inspection and validation read metadata and
-coordinates, not scientific field values. Execution reads the selected fields.
+The :ref:`terminal explorer <inspect-sample>` reads one file per source.
+Schema-only checks open no data. Basic inspection reads metadata and
+coordinates. Execution reads the selected fields.
 
 Templates and results
 ---------------------

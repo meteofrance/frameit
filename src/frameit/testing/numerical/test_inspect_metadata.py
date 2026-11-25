@@ -193,13 +193,9 @@ def test_ordinary_preflight_does_not_add_inspection_metadata(tmp_path):
     assert all("variable_metadata" not in item for item in report["inputs"])
 
 
-def test_grib_inspect_preserves_same_name_in_different_groups_without_payload_reads(
-    tmp_path, monkeypatch, capsys,
-):
-    ec = pytest.importorskip("eccodes")
-    path = tmp_path / "wind.grib"
+def _write_grib_vectors(ec, path, rows):
     with path.open("wb") as stream:
-        for group, level, flag in (("isobaricInhPa", 850, 1), ("hybrid", 1, 0)):
+        for group, level, flag, cycle, param in rows:
             message = ec.codes_grib_new_from_samples("regular_ll_sfc_grib2")
             try:
                 for key, value in {
@@ -208,7 +204,7 @@ def test_grib_inspect_preserves_same_name_in_different_groups_without_payload_re
                     "longitudeOfFirstGridPointInDegrees": 60.,
                     "longitudeOfLastGridPointInDegrees": 60.02, "iDirectionIncrementInDegrees": .01,
                     "jDirectionIncrementInDegrees": .01, "jScansPositively": 1,
-                    "dataDate": 20240101, "dataTime": 0, "paramId": 131,
+                    "dataDate": 20240101, "dataTime": cycle, "paramId": param,
                     "typeOfLevel": group, "level": level, "uvRelativeToGrid": flag,
                 }.items():
                     ec.codes_set(message, key, value)
@@ -216,7 +212,9 @@ def test_grib_inspect_preserves_same_name_in_different_groups_without_payload_re
                 ec.codes_write(message, stream)
             finally:
                 ec.codes_release(message)
-    path.chmod(0o444)
+
+
+def _guard_grib_payloads(ec, monkeypatch):
     original_array = ec.codes_get_array
 
     def forbidden(*args, **kwargs):
@@ -229,6 +227,16 @@ def test_grib_inspect_preserves_same_name_in_different_groups_without_payload_re
 
     monkeypatch.setattr(ec, "codes_get_values", forbidden)
     monkeypatch.setattr(ec, "codes_get_array", guarded_array)
+
+
+def test_grib_inspect_preserves_same_name_in_different_groups_without_payload_reads(
+    tmp_path, monkeypatch, capsys,
+):
+    ec = pytest.importorskip("eccodes")
+    path = tmp_path / "wind.grib"
+    _write_grib_vectors(ec, path, [("isobaricInhPa", 850, 1, 0, 131), ("hybrid", 1, 0, 0, 131)])
+    path.chmod(0o444)
+    _guard_grib_payloads(ec, monkeypatch)
     request = tmp_path / "inspect.yaml"
     request.write_text(yaml.safe_dump({
         "schema_version": 3, "sources": {"atmosphere": {
@@ -247,6 +255,61 @@ def test_grib_inspect_preserves_same_name_in_different_groups_without_payload_re
         ("u", "hybrid", 0, "eastward/northward components"),
     ]
     assert set(tmp_path.iterdir()) == {path, request}
+
+
+def test_sample_inspection_selectors_keep_native_identity(tmp_path, monkeypatch):
+    from frameit.core.configuration import resolve_schema
+    from frameit.core.preflight import collect_preflight
+    from frameit.processing.requests import field_candidates
+
+    ec = pytest.importorskip("eccodes")
+    path = tmp_path / "wind.grib"
+    _write_grib_vectors(ec, path, [
+        ("isobaricInhPa", 850, 1, 0, 131), ("isobaricInhPa", 850, 0, 600, 131),
+        ("hybrid", 1, 0, 0, 131),
+        ("hybrid", 1, 0, 0, 132), ("hybrid", 1, 0, 0, 132),
+    ])
+    _guard_grib_payloads(ec, monkeypatch)
+    declaration = {"model": "arome", "files": str(path), "variables": {"3d": ["u"]},
+                   "time": {"cycle": "2024-01-01T00:00:00"}}
+    raw = {"schema_version": 3, "sources": {"weather": declaration}, "resources": {"cpus": 1}}
+    result = collect_preflight(raw, command="inspect", sample_only=True)
+    assert not result.errors
+    source = result.facts["sources"]["weather"]
+    assert len({r["cycle"] for r in source["record_inventory"]}) == 2
+    selectors = source["available_selectors"]
+    selector, = selectors
+    assert selector["field"] == "hybrid.u"
+    assert source["fields"][selector["field_id"]]["group"] == "hybrid"
+    assert source["unresolved_references"] == ["u"]
+    assert set(source["request_status"].values()) == {"unresolved", "not_requested"}
+    declaration["variables"] = yaml.safe_load(yaml.safe_dump(selector["variables"]))
+    _, requests, _ = resolve_schema(raw, base_dir=tmp_path)
+    records = [(i, r) for i, r in enumerate(source["record_inventory"]) if r["name"] == "u"]
+    matched = field_candidates(source, requests["weather"], selector["field"], {"u": records})
+    assert {r["field_id"] for _, r in matched} == {selector["field_id"]}
+
+
+def test_sample_inspection_reports_truncated_grib_without_hiding_other_sources(tmp_path):
+    from frameit.core.preflight import collect_preflight
+
+    ec = pytest.importorskip("eccodes")
+    valid = tmp_path / "good.grib"
+    broken = tmp_path / "truncated.grib"
+    _write_grib_vectors(ec, valid, [("isobaricInhPa", 850, 1, 0, 131)])
+    broken.write_bytes(valid.read_bytes()[:-5])
+    raw = {"schema_version": 3, "sources": {
+        "damaged": {"model": "arome", "files": [str(broken), str(valid)]},
+        "other": {"model": "arome", "files": str(valid)},
+    }, "resources": {"cpus": 1}}
+    result = collect_preflight(raw, command="inspect", sample_only=True)
+    error, = result.errors
+    assert error.code == "E1202"
+    assert error.contexts[-1]["source"] == "damaged" and error.contexts[-1]["file"] == str(broken)
+    sources = result.facts["sources"]
+    assert [entry["status"] for entry in sources["damaged"]["file_inventory"]] == [
+        "sample_failed", "not_inspected"]
+    assert sources["other"]["fields"]
 
 
 def v3_scene(*, names=("temperature",), hours=(0, 1, 2, 3), model="Meso-NH"):

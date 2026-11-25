@@ -51,7 +51,7 @@ pair, including the atmospheric snapshot. It does not fill the gap.
 
 .. code-block:: bash
 
-   frameit inspect coupled-clocks.yaml
+   frameit inspect coupled-clocks.yaml --cli
    frameit validate coupled-clocks.yaml
 
 .. container:: frameit-tabs

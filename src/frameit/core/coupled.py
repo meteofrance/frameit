@@ -557,11 +557,13 @@ def _prepare_v3_regions(conf, children, plans):
             source["region"]["grids"][grid_id] = facts
 
 
-def prepare_sources(conf, *, check_output=True, execution_options=None, resources=None):
+def prepare_sources(conf, *, check_output=True, execution_options=None, resources=None,
+                    progress=None):
     """Discover times first; scientifically validate only the selected records."""
     if getattr(conf, "schema_version", None) == 3:
         return _prepare_v3_sources(conf, check_output=check_output,
-                                   execution_options=execution_options, resources=resources)
+                                   execution_options=execution_options, resources=resources,
+                                   progress=progress)
     from frameit.core.preflight import polar_sampling_plan, preflight
 
     preceding = conf.time_alignment == "preceding_hour"
@@ -684,11 +686,22 @@ def prepare_sources(conf, *, check_output=True, execution_options=None, resource
     return plan, children, plans
 
 
-def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, resources=None):
-    """Independent metadata inventories; associations and payloads belong to later tasks."""
-    from frameit.core.configuration import _fa_runtime_options, _source_runtime, resolved_sources
-    from frameit.core.preflight import _required_dependencies, inventory_source
+def _source_child(conf, name) -> SimulationConfig:
+    from frameit.core.configuration import _fa_runtime_options, _source_runtime
     from frameit.io.loader import _apply_model_presets
+
+    runtime = _source_runtime(conf, name)
+    if not runtime["file_type"] and "profile" in conf.sources[name]:
+        runtime["file_type"] = "fa"
+        runtime["fa_options"] = _fa_runtime_options(conf.sources[name])
+    return SimulationConfig(**_apply_model_presets(runtime))
+
+
+def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, resources=None,
+                        progress=None):
+    """Independent metadata inventories; associations and payloads belong to later tasks."""
+    from frameit.core.configuration import resolved_sources
+    from frameit.core.preflight import _required_dependencies, inventory_source
 
     request_plan = conf.simulation_parameter["request_plan"]
     request_plan["warnings"] = []
@@ -697,13 +710,9 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
     deferred = []
     for name in conf.sources:
         try:
-            runtime = _source_runtime(conf, name)
-            if not runtime["file_type"] and "profile" in conf.sources[name]:
-                runtime["file_type"] = "fa"
-                runtime["fa_options"] = _fa_runtime_options(conf.sources[name])
-            child = SimulationConfig(**_apply_model_presets(runtime))
+            child = _source_child(conf, name)
             children[name] = child
-            source = inventory_source(child, name, resources=resources)
+            source = inventory_source(child, name, resources=resources, progress=progress)
             physical = source["physical_type"]
             if physical in types:
                 errors.append(Diagnostic(
@@ -810,7 +819,8 @@ def _select_times(tree, times):
     return {key: _select_times(value, times) for key, value in tree.items()}
 
 
-def bind_sources(conf, *, check_output=True, execution_options=None, resources=None):
+def bind_sources(conf, *, check_output=True, execution_options=None, resources=None,
+                 progress=None):
     """Prepare actual consumers once, then copy their bound snapshots to the parent."""
     from frameit.core.preflight import (
         _publish_source_binding,
@@ -829,7 +839,7 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
     try:
         report, children, plans = prepare_sources(
             conf, check_output=check_output,
-            execution_options=execution_options, resources=resources)
+            execution_options=execution_options, resources=resources, progress=progress)
     except PreflightError as exc:
         if not hasattr(exc, "_binding_inputs"):
             raise
@@ -861,6 +871,8 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                     f"sources.{name}.binding", prerequisites,
                     "Source binding requires its selected method dependencies."))
                 continue
+            if progress is not None:
+                progress("binding", name, None, None)
             try:
                 binding = bindings[name] = bind_source(
                     child, name, resources=resources, layout_for=layout_for)
@@ -909,6 +921,8 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                 "plan", [error.path for error in errors],
                 "Product geometry, layouts and execution require successful source bindings."),
                 *deferred])
+        if progress is not None:
+            progress("plan", None, None, None)
         participants = {name: child for name, child in children.items()
                         if "polar" in bindings[name]["products"]}
         if conf.polar_shared_target and participants:

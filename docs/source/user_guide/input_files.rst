@@ -47,6 +47,57 @@ If a downstream tool needs this attribute, use a ``field_metadata`` declaration
 based on the producer's field definition. See :doc:`configuration_file` for the
 interpolation defaults and :doc:`fa_inputs` for native FA input declarations.
 
+.. _inspect-sample:
+
+Explore a sample in the terminal
+--------------------------------
+
+Run ``frameit inspect`` to open ``frameit.yaml`` in the current directory, or
+pass the path to a different YAML file. Field selections can be unfinished.
+The terminal explorer lists matching files but reads metadata from **one file
+per source**. It takes the first match in the declared path and glob order,
+with each glob sorted, after applying exclusions and removing file aliases.
+The Files tab names the sample and marks the other matches as not inspected.
+If the sample cannot be read, the explorer shows the error without trying
+another file.
+
+* Use ``1`` for sources, ``2`` for the field table and ``4`` for source
+  information. Open a field with Enter or ``3``; Esc returns to the table.
+  Field details show the full native group label and available selector.
+  **Technical field metadata** keeps full identifiers and attributes.
+  The Files tab shows basenames; expand **Exact file locations** for full
+  paths. Press ``d`` for Diagnostics and ``?`` for shortcuts.
+* When Sources is beside the field table, press ``b`` to hide or show it.
+  ``1`` opens Sources even if the sidebar is closed.
+* Use ``/`` to search fields by name, units or native group. Press Enter or
+  Esc to return to the table. Use ``s`` to change the sort and ``f`` to filter
+  by request status. A field can be present without being requested.
+* Use ``c`` to send an available YAML selector to the terminal clipboard, or
+  ``p`` to send the configuration path. Paste to verify delivery, then put
+  the selector under the shown source's ``variables`` without dropping your
+  other selections. If clipboard access is blocked, copy the visible YAML.
+* Use ``a`` to add or remove an offered selector in a draft for the current
+  source. Press ``v`` to review and copy the combined YAML. The draft does
+  not edit the configuration. If a refreshed sample no longer supports an
+  entry, review it separately; FrameIt excludes it from the copied draft.
+  Check the combined request with ``frameit validate`` before processing.
+* Press ``r`` to reread saved edits. The previous sample remains visible and
+  labelled while the check runs. If it is marked stale, refresh it before
+  using its selectors. ``Ctrl+C`` requests cancellation; a native read may
+  need to finish first. Press ``q`` to quit when idle. The explorer never
+  edits the YAML or writes products.
+
+Use Page Up and Page Down for long detail panels. To reduce motion or avoid
+the Braille mark in a terminal that cannot display it, see
+:ref:`terminal motion settings <terminal-motion>`.
+
+**Not seen in sample** does not mean missing from the source. The file's
+observed timestamps and cycles are separate from the YAML's requested time
+window. Use ``frameit inspect frameit.yaml --cli`` for the full text report
+or ``--json`` for the full structured report. Redirected commands also use
+the full inventory. To export or revisit a sample, see
+:ref:`saving terminal reports <terminal-report-archives>`.
+
 File inventory and ambiguity
 -----------------------------
 
@@ -86,9 +137,10 @@ destination axis's formula, not just the input axis's formula. A method that
 needs physical height requires valid altitude on its working grid or a complete
 supported formula.
 
-A matched file is skipped only when metadata proves that it supplies no requested
-field or required dependency. The reason is reported. An unreadable matched file
-fails; it is not treated as irrelevant. Calculation inputs must come from the
+A matched file is skipped by the full inventory only when metadata proves it
+supplies no requested field or required dependency. The reason is reported.
+An unreadable matched file fails; it is not treated as irrelevant.
+Calculation inputs must come from the
 selected inventory after exclusions, not another format or neighbouring stream.
 
 Source data are read-only. GRIB indexes belong in the run's ``cache/``, not

@@ -236,6 +236,186 @@ def test_inspection_without_a_clock_retains_observed_fields_not_phantom_times(tm
     assert any("clock" in check["message"] for check in report["deferred_checks"])
 
 
+def _observe_sample_opens(monkeypatch):
+    opened = set()
+    open_path = Path.open
+    open_netcdf = preflight.DatasetResources.open_netcdf
+
+    def sniff(path, *args, **kwargs):
+        if path.suffix == ".nc":
+            opened.add(path)
+        return open_path(path, *args, **kwargs)
+
+    def read(resources, path, **kwargs):
+        opened.add(Path(path))
+        return open_netcdf(resources, path, **kwargs)
+
+    monkeypatch.setattr(Path, "open", sniff)
+    monkeypatch.setattr(preflight.DatasetResources, "open_netcdf", read)
+    return opened
+
+
+def test_sample_inspection_opens_one_file_per_source(tmp_path, monkeypatch):
+    names = ("temperature", "product_only", "u", "v")
+    atmosphere = tmp_path / "b-01.nc"
+    ocean = tmp_path / "o-01.nc"
+    v3_scene(names=names, hours=(0, 1)).to_netcdf(atmosphere, engine="h5netcdf")
+    (tmp_path / "a-alias.nc").hardlink_to(atmosphere)
+    (tmp_path / "b-00.nc").touch()
+    v3_scene(names=(*names, "later_only"), hours=(3,)).to_netcdf(
+        tmp_path / "b-02.nc", engine="h5netcdf")
+    water = v3_scene(names=("sea",), model="NEMO").rename(time="time_counter")
+    water = water.drop_vars(["latitude", "longitude"]).assign_coords(
+        nav_lat=(("y", "x"), np.broadcast_to([[-20.], [-19.99]], (2, 3)),
+                 {"units": "degrees_north", "standard_name": "latitude"}),
+        nav_lon=(("y", "x"), np.broadcast_to([[60., 60.01, 60.02]], (2, 3)),
+                 {"units": "degrees_east", "standard_name": "longitude"}))
+    water.to_netcdf(ocean, engine="h5netcdf")
+    (tmp_path / "o-02.nc").touch()
+    cfg = request(tmp_path, {
+        "atmosphere": {
+            "files": ["b-*.nc", "a-*.nc"], "exclude": ["b-00.nc"],
+            "time": {"values": ["2026-01-01T02:00:00+01:00", "2026-01-01T03:00:00"]},
+            "variables": {"2d": ["temperature", "later_only"]},
+            "field_metadata": {"temperature": {"units": "Pa"}},
+            "derived": {"speed": {"method": "wind_speed", "inputs": {"u": "u", "v": "v"}}},
+        },
+        "ocean": {"files": "o-*.nc"},
+    })
+    cfg["products"] = {"model_grid": {"fields": {"atmosphere": ["product_only", "speed"]}}}
+    path = tmp_path / "request.yaml"
+    path.write_text(yaml.safe_dump(cfg))
+    original = {file: file.read_bytes() for file in tmp_path.iterdir()}
+    guard_netcdf_payloads(monkeypatch, {*names, "later_only", "sea"})
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Sample inspection entered archive planning or binding")
+
+    for function in ("bind_sources", "prepare_sources", "_prepare_v3_regions"):
+        monkeypatch.setattr(f"frameit.core.coupled.{function}", forbidden)
+
+    progress = []
+    with monkeypatch.context() as scoped:
+        opened = _observe_sample_opens(scoped)
+        report = project(collect(path, command="inspect", sample_only=True,
+                                 progress=lambda *event: progress.append(event)))
+        assert opened == {atmosphere, ocean}
+    assert not report["errors"]
+    sources = report["data"]["plan"]["sources"]
+    source = sources["atmosphere"]
+    for name, chosen in (("atmosphere", atmosphere), ("ocean", ocean)):
+        assert sources[name]["sample"] == {"path": str(chosen), "discovered": 2, "inspected": 1}
+        assert [e["status"] for e in sources[name]["file_inventory"]] == [
+            "inspected", "not_inspected"]
+        assert [e[2:] for e in progress if e[:2] == ("metadata", name) and e[2] is not None] == [
+            (0, 1), (1, 1)]
+    assert source["file_inventory"][0]["aliases"] == [str(tmp_path / "a-alias.nc")]
+    assert source["excluded_files"] == [str(tmp_path / "b-00.nc")]
+    assert source["missing_references"] == ["later_only"]
+    assert {r["time"][:19] for r in source["record_inventory"]} == {
+        "2026-01-01T00:00:00", "2026-01-01T01:00:00"}
+    note, = source["time_notes"]
+    assert note["status"] == "not_seen" and "03:00:00" in note["subject"]
+    by_name = {f["name"]: identity for identity, f in source["fields"].items()}
+    assert source["request_status"][by_name["temperature"]] == "requested"
+    assert source["request_status"][by_name["product_only"]] == "requested"
+    assert source["request_status"][by_name["u"]] == "not_requested"
+    assert source["fields"][by_name["temperature"]]["attributes"]["units"] == "K"
+    assert source["declaration"]["field_metadata"]["temperature"]["units"] == "Pa"
+    assert {file: file.read_bytes() for file in tmp_path.iterdir()} == original
+
+
+@pytest.mark.parametrize(("failure", "code"), [
+    ("yaml", "E1102"), ("sample", "E1202"), ("discovery", "E1201"),
+])
+def test_sample_inspection_retains_independent_sources(tmp_path, monkeypatch, failure, code):
+    broken = tmp_path / "broken.nc"
+    fallback = tmp_path / "fallback.nc"
+    good = tmp_path / "good.nc"
+    broken.touch()
+    for file in (fallback, good):
+        v3_scene(hours=(0,)).to_netcdf(file, engine="h5netcdf")
+    document = tmp_path / "request.yaml"
+    first = "missing-*.nc" if failure == "discovery" else broken.name
+    document.write_text("sources: [\n" if failure == "yaml" else yaml.safe_dump(request(
+        tmp_path, {"broken": {"files": [first, fallback.name]}, "good": {"files": good.name}})))
+    opened = _observe_sample_opens(monkeypatch)
+    report = project(collect(document, command="inspect", sample_only=True))
+    error, = report["errors"]
+    assert error["code"] == code
+    sources = report["data"]["plan"].get("sources", {})
+    if failure == "yaml":
+        assert not opened and not sources
+        return
+    assert sources["good"]["fields"]
+    assert not sources["broken"]["fields"]
+    assert sources["broken"]["sample"]["inspected"] == 0
+    assert opened == ({good, broken} if failure == "sample" else {good})
+    entries = sources["broken"]["file_inventory"]
+    assert entries[-1]["status"] == "not_inspected"
+    if failure == "sample":
+        assert entries[0]["status"] == "sample_failed"
+        assert sources["broken"]["sample"]["path"] == str(broken)
+        assert error["contexts"][-1]["file"] == str(broken)
+    else:
+        assert sources["broken"]["sample"]["path"] is None
+        assert sources["broken"]["sample"]["discovered"] is None
+
+
+def test_sample_inspection_without_clock(tmp_path):
+    v3_scene().isel(time=0, drop=True).to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
+    raw = request(tmp_path, {"weather": {
+        "files": "input.nc", "variables": {"2d": ["temperature"]},
+        "time": {"start": "2026-01-01T00:00:00"},
+    }})
+    path = tmp_path / "request.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    report = project(collect(path, command="inspect", sample_only=True))
+    assert not report["errors"]
+    source = report["data"]["plan"]["sources"]["weather"]
+    assert source["record_inventory"] == []
+    identity, = source["fields"]
+    assert source["request_status"][identity] == "requested"
+    assert source["available_selectors"] == [{
+        "field": "temperature", "field_id": identity, "variables": {"2d": ["temperature"]}}]
+    assert [note["status"] for note in source["time_notes"]] == ["not_reported"]
+
+
+def test_sample_inspection_omits_selector_redirected_by_a_declared_group(tmp_path):
+    ds = v3_scene(names=("level.u",), hours=(0,))
+    ds["u"] = (("time", "level", "y", "x"), np.ones((1, 2, 2, 3)), {"units": "m s-1"})
+    ds = ds.assign_coords(level=("level", [200., 400.], {"axis": "Z", "units": "m"}))
+    ds.to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
+    raw = request(tmp_path, {"weather": {
+        "files": str(tmp_path / "input.nc"), "variables": {"3d": {"level": {"names": ["u"]}}},
+    }})
+    report = project(collect(raw, command="inspect", sample_only=True))
+    assert not report["errors"]
+    source = report["data"]["plan"]["sources"]["weather"]
+    assert {field["name"] for field in source["fields"].values()} == {"level.u", "u"}
+    assert [entry["field"] for entry in source["available_selectors"]] == ["u"]
+    assert any("level.u" in item["message"] and "group" in item["message"]
+               for item in report["deferred_checks"])
+
+
+def test_sample_inspection_keeps_exclusions_after_discovery_error(tmp_path, monkeypatch):
+    for file in ("excluded.nc", "eligible.nc"):
+        (tmp_path / file).touch()
+    raw = request(tmp_path, {"weather": {
+        "files": [str(tmp_path / f) for f in ("excluded.nc", "eligible.nc", "absent.nc")],
+        "exclude": [str(tmp_path / "excluded.nc")],
+    }})
+    opened = _observe_sample_opens(monkeypatch)
+    report = project(collect(raw, command="inspect", sample_only=True))
+    assert not opened
+    error, = report["errors"]
+    assert error["code"] == "E1201" and "absent.nc" in error["message"]
+    source = report["data"]["plan"]["sources"]["weather"]
+    assert source["excluded_files"] == [str(tmp_path / "excluded.nc")]
+    entry, = source["file_inventory"]
+    assert entry["path"] == str(tmp_path / "eligible.nc") and entry["status"] == "not_inspected"
+
+
 def test_ambiguous_inspection_never_offers_unsupported_qualified_selectors(tmp_path):
     v3_scene().to_netcdf(tmp_path / "one.nc", engine="h5netcdf")
     v3_scene().assign_coords(x=[4., 5., 6.]).to_netcdf(
@@ -577,6 +757,49 @@ def test_existing_planning_handlers_share_one_preflight_and_projection(
     assert [facts["sources"]["weather"]["selected_times"] for facts in calls] == [
         list(v3_scene().time.values),
     ] * 3
+
+
+@pytest.mark.parametrize("broken", [False, True])
+def test_validation_progress_leaves_report_unchanged(tmp_path, monkeypatch, broken):
+    from frameit.cli import _collect_report
+
+    files = []
+    for hour in range(3):
+        path = tmp_path / f"hour-{hour}.nc"
+        files.append(str(path))
+        if broken and hour == 1:
+            path.write_bytes(b"not a dataset")
+        else:
+            v3_scene(hours=(hour,)).to_netcdf(path, engine="h5netcdf")
+    document = tmp_path / "request.yaml"
+    document.write_text(yaml.safe_dump(request(tmp_path, {
+        "weather": {"files": files, "variables": {"2d": ["temperature"]}},
+    })))
+    guard_netcdf_payloads(monkeypatch, {"temperature"})
+    events = []
+
+    def observe(*event):
+        events.append(event)
+
+    plain = project(_collect_report(document, command="validate"))
+    observed = project(_collect_report(document, command="validate", progress=observe))
+    assert observed == plain
+    stages = [stage for stage, *_ in events]
+    assert stages[0] == "configuration"
+    assert [event for event in events if event[2] is not None] == [
+        ("metadata", "weather", i, 3) for i in range(4)
+    ]
+    if broken:
+        assert observed["status"] == "error" and "plan" not in stages
+    else:
+        assert observed["status"] == "ok"
+        assert stages.index("metadata") < stages.index("binding") < stages.index("plan")
+    assert not (tmp_path / "output").exists()
+
+    events.clear()
+    schema = _collect_report(document, command="validate", schema_only=True, progress=observe)
+    assert project(schema)["status"] == "ok"
+    assert events == [("configuration", None, None, None)]
 
 
 def test_independent_null_source_and_invalid_source_are_both_reported(tmp_path):

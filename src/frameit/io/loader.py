@@ -164,6 +164,14 @@ def input_path_excluded(path, config):
 
 def inventory_source_files(source):
     """Expand only declared v3 paths; identity is device/inode, not file contents."""
+    entries, excluded, overlaps, failure = _discover_source_files(source)
+    if failure is not None:
+        raise failure
+    return entries, excluded, overlaps
+
+
+def _discover_source_files(source):
+    """Keep discovery evidence even if another declared path fails."""
     import fnmatch
     import glob
 
@@ -206,13 +214,11 @@ def inventory_source_files(source):
                                       "mtime_ns": stat.st_mtime_ns}}
                 identities[identity] = entry
                 entries.append(entry)
-    if errors:
-        raise tag_error(ValueError("\n".join(message for _, message in errors)), errors[0][0])
-    if not entries:
-        raise tag_error(
-            ValueError("No selected input files remain after sources.*.exclude"), "E1201"
-        )
-    return entries, excluded, overlaps
+    if not entries and not errors:
+        errors.append(("E1201", "No selected input files remain after sources.*.exclude"))
+    failure = (tag_error(ValueError("\n".join(message for _, message in errors)), errors[0][0])
+               if errors else None)
+    return entries, excluded, overlaps, failure
 
 
 def _load_yaml(p: Path) -> dict[str, Any]:

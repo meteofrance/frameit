@@ -38,6 +38,7 @@ _sanitize_sys_path_user_site()
 import argparse  # noqa: E402
 import logging  # noqa: E402
 import platform  # noqa: E402
+from functools import partial  # noqa: E402
 from typing import Any  # noqa: E402
 
 from frameit.utils.diagnostics import (  # noqa: E402
@@ -163,13 +164,16 @@ def _build_parser() -> argparse.ArgumentParser:
     pv = sub.add_parser("validate", allow_abbrev=False,
                         help="Check YAML, selected metadata, dependencies and the processing plan.")
     pv.add_argument(
-        "config", nargs="?", default=Path("frameit.yaml"), type=Path,
+        "config", nargs="?", type=Path,
         help="YAML file (default: frameit.yaml)",
     )
     pv.add_argument(
         "--schema-only", action="store_true", help="Validate YAML without opening datasets"
     )
     pv.add_argument("--json", action="store_true", help="Emit one structured validation report")
+    pv.add_argument("--cli", action="store_true", help="Use the text report instead of the TUI")
+    pv.add_argument("--saved-report", type=Path,
+                    help="Open an existing validation JSON report without rechecking inputs")
     _operational_arguments(pv)
 
     from frameit.core.configuration import TEMPLATES
@@ -202,8 +206,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     pins = sub.add_parser("inspect", allow_abbrev=False,
                           help="Inspect sources in a YAML request, including unfinished selections")
-    pins.add_argument("config", type=Path, help="The same YAML used by validate and run")
+    pins.add_argument(
+        "config", nargs="?", type=Path,
+        help="YAML file (default: frameit.yaml)",
+    )
     pins.add_argument("--json", action="store_true", help="Emit one structured metadata report")
+    pins.add_argument("--cli", action="store_true",
+                      help="Use the full text report instead of the TUI")
+    pins.add_argument("--saved-report", type=Path,
+                      help="Open an existing inspection JSON report without checking inputs")
 
     capabilities_parser = sub.add_parser(
         "capabilities", allow_abbrev=False,
@@ -319,7 +330,7 @@ def _load_config(path, overrides):
         return SimulationConfig(**_apply_model_presets(runtime, strict_locked=True))
 
 
-def _report_failure(exc, command):
+def _report_failure(exc, command, *, sample_only=False):
     from frameit.core.reports import (
         PreflightResult,
         blocked_check,
@@ -329,34 +340,86 @@ def _report_failure(exc, command):
     errors = exception_diagnostics(
         exc, path="configuration", expected="valid v3 configuration",
         observed={"cause": str(exc)}, repairs=[f"Correct the reported prerequisite: {exc}"])
-    return PreflightResult(command, errors=errors, deferred_checks=[blocked_check(
+    deferred = [] if sample_only else [blocked_check(
         "plan", [error.path for error in errors],
-        "Dependent planning and execution are blocked until these errors are repaired.")])
+        "Dependent planning and execution are blocked until these errors are repaired.")]
+    return PreflightResult(command, errors=errors, deferred_checks=deferred)
 
 
-def _collect_report(path, *, command, schema_only=False, overrides=None):
+def _collect_report(path, *, command, schema_only=False, overrides=None, progress=None,
+                    sample_only: bool = False):
+    if progress is not None:
+        progress("configuration", None, None, None)
     try:
         from yaml import YAMLError
 
         from frameit.core.preflight import collect_preflight
         from frameit.utils.logging import frameit_logging_scope
     except ImportError as exc:
-        return _report_failure(tag_error(exc, "E1001"), command)
+        return _report_failure(tag_error(exc, "E1001"), command, sample_only=sample_only)
 
     try:
         request = _load_config(path, overrides or {})
         with frameit_logging_scope(None, level=request.log_level):
             for handler in logging.getLogger("frameit").handlers:
                 handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-            return collect_preflight(request, command=command, schema_only=schema_only)
+            return collect_preflight(
+                request, command=command, schema_only=schema_only, progress=progress,
+                sample_only=sample_only)
     except (OSError, ValueError, ImportError, YAMLError) as exc:
-        return _report_failure(exc, command)
+        return _report_failure(exc, command, sample_only=sample_only)
 
 
-def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False, overrides=None) -> int:
-    return _print_preflight(_collect_report(
-        cfg_path, command="validate", schema_only=schema_only, overrides=overrides),
-        json_output=json_output)
+def _run_report_app(build_app, *, cli_output: bool, json_output: bool, live=False) -> int | None:
+    if (cli_output or json_output or os.environ.get("TERM") in (None, "", "dumb")
+            or not all(stream.isatty() for stream in (sys.stdin, sys.stdout, sys.stderr))):
+        return None
+    try:
+        app = build_app()
+    except ModuleNotFoundError as exc:
+        if exc.name != "textual":
+            raise
+        return None
+
+    import signal
+
+    signals = [signal.SIGTERM]
+    hangup = getattr(signal, "SIGHUP", None)
+    if live and hangup is not None and signal.getsignal(hangup) != signal.SIG_IGN:
+        signals.append(hangup)
+
+    def quit_report(signum, frame):
+        if signum == hangup:
+            lost_outputs = [fd for fd in (1, 2) if not os.isatty(fd)]
+            if lost_outputs:
+                # A closed PTY cannot accept Textual's final writes or Python's flush.
+                with open(os.devnull, "w") as sink:
+                    for fd in lost_outputs:
+                        os.dup2(sink.fileno(), fd)
+        app.exit(128 + signum)
+
+    previous = {sig: signal.signal(sig, quit_report) for sig in signals}
+    try:
+        code = app.run()
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+    return 1 if code is None else code
+
+
+def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False, cli_output=False,
+                  overrides=None) -> int:
+    collect = partial(_collect_report, cfg_path, command="validate", schema_only=schema_only,
+                      overrides=overrides)
+
+    def build_app():
+        from frameit.validate_tui import ValidationApp
+
+        return ValidationApp(cfg_path, collect, schema_only=schema_only, overrides=overrides,
+                             isolate=True)
+
+    code = _run_report_app(build_app, cli_output=cli_output, json_output=json_output, live=True)
+    return _print_preflight(collect(), json_output=json_output) if code is None else code
 
 
 def _print_preflight(result, *, json_output=False):
@@ -364,6 +427,40 @@ def _print_preflight(result, *, json_output=False):
 
     print(serialize_report(result) if json_output else render_report(result))
     return int(bool(result.errors))
+
+
+def _cmd_saved_report(args):
+    from frameit.core.reports import load_saved_report, render_projection, serialize_projection
+
+    if (args.config is not None or getattr(args, "schema_only", False)
+            or (args.command == "validate" and _operational_overrides(args))):
+        print("Use --saved-report without a YAML request or live check options.", file=sys.stderr)
+        return 1
+    path = args.saved_report
+    try:
+        report = load_saved_report(path, args.command)
+    except (OSError, ValueError) as exc:
+        print(f"Cannot open saved report: {exc}", file=sys.stderr)
+        return 1
+
+    def build_app():
+        if args.command == "inspect":
+            from frameit.inspect_tui import InspectionApp
+
+            return InspectionApp(path, None, saved_report=report)
+        from frameit.validate_tui import ValidationApp
+
+        return ValidationApp(path, None, saved_report=report)
+
+    code = _run_report_app(build_app, cli_output=args.cli, json_output=args.json)
+    if code is not None:
+        return code
+    if args.json:
+        print(serialize_projection(report))
+    else:
+        print("Saved report (recorded checks only)\n" + render_projection(report).replace(
+            "\r\n", "\n"))
+    return int(bool(report["errors"]))
 
 
 def _cmd_info(short: bool) -> int:
@@ -505,7 +602,19 @@ def _cmd_config(args):
 
 
 def _cmd_inspect(args):
-    return _print_preflight(_collect_report(args.config, command="inspect"), json_output=args.json)
+    config = args.config or Path("frameit.yaml")
+
+    def build_app():
+        from frameit.inspect_tui import InspectionApp
+
+        return InspectionApp(config, partial(
+            _collect_report, config, command="inspect", sample_only=True), isolate=True)
+
+    code = _run_report_app(build_app, cli_output=args.cli, json_output=args.json, live=True)
+    if code is None:
+        return _print_preflight(
+            _collect_report(config, command="inspect"), json_output=args.json)
+    return code
 
 
 def _cmd_prepare_ci_dataset(args: argparse.Namespace) -> int:
@@ -584,12 +693,15 @@ def main(argv: list[str] | None = None) -> None:
                         format="%(levelname)s:%(name)s:%(message)s")
 
     try:
-        if args.command == "run":
+        if getattr(args, "saved_report", None) is not None:
+            code = _cmd_saved_report(args)
+        elif args.command == "run":
             code = _cmd_run(args)
         elif args.command == "validate":
             code = _cmd_validate(
-                args.config, schema_only=args.schema_only, json_output=args.json,
-                overrides=_operational_overrides(args))
+                args.config or Path("frameit.yaml"), schema_only=args.schema_only,
+                json_output=args.json,
+                cli_output=args.cli, overrides=_operational_overrides(args))
         elif args.command == "init":
             from frameit.core.configuration import write_template
 

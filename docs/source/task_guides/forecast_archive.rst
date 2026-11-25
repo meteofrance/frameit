@@ -41,7 +41,7 @@ Use the original request. Its ``cycle`` selects the forecast started at
 
 .. code-block:: bash
 
-   frameit inspect forecast-archive.yaml
+   frameit inspect forecast-archive.yaml --cli
    frameit validate forecast-archive.yaml
    frameit config show forecast-archive.yaml --effective
 

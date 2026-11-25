@@ -59,8 +59,101 @@ Errors identify keys/files, YAML locations, expected/observed facts and possible
 repairs. Each error has a ``code`` and a ``help`` path relative to the docs for
 that FrameIt version. Warnings remain strings and start with a code in brackets.
 Find a code in :doc:`../troubleshooting/codes`.
-Blocked checks are not passes. Successful validation does not establish
-scientific validity. See :doc:`../troubleshooting`.
+For failed or blocked checks, see :doc:`../troubleshooting`.
+
+Terminal view
+~~~~~~~~~~~~~
+
+The terminal view is installed with FrameIt:
+
+.. code-block:: bash
+
+   frameit validate frameit.yaml
+
+In an interactive terminal, validation opens **Overview**, **Findings**, and
+**Details**. Press ``1``, ``2``, or ``3`` to switch tabs. After saving edits in
+another terminal, press ``r`` to recheck the same file. The activity screen
+returns while the new check runs. Cancelling a recheck restores the previous
+report, not a result for the edited file. If you cancel the first check, use
+``r`` to retry. Press ``q`` to quit when idle. Quitting after a cancelled check
+returns status 130 unless another check produces a new report. Press ``?`` for
+shortcuts or ``p`` to send the configuration path to the terminal clipboard.
+Paste to verify delivery.
+
+The logo shows that a check is active. The progress bar counts files checked
+in the current source, not overall validation progress. Some stages have no
+known total. The ETA estimates only the current source's metadata scan.
+``Ctrl+C`` requests cancellation. A native
+read may need to finish before cancellation takes effect.
+
+**Overview** summarizes the checked inputs, selection, time, region and planned
+outputs. It shows the run command when input checks pass and the first fix
+when validation fails. Preflight checks metadata and can check required
+static support, such as an ocean mask. Other value and mask checks are
+deferred to execution.
+
+In **Findings**, press Enter to open the selected finding and Esc to return to
+the list. The problem and any reported repair appear before **Technical
+evidence**, where the original message, full paths and evidence remain
+available. Press ``y`` in a finding to copy its evidence. Warnings logged
+while reading metadata appear here too. Press ``n`` to filter to field
+discovery notes when available. Items under **During run** are not counted
+as validation issues. On a wide terminal, press ``b`` to hide or show the list.
+
+For a live validation error, press ``e`` to open the active YAML in the editor
+set by ``VISUAL`` or ``EDITOR``. Some editors accept the reported line number;
+otherwise FrameIt opens the file normally. Press ``l`` to copy the recorded
+location when available. It may point to an enclosing key or become stale after
+edits. Returning from the editor does not recheck the file. Save your edits,
+return to FrameIt and press ``r``.
+
+In **Details**, press ``Tab`` to focus a section and ``Enter`` to expand or
+collapse it. Use Page Up and Page Down for long panels, and left and right
+arrows for long lines. The title of the expanded section stays visible above
+its contents as you scroll. Click that title to collapse the section. The
+processing plan lists reported products by source. Move through the table
+to see the selected product's fields, full destination and layout. These
+are planned products, not completed publications. Output paths from a
+failed check are unconfirmed. Expand **Raw report** for the original facts.
+
+Press ``g`` where **Related** is offered to follow recorded prerequisites,
+settings, sources or bound fields. Esc returns to the previous item.
+After revalidation, press ``u`` to compare with the last completed check.
+A finding that is no longer reported was not necessarily resolved; some checks
+may not have run. Cancelled checks do not become comparison baselines.
+
+.. _terminal-report-archives:
+
+In either terminal report, press ``w`` and enter a new path to export the
+completed report as JSON. Existing files are not replaced. The export contains
+metadata and may include private paths and configuration values. Reopen the
+archive with the command that produced it, for example:
+
+.. code-block:: bash
+
+   frameit validate --saved-report validated.json
+   frameit inspect --saved-report inspected.json
+
+Saved reports show recorded evidence without opening the original YAML or
+datasets. Do not pass a YAML path with ``--saved-report``. Refresh and editing
+are unavailable. Use a separate live command to check current inputs.
+
+Use ``frameit validate frameit.yaml --cli`` for the text report even in a
+terminal. ``--json`` writes one JSON report. Redirected commands do not open
+the terminal view.
+
+.. _terminal-motion:
+
+For less motion in Inspect or Validate, set ``TEXTUAL_ANIMATIONS=basic`` for
+a static activity mark and a non-animated sidebar. To disable animations and
+smooth scrolling, run for example:
+
+.. code-block:: bash
+
+   TEXTUAL_ANIMATIONS=none TEXTUAL_SMOOTH_SCROLL=0 frameit validate frameit.yaml
+
+If the terminal cannot display Braille, set ``NO_COLOR=1`` to use text
+activity feedback. These settings do not change the check or its report.
 
 Authored and effective views
 ----------------------------
@@ -81,7 +174,9 @@ sets, string keys, ``{"hex": "..."}`` for binary values and
 
 ``--effective`` adds metadata checks, resolved settings, origins, observed inputs,
 the plan and pending checks. Neither view rewrites the file. ``inspect`` accepts
-unfinished field selections and reports available selectors.
+unfinished field selections and reports available selectors. The
+:ref:`terminal explorer <inspect-sample>` samples one file per source;
+``inspect --cli`` and ``inspect --json`` report the full inventory.
 
 ``validate``, ``run`` and ``config show --effective`` accept
 ``--output-directory``, ``--cpus``, ``--overwrite`` or ``--no-overwrite``, and
@@ -413,8 +508,8 @@ A centre provider alone does not request an exported trajectory.
 
 Without a product ``fields`` map, field products use source ``variables`` and
 ``derived``. With a map, list exact input fields or defined derived results by
-source. An input field does not need to be repeated in ``variables``. Input-aware
-validation rejects missing or ambiguous fields. Use a qualified name to keep
+source. An input field does not need to be repeated in ``variables``. Validation
+with input files rejects missing or ambiguous fields. Use a qualified name to keep
 the levels declared for its group. A product-only dotted name fails if it
 matches both a literal input name and a qualified group field. Unlisted fields
 are not exported; required internal inputs can still be read.
@@ -428,7 +523,7 @@ Changing only the crop must not change polar sampling.
 See :doc:`../task_guides/polar_sampling` for a complete instructional request.
 
 Optional ``radial_step_km`` defaults to native source spacing and cannot be finer.
-Input-aware ``frameit validate`` rejects a smaller step and reports the minimum
+``frameit validate`` rejects a smaller step and reports the minimum
 for the selected files. Use at least that value, or omit the setting. Schema-only
 validation cannot determine it. A shared target uses the coarsest participating grid.
 ``azimuth_count`` is the only angular control. Omission chooses a count from

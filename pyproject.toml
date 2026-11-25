@@ -9,7 +9,7 @@ requires-python = ">=3.13,<3.14"
 description = "Focused Regional Analysis of Modeled Events with Integrated Tracking"
 dependencies = [
     "numpy", "scipy", "xarray", "dask[array]", "PyYAML", "pyproj",
-    "netCDF4", "h5netcdf", "h5py", "threadpoolctl>=3",
+    "netCDF4", "h5netcdf", "h5py", "threadpoolctl>=3", "textual>=8.2.8",
 ]
 readme = "README.md"
 license = "Apache-2.0"
