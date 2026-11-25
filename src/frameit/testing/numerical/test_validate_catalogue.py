@@ -1,4 +1,4 @@
-"""Reviewable catalogue advice, with no runtime substitution or new read path."""
+"""Qualified catalogue fallback without editing inputs or reading payloads in validation."""
 
 import json
 from pathlib import Path
@@ -83,9 +83,7 @@ def test_validated_lookup_resolves_required_units_without_a_yaml_declaration(
     assert field["native_identity"]["netcdf_group"] == ""
     assert field["status"] == "applied" and field["applied_values"] == {"units": "K"}
     assert 10546 in field["record_ids"] and field["evidence"]
-    assert field["repair"] == {"sources": {"atmosphere": {"field_metadata": {
-        "THT": {"units": "K"},
-    }}}}
+    assert "repair" not in field
     assert any("[W1306]" in warning and "units=K" in warning for warning in report["warnings"])
     assert report["data"]["origins"]["inputs.sources.atmosphere.field_metadata"]["THT"][
         "units"] == "catalogue"
@@ -101,12 +99,14 @@ def test_validated_lookup_resolves_required_units_without_a_yaml_declaration(
     with xr.open_dataset(run.products[0]["path"]) as output:
         assert output.THT.attrs["units"] == "K"
     provenance = yaml.safe_load((tmp_path / "out" / "run-provenance.yaml").read_text())
-    assert provenance["sources"]["atmosphere"]["metadata_catalogue"][0]["applied_values"] == {
-        "units": "K",
-    }
-    assert provenance["sources"]["atmosphere"]["metadata_catalogue"][0]["record_ids"] == {
-        "units": [10546],
-    }
+    entry, = provenance["sources"]["atmosphere"]["metadata_catalogue"]
+    assert entry["applied_values"] == {"units": "K"}
+    assert entry["record_ids"] == {"units": [10546]}
+    native, = entry["records"]
+    assert native["file_index"] == 0
+    assert provenance["binding"]["atmosphere"]["files"][native["file_index"]] == str(path)
+    assert native["native_identity"]["version"] == "6.0.0"
+    assert native["record_ids"] == {"units": [10546]}
     assert (path.read_bytes(), request.read_bytes()) == before
 
 
@@ -139,6 +139,18 @@ def test_source_conflict_retains_distinct_file_evidence_and_withholds_selector(t
     assert field["status"] == "conflict" and field["selector"] is None and "repair" not in field
 
 
+def test_equal_catalogue_values_do_not_override_mixed_producer_releases(tmp_path):
+    first, second = tmp_path / "first.nc", tmp_path / "second.nc"
+    _scene().isel(time=[0]).to_netcdf(first, engine="h5netcdf")
+    _scene(version="6.0.1").isel(time=[1]).to_netcdf(second, engine="h5netcdf")
+    report = project_report(collect_preflight(_request(tmp_path, paths=[str(first), str(second)])))
+    field, = _suggestions(report)
+    assert {r["native_identity"]["version"] for r in field["records"]} == {"6.0.0", "6.0.1"}
+    assert all(r["proposed_values"] == {"units": "K"} for r in field["records"])
+    assert report["errors"] and field["status"] == "conflict" and "applied_values" not in field
+    assert not any("[W1306]" in warning for warning in report["warnings"])
+
+
 def test_optional_labels_do_not_fail_validation_or_consult_unselected_fields(tmp_path):
     ds = _scene(units="K")
     ds.THT.attrs = {"units": "K"}
@@ -150,6 +162,25 @@ def test_optional_labels_do_not_fail_validation_or_consult_unselected_fields(tmp
     assert field["applied_values"] == {
         "long_name": "THT", "standard_name": "air_potential_temperature",
     }
+
+
+@pytest.mark.parametrize("explicit_basis", ["field", "dataset", "wind_pairs"])
+def test_catalogue_cf_name_cannot_label_earth_wind_as_grid_wind(tmp_path, explicit_basis):
+    ds = _scene(name="UT").rename(V="VT")
+    ds.UT.attrs = {"units": "m s-1", "long_name": "UT"}
+    doc = _request(tmp_path, name="UT", target=None)
+    if explicit_basis == "wind_pairs":
+        doc["sources"]["atmosphere"]["wind_pairs"] = [{"u": "UT", "v": "VT", "basis": "earth"}]
+    else:
+        (ds.UT if explicit_basis == "field" else ds).attrs["wind_reference_frame"] = "earth"
+    ds.to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
+
+    result = collect_preflight(doc)
+    assert not result.errors
+    field, = _suggestions(project_report(result))
+    assert "standard_name" not in field.get("applied_values", {})
+    assert any(reason["reason"] == "wind_basis_conflict" for reason in field["withheld"])
+    assert not any("[W1306]" in warning for warning in result.facts["warnings"])
 
 
 def test_catalogue_does_not_introduce_an_unrelated_native_export_failure(tmp_path):
@@ -204,6 +235,51 @@ def test_tracker_consumes_admitted_catalogue_pressure_units(tmp_path, monkeypatc
     assert not result.errors, result.errors
     field = next(row for row in _suggestions(project_report(result)) if row["field"] == "MSLP")
     assert field["applied_values"] == {"units": "hPa"}
+
+
+def test_pressure_centroid_does_not_block_units_for_an_independent_transform(tmp_path, monkeypatch):
+    from frameit.testing.numerical.test_pressure_centroid_mnh import native_vortex
+
+    ds, _ = native_vortex(n=7)
+    ds.attrs["MNH_VERSION"] = [6, 0, 0]
+    ds["THT"] = xr.full_like(ds.PABST, 300.).assign_attrs(
+        units="", long_name="THT", standard_name="air_potential_temperature")
+    ds.to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
+    doc = _request(tmp_path)
+    doc["sources"]["atmosphere"]["wind_pairs"] = [
+        {"u": "UT_ZM", "v": "VT_ZM", "basis": "earth"},
+        {"u": "UM10", "v": "VM10", "basis": "earth"},
+    ]
+    doc["region"] = {"tracker": {"method": "pressure_centroid"},
+                     "width_km": {"x": 100, "y": 100}}
+    doc["products"] = {"track": True, "model_grid": True}
+    guard_netcdf_payloads(monkeypatch, set(ds.data_vars) - {"latitude", "longitude"})
+    result = collect_preflight(doc)
+    assert not result.errors, result.errors
+    field = next(row for row in _suggestions(project_report(result)) if row["field"] == "THT")
+    assert field["applied_values"] == {"units": "K"}
+
+
+def test_catalogue_withholds_units_when_packed_range_blocks_conversion(tmp_path, monkeypatch):
+    from frameit.testing.numerical.test_v3_polar import scene as surface_scene
+
+    ds = surface_scene().rename(q="MSLP").assign_attrs(MNH_VERSION=[6, 0, 0])
+    ds.MSLP.attrs = {"long_name": "MSLP", "standard_name": "air_pressure_at_sea_level",
+                     "valid_range": [0, 1100]}
+    ds.to_netcdf(tmp_path / "input.nc", engine="h5netcdf", encoding={
+        "MSLP": {"dtype": "int16", "scale_factor": 0.1, "_FillValue": -32768},
+    })
+    doc = _request(tmp_path, name="MSLP", target="Pa")
+    doc["sources"]["atmosphere"]["variables"] = {"2d": ["MSLP"]}
+    guard_netcdf_payloads(monkeypatch, {"MSLP"})
+
+    report = project_report(collect_preflight(doc))
+    field, = _suggestions(report)
+    assert report["errors"] and not field.get("applied_values")
+    assert any(evidence["reason"] == "unit_admission"
+               and "packed validity/range metadata" in evidence["detail"]
+               for evidence in field["withheld"])
+    assert not any("[W1306]" in warning for warning in report["warnings"])
 
 
 def test_native_version_string_identifies_the_release(tmp_path):

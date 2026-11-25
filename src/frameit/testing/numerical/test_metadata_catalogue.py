@@ -5,6 +5,7 @@ import json
 import lzma
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from importlib.resources import files
 
 import pytest
@@ -72,9 +73,9 @@ def test_packaged_release_preserves_records_and_reuses_read_only_cache(
     assert list(tmp_path.rglob("*.sqlite3")) == [cache]
 
 
-def _mini_release(records, *, version=2, content=None, whole=None):
+def _mini_release(records, *, version=2, content=None, whole=None, kind="change"):
     body = b"".join(json.dumps(row).encode() + b"\n" for row in records)
-    counts = {"change": len(records)}
+    counts = {kind: len(records)}
     header = {
         "type": "catalogue", "format": "frameit.metadata.catalogue", "format_version": version,
         "catalogue_version": "0.2.0", "previous_version": "0.1.0", "cf_table_version": "95",
@@ -99,6 +100,35 @@ def _mini_release(records, *, version=2, content=None, whole=None):
             "content_sha256": header["content_sha256"],
         },
     }, compressed, "synthetic-test-manifest"
+
+
+@pytest.mark.parametrize("damage", [
+    """UPDATE records SET json=replace(json, '"K"', '"Pa"') WHERE id=7""",
+    "UPDATE records SET json='{}' WHERE id=7",
+    "UPDATE records SET name='other' WHERE id=7",
+    "DELETE FROM records WHERE id=7",
+])
+def test_query_rebuilds_a_structurally_valid_cache_with_changed_records(
+        tmp_path, monkeypatch, damage):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    field = {
+        "type": "field", "producer": "mesonh", "version": "6.0.0", "name": "THT",
+        "name_kind": "exact", "namespace": "native", "role": "field",
+        "introduced_in": "0.2.0", "source": {},
+        "completion": {"candidate": True, "identity": {}, "requires": {}, "withheld": {}},
+    }
+    first = {**field, "id": 7, "completion": {**field["completion"], "values": {"units": "K"}}}
+    second = {**field, "id": 4, "completion": {**field["completion"], "values": {}}}
+    release = _mini_release([first, second], kind="field")
+    monkeypatch.setattr(catalogue_module, "_load_release", lambda: release)
+    with catalogue_module.open_catalogue():
+        pass
+    cache, = tmp_path.rglob("*.sqlite3")
+    with closing(sqlite3.connect(cache)) as conn, conn:
+        conn.execute(damage)
+        assert conn.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+    with catalogue_module.open_catalogue() as index:
+        assert index.lookup("mesonh", "6.0.0", "THT", "native") == [second, first]
 
 
 @pytest.mark.parametrize(("rows", "options", "message"), [

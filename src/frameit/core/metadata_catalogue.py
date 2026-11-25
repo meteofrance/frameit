@@ -19,7 +19,7 @@ _MANIFEST_SHA256 = "63201541711c7c363f1b06865f6b552587aabd71029fb6fb5c978c11fb15
 _ARTIFACT = f"frameit_metadata_catalogue-{VERSION}.jsonl.xz"
 _FORMAT = "frameit.metadata.catalogue"
 _FORMAT_VERSION = 2
-_CACHE_SCHEMA = 1
+_CACHE_SCHEMA = 2
 COMPLETION_KEYS = ("units", "long_name", "standard_name")
 _TYPES = {
     "attribute", "cf_name", "change", "field", "metadata_key", "metadata_key_census",
@@ -27,6 +27,15 @@ _TYPES = {
 }
 _EXACT = ("SELECT id, json FROM records WHERE type = 'field' AND name_kind = 'exact'"
           " AND producer = ? AND version = ? AND name = ?")
+_RECORDS_DDL = (
+    "CREATE TABLE records (id INTEGER NOT NULL UNIQUE, type TEXT NOT NULL,"
+    " producer TEXT COLLATE BINARY, version TEXT COLLATE BINARY, name TEXT COLLATE BINARY,"
+    " name_kind TEXT, namespace TEXT COLLATE BINARY, json TEXT NOT NULL)"
+)
+_INDEX_DDL = (
+    "CREATE INDEX field_lookup ON records(producer, version, name, namespace)"
+    " WHERE type = 'field' AND name_kind = 'exact'"
+)
 
 
 class CatalogueError(ValueError):
@@ -155,14 +164,9 @@ def _write_cache(path, stream, first_line, manifest, cache_info):
             yield (*columns, text)
 
     with closing(sqlite3.connect(path)) as db, db:
-        db.executescript("""
-            CREATE TABLE cache_info (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
-            CREATE TABLE records (
-                id INTEGER PRIMARY KEY, type TEXT NOT NULL, producer TEXT COLLATE BINARY,
-                version TEXT COLLATE BINARY, name TEXT COLLATE BINARY, name_kind TEXT,
-                namespace TEXT COLLATE BINARY, json TEXT NOT NULL
-            );
-        """)
+        db.execute("CREATE TABLE cache_info (key TEXT PRIMARY KEY, value TEXT NOT NULL) "
+                   "WITHOUT ROWID")
+        db.execute(_RECORDS_DDL)
         db.executemany("INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?)", records())
         artifact = manifest["artifact"]
         if body.hexdigest() != artifact["content_sha256"]:
@@ -173,16 +177,26 @@ def _write_cache(path, stream, first_line, manifest, cache_info):
             raise CatalogueError("Catalogue uncompressed checksum or size mismatch")
         if counts != manifest["counts"] or counts.total() != manifest["body_records"]:
             raise CatalogueError("Catalogue row counts do not match the manifest")
-        db.execute("""
-            CREATE INDEX field_lookup ON records(producer, version, name, namespace)
-            WHERE type = 'field' AND name_kind = 'exact'
-        """)
+        db.execute(_INDEX_DDL)
         db.executemany("INSERT INTO cache_info VALUES (?, ?)", cache_info.items())
         if db.execute("PRAGMA integrity_check").fetchone() != ("ok",):
             raise CatalogueError("New catalogue index failed its integrity check")
 
 
-def _read_cache(path, cache_info):
+def _matches_contents(db, content_sha256):
+    body = hashlib.sha256()
+    # rowid preserves package order even when release-scoped IDs are not sorted.
+    for *columns, line in db.execute(
+        "SELECT id, type, producer, version, name, name_kind, namespace, CAST(json AS BLOB)"
+        " FROM records ORDER BY rowid"
+    ):
+        if _record_columns(_json(line)) != tuple(columns):
+            return False
+        body.update(line)
+    return body.hexdigest() == content_sha256
+
+
+def _read_cache(path, cache_info, content_sha256):
     if not path.is_file():
         return None
     db = None
@@ -190,12 +204,15 @@ def _read_cache(path, cache_info):
         db = sqlite3.connect(path.absolute().as_uri() + "?mode=ro", uri=True)
         db.execute("PRAGMA query_only=ON")
         db.execute("PRAGMA trusted_schema=OFF")
+        db.execute("BEGIN")  # Verify and query the same snapshot.
         if (dict(db.execute("SELECT key, value FROM cache_info")) == cache_info
-                and db.execute("PRAGMA quick_check").fetchone() == ("ok",)
-                and db.execute("SELECT name FROM sqlite_schema WHERE name='field_lookup' "
-                               "AND type='index'").fetchone()):
+                and dict(db.execute("SELECT name, sql FROM sqlite_schema "
+                                    "WHERE name IN ('records', 'field_lookup')"))
+                == {"records": _RECORDS_DDL, "field_lookup": _INDEX_DDL}
+                and db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+                and _matches_contents(db, content_sha256)):
             return db
-    except sqlite3.DatabaseError:
+    except (sqlite3.DatabaseError, ValueError):
         pass  # The only recovery is rebuilding from the verified packaged bytes.
     if db is not None:
         db.close()
@@ -216,8 +233,9 @@ def _open_index():
         cache_info = {"header": first_line.decode("utf-8"), "manifest_sha256": manifest_hash,
                       "schema": str(_CACHE_SCHEMA)}
         directory = _cache_directory()
-        path = directory / f"{header['content_sha256']}-v{_CACHE_SCHEMA}.sqlite3"
-        if db := _read_cache(path, cache_info):
+        content = header["content_sha256"]
+        path = directory / f"{content}-v{_CACHE_SCHEMA}.sqlite3"
+        if db := _read_cache(path, cache_info, content):
             return CatalogueIndex(db, header)
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(dir=directory, prefix=".building-", suffix=".sqlite3")
@@ -228,12 +246,12 @@ def _open_index():
             # Replace, never open or update a cache another validator is reading.
             temporary.replace(path)
         except (OSError, sqlite3.OperationalError):
-            if db := _read_cache(path, cache_info):
+            if db := _read_cache(path, cache_info, content):
                 return CatalogueIndex(db, header)
             raise
         finally:
             temporary.unlink(missing_ok=True)
-        if db := _read_cache(path, cache_info):
+        if db := _read_cache(path, cache_info, content):
             return CatalogueIndex(db, header)
         raise CatalogueError("Cannot reopen the built catalogue index")
 

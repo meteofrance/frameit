@@ -78,20 +78,24 @@ selector is not a NetCDF group path.
 Native metadata and consistent ``sources.<id>.field_metadata`` declarations
 take precedence. A :ref:`w1306` warning identifies each value FrameIt obtained
 from the catalogue. No YAML changes are needed for these values; ``frameit run``
-resolves them on its own. Input files, YAML and scientific values are not
-rewritten. Missing required attributes still fail when the evidence cannot
-resolve them. Check the producer records before adding a declaration or
-regenerating the input. An unlisted tracer or custom diagnostic is not an
-error by itself.
+resolves them on its own. Input files and YAML are not rewritten.
+
+FrameIt does not combine catalogue values for one field across different
+producer releases. It also withholds values that conflict with the input or
+that the selected operation cannot use. For example, a grid-relative CF name
+cannot label an Earth-relative wind. If the selected method requires native
+headers, correct those upstream. An unlisted tracer or custom diagnostic is
+not an error by itself.
 
 The installed offline catalogue is release 0.2.0.
 ``data.plan.metadata_catalogue`` records its content SHA-256, matched
 assertions, applied values, and missing or conflicting evidence. The catalogue
 covers the audited sources in its bundled manifest, not every configuration,
-writer, or runtime field. Its verified SQLite index is disposable and stored
-under ``$XDG_CACHE_HOME/frameit/metadata-catalogue`` (default
-``~/.cache/frameit/metadata-catalogue``). Schema-only validation does not
-open the catalogue or create that index.
+writer, or runtime field. FrameIt checks the SQLite index against the bundled
+release before using it and rebuilds a damaged index. The disposable index is
+stored under ``$XDG_CACHE_HOME/frameit/metadata-catalogue`` (default
+``~/.cache/frameit/metadata-catalogue``). Schema-only validation and inspection
+do not open the catalogue or create that index.
 
 If full validation can bind the workload, **Overview** and the text report
 show a RAM recommendation. In JSON, see ``data.plan.memory_estimate``.

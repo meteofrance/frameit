@@ -1212,14 +1212,25 @@ def run_native_sources(runner, *, benchmark=False):
             shared["verification"] = "exact_coordinates_at_associated_centres"
     catalogue = report.get("metadata_catalogue", {})
     applied_catalogue = {}
+    file_indexes = {name: {path: i for i, path in enumerate(source["files"])}
+                    for name, source in plans.items()}
     for item in catalogue.get("fields", ()):
         if values := item.get("applied_values"):
-            applied_catalogue.setdefault(item["source_id"], []).append({
-                "catalogue_version": catalogue["catalogue_version"],
-                "content_sha256": catalogue["content_sha256"],
-                "field": item["field"], "native_identity": item["native_identity"],
-                "applied_values": values, "record_ids": item["supporting_record_ids"],
-            })
+            name = item["source_id"]
+            indexes = file_indexes[name]
+            providers = [
+                {"file_index": indexes[record["file"]], "native_identity": record["native_identity"],
+                 "record_ids": {key: record["supporting_record_ids"][key] for key in values}}
+                for record in item.get("records", [item]) if record["file"] in indexes
+            ]
+            if providers:
+                applied_catalogue.setdefault(name, []).append({
+                    "catalogue_version": catalogue["catalogue_version"],
+                    "content_sha256": catalogue["content_sha256"],
+                    "field": item["field"], "native_identity": item["native_identity"],
+                    "applied_values": values, "record_ids": item["supporting_record_ids"],
+                    "records": providers,
+                })
     runner.conf.add_parameter("source_provenance", {
         name: {"model": source["model"], "format": source["format"],
                "fa_inputs": children[name].simulation_parameter.get("fa_inputs", []),

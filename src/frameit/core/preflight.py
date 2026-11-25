@@ -492,6 +492,7 @@ def _netcdf_inventory(path, source, resources, *, previous_grids=None, header_ob
 
             if name in SURFEX_FIELDS - {"FRAC_SEA"}:
                 field["dependencies"]["FRAC_SEA"] = "sea_support"
+        packing = {k: var.encoding[k] for k in ("scale_factor", "add_offset") if k in var.encoding}
         for sample in samples:
             indexers = {dim: index for dim, index in sample["indexers"].items() if dim in var.dims}
             records.append({
@@ -500,6 +501,7 @@ def _netcdf_inventory(path, source, resources, *, previous_grids=None, header_ob
                 "field_id": field_id, "name": name, "grid_id": grid_id, "level": None,
                 "stored_dtype": np.dtype(var.encoding.get("dtype", var.dtype)).name,
                 "decoded_dtype": var.dtype.name,
+                **({"packing": packing} if packing else {}),
                 "temporal_metadata": {k: var.attrs[k] for k in (
                     "cell_methods", "GRIB_stepType", "online_operation",
                     "interval_operation", "interval_write")
@@ -1550,8 +1552,12 @@ def bind_source(conf, name, *, representations=None, required_inputs=(), resourc
         try:
             source["tracker_support"] = resolve_tracker_support(conf, source)
         except ValueError as exc:
+            if catalogue_advice is not None:
+                catalogue_advice.after_tracker(name, blocked=True)
             raise tag_error(exc, "E1503")
         required_inputs = source["tracker_support"]["inputs"]
+        if catalogue_advice is not None:
+            catalogue_advice.after_tracker(name)
     from frameit.processing.requests import bind_source_operations
 
     binding = (bind_requests({**source, "name": name}, request,

@@ -12,8 +12,11 @@ from frameit.core import metadata_catalogue as catalogue
 from frameit.core.configuration import field_selection
 from frameit.io.surfex_utils import SURFEX_FIELDS, _unit_identity
 from frameit.processing.requests import _operation_units, native_field_group, source_field_metadata
+from frameit.processing.wind_reference import _metadata_frames
 from frameit.utils.diagnostics import format_message
 from frameit.utils.units import UNITS, unit_metadata
+
+_NATIVE_TRACKERS = {"pressure_centroid", "multifield_vortex"}
 
 
 def _present(value):
@@ -46,7 +49,7 @@ def _contradicted(key, required, observed):
     return type(required) is type(observed) and required != observed
 
 
-def propose(rows, context, observed, missing, *, reject_unit=None):
+def propose(rows, context, observed, missing, *, reject_unit=None, reject_standard_name=None):
     """Evaluate already exact-name candidates with verified context and joint attributes."""
     outcome = {
         "status": "unmatched", "proposed_values": {}, "unresolved_requirements": [],
@@ -124,6 +127,13 @@ def propose(rows, context, observed, missing, *, reject_unit=None):
             rejected = True
             outcome["withheld"].append({
                 "record_ids": ids, "attribute": key, "reason": "unit_admission", "detail": reason})
+        elif key == "standard_name" and reject_standard_name and (
+            reason := reject_standard_name(value)
+        ):
+            rejected = True
+            outcome["withheld"].append({
+                "record_ids": ids, "attribute": key, "reason": "wind_basis_conflict",
+                "detail": reason})
         else:
             outcome["proposed_values"][key] = value
             outcome["supporting_record_ids"][key] = ids
@@ -171,13 +181,35 @@ def _netcdf_identity(model, attrs):
     return context
 
 
-def _unit_rejection(source, name, group, attrs, tracker, units):
+def _matches_field(request, reference, name, group):
+    native, qualified, _ = field_selection(request, reference)
+    return native == name and (qualified is None or qualified == group)
+
+
+def _wind_name_rejection(source, field, group, attrs, standard_name):
+    name = field["name"]
+    claimed = _metadata_frames({"standard_name": standard_name}, name)
+    if not claimed:
+        return None
+    try:
+        recorded = _metadata_frames(attrs, name) + _metadata_frames(
+            field.get("dataset_attributes", {}), "Dataset")
+    except (ValueError, TypeError) as exc:
+        return str(exc)
+    recorded.extend(pair["basis"] for pair in source["declaration"].get("wind_pairs", ())
+                    if any(_matches_field(source["requests"], pair[key], name, group)
+                           for key in ("u", "v")))
+    if any(frame != claimed[0] for frame in recorded):
+        return f"{standard_name} implies {claimed[0]} winds; observed basis {sorted(set(recorded))}"
+    return None
+
+
+def _unit_rejection(source, name, group, attrs, packing, tracker, units):
     request = source["requests"]
     exports = request["exports"]
 
     def matches(reference):
-        native, qualified, _ = field_selection(request, reference)
-        return native == name and (qualified is None or qualified == group)
+        return _matches_field(request, reference, name, group)
 
     targets = set()
     pairs = source["declaration"].get("wind_pairs", ())
@@ -208,12 +240,13 @@ def _unit_rejection(source, name, group, attrs, tracker, units):
             tracker_quantity = "pressure"
         elif name in {"UM10", "VM10", "u10", "v10"}:
             tracker_quantity = "velocity"
-    elif tracker in {"pressure_centroid", "multifield_vortex"}:
-        if not source.get("tracker_support") or name in source["tracker_support"]["inputs"]:
-            return "The selected tracker has not evidenced catalogue unit admission for this field."
+    elif (tracker in _NATIVE_TRACKERS
+          and name in source.get("tracker_support", {}).get("inputs", {})):
+        return "The selected tracker checks native units for this field."
     if not targets and not croco_current and not tracker_quantity:
         return None
     probe = xr.DataArray(0., name=name, attrs={**attrs, "units": units})
+    probe.encoding = dict(packing)
     try:
         for target in sorted(targets):
             _operation_units(probe, target, model=source["model"])
@@ -251,6 +284,7 @@ class CatalogueResolution:
         self.resources = resources
         self.headers = {}
         self.inventories = {}
+        self.pending_trackers = {}
         self.index = None
         self.lookups = {}
         self.fields = []
@@ -264,7 +298,15 @@ class CatalogueResolution:
         selected = [r for r in source["records"] if r["field_id"] in identities]
         seen = {_snapshot_key(r) for r in selected}
         self.inventories[source_id] = source, seen, tracker
-        self._resolve(source_id, source, selected, tracker, blocked=blocked)
+        if tracker in _NATIVE_TRACKERS and not blocked:
+            self.pending_trackers[source_id] = selected
+        else:
+            self._resolve(source_id, source, selected, tracker, blocked=blocked)
+
+    def after_tracker(self, source_id, *, blocked=False):
+        if selected := self.pending_trackers.pop(source_id, ()):
+            source, _, tracker = self.inventories[source_id]
+            self._resolve(source_id, source, selected, tracker, blocked=blocked)
 
     def observe_operation(self, source_id, candidates):
         source, seen, tracker = self.inventories[source_id]
@@ -364,9 +406,12 @@ class CatalogueResolution:
                     result["status"] = "context_required"
                     result["unresolved_requirements"] = [{"key": "name"}]
                 else:
-                    reject_unit = partial(_unit_rejection, source, name, group, attrs, tracker)
+                    reject_unit = partial(_unit_rejection, source, name, group, attrs,
+                                          record.get("packing", {}), tracker)
+                    reject_name = partial(_wind_name_rejection, source,
+                                          source["fields"][record["field_id"]], group, attrs)
                     result = propose(self._lookup(identity), identity, observed, missing,
-                                     reject_unit=reject_unit)
+                                     reject_unit=reject_unit, reject_standard_name=reject_name)
                     if self.unavailable:
                         result["status"] = "unavailable"
                 results.append({
@@ -428,6 +473,13 @@ def _combine(source_id, name, selector, results, blocked):
                     summary[key].append(value)
         values = {key: value for key, value in first["proposed_values"].items() if all(
             _equal(key, value, record["proposed_values"].get(key)) for record in results)}
+        if values and any(
+            key not in summary["native_identity"]
+            for key in ("producer", "version", "name", "namespace")
+        ):
+            values = {}
+            summary["withheld"].append({
+                "attribute": "record", "reason": "per_file_identity_disagreement"})
         summary["supporting_record_ids"] = {
             key: sorted({record_id for record in results
                          for record_id in record["supporting_record_ids"].get(key, ())})
@@ -445,10 +497,6 @@ def _combine(source_id, name, selector, results, blocked):
                        supporting_record_ids={})
         summary["withheld"] = [*summary["withheld"], {
             "attribute": "record", "reason": "no_unambiguous_selector"}]
-    if summary["proposed_values"]:
-        summary["repair"] = {"sources": {source_id: {"field_metadata": {
-            selector: summary["proposed_values"],
-        }}}}
     return summary
 
 

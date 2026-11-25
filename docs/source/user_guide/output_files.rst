@@ -154,7 +154,9 @@ record, including excluded times. Unmapped GRIB headers remain inspectable under
 record locators; they are not given invented physical-field aliases.
 When a catalogue supplies missing metadata, ``sources.<id>.metadata_catalogue``
 records the applied values, native identity, supporting record IDs, catalogue
-version and content SHA-256.
+version and content SHA-256. Each provider in ``records`` identifies its input
+with a zero-based ``file_index`` into ``binding.<id>.files`` and records the
+exact identity and catalogue IDs that supported that input.
 
 Status ``layouts`` records reader/product chunks, dimensions and uncompressed
 array sizes; published descriptors record reopened storage layouts. Estimates
