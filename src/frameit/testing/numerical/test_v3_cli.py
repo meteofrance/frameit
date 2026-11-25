@@ -159,7 +159,8 @@ def test_validate_selects_output_mode(
     assert prior[0] == (0 if valid else 1)
     imports, app_calls = [], []
 
-    def app(config, collect, *, schema_only, overrides):
+    def app(config, collect, *, schema_only, overrides, isolate):
+        assert isolate
         app_calls.append((config, schema_only, overrides))
         return SimpleNamespace(run=lambda: int(bool(collect().errors)))
 
@@ -224,7 +225,8 @@ def test_inspect_selects_output_mode(tmp_path, monkeypatch, capsys, flags, term,
 
     app_calls, imports = [], []
 
-    def app(config, collect):
+    def app(config, collect, *, isolate):
+        assert isolate
         def run():
             report = project_report(collect())
             app_calls.append((config, report))

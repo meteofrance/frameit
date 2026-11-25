@@ -27,7 +27,8 @@ from textual.theme import Theme
 from textual.widgets import Collapsible, Footer, Input, OptionList, ProgressBar, Static
 from textual.worker import Worker, WorkerState, get_current_worker
 
-from frameit.core.reports import project_report, serialize_projection
+from frameit.core.reports import serialize_projection
+from frameit.report_check import ReportProcess, collect_projection
 from frameit.report_diff import finding_key
 from frameit.report_motion import BrandActivity, ReportScroll
 
@@ -301,7 +302,9 @@ class ReportApp(App[int]):
     Screen.checking #operation-context { display: block; }
     #report-feedback, #feedback-copy { height: auto; }
     #feedback-copy { width: 1fr; }
-    #brand-activity { display: none; width: 20; height: 10; margin-right: 2; }
+    #brand-activity {
+        display: none; width: 20; height: 10; margin-right: 2; text-wrap: nowrap;
+    }
     Screen.starting #report-feedback { height: 1fr; align: center middle; }
     Screen.starting #feedback-copy {
         width: 1fr; max-width: 44; height: 10; align: left middle;
@@ -380,10 +383,11 @@ class ReportApp(App[int]):
     #finding-actions { height: auto; color: $accent; margin-top: 1; }
     """
 
-    def __init__(self, config: Path, collect, *, saved_report=None):
+    def __init__(self, config: Path, collect, *, saved_report=None, isolate=False):
         super().__init__()
         self.config = config
         self.collect = collect
+        self._reader = ReportProcess(collect) if isolate else None
         self._saved_projection = saved_report
         self.saved = saved_report is not None
         self.result_code = None
@@ -449,6 +453,16 @@ class ReportApp(App[int]):
                 yield Collapsible(Static(id="finding-evidence-text", markup=False),
                                   title="Technical evidence", id="finding-evidence")
 
+    def run(self, *args, **kwargs):
+        if self._reader is None:
+            return super().run(*args, **kwargs)
+        try:
+            # The first spawn needs a real stderr FD, before Textual captures it.
+            self._reader.start()
+            return super().run(*args, **kwargs)
+        finally:
+            self._reader.close()
+
     def on_mount(self):
         for widget in self.query("VerticalScroll, OptionList, DataTable"):
             if widget.scrollbar_size_vertical:
@@ -469,6 +483,10 @@ class ReportApp(App[int]):
         else:
             self.begin_capture_print(self, stdout=False)
             self._start_check()
+
+    def on_unmount(self):
+        if self._reader is not None:
+            self._reader.close()
 
     @property
     def busy(self):
@@ -500,25 +518,26 @@ class ReportApp(App[int]):
 
     def _collect(self):
         worker = get_current_worker()
-        last_key, last_sent = None, 0.0
 
-        def progress(stage, source, checked, total):
-            nonlocal last_key, last_sent
-            if self._cancel.is_set() or worker.is_cancelled:
-                raise CancelledError
-            at, key = monotonic(), (stage, source, total)
-            if key != last_key or (checked is not None and checked == total
-                                   or at - last_sent >= 0.12):
-                self.post_message(_Progress(worker, stage, source, checked, total, at))
-                last_key, last_sent = key, at
+        def cancelled():
+            return self._cancel.is_set() or worker.is_cancelled
 
-        result = self.collect(progress=progress)
-        progress("report", None, None, None)
-        report = project_report(result)
+        def notify(*args):
+            self.post_message(_Progress(worker, *args))
+
+        if self._reader is None:
+            report = collect_projection(self.collect, notify, cancelled)
+        else:
+            report = self._reader.read(notify, cancelled, self._remember_warning)
+        if cancelled():
+            raise CancelledError
         prepared = self.prepare_view(report)
-        if self._cancel.is_set() or worker.is_cancelled:
+        if cancelled():
             raise CancelledError
         return report, prepared
+
+    def _remember_warning(self, detail):
+        self._runtime_warnings.append(f"({self.LOG_CONTEXT} log) {detail}")
 
     def prepare_view(self, report: dict):
         return None
@@ -527,8 +546,7 @@ class ReportApp(App[int]):
         if self.busy and event.stderr:
             level, _, message = event.text.rstrip().partition(":")
             if level == "WARNING" and message:
-                detail = message.partition(":")[2] or message
-                self._runtime_warnings.append(f"({self.LOG_CONTEXT} log) {detail}")
+                self._remember_warning(message.partition(":")[2] or message)
 
     @on(_Progress)
     def _observe(self, event: _Progress):

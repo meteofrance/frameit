@@ -201,8 +201,8 @@ class ValidationApp(ReportApp):
     """
 
     def __init__(self, config: Path, collect, *, schema_only=False, overrides=None,
-                 saved_report=None):
-        super().__init__(config, collect, saved_report=saved_report)
+                 saved_report=None, isolate=False):
+        super().__init__(config, collect, saved_report=saved_report, isolate=isolate)
         self.schema_only = schema_only if saved_report is None else any(
             item["status"] == "schema-only" for item in saved_report["deferred_checks"])
         self.overrides = overrides or {}

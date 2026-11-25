@@ -6,6 +6,7 @@ from functools import partial
 from threading import Event
 
 import pytest
+from textual.content import Content
 from textual.widgets import ProgressBar
 from textual.worker import WorkerFailed
 
@@ -13,6 +14,42 @@ from frameit.cli import _collect_report
 from frameit.inspect_tui import InspectionApp
 from frameit.testing.numerical.test_validate_tui import _case, _text
 from frameit.validate_tui import ValidationApp
+
+
+def test_logo_jumps_to_elapsed_phase_without_repainting_the_same_frame(tmp_path, monkeypatch):
+    from frameit import report_motion
+    from frameit.core.reports import PreflightResult
+
+    now = [100.0]
+    monkeypatch.setattr(report_motion, "monotonic", lambda: now[0], raising=False)
+    finish = Event()
+
+    def collect(*, progress):
+        assert finish.wait(10)
+        return PreflightResult("validate")
+
+    async def exercise():
+        app = ValidationApp(tmp_path / "config.yaml", collect)
+        async with app.run_test(size=(80, 24)) as pilot:
+            try:
+                await pilot.pause()
+                logo = app.query_one(report_motion.BrandActivity)
+                assert logo.timer is not None
+                first = logo.content
+                logo._advance()
+                assert logo.content is first
+                now[0] += .5  # Simulate a late timer, without waiting in the test.
+                logo._advance()
+                frame = logo.content
+                assert isinstance(frame, Content) and frame.spans != first.spans
+                assert str(frame) == str(first)
+                now[0] += 2
+                logo._advance()
+                assert logo.content is frame
+            finally:
+                finish.set()
+
+    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize(("app_type", "command"), [

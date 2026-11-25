@@ -361,11 +361,12 @@ def test_console_distinguishes_scanned_files_source_times_and_centre_matches(tmp
 
 
 def test_live_scan_and_reload(tmp_path, monkeypatch):
-    from frameit import report_tui, validate_tui
+    from frameit import report_check, report_tui, validate_tui
 
     path = _case(tmp_path)
     clock = [100.0]
     monkeypatch.setattr(report_tui, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(report_check, "monotonic", lambda: clock[0])
     collect = partial(_collect_report, path, command="validate", overrides={"cpus": 1})
     stages = [
         ("metadata", "atmosphere", 0, 6),
@@ -1042,49 +1043,56 @@ def test_refresh_retains_finding_when_only_authored_line_numbers_move(tmp_path):
 @pytest.mark.parametrize("command", ["validate", "inspect"])
 def test_sigterm_restores_tty_during_terminal_report(tmp_path, command):
     path = _case(tmp_path)
+    (tmp_path / "gate-next").touch()
     master, terminal = pty.openpty()
     termios.tcsetwinsize(terminal, (24, 80))
-    ready_read, ready_write = os.pipe()
-    resume_read, resume_write = os.pipe()
     original = termios.tcgetattr(terminal)
     script = """
-import os, sys
+import sys
+from functools import partial
+from pathlib import Path
 from frameit import cli
-load = cli._load_config
-def gated(*args, **kwargs):
-    os.write(int(sys.argv[2]), b'1')
-    os.read(int(sys.argv[3]), 1)
-    return load(*args, **kwargs)
-cli._load_config = gated
-args = [sys.argv[4], sys.argv[1]]
+from frameit.testing.numerical.test_report_process import gated_cli_report
+cli._collect_report = partial(gated_cli_report, Path(sys.argv[1]).parent)
+args = [sys.argv[2], sys.argv[1]]
 cli.main(args + (['--cpus', '1'] if args[0] == 'validate' else []))
 """
+    chunks = []
+
+    def read_output():
+        if select.select([master], [], [], 0.05)[0]:
+            chunks.append(os.read(master, 65536))
+
     try:
         with subprocess.Popen(
-            [sys.executable, "-c", script, str(path), str(ready_write), str(resume_read), command],
+            [sys.executable, "-c", script, str(path), command],
             stdin=terminal, stdout=terminal, stderr=terminal,
-            pass_fds=(ready_write, resume_read), env={**os.environ, "TERM": "xterm-256color"},
+            env={**os.environ, "TERM": "xterm-256color"},
         ) as process:
             try:
-                assert select.select([ready_read], [], [], 15)[0]
-                assert os.read(ready_read, 1) == b"1"
+                deadline = monotonic() + 10
+                while not (started := list(tmp_path.glob("entered-*"))) and monotonic() < deadline:
+                    read_output()
+                assert started, b"".join(chunks)[-1500:].decode(errors="replace")
+                reader_pid = int(started[0].name.split("-")[-1])
+                assert reader_pid != process.pid
                 assert not termios.tcgetattr(terminal)[3] & (termios.ICANON | termios.ECHO)
                 process.terminate()
-                os.write(resume_write, b"1")
                 # A terminal consumes output while the driver flushes on shutdown.
-                chunks = []
                 deadline = monotonic() + 10
                 while process.poll() is None and monotonic() < deadline:
-                    if select.select([master], [], [], 0.1)[0]:
-                        chunks.append(os.read(master, 65536))
+                    read_output()
                 assert process.returncode == 143
                 assert termios.tcgetattr(terminal) == original
+                with pytest.raises(ProcessLookupError):
+                    os.kill(reader_pid, 0)
                 while select.select([master], [], [], 0)[0]:
                     chunks.append(os.read(master, 65536))
                 assert b"\x1b[?1049l" in b"".join(chunks)
             finally:
+                (tmp_path / "release").touch()
                 if process.poll() is None:
                     process.kill()
     finally:
-        for fd in (master, terminal, ready_read, ready_write, resume_read, resume_write):
+        for fd in (master, terminal):
             os.close(fd)

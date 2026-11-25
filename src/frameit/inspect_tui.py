@@ -211,8 +211,8 @@ class InspectionApp(ReportApp):
     #field-evidence, #source-file-evidence { border: none; padding: 0; margin-top: 1; }
     """
 
-    def __init__(self, config: Path, collect, *, saved_report=None):
-        super().__init__(config, collect, saved_report=saved_report)
+    def __init__(self, config: Path, collect, *, saved_report=None, isolate=False):
+        super().__init__(config, collect, saved_report=saved_report, isolate=isolate)
         self._sources = {}
         self._source_details = {}
         self._source = None
@@ -334,7 +334,7 @@ class InspectionApp(ReportApp):
                 and event.option.id != self._source):
             self._select_source(event.option.id)
 
-    def _populate_fields(self, previous):
+    def _populate_fields(self, previous, *, search_only=False):
         # Load Rich only after Textual so a missing UI stack falls back to the text report.
         from rich.text import Text
 
@@ -343,16 +343,19 @@ class InspectionApp(ReportApp):
         status = self._filter
         fields = [(identity, _field_cells(source, identity, field))
                   for identity, field in source.get("fields", {}).items()]
-        self._groups = _row_groups(fields)
         rows = [(identity, cells) for identity, cells in fields
                 if (not status or cells[3] == _REQUEST[status])
                 and (not search or any(search in text.casefold() for text in cells[:3]))]
         rows.sort(key=lambda row: (row[1][_SORTS[self._sort]].casefold(), row[1][0].casefold()))
+        visible = [identity for identity, _ in rows]
+        if search_only and visible == self._visible:
+            return
+        self._visible = visible
+        self._groups = _row_groups(fields)
         table = self.query_one("#fields", DataTable)
         table.clear(columns=True)
         for label, width in _FIELD_COLUMNS:
             table.add_column(label, width=width)
-        self._visible = [identity for identity, _ in rows]
         for identity, (name, _, units, request) in rows:
             table.add_row(*(Text(cell, no_wrap=True, overflow="ellipsis") for cell in (
                 name, self._groups[identity], "—" if units == _UNKNOWN else units, request)),
@@ -506,9 +509,9 @@ class InspectionApp(ReportApp):
             super().action_back()
 
     @on(Input.Changed, "#field-search")
-    def _search_changed(self):
-        if self.result_code is not None:
-            self._populate_fields(self._field)
+    def _search_changed(self, event: Input.Changed):
+        if self.result_code is not None and event.value == event.input.value:
+            self._populate_fields(self._field, search_only=True)
 
     @on(Input.Submitted, "#field-search")
     def _search_submitted(self):

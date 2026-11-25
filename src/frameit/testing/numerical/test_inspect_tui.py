@@ -161,6 +161,46 @@ def test_explorer_shows_a_fitting_field_row_in_a_nine_row_terminal(tmp_path):
     asyncio.run(exercise())
 
 
+def test_search_reuses_unchanged_rows_and_only_builds_the_latest_query(tmp_path, monkeypatch):
+    sample = tmp_path / "sample.nc"
+    data = v3_scene(names=("pressure", "temperature"), hours=(0,))
+    data.to_netcdf(sample, engine="h5netcdf")
+    path = _case(tmp_path, {"air": {"files": "sample.nc"}})
+
+    async def exercise():
+        app = _app(path)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _ready(app, pilot)
+            table = app.query_one("#fields")
+            search = app.query_one("#field-search")
+            cleared = []
+            clear = table.clear
+
+            def track_clear(*args, **kwargs):
+                cleared.append(search.value)
+                return clear(*args, **kwargs)
+
+            monkeypatch.setattr(table, "clear", track_clear)
+            assert table.row_count == 2
+            for prefix in ("t", "te", "tem", "temp"):
+                search.value = prefix
+            await pilot.pause()
+            assert cleared == ["temp"] and table.row_count == 1
+            assert str(table.get_row_at(0)[0]) == "temperature"
+            search.value = "temperature"
+            await pilot.pause()
+            assert cleared == ["temp"] and "1 of 2 fields" in _text(app, "#field-controls")
+            assert "temperature" in _text(app, "#field-details")
+            data["temperature"].attrs["units"] = "degC"
+            data.to_netcdf(sample, engine="h5netcdf")
+            await pilot.press("r")
+            await _ready(app, pilot)
+            assert str(table.get_row_at(0)[2]) == "degC"
+            assert cleared == ["temp", "temperature"]
+
+    asyncio.run(exercise())
+
+
 def test_explorer_scrolls_source_picker_without_a_bar(tmp_path):
     from textual.events import MouseScrollDown
 

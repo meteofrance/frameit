@@ -399,7 +399,8 @@ def _cmd_validate(cfg_path: Path, *, schema_only=False, json_output=False, cli_o
     def build_app():
         from frameit.validate_tui import ValidationApp
 
-        return ValidationApp(cfg_path, collect, schema_only=schema_only, overrides=overrides)
+        return ValidationApp(cfg_path, collect, schema_only=schema_only, overrides=overrides,
+                             isolate=True)
 
     code = _run_report_app(build_app, cli_output=cli_output, json_output=json_output)
     return _print_preflight(collect(), json_output=json_output) if code is None else code
@@ -591,7 +592,7 @@ def _cmd_inspect(args):
         from frameit.inspect_tui import InspectionApp
 
         return InspectionApp(config, partial(
-            _collect_report, config, command="inspect", sample_only=True))
+            _collect_report, config, command="inspect", sample_only=True), isolate=True)
 
     code = _run_report_app(build_app, cli_output=args.cli, json_output=args.json)
     if code is None:

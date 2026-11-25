@@ -80,9 +80,10 @@ returns status 130 unless another check produces a new report. Press ``?`` for
 shortcuts or ``p`` to send the configuration path to the terminal clipboard.
 Paste to verify delivery.
 
-The progress bar counts files checked in the current source, not overall
-validation progress. Some stages have no known total. The ETA estimates only
-the current source's metadata scan. ``Ctrl+C`` requests cancellation. A native
+The logo shows that a check is active. The progress bar counts files checked
+in the current source, not overall validation progress. Some stages have no
+known total. The ETA estimates only the current source's metadata scan.
+``Ctrl+C`` requests cancellation. A native
 read may need to finish before cancellation takes effect.
 
 **Overview** summarizes the checked inputs, selection, time, region and planned
