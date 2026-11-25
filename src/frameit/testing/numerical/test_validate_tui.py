@@ -7,14 +7,17 @@ import select
 import subprocess
 import sys
 import termios
+from contextlib import suppress
 from functools import partial
 from threading import Event
 from time import monotonic
 
 import pytest
 import yaml
+from textual import on
+from textual.events import MouseScrollDown
 from textual.geometry import Region
-from textual.worker import WorkerCancelled
+from textual.worker import Worker, WorkerCancelled, WorkerFailed, WorkerState
 
 from frameit.cli import _collect_report
 from frameit.core.configuration import write_template
@@ -181,12 +184,29 @@ def test_details_render_long_nested_yaml_lines_without_wrapping(tmp_path):
             assert details.max_scroll_x > 0
             assert details.scrollable_size == viewport
             assert details.scrollbars_space == (1, 1)
-            corner = (details.vertical_scrollbar.region.x, details.horizontal_scrollbar.region.y)
+            vertical = details.vertical_scrollbar
+            strokes = [vertical.render_line(i).text for i in range(vertical.size.height)]
+            assert any("┃" in line for line in strokes)
+            corner = (vertical.region.x, details.horizontal_scrollbar.region.y)
             background = app.screen.styles.background.rich_color
+            assert background.triplet == (0, 0, 0)
             assert app.screen.get_style_at(*corner).bgcolor == background
             await pilot.press("right")
             await pilot.wait_for_scheduled_animations()
             assert details.scroll_x > 0
+            x, y = vertical.region.offset
+            grip = next(i for i, line in enumerate(strokes) if "┃" in line)
+            await pilot.mouse_down(offset=(x, y + grip))
+            await pilot.hover(offset=(x, y + grip + 2))
+            await pilot.mouse_up(offset=(x, y + grip + 2))
+            await pilot.wait_for_scheduled_animations()
+            assert details.scroll_y > 0
+            details.scroll_to(y=0, animate=False)
+            await pilot.pause()
+            assert "┃" not in strokes[-1]
+            await pilot.click(offset=(x, vertical.region.bottom - 1))
+            await pilot.wait_for_scheduled_animations()
+            assert details.scroll_y > 0
             await pilot.press("q")
 
     asyncio.run(exercise())
@@ -218,6 +238,54 @@ def test_details_thumb_is_draggable_with_only_one_clipped_column(tmp_path):
             await pilot.wait_for_scheduled_animations()
             await pilot.mouse_up(offset=(x + 2, y))
             assert details.scroll_x == 1
+
+    asyncio.run(exercise())
+
+
+def test_details_pins_only_the_section_scrolled_under_the_top_edge(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    path = _case(tmp_path)
+    collect = partial(_collect_report, path, command="validate")
+
+    async def exercise():
+        app = ValidationApp(path, collect)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("3", "tab", "enter")
+            details = app.query_one("#details-scroll")
+            viewport = details.scrollable_size
+            details.scroll_to(y=3, animate=False)
+            await pilot.pause()
+            pinned = app.query_one("#details-sticky")
+            assert pinned.is_on_screen
+            assert _text(app, "#details-sticky") == "Effective configuration"
+            x, y = pinned.region.offset
+            app.post_message(MouseScrollDown(None, x + 2, y, 0, 0, 0, False, False, False))
+            await pilot.pause()
+            await pilot.wait_for_scheduled_animations()
+            assert details.scroll_offset.y > 3
+
+            details.scroll_end(animate=False)
+            await pilot.pause()
+            await pilot.click("#detail-plan CollapsibleTitle", offset=(3, 0))
+            plan = app.query_one("#detail-plan")
+            assert not plan.collapsed
+            details.scroll_to(y=plan.virtual_region.y, animate=False)
+            await pilot.pause()
+            assert not _text(app, "#details-sticky")
+            details.scroll_to(y=plan.virtual_region.y + 3, animate=False)
+            await pilot.pause()
+            assert _text(app, "#details-sticky") == "Processing plan"
+
+            await pilot.press("enter")
+            assert plan.collapsed
+            assert "Processing plan" not in _text(app, "#details-sticky")
+            details.scroll_home(animate=False)
+            await pilot.pause()
+            assert not _text(app, "#details-sticky")
+            assert details.scrollable_size == viewport
+            await pilot.press("q")
 
     asyncio.run(exercise())
 
@@ -336,8 +404,9 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
                 await pilot.press("r")
                 assert calls == 2
                 assert "passed" not in _text(app, "#status")
-                assert app.query_one("#report-tabs").display
-                assert "previous report" in _text(app, "#status")
+                assert not app.query_one("#report-tabs").display
+                assert "Refreshing" in _text(app, "#status")
+                assert app.query_one("#local-activity").loading
                 resume[4].set()
                 await app.workers.wait_for_complete()
                 await pilot.press("2")
@@ -352,49 +421,150 @@ def test_live_scan_and_reload(tmp_path, monkeypatch):
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize("mode", ["initial", "refresh", "idle"])
-def test_interruption_returns_130(tmp_path, mode):
+@pytest.mark.parametrize("mode", ["initial", "refresh", "retry", "retry-fails", "idle"])
+def test_validation_interruption_preserves_the_previous_view(tmp_path, mode):
     from frameit.validate_tui import ValidationApp
 
     release, started = Event(), Event()
     path = _case(tmp_path)
     calls = 0
+    refresh = mode in {"refresh", "retry", "retry-fails"}
 
     def collect(*, progress):
         nonlocal calls
         calls += 1
-        if mode == "initial" or (mode == "refresh" and calls == 2):
+        if mode == "initial" or (refresh and calls == 2):
             started.set()
             assert release.wait(10)
             progress("metadata", "atmosphere", 0, 1)
+        if mode == "retry-fails" and calls == 3:
+            raise RuntimeError("reader could not finish")
         return _collect_report(path, command="validate", progress=progress)
 
     async def exercise():
         app = ValidationApp(path, collect)
-        async with app.run_test() as pilot:
+        async with app.run_test(size=(120, 40)) as pilot:
             try:
                 if mode != "initial":
                     await app.workers.wait_for_complete()
                     await pilot.pause()
                     assert app.result_code == 0
-                if mode == "refresh":
-                    await pilot.press("r")
+                if refresh:
+                    await pilot.press("3")
+                    await pilot.click("#detail-plan CollapsibleTitle", offset=(3, 0))
+                    if mode == "retry":
+                        await pilot.press("3")
+                    await pilot.press("pagedown")
+                    await pilot.wait_for_scheduled_animations()
+                    details = app.query_one("#details-scroll")
+                    offset = details.scroll_offset
+                    focused = details if mode == "retry" else details.query_one(
+                        "#detail-plan CollapsibleTitle")
+                    assert offset.y > 0 and focused.has_focus
+                    previous = _text(app, "#summary")
+                    await pilot.press("r", "1")
                 if mode != "idle":
                     assert await asyncio.to_thread(started.wait, 5)
                     worker = next(iter(app.workers))
+                if refresh:
+                    assert not app.query_one("#report-tabs").display
+                    assert app.query_one("#brand-activity").display
+                    await pilot.resize_terminal(52, 16)
+                    await pilot.resize_terminal(120, 40)
+                    await pilot.press("enter")
                 await pilot.press("ctrl+c")
                 if mode != "idle":
                     status = _text(app, "#status").lower()
                     assert "cancellation requested" in status
-                    if mode == "refresh":
-                        assert "previous report" in status
-                        assert "frameit run" in _text(app, "#summary")
                     release.set()
                     with pytest.raises(WorkerCancelled):
                         await worker.wait()
                     await pilot.pause()
+                if refresh:
+                    tabs = app.query_one("#report-tabs")
+                    assert tabs.display and tabs.active == "details"
+                    assert not app.query_one("#detail-plan").collapsed
+                    assert focused.has_focus and details.scroll_offset == offset
+                    assert _text(app, "#summary") == previous
+                    assert "previous report" in _text(app, "#status").lower()
+                    assert not app.query_one("#brand-activity").display
+                    assert {"1", "2", "3", "r", "q"} <= {
+                        key.key for key in app.query("FooterKey") if key.is_on_screen
+                    }
+                    if mode == "retry":
+                        await pilot.press("r")
+                        await app.workers.wait_for_complete()
+                        await pilot.pause()
+                        assert "passed" in _text(app, "#status")
+                    elif mode == "retry-fails":
+                        await pilot.press("r")
+                        with suppress(WorkerFailed):
+                            await app.workers.wait_for_complete()
+                        await pilot.pause()
+                        assert "previous report is stale" in _text(app, "#status")
+                    await pilot.press("q")
             finally:
                 release.set()
+        assert app.return_value == (0 if mode == "retry" else 130)
+
+    asyncio.run(exercise())
+
+
+def test_revalidation_before_view_has_redrawn_keeps_cancelled_details_focus(tmp_path):
+    from frameit.validate_tui import ValidationApp
+
+    class PromptRetry(ValidationApp):
+        retry = True
+
+        @on(Worker.StateChanged)
+        def retry_first_cancellation(self, event):
+            if self.retry and event.state == WorkerState.CANCELLED:
+                self.retry = False
+                self.call_next(self.action_refresh)
+
+    path = _case(tmp_path)
+    entered, release = [Event(), Event()], [Event(), Event()]
+    calls = 0
+
+    def collect(*, progress):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            index = calls - 2
+            entered[index].set()
+            assert release[index].wait(10)
+            progress("report", None, None, None)
+        return _collect_report(path, command="validate", progress=progress)
+
+    async def exercise():
+        app = PromptRetry(path, collect)
+        app.animation_level = "none"
+        async with app.run_test(size=(80, 24)) as pilot:
+            try:
+                await app.workers.wait_for_complete()
+                await pilot.press("3")
+                await pilot.click("#detail-plan CollapsibleTitle", offset=(3, 0))
+                await pilot.press("pagedown")
+                focused = app.query_one("#detail-plan CollapsibleTitle")
+                assert focused.has_focus
+                details = app.query_one("#details-scroll")
+                offset = details.scroll_offset
+                assert offset.y > 0
+                await pilot.press("r")
+                for index in range(2):
+                    assert await asyncio.to_thread(entered[index].wait, 5)
+                    worker = next(iter(app.workers))
+                    await pilot.press("ctrl+c")
+                    release[index].set()
+                    with pytest.raises(WorkerCancelled):
+                        await worker.wait()
+                await pilot.pause()
+                assert focused.has_focus
+                assert details.scroll_offset == offset
+                await pilot.press("q")
+            finally:
+                for event in release:
+                    event.set()
         assert app.return_value == 130
 
     asyncio.run(exercise())

@@ -4,7 +4,7 @@ from collections import Counter
 from pathlib import Path
 from shlex import join
 
-from textual import on
+from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.widgets import Collapsible, Static, TabbedContent, TabPane
@@ -124,6 +124,7 @@ class ValidationApp(ReportApp):
     LOG_CONTEXT = "validation"
     FINDINGS_HINT = "Findings (2) lists repairs and warnings."
     SIDEBAR = ("#finding-list", "#finding-scroll")
+    BRANDED_REFRESH = True
     STAGES = {
         **ReportApp.STAGES,
         "binding": "Checking selected fields and methods",
@@ -138,7 +139,16 @@ class ValidationApp(ReportApp):
         Binding("q", "quit", "Quit"),
     ]
     CSS = ReportApp.CSS + """
-    #summary, #details-scroll { padding-top: 1; }
+    #summary { padding-top: 1; }
+    #details-sticky {
+        dock: top;
+        height: 1;
+        padding: 0 1;
+        color: $accent;
+        text-style: bold;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
     #details-scroll CollapsibleTitle:focus {
         background: #102440;
         color: $foreground;
@@ -168,12 +178,36 @@ class ValidationApp(ReportApp):
                 yield from self.compose_findings()
             with TabPane("Details", id="details"):
                 with ReportScroll(id="details-scroll"):
+                    yield Static(id="details-sticky", markup=False)
                     for key, label in _DETAIL_LABELS.items():
                         yield Collapsible(
                             Static(id=f"detail-{key}-text", markup=False),
                             title=label, id=f"detail-{key}",
                             collapsed_symbol="›", expanded_symbol="⌄",
                         )
+
+    @on(events.Mount)
+    def _watch_details_scroll(self):
+        details = self.query_one("#details-scroll", ReportScroll)
+        self.watch(details, "scroll_y", self._schedule_details_title, init=False)
+        self.watch(details, "virtual_size", self._schedule_details_title, init=False)
+
+    @on(Collapsible.Toggled)
+    def _schedule_details_title(self):
+        self.call_after_refresh(self._update_details_title)
+
+    def _update_details_title(self):
+        details = self.query_one("#details-scroll", ReportScroll)
+        top = details.scroll_offset.y
+        label = ""
+        for section in details.query(Collapsible):
+            region = section.virtual_region
+            if not section.collapsed and region.y < top < region.bottom:
+                label = section.title
+                break
+        pinned = self.query_one("#details-sticky", Static)
+        if pinned.content != label:
+            pinned.update(label, layout=False)
 
     def prepare_view(self, report: dict):
         data = report["data"]
@@ -200,11 +234,12 @@ class ValidationApp(ReportApp):
             section = self.query_one(f"#detail-{key}", Collapsible)
             section.title = plan_title if key == "plan" else _DETAIL_LABELS[key]
             self.query_one(f"#detail-{key}-text", Static).update(text)
+        self._schedule_details_title()
         if not self._has_report:
             self.action_view("overview")
 
     def _sidebar_available(self):
-        return (super()._sidebar_available()
+        return (not self.busy and super()._sidebar_available()
                 and self.query_one("#report-tabs", TabbedContent).active == "findings")
 
     @on(TabbedContent.TabActivated, "#report-tabs")
@@ -212,7 +247,7 @@ class ValidationApp(ReportApp):
         self.screen.refresh_bindings()
 
     def action_view(self, view):
-        if self.result_code is not None:
+        if not self.busy and self.result_code is not None:
             self.query_one("#report-tabs", TabbedContent).active = view
             target = f"#{view}-scroll"
             if view == "findings":

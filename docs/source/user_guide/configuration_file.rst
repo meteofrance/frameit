@@ -72,16 +72,18 @@ The terminal view is installed with FrameIt:
 
 In an interactive terminal, validation opens **Overview**, **Findings**, and
 **Details**. Press ``1``, ``2``, or ``3`` to switch tabs. After saving edits in
-another terminal, press ``r`` to recheck the same file. The previous report
-remains visible and labelled until the check returns. A stale report is not a
-successful recheck. Press ``q`` to quit when idle. ``p`` sends the configuration
-path to the terminal clipboard; paste to verify delivery. The interface does
-not edit the file or run processing.
+another terminal, press ``r`` to recheck the same file. The activity screen
+returns while the new check runs. Cancelling a recheck restores the previous
+report, not a result for the edited file. Press ``q`` to quit when idle.
+Quitting after a cancelled recheck returns status 130 unless another check
+produces a new report. Press ``p`` to send the configuration path to the terminal
+clipboard; paste to verify delivery. The interface does not edit the file or
+run processing.
 
 The progress bar counts files checked in the current source, not overall
 validation progress. Some stages have no known total. The ETA estimates only
-the current source's metadata scan. ``Ctrl+C`` requests cancellation; an active
-native read may need to finish before the process exits.
+the current source's metadata scan. ``Ctrl+C`` requests cancellation. A native
+read may need to finish before cancellation takes effect.
 
 **Overview** summarizes the checked inputs, selection, region and planned
 outputs. It shows the run command when input checks pass and the first fix
@@ -97,9 +99,11 @@ keeping the selected finding open.
 
 In **Details**, press ``Tab`` to focus a section and ``Enter`` to expand or
 collapse it. Use Page Up and Page Down for long panels, and left and right
-arrows for long lines. The processing plan starts with planned output paths
-and product selections. Output paths from a failed check are unconfirmed.
-The plan, effective configuration and setting origins are read-only.
+arrows for long lines. The title of the expanded section stays visible above
+its contents as you scroll. The processing plan starts with planned output
+paths and product selections. Output paths from a failed check are
+unconfirmed. The plan, effective configuration and setting origins are
+read-only.
 
 Use ``frameit validate frameit.yaml --cli`` for the text report even in a
 terminal. ``--json`` writes one JSON report. Redirected commands do not open

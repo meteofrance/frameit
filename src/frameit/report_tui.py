@@ -36,7 +36,7 @@ _CHECK_LABELS = {
 _TEAL, _AMBER, _RED, _SLATE = "#49C5BC", "#F5B55E", "#DA5656", "#A6B4C4"
 _THEME = Theme(
     name="frameit", primary=_TEAL, accent=_TEAL, warning=_AMBER, error=_RED,
-    background="#021633", surface="#021633", panel="#021633", foreground="#E6EDF3",
+    background="#000000", surface="#000000", panel="#000000", foreground="#E6EDF3",
 )
 
 
@@ -94,7 +94,7 @@ class _Progress(Message):
     at: float
 
 
-class _ThinHorizontalThumb(ScrollBarRender):
+class _ThinThumb(ScrollBarRender):
     """Center the painted thumb without shrinking its mouse target."""
 
     def __rich_console__(self, console, options):
@@ -102,11 +102,12 @@ class _ThinHorizontalThumb(ScrollBarRender):
         from rich.style import Style
 
         paint = Style(bgcolor=console.get_style(self.style).bgcolor, reverse=False)
+        glyph = "┃" if self.vertical else "━"
         for bar in super().__rich_console__(console, options):
             for cell in console.render(bar, options):
                 # Only the native thumb has a foreground; keep its mouse action metadata.
                 if cell.style is not None and cell.style.color is not None:
-                    yield Segment("━" * cell.cell_length, cell.style + paint, cell.control)
+                    yield Segment(glyph * cell.cell_length, cell.style + paint, cell.control)
                 else:
                     yield cell
 
@@ -116,6 +117,7 @@ class ReportApp(App[int]):
     LOG_CONTEXT = "report"
     FINDINGS_HINT = "Review the report findings."
     SIDEBAR = None
+    BRANDED_REFRESH = False
     HORIZONTAL_BREAKPOINTS = [(0, "-compact"), (68, "-narrow"), (120, "-wide")]
     VERTICAL_BREAKPOINTS = [(0, "-tiny"), (10, "-low"), (20, "-short"), (30, "-tall")]
     STAGES = {
@@ -219,6 +221,7 @@ class ReportApp(App[int]):
         self._elapsed_timer = None
         self._notice_since = 0.0
         self._has_report = self._stale = False
+        self._hidden_view = None
         self._cancel = Event()
         self._sidebar_closed = False
         self._sidebar_epoch = 0
@@ -254,8 +257,11 @@ class ReportApp(App[int]):
                 yield Static(id="finding", markup=False)
 
     def on_mount(self):
+        for widget in self.query("VerticalScroll, OptionList, DataTable"):
+            if widget.scrollbar_size_vertical:
+                widget.vertical_scrollbar.renderer = _ThinThumb
         for widget in self.query("DataTable, #details-scroll"):
-            widget.horizontal_scrollbar.renderer = _ThinHorizontalThumb
+            widget.horizontal_scrollbar.renderer = _ThinThumb
         self.begin_capture_print(self, stdout=False)
         self._start_check()
 
@@ -264,6 +270,8 @@ class ReportApp(App[int]):
         return self._worker is not None
 
     def _start_check(self):
+        if self._has_report and self.BRANDED_REFRESH and self._hidden_view is None:
+            self._hidden_view = self._view_state()
         self._notice_since = time()
         self._clear_notices()
         self._cancel.clear()
@@ -273,7 +281,7 @@ class ReportApp(App[int]):
         self._runtime_warnings = []
         self._activity = self.STAGES["configuration"]
         self.screen.add_class("checking")
-        self.screen.set_class(not self._has_report, "starting")
+        self.screen.set_class(not self._has_report or self.BRANDED_REFRESH, "starting")
         self.query_one("#status").set_classes("progress")
         self._worker = self.run_worker(self._collect, thread=True, exit_on_error=False)
         self._elapsed_timer = self.set_interval(1, self._tick)
@@ -339,8 +347,11 @@ class ReportApp(App[int]):
             if self._eta_at is not None and now < self._eta_at:
                 activity += f" · ETA ~{_clock(ceil(self._eta_at - now))} (this source)"
             elapsed = _clock(now - self._started)
-            status = (f"Refreshing (previous report shown)\n{activity} · {elapsed} elapsed"
-                      if self._has_report else f"{activity}\n{elapsed} elapsed")
+            if self._has_report and not self.BRANDED_REFRESH:
+                status = f"Refreshing (previous report shown)\n{activity} · {elapsed} elapsed"
+            else:
+                prefix = "Refreshing report\n" if self._has_report else ""
+                status = f"{prefix}{activity}\n{elapsed} elapsed"
             self.query_one("#status", Static).update(status)
 
     async def on_resize(self, event: events.Resize):
@@ -360,7 +371,7 @@ class ReportApp(App[int]):
         graphical = (not self.no_color and encoding.lower().replace("-", "") == "utf8"
                      and environ.get("TERM") not in {"ansi", "linux", "vt100"})
         motion = active and graphical and self.animation_level == "full"
-        branded = (active and graphical and not self._has_report
+        branded = (active and graphical and self.screen.has_class("starting")
                    and size.width >= 68 and size.height >= 20)
         self.query_one(BrandActivity).set_active(branded)
         known = active and graphical and bool(self._total)
@@ -386,11 +397,21 @@ class ReportApp(App[int]):
         self._worker = None
         self._stop_feedback()
         self.screen.remove_class("checking", "starting")
+        hidden_view = self._hidden_view
         if self._cancel.is_set() or event.state == WorkerState.CANCELLED:
-            self.exit(130)
+            if hidden_view is None:
+                self.exit(130)
+            else:
+                self.result_code = 130
+                self._stale = True
+                status = self.query_one("#status", Static)
+                status.set_classes("warning")
+                status.update("Refresh cancelled · previous report shown")
+                self.call_after_refresh(self._restore_hidden_view)
             return
         if event.state == WorkerState.ERROR:
-            self.result_code = 1
+            if self.result_code != 130:
+                self.result_code = 1
             self._stale = self._has_report
             self.screen.set_class(not self._has_report, "empty")
             status = self.query_one("#status", Static)
@@ -400,14 +421,13 @@ class ReportApp(App[int]):
             status.update(f"{verdict} · {problem}. Press r to retry.")
             self._notice("Refresh failed" if self._stale else "Check failed",
                          "Press r to retry.", "warning" if self._stale else "error")
+            if hidden_view is not None:
+                self.call_after_refresh(self._restore_hidden_view)
             return
         report, prepared = event.worker.result
         self._stale = False
         self.screen.remove_class("empty")
-        focused = self.focused
-        offsets = [(widget, widget.scroll_offset, self._scroll_anchor(widget))
-                   for widget in self.query("VerticalScroll, DataTable, OptionList")
-                   if self._has_report and widget.is_on_screen]
+        focused, offsets = hidden_view or self._view_state()
         listing = self.query_one("#finding-list", OptionList)
         old_index = listing.highlighted
         previous = None if old_index is None else self.findings[old_index]
@@ -439,21 +459,36 @@ class ReportApp(App[int]):
         self._has_report = True
         self.screen.refresh_bindings()
         self._notify_result(refreshed)
-        offsets = [(widget, offset) for widget, offset, anchor in offsets
+        offsets = [(widget, offset, anchor) for widget, offset, anchor in offsets
                    if (retained or widget.id != "finding-scroll")
-                   and (index == old_index or widget is not listing)
-                   and anchor == self._scroll_anchor(widget)]
-        if offsets and self.focused is focused:
-            self.call_after_refresh(self._restore_scroll, offsets)
+                   and (index == old_index or widget is not listing)]
+        if hidden_view is not None:
+            self._hidden_view = focused, offsets
+            self.call_after_refresh(self._restore_hidden_view)
+        elif offsets and self.focused is focused:
+            self.call_after_refresh(self._restore_view, None, offsets)
+
+    def _view_state(self):
+        offsets = [(widget, widget.scroll_offset, self._scroll_anchor(widget))
+                   for widget in self.query("VerticalScroll, DataTable, OptionList")
+                   if self._has_report and widget.is_on_screen]
+        return self.focused, offsets
 
     def _scroll_anchor(self, widget):
         return None
 
-    @staticmethod
-    def _restore_scroll(offsets):
-        for widget, (x, y) in offsets:
-            if widget.is_on_screen:
-                widget.scroll_to(x=x, y=y, animate=False)
+    def _restore_hidden_view(self):
+        # A quick retry can start before the report has redrawn.
+        if not self.busy and self._hidden_view is not None:
+            view, self._hidden_view = self._hidden_view, None
+            self._restore_view(*view)
+
+    def _restore_view(self, focused, offsets):
+        if focused is not None and focused.is_on_screen:
+            self.screen.set_focus(focused, scroll_visible=False)
+        for widget, (x, y), anchor in offsets:
+            if widget.is_on_screen and anchor == self._scroll_anchor(widget):
+                widget.scroll_to(x=x, y=y, animate=False, immediate=self.BRANDED_REFRESH)
 
     def show_report(self, report: dict, prepared) -> None:
         raise NotImplementedError
@@ -593,6 +628,6 @@ class ReportApp(App[int]):
             self._cancel.set()
             self._stop_feedback()
             status = "Cancellation requested · waiting for the current operation"
-            if self._has_report:
+            if self._has_report and not self.BRANDED_REFRESH:
                 status = f"Previous report shown\n{status}"
             self.query_one("#status", Static).update(status)

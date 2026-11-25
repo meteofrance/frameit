@@ -29,3 +29,19 @@ Use Python 3.13 in `frameit_env` and the installed Textual 8.2.8 APIs. No new
 runtime dependencies, configuration schema changes or changed scientific
 methods. Inspect rendered captures before finalizing. Run independent
 interactive usability passes, then the full suite once after their fixes.
+
+## Follow-up review (2026-11-25)
+
+- Use a pure black report background and match the centered horizontal and
+  vertical thumb strokes without changing native scrollbar input.
+- Validate reopens the startup activity screen on refresh. Keep the previous
+  report mounted but hidden; cancellation restores its view and labels it as
+  previous. Quitting after that interruption returns 130 unless another check
+  produces a replacement report. First-check cancellation and Inspect behavior
+  stay unchanged.
+- When a Details disclosure scrolls above the viewport, show its title until
+  its content has scrolled past. Reuse the space above the details, so neither
+  scrolling nor expanding a disclosure moves the viewport to fit a new bar.
+- Check representative local producer files read-only, including concurrent
+  sources in a single report. Distinguish a readable sample or a successful
+  preflight from processing or scientific validation.
