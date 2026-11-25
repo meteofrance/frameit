@@ -109,6 +109,8 @@ out-of-memory stop, try a smaller selection first. See
 job log was created, check the job's output directory exists and
 is writable before submission.
 
+.. _execution-progress:
+
 The job is pending or the run is quiet
 --------------------------------------
 
@@ -116,4 +118,5 @@ For a pending Slurm job, run ``squeue -j JOBID`` and read its reason in
 the last column. If the run started, check the latest progress line in
 stderr or its run log. It shows the last activity FrameIt could report,
 not proof that a native call is moving. ``running`` is a saved state,
-not proof the process is alive. See :ref:`execution-progress`.
+not proof the process is alive. See :doc:`../user_guide/output_files` for
+the recorded products and completion state.

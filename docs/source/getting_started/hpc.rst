@@ -172,11 +172,11 @@ Retain resource records and increase input size gradually before selecting
 production requests. Chunking does not bound the whole run: GRIB, tracking
 preparation, caches and export have separate costs.
 
-During quiet work, :ref:`execution-progress` reports the operation/source,
+During quiet work, the progress line reports the operation/source,
 completed counts and last recorded activity. Early preparation notices can
 appear on standard error before a run log exists. A repeated notice is not
 evidence that a native call is advancing or that the run has completed.
-See :doc:`../troubleshooting/run` for a run that stops without a code.
+See :ref:`execution-progress` for a quiet run.
 
 4. Cancellation, retries and interpreting status
 ------------------------------------------------------------
