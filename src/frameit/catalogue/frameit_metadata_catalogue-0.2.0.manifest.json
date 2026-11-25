@@ -1,0 +1,1351 @@
+{
+  "manifest_version": 1,
+  "format": "frameit.metadata.catalogue",
+  "format_version": 2,
+  "catalogue_version": "0.2.0",
+  "date": "2026-11-25",
+  "previous_catalogue_version": "0.1.0",
+  "previous_sqlite_sha256": "f7531aaea03dc42585c8776d59dc2a24309bbe5d94f8a0eeffc9cfc475179498",
+  "artifact": {
+    "filename": "frameit_metadata_catalogue-0.2.0.jsonl.xz",
+    "compression": "xz",
+    "filter": "LZMA2",
+    "preset": 9,
+    "extreme": true,
+    "check": "CRC64",
+    "bytes": 1504656,
+    "sha256": "0fbd92ebfea2198ebb6b7c5b169314744ac51ccbd29ab8f4fe9664ba4f742baf",
+    "uncompressed_bytes": 104278670,
+    "uncompressed_sha256": "534f3adda55023b22826f0b19209789e2f8d2740414b4a90882f10740b890527",
+    "content_sha256": "ff7b1e735ff50370addda7c5a4308ff6457d960ab0c50fdd841dcbef598b41ec"
+  },
+  "serialization": {
+    "encoding": "UTF-8",
+    "line_endings": "LF",
+    "json": "sorted keys; compact separators; Unicode preserved; nonfinite numbers forbidden",
+    "first_line": "catalogue header; no numeric ID",
+    "body": "one complete typed JSON object per line",
+    "content_hash_scope": "Exact bytes of every line after the header, including LF terminators",
+    "record_ids": "Integers unique only within this catalogue snapshot",
+    "unknown_values": "Not imputed; original missing/blank/null representations retained"
+  },
+  "counts": {
+    "field": 33025,
+    "writer_contract": 14013,
+    "metadata_key_census": 256,
+    "attribute": 407,
+    "metadata_key": 1974,
+    "cf_name": 5695,
+    "source": 1150,
+    "change": 165
+  },
+  "body_records": 56685,
+  "field_summary": {
+    "arome": {
+      "records": 1042,
+      "exact_records": 1042,
+      "distinct_exact_names": 114
+    },
+    "croco": {
+      "records": 5429,
+      "exact_records": 4932,
+      "dynamic_records": 497,
+      "distinct_exact_names": 1018
+    },
+    "mesonh": {
+      "records": 8112,
+      "exact_records": 7703,
+      "dynamic_records": 409,
+      "distinct_exact_names": 1532
+    },
+    "nemo": {
+      "records": 14441,
+      "exact_records": 14266,
+      "dynamic_records": 175,
+      "distinct_exact_names": 2190
+    },
+    "surfex": {
+      "records": 4001,
+      "dynamic_records": 1458,
+      "exact_records": 2543,
+      "distinct_exact_names": 1769
+    }
+  },
+  "distinct_exact_producer_name_pairs": 6623,
+  "native_attribute_names": 283,
+  "changes": {
+    "baseline_field_records": 30175,
+    "additions": 2961,
+    "deletions": 111,
+    "replacements": 54,
+    "new_exact_producer_name_pairs": 626,
+    "groups": {
+      "atmosphere": {
+        "delete": 111,
+        "replace": 12,
+        "add": 705,
+        "contracts": 310
+      },
+      "ocean": {
+        "replace": 42,
+        "add": 1759,
+        "contracts": 13465
+      },
+      "surfex": {
+        "add": 497,
+        "contracts": 238
+      }
+    },
+    "completion_policy_changes": {
+      "placeholder_units_withheld": 105,
+      "expression_records_with_values_withheld": 1386,
+      "expression_records_reference_only": 1454,
+      "source_semantic_conflict_withheld": 85,
+      "cf_unit_dimension_conflict_withheld": 8
+    }
+  },
+  "cf_table": {
+    "version": "95",
+    "source_sha256": "d202558c2f2d0bf99e9fd4fbf8b8450902c56e09e7974b70b8726e740bbd51ba",
+    "names_and_aliases": 5695,
+    "role": "Name membership and canonical units; not proof of field semantics"
+  },
+  "completion": {
+    "allowed_attributes": [
+      "units",
+      "long_name",
+      "standard_name"
+    ],
+    "identity": [
+      "producer",
+      "version",
+      "name",
+      "namespace"
+    ],
+    "required_context_member": "completion.requires",
+    "source_assertions_member": "source",
+    "eligible_values_member": "completion.values",
+    "rule": "Use eligible values only after exact identity, all required context, candidate agreement and existing consumer validation.",
+    "reference_types": [
+      "writer_contract",
+      "attribute",
+      "metadata_key",
+      "metadata_key_census",
+      "source",
+      "change",
+      "cf_name"
+    ],
+    "unknown_or_conflicting": "Preserve as unknown/conflicting; do not guess a scientific value or infer a conversion"
+  },
+  "sources": [
+    {
+      "producer": "croco",
+      "version": "2.1.0",
+      "commit": "291e8cd11b2329ee171c7a02c52c9c481dda981e"
+    },
+    {
+      "producer": "croco",
+      "version": "2.1.1",
+      "commit": "8b7394f79e4e8480d765f0678d4cffeabaef199d"
+    },
+    {
+      "producer": "croco",
+      "version": "2.1.3",
+      "commit": "ab63b583c9f9e1faceb838e7063b71f1ab9bd56f"
+    },
+    {
+      "producer": "nemo",
+      "version": "4.2.1",
+      "commit": "9c0f2d511690c30aec45516361e032c5b46a94f5"
+    },
+    {
+      "producer": "nemo",
+      "version": "5.0",
+      "commit": "d6c9fd7692b7bc054875bd8d267ab4ac53d2d83c"
+    },
+    {
+      "producer": "nemo",
+      "version": "5.0.1",
+      "commit": "6f645ba8c1d97fb6c73c4deb3760148f5c5d1b9d"
+    },
+    {
+      "producer": "mesonh",
+      "version": "6.0.0",
+      "commit": "756a50d048f5d349caa2188d593ffccef6185e5d"
+    },
+    {
+      "producer": "mesonh",
+      "version": "6.0.1",
+      "commit": "3be4f4a95ecdb94cccf43f22fa59703542d9ebfe"
+    },
+    {
+      "producer": "mesonh",
+      "version": "6.0-documentation",
+      "scope": "Documentation, not exact producing release identity"
+    },
+    {
+      "producer": "surfex",
+      "version": "8.1",
+      "source_release": "open_surfex_v8_1_20210914"
+    },
+    {
+      "producer": "arome",
+      "version": "official_product_documentation_snapshot_2026-11-25",
+      "scope": "Product documentation, not complete native GRIB/FA inventory"
+    }
+  ],
+  "completeness": "bounded_source_audit",
+  "scope_limits": [
+    "The inventory accounts for the source/API/table classes and pinned inputs described in the audit; it is not a closed universe of every FrameIt-admissible field.",
+    "Runtime-generated names, custom tracers/mechanisms, external/coupled schemas, modified configurations and other releases remain open.",
+    "Reader source versions do not prove external files were produced by that version.",
+    "Source assertions can contain defects; known conflicts remain visible but are ineligible for completion.",
+    "No general UDUNITS parser, model execution or FrameIt end-to-end validation was performed."
+  ],
+  "verification": {
+    "assembly_source_record_round_trip": true,
+    "assembly_contract_round_trip": true,
+    "source_audit_validation": {
+      "atmosphere": {
+        "additions": 705,
+        "base_unchanged": true,
+        "counts_after": {
+          "arome": 1042,
+          "mesonh": 8112
+        },
+        "counts_before": {
+          "arome": 562,
+          "mesonh": 7998
+        },
+        "evidence_entries_verified": 1333,
+        "evidence_files_verified": 35,
+        "patches": 123,
+        "records_after": 9154,
+        "records_before": 8560,
+        "semantic_checks": [
+          "PRES inherits PABST pressure metadata",
+          "WM88/WM89 inherit WT vertical wind and W grid",
+          "four electrical fields use pC units with explicit 1.E12 output scaling",
+          "PI parameter availability has both explicit grids and hourly gust constraints",
+          "all source contracts are reference-only",
+          "all added scoped records require context review"
+        ],
+        "source_contracts": 310,
+        "status": "passed",
+        "unique_scoped_names_unchanged": true
+      },
+      "ocean": {
+        "status": "passed",
+        "baseline_sha256": "fbd85d33c6f37beabcd754dbec658e6bed1b16514f2220b4f36ea241f73eaa56",
+        "baseline_records": 18111,
+        "additional_records": 1759,
+        "corrected_records": 42,
+        "resulting_ocean_records": 19870,
+        "all_xml_field_occurrences_accounted": 15163,
+        "all_native_netcdf_declarations_accounted": 1704,
+        "all_croco_vname_assignments_accounted": 9663,
+        "writer_contracts": 13465,
+        "unique_exact_kind_and_values": 3843,
+        "sources_hash_verified": 838,
+        "native_literal_attribute_occurrences_by_scope": {
+          "global": 606,
+          "variable_bound": 4063,
+          "variable_handle_unbound": 117
+        },
+        "native_dynamic_attribute_name_occurrences": 43,
+        "metadata_keys_by_category": {
+          "catalogue_metadata_keys": [
+            "_FillValue",
+            "axis",
+            "c_grid_axis_shift",
+            "comment",
+            "coordinates",
+            "description",
+            "field",
+            "formula_terms",
+            "long_name",
+            "name",
+            "option_0",
+            "option_1",
+            "option_F",
+            "option_T",
+            "positive",
+            "side_definition",
+            "standard_name",
+            "units"
+          ],
+          "croco_metadata_array_attributes": [
+            "axis",
+            "calendar",
+            "coordinates",
+            "field",
+            "long_name",
+            "positive",
+            "standard_name",
+            "time_origin",
+            "units"
+          ],
+          "netcdf_attribute_writes": [
+            "Akt_bak",
+            "Akt_bak_expl",
+            "Akt_bak_units",
+            "Akv_bak",
+            "Akv_bak_expl",
+            "Akv_bak_units",
+            "Bpor_expl",
+            "Bthk_expl",
+            "CPP-options",
+            "Cdb_expl",
+            "Cdb_max",
+            "Cdb_min",
+            "CfgIndex",
+            "CfgName",
+            "Content",
+            "Convention",
+            "Conventions",
+            "Cs_rho",
+            "Cs_rho_expl",
+            "Cs_w",
+            "Cs_w_expl",
+            "Csed_expl",
+            "DOMAIN_dimensions_ids",
+            "DOMAIN_halo_size_end",
+            "DOMAIN_halo_size_start",
+            "DOMAIN_number",
+            "DOMAIN_number_total",
+            "DOMAIN_position_first",
+            "DOMAIN_position_last",
+            "DOMAIN_size_global",
+            "DOMAIN_size_local",
+            "DOMAIN_type",
+            "Erate_expl",
+            "Fcoor",
+            "Fcount",
+            "Fdt",
+            "Fdx",
+            "Fdy",
+            "Fdz",
+            "Fgrd",
+            "Ft0",
+            "Ftype",
+            "Fx0",
+            "Fy0",
+            "Fz0",
+            "Hrip",
+            "Hrip_expl",
+            "Iperio",
+            "IsfCav",
+            "Jperio",
+            "Lrip",
+            "Lrip_expl",
+            "NFold",
+            "NFtype",
+            "R0",
+            "R0_expl",
+            "R0_units",
+            "S0",
+            "S0_expl",
+            "S0_units",
+            "SRCS",
+            "Scoef",
+            "Scoef_expl",
+            "Scoef_units",
+            "Sd_expl",
+            "Srho",
+            "T0",
+            "T0_expl",
+            "T0_units",
+            "Tcline",
+            "Tcline_expl",
+            "Tcline_units",
+            "Tcoef",
+            "Tcoef_expl",
+            "Tcoef_units",
+            "VertCoord",
+            "VertCoordType",
+            "Vtransform",
+            "Wsed_expl",
+            "Zob",
+            "Zob_expl",
+            "Zob_units",
+            "_FillValue",
+            "_Fillvalue",
+            "apar_file",
+            "ass_file",
+            "avg_file",
+            "axis",
+            "bedload_coeff",
+            "bedload_coeff_expl",
+            "bfr_expl",
+            "boundary",
+            "c_grid_axis_shift",
+            "c_grid_dynamic_range",
+            "calendar",
+            "coordinates",
+            "date",
+            "description",
+            "dlat",
+            "dlon",
+            "dt",
+            "dtfast",
+            "field",
+            "flt_file",
+            "formula_terms",
+            "fpos_file",
+            "frc_file",
+            "gamma2",
+            "gamma2_expl",
+            "grd_file",
+            "hc",
+            "hc_expl",
+            "hc_units",
+            "his_file",
+            "ini_file",
+            "latmin",
+            "levbfrc",
+            "levbfrc_expl",
+            "levsfrc",
+            "levsfrc_expl",
+            "long_name",
+            "lonmin",
+            "maxxdiff",
+            "maxydiff",
+            "morph_fac",
+            "morph_fac_expl",
+            "mpi_avg",
+            "name",
+            "navg",
+            "navg_expl",
+            "ndtfast",
+            "nsta",
+            "nsta_expl",
+            "ntimes",
+            "ntsavg",
+            "ntsavg_expl",
+            "nwrt",
+            "option_0",
+            "option_1",
+            "option_F",
+            "option_T",
+            "partition",
+            "partition_ucla",
+            "positive",
+            "qbar_file",
+            "rdrg",
+            "rdrg2",
+            "rdrg2_expl",
+            "rdrg2_units",
+            "rdrg_expl",
+            "rdrg_units",
+            "rho0",
+            "rho0_expl",
+            "rho0_units",
+            "rimwidth",
+            "rst_file",
+            "s_rho",
+            "s_rho_expl",
+            "s_w",
+            "s_w_expl",
+            "side_definition",
+            "skpp",
+            "sponge_expl",
+            "spos_file",
+            "sta_file",
+            "standard_name",
+            "tau_ce_expl",
+            "theta_b",
+            "theta_b_expl",
+            "theta_s",
+            "theta_s_expl",
+            "time_origin",
+            "time_window",
+            "title",
+            "tnu2",
+            "tnu2_expl",
+            "tnu2_units",
+            "tnu4",
+            "tnu4_expl",
+            "type",
+            "units",
+            "v_sponge",
+            "visc2",
+            "visc2_expl",
+            "visc2_units",
+            "visc4",
+            "visc4_expl",
+            "visc4_units",
+            "x_sponge"
+          ],
+          "xios_api_axis_attributes": [
+            "axis_ref",
+            "begin",
+            "bounds",
+            "data_begin",
+            "data_n",
+            "long_name",
+            "n",
+            "n_glo",
+            "name",
+            "positive",
+            "standard_name",
+            "value"
+          ],
+          "xios_api_axisgroup_attributes": [
+            "bounds",
+            "n_glo",
+            "value"
+          ],
+          "xios_api_domain_attributes": [
+            "area",
+            "bounds_lat_1d",
+            "bounds_lon_1d",
+            "data_dim",
+            "data_ibegin",
+            "data_jbegin",
+            "data_ni",
+            "data_nj",
+            "domain_ref",
+            "ibegin",
+            "jbegin",
+            "lat_name",
+            "latvalue_1d",
+            "latvalue_2d",
+            "lon_name",
+            "lonvalue_1d",
+            "lonvalue_2d",
+            "mask_1d",
+            "name",
+            "ni",
+            "ni_glo",
+            "nj",
+            "nj_glo",
+            "ntiles",
+            "nvertex",
+            "tile_data_ibegin",
+            "tile_data_jbegin",
+            "tile_data_ni",
+            "tile_data_nj",
+            "tile_ibegin",
+            "tile_jbegin",
+            "tile_ni",
+            "tile_nj",
+            "type"
+          ],
+          "xios_api_domaingroup_attributes": [
+            "area",
+            "bounds_lat_1d",
+            "bounds_lon_1d",
+            "data_dim",
+            "data_ibegin",
+            "data_jbegin",
+            "data_ni",
+            "data_nj",
+            "ibegin",
+            "jbegin",
+            "latvalue_1d",
+            "lonvalue_1d",
+            "mask_1d",
+            "ni",
+            "ni_glo",
+            "nj",
+            "nj_glo",
+            "nvertex",
+            "type"
+          ],
+          "xios_api_extract_domain_attributes": [
+            "ibegin",
+            "jbegin",
+            "ni",
+            "nj"
+          ],
+          "xios_api_field_attributes": [
+            "freq_offset",
+            "freq_op"
+          ],
+          "xios_api_fieldgroup_attributes": [
+            "freq_offset",
+            "freq_op"
+          ],
+          "xios_api_file_attributes": [
+            "enabled",
+            "min_digits",
+            "mode",
+            "name",
+            "name_suffix",
+            "output_freq",
+            "par_access",
+            "type"
+          ],
+          "xios_api_filegroup_attributes": [
+            "name",
+            "name_suffix"
+          ],
+          "xios_api_grid_attributes": [
+            "mask_3d"
+          ],
+          "xios_api_gridgroup_attributes": [
+            "mask_3d"
+          ],
+          "xios_api_variable_attributes": [
+            "name",
+            "type"
+          ],
+          "xios_api_zoom_domain_attributes": [
+            "ibegin",
+            "jbegin",
+            "ni",
+            "nj"
+          ],
+          "xios_axis_attributes": [
+            "axis_ref",
+            "chunking_weight",
+            "id",
+            "long_name",
+            "n_glo",
+            "positive",
+            "unit"
+          ],
+          "xios_configuration_attributes": [
+            "begin",
+            "chunking_blocksize_target",
+            "compression_level",
+            "default_pool_gatherer",
+            "default_pool_writer",
+            "default_value",
+            "description",
+            "direction",
+            "domain_ref",
+            "enabled",
+            "gatherer",
+            "grid_ref",
+            "group_ref",
+            "ibegin",
+            "id",
+            "jbegin",
+            "level",
+            "local",
+            "min_digits",
+            "mode",
+            "n",
+            "name",
+            "name_suffix",
+            "ni",
+            "nj",
+            "nprocs",
+            "operation",
+            "output_freq",
+            "output_level",
+            "position",
+            "prec",
+            "split_freq",
+            "split_freq_format",
+            "src",
+            "sync_freq",
+            "type",
+            "using_server2",
+            "writer"
+          ],
+          "xios_domain_attributes": [
+            "chunking_weight_i",
+            "chunking_weight_j",
+            "domain_ref",
+            "id",
+            "long_name",
+            "name"
+          ],
+          "xios_field_attributes": [
+            "axis_ref",
+            "comment",
+            "detect_missing_value",
+            "enabled",
+            "expr",
+            "field_ref",
+            "freq_offset",
+            "freq_op",
+            "grid_ref",
+            "id",
+            "long_name",
+            "name",
+            "operation",
+            "prec",
+            "read_access",
+            "standard_name",
+            "unit"
+          ],
+          "xios_grid_attributes": [
+            "id"
+          ],
+          "xios_scalar_attributes": [
+            "id",
+            "scalar_ref"
+          ]
+        },
+        "artifacts": {
+          "additional_records.jsonl": {
+            "bytes": 2167912,
+            "sha256": "96be8aebdcfabab56771d7e89b06a8b59e700db497a16df4b52f92deec92d775"
+          },
+          "audit_ocean.py": {
+            "bytes": 37641,
+            "sha256": "25d665047bfbc914fe618ef56d159add930c589ecfe009e5f61cfde9d7dc5755"
+          },
+          "audit_summary.json": {
+            "bytes": 64246,
+            "sha256": "66506b29e70d7fe0ce129c6beb4e8600d7e3dca65e9925f6d56033cd9f0bb6f6"
+          },
+          "candidate_census.jsonl": {
+            "bytes": 9356051,
+            "sha256": "13bd833096221432d09a393df5f04678951585c10fab50a216f3ae45a792d226"
+          },
+          "corrections.jsonl": {
+            "bytes": 126270,
+            "sha256": "67ef66c8a15a28c6299dd8ca5cb8a51e9f292edd2c4ff1b6799fe8a21568b702"
+          },
+          "metadata_key_census.json": {
+            "bytes": 1364289,
+            "sha256": "98249412bd83367cbaaf6f779d81255e932f698ab300f9eafce6cb17485b7415"
+          },
+          "source_manifest.json": {
+            "bytes": 416596,
+            "sha256": "0667e7061871ca112c27247e599fb5547eb8ed9359f935cd85f914b7b4ed3574"
+          },
+          "validate_ocean_audit.py": {
+            "bytes": 6508,
+            "sha256": "6d8eb9d78f2242cd723f687192a6dfe61b9dd013d9def6eb198c09d2cf2078d6"
+          },
+          "writer_contracts.json": {
+            "bytes": 17592385,
+            "sha256": "a584e35f21fc2432550d7fb28fbcfac3c63bec51949d88f06b206d9f404f819b"
+          }
+        },
+        "scope_note": "All counts refer to the APIs, definitions and exact source trees listed in audit_summary.json. Runtime-generated names and effective output configurations remain unresolved."
+      },
+      "surfex": {
+        "status": "passed",
+        "checks": [
+          {
+            "check": "baseline SHA-256 unchanged",
+            "passed": true
+          },
+          {
+            "check": "supplement SHA-256 matches",
+            "passed": true
+          },
+          {
+            "check": "contracts SHA-256 matches",
+            "passed": true
+          },
+          {
+            "check": "unique canonical supplementary records",
+            "passed": true
+          },
+          {
+            "check": "all new records reference-only and review-required",
+            "passed": true
+          },
+          {
+            "check": "all contracts reference-only",
+            "passed": true
+          },
+          {
+            "check": "unknown physical metadata stays absent",
+            "passed": true
+          },
+          {
+            "check": "metadata contains only declared GELATO keys",
+            "passed": true
+          },
+          {
+            "check": "all patterns marked and review-required",
+            "passed": true
+          },
+          {
+            "check": "configuration records identified explicitly",
+            "passed": true
+          },
+          {
+            "check": "no blank names or blank metadata assertions",
+            "passed": true
+          },
+          {
+            "check": "all source hashes and line ranges valid",
+            "passed": true,
+            "detail": {
+              "evidence_references": 877,
+              "distinct_cited_files": 77
+            }
+          },
+          {
+            "check": "every GELATO metadata assertion matches its literal t_def constructor",
+            "passed": true,
+            "detail": {
+              "bindings_checked": 192
+            }
+          },
+          {
+            "check": "independent direct-call counts agree",
+            "passed": true,
+            "detail": {}
+          },
+          {
+            "check": "no literal identifiers omitted in audited APIs",
+            "passed": true,
+            "detail": {
+              "literal_observations": 463,
+              "distinct_literal_names": 250,
+              "omissions": []
+            }
+          },
+          {
+            "check": "candidate ledger accounts for every selected name API call",
+            "passed": true
+          },
+          {
+            "check": "external/positional candidate counts agree",
+            "passed": true
+          },
+          {
+            "check": "Chapter 9 independent italic-token census has no unresolved candidates",
+            "passed": true,
+            "detail": {
+              "pdf_sha256": "0a90ce9081f0f3dd87c0aae39f8ad53908ac9a13852a2ce6aca672dccd887469",
+              "pdf_page_range": [
+                284,
+                320
+              ],
+              "baseline_manual_records": 919,
+              "italic_token_observations": 781,
+              "status_counts": {
+                "represented": 769,
+                "excluded_nonfield": 12
+              },
+              "identifier_only_manual_descriptions": 264
+            }
+          }
+        ],
+        "source_files_scanned": 1686,
+        "source_census_manifest_sha256": "9e99d109eb0dd54843de1168b96b7eebad3b094ae245ec2d8fa1d63d4d1dd0b4",
+        "supplementary_records": 497,
+        "contracts": 238,
+        "no_model_runtime_or_frameit_execution": true
+      }
+    },
+    "final_independent_qa": {
+      "status": "passed",
+      "catalogue_version": "0.2.0",
+      "catalogue_sha256": "534f3adda55023b22826f0b19209789e2f8d2740414b4a90882f10740b890527",
+      "body_content_sha256": "ff7b1e735ff50370addda7c5a4308ff6457d960ab0c50fdd841dcbef598b41ec",
+      "checks": [
+        {
+          "check": "baseline has unique canonical source records",
+          "passed": true
+        },
+        {
+          "check": "all body IDs are unique",
+          "passed": true
+        },
+        {
+          "check": "all 33025 field source objects match independent merge",
+          "passed": true,
+          "details": {
+            "baseline": 30175,
+            "deltas": {
+              "delete": 111,
+              "replace": 54,
+              "add": 2961
+            },
+            "final": 33025
+          }
+        },
+        {
+          "check": "all writer contracts survive unchanged",
+          "passed": true,
+          "details": {
+            "contracts": 14013
+          }
+        },
+        {
+          "check": "all original metadata censuses survive unchanged",
+          "passed": true
+        },
+        {
+          "check": "all discovered native attribute names are in attribute policy",
+          "passed": true,
+          "details": {
+            "native_attribute_names": 283,
+            "policy_names": 407,
+            "missing": []
+          }
+        },
+        {
+          "check": "all discovered native attributes have scoped key rows",
+          "passed": true
+        },
+        {
+          "check": "every scoped-key census link resolves to its literal key",
+          "passed": true,
+          "details": {
+            "links": 2123,
+            "errors": []
+          }
+        },
+        {
+          "check": "contracts and scoped keys cannot authorize fill",
+          "passed": true
+        },
+        {
+          "check": "completion keys use only the allowed three attributes",
+          "passed": true
+        },
+        {
+          "check": "review/reference-only sources have no completion values",
+          "passed": true,
+          "details": {
+            "leaked_ids": []
+          }
+        },
+        {
+          "check": "all eligible CF standard names are in the bundled table",
+          "passed": true
+        },
+        {
+          "check": "known placeholder units cannot be proposed",
+          "passed": true
+        },
+        {
+          "check": "all nonempty XIOS expressions remain reference-only",
+          "passed": true,
+          "details": {
+            "records": 1454
+          }
+        },
+        {
+          "check": "policy withholding preserves candidate participation",
+          "passed": true
+        },
+        {
+          "check": "all identified dimensional/descriptor conflicts are withheld",
+          "passed": true,
+          "details": {
+            "records": 93,
+            "by_reason": {
+              "source_semantic_conflict": 85,
+              "cf_unit_dimension_conflict": 8
+            }
+          }
+        },
+        {
+          "check": "body content hash matches header",
+          "passed": true
+        },
+        {
+          "check": "whole-file hash matches frozen build",
+          "passed": true
+        },
+        {
+          "check": "header counts match all preserved rows",
+          "passed": true
+        },
+        {
+          "check": "release completeness is explicitly bounded",
+          "passed": true
+        }
+      ],
+      "counts": {
+        "field_records": 33025,
+        "writer_contracts": 14013,
+        "attribute_policies": 407,
+        "scoped_metadata_keys": 1974,
+        "native_attribute_names": 283,
+        "metadata_census_records": 256,
+        "metadata_key_links": 2123,
+        "eligible_field_records": 16516,
+        "remaining_eligible_cf_unit_pairs": 55,
+        "remaining_eligible_cf_label_combinations": 269,
+        "expression_records_reference_only": 1454,
+        "identified_conflict_records_reference_only": 93,
+        "expression_conflict_overlap": 0
+      },
+      "review_boundaries": {
+        "eligible_cf_canonical_unit_source_unit_pairs_reviewed": 58,
+        "eligible_standard_name_units_long_name_field_combinations_screened": 281,
+        "scope": "Finite pre-final-guard combinations, after expression withholding; final counts are reported separately.",
+        "limitations": [
+          "No general UDUNITS parser was run.",
+          "This is not proof that every free-form producer unit label is understood by FrameIt.",
+          "Equal dimensions do not establish identical physical meaning, sign, grid, or temporal interpretation.",
+          "Runtime producer/version/writer/configuration checks remain required.",
+          "No FrameIt implementation or runtime acceptance test was performed.",
+          "Completeness remains bounded by the three frozen audits."
+        ]
+      },
+      "policy_findings": {
+        "placeholder_unit_assertions_withheld": 554,
+        "conflicts_by_model_name": {
+          "croco/bostr": 6,
+          "croco/bostrw": 6,
+          "croco/bustr": 3,
+          "croco/bvstr": 3,
+          "croco/dQdSST": 3,
+          "croco/radlw_in": 3,
+          "croco/rhum": 3,
+          "croco/sustr": 3,
+          "croco/svstr": 3,
+          "croco/wstr": 6,
+          "nemo/afxthd": 5,
+          "nemo/logavs": 5,
+          "nemo/logavt": 5,
+          "nemo/sidconcth": 5,
+          "nemo/somesatr": 14,
+          "nemo/ttrd_totad": 5,
+          "nemo/v_salttr": 5,
+          "nemo/wfo": 10
+        },
+        "kinematic_predicate_note": "Case-insensitive matching also identifies six bostrw records whose label is Wave-induced kinematic bottom stress; no CF standard name is present in those records.",
+        "original_values_preserved": true,
+        "invented_replacements": false
+      },
+      "log_transform_evidence": [
+        {
+          "producer": "nemo",
+          "version": "4.2.1",
+          "source_file": "src/OCE/DIA/diawri.F90",
+          "source_sha256": "b161b5d4e4758d250611cc143bdda95b45db44eab21522f24438433091742ca7",
+          "source_lines": [
+            299,
+            300
+          ],
+          "source_url": "https://forge.nemo-ocean.eu/nemo/nemo/-/blob/9c0f2d511690c30aec45516361e032c5b46a94f5/src/OCE/DIA/diawri.F90",
+          "observed_operation": "LOG(MAX(...)) passed to iom_put for logavt and logavs"
+        },
+        {
+          "producer": "nemo",
+          "version": "5.0",
+          "source_file": "src/OCE/DIA/diawri.F90",
+          "source_sha256": "6890d2333adc652bfa70d3d152701eaa796c6a9e5a1053a14708998ab2f86219",
+          "source_lines": [
+            293,
+            294
+          ],
+          "source_url": "https://forge.nemo-ocean.eu/nemo/nemo/-/blob/d6c9fd7692b7bc054875bd8d267ab4ac53d2d83c/src/OCE/DIA/diawri.F90",
+          "observed_operation": "LOG(MAX(...)) passed to iom_put for logavt and logavs"
+        },
+        {
+          "producer": "nemo",
+          "version": "5.0.1",
+          "source_file": "src/OCE/DIA/diawri.F90",
+          "source_sha256": "6890d2333adc652bfa70d3d152701eaa796c6a9e5a1053a14708998ab2f86219",
+          "source_lines": [
+            293,
+            294
+          ],
+          "source_url": "https://forge.nemo-ocean.eu/nemo/nemo/-/blob/6f645ba8c1d97fb6c73c4deb3760148f5c5d1b9d/src/OCE/DIA/diawri.F90",
+          "observed_operation": "LOG(MAX(...)) passed to iom_put for logavt and logavs"
+        }
+      ],
+      "source_inputs": [
+        {
+          "path": "frameit_variable_registry/data/source_records/atmosphere_records.jsonl",
+          "sha256": "4bceff9572ec1287beb2de977dd92a767117257de279a175d9620ec7f971d9fb"
+        },
+        {
+          "path": "frameit_variable_registry/data/source_records/ocean_variables.jsonl",
+          "sha256": "fbd85d33c6f37beabcd754dbec658e6bed1b16514f2220b4f36ea241f73eaa56"
+        },
+        {
+          "path": "frameit_variable_registry/data/source_records/surfex_records.jsonl",
+          "sha256": "75469374546f078721a76f2265fe7cdf0c073e0727d0239faefeca9237ffc163"
+        },
+        {
+          "path": "atmosphere/corrections.jsonl",
+          "sha256": "dcbefe54905b9b5c285f026552d0082e9006e096a1c67ffd2d763dc59c001cb8"
+        },
+        {
+          "path": "atmosphere/additional_records.jsonl",
+          "sha256": "2b41178fc885ab80cbaf458d8d4d16e7f99cd8611fee47ed1629e05b24ea61d1"
+        },
+        {
+          "path": "atmosphere/writer_contracts.json",
+          "sha256": "1633239fab947ec5484b50ca8bfd8829beaefbce1cc6d310e687bc7ccf1464cf"
+        },
+        {
+          "path": "ocean/corrections.jsonl",
+          "sha256": "67ef66c8a15a28c6299dd8ca5cb8a51e9f292edd2c4ff1b6799fe8a21568b702"
+        },
+        {
+          "path": "ocean/additional_records.jsonl",
+          "sha256": "96be8aebdcfabab56771d7e89b06a8b59e700db497a16df4b52f92deec92d775"
+        },
+        {
+          "path": "ocean/writer_contracts.json",
+          "sha256": "a584e35f21fc2432550d7fb28fbcfac3c63bec51949d88f06b206d9f404f819b"
+        },
+        {
+          "path": "surfex/corrections.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "surfex/additional_records.jsonl",
+          "sha256": "0630888df3d19dde917c024d37cf3649792fe5872712a414a8ff3b61c552449c"
+        },
+        {
+          "path": "surfex/writer_contracts.json",
+          "sha256": "77ef080d687625621187c0ece1569748ade543211923eb148d627f6c71c48df5"
+        }
+      ]
+    },
+    "standalone_cache_validation": {
+      "catalogue_version": "0.2.0",
+      "content_sha256": "ff7b1e735ff50370addda7c5a4308ff6457d960ab0c50fdd841dcbef598b41ec",
+      "uncompressed_sha256": "534f3adda55023b22826f0b19209789e2f8d2740414b4a90882f10740b890527",
+      "body_records": 56685,
+      "row_types": {
+        "field": 33025,
+        "writer_contract": 14013,
+        "metadata_key_census": 256,
+        "attribute": 407,
+        "metadata_key": 1974,
+        "cf_name": 5695,
+        "source": 1150,
+        "change": 165
+      },
+      "canonical_jsonl": true,
+      "sequential_ids": true,
+      "checks": {
+        "review_required_fields_withheld": 5407,
+        "new_additions_reference_only": 2961,
+        "expression_fields_reference_only": 1454,
+        "contradictory_source_fields_withheld": 93,
+        "dynamic_fields_reference_only": 2539,
+        "recovered_xml_fields_reference_only": 124,
+        "metadata_key_observation_links": 2123
+      },
+      "native_attribute_names_indexed": 283,
+      "cache_round_trip": true,
+      "sqlite_integrity": "ok",
+      "cache_bytes": 139902976,
+      "cache_build_from_plain_jsonl_seconds": 1.3104,
+      "python": "3.13.5",
+      "sqlite_version": "3.46.1",
+      "query_plan": [
+        "SEARCH records USING INDEX field_lookup (producer=? AND version=? AND name=? AND namespace=?)"
+      ],
+      "benchmark_queries": 10000,
+      "benchmark_result_rows": 17843,
+      "warm_lookup_including_json_parse_median_ms": 0.0232,
+      "warm_lookup_including_json_parse_p95_ms": 0.098,
+      "frameit_integration_tested": false
+    },
+    "compression_comparison": [
+      {
+        "format": "gzip-9",
+        "input_bytes": 104278670,
+        "bytes": 3772850,
+        "ratio": 0.03618,
+        "encode_seconds": 1.13,
+        "decode_seconds": 0.7276,
+        "sha256": "88bec41454e048881e64a29f845b94d104af104f19e7602916763b65b8a588f0",
+        "round_trip": true
+      },
+      {
+        "format": "bzip2-9",
+        "input_bytes": 104278670,
+        "bytes": 2413335,
+        "ratio": 0.023143,
+        "encode_seconds": 11.0493,
+        "decode_seconds": 1.6426,
+        "sha256": "f2bf3dbbdad7a33963ec32134252d003cd545c7d2871217705190a96929f9e47",
+        "round_trip": true
+      },
+      {
+        "format": "zstd-19",
+        "input_bytes": 104278670,
+        "bytes": 1873859,
+        "ratio": 0.01797,
+        "encode_seconds": 37.3547,
+        "decode_seconds": 0.2737,
+        "sha256": "a2d4e38cade107a4fba07e8047a3b903587423e6a8b0c56462edf5ecba6a6453",
+        "round_trip": true
+      },
+      {
+        "format": "zstd-22",
+        "input_bytes": 104278670,
+        "bytes": 1577473,
+        "ratio": 0.015127,
+        "encode_seconds": 151.5153,
+        "decode_seconds": 0.0829,
+        "sha256": "98297aa4102df4cff8253bd9e3a54fdf6907d2d44d41fb92689524628d8bf06e",
+        "round_trip": true
+      },
+      {
+        "format": "xz-6",
+        "input_bytes": 104278670,
+        "bytes": 2140408,
+        "ratio": 0.020526,
+        "encode_seconds": 8.0529,
+        "decode_seconds": 0.2321,
+        "sha256": "7775115be9adf5b55bc2ac42471d1df8cf3d77d5c5fe8bedb0cbdebfb1931ac8",
+        "round_trip": true
+      },
+      {
+        "format": "xz-9e",
+        "input_bytes": 104278670,
+        "bytes": 1504656,
+        "ratio": 0.014429,
+        "encode_seconds": 78.5782,
+        "decode_seconds": 0.1995,
+        "sha256": "0fbd92ebfea2198ebb6b7c5b169314744ac51ccbd29ab8f4fe9664ba4f742baf",
+        "round_trip": true
+      }
+    ]
+  },
+  "audit_input_hashes": [
+    {
+      "path": "atmosphere/corrections.jsonl",
+      "sha256": "dcbefe54905b9b5c285f026552d0082e9006e096a1c67ffd2d763dc59c001cb8",
+      "bytes": 274064
+    },
+    {
+      "path": "atmosphere/additional_records.jsonl",
+      "sha256": "2b41178fc885ab80cbaf458d8d4d16e7f99cd8611fee47ed1629e05b24ea61d1",
+      "bytes": 1074487
+    },
+    {
+      "path": "atmosphere/writer_contracts.json",
+      "sha256": "1633239fab947ec5484b50ca8bfd8829beaefbce1cc6d310e687bc7ccf1464cf",
+      "bytes": 397805
+    },
+    {
+      "path": "ocean/corrections.jsonl",
+      "sha256": "67ef66c8a15a28c6299dd8ca5cb8a51e9f292edd2c4ff1b6799fe8a21568b702",
+      "bytes": 126270
+    },
+    {
+      "path": "ocean/additional_records.jsonl",
+      "sha256": "96be8aebdcfabab56771d7e89b06a8b59e700db497a16df4b52f92deec92d775",
+      "bytes": 2167912
+    },
+    {
+      "path": "ocean/writer_contracts.json",
+      "sha256": "a584e35f21fc2432550d7fb28fbcfac3c63bec51949d88f06b206d9f404f819b",
+      "bytes": 17592385
+    },
+    {
+      "path": "surfex/corrections.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "surfex/additional_records.jsonl",
+      "sha256": "0630888df3d19dde917c024d37cf3649792fe5872712a414a8ff3b61c552449c",
+      "bytes": 536530
+    },
+    {
+      "path": "surfex/writer_contracts.json",
+      "sha256": "77ef080d687625621187c0ece1569748ade543211923eb148d627f6c71c48df5",
+      "bytes": 288878
+    },
+    {
+      "path": "atmosphere/validation.json",
+      "bytes": 794,
+      "sha256": "2d7b81993950cde284b322bdd2c609a16e733f7b00dd97834e7658d273835de4"
+    },
+    {
+      "path": "atmosphere/source_manifest.json",
+      "bytes": 533552,
+      "sha256": "40305377a5acf4a399534850587f1f41c9ef2824a70babacd315a0ed9568a822"
+    },
+    {
+      "path": "atmosphere/metadata_key_census.json",
+      "bytes": 141198,
+      "sha256": "615640d3d3a28c483e6eabfe790b164e8ee8bd42eced9ee07873d5b6ddc7eed1"
+    },
+    {
+      "path": "atmosphere/audit_report.json",
+      "bytes": 9037,
+      "sha256": "3f01c40ed6b952e758ed0a403594323c8bc923e7483abfbbc5702ef522ab833c"
+    },
+    {
+      "path": "ocean/validation.json",
+      "bytes": 10067,
+      "sha256": "e3da06a5b4a20fbef568ea5befb60aa4f75562e4a46cf30f91b6334647d2d78a"
+    },
+    {
+      "path": "ocean/source_manifest.json",
+      "bytes": 416596,
+      "sha256": "0667e7061871ca112c27247e599fb5547eb8ed9359f935cd85f914b7b4ed3574"
+    },
+    {
+      "path": "ocean/metadata_key_census.json",
+      "bytes": 1364289,
+      "sha256": "98249412bd83367cbaaf6f779d81255e932f698ab300f9eafce6cb17485b7415"
+    },
+    {
+      "path": "ocean/audit_summary.json",
+      "bytes": 64246,
+      "sha256": "66506b29e70d7fe0ce129c6beb4e8600d7e3dca65e9925f6d56033cd9f0bb6f6"
+    },
+    {
+      "path": "surfex/validation.json",
+      "bytes": 2716,
+      "sha256": "dad06afa5671d1f98b60420931e460f79c7c95b1d7df6a9e6557c539de23975a"
+    },
+    {
+      "path": "surfex/source_manifest.json",
+      "bytes": 28853,
+      "sha256": "1e807ad0b6729e75a995622ab7dbcfe244f1cf71907045f45b258b779465796a"
+    },
+    {
+      "path": "surfex/metadata_key_census.jsonl",
+      "bytes": 64703,
+      "sha256": "3ed7f4194c5f94c3d152c88363415c6536ac4367bc1cf1221d055766224a855e"
+    },
+    {
+      "path": "surfex/audit_summary.json",
+      "bytes": 25618,
+      "sha256": "04fef305ac61ea82c182616813420aadc99c6a7d01c6a9159907adabce0b484c"
+    },
+    {
+      "path": "build_release.py",
+      "bytes": 14094,
+      "sha256": "f8cefa34711dbad37c508c5f7ba424c03f4d10eeee54472db057cfebf861ed0f"
+    },
+    {
+      "path": "validate_release.py",
+      "bytes": 6916,
+      "sha256": "bbf1655cb9dcc498e23db27a6a23206541d02692692c5d89311f3e81dc5049cf"
+    },
+    {
+      "path": "FINAL_QA.json",
+      "bytes": 8417,
+      "sha256": "1b7b63af77ef48e6bd9d41a568e787364eadafa4aa907b228c8d428b8cb8ccf1"
+    },
+    {
+      "path": "release_build.json",
+      "bytes": 3562,
+      "sha256": "4137d3bd2ee9c6fd0c8ab284b272b22a0b095addf6eb48949b6aaba9202168c6"
+    },
+    {
+      "path": "release_validation.json",
+      "bytes": 1400,
+      "sha256": "d126d47c40eb383567ed90bd23c3938c8dbbe76d418a763fc714dcb648dde432"
+    }
+  ],
+  "companion_files": [
+    {
+      "filename": "FRAMEIT_VALIDATE_IMPLEMENTATION-0.2.0.md",
+      "bytes": 22972,
+      "sha256": "fbf5fd0cf7e2bc1f2f30951f7e214de91cd88e8159d2be9dc8ac4355ef1ea1f0"
+    },
+    {
+      "filename": "frameit_metadata_catalogue-0.2.0.audit.md",
+      "bytes": 22222,
+      "sha256": "1dc544c16d72fbdd934ac8859c47afb1d87e10834cbd9bda3ffdb375e75b4289"
+    },
+    {
+      "filename": "frameit_metadata_catalogue.CHANGELOG.md",
+      "bytes": 4637,
+      "sha256": "fc08ba238771db3b415c0136fee105571511db3f15356eb3b5be1f7cbd445184"
+    }
+  ]
+}

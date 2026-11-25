@@ -182,6 +182,25 @@ Read the group name and missing variables in the warning. Check
 the input inventory for those names. Do not assume the group contains
 every requested field. Use the actual list when choosing what to analyse.
 
+.. _w1306:
+
+W1306: The catalogue proposed missing field metadata
+----------------------------------------------------
+
+Verify the proposed keys against the exact producer release and writer. If
+they agree, merge the YAML fragment into ``sources.<id>.field_metadata`` and
+run ``frameit validate`` again. The warning does not mean your configuration or
+source file was changed.
+
+.. _w1307:
+
+W1307: The metadata catalogue could not be used
+-----------------------------------------------
+
+Read the reason in the warning. Check that the installed FrameIt package
+contains both catalogue files and the local cache is writable. You can still
+declare field metadata from producer evidence and revalidate.
+
 Results that look wrong
 -----------------------
 

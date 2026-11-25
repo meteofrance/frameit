@@ -10,6 +10,7 @@ import os
 import re
 from contextlib import nullcontext
 from copy import deepcopy
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -339,7 +340,7 @@ def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None, *, previ
     return _metadata_id("grid_", grid), grid
 
 
-def _netcdf_inventory(path, source, resources, *, previous_grids=None):
+def _netcdf_inventory(path, source, resources, *, previous_grids=None, header_observer=None):
     from frameit.io.grib_utils import normalize_isobaric_coordinates
     from frameit.io.netcdf_utils import mnh_altitude_terms
 
@@ -362,6 +363,9 @@ def _netcdf_inventory(path, source, resources, *, previous_grids=None):
     if model == "croco" and ds.attrs.get("type") != "CROCO history file":
         raise tag_error(ValueError(f"{path}: CROCO requires the admitted CROCO history file profile"),
                         "E1203")
+    if header_observer is not None:
+        # This reader opens the root group, not a FrameIt vertical group.
+        header_observer(model, ds.attrs)
     try:
         samples, time_names = _decoded_clock(ds, path, model=model)
     except PreflightError:
@@ -915,7 +919,7 @@ def _provider_key(record):
 
 
 def inventory_source(conf, name, *, resources=None, progress=None,
-                     sample_only: bool = False) -> dict:
+                     sample_only: bool = False, catalogue_advice=None) -> dict:
     """Populate a v3 source's metadata handoff without binding or processing fields."""
     source = conf.sources[name]
     request = conf.source_requests[name]
@@ -959,7 +963,10 @@ def inventory_source(conf, name, *, resources=None, progress=None,
                     if dependency_error:
                         raise PreflightError([dependency_error])
                 if fmt == "netcdf":
-                    info = _netcdf_inventory(path, source, owned, previous_grids=previous_grids)
+                    header_observer = (partial(catalogue_advice.netcdf_header, name, path)
+                                       if catalogue_advice is not None else None)
+                    info = _netcdf_inventory(path, source, owned, previous_grids=previous_grids,
+                                             header_observer=header_observer)
                 elif fmt == "grib":
                     info = _grib_source_inventory(path, source, sample_only=sample_only)
                 else:
@@ -1138,6 +1145,7 @@ def inventory_source(conf, name, *, resources=None, progress=None,
             relevant, source.get("time", {}), f"sources.{name}")
     errors, providers, conflicts, allowed_gaps = [], {}, [], []
     required_ids = {ref: {r["field_id"] for _, r in candidates[ref]} for ref in required}
+    tracker_method = conf.tracking_method if tracker and physical == "atmosphere" else None
     grouped_levels = {group for group, spec in request.get("groups", {}).items()
                       if spec.get("levels")}
     for field_name in sorted(required):
@@ -1217,6 +1225,11 @@ def inventory_source(conf, name, *, resources=None, progress=None,
                     "make inputs unambiguous upstream.")
         providers[key] = record["locator"]
     if errors:
+        if catalogue_advice is not None:
+            catalogue_advice.capture(
+                name, {**selection_source, "name": name, "model": model, "declaration": source,
+                       "requests": request, "records": selected, "record_inventory": selected},
+                set().union(*required_ids.values()), blocked=True, tracker=tracker_method)
         raise tag_error(ValueError("\n".join(errors)), "E1302")
     selected.sort(key=lambda r: (r["time"], r["name"], r["field_id"], str(r["level"])))
     selected_times = set(times)
@@ -1258,6 +1271,9 @@ def inventory_source(conf, name, *, resources=None, progress=None,
                   records=selected, record_inventory=record_inventory, selected_times=times,
                   dependency_resolution=dependency_resolution, provider_conflicts=conflicts,
                   tracker_input_groups=tracker_groups)
+    if catalogue_advice is not None:
+        catalogue_advice.capture(name, result, set().union(*required_ids.values()),
+                                 tracker=tracker_method)
     if missing_altitude:
         result["missing_mnh_altitude_operands"] = missing_altitude
     else:
@@ -1519,7 +1535,7 @@ def _required_dependencies(conf, execution_options=None):
 
 
 def bind_source(conf, name, *, representations=None, required_inputs=(), resources=None,
-                layout_for=None):
+                layout_for=None, catalogue_advice=None):
     """Bind inventoried inputs using coordinate/static support, not scientific field payloads."""
     source = conf.simulation_parameter["request_plan"]["sources"][name]
     request = conf.source_requests[name]
@@ -1543,7 +1559,9 @@ def bind_source(conf, name, *, representations=None, required_inputs=(), resourc
                if representations is not None else
                 bind_source_operations(
                     {**source, "name": name}, request, conf, required_inputs=required_inputs,
-                    layout_for=layout_for))
+                    layout_for=layout_for, catalogue_advice=catalogue_advice))
+    if catalogue_advice is not None:
+        catalogue_advice.observe_binding(name, binding)
     if source["model"] == "croco" and source["format"] == "netcdf":
         from frameit.io.croco_utils import validate_bound_support
 
@@ -2203,6 +2221,7 @@ def collect_preflight(request, *, command="validate", schema_only=False, check_o
     from frameit.core.settings_class import SimulationConfig
 
     result = PreflightResult(command)
+    catalogue_advice = None
     try:
         conf = request if isinstance(request, SimulationConfig) else (
             SimulationConfig.from_mapping_with_model_preset(request) if isinstance(request, dict)
@@ -2228,12 +2247,16 @@ def collect_preflight(request, *, command="validate", schema_only=False, check_o
             else:
                 from frameit.core.coupled import bind_sources
 
+                if command == "validate":
+                    from frameit.core.catalogue_diagnostics import CatalogueAdvice
+
+                    catalogue_advice = CatalogueAdvice()
                 if progress is not None:
                     progress("metadata", None, None, None)
                 result.facts = bind_sources(
                     conf, check_output=check_output, execution_options=execution_options,
-                    resources=resources, progress=progress)[0]
-            return preflight_result(conf, result.facts, command=command)
+                    resources=resources, progress=progress, catalogue_advice=catalogue_advice)[0]
+            result = preflight_result(conf, result.facts, command=command)
     except (OSError, ValueError, ImportError) as exc:
         result.errors = exception_diagnostics(
             exc, path="configuration" if result.conf is None else "plan",
@@ -2246,6 +2269,8 @@ def collect_preflight(request, *, command="validate", schema_only=False, check_o
             result.deferred_checks = [blocked_check(
                 "plan", [error.path for error in result.errors],
                 "Dependent planning and execution are blocked until these errors are repaired.")]
+    if catalogue_advice is not None:
+        catalogue_advice.finish(result.facts)
     return result
 
 

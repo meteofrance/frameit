@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -412,7 +413,20 @@ def render_projection(report):
             describe(error[key], 4)
     for section in ("configuration", "origins", "inputs", "plan", "pending"):
         lines.append(section.capitalize() + ":")
-        describe(report["data"][section])
+        data = report["data"][section]
+        if section == "plan" and isinstance(catalogue := data.get("metadata_catalogue"), dict):
+            describe({key: value for key, value in data.items() if key != "metadata_catalogue"})
+            fields = catalogue.get("fields", ())
+            if isinstance(fields, list):
+                counts = Counter(str(field.get("status", "")) for field in fields
+                                 if isinstance(field, dict))
+                lines.append(f"  Metadata catalogue {catalogue.get('catalogue_version')}"
+                             " (advice only): " + ", ".join(
+                                 f"{count} {status.replace('_', ' ')}"
+                                 for status, count in sorted(counts.items())))
+                lines.append("    See warnings for exact YAML repairs and --json for evidence.")
+        else:
+            describe(data)
     if report["warnings"]:
         lines.append("Warnings:")
         describe(report["warnings"])

@@ -1090,7 +1090,7 @@ def _grid_from_geometry(geometry, dimensions, *, rotation_coordinate=None):
 
 
 def bind_source_operations(source, request, conf, *, representations=None, required_inputs=(),
-                           layout_for=None):
+                           layout_for=None, catalogue_advice=None):
     """Bind explicit result preparation separately from native exports and trackers.
 
     Every operation's input binding is produced by ``bind_requests`` on actual
@@ -1239,6 +1239,8 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                        for n, candidates in by_name.items()}
             if any(not sequence for sequence in records.values()):
                 raise ValueError(f"{name}: missing input support at selected time/cycle {context}")
+            if catalogue_advice is not None:
+                catalogue_advice.observe_operation(source["name"], records)
             geometry = _operation_geometry(
                 source, records, operation, conf,
                 wind_pair=(inputs["u"], inputs["v"]) if {"u", "v"} <= inputs.keys() else ())

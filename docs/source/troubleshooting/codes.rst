@@ -90,6 +90,8 @@ Warnings
 * :ref:`w1303`
 * :ref:`w1304`
 * :ref:`w1305`
+* :ref:`w1306`
+* :ref:`w1307`
 * :ref:`w1401`
 * :ref:`w1402`
 * :ref:`w1501`

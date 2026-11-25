@@ -558,12 +558,12 @@ def _prepare_v3_regions(conf, children, plans):
 
 
 def prepare_sources(conf, *, check_output=True, execution_options=None, resources=None,
-                    progress=None):
+                    progress=None, catalogue_advice=None):
     """Discover times first; scientifically validate only the selected records."""
     if getattr(conf, "schema_version", None) == 3:
         return _prepare_v3_sources(conf, check_output=check_output,
-                                   execution_options=execution_options, resources=resources,
-                                   progress=progress)
+                                    execution_options=execution_options, resources=resources,
+                                    progress=progress, catalogue_advice=catalogue_advice)
     from frameit.core.preflight import polar_sampling_plan, preflight
 
     preceding = conf.time_alignment == "preceding_hour"
@@ -698,7 +698,7 @@ def _source_child(conf, name) -> SimulationConfig:
 
 
 def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, resources=None,
-                        progress=None):
+                         progress=None, catalogue_advice=None):
     """Independent metadata inventories; associations and payloads belong to later tasks."""
     from frameit.core.configuration import resolved_sources
     from frameit.core.preflight import _required_dependencies, inventory_source
@@ -712,7 +712,8 @@ def _prepare_v3_sources(conf, *, check_output=True, execution_options=None, reso
         try:
             child = _source_child(conf, name)
             children[name] = child
-            source = inventory_source(child, name, resources=resources, progress=progress)
+            source = inventory_source(child, name, resources=resources, progress=progress,
+                                      catalogue_advice=catalogue_advice)
             physical = source["physical_type"]
             if physical in types:
                 errors.append(Diagnostic(
@@ -820,7 +821,7 @@ def _select_times(tree, times):
 
 
 def bind_sources(conf, *, check_output=True, execution_options=None, resources=None,
-                 progress=None):
+                 progress=None, catalogue_advice=None):
     """Prepare actual consumers once, then copy their bound snapshots to the parent."""
     from frameit.core.preflight import (
         _publish_source_binding,
@@ -839,7 +840,8 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
     try:
         report, children, plans = prepare_sources(
             conf, check_output=check_output,
-            execution_options=execution_options, resources=resources, progress=progress)
+            execution_options=execution_options, resources=resources, progress=progress,
+            catalogue_advice=catalogue_advice)
     except PreflightError as exc:
         if not hasattr(exc, "_binding_inputs"):
             raise
@@ -875,7 +877,8 @@ def bind_sources(conf, *, check_output=True, execution_options=None, resources=N
                 progress("binding", name, None, None)
             try:
                 binding = bindings[name] = bind_source(
-                    child, name, resources=resources, layout_for=layout_for)
+                    child, name, resources=resources, layout_for=layout_for,
+                    catalogue_advice=catalogue_advice)
                 if preparation_prerequisites:
                     deferred.append(blocked_check(
                         f"sources.{name}.execution", preparation_prerequisites,

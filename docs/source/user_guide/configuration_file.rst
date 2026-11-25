@@ -61,6 +61,38 @@ that FrameIt version. Warnings remain strings and start with a code in brackets.
 Find a code in :doc:`../troubleshooting/codes`.
 For failed or blocked checks, see :doc:`../troubleshooting`.
 
+Repair missing field metadata
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Full validation can look up missing ``units``, ``long_name`` and
+``standard_name`` on selected fields. It matches the exact producer release,
+case-sensitive native name and the writer or group evidence available in the
+input. It does not infer a version from a filename, or use a model's published
+mnemonic as a native variable name. Missing optional labels do not fail
+validation.
+
+For Meso-NH NetCDF, the current reader checks root variables, using the native
+``MNH_VERSION`` or an exact ``MNH_VERSION_STR`` release. A vertical-group
+selector is not a NetCDF group path.
+
+A :ref:`w1306` warning contains a YAML fragment for
+``sources.<id>.field_metadata``. Check it against the source producer's
+documentation or run records, then merge the suggested keys into your
+configuration and validate again. FrameIt does not apply the repair for you.
+Required metadata remains an error until the normal input or declaration
+supplies it. If a selected method requires native metadata, repair the input
+upstream instead. An unlisted tracer or custom diagnostic is not an error by
+itself.
+
+The installed offline catalogue is release 0.2.0.
+``data.plan.metadata_catalogue`` records its content SHA-256, matched
+assertions, proposed values, and missing or conflicting evidence. The catalogue
+covers the audited sources in its bundled manifest, not every configuration,
+writer, or runtime field. Its verified SQLite index is disposable and stored
+under ``$XDG_CACHE_HOME/frameit/metadata-catalogue`` (default
+``~/.cache/frameit/metadata-catalogue``). Schema-only validation does not
+open the catalogue or create that index.
+
 Terminal view
 ~~~~~~~~~~~~~
 
