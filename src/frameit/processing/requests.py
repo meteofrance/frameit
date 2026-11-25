@@ -850,8 +850,8 @@ def source_field_declaration(source, field, *, record=None):
     return metadata
 
 
-def source_field_metadata(source, field, *, record=None):
-    """Resolve only this selected field's declaration and admitted SEA metadata."""
+def source_field_metadata(source, field, *, record=None, use_catalogue=True, check_native=False):
+    """Resolve native and declared metadata first, then evidenced catalogue gaps."""
     declaration = source.get("declaration", {})
     name, attrs = field["name"], field["attributes"]
     if record is not None:
@@ -864,7 +864,8 @@ def source_field_metadata(source, field, *, record=None):
         if name in SURFEX_FIELDS:
             attrs = surfex_metadata(source, {**field, "attributes": attrs})
             interpreted = True
-    if not metadata and not interpreted:
+    catalogue_values = (record or {}).get("catalogue_values", {}) if use_catalogue else {}
+    if not (metadata or interpreted or catalogue_values or check_native):
         return None
     temporal_names = {"time"}
     records = [record] if record is not None else source["record_inventory"]
@@ -882,6 +883,10 @@ def source_field_metadata(source, field, *, record=None):
         temporal_names=temporal_names)
     if interpreted:
         result["origins"]["units"] = attrs["surfex_units_source"]
+    for key, value in catalogue_values.items():
+        if key not in result["origins"]:
+            result["attributes"][key] = value
+            result["origins"][key] = "catalogue"
     return result
 
 
@@ -1208,6 +1213,8 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
             if len({r["field_id"] for _, r in candidates}) != 1:
                 raise ValueError(
                     f"{loc}: input {field_name} missing or ambiguous in selected inventory")
+        if catalogue_advice is not None:
+            catalogue_advice.observe_operation(source["name"], by_name)
         if product == "polar" and operation["method"] == "polar_input":
             field_id = by_name[name][0][1]["field_id"]
             other = polar_native_ids.setdefault(field_id, name)
@@ -1239,8 +1246,6 @@ def bind_source_operations(source, request, conf, *, representations=None, requi
                        for n, candidates in by_name.items()}
             if any(not sequence for sequence in records.values()):
                 raise ValueError(f"{name}: missing input support at selected time/cycle {context}")
-            if catalogue_advice is not None:
-                catalogue_advice.observe_operation(source["name"], records)
             geometry = _operation_geometry(
                 source, records, operation, conf,
                 wind_pair=(inputs["u"], inputs["v"]) if {"u", "v"} <= inputs.keys() else ())
@@ -2021,6 +2026,8 @@ def bind_requests(source, request, *, representations=None, required_inputs=()):
                 metadata = source_field_metadata(source, field, record=record)
                 if metadata is not None:
                     descriptor.setdefault("field_metadata", metadata)
+                    if record.get("catalogue_values"):
+                        record["field_metadata"] = metadata
                     if interpreted and "surfex_units_source" in metadata["attributes"]:
                         record["field_metadata"] = metadata
                         sea_records.append(record)

@@ -14,6 +14,7 @@ from textual.content import Content
 from textual.screen import ModalScreen
 from textual.widgets import Collapsible, DataTable, Static, TabbedContent, TabPane
 
+from frameit.core.reports import memory_summary
 from frameit.report_diff import product_key, product_path, report_changes
 from frameit.report_motion import ReportScroll
 from frameit.report_tui import DisclosureScroll, EvidenceChoices, ReportApp, _time_label, _yaml
@@ -120,6 +121,8 @@ def _overview(report, config, schema_only, overrides, *, has_warnings, saved=Fal
     lines.append(f"{'Time':<11}{time_span}")
     lines.extend(f"{'':<11}{row}" for row in time_rows[1:])
     lines.extend((f"{'Region':<11}{region}", f"{'Outputs':<11}{outputs}"))
+    if memory := memory_summary(plan.get("memory_estimate")):
+        lines.extend(("", *memory))
     if saved:
         lines.extend(("", "Recorded evidence only. Open a live request to check current inputs."))
     elif not report["errors"]:

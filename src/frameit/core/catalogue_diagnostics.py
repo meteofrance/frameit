@@ -1,20 +1,19 @@
-"""Validation-only advice. Catalogue values never enter the owning field binding."""
+"""Resolve selected missing fields from verified, release-scoped catalogue evidence."""
 
+import logging
 import re
 from collections import defaultdict
-from contextlib import ExitStack
 from functools import partial
 
 import numpy as np
 import xarray as xr
-import yaml
 
 from frameit.core import metadata_catalogue as catalogue
 from frameit.core.configuration import field_selection
 from frameit.io.surfex_utils import SURFEX_FIELDS, _unit_identity
 from frameit.processing.requests import _operation_units, native_field_group, source_field_metadata
 from frameit.utils.diagnostics import format_message
-from frameit.utils.units import UNITS
+from frameit.utils.units import UNITS, unit_metadata
 
 
 def _present(value):
@@ -51,6 +50,7 @@ def propose(rows, context, observed, missing, *, reject_unit=None):
     """Evaluate already exact-name candidates with verified context and joint attributes."""
     outcome = {
         "status": "unmatched", "proposed_values": {}, "unresolved_requirements": [],
+        "supporting_record_ids": {},
         "record_ids": [row["id"] for row in rows],
         "withheld": [{"record_id": row["id"], "attribute": key, "reason": reason}
                      for row in rows for key, reason in row["completion"]["withheld"].items()],
@@ -126,6 +126,7 @@ def propose(rows, context, observed, missing, *, reject_unit=None):
                 "record_ids": ids, "attribute": key, "reason": "unit_admission", "detail": reason})
         else:
             outcome["proposed_values"][key] = value
+            outcome["supporting_record_ids"][key] = ids
     values = outcome["proposed_values"]
     outcome["status"] = (
         ("partial" if len(values) < len(missing) else "proposed") if values else
@@ -201,18 +202,23 @@ def _unit_rejection(source, name, group, attrs, tracker, units):
         if any(map(matches, request["derived"][ref]["inputs"].values())):
             targets.add("m s-1")
 
-    if tracker and name in source.get("tracker_support", {}).get("inputs", ()):
-        return "The selected tracker checks its native inputs before declaration binding."
-    if tracker == "wind_pressure" and name in {"MSLP", "UM10", "VM10", "prmsl", "u10", "v10"}:
-        return "The selected tracker checks its native inputs before declaration binding."
-    if tracker in {"pressure_centroid", "multifield_vortex"} and not source.get("tracker_support"):
-        return "The tracker inputs are not bound; unit admission cannot be confirmed."
-    if not targets and not croco_current:
+    tracker_quantity = None
+    if tracker == "wind_pressure":
+        if name in {"MSLP", "prmsl"}:
+            tracker_quantity = "pressure"
+        elif name in {"UM10", "VM10", "u10", "v10"}:
+            tracker_quantity = "velocity"
+    elif tracker in {"pressure_centroid", "multifield_vortex"}:
+        if not source.get("tracker_support") or name in source["tracker_support"]["inputs"]:
+            return "The selected tracker has not evidenced catalogue unit admission for this field."
+    if not targets and not croco_current and not tracker_quantity:
         return None
     probe = xr.DataArray(0., name=name, attrs={**attrs, "units": units})
     try:
         for target in sorted(targets):
             _operation_units(probe, target, model=source["model"])
+        if tracker_quantity:
+            unit_metadata(probe, tracker_quantity)
         if croco_current:
             from frameit.io.croco_utils import _velocity
 
@@ -238,145 +244,171 @@ def _selector(name, field_id, groups, records, requests):
     return name
 
 
-class CatalogueAdvice:
-    """Remember only the native inputs validation actually selects, even on a bind failure."""
+class CatalogueResolution:
+    """Resolve selected metadata before its checks; keep original file metadata intact."""
 
-    def __init__(self):
+    def __init__(self, resources):
+        self.resources = resources
         self.headers = {}
         self.inventories = {}
-        self.bindings = {}
-        self.operation_records = defaultdict(dict)
+        self.index = None
+        self.lookups = {}
+        self.fields = []
+        self.warnings = []
+        self.unavailable = False
 
     def netcdf_header(self, source_id, path, model, attrs):
         self.headers[source_id, str(path)] = _netcdf_identity(model, attrs)
 
     def capture(self, source_id, source, identities, *, blocked=False, tracker=None):
         selected = [r for r in source["records"] if r["field_id"] in identities]
-        self.inventories[source_id] = source, selected, blocked, tracker
+        seen = {_snapshot_key(r) for r in selected}
+        self.inventories[source_id] = source, seen, tracker
+        self._resolve(source_id, source, selected, tracker, blocked=blocked)
 
-    def observe_operation(self, source_id, records):
-        known = self.operation_records[source_id]
-        for sequence in records.values():
-            for record in sequence:
-                known.setdefault((record["field_id"], record["locator"]["path"]), record)
+    def observe_operation(self, source_id, candidates):
+        source, seen, tracker = self.inventories[source_id]
+        chosen = [record for sequence in candidates.values() for _, record in sequence]
+        new = {_snapshot_key(r) for r in chosen} - seen
+        if new:
+            # Evaluate all selected records of a new field together, not one time at a time.
+            identities = {identity for identity, _ in new}
+            self._resolve(source_id, source,
+                          [r for r in chosen if r["field_id"] in identities], tracker)
+            seen.update(new)
 
-    def observe_binding(self, source_id, binding):
-        self.bindings[source_id] = binding["records"]
-
-    def _selections(self):
-        for source_id, (source, selected, blocked, tracker) in self.inventories.items():
-            chosen = self.bindings.get(source_id)
-            if chosen is None:
-                chosen = [*selected, *self.operation_records[source_id].values()]
-            if not chosen:
+    def _selections(self, source_id, source, chosen):
+        by_name, groups, observations = defaultdict(set), {}, defaultdict(list)
+        fields = source["fields"]
+        chosen_names = {r["name"] for r in chosen if r["name"] is not None}
+        group_names = chosen_names | {name.split(".", 1)[1] for name in chosen_names if "." in name}
+        for record in source["record_inventory"]:
+            name, field_id = record["name"], record["field_id"]
+            if name is None:
                 continue
-            by_name, groups, observations = defaultdict(set), {}, defaultdict(list)
-            fields = source["fields"]
-            chosen_names = {r["name"] for r in chosen if r["name"] is not None}
-            group_names = chosen_names | {name.split(".", 1)[1] for name in chosen_names
-                                          if "." in name}
-            for record in source["record_inventory"]:
-                name, field_id = record["name"], record["field_id"]
-                if name is None:
-                    continue
-                by_name[name].add(field_id)
-                if name in group_names and field_id not in groups:
-                    try:
-                        groups[field_id] = native_field_group(source, fields[field_id], record)
-                    except ValueError:
-                        groups[field_id] = None
-            seen = set()
-            for record in chosen:
-                name, field_id = record["name"], record["field_id"]
-                path = record["locator"]["path"]
-                if name is None or (field_id, path) in seen:
-                    continue
-                seen.add((field_id, path))
-                field = fields[field_id]
-                selector = _selector(name, field_id, groups, by_name, source["requests"])
-                attrs = record.get("observed_attributes", field["attributes"])
-                valid = True
+            by_name[name].add(field_id)
+            if name in group_names and field_id not in groups:
                 try:
-                    metadata = source_field_metadata(source, field, record=record)
+                    groups[field_id] = native_field_group(source, fields[field_id], record)
                 except ValueError:
-                    valid = False  # Do not propose a fix around a rejected native declaration.
+                    groups[field_id] = None
+        seen = set()
+        for record in chosen:
+            name, field_id = record["name"], record["field_id"]
+            path = record["locator"]["path"]
+            if name is None or (field_id, path) in seen:
+                continue
+            seen.add((field_id, path))
+            field = fields[field_id]
+            selector = _selector(name, field_id, groups, by_name, source["requests"])
+            attrs = record.get("observed_attributes", field["attributes"])
+            valid = True
+            try:
+                metadata = source_field_metadata(source, field, record=record, use_catalogue=False,
+                                                 check_native=True)
+            except ValueError:
+                valid = False  # Do not work around a rejected native declaration.
+            else:
+                if metadata is not None:
+                    attrs = metadata["attributes"]
+            observed = {key: attrs[key] for key in catalogue.COMPLETION_KEYS if key in attrs}
+            identity = dict(self.headers.get(
+                (source_id, path), {"format": record["locator"]["format"]}))
+            if (source["declaration"].get("interpretation") == "mesonh_surfex_sea"
+                    and name in SURFEX_FIELDS):
+                # A verified host version says nothing about the embedded writer release.
+                identity = {"format": "netcdf", "netcdf_group": ""}
+            if native := record["locator"].get("variable"):
+                identity["name"] = native
+            elif record["locator"]["format"] == "fa" and not field.get("native_cube"):
+                identity["name"] = name
+            missing = [key for key in catalogue.COMPLETION_KEYS if not _present(observed.get(key))]
+            observations[name, selector].append((
+                record, identity, observed, missing, valid, attrs, groups[field_id]))
+        for (name, selector), items in observations.items():
+            if any(valid and ("units" in missing or missing and "version" in identity)
+                   for _, identity, _, missing, valid, _, _ in items):
+                yield name, selector, items
+
+    def _lookup(self, identity):
+        if not self.unavailable:
+            try:
+                if self.index is None:
+                    self.index = self.resources.enter_context(catalogue.open_catalogue())
+                key = tuple(identity.get(k) for k in ("producer", "version", "name", "namespace"))
+                if key not in self.lookups:
+                    self.lookups[key] = self.index.lookup(*key)
+                return self.lookups[key]
+            except catalogue.CatalogueError as exc:
+                self.unavailable = True
+                self._warn("W1307", f"Metadata catalogue unavailable: {exc}. "
+                           "Use explicit source evidence for unresolved fields.")
+        return []
+
+    def _resolve(self, source_id, source, chosen, tracker, *, blocked=False):
+        if not chosen:
+            return
+        resolved = {}
+        for name, selector, items in self._selections(source_id, source, chosen):
+            results = []
+            for record, identity, observed, missing, valid, attrs, group in items:
+                result = propose([], {}, {}, [])
+                if not valid:
+                    result["status"] = "conflict"
+                elif not missing:
+                    result["status"] = "complete"
+                elif "version" not in identity:
+                    result["status"] = "version_required"
+                    result["unresolved_requirements"] = [{"key": "version"}]
+                elif "name" not in identity:
+                    result["status"] = "context_required"
+                    result["unresolved_requirements"] = [{"key": "name"}]
                 else:
-                    if metadata is not None:
-                        attrs = metadata["attributes"]
-                observed = {key: attrs[key] for key in catalogue.COMPLETION_KEYS if key in attrs}
-                identity = dict(self.headers.get(
-                    (source_id, path), {"format": record["locator"]["format"]}))
-                if (source["declaration"].get("interpretation") == "mesonh_surfex_sea"
-                        and name in SURFEX_FIELDS):
-                    # A verified host version says nothing about the embedded writer release.
-                    identity = {"format": "netcdf", "netcdf_group": ""}
-                if native := record["locator"].get("variable"):
-                    identity["name"] = native
-                elif record["locator"]["format"] == "fa" and not field.get("native_cube"):
-                    identity["name"] = name
-                missing = [key for key in catalogue.COMPLETION_KEYS
-                           if not _present(observed.get(key))]
-                observations[name, selector].append((path, identity, observed, missing, valid,
-                                                     attrs, groups[field_id]))
-            for (name, selector), items in observations.items():
-                if any(valid and ("units" in missing or missing and "version" in identity)
-                       for _, identity, _, missing, valid, _, _ in items):
-                    yield source_id, source, tracker, name, selector, items, blocked
+                    reject_unit = partial(_unit_rejection, source, name, group, attrs, tracker)
+                    result = propose(self._lookup(identity), identity, observed, missing,
+                                     reject_unit=reject_unit)
+                    if self.unavailable:
+                        result["status"] = "unavailable"
+                results.append({
+                    "file": record["locator"]["path"], "native_identity": identity,
+                    "observed_metadata": observed, "missing_attributes": missing, **result,
+                })
+            summary = _combine(source_id, name, selector, results, blocked)
+            if values := summary.pop("proposed_values"):
+                for record, *_ in items:
+                    resolved[_snapshot_key(record)] = values
+                summary["applied_values"] = values
+                summary["status"] = ("applied" if len(values) == len(summary["missing_attributes"])
+                                     else "partially_applied")
+                attributes = ", ".join(f"{key}={value}" for key, value in values.items())
+                self._warn("W1306", f"Metadata catalogue {catalogue.VERSION} supplied "
+                           f"{attributes} for {source_id}.{selector or name}. "
+                           "Input files and YAML were not changed.")
+            else:
+                summary["proposed_values"] = {}
+            self.fields.append(summary)
+        for record in chosen:
+            if values := resolved.get(_snapshot_key(record)):
+                record["catalogue_values"] = values
+
+    def _warn(self, code, text):
+        message = format_message(code, text)
+        if message not in self.warnings:
+            self.warnings.append(message)
+            logging.getLogger(__name__).warning(message)
 
     def finish(self, facts):
-        fields, lookups, warnings = [], {}, []
-        try:
-            with ExitStack() as resources:
-                index = None
-                for selection in self._selections():
-                    source_id, source, tracker, name, selector, items, blocked = selection
-                    results = []
-                    for path, identity, observed, missing, valid, attrs, group in items:
-                        result = propose([], {}, {}, [])
-                        if not valid:
-                            result["status"] = "conflict"
-                        elif not missing:
-                            result["status"] = "complete"
-                        elif "version" not in identity:
-                            result["status"] = "version_required"
-                            result["unresolved_requirements"] = [{"key": "version"}]
-                        elif "name" not in identity:
-                            result["status"] = "context_required"
-                            result["unresolved_requirements"] = [{"key": "name"}]
-                        else:
-                            if index is None:
-                                index = resources.enter_context(catalogue.open_catalogue())
-                            key = tuple(identity.get(k) for k in (
-                                "producer", "version", "name", "namespace"))
-                            if key not in lookups:
-                                lookups[key] = index.lookup(*key)
-                            reject_unit = partial(_unit_rejection, source, name, group,
-                                                  attrs, tracker)
-                            result = propose(lookups[key], identity, observed, missing,
-                                             reject_unit=reject_unit)
-                        results.append({
-                            "file": path, "native_identity": identity,
-                            "observed_metadata": observed, "missing_attributes": missing, **result,
-                        })
-                    summary = _combine(source_id, name, selector, results, blocked)
-                    fields.append(summary)
-                    if "repair" in summary:
-                        warning = format_message(
-                            "W1306", f"Metadata catalogue {catalogue.VERSION} proposed a repair "
-                            f"for {source_id}.{selector}; no metadata was applied. Review against "
-                            "producer evidence before merging this into your YAML:")
-                        warnings.append(warning + "\n" + yaml.safe_dump(
-                            summary["repair"], sort_keys=False, allow_unicode=True).rstrip())
-        except catalogue.CatalogueError as exc:
-            warnings.append(format_message(
-                "W1307", f"Metadata catalogue unavailable: {exc}. Use explicit source evidence."))
-        if fields:
+        if self.fields:
             facts["metadata_catalogue"] = {
                 "catalogue_version": catalogue.VERSION, "content_sha256": catalogue.CONTENT_SHA256,
-                "fields": fields,
+                "fields": self.fields,
             }
-        if warnings:
-            facts["warnings"] = list(dict.fromkeys([*facts.get("warnings", ()), *warnings]))
+        if self.warnings:
+            facts["warnings"] = list(dict.fromkeys([*facts.get("warnings", ()), *self.warnings]))
+
+
+def _snapshot_key(record):
+    return record["field_id"], record["locator"]["path"]
 
 
 def _combine(source_id, name, selector, results, blocked):
@@ -396,6 +428,10 @@ def _combine(source_id, name, selector, results, blocked):
                     summary[key].append(value)
         values = {key: value for key, value in first["proposed_values"].items() if all(
             _equal(key, value, record["proposed_values"].get(key)) for record in results)}
+        summary["supporting_record_ids"] = {
+            key: sorted({record_id for record in results
+                         for record_id in record["supporting_record_ids"].get(key, ())})
+            for key in values}
         statuses = {r["status"] for r in results}
         summary["proposed_values"] = values
         summary["status"] = (("proposed" if len(values) == len(summary["missing_attributes"])
@@ -405,7 +441,8 @@ def _combine(source_id, name, selector, results, blocked):
     else:
         summary["file"] = first["file"]
     if blocked or selector is None:
-        summary.update(status="conflict", selector=None, proposed_values={})
+        summary.update(status="conflict", selector=None, proposed_values={},
+                       supporting_record_ids={})
         summary["withheld"] = [*summary["withheld"], {
             "attribute": "record", "reason": "no_unambiguous_selector"}]
     if summary["proposed_values"]:

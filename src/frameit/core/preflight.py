@@ -1299,7 +1299,7 @@ def inventory_source(conf, name, *, resources=None, progress=None,
             metadata = source_field_metadata(result, field, record=record)
             if metadata is not None:
                 origins.setdefault(field["name"], metadata["origins"])
-                if "observed_attributes" in record:
+                if "observed_attributes" in record or record.get("catalogue_values"):
                     record["field_metadata"] = metadata
         result["metadata_origins"]["field_metadata"] = origins
         if source.get("interpretation"):
@@ -1560,8 +1560,6 @@ def bind_source(conf, name, *, representations=None, required_inputs=(), resourc
                 bind_source_operations(
                     {**source, "name": name}, request, conf, required_inputs=required_inputs,
                     layout_for=layout_for, catalogue_advice=catalogue_advice))
-    if catalogue_advice is not None:
-        catalogue_advice.observe_binding(name, binding)
     if source["model"] == "croco" and source["format"] == "netcdf":
         from frameit.io.croco_utils import validate_bound_support
 
@@ -1652,8 +1650,8 @@ def describe_model_grid_output(source, binding, product, *, regional=False, layo
                 # The owning reader still rejects unrepresentable native-axis mixtures.
                 product["dimensions"][name] = None
         product["stored_names"][name] = name
-        product["units"][name] = descriptor.get(
-            "result_units", field["attributes"].get("units"))
+        attributes = descriptor.get("field_metadata", {}).get("attributes", field["attributes"])
+        product["units"][name] = descriptor.get("result_units", attributes.get("units"))
 
 
 def _describe_v3_unbound_resources(conf, execution_options=None):
@@ -2221,7 +2219,7 @@ def collect_preflight(request, *, command="validate", schema_only=False, check_o
     from frameit.core.settings_class import SimulationConfig
 
     result = PreflightResult(command)
-    catalogue_advice = None
+    output_layouts = None
     try:
         conf = request if isinstance(request, SimulationConfig) else (
             SimulationConfig.from_mapping_with_model_preset(request) if isinstance(request, dict)
@@ -2247,15 +2245,14 @@ def collect_preflight(request, *, command="validate", schema_only=False, check_o
             else:
                 from frameit.core.coupled import bind_sources
 
-                if command == "validate":
-                    from frameit.core.catalogue_diagnostics import CatalogueAdvice
-
-                    catalogue_advice = CatalogueAdvice()
                 if progress is not None:
                     progress("metadata", None, None, None)
-                result.facts = bind_sources(
+                result.facts, children, _ = bind_sources(
                     conf, check_output=check_output, execution_options=execution_options,
-                    resources=resources, progress=progress, catalogue_advice=catalogue_advice)[0]
+                    resources=resources, progress=progress)
+                if command == "validate":
+                    output_layouts = {name: child._bound_output_layouts
+                                      for name, child in children.items()}
             result = preflight_result(conf, result.facts, command=command)
     except (OSError, ValueError, ImportError) as exc:
         result.errors = exception_diagnostics(
@@ -2265,12 +2262,17 @@ def collect_preflight(request, *, command="validate", schema_only=False, check_o
         if isinstance(exc, PreflightError):
             result.facts = exc.facts
             result.deferred_checks = exc.deferred_checks
+        elif catalogue_facts := getattr(exc, "catalogue_facts", None):
+            result.facts.update(catalogue_facts)
         if not result.deferred_checks:
             result.deferred_checks = [blocked_check(
                 "plan", [error.path for error in result.errors],
                 "Dependent planning and execution are blocked until these errors are repaired.")]
-    if catalogue_advice is not None:
-        catalogue_advice.finish(result.facts)
+    if command == "validate" and not schema_only and result.conf is not None:
+        from frameit.core.memory_estimate import estimate_run_memory
+
+        result.facts["memory_estimate"] = estimate_run_memory(
+            result.facts if not result.errors else {}, output_layouts=output_layouts)
     return result
 
 

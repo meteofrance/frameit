@@ -132,8 +132,8 @@ Keep these four records with the data:
   content checksums are not captured; runtime-only callers are identified.
 * ``resolved-config.yaml`` records effective controls, not completion.
 * ``run-provenance.yaml`` records scientific/execution facts as they become known,
-  including versions and code revision/dirty state when available. Unknown facts
-  remain explicit.
+   including versions and code revision/dirty state when available. Unknown facts
+   remain explicit.
 * ``run-status.yaml`` (record version 1) inventories complete publications:
   relative paths, byte sizes, tracking completeness, execution limits, backend
   versions and selected Slurm metadata. ``planned_products`` is intent;
@@ -152,6 +152,9 @@ When centre association is used, status ``time_alignment`` mirrors the provenanc
 record, including excluded times. Unmapped GRIB headers remain inspectable under
 ``sources.<id>.unmapped_grib_records`` in provenance, with native attributes and
 record locators; they are not given invented physical-field aliases.
+When a catalogue supplies missing metadata, ``sources.<id>.metadata_catalogue``
+records the applied values, native identity, supporting record IDs, catalogue
+version and content SHA-256.
 
 Status ``layouts`` records reader/product chunks, dimensions and uncompressed
 array sizes; published descriptors record reopened storage layouts. Estimates

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Have full `frameit validate` explain safe metadata repairs and recommend RAM for the same proposed run.
+**Goal:** Resolve evidenced metadata gaps and have full `frameit validate` recommend RAM for the same run.
 
-**Architecture:** An optional validation observer retains per-record provenance and checks exact indexed catalogue matches after preflight. A separate estimator uses successful bound plans; existing reports render both without passing advice back to execution.
+**Architecture:** Shared source binding uses an indexed catalogue fallback when native and explicit metadata leave a gap. A separate estimator uses successful bound plans; the resource advice is never used by execution.
 
 **Tech Stack:** Python 3.13 in Conda `frameit_env`, stdlib SQLite, LZMA and hashes, existing NumPy/xarray metadata, PyYAML and Textual.
 
@@ -14,7 +14,7 @@
 
 - Start on the local `develop` fork; finish catalogue work before RAM work, with focused local commits and no push.
 - Catalogue release `0.2.0`, format `2`, 56,685 records; trust only the pinned package and preserve all eight row types.
-- Only propose `units`, `long_name`, and `standard_name`. Never change native/configuration metadata, `run`/`inspect` behavior or validation clearance.
+- Only fill missing `units`, `long_name`, and `standard_name`. Do not replace native or authored metadata. `validate` and `run` consume the same decision; `inspect` remains native-only.
 - No new dependencies, config keys, payload reads, remote calls, or report-envelope/version changes.
 - Run tests as `conda run --no-capture-output -n frameit_env env PYTHONPATH=src python -m pytest ...`; build and check published documentation for both commits.
 
@@ -37,15 +37,15 @@
 - [ ] Bundle exactly the verified two assets. Implement streamed JSONL-to-SQLite validation, an out-of-tree cache keyed by content hash and schema, a same-directory temporary build and atomic replacement. Reuse only verified read-only caches with matching release identity. Benchmark cold construction and warm indexed exact queries separately.
 - [ ] Rerun the index tests. Include this work in the catalogue integration commit after Task 2 so the assets have a consumer and documentation.
 
-### Task 2: Catalogue advice in validation
+### Task 2: Catalogue fallback in shared binding
 
 **Files:** `src/frameit/core/catalogue_diagnostics.py`, `src/frameit/core/preflight.py`, `src/frameit/core/coupled.py`, `src/frameit/processing/requests.py`, `src/frameit/core/reports.py`, `src/frameit/utils/diagnostics.py`, `src/frameit/testing/numerical/test_validate_catalogue.py`, and the configuration/troubleshooting docs.
 
-**Interface:** `CatalogueAdvice` is created only by normal `collect_preflight(command="validate")`. It observes per-file NetCDF identity, selected records, and existing operation constraints, then adds `facts["metadata_catalogue"]` and existing-format warnings. The pure `propose` resolver accepts indexed candidates, verified context, observed attributes, missing keys, and unit-admission checks.
+**Interface:** `CatalogueResolution` is owned by `bind_sources`. It observes per-file NetCDF identity and selected records, resolves missing keys before consumers check them, and publishes warnings and `facts["metadata_catalogue"]`. The pure `propose` resolver accepts indexed candidates, verified context, observed attributes, missing keys, and unit-admission checks.
 
-- [ ] Add tests: verified root Meso-NH 6.0.0 `THT` proposes `K` for a selected conversion and retains its original error; applying the declaration makes both validation and execution accept it. Guard payloads, config/input bytes, exit status and JSON envelope. Cover distinct-file disagreements, unknown version/case, unselected fields, schema-only/offline isolation, and optional catalogue failure. With real catalogue rows test TSERIES vs ZTSERIES, LES, CCLOUD, CROCO `u`/`aice`/`vortuw_nbq`, NEMO `ttrd_totad`/XIOS and AROME reference-only. Test empty competitors, typed flags, and `K` rejected by an incompatible target unit.
+- [ ] Add tests: verified root Meso-NH 6.0.0 `THT` uses `K` in both validation and execution without a YAML edit. Guard payloads, config/input bytes, exit status and JSON envelope. Cover distinct-file disagreements, unknown version/case, unselected fields, schema-only/offline isolation, and optional catalogue failure. With real catalogue rows test TSERIES vs ZTSERIES, LES, CCLOUD, CROCO `u`/`aice`/`vortuw_nbq`, NEMO `ttrd_totad`/XIOS and AROME reference-only. Test empty competitors, typed flags, and `K` rejected by an incompatible target unit.
 - [ ] Run `... pytest -q src/frameit/testing/numerical/test_validate_catalogue.py` and see the absent proposal/resolver fail.
-- [ ] Capture evidence at the selected-field boundary, preserving partial inputs even if binding stops. Identify Meso-NH releases from audited native version headers and root from the actual reader, not a vertical selector; require real evidence for other namespaces and bindings. Use existing declaration and unit checks, per-record observations, and safe intersection for one YAML selector. Add `[W1306]` for proposals and `[W1307]` for unavailable assistance; put exact YAML in findings and only a summary in text, full details in JSON.
+- [ ] Capture evidence at the selected-field boundary, preserving partial inputs even if binding stops. Identify Meso-NH releases from audited native version headers and root from the actual reader, not a vertical selector. Require real evidence for other namespaces. Use existing declaration and unit checks and safe intersection across selected records. Add `[W1306]` for applied values and `[W1307]` for unavailable assistance. Retain evidence in JSON and the applied-value provenance.
 - [ ] Rerun Tasks 1–2 and the report/regression tests. Build wheel/sdist and check their installed resources offline; build strict docs and inspect their rendered pages. Commit catalogue code, assets, tests and docs.
 
 ### Task 3: RAM estimate

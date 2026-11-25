@@ -373,6 +373,34 @@ def render_report(result):
     return render_projection(project_report(result))
 
 
+def memory_summary(estimate):
+    """Render advisory facts without assuming older or offline reports contain them."""
+    if not isinstance(estimate, dict):
+        return []
+    if estimate.get("status") == "unavailable":
+        reason = estimate.get("reason")
+        return ["RAM estimate unavailable"
+                + (f": {reason}" if isinstance(reason, str) and reason else ".")]
+    peak, median, recommendation = (estimate.get(key) for key in (
+        "estimated_peak_rss_bytes", "estimated_median_rss_bytes", "recommended_allocation_bytes"))
+    if not all(type(value) is int for value in (peak, median, recommendation)) or not (
+        0 < median <= peak < recommendation
+    ):
+        return []
+
+    def gibibytes(size):
+        gib = 1024**3
+        units, hundredths = divmod((100 * size + gib // 2) // gib, 100)
+        return f"{units}.{hundredths:02d}"
+
+    return [
+        "RAM estimate for frameit run (advisory, includes local workers):",
+        f"Estimated peak RSS: {gibibytes(peak)} GiB",
+        f"Estimated median RSS: {gibibytes(median)} GiB (modeled, not sampled)",
+        f"Recommended allocation: {recommendation // (1024**3)} GiB (with headroom)",
+    ]
+
+
 def render_projection(report):
     lines = [f"{'OK' if report['status'] == 'ok' else 'ERROR'}: {report['command']} "
              "(checks only; not scientific validity or completed execution)"]
@@ -414,17 +442,19 @@ def render_projection(report):
     for section in ("configuration", "origins", "inputs", "plan", "pending"):
         lines.append(section.capitalize() + ":")
         data = report["data"][section]
-        if section == "plan" and isinstance(catalogue := data.get("metadata_catalogue"), dict):
-            describe({key: value for key, value in data.items() if key != "metadata_catalogue"})
-            fields = catalogue.get("fields", ())
-            if isinstance(fields, list):
+        if section == "plan":
+            describe({key: value for key, value in data.items()
+                      if key not in {"metadata_catalogue", "memory_estimate"}})
+            catalogue = data.get("metadata_catalogue")
+            if isinstance(catalogue, dict) and isinstance(fields := catalogue.get("fields"), list):
                 counts = Counter(str(field.get("status", "")) for field in fields
                                  if isinstance(field, dict))
-                lines.append(f"  Metadata catalogue {catalogue.get('catalogue_version')}"
-                             " (advice only): " + ", ".join(
+                lines.append(f"  Metadata catalogue {catalogue.get('catalogue_version')}: "
+                             + ", ".join(
                                  f"{count} {status.replace('_', ' ')}"
                                  for status, count in sorted(counts.items())))
-                lines.append("    See warnings for exact YAML repairs and --json for evidence.")
+                lines.append("    See warnings for applied values and --json for evidence.")
+            lines.extend(f"  {line}" for line in memory_summary(data.get("memory_estimate")))
         else:
             describe(data)
     if report["warnings"]:

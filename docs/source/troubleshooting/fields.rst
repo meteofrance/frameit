@@ -184,13 +184,13 @@ every requested field. Use the actual list when choosing what to analyse.
 
 .. _w1306:
 
-W1306: The catalogue proposed missing field metadata
+W1306: The catalogue supplied missing field metadata
 ----------------------------------------------------
 
-Verify the proposed keys against the exact producer release and writer. If
-they agree, merge the YAML fragment into ``sources.<id>.field_metadata`` and
-run ``frameit validate`` again. The warning does not mean your configuration or
-source file was changed.
+Read the source, field and applied keys in the warning. You do not need to
+edit YAML to use them. Check the source evidence in ``frameit validate --json``
+or, after execution, the catalogue entries in ``run-provenance.yaml``.
+FrameIt does not rewrite the input or configuration.
 
 .. _w1307:
 

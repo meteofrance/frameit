@@ -821,8 +821,32 @@ def _select_times(tree, times):
 
 
 def bind_sources(conf, *, check_output=True, execution_options=None, resources=None,
-                 progress=None, catalogue_advice=None):
+                 progress=None):
     """Prepare actual consumers once, then copy their bound snapshots to the parent."""
+    from contextlib import ExitStack
+
+    from frameit.core.catalogue_diagnostics import CatalogueResolution
+
+    with ExitStack() as resources_stack:
+        resolution = CatalogueResolution(resources_stack)
+        try:
+            bound = _bind_sources(conf, check_output=check_output,
+                                  execution_options=execution_options, resources=resources,
+                                  progress=progress, catalogue_advice=resolution)
+        except PreflightError as exc:
+            resolution.finish(exc.facts)
+            raise
+        except (OSError, ValueError, ImportError) as exc:
+            facts = {}
+            resolution.finish(facts)
+            if facts:
+                exc.catalogue_facts = facts
+            raise
+        resolution.finish(bound[0])
+        return bound
+
+
+def _bind_sources(conf, *, check_output, execution_options, resources, progress, catalogue_advice):
     from frameit.core.preflight import (
         _publish_source_binding,
         bind_source,
@@ -1186,6 +1210,16 @@ def run_native_sources(runner, *, benchmark=False):
         shared = runner.conf.simulation_parameter.get("common_polar_target")
         if shared is not None:
             shared["verification"] = "exact_coordinates_at_associated_centres"
+    catalogue = report.get("metadata_catalogue", {})
+    applied_catalogue = {}
+    for item in catalogue.get("fields", ()):
+        if values := item.get("applied_values"):
+            applied_catalogue.setdefault(item["source_id"], []).append({
+                "catalogue_version": catalogue["catalogue_version"],
+                "content_sha256": catalogue["content_sha256"],
+                "field": item["field"], "native_identity": item["native_identity"],
+                "applied_values": values, "record_ids": item["supporting_record_ids"],
+            })
     runner.conf.add_parameter("source_provenance", {
         name: {"model": source["model"], "format": source["format"],
                "fa_inputs": children[name].simulation_parameter.get("fa_inputs", []),
@@ -1195,7 +1229,9 @@ def run_native_sources(runner, *, benchmark=False):
                    {**record, "attributes": source["fields"][record["field_id"]]["attributes"]}
                    for entry in source["file_inventory"] if entry["path"] in source["files"]
                    for record in entry.get("unmapped_records", [])]),
-               "field_metadata": source["metadata_origins"].get("field_metadata", {}),
+                "field_metadata": source["metadata_origins"].get("field_metadata", {}),
+                **({"metadata_catalogue": applied_catalogue[name]} if name in applied_catalogue
+                   else {}),
                "interpretation": source.get("interpretation"),
                 "region": _association_report(source.get("region")),
                 "polar": source.get("polar"),

@@ -61,10 +61,10 @@ that FrameIt version. Warnings remain strings and start with a code in brackets.
 Find a code in :doc:`../troubleshooting/codes`.
 For failed or blocked checks, see :doc:`../troubleshooting`.
 
-Repair missing field metadata
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Resolve missing field metadata
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Full validation can look up missing ``units``, ``long_name`` and
+Full validation and execution can fill missing ``units``, ``long_name`` and
 ``standard_name`` on selected fields. It matches the exact producer release,
 case-sensitive native name and the writer or group evidence available in the
 input. It does not infer a version from a filename, or use a model's published
@@ -75,23 +75,27 @@ For Meso-NH NetCDF, the current reader checks root variables, using the native
 ``MNH_VERSION`` or an exact ``MNH_VERSION_STR`` release. A vertical-group
 selector is not a NetCDF group path.
 
-A :ref:`w1306` warning contains a YAML fragment for
-``sources.<id>.field_metadata``. Check it against the source producer's
-documentation or run records, then merge the suggested keys into your
-configuration and validate again. FrameIt does not apply the repair for you.
-Required metadata remains an error until the normal input or declaration
-supplies it. If a selected method requires native metadata, repair the input
-upstream instead. An unlisted tracer or custom diagnostic is not an error by
-itself.
+Native metadata and consistent ``sources.<id>.field_metadata`` declarations
+take precedence. A :ref:`w1306` warning identifies each value FrameIt obtained
+from the catalogue. No YAML changes are needed for these values; ``frameit run``
+resolves them on its own. Input files, YAML and scientific values are not
+rewritten. Missing required attributes still fail when the evidence cannot
+resolve them. Check the producer records before adding a declaration or
+regenerating the input. An unlisted tracer or custom diagnostic is not an
+error by itself.
 
 The installed offline catalogue is release 0.2.0.
 ``data.plan.metadata_catalogue`` records its content SHA-256, matched
-assertions, proposed values, and missing or conflicting evidence. The catalogue
+assertions, applied values, and missing or conflicting evidence. The catalogue
 covers the audited sources in its bundled manifest, not every configuration,
 writer, or runtime field. Its verified SQLite index is disposable and stored
 under ``$XDG_CACHE_HOME/frameit/metadata-catalogue`` (default
 ``~/.cache/frameit/metadata-catalogue``). Schema-only validation does not
 open the catalogue or create that index.
+
+If full validation can bind the workload, **Overview** and the text report
+show a RAM recommendation. In JSON, see ``data.plan.memory_estimate``.
+See :ref:`estimate-run-ram` for how to use it.
 
 Terminal view
 ~~~~~~~~~~~~~

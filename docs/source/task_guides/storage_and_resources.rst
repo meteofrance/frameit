@@ -25,6 +25,31 @@ calculations; output chunks/shards encode storage. See
 :ref:`sharded-zarr-output` for layouts, reader requirements and replacement limits.
 The one-CPU settings here are a bounded tutorial, not a fastest configuration.
 
+.. _estimate-run-ram:
+
+Estimate RAM before a run
+--------------------------
+
+Run full validation with the same resources and output settings you will use
+for execution:
+
+.. code-block:: bash
+
+   frameit validate storage-and-resources.yaml --cli
+
+Use **Recommended allocation** as a starting point. FrameIt rounds 1.5 times
+the estimated peak up to a whole GiB. It estimates peak RSS from the bound
+input sizes, processing and output buffers, and simultaneous local workers.
+The reported median is the median of modeled typical phase budgets, not a
+sample across the runtime of a job. The estimate sums RSS across processes,
+which can count shared pages more than once. It is not Slurm's ``MaxRSS``.
+
+``--json`` includes the approximate byte counts and phase breakdown under
+``data.plan.memory_estimate``. Schema-only validation and unresolved plans
+cannot recommend an allocation. Validation does not run the workload to
+measure RAM. Backend caches, compression and realized processing costs vary;
+check a representative pilot before sizing a production run.
+
 Run
 ----
 

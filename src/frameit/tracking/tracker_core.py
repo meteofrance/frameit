@@ -490,16 +490,23 @@ def resolve_tracker_support(conf, source):
         names = (*names, "u", "v", "z")
     headers, inputs, axes = {}, {}, {}
     for name in names:
-        identities = {record["field_id"] for record in source["record_inventory"]
+        candidates = [record for record in source["record_inventory"]
                       if record["name"] == name and (
                           name not in {"u", "v", "z"}
                           or source["fields"][record["field_id"]].get("group") == "isobaric"
-                          or "isobaric" in source["fields"][record["field_id"]]["dimensions"])}
+                          or "isobaric" in source["fields"][record["field_id"]]["dimensions"])]
+        identities = {record["field_id"] for record in candidates}
         if len(identities) != 1:
             raise ValueError(
                 f"{method}: required input {name} missing or ambiguous in selected metadata")
         field = source["fields"][next(iter(identities))]
-        headers[name] = xr.DataArray(0., attrs=field["attributes"], name=name)
+        record = candidates[0]
+        attrs = field["attributes"]
+        if record.get("catalogue_values"):
+            from frameit.processing.requests import source_field_metadata
+
+            attrs = source_field_metadata(source, field, record=record)["attributes"]
+        headers[name] = xr.DataArray(0., attrs=attrs, name=name)
         quantity = "pressure" if name == names[0] else "geopotential" if name == "z" else "velocity"
         unit_metadata(headers[name], quantity)
         from frameit.processing.requests import _field_axis

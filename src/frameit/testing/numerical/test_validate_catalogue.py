@@ -1,6 +1,5 @@
 """Reviewable catalogue advice, with no runtime substitution or new read path."""
 
-import importlib
 import json
 from pathlib import Path
 
@@ -9,6 +8,7 @@ import xarray as xr
 import yaml
 
 from frameit.cli import _cmd_validate
+from frameit.core.catalogue_diagnostics import propose
 from frameit.core.execution import execute_simulation
 from frameit.core.metadata_catalogue import open_catalogue
 from frameit.core.preflight import collect_preflight
@@ -60,7 +60,9 @@ def _suggestions(report):
     return table["fields"]
 
 
-def test_warning_offers_exact_repair_but_preserves_failure(tmp_path, monkeypatch, capsys):
+def test_validated_lookup_resolves_required_units_without_a_yaml_declaration(
+    tmp_path, monkeypatch, capsys,
+):
     path, request = tmp_path / "input.nc", tmp_path / "frameit.yaml"
     _scene().to_netcdf(path, engine="h5netcdf")
     doc = _request(tmp_path)
@@ -68,35 +70,44 @@ def test_warning_offers_exact_repair_but_preserves_failure(tmp_path, monkeypatch
     before = path.read_bytes(), request.read_bytes()
     with monkeypatch.context() as guard:
         guard_netcdf_payloads(guard, {"THT", "V"})
-        assert _cmd_validate(request, json_output=True) == 1
+        assert _cmd_validate(request, json_output=True) == 0
     captured = capsys.readouterr()
     report = json.loads(captured.out)
     assert set(report) == {
         "report_version", "command", "status", "data", "warnings", "errors", "deferred_checks",
     }
-    assert report["status"] == "error"
-    assert "incompatible or unsupported units" in report["errors"][0]["message"]
+    assert report["status"] == "ok" and not report["errors"]
+    assert not report["data"]["configuration"]["sources"]["atmosphere"]["field_metadata"]
     field, = _suggestions(report)
     assert field["source_id"] == "atmosphere" and field["selector"] == "THT"
     assert field["native_identity"]["netcdf_group"] == ""
-    assert field["status"] == "proposed" and field["proposed_values"] == {"units": "K"}
+    assert field["status"] == "applied" and field["applied_values"] == {"units": "K"}
     assert 10546 in field["record_ids"] and field["evidence"]
     assert field["repair"] == {"sources": {"atmosphere": {"field_metadata": {
         "THT": {"units": "K"},
     }}}}
-    assert any("[W1306]" in warning for warning in report["warnings"])
+    assert any("[W1306]" in warning and "units=K" in warning for warning in report["warnings"])
+    assert report["data"]["origins"]["inputs.sources.atmosphere.field_metadata"]["THT"][
+        "units"] == "catalogue"
     text = render_projection(report)
-    assert "Metadata catalogue 0.2.0" in text and "units: K" in text
+    assert "Metadata catalogue 0.2.0" in text and "units=K" in text
     assert (path.read_bytes(), request.read_bytes()) == before
     assert not (tmp_path / "out").exists()
 
-    doc["sources"]["atmosphere"].update(field["repair"]["sources"]["atmosphere"])
-    assert not collect_preflight(doc).errors
-    run = execute_simulation(SimulationConfig.from_mapping_with_model_preset(doc))
+    # Execution independently resolves the same request without a validate-generated file.
+    run = execute_simulation(SimulationConfig.from_yaml_with_model_preset(request))
     assert run.ok
+    assert "[W1306]" in capsys.readouterr().err
     with xr.open_dataset(run.products[0]["path"]) as output:
         assert output.THT.attrs["units"] == "K"
-    assert path.read_bytes() == before[0]
+    provenance = yaml.safe_load((tmp_path / "out" / "run-provenance.yaml").read_text())
+    assert provenance["sources"]["atmosphere"]["metadata_catalogue"][0]["applied_values"] == {
+        "units": "K",
+    }
+    assert provenance["sources"]["atmosphere"]["metadata_catalogue"][0]["record_ids"] == {
+        "units": [10546],
+    }
+    assert (path.read_bytes(), request.read_bytes()) == before
 
 
 @pytest.mark.parametrize(("version", "name", "target", "status"), [
@@ -136,9 +147,18 @@ def test_optional_labels_do_not_fail_validation_or_consult_unselected_fields(tmp
     assert not result.errors
     field, = _suggestions(project_report(result))
     assert field["selector"] == "THT"
-    assert field["proposed_values"] == {
+    assert field["applied_values"] == {
         "long_name": "THT", "standard_name": "air_potential_temperature",
     }
+
+
+def test_catalogue_does_not_introduce_an_unrelated_native_export_failure(tmp_path):
+    ds = _scene()
+    ds.THT.attrs.update(online_operation="mean", cell_methods="time: point")
+    ds.to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
+    result = collect_preflight(_request(tmp_path, target=None))
+    assert not result.errors, result.errors
+    assert not any("[W1306]" in warning for warning in result.facts["warnings"])
 
 
 def test_conflicting_explicit_declaration_is_not_resolved_by_catalogue(tmp_path):
@@ -150,6 +170,42 @@ def test_conflicting_explicit_declaration_is_not_resolved_by_catalogue(tmp_path)
     assert "metadata_catalogue" not in result.facts
 
 
+@pytest.mark.parametrize("where", ["input", "declaration"])
+def test_existing_units_take_precedence_without_a_catalogue_warning(tmp_path, where):
+    ds = _scene(units="kelvin" if where == "input" else None)
+    ds.to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
+    doc = _request(tmp_path, target="kelvin")
+    if where == "declaration":
+        doc["sources"]["atmosphere"]["field_metadata"] = {"THT": {"units": "kelvin"}}
+    result = collect_preflight(doc)
+    assert not result.errors and "metadata_catalogue" not in result.facts
+    source = result.facts["sources"]["atmosphere"]
+    assert source["metadata_origins"]["field_metadata"].get("THT", {}).get("units", "input") == (
+        where)
+    assert result.facts["products"][0]["units"]["THT"] == "kelvin"
+
+
+def test_tracker_consumes_admitted_catalogue_pressure_units(tmp_path, monkeypatch):
+    from frameit.testing.numerical.test_v3_polar import scene as surface_scene
+
+    ds = surface_scene().rename(q="MSLP").assign_attrs(MNH_VERSION=[6, 0, 0])
+    ds.MSLP.attrs = {"long_name": "MSLP", "standard_name": "air_pressure_at_sea_level"}
+    ds["UM10"] = xr.zeros_like(ds.MSLP).assign_attrs(
+        long_name="UM10", units="m s-1", standard_name="eastward_wind")
+    ds["VM10"] = xr.zeros_like(ds.MSLP).assign_attrs(
+        long_name="VM10", units="m s-1", standard_name="northward_wind")
+    ds.to_netcdf(tmp_path / "input.nc", engine="h5netcdf")
+    doc = _request(tmp_path, name="MSLP", target=None)
+    doc["sources"]["atmosphere"]["variables"] = {"2d": ["MSLP"]}
+    doc["region"] = {"tracker": {"method": "pressure_wind"}}
+    doc["products"] = {"track": True}
+    guard_netcdf_payloads(monkeypatch, {"MSLP", "UM10", "VM10"})
+    result = collect_preflight(doc)
+    assert not result.errors, result.errors
+    field = next(row for row in _suggestions(project_report(result)) if row["field"] == "MSLP")
+    assert field["applied_values"] == {"units": "hPa"}
+
+
 def test_native_version_string_identifies_the_release(tmp_path):
     ds = _scene(version=None)
     ds.attrs["MNH_VERSION_STR"] = "Meso-NH 6.0.0"
@@ -157,7 +213,7 @@ def test_native_version_string_identifies_the_release(tmp_path):
     result = collect_preflight(_request(tmp_path))
     field, = _suggestions(project_report(result))
     assert field["native_identity"]["version_evidence"] == "MNH_VERSION_STR"
-    assert field["proposed_values"] == {"units": "K"}
+    assert field["applied_values"] == {"units": "K"}
 
 
 def test_catalogue_advice_does_not_hide_an_independent_source_error(tmp_path):
@@ -166,9 +222,9 @@ def test_catalogue_advice_does_not_hide_an_independent_source_error(tmp_path):
     doc["sources"]["ocean"] = {"model": "nemo", "files": str(tmp_path / "missing.nc"),
                                "variables": {"2d": ["temp"]}}
     result = collect_preflight(doc)
-    assert {"sources.ocean.files", "sources.atmosphere"} <= {e.path for e in result.errors}
+    assert {e.path for e in result.errors} == {"sources.ocean.files"}
     field, = _suggestions(project_report(result))
-    assert field["source_id"] == "atmosphere" and field["proposed_values"] == {"units": "K"}
+    assert field["source_id"] == "atmosphere" and field["applied_values"] == {"units": "K"}
 
 
 def test_schema_only_and_inspect_do_not_open_catalogue(tmp_path, monkeypatch):
@@ -199,13 +255,10 @@ def test_missing_catalogue_does_not_replace_validation_verdict(tmp_path, monkeyp
 
 
 def _resolve(producer, version, name, namespace, context, observed=None, missing=("units",)):
-    module = "frameit.core.catalogue_diagnostics"
-    assert importlib.util.find_spec(module), "No qualified catalogue resolver is available"
-    lookup = importlib.import_module(module)
     with open_catalogue() as index:
         rows = index.lookup(producer, version, name, namespace)
     assert rows
-    return lookup.propose(rows, {"namespace": namespace, **context}, observed or {}, missing)
+    return propose(rows, {"namespace": namespace, **context}, observed or {}, missing)
 
 
 @pytest.mark.parametrize(("group", "units"), [
@@ -268,9 +321,6 @@ def test_output_alias_and_product_mnemonic_are_not_native_bindings():
 
 
 def test_empty_candidate_counts_instead_of_selecting_an_eligible_first_row():
-    module = "frameit.core.catalogue_diagnostics"
-    assert importlib.util.find_spec(module), "No qualified catalogue resolver is available"
-    propose = importlib.import_module(module).propose
     identity = {"namespace": "native"}
     usable = {"candidate": True, "identity": {}, "requires": {}, "withheld": {}}
     rows = [
@@ -284,9 +334,6 @@ def test_empty_candidate_counts_instead_of_selecting_an_eligible_first_row():
 
 
 def test_observed_units_and_standard_name_do_not_establish_two_different_identities():
-    module = "frameit.core.catalogue_diagnostics"
-    assert importlib.util.find_spec(module), "No qualified catalogue resolver is available"
-    propose = importlib.import_module(module).propose
     completion = {"candidate": True, "identity": {}, "requires": {}, "withheld": {},
                   "values": {"long_name": "Cannot be proposed"}}
     rows = [

@@ -109,8 +109,10 @@ input size:
    python -m frameit validate /absolute/path/case.yaml
    python -m frameit config show /absolute/path/case.yaml --effective
 
-Planning reports effective settings and resources. Use the pilot run to measure
-memory, disk use and runtime.
+Use the :ref:`estimated RAM allocation <estimate-run-ram>` as an initial
+``sbatch --mem`` request, with the same worker counts and output settings.
+Measure memory, disk use and runtime in the pilot. The modeled peak and median
+are not scheduler-accounted measurements.
 
 3. Submit and independently check the real pilot
 ------------------------------------------------------------
