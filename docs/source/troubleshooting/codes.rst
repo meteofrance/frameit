@@ -80,6 +80,8 @@ Errors
 * :ref:`e2001`
 * :ref:`e2002`
 * :ref:`e2003`
+* :ref:`e2004`
+* :ref:`e2005`
 
 Warnings
 --------
@@ -110,3 +112,4 @@ Warnings
 * :ref:`w1801`
 * :ref:`w1901`
 * :ref:`w2001`
+* :ref:`w2002`

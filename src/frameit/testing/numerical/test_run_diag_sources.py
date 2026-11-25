@@ -13,18 +13,21 @@ from frameit.testing.numerical.test_run_diag_configuration import request
 from frameit.testing.numerical.test_run_diag_lifecycle import run_diag, write_request
 
 
-def vortex_input(path, *, temporal="qualified", size=45):
+def vortex_input(path, *, temporal="qualified", size=45, declared_height=10.0):
     from pyproj import Geod
 
-    lat = -20. + .05 * (np.arange(size) - size // 2)
-    lon = 60. + .05 * (np.arange(size) - size // 2)
+    lat = -20.0 + 0.05 * (np.arange(size) - size // 2)
+    lon = 60.0 + 0.05 * (np.arange(size) - size // 2)
     xx, yy = np.meshgrid(lon, lat)
     _, _, metres = Geod(a=6371000, b=6371000).inv(
-        np.full(xx.shape, 60.), np.full(xx.shape, -20.), xx, yy)
+        np.full(xx.shape, 60.0), np.full(xx.shape, -20.0), xx, yy
+    )
     shape = (2, size, size)
     radius = metres / 18000
     speed = np.broadcast_to(44 * radius * np.exp(1 - radius), shape)
-    wind = {"units": "m s-1", "height_above_ground_m": 10., "wind_reference_frame": "earth"}
+    wind = {"units": "m s-1", "wind_reference_frame": "earth"}
+    if declared_height is not None:
+        wind["height_above_ground_m"] = declared_height
     time_attrs = {"standard_name": "time", "bounds": "time_bounds"}
     if temporal == "qualified":
         wind["cell_methods"] = "time: mean"
@@ -32,46 +35,83 @@ def vortex_input(path, *, temporal="qualified", size=45):
         wind["temporal_kind"] = "instantaneous"
     times = np.array(["2000-01-01T00", "2000-01-01T01"], dtype="datetime64[s]")
     dims = ("time", "latitude", "longitude")
-    data = xr.Dataset({
-        "wind10": (dims, speed, {**wind, "standard_name": "wind_speed"}),
-        "wind_levels": (("time", "height", "latitude", "longitude"),
-                        np.stack((speed, speed + 1), axis=1),
-                        {**wind, "standard_name": "wind_speed"}),
-        "u": (dims, speed, {**wind, "standard_name": "eastward_wind"}),
-        "v": (dims, np.zeros(shape), {**wind, "standard_name": "northward_wind"}),
-        "mslp": (dims, np.broadcast_to(98000 + metres * .02, shape),
-                 {"units": "Pa", "standard_name": "air_pressure_at_mean_sea_level"}),
-        "area": (dims, np.full(shape, 3e7), {"units": "m2", "standard_name": "cell_area"}),
-        "unused": (dims, np.zeros(shape)),
-        "time_bounds": (("time", "bounds"), np.stack(
-            (times - np.timedelta64(600, "s"), times), axis=1)),
-    }, coords={
-        "time": ("time", times, time_attrs),
-        "height": ("height", [10., 20.], {"standard_name": "height", "units": "m",
-                                         "positive": "up", "axis": "Z"}),
-        "latitude": ("latitude", lat, {"standard_name": "latitude", "units": "degrees_north"}),
-        "longitude": ("longitude", lon, {"standard_name": "longitude", "units": "degrees_east"}),
-    }, attrs={"earth_radius": 6371000.})
-    encoding = {var: {"units": "seconds since 2000-01-01", "calendar": "proleptic_gregorian"}
-                for var in ("time", "time_bounds")}
+    data = xr.Dataset(
+        {
+            "wind10": (dims, speed, {**wind, "standard_name": "wind_speed"}),
+            "wind_levels": (
+                ("time", "height", "latitude", "longitude"),
+                np.stack((speed, speed + 1), axis=1),
+                {**wind, "standard_name": "wind_speed"},
+            ),
+            "u": (dims, speed, {**wind, "standard_name": "eastward_wind"}),
+            "v": (dims, np.zeros(shape), {**wind, "standard_name": "northward_wind"}),
+            "mslp": (
+                dims,
+                np.broadcast_to(98000 + metres * 0.02, shape),
+                {"units": "Pa", "standard_name": "air_pressure_at_mean_sea_level"},
+            ),
+            "area": (dims, np.full(shape, 3e7), {"units": "m2", "standard_name": "cell_area"}),
+            "unused": (dims, np.zeros(shape)),
+            "time_bounds": (
+                ("time", "bounds"),
+                np.stack((times - np.timedelta64(600, "s"), times), axis=1),
+            ),
+        },
+        coords={
+            "time": ("time", times, time_attrs),
+            "height": (
+                "height",
+                [10.0, 20.0],
+                {"standard_name": "height", "units": "m", "positive": "up", "axis": "Z"},
+            ),
+            "latitude": ("latitude", lat, {"standard_name": "latitude", "units": "degrees_north"}),
+            "longitude": (
+                "longitude",
+                lon,
+                {"standard_name": "longitude", "units": "degrees_east"},
+            ),
+        },
+        attrs={"earth_radius": 6371000.0},
+    )
+    encoding = {
+        var: {"units": "seconds since 2000-01-01", "calendar": "proleptic_gregorian"}
+        for var in ("time", "time_bounds")
+    }
     data.to_netcdf(path, engine="h5netcdf", encoding=encoding)
 
 
-def vortex_parent(tmp_path, *, kind="original", temporal="qualified", size=45,
-                  fields=("wind10", "mslp", "area"), width=190, output_format="netcdf"):
+def vortex_parent(
+    tmp_path,
+    *,
+    kind="original",
+    temporal="qualified",
+    size=45,
+    fields=("wind10", "mslp", "area"),
+    width=190,
+    output_format="netcdf",
+    declared_height=10.0,
+    export_track=False,
+):
     raw = request(kind=kind)
     raw["sources"]["weather"].update(
-        files="vortex*.nc", variables={"2d": list(fields)}, reader={"engine": "h5netcdf"})
+        files="vortex*.nc", variables={"2d": list(fields)}, reader={"engine": "h5netcdf"}
+    )
     raw["output"] = {"directory": "parent", "format": output_format}
     raw["resources"] = {"cpus": 1, "scheduler": "synchronous", "synchronous_export": True}
-    raw["region"] = {"center": {"latitude": -20., "longitude": 60.},
-                     "width_km": {"x": width, "y": width}}
+    raw["region"] = {
+        "center": {"latitude": -20.0, "longitude": 60.0},
+        "width_km": {"x": width, "y": width},
+    }
+    if export_track:
+        raw["products"] = {"track": True, "model_grid": True}
     best = raw["diagnostics"]["best_track"]
     best["fields"]["cell_area"] = "area"
+    best["rmw"]["azimuth_sectors"] = 4
     best["search"]["wind_radii_radius_km"] = 80
     raw_source = tmp_path / "vortex.nc"
-    vortex_input(raw_source, temporal=temporal, size=size)
-    conf = SimulationConfig(**to_runtime(raw, base_dir=tmp_path))
+    vortex_input(raw_source, temporal=temporal, size=size, declared_height=declared_height)
+    original = {key: val for key, val in raw.items() if key != "diagnostics"}
+    conf = SimulationConfig(**to_runtime(original, base_dir=tmp_path))
     execute_simulation(conf, ExecutionOptions.from_config(conf))
     return write_request(tmp_path / "config.yaml", raw), raw, raw_source, conf.output_dir
 
@@ -80,18 +120,22 @@ def test_exact_netcdf_selection(tmp_path, monkeypatch):
     from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
 
     cfg, raw, path, root = vortex_parent(tmp_path)
-    raw["diagnostics"]["best_track"]["fields"]["wind"] = {"speed": {
-        "field": "wind_levels", "group": "height", "level": {"value": 0.01, "units": "km"},
-    }}
+    raw["diagnostics"]["best_track"]["fields"]["wind"] = {
+        "speed": {
+            "field": "wind_levels",
+            "group": "height",
+            "level": {"value": 0.01, "units": "km"},
+        }
+    }
     write_request(cfg, raw)
     # This file matches the current glob, but was not admitted by the parent.
     (tmp_path / "vortex-new.nc").write_bytes(b"not a NetCDF")
     report = run_diag(cfg, check=True)
     assert report["status"] == "ok", report["errors"]
 
+    from frameit.core.configuration import resolve_schema
     from frameit.diagnostics.runner import _admit_parent
     from frameit.diagnostics.sources import open_source, plan_source
-    from frameit.core.configuration import resolve_schema
 
     native_get = H5NetCDFArrayWrapper._getitem
     seen = []
@@ -103,13 +147,15 @@ def test_exact_netcdf_selection(tmp_path, monkeypatch):
 
     monkeypatch.setattr(H5NetCDFArrayWrapper, "_getitem", traced)
     conf, _, _ = resolve_schema(raw, base_dir=cfg.parent)
-    parent = _admit_parent(root, raw, base_dir=cfg.parent, source_name="weather",
-                           source_kind="original")
+    parent = _admit_parent(
+        root, raw, base_dir=cfg.parent, source_name="weather", source_kind="original"
+    )
     plan = plan_source(parent, conf["diagnostics"]["best_track"], scratch=tmp_path)
     assert seen == []  # Planning reads declarations/coordinates, not selected payload.
     with open_source(plan, scratch=tmp_path) as reader:
-        wind = next(group for group in reader.samples(parent.centres[0].time)
-                    if group.role == "wind")
+        wind = next(
+            group for group in reader.samples(parent.centres[0].time) if group.role == "wind"
+        )
         with reader.open_group(wind) as view:
             block = view.read((slice(3, 6), slice(4, 8)))
     assert block.values["speed"].shape == (3, 4)
@@ -129,7 +175,7 @@ def test_cropped_without_raw_or_catalogue(tmp_path, monkeypatch):
     monkeypatch.setattr("frameit.core.metadata_catalogue.open_catalogue", unexpected)
     plan = run_diag(cfg, check=True)
     assert plan["status"] == "ok", plan["errors"]
-    product, = (root / "products").glob("*.nc")
+    (product,) = (root / "products").glob("*.nc")
     product.touch()
     failure = run_diag(cfg, check=True)
     assert failure["errors"][0]["code"] == "E2003"
@@ -148,7 +194,7 @@ def test_wind_and_gust_evidence(tmp_path):
     assert wind["temporal_statistic"] == "magnitude_of_mean_components"
     assert wind["averaging_seconds"] == 600
     assert wind["qualified"] is False
-    assert np.hypot(np.mean([4., 0.]), np.mean([0., 4.])) < np.mean([4., 4.])
+    assert np.hypot(np.mean([4.0, 0.0]), np.mean([0.0, 4.0])) < np.mean([4.0, 4.0])
 
 
 def test_budget_and_scope(tmp_path):

@@ -35,8 +35,11 @@ def _portable(value):
 
 
 def content_digest(value):
-    return hashlib.sha256(json.dumps(_portable(value), sort_keys=True, separators=(",", ":"),
-                                     ensure_ascii=True).encode("ascii")).hexdigest()
+    return hashlib.sha256(
+        json.dumps(
+            _portable(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("ascii")
+    ).hexdigest()
 
 
 def file_sha256(path):
@@ -49,8 +52,13 @@ def project_base_request(authored, *, base_dir, version=PROJECTION_VERSION):
     if type(version) is not int or version != PROJECTION_VERSION:
         raise ValueError(f"Unsupported scientific request projection version: {version!r}")
     base_dir = Path(base_dir).absolute()
-    result = deepcopy({key: value for key, value in authored.items()
-                       if key not in {"diagnostics", "logging", "resources", "metadata"}})
+    result = deepcopy(
+        {
+            key: value
+            for key, value in authored.items()
+            if key not in {"diagnostics", "logging", "resources", "metadata"}
+        }
+    )
 
     def absolute(value):
         return str(base_dir / value)
@@ -59,8 +67,11 @@ def project_base_request(authored, *, base_dir, version=PROJECTION_VERSION):
         for key in ("files", "exclude"):
             if key in source:
                 paths = source[key]
-                source[key] = (absolute(paths) if isinstance(paths, str)
-                               else [absolute(path) for path in paths])
+                source[key] = (
+                    absolute(paths)
+                    if isinstance(paths, str)
+                    else [absolute(path) for path in paths]
+                )
         reader = source.get("reader", {})
         if "python_executable" in reader:
             reader["python_executable"] = absolute(reader["python_executable"])
@@ -70,7 +81,8 @@ def project_base_request(authored, *, base_dir, version=PROJECTION_VERSION):
     if "weights_file" in region.get("tracker", {}):
         region["tracker"]["weights_file"] = absolute(region["tracker"]["weights_file"])
     for section, operational in (
-        ("run", {"description"}), ("output", {"directory", "overwrite", "writer"}),
+        ("run", {"description"}),
+        ("output", {"directory", "overwrite", "writer"}),
     ):
         if section in result:
             kept = {key: value for key, value in result[section].items() if key not in operational}
@@ -88,8 +100,11 @@ def build_context(request, effective):
         "authored": project_base_request(authored, base_dir=base) if authored is not None else None,
         "effective": project_base_request(effective, base_dir=base),
     }
-    summary = {"context_version": CONTEXT_VERSION, "projection_version": PROJECTION_VERSION,
-               **{f"{key}_sha256": content_digest(value) for key, value in projections.items()}}
+    summary = {
+        "context_version": CONTEXT_VERSION,
+        "projection_version": PROJECTION_VERSION,
+        **{f"{key}_sha256": content_digest(value) for key, value in projections.items()},
+    }
     return summary, {**summary, **projections}
 
 
@@ -98,8 +113,10 @@ def freeze_source_inventory(source):
     from frameit.processing.requests import native_field_group, source_field_metadata
 
     by_path = {entry["path"]: entry for entry in source["file_inventory"]}
-    files = [{key: by_path[path][key] for key in ("path", "aliases", "identity")}
-             for path in source["files"]]
+    files = [
+        {key: by_path[path][key] for key in ("path", "aliases", "identity")}
+        for path in source["files"]
+    ]
     indexes = {entry["path"]: index for index, entry in enumerate(files)}
     samples, definitions = {}, {}
     for record in source["records"]:
@@ -107,9 +124,19 @@ def freeze_source_inventory(source):
         index = indexes.get(locator["path"])
         if index is None:
             continue
-        sample = {key: record.get(key) for key in (
-            "time", "calendar", "cycle", "reference_calendar", "cycle_calendar",
-            "clock", "time_bounds", "native_axes")}
+        sample = {
+            key: record.get(key)
+            for key in (
+                "time",
+                "calendar",
+                "cycle",
+                "reference_calendar",
+                "cycle_calendar",
+                "clock",
+                "time_bounds",
+                "native_axes",
+            )
+        }
         sample.update(file_index=index, indexers=locator.get("coordinate_indexers", {}))
         sample = _portable(sample)
         samples.setdefault(content_digest(sample), sample)
@@ -120,29 +147,94 @@ def freeze_source_inventory(source):
         if metadata is None and source["format"] != "fa":
             metadata = source_field_metadata(source, field, record=record)
         metadata = metadata or {"attributes": field["attributes"], "origins": {}}
-        definition = _portable({
-            "name": field["name"], "file_index": index, "native_id": record["field_id"],
-            "group": native_field_group(source, field, record), "metadata": metadata,
-        })
+        definition = _portable(
+            {
+                "name": field["name"],
+                "file_index": index,
+                "native_id": record["field_id"],
+                "group": native_field_group(source, field, record),
+                "metadata": metadata,
+            }
+        )
         key = content_digest(definition)
         entry = definitions.setdefault(key, {**definition, "samples": []})
-        sample_index = {"time": sample["time"], "cycle": sample["cycle"],
-                        "indexers": sample["indexers"], "native_axes": sample["native_axes"]}
+        sample_index = {
+            "time": sample["time"],
+            "cycle": sample["cycle"],
+            "indexers": sample["indexers"],
+            "native_axes": sample["native_axes"],
+        }
         if not entry["samples"] or entry["samples"][-1] != sample_index:
             entry["samples"].append(sample_index)
-    return {"version": 1, "format": source["format"], "physical_type": source["physical_type"],
-            "model": source["model"], "profile": source.get("profile"),
-            "files": files, "samples": list(samples.values()),
-            "fields": list(definitions.values())}
+    frozen = {
+        "version": 1,
+        "format": source["format"],
+        "physical_type": source["physical_type"],
+        "model": source["model"],
+        "profile": source.get("profile"),
+        "files": files,
+        "samples": list(samples.values()),
+        "fields": list(definitions.values()),
+    }
+    if source["format"] == "grib":
+        selected = {
+            (s["file_index"], s["time"], s["cycle"], content_digest(s["native_axes"]))
+            for s in samples.values()
+        }
+        messages = []
+        for record in source["record_inventory"]:
+            locator = record["locator"]
+            index = indexes.get(locator["path"])
+            if index is None or record["name"] is None:
+                continue
+            key = (
+                index,
+                str(record["time"]),
+                str(record["cycle"]),
+                content_digest(record.get("native_axes")),
+            )
+            if key not in selected:
+                continue
+            grid = source["native_grids"][record["grid_id"]]
+            messages.append(
+                _portable(
+                    {
+                        "file_index": index,
+                        "name": record["name"],
+                        "native_id": record["field_id"],
+                        "time": record["time"],
+                        "cycle": record["cycle"],
+                        "level": record["level"],
+                        "time_bounds": record["time_bounds"],
+                        "axes": record.get("native_axes"),
+                        "locator": {
+                            key: locator[key] for key in ("offset", "length", "message_index")
+                        },
+                        "shape": [grid["dimensions"][d] for d in ("y", "x")],
+                        "grid_section": grid["grib_grid_section"],
+                        "attributes": source["fields"][record["field_id"]]["attributes"],
+                    }
+                )
+            )
+        frozen["messages"] = messages
+    return frozen
 
 
 def _netcdf_structure(ds):
-    return content_digest({
-        "dimensions": dict(ds.sizes), "attributes": ds.attrs,
-        "variables": {name: {"dimensions": value.dims, "dtype": str(value.dtype),
-                             "attributes": value.attrs}
-                      for name, value in ds.variables.items()},
-    })
+    return content_digest(
+        {
+            "dimensions": dict(ds.sizes),
+            "attributes": ds.attrs,
+            "variables": {
+                name: {
+                    "dimensions": value.dims,
+                    "dtype": str(value.dtype),
+                    "attributes": value.attrs,
+                }
+                for name, value in ds.variables.items()
+            },
+        }
+    )
 
 
 def product_identity(path, *, representation, header=None, engine=None):
@@ -153,20 +245,29 @@ def product_identity(path, *, representation, header=None, engine=None):
         documents = [root, *(item / "zarr.json" for item in path.iterdir() if item.is_dir())]
         if any(doc.is_symlink() or doc.parent.is_symlink() for doc in documents):
             raise ValueError(f"Unsafe Zarr metadata in {path}")
-        return {"version": 1, "strategy": "zarr_v3_metadata_documents",
-                "structure_sha256": content_digest({
-                    str(doc.relative_to(path)): file_sha256(doc) for doc in documents})}
+        return {
+            "version": 1,
+            "strategy": "zarr_v3_metadata_documents",
+            "structure_sha256": content_digest(
+                {str(doc.relative_to(path)): file_sha256(doc) for doc in documents}
+            ),
+        }
     if representation != "netcdf4":
         raise ValueError(f"Unsupported product identity representation: {representation!r}")
     stat = path.stat()
     if header is None:
         import xarray as xr
 
-        with xr.open_dataset(path, engine=engine, decode_cf=False, create_default_indexes=False,
-                             cache=False) as saved:
+        with xr.open_dataset(
+            path, engine=engine, decode_cf=False, create_default_indexes=False, cache=False
+        ) as saved:
             signature = _netcdf_structure(saved)
     else:
         signature = _netcdf_structure(header)
-    return {"version": 1, "strategy": "netcdf_stat_and_header",
-            "size_bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns,
-            "structure_sha256": signature}
+    return {
+        "version": 1,
+        "strategy": "netcdf_stat_and_header",
+        "size_bytes": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+        "structure_sha256": signature,
+    }

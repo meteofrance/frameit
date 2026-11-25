@@ -20,8 +20,11 @@ def write_trajectory_record(root, track, *, attempt_id, origin, tracking_facts, 
         ds[name] = ds[name].astype("float64")
         ds[name].encoding = {}
     ds.attrs = {
-        "record_type": "frameit_trajectory", "record_version": 1, "run_attempt_id": attempt_id,
-        "centre_origin": origin, **tracking_facts,
+        "record_type": "frameit_trajectory",
+        "record_version": 1,
+        "run_attempt_id": attempt_id,
+        "centre_origin": origin,
+        **tracking_facts,
     }
     calendar = track.time.encoding.get("calendar", "proleptic_gregorian")
     ds.time.encoding = {"calendar": calendar, "dtype": "int64"}
@@ -30,6 +33,13 @@ def write_trajectory_record(root, track, *, attempt_id, origin, tracking_facts, 
             ds.to_netcdf(temporary, engine="netcdf4")
             checksum = file_sha256(temporary)
     except Exception as exc:
-        raise tag_error(exc, "E1808")
-    return {"role": "trajectory", "path": TRAJECTORY_RECORD, "run_attempt_id": attempt_id,
-            "calendar": calendar, "centre_origin": origin, "sha256": checksum}
+        tag_error(exc, "E1808")
+        raise
+    return {
+        "role": "trajectory",
+        "path": TRAJECTORY_RECORD,
+        "run_attempt_id": attempt_id,
+        "calendar": calendar,
+        "centre_origin": origin,
+        "sha256": checksum,
+    }

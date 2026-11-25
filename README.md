@@ -99,6 +99,8 @@ Set `output.format: zarr` for `.zarr` stores instead of `.nc` files. See
   centres, source depths, time intervals and field-specific missingness are
   preserved. Check [ocean conventions and limits](https://meteofrance.github.io/frameit/user_guide/ocean_netcdf.html).
 
+`frameit run-diag` can reuse a completed run's centres for experimental
+[RSMC La Réunion comparison](https://meteofrance.github.io/frameit/task_guides/best_track_comparison.html).
 Diagnostics run only when selected. Check scientific definitions, units, sampling
 and reference frames before comparing products.
 

@@ -13,6 +13,7 @@ offers equivalent CLI/API execution and a standalone output plot.
    field_selection
    moving_region
    calculate_track
+   best_track_comparison
    scalars_and_vectors
    polar_sampling
    coupled_inputs

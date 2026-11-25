@@ -12,16 +12,26 @@ from frameit.core.reports import PreflightError, error_record
 def request(*, kind="model_grid"):
     return {
         "schema_version": 3,
-        "sources": {"weather": {"model": "arome", "files": "input.nc",
-                                "variables": {"2d": ["instructional_scalar"]}}},
-        "diagnostics": {"best_track": {
-            "agency_template": "RSMC",
-            "input": {"kind": kind, "source": "weather"},
-            "fields": {"wind": {"speed": "wind10"}, "sea_level_pressure": "mslp"},
-            "search": {"pressure_radius_km": 20, "maximum_wind_radius_km": 40,
-                       "wind_radii_radius_km": 80},
-            "rmw": {"method": "annular_mean_speed", "radius_km": 30, "bin_width_km": 10},
-        }},
+        "sources": {
+            "weather": {
+                "model": "arome",
+                "files": "input.nc",
+                "variables": {"2d": ["instructional_scalar"]},
+            }
+        },
+        "diagnostics": {
+            "best_track": {
+                "agency_template": "RSMC",
+                "input": {"kind": kind, "source": "weather"},
+                "fields": {"wind": {"speed": "wind10"}, "sea_level_pressure": "mslp"},
+                "search": {
+                    "pressure_radius_km": 20,
+                    "maximum_wind_radius_km": 40,
+                    "wind_radii_radius_km": 80,
+                },
+                "rmw": {"method": "annular_mean_speed", "radius_km": 30, "bin_width_km": 10},
+            }
+        },
     }
 
 
@@ -57,28 +67,48 @@ assert not {"frameit.diagnostics.sources", "frameit.diagnostics.best_track",
             "frameit.core.metadata_catalogue", "zarr", "epygram", "eccodes"} & sys.modules.keys()
 """
     proc = subprocess.run(
-        [sys.executable, "-c", program, str(path)], capture_output=True, text=True, check=True,
+        [sys.executable, "-c", program, str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
     )
     catalog = json.loads(proc.stdout)
     assert list(catalog) == ["best_track"]
     assert catalog["best_track"]["maturity"] == "experimental"
 
 
-@pytest.mark.parametrize(("parts", "value", "suffix"), [
-    ((), None, ""),
-    (("best_track",), "on", ".best_track"),
-    (("best_track", "enabled"), True, ".best_track.enabled"),
-    (("best_track", "input", "kind"), "auto", ".best_track.input.kind"),
-    (("best_track", "agency_template"), "JTWC", ".best_track.agency_template"),
-    (("best_track", "fields", "wind"), {"speed": "x", "u": "u", "v": "v"}, ".best_track.fields.wind"),
-    (("best_track", "fields", "sea_level_pressure"), {"field": "p", "group": "s"},
-     ".best_track.fields.sea_level_pressure.group"),
-    (("best_track", "fields", "sea_level_pressure"), {"field": "p", "level": {"value": True}},
-     ".best_track.fields.sea_level_pressure.level.units"),
-    (("best_track", "search", "pressure_radius_km"), 80, ".best_track.search"),
-    (("best_track", "rmw", "bin_width_km"), 11, ".best_track.rmw.bin_width_km"),
-    (("best_track", "processing"), {"max_open_files": True}, ".best_track.processing.max_open_files"),
-])
+@pytest.mark.parametrize(
+    ("parts", "value", "suffix"),
+    [
+        ((), None, ""),
+        (("best_track",), "on", ".best_track"),
+        (("best_track", "enabled"), True, ".best_track.enabled"),
+        (("best_track", "input", "kind"), "auto", ".best_track.input.kind"),
+        (("best_track", "agency_template"), "JTWC", ".best_track.agency_template"),
+        (
+            ("best_track", "fields", "wind"),
+            {"speed": "x", "u": "u", "v": "v"},
+            ".best_track.fields.wind",
+        ),
+        (
+            ("best_track", "fields", "sea_level_pressure"),
+            {"field": "p", "group": "s"},
+            ".best_track.fields.sea_level_pressure.group",
+        ),
+        (
+            ("best_track", "fields", "sea_level_pressure"),
+            {"field": "p", "level": {"value": True}},
+            ".best_track.fields.sea_level_pressure.level.units",
+        ),
+        (("best_track", "search", "pressure_radius_km"), 80, ".best_track.search"),
+        (("best_track", "rmw", "bin_width_km"), 11, ".best_track.rmw.bin_width_km"),
+        (
+            ("best_track", "processing"),
+            {"max_open_files": True},
+            ".best_track.processing.max_open_files",
+        ),
+    ],
+)
 def test_invalid_diagnostic_path(parts, value, suffix):
     raw = request()
     parent = raw

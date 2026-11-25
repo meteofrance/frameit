@@ -37,6 +37,7 @@ class File:
     representation: str
     identity: dict
     attempt: str | None = None
+    decode_units: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,7 @@ class FieldSample:
     dtype: str
     metadata_evidence: dict
     scalar_coordinates: tuple
+    native: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -91,7 +93,7 @@ class Group:
 
     @property
     def qualified(self):
-        return self.fields[0].qualified
+        return all(field.qualified for field in self.fields if field.role != "area")
 
 
 @dataclass(frozen=True)
@@ -104,8 +106,11 @@ class Block:
 def _error(message, *, role=None, observed=None):
     path = "diagnostics.best_track"
     return diagnostic_error(
-        "E2003", path if role is None else f"{path}.fields.{role}", message,
-        observed=observed, expected="bounded input with compatible recorded physical metadata",
+        "E2003",
+        path if role is None else f"{path}.fields.{role}",
+        message,
+        observed=observed,
+        expected="bounded input with compatible recorded physical metadata",
         repair="Check the selected field, its metadata and the diagnostic working-buffer budget.",
     )
 
@@ -127,29 +132,42 @@ def _timestamp(value):
 
 def _verify_file(file):
     try:
-        if file.representation == "original":
+        if file.representation.startswith("original"):
             info = file.path.stat()
             observed = {"size_bytes": info.st_size, "mtime_ns": info.st_mtime_ns}
             if file.identity.get("strategy") == "device_inode":
                 observed.update(device=info.st_dev, inode=info.st_ino)
             if any(file.identity.get(key) != value for key, value in observed.items()):
-                raise _error(f"Original input identity changed: {file.path.name}", observed=observed)
+                raise _error(
+                    f"Original input identity changed: {file.path.name}", observed=observed
+                )
         else:
-            current = product_identity(file.path, representation=file.representation,
-                                       engine=file.engine)
+            current = product_identity(
+                file.path, representation=file.representation, engine=file.engine
+            )
             if file.identity != current:
-                raise _error(f"Published product identity changed: {file.path.name}", observed=current)
+                raise _error(
+                    f"Published product identity changed: {file.path.name}", observed=current
+                )
     except OSError as exc:
         raise _error(f"Cannot verify recorded input identity: {file.path.name}: {exc}") from exc
 
 
 @contextmanager
-def _open(file):
-    with DatasetResources() as resources:
-        ds = resources.add(xr.open_dataset(
-            file.path, engine=file.engine, chunks=None, cache=False,
-            create_default_indexes=False, decode_coords="all",
-        ))
+def _open(file, *, zarr_objects=None, object_limit=0):
+    with ExitStack() as scope, DatasetResources() as resources:
+        options = {"chunks": None, "create_default_indexes": False, "decode_coords": "all"}
+        if file.representation == "zarr3":
+            from frameit.diagnostics.zarr_source import open_store
+
+            store = scope.enter_context(
+                open_store(file.path, evidence=zarr_objects, max_objects=object_limit)
+            )
+            ds = resources.add(xr.open_zarr(store, zarr_format=3, consolidated=False, **options))
+        else:
+            ds = resources.add(
+                xr.open_dataset(file.path, engine=file.engine, cache=False, **options)
+            )
         if file.attempt is not None and ds.attrs.get("run_attempt_id") != file.attempt:
             raise _error(f"Product attempt identity does not match: {file.path.name}")
         yield ds
@@ -165,28 +183,41 @@ def _source_files(parent, request):
     ):
         raise _error(f"Source {name!r} is not an admitted atmospheric source")
     if kind == "original":
-        if inventory.get("version") != 1 or inventory.get("format") != "netcdf":
+        if inventory.get("version") != 1 or inventory.get("format") not in {"netcdf", "grib"}:
             raise _error(f"Original {inventory.get('format')!r} is not an admitted bounded backend")
-        files = tuple(File(Path(entry["path"]), cfg.get("reader", {}).get("engine"),
-                           "original", entry["identity"]) for entry in inventory["files"])
+        representation = "original_grib" if inventory["format"] == "grib" else "original"
+        files = tuple(
+            File(
+                Path(entry["path"]),
+                cfg.get("reader", {}).get("engine"),
+                representation,
+                entry["identity"],
+            )
+            for entry in inventory["files"]
+        )
         if not files:
             raise _error("The parent did not select any original files for this source")
         return files, inventory, cfg, evidence
-    matches = [item for item in parent.products
-               if item.get("role", item.get("product")) == "model_grid"
-               and item.get("source") == name]
+    matches = [
+        item
+        for item in parent.products
+        if item.get("role", item.get("product")) == "model_grid" and item.get("source") == name
+    ]
     if len(matches) != 1:
-        raise _error(f"Expected one actual model_grid publication for {name!r}; found {len(matches)}")
-    item, = matches
-    path, = OutputPaths(parent.root).planned_products(matches)
+        raise _error(
+            f"Expected one actual model_grid publication for {name!r}; found {len(matches)}"
+        )
+    (item,) = matches
+    (path,) = OutputPaths(parent.root).planned_products(matches)
     encoding = item.get("encoding", {})
     representation = encoding.get("format")
-    if representation != "netcdf4":
+    if representation not in {"netcdf4", "zarr3"}:
         raise _error(f"Published {representation!r} is not an admitted bounded backend")
     if parent.identity_scheme.startswith("legacy_"):
         try:
-            identity = product_identity(path, representation=representation,
-                                        engine=encoding.get("engine"))
+            identity = product_identity(
+                path, representation=representation, engine=encoding.get("engine")
+            )
         except (OSError, ValueError) as exc:
             raise _error(f"Cannot read recorded legacy model_grid: {path.name}") from exc
         attempt = None
@@ -194,7 +225,15 @@ def _source_files(parent, request):
         identity, attempt = item.get("identity"), parent.attempt_id
         if not isinstance(identity, dict) or identity.get("version") != 1:
             raise _error("Recorded model_grid lacks a recognized product identity")
-    return (File(path, encoding.get("engine"), representation, identity, attempt),), {}, cfg, evidence
+    units = None
+    if representation == "zarr3":
+        from frameit.diagnostics.zarr_source import check_layout
+        from frameit.io.zarr_export import check_zarr_dependencies
+
+        check_zarr_dependencies()
+        units = check_layout(path)
+    file = File(path, encoding.get("engine"), representation, identity, attempt, units)
+    return (file,), {}, cfg, evidence
 
 
 def _clock_samples(ds, file, *, inventory, file_index, model):
@@ -202,16 +241,23 @@ def _clock_samples(ds, file, *, inventory, file_index, model):
 
     centres = ds.get("center_time")
     clock_view = ds.drop_vars("center_time", errors="ignore")
-    for name, variable in clock_view.variables.items():
+    for variable in clock_view.variables.values():
         if variable.dtype.kind in "MO" and "bounds" in variable.encoding:
             variable.attrs = dict(variable.attrs, bounds=variable.encoding["bounds"])
     samples, _ = _decoded_clock(clock_view, file.path, model=model)
     frozen = set()
     if inventory:
-        frozen = {(_timestamp(sample["time"]), _timestamp(sample["cycle"]),
-                   tuple(sorted(sample["indexers"].items())), sample["calendar"],
-                   sample.get("reference_calendar"))
-                  for sample in inventory["samples"] if sample["file_index"] == file_index}
+        frozen = {
+            (
+                _timestamp(sample["time"]),
+                _timestamp(sample["cycle"]),
+                tuple(sorted(sample["indexers"].items())),
+                sample["calendar"],
+                sample.get("reference_calendar"),
+            )
+            for sample in inventory["samples"]
+            if sample["file_index"] == file_index
+        }
     for sample in samples:
         if sample["calendar"] not in UTC_CALENDARS or (
             sample.get("reference_calendar") not in UTC_CALENDARS | {None}
@@ -219,14 +265,24 @@ def _clock_samples(ds, file, *, inventory, file_index, model):
             raise _error(f"Unsupported native/reference calendar in {file.path.name}")
         sample["time"], sample["cycle"] = _timestamp(sample["time"]), _timestamp(sample["cycle"])
         sample["indices"] = tuple(sorted(sample.pop("indexers").items()))
-        if inventory and (sample["time"], sample["cycle"], sample["indices"], sample["calendar"],
-                          sample.get("reference_calendar")) not in frozen:
+        if (
+            inventory
+            and (
+                sample["time"],
+                sample["cycle"],
+                sample["indices"],
+                sample["calendar"],
+                sample.get("reference_calendar"),
+            )
+            not in frozen
+        ):
             continue
         if bounds := sample["time_bounds"]:
             sample["time_bounds"] = tuple(map(_timestamp, bounds))
         if centres is not None and set(centres.dims) <= dict(sample["indices"]).keys():
-            sample["centre_time"] = _timestamp(centres.isel({
-                dim: dict(sample["indices"])[dim] for dim in centres.dims}).values[()])
+            sample["centre_time"] = _timestamp(
+                centres.isel({dim: dict(sample["indices"])[dim] for dim in centres.dims}).values[()]
+            )
         yield sample
 
 
@@ -269,8 +325,7 @@ def _earth_model(ds, field):
 
 
 def _coord_names(ds, field, indexers):
-    linked = set(str(field.attrs.get(
-        "coordinates", field.encoding.get("coordinates", ""))).split())
+    linked = set(str(field.attrs.get("coordinates", field.encoding.get("coordinates", ""))).split())
     names = set(field.coords) | linked
     candidates = {"latitude": [], "longitude": []}
     for name in sorted(names & ds.variables.keys()):
@@ -283,8 +338,10 @@ def _coord_names(ds, field, indexers):
     for role, values in candidates.items():
         candidates[role] = [name for name in values if name in linked] or values
     if any(len(values) != 1 for values in candidates.values()):
-        raise _error(f"{field.name!r} does not have unique field-specific geographic coordinates",
-                     observed=candidates)
+        raise _error(
+            f"{field.name!r} does not have unique field-specific geographic coordinates",
+            observed=candidates,
+        )
     return candidates["latitude"][0], candidates["longitude"][0]
 
 
@@ -295,21 +352,30 @@ def _vertical_selection(ds, field, selector, spatial, clock_indices):
     remaining = set(field.dims) - indices.keys() - set(spatial)
     level = selector.get("level")
     selected = None
-    axes = [dim for dim in sorted(remaining) if dim in ds.coords and (
-        ds[dim].attrs.get("axis") == "Z" or ds[dim].attrs.get("positive") in {"up", "down"}
-        or ds[dim].attrs.get("standard_name") in {"height", "air_pressure", "altitude",
-                                                 "geopotential_height"}
-    )]
+    axes = [
+        dim
+        for dim in sorted(remaining)
+        if dim in ds.coords
+        and (
+            ds[dim].attrs.get("axis") == "Z"
+            or ds[dim].attrs.get("positive") in {"up", "down"}
+            or ds[dim].attrs.get("standard_name")
+            in {"height", "air_pressure", "altitude", "geopotential_height"}
+        )
+    ]
     if level is not None:
         if len(axes) != 1:
-            raise _error(f"{field.name!r}: exact level selector requires one physical vertical axis")
-        axis, = axes
+            raise _error(
+                f"{field.name!r}: exact level selector requires one physical vertical axis"
+            )
+        (axis,) = axes
         coordinate = ds[axis]
         if coordinate.ndim != 1 or coordinate.dims != (axis,):
             raise _error(f"{field.name!r}: unsupported compound vertical selection")
         target = coordinate.attrs.get("units")
-        quantity = next((kind for kind in ("distance", "pressure")
-                         if unit_key(target) in UNITS[kind][1]), None)
+        quantity = next(
+            (kind for kind in ("distance", "pressure") if unit_key(target) in UNITS[kind][1]), None
+        )
         if quantity is None:
             raise _error(f"{field.name!r}: level units are not physical distance or pressure units")
         value = float(level["value"]) * _units_factor(level["units"], quantity, target=target)
@@ -325,7 +391,9 @@ def _vertical_selection(ds, field, selector, spatial, clock_indices):
         raise _error(f"{field.name!r}: selector group does not identify the native vertical axis")
     for dim in sorted(remaining):
         if ds.sizes[dim] != 1 or dim not in ds.coords or ds[dim].dims != (dim,):
-            raise _error(f"{field.name!r}: unresolved native axis {dim!r}; select one physical sample")
+            raise _error(
+                f"{field.name!r}: unresolved native axis {dim!r}; select one physical sample"
+            )
         indices[dim] = 0
     return indices
 
@@ -337,8 +405,14 @@ def _height_and_scalar_coords(ds, field, indices, attrs):
     scalar = []
     for coord in field.coords.values():
         standard = coord.attrs.get("standard_name")
-        if standard not in {"height", "altitude", "air_pressure", "forecast_period",
-                            "realization", "geopotential_height"}:
+        if standard not in {
+            "height",
+            "altitude",
+            "air_pressure",
+            "forecast_period",
+            "realization",
+            "geopotential_height",
+        }:
             continue
         if set(coord.dims) <= indices.keys():
             value = coord.isel({dim: indices[dim] for dim in coord.dims}).values[()]
@@ -353,34 +427,55 @@ def _height_and_scalar_coords(ds, field, indices, attrs):
 
 def _semantics(role, field, attrs, height, sample, wind_pairs):
     standard = attrs.get("standard_name")
-    if standard not in WIND_NAMES[role]:
-        raise _error(f"{field.name!r} does not establish the physical quantity {role}", role=role,
-                     observed=standard)
+    unresolved = "physical_definition_unverified", None, False, None
+    if standard and standard not in WIND_NAMES[role]:
+        raise _error(
+            f"{field.name!r} does not establish the physical quantity {role}",
+            role=role,
+            observed=standard,
+        )
     if attrs.get("kind") == "categorical":
         raise _error(f"{field.name!r} is categorical, not physical continuous data", role=role)
+    if role not in {"pressure", "area"} and height is not None and height != 10:
+        raise _error(
+            f"{field.name!r} has a height other than 10 m above ground", role=role, observed=height
+        )
+    if not standard or not attrs.get("units"):
+        return unresolved
     if role in {"pressure", "area"}:
         return "native", None, True, None
-    if height != 10:
-        raise _error(f"{field.name!r} requires verified 10 m height above ground", role=role,
-                     observed=height)
     reference = attrs.get("physical_reference_frame", attrs.get("reference_frame"))
     basis = attrs.get("wind_reference_frame")
     if reference not in {None, "earth", "ground"} or basis not in {None, "earth", "grid"}:
-        raise _error(f"{field.name!r}: unsupported physical wind frame", role=role,
-                     observed=(reference, basis))
+        raise _error(
+            f"{field.name!r}: unsupported physical wind frame",
+            role=role,
+            observed=(reference, basis),
+        )
     declared = {pair["basis"] for pair in wind_pairs if pair.get(role) == field.name}
-    implied = ("earth" if standard in {"eastward_wind", "northward_wind"} else
-               "grid" if role in {"u", "v"} else None)
+    implied = (
+        "earth"
+        if standard in {"eastward_wind", "northward_wind"}
+        else "grid"
+        if role in {"u", "v"}
+        else None
+    )
     frames = declared | {value for value in (basis, implied) if value is not None}
-    if len(frames) != 1 and not (not frames and reference in {"earth", "ground"}):
-        raise _error(f"{field.name!r}: unresolved or contradictory wind basis", role=role,
-                     observed=sorted(frames))
+    if len(frames) > 1:
+        raise _error(
+            f"{field.name!r}: contradictory wind basis", role=role, observed=sorted(frames)
+        )
+    if height is None or not frames and reference not in {"earth", "ground"}:
+        return unresolved
     frame = next(iter(frames), "earth")
     if frame == "grid" and role in {"speed", "gust"}:
         raise _error(f"{field.name!r}: scalar magnitude requires an Earth-relative definition")
     methods = sub(r"\([^)]*\)", "", str(attrs.get("cell_methods", "")))
-    methods = {method for axis, method in findall(r"(\w+)\s*:\s*(\w+)", methods)
-               if axis in {*sample["temporal_names"], "time"}}
+    methods = {
+        method
+        for axis, method in findall(r"(\w+)\s*:\s*(\w+)", methods)
+        if axis in {*sample["temporal_names"], "time"}
+    }
     duration = None
     if bounds := sample["time_bounds"]:
         a, b = map(np.datetime64, bounds)
@@ -390,18 +485,29 @@ def _semantics(role, field, attrs, height, sample, wind_pairs):
     # CF cell_methods interval describes sample spacing, not the length of a mean.
     temporal = attrs.get("temporal_kind")
     if role == "gust":
-        return ("producer_gust", duration,
-                "maximum" in methods and duration is not None
-                and attrs.get("gust_duration_seconds") == 3
-                and attrs.get("gust_reference_profile") == AGENCY_PROFILE_VERSION, frame)
+        return (
+            "producer_gust",
+            duration,
+            "maximum" in methods
+            and duration is not None
+            and attrs.get("gust_duration_seconds") == 3
+            and attrs.get("gust_reference_profile") == AGENCY_PROFILE_VERSION,
+            frame,
+        )
     if "mean" in methods or temporal == "mean":
         statistic = "mean_scalar_speed" if role == "speed" else "magnitude_of_mean_components"
-        qualified = ("mean" in methods and duration == 600 and (
-            role == "speed" or attrs.get("sustained_wind_convention") ==
-            "magnitude_of_mean_components_compatible_10min"))
+        qualified = (
+            "mean" in methods
+            and duration == 600
+            and (
+                role == "speed"
+                or attrs.get("sustained_wind_convention")
+                == "magnitude_of_mean_components_compatible_10min"
+            )
+        )
         return statistic, duration, qualified, frame
     if "point" in methods or temporal == "instantaneous":
-        return "instantaneous", 0., False, frame
+        return "instantaneous", 0.0, False, frame
     return "unverified", None, False, frame
 
 
@@ -410,10 +516,16 @@ def _metadata(ds, field, sample, *, inventory, source_cfg, evidence, file_index,
     if not inventory:
         return native, {"origin": "saved_effective_product"}
     name = field.name
-    matches = [entry for entry in inventory.get("fields", []) if entry["file_index"] == file_index
-               and entry["name"] == name and any(
-                   item["time"] == sample["time"] or _timestamp(item["time"]) == sample["time"]
-                   for item in entry["samples"])]
+    matches = [
+        entry
+        for entry in inventory.get("fields", [])
+        if entry["file_index"] == file_index
+        and entry["name"] == name
+        and any(
+            item["time"] == sample["time"] or _timestamp(item["time"]) == sample["time"]
+            for item in entry["samples"]
+        )
+    ]
     if matches:
         keys = {content_digest(m["metadata"]) for m in matches}
         if len(keys) != 1:
@@ -424,17 +536,22 @@ def _metadata(ds, field, sample, *, inventory, source_cfg, evidence, file_index,
     from frameit.processing.requests import resolve_field_metadata
 
     declarations = source_cfg.get("field_metadata", {})
-    native_groups = [dim for dim in field.dims if dim in ds.coords
-                     and (ds[dim].attrs.get("axis") == "Z"
-                          or ds[dim].attrs.get("positive") in {"up", "down"})]
-    qualified = [declarations[f"{dim}.{name}"] for dim in native_groups
-                 if f"{dim}.{name}" in declarations]
+    native_groups = [
+        dim
+        for dim in field.dims
+        if dim in ds.coords
+        and (ds[dim].attrs.get("axis") == "Z" or ds[dim].attrs.get("positive") in {"up", "down"})
+    ]
+    qualified = [
+        declarations[f"{dim}.{name}"] for dim in native_groups if f"{dim}.{name}" in declarations
+    ]
     declared = declarations.get(name, {})
     choices = [value for value in [declared, *qualified] if value]
     if len({content_digest(item) for item in choices}) > 1:
         raise _error(f"Conflicting inherited source declarations for {name!r}")
     resolved = resolve_field_metadata(
-        native, choices[0] if choices else {}, name, temporal_names=sample["temporal_names"])
+        native, choices[0] if choices else {}, name, temporal_names=sample["temporal_names"]
+    )
     attrs, origins = resolved["attributes"], resolved["origins"]
     keys = ("units", "long_name", "standard_name")
     missing = [key for key in keys if not attrs.get(key)]
@@ -453,18 +570,23 @@ def _metadata(ds, field, sample, *, inventory, source_cfg, evidence, file_index,
                 if "catalogue" not in cache:
                     cache["catalogue"] = scope.enter_context(metadata_catalogue.open_catalogue())
                 cache[key] = cache["catalogue"].lookup(
-                    identity["producer"], identity["version"], name, identity["namespace"])
+                    identity["producer"], identity["version"], name, identity["namespace"]
+                )
             except metadata_catalogue.CatalogueError:
                 cache[key] = []
-        result = propose(cache[key], identity, {key: attrs[key] for key in keys if key in attrs},
-                         missing)
+        result = propose(
+            cache[key], identity, {key: attrs[key] for key in keys if key in attrs}, missing
+        )
         if values := result["proposed_values"]:
             attrs.update(values)
             origins.update({key: "catalogue" for key in values})
             details.update(
-                origin="diagnostic_catalogue", catalogue_version=metadata_catalogue.VERSION,
-                content_sha256=metadata_catalogue.CONTENT_SHA256, native_identity=identity,
-                applied_values=values, record_ids=result["supporting_record_ids"],
+                origin="diagnostic_catalogue",
+                catalogue_version=metadata_catalogue.VERSION,
+                content_sha256=metadata_catalogue.CONTENT_SHA256,
+                native_identity=identity,
+                applied_values=values,
+                record_ids=result["supporting_record_ids"],
             )
     return attrs, details
 
@@ -481,7 +603,9 @@ def _bind_field(ds, file, role, selector, sample, attrs, evidence, wind_pairs):
     field = ds[selector["field"]]
     clock_indices = dict(sample["indices"])
     if not set(field.dims).intersection(clock_indices) and role != "area":
-        raise _error(f"{field.name!r}: no field sample axis is linked to the recorded clock", role=role)
+        raise _error(
+            f"{field.name!r}: no field sample axis is linked to the recorded clock", role=role
+        )
     lat, lon = _coord_names(ds, field, clock_indices)
     spatial = (set(ds[lat].dims) | set(ds[lon].dims)) - clock_indices.keys()
     dims = tuple(dim for dim in field.dims if dim in spatial)
@@ -494,22 +618,49 @@ def _bind_field(ds, file, role, selector, sample, attrs, evidence, wind_pairs):
     if any(key in attrs for key in ("flag_masks", "flag_values")):
         raise _error(f"{field.name!r}: a categorical field cannot supply physical values")
     height, scalar = _height_and_scalar_coords(ds, field, indices, attrs)
-    statistic, seconds, qualified, frame = _semantics(role, field, attrs, height, sample, wind_pairs)
+    statistic, seconds, qualified, frame = _semantics(
+        role, field, attrs, height, sample, wind_pairs
+    )
     units = attrs.get("units")
     quantity = role if role in {"pressure", "area"} else "velocity"
-    factor = _units_factor(units, quantity)
+    factor = _units_factor(units, quantity) if units else 1.0
     earth, origin = _earth_model(ds, field)
     grid = Grid(
-        dims, tuple(ds.sizes[d] for d in dims), lat, lon,
+        dims,
+        tuple(ds.sizes[d] for d in dims),
+        lat,
+        lon,
         tuple((d, i) for d, i in sample["indices"] if d in ds[lat].dims or d in ds[lon].dims),
         _units_factor(ds[lat].attrs.get("units"), "angle", target="degrees_north"),
-        _units_factor(ds[lon].attrs.get("units"), "angle", target="degrees_east"), earth, origin,
+        _units_factor(ds[lon].attrs.get("units"), "angle", target="degrees_east"),
+        earth,
+        origin,
     )
     return FieldSample(
-        role, field.name, file, grid, tuple(sorted(indices.items())), sample["time"], sample["cycle"],
-        sample["calendar"], sample.get("reference_calendar"), sample["time_bounds"],
-        sample.get("centre_time"), height, statistic, seconds, qualified, frame, units, factor,
-        sum(_decode_unit(da) for da in (field, *coordinates)), str(field.dtype), evidence, scalar,
+        role,
+        field.name,
+        file,
+        grid,
+        tuple(sorted(indices.items())),
+        sample["time"],
+        sample["cycle"],
+        sample["calendar"],
+        sample.get("reference_calendar"),
+        sample["time_bounds"],
+        sample.get("centre_time"),
+        height,
+        statistic,
+        seconds,
+        qualified,
+        frame,
+        units,
+        factor,
+        sum(
+            (file.decode_units or {}).get(da.name, _decode_unit(da)) for da in (field, *coordinates)
+        ),
+        str(field.dtype),
+        evidence,
+        scalar,
     )
 
 
@@ -519,52 +670,98 @@ def _selectors(request):
     for name, role in (("gust", "gust"), ("cell_area", "area")):
         if name in fields:
             roles[role] = fields[name]
-    return {role: ({"field": value} if isinstance(value, str) else value)
-            for role, value in roles.items()}
+    return {
+        role: ({"field": value} if isinstance(value, str) else value)
+        for role, value in roles.items()
+    }
 
 
 def _groups(bindings, selectors, *, radius_bins, sectors, budget, original):
-    roles = [("wind", ("speed",) if "speed" in selectors else ("u", "v")),
-             ("pressure", ("pressure",)), ("gust", ("gust",))]
+    roles = [
+        ("wind", ("speed",) if "speed" in selectors else ("u", "v")),
+        ("pressure", ("pressure",)),
+        ("gust", ("gust",)),
+    ]
     groups = []
     for role, members in roles:
         if any(name not in bindings for name in members):
             continue
         fields = tuple(bindings[name] for name in members)
         first = fields[0]
-        common = (first.file.path, first.grid, first.cycle, first.calendar, first.reference_calendar)
+        common = (
+            first.file.path,
+            first.grid,
+            first.cycle,
+            first.calendar,
+            first.reference_calendar,
+        )
         if len(fields) > 1:
             other = fields[1]
-            if common != (other.file.path, other.grid, other.cycle, other.calendar,
-                          other.reference_calendar) or (
-                first.statistic, first.averaging_seconds, first.time_bounds, first.frame,
-                first.qualified, first.scalar_coordinates
-            ) != (
-                other.statistic, other.averaging_seconds, other.time_bounds, other.frame,
-                other.qualified, other.scalar_coordinates
+            physical = all(f.statistic != "physical_definition_unverified" for f in fields)
+            if (
+                common
+                != (
+                    other.file.path,
+                    other.grid,
+                    other.cycle,
+                    other.calendar,
+                    other.reference_calendar,
+                )
+                or physical
+                and (
+                    first.statistic,
+                    first.averaging_seconds,
+                    first.time_bounds,
+                    first.frame,
+                    first.qualified,
+                    first.scalar_coordinates,
+                )
+                != (
+                    other.statistic,
+                    other.averaging_seconds,
+                    other.time_bounds,
+                    other.frame,
+                    other.qualified,
+                    other.scalar_coordinates,
+                )
             ):
-                raise _error("Wind components do not share an admitted collocated grid, "
-                             "physical coordinates, clock, and averaging convention")
-            if first.frame == "grid":
-                raise _error("Grid-relative components require verified orthonormal preparation; "
-                             "this grid has no admitted native stencil")
+                raise _error(
+                    "Wind components do not share an admitted collocated grid, "
+                    "physical coordinates, clock, and averaging convention"
+                )
+            if physical and first.frame == "grid":
+                raise _error(
+                    "Grid-relative components require verified orthonormal preparation; "
+                    "this grid has no admitted native stencil"
+                )
         first_grid = first.grid
         if role == "wind" and (area := bindings.get("area")) is not None:
-            if common != (area.file.path, area.grid, area.cycle, area.calendar,
-                          area.reference_calendar):
+            if common != (
+                area.file.path,
+                area.grid,
+                area.cycle,
+                area.calendar,
+                area.reference_calendar,
+            ):
                 raise _error("Physical cell area does not match the final wind grid exactly")
-            fields = (*fields, area)
+            if area.qualified:
+                fields = (*fields, area)
         perimeter_bytes = 4 * sum(first_grid.shape) * PERIMETER_BYTES
         decode_bytes = sum(f.decode_bytes for f in fields)
         accumulators = radius_bins * (64 + sectors * 8) if role == "wind" else 0
         reserved = perimeter_bytes + decode_bytes + accumulators
         if budget < reserved + 9 * CELLS_BYTES:
-            raise _error("Minimum decode, perimeter and accumulator working buffers exceed "
-                         "working_memory_mib",
-                         observed={"reserved_bytes": reserved, "budget_bytes": budget})
+            raise _error(
+                "Minimum decode, perimeter and accumulator working buffers exceed "
+                "working_memory_mib",
+                observed={"reserved_bytes": reserved, "budget_bytes": budget},
+            )
         tile_side = min(256, isqrt((budget - reserved) // CELLS_BYTES) - 2)
-        groups.append(Group(role, fields, tile_side,
-                            "model_domain_truncated" if original else "crop_truncated"))
+        groups.append(
+            Group(
+                role, fields, tile_side, "model_domain_truncated" if original else "crop_truncated"
+            )
+        )
     return tuple(groups)
 
 
@@ -587,34 +784,67 @@ def _plan_source(parent, request):
     sectors = request["rmw"]["azimuth_sectors"]
     budget = request["processing"]["working_memory_mib"] * 2**20
     need = bins * (64 + sectors * 8)
-    if bins > np.iinfo(np.intp).max or sectors > np.iinfo(np.intp).max or (
-        bins * sectors > np.iinfo(np.intp).max or need + 9 * CELLS_BYTES > budget
+    if (
+        bins > np.iinfo(np.intp).max
+        or sectors > np.iinfo(np.intp).max
+        or (bins * sectors > np.iinfo(np.intp).max or need + 9 * CELLS_BYTES > budget)
     ):
-        raise _error("RMW accumulator dimensions exceed the working-buffer budget",
-                     observed={"accumulator_bytes": need, "budget_bytes": budget})
+        raise _error(
+            "RMW accumulator dimensions exceed the working-buffer budget",
+            observed={"accumulator_bytes": need, "budget_bytes": budget},
+        )
     files, inventory, cfg, evidence = _source_files(parent, request)
+    object_limit = budget // 4096
+    zarr_objects = {file.path: {} for file in files if file.representation == "zarr3"}
+    if zarr_objects:
+        budget -= object_limit * 1024
     selectors = _selectors(request)
     original = bool(inventory)
     times = {centre.time for centre in parent.centres}
     bindings, seen = {}, set()
+
+    def add(field):
+        role = field.role
+        seen.add(role)
+        if field.time not in times:
+            return
+        matching = bindings.setdefault(field.time, {})
+        if role in matching:
+            raise _error(f"Ambiguous provider, cycle or member for {role} at {field.time}")
+        matching[role] = field
+
     with ExitStack() as scope:
         cache = {}
         for i, file in enumerate(files):
             _verify_file(file)
-            with _open(file) as ds:
-                if not original and (ds.attrs.get("product_type") != "model_grid"
-                                     or ds.attrs.get("source_id") != request["input"]["source"]):
+            if file.representation == "original_grib":
+                from frameit.diagnostics.grib_source import bind_messages
+
+                for field in bind_messages(file, i, inventory, cfg, selectors, budget=budget):
+                    add(field)
+                continue
+            with _open(
+                file, zarr_objects=zarr_objects.get(file.path), object_limit=object_limit
+            ) as ds:
+                if not original and (
+                    ds.attrs.get("product_type") != "model_grid"
+                    or ds.attrs.get("source_id") != request["input"]["source"]
+                ):
                     raise _error("Recorded product does not carry the selected model_grid identity")
-                samples = list(_clock_samples(
-                    ds, file, inventory=inventory, file_index=i, model=evidence["model"]))
+                samples = list(
+                    _clock_samples(
+                        ds, file, inventory=inventory, file_index=i, model=evidence["model"]
+                    )
+                )
                 if not samples:
                     continue
                 local = dict(selectors)
                 if "area" not in local:
                     wind = local.get("speed", local.get("u"))["field"]
                     if wind in ds:
-                        area = ds[wind].attrs.get("cell_measures", ds[wind].encoding.get(
-                            "cell_measures", ""))
+                        area = ds[wind].attrs.get(
+                            "cell_measures", ds[wind].encoding.get("cell_measures", "")
+                        )
                         areas = findall(r"\barea:\s*(\S+)", str(area))
                         if len(areas) == 1 and areas[0] in ds:
                             local["area"] = {"field": areas[0]}
@@ -625,48 +855,82 @@ def _plan_source(parent, request):
                         continue
                     for sample in samples:
                         attrs, metadata = _metadata(
-                            ds, ds[selector["field"]], sample, inventory=inventory,
-                            source_cfg=cfg, evidence=evidence, file_index=i, scope=scope, cache=cache)
+                            ds,
+                            ds[selector["field"]],
+                            sample,
+                            inventory=inventory,
+                            source_cfg=cfg,
+                            evidence=evidence,
+                            file_index=i,
+                            scope=scope,
+                            cache=cache,
+                        )
                         field = _bind_field(
-                            ds, file, role, selector, sample, attrs, metadata,
-                            cfg.get("wind_pairs", ()) if original else ())
-                        seen.add(role)
-                        if sample["time"] not in times:
-                            continue
-                        matching = bindings.setdefault(sample["time"], {})
-                        if role in matching:
-                            raise _error(f"Ambiguous provider, cycle or member for {role} at "
-                                         f"{sample['time']}")
-                        matching[role] = field
+                            ds,
+                            file,
+                            role,
+                            selector,
+                            sample,
+                            attrs,
+                            metadata,
+                            cfg.get("wind_pairs", ()) if original else (),
+                        )
+                        add(field)
     if absent := selectors.keys() - seen:
         missing = {role: selectors[role]["field"] for role in sorted(absent)}
-        raise _error(f"Requested fields not found in the selected provider: {missing}", observed=missing)
-    groups = tuple((c.time, _groups(
-        bindings.get(c.time, {}), selectors, radius_bins=bins, sectors=sectors, budget=budget,
-        original=original)) for c in parent.centres)
+        raise _error(
+            f"Requested fields not found in the selected provider: {missing}", observed=missing
+        )
+    groups = tuple(
+        (
+            c.time,
+            _groups(
+                bindings.get(c.time, {}),
+                selectors,
+                radius_bins=bins,
+                sectors=sectors,
+                budget=budget,
+                original=original,
+            ),
+        )
+        for c in parent.centres
+    )
     facts = {
-        "diagnostic": "best_track", "source": request["input"], "track_samples": len(parent.centres),
+        "diagnostic": "best_track",
+        "source": request["input"],
+        "track_samples": len(parent.centres),
         "files": [{**asdict(file), "path": str(file.path)} for file in files],
-        "input_identity_note": ("Legacy product: current header/stat evidence only; it does not "
-                                "establish original publication bytes." if
-                                parent.identity_scheme.startswith("legacy_") else
-                                "Metadata fingerprint; not a payload checksum."),
+        "input_identity_note": (
+            "Legacy product: current header/stat evidence only; it does not "
+            "establish original publication bytes."
+            if parent.identity_scheme.startswith("legacy_")
+            else "Metadata fingerprint; not a payload checksum."
+        ),
         "inherited_catalogue": evidence.get("metadata_catalogue", []),
         "working_buffers": {
-            "budget_bytes": budget, "bytes_per_tile_cell_with_halo": CELLS_BYTES,
-            "rmw_accumulator_bytes": need, "max_open_source_files": 1,
+            "budget_bytes": budget,
+            "bytes_per_tile_cell_with_halo": CELLS_BYTES,
+            "rmw_accumulator_bytes": need,
+            "max_open_source_files": 1,
             "unestimated": "Python/backend caches, metadata objects and process RSS",
         },
         "groups": [_group_facts(stamp, group) for stamp, items in groups for group in items],
     }
-    return DiagnosticPlan(parent, request, facts, groups, files)
+    if zarr_objects:
+        facts["initial_zarr_accesses"] = {p.name: len(keys) for p, keys in zarr_objects.items()}
+        facts["working_buffers"]["max_zarr_access_records"] = object_limit
+    return DiagnosticPlan(parent, request, facts, groups, files, zarr_evidence=zarr_objects)
 
 
 def _group_facts(stamp, group):
     field = group.fields[0]
     return {
-        "time": stamp, "role": group.role, "qualified": group.qualified, "tile_side": group.tile_side,
-        "temporal_statistic": field.statistic, "averaging_seconds": field.averaging_seconds,
+        "time": stamp,
+        "role": group.role,
+        "qualified": group.qualified,
+        "tile_side": group.tile_side,
+        "temporal_statistic": field.statistic,
+        "averaging_seconds": field.averaging_seconds,
         "sources": [{**asdict(f), "file": f.file.path.name} for f in group.fields],
     }
 
@@ -678,17 +942,28 @@ class _GroupView:
     def geography(self, window):
         grid = self.group.grid
         indexers = dict(grid.clock_indices) | dict(zip(grid.dims, window, strict=True))
-        shape = tuple(len(range(*key.indices(n))) for key, n in zip(window, grid.shape, strict=True))
+        shape = tuple(
+            len(range(*key.indices(n))) for key, n in zip(window, grid.shape, strict=True)
+        )
         coordinates = []
-        for name, factor in ((grid.latitude, grid.latitude_factor),
-                             (grid.longitude, grid.longitude_factor)):
+        for name, factor in (
+            (grid.latitude, grid.latitude_factor),
+            (grid.longitude, grid.longitude_factor),
+        ):
             da = self.dataset[name]
-            values = da.isel({d: indexers[d] for d in da.dims}).transpose(
-                *(dim for dim in grid.dims if dim in da.dims)).to_numpy()
-            shaped = tuple(size if dim in da.dims else 1
-                           for dim, size in zip(grid.dims, shape, strict=True))
-            coordinates.append(np.broadcast_to(
-                (values.astype("float64", copy=False) * factor).reshape(shaped), shape))
+            values = (
+                da.isel({d: indexers[d] for d in da.dims})
+                .transpose(*(dim for dim in grid.dims if dim in da.dims))
+                .to_numpy()
+            )
+            shaped = tuple(
+                size if dim in da.dims else 1 for dim, size in zip(grid.dims, shape, strict=True)
+            )
+            coordinates.append(
+                np.broadcast_to(
+                    (values.astype("float64", copy=False) * factor).reshape(shaped), shape
+                )
+            )
         return tuple(coordinates)
 
     def read(self, window):
@@ -699,8 +974,12 @@ class _GroupView:
         spatial = dict(zip(self.group.grid.dims, window, strict=True))
         values = {}
         for field in self.group.fields:
-            data = self.dataset[field.name].isel(dict(field.indexers) | spatial).transpose(
-                *self.group.grid.dims).to_numpy()
+            data = (
+                self.dataset[field.name]
+                .isel(dict(field.indexers) | spatial)
+                .transpose(*self.group.grid.dims)
+                .to_numpy()
+            )
             values[field.role] = data.astype("float64", copy=False) * field.factor
         return values
 
@@ -709,18 +988,34 @@ class _Provider:
     def __init__(self, plan):
         self.plan = plan
         self.groups = dict(plan.samples)
+        self.zarr_evidence = {path: dict(keys) for path, keys in (plan.zarr_evidence or {}).items()}
 
     def samples(self, track_time):
         return self.groups[track_time]
 
     @contextmanager
     def open_group(self, group):
-        with _open(group.fields[0].file) as ds:
+        file = group.fields[0].file
+        if file.representation == "original_grib":
+            from frameit.diagnostics.grib_source import open_grib_group
+
+            with open_grib_group(group) as view:
+                yield view
+            return
+        with _open(
+            file,
+            zarr_objects=self.zarr_evidence.get(file.path),
+            object_limit=self.plan.facts["working_buffers"].get("max_zarr_access_records", 0),
+        ) as ds:
             yield _GroupView(ds, group)
 
     def recheck(self):
         for file in self.plan.files:
             _verify_file(file)
+            if file.path in self.zarr_evidence:
+                from frameit.diagnostics.zarr_source import verify_accesses
+
+                verify_accesses(file.path, self.zarr_evidence[file.path])
 
 
 @contextmanager

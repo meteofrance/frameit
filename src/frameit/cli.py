@@ -160,6 +160,15 @@ def _build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--require-complete-tracking", action="store_true", default=None,
                     help="Fail if the selected tracker returns an incomplete trajectory")
 
+    diag = sub.add_parser("run-diag", allow_abbrev=False,
+                          help="Run opted-in diagnostics on a completed extraction")
+    diag.add_argument("config", type=Path, help="YAML configuration file")
+    diag.add_argument("--run-directory", type=Path,
+                      help="Select an existing parent instead of output.directory")
+    diag.add_argument("--check", action="store_true",
+                      help="Check the parent and inputs without writing a diagnostic attempt")
+    diag.add_argument("--json", action="store_true", help="Emit one structured diagnostic report")
+
     # validate
     pv = sub.add_parser("validate", allow_abbrev=False,
                         help="Check YAML, selected metadata, dependencies and the processing plan.")
@@ -580,6 +589,40 @@ def _print_yaml(value):
     print(yaml.safe_dump(value, sort_keys=False, allow_unicode=True))
 
 
+def _cmd_run_diag(args):
+    from frameit.core.reports import render_run_summary
+    from frameit.core.runtime import termination_scope
+    from frameit.diagnostics.runner import run_diagnostics
+
+    with termination_scope():
+        result = run_diagnostics(args.config, run_directory=args.run_directory, check=args.check)
+    if args.json or (args.check and "message" not in result.facts) or result.errors:
+        try:
+            return _print_preflight(result, json_output=args.json)
+        except Exception as exc:
+            if result.facts.get("committed"):
+                exc.add_note("Diagnostic outputs already committed at "
+                             + result.facts["attempt_directory"])
+            raise
+    if message := result.facts.get("message"):
+        print(message)
+        return 0
+    attempt = result.facts["attempt_directory"]
+    try:
+        print(render_run_summary({
+            "state": "completed", "products": result.facts["products"],
+            "warnings": result.facts["warnings"],
+        }, root=attempt))
+        counts = result.facts["scientific_summary"]["counts"]
+        print(f"Unavailable requested values: {counts.get('unavailable', 0)}; "
+              f"native proxy values: {counts.get('model_native_proxy', 0)}.")
+        print("CSV does not carry complete quality information; open the paired NetCDF.")
+    except Exception as exc:
+        raise tag_error(OSError(f"Outputs were already committed at {attempt}: {exc}"),
+                        "E1808") from exc
+    return 0
+
+
 def _cmd_config(args):
     if args.effective:
         return _print_preflight(_collect_report(
@@ -697,6 +740,8 @@ def main(argv: list[str] | None = None) -> None:
             code = _cmd_saved_report(args)
         elif args.command == "run":
             code = _cmd_run(args)
+        elif args.command == "run-diag":
+            code = _cmd_run_diag(args)
         elif args.command == "validate":
             code = _cmd_validate(
                 args.config or Path("frameit.yaml"), schema_only=args.schema_only,
@@ -727,7 +772,15 @@ def main(argv: list[str] | None = None) -> None:
             from frameit.core.reports import render_run_summary
             from frameit.core.run_state import read_run_status
 
-            facts = read_run_status(args.run_directory)
+            diagnostic_status = args.run_directory / "diagnostics-status.yaml"
+            parent_status = args.run_directory / "run-status.yaml"
+            if (not parent_status.exists() and not parent_status.is_symlink()
+                    and (diagnostic_status.exists() or diagnostic_status.is_symlink())):
+                from frameit.diagnostics.runner import read_diagnostics_status
+
+                facts = read_diagnostics_status(args.run_directory)
+            else:
+                facts = read_run_status(args.run_directory)
             print(render_run_summary(facts, root=args.run_directory.resolve(), recorded=True))
             code = 0 if facts["state"] in {"completed", "incomplete"} else 1
         elif args.command == "info":

@@ -7,9 +7,18 @@ from frameit.core.reports import Diagnostic, PreflightError
 
 
 def diagnostic_error(code, path, message, *, expected=None, observed=None, repair=None):
-    return PreflightError([Diagnostic(
-        path, message, expected, observed, [repair] if repair else [], code=code,
-    )])
+    return PreflightError(
+        [
+            Diagnostic(
+                path,
+                message,
+                expected,
+                observed,
+                [repair] if repair else [],
+                code=code,
+            )
+        ]
+    )
 
 
 @dataclass(frozen=True)
@@ -42,6 +51,8 @@ class DiagnosticPlan:
     facts: dict
     samples: tuple = ()
     files: tuple = ()
+    reference: object | None = None
+    zarr_evidence: dict | None = None
 
 
 @dataclass(frozen=True)

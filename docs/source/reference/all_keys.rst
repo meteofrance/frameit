@@ -13,6 +13,8 @@ Find the detailed contract
 
 * ``schema_version``, ``run``, ``sources`` and precedence:
   :doc:`../user_guide/configuration_file`.
+* ``diagnostics.best_track`` selectors, support and resource settings:
+  :doc:`../task_guides/best_track_comparison` and :doc:`../diagnostics/best_track`.
 * Source ``files``, ``exclude``, ``model``, ``format`` and ``reader``:
   :doc:`../user_guide/input_files`.
 * Source ``profile``, ``fa``, ``field_metadata`` and ``native_cubes``:

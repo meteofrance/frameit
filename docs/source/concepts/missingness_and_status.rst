@@ -27,6 +27,12 @@ them with zeros. See :doc:`../polar_projection/xESMF_proj`.
 Run completion is a separate check
 ----------------------------------
 
+For :doc:`../diagnostics/best_track`, check each metric's availability,
+spatial support and comparability separately. A zero wind radius requires
+complete support and no exceedance. A blank comparison cell can indicate
+missing support, an unqualified temporal statistic or a value below export
+resolution. The canonical NetCDF distinguishes these cases.
+
 Read ``run-status.yaml`` after a normal process exit. ``completed`` records a
 finished requested execution; an accepted shortened track is ``incomplete``.
 Keep ``region.tracker.on_incomplete: error`` to reject that prefix before

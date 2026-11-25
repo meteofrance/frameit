@@ -6,7 +6,7 @@ from math import pi
 import numpy as np
 
 METHOD = "structured_center_perimeter_v1"
-EPSILON_M = 1.
+EPSILON_M = 1.0
 PERIMETER_BYTES = 256
 
 
@@ -17,10 +17,18 @@ def _cross(a, b):
 def _project(centre, latitude, longitude, geod):
     shape = latitude.shape
     azimuth, _, radius = geod.inv(
-        np.full(shape, centre.longitude), np.full(shape, centre.latitude), longitude, latitude,
+        np.full(shape, centre.longitude),
+        np.full(shape, centre.latitude),
+        longitude,
+        latitude,
     )
-    valid = (np.isfinite(latitude) & np.isfinite(longitude) & (np.abs(latitude) <= 90)
-             & np.isfinite(radius) & (radius < min(geod.a, geod.b) * pi / 2))
+    valid = (
+        np.isfinite(latitude)
+        & np.isfinite(longitude)
+        & (np.abs(latitude) <= 90)
+        & np.isfinite(radius)
+        & (radius < min(geod.a, geod.b) * pi / 2)
+    )
     angle = np.deg2rad(azimuth)
     xy = np.stack((radius * np.sin(angle), radius * np.cos(angle)), axis=-1)
     return np.where(valid, radius, np.nan), np.mod(azimuth, 360), xy, valid
@@ -38,8 +46,7 @@ def _simple_boundary(points):
         for j in active:
             if abs(i - j) in {1, len(points) - 1}:
                 continue
-            if (upper[j, 1] < lower[i, 1] - EPSILON_M
-                    or upper[i, 1] < lower[j, 1] - EPSILON_M):
+            if upper[j, 1] < lower[i, 1] - EPSILON_M or upper[i, 1] < lower[j, 1] - EPSILON_M:
                 continue
             a, b, c, d = points[i], end[i], points[j], end[j]
             # Signed distances to the supporting lines (metres).
@@ -67,25 +74,38 @@ def certify_disc(centre, perimeter, *, geod, radius_m, budget_bytes):
     guard = radius_m + EPSILON_M
     if np.any(radii <= guard):
         return "truncated"
-    winding = np.sum(np.arctan2(
-        _cross(points, np.roll(points, -1, axis=0)),
-        np.einsum("ij,ij->i", points, np.roll(points, -1, axis=0)),
-    ))
+    winding = np.sum(
+        np.arctan2(
+            _cross(points, np.roll(points, -1, axis=0)),
+            np.einsum("ij,ij->i", points, np.roll(points, -1, axis=0)),
+        )
+    )
     if abs(winding) < 1e-8:
         return "truncated"
     if abs(abs(winding) - 2 * pi) > 1e-8:
         return "unknown_geometry"
     # Triangle inequality: every point on a short edge is within half its
     # length of an endpoint. Refine uncertain edges without retaining a mesh.
-    edges_az, _, lengths = geod.inv(longitude, latitude, np.roll(longitude, -1),
-                                   np.roll(latitude, -1))
+    edges_az, _, lengths = geod.inv(
+        longitude, latitude, np.roll(longitude, -1), np.roll(latitude, -1)
+    )
     checks = len(latitude)
     for i in range(len(latitude)):
         j = (i + 1) % len(latitude)
         if min(radii[i], radii[j]) - lengths[i] / 2 > guard:
             continue
-        stack = [(longitude[i], latitude[i], radii[i],
-                  longitude[j], latitude[j], radii[j], edges_az[i], lengths[i])]
+        stack = [
+            (
+                longitude[i],
+                latitude[i],
+                radii[i],
+                longitude[j],
+                latitude[j],
+                radii[j],
+                edges_az[i],
+                lengths[i],
+            )
+        ]
         while stack:
             x, y, ra, x1, y1, rb, bearing, length = stack.pop()
             if min(ra, rb) - length / 2 > guard:
@@ -114,10 +134,15 @@ def view_perimeter(view, shape):
         (slice(1, ny - 1), slice(0, 1)),
     )
     parts = [view.geography(window) for window in windows]
-    return tuple(np.concatenate([
-        part[axis].ravel()[::-1] if i >= 2 else part[axis].ravel()
-        for i, part in enumerate(parts)
-    ]) for axis in range(2))
+    return tuple(
+        np.concatenate(
+            [
+                part[axis].ravel()[::-1] if i >= 2 else part[axis].ravel()
+                for i, part in enumerate(parts)
+            ]
+        )
+        for axis in range(2)
+    )
 
 
 @dataclass(frozen=True)
@@ -143,14 +168,18 @@ def orientation(tile, available_cells):
         return None
     if np.all(a > EPSILON_M**2) and np.all(b > EPSILON_M**2):
         return 1
-    if np.all(a < -EPSILON_M**2) and np.all(b < -EPSILON_M**2):
+    if np.all(a < -(EPSILON_M**2)) and np.all(b < -(EPSILON_M**2)):
         return -1
     return 0
 
 
 def disc_and_rim(radius, distance, interior):
-    within = (radius <= distance)
+    within = radius <= distance
     padded = np.pad(within, 1, constant_values=False)
-    inner = padded[1:-1, 1:-1] & padded[:-2, 1:-1] & padded[2:, 1:-1] & (
-        padded[1:-1, :-2] & padded[1:-1, 2:])
+    inner = (
+        padded[1:-1, 1:-1]
+        & padded[:-2, 1:-1]
+        & padded[2:, 1:-1]
+        & (padded[1:-1, :-2] & padded[1:-1, 2:])
+    )
     return within[interior], (within & ~inner)[interior]

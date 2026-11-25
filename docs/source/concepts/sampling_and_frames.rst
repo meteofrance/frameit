@@ -58,3 +58,6 @@ Use :doc:`../task_guides/scalars_and_vectors` for representation choices and
 :doc:`../task_guides/polar_sampling` for target spacing and coverage. The
 :doc:`polar reference <../polar_projection/xESMF_proj>` defines angle conventions,
 local radial directions and undefined components at the origin.
+
+:doc:`../diagnostics/best_track` requires a known physical wind frame and
+keeps native temporal proxies separate from agency-qualified values.

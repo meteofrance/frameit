@@ -640,6 +640,10 @@ Post-run diagnostics
 Omit ``diagnostics`` or set ``diagnostics: {}`` to leave post-run diagnostics
 off. Extraction validates this block but does not read its selected fields or
 compute its metrics. Adding it does not change the extraction request.
+See :doc:`../task_guides/best_track_comparison` for exact selectors and an
+optional local reference. The default diagnostic working-buffer budget is
+256 MiB, not a process RSS cap. The default handle limit is four; the current
+reader uses at most one input file at a time.
 
 .. _output-resources-and-metadata:
 

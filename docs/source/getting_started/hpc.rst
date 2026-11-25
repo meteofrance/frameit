@@ -214,6 +214,11 @@ confirm its owner has stopped before manual removal. ``overwrite: true`` keeps
 its existing sequential-rerun meaning and may leave older unlisted products;
 use the current manifest inventory.
 
+Use ``frameit run-diag config.yaml --check --json`` against the completed
+parent before submitting a post-run diagnostic. It uses one CPU with
+synchronous computation and does not need an export worker pool. Schedule
+the child after its parent; they use the same exclusion lock.
+
 Repeat complete cases
 ---------------------
 

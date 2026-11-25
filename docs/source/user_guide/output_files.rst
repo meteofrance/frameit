@@ -154,6 +154,10 @@ status. The checksum and path are in ``run-status.yaml`` under ``records``,
 not ``products``. This internal record does not enable the optional public
 ``products.track`` export. A full-domain run with no centres has no trajectory.
 
+``frameit run-diag`` writes an independent attempt with its own status,
+inventory and provenance. See :doc:`../diagnostics/index`; the canonical
+diagnostic NetCDF carries reasons that the RSMC CSV cannot represent.
+
 When comparing run records, compare the parsed YAML values. Quoting and
 Unicode escapes can differ depending on the installed YAML emitter.
 

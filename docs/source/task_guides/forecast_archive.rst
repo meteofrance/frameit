@@ -84,6 +84,10 @@ In ``results/forecast-archive/run-provenance.yaml``, check
 ``binding.atmosphere.files``. It lists ``z-earlier.nc`` and ``a-later.nc``,
 not ``b-other-cycle.nc``.
 
+An :doc:`experimental best-track comparison <best_track_comparison>` uses
+only those recorded cycles and exact field times. It will not search another
+cycle for a missing valid time.
+
 Copy this into ``plot_forecast_archive.py``:
 
 .. literalinclude:: ../../../example/plots/plot_forecast_archive.py

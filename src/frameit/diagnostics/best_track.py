@@ -1,6 +1,7 @@
 """Native-cell best-track estimators; no interpolation or synthetic qualification."""
 
 from dataclasses import replace
+from itertools import pairwise
 
 import numpy as np
 from pyproj import Geod
@@ -19,8 +20,13 @@ THRESHOLDS = (28, 34, 48, 64)
 QUADRANTS = ("ne", "se", "so", "no")
 KNOT_M_S = 1852 / 3600
 THRESHOLD_M_S = tuple(threshold * 1852 / 3600 for threshold in THRESHOLDS)
-SUPPORT_REASONS = ("unknown_geometry", "crop_truncated", "model_domain_truncated",
-                   "missing_field_support", "search_limit_reached")
+SUPPORT_REASONS = (
+    "unknown_geometry",
+    "crop_truncated",
+    "model_domain_truncated",
+    "missing_field_support",
+    "search_limit_reached",
+)
 
 
 def unavailable(reason, *, comparability="unavailable"):
@@ -39,29 +45,40 @@ def annular_peak(means, sectors, width):
     epsilon = max(1e-10, 1e-12 * float(np.max(np.abs(means))))
     candidates = np.flatnonzero(highest - means <= epsilon)
     peak = int(candidates[0])
-    midpoint = (peak + .5) * width
+    midpoint = (peak + 0.5) * width
     if len(candidates) > 1:
         return Metric(
-            observed=midpoint, support="complete", reasons=("ambiguous_peak",),
+            observed=midpoint,
+            support="complete",
+            reasons=("ambiguous_peak",),
             candidates=tuple((a * width, (b + 1) * width) for a, b in _intervals(candidates)),
         )
     if peak in {0, len(means) - 1}:
         return Metric(observed=midpoint, support="complete", reasons=("peak_at_radial_boundary",))
-    if np.any(sectors[peak - 1:peak + 2] == 0):
-        return Metric(observed=midpoint, support="complete",
-                      reasons=("insufficient_azimuthal_sampling",))
+    if np.any(sectors[peak - 1 : peak + 2] == 0):
+        return Metric(
+            observed=midpoint, support="complete", reasons=("insufficient_azimuthal_sampling",)
+        )
     local_peaks = 0
     lo = 0
     while lo < len(means):
         hi = lo
         while hi + 1 < len(means) and abs(means[hi + 1] - means[lo]) <= epsilon:
             hi += 1
-        if (lo > 0 and hi < len(means) - 1 and means[lo] - means[lo - 1] > epsilon
-                and means[hi] - means[hi + 1] > epsilon):
+        if (
+            lo > 0
+            and hi < len(means) - 1
+            and means[lo] - means[lo - 1] > epsilon
+            and means[hi] - means[hi + 1] > epsilon
+        ):
             local_peaks += 1
         lo = hi + 1
-    return Metric(value=midpoint, observed=midpoint, support="complete",
-                  reasons=("multiple_local_peaks",) if local_peaks > 1 else ())
+    return Metric(
+        value=midpoint,
+        observed=midpoint,
+        support="complete",
+        reasons=("multiple_local_peaks",) if local_peaks > 1 else (),
+    )
 
 
 class _Extremum:
@@ -102,18 +119,27 @@ class _Extremum:
             reasons.append("stronger_wind_outside_core")
         is_bound = self.value is not None and any(reason in SUPPORT_REASONS for reason in reasons)
         return Metric(
-            value=self.value if not reasons else None, observed=self.value,
+            value=self.value if not reasons else None,
+            observed=self.value,
             bound=self.value if is_bound else None,
             bound_kind=("upper" if self.minimum else "lower") if is_bound else "none",
-            support=_support(reasons), comparability=comparability, reasons=tuple(reasons),
-            location=self.location, offset_m=self.offset, ties=self.ties, valid_samples=self.good,
+            support=_support(reasons),
+            comparability=comparability,
+            reasons=tuple(reasons),
+            location=self.location,
+            offset_m=self.offset,
+            ties=self.ties,
+            valid_samples=self.good,
         )
 
 
 def _reasons(geometry, missing, rim, samples):
-    return ([geometry] if geometry != "complete" else []) + (
-        ["missing_field_support"] if missing else []) + (
-        ["search_limit_reached"] if rim else []) + (["no_valid_data"] if not samples else [])
+    return (
+        ([geometry] if geometry != "complete" else [])
+        + (["missing_field_support"] if missing else [])
+        + (["search_limit_reached"] if rim else [])
+        + (["no_valid_data"] if not samples else [])
+    )
 
 
 def _support(reasons):
@@ -149,16 +175,21 @@ class _WindRadii:
             if available and observed is None:
                 reasons.append("threshold_not_reached")
             is_bound = not available and observed is not None
-            entries.append(Metric(
-                value=(0. if observed is None else observed) if available else None,
-                observed=observed, bound=observed if is_bound else None,
-                bound_kind="lower" if is_bound else "none", support=_support(reasons),
-                comparability=comparability, reasons=tuple(reasons), valid_samples=int(self.good[q]),
-            ))
+            entries.append(
+                Metric(
+                    value=(0.0 if observed is None else observed) if available else None,
+                    observed=observed,
+                    bound=observed if is_bound else None,
+                    bound_kind="lower" if is_bound else "none",
+                    support=_support(reasons),
+                    comparability=comparability,
+                    reasons=tuple(reasons),
+                    valid_samples=int(self.good[q]),
+                )
+            )
         for q in range(4):
             metric = [entries[i * 4 + q].value for i in range(4)]
-            if any(a < b for a, b in zip(metric, metric[1:])
-                   if a is not None and b is not None):
+            if any(a < b for a, b in pairwise(v for v in metric if v is not None)):
                 raise ArithmeticError("Nested wind-radius thresholds produced out-of-order extents")
         return tuple(entries)
 
@@ -196,12 +227,18 @@ class _Annuli:
         if not self.has_area:
             reasons.append("cell_area_unverified")
         if reasons:
-            return Metric(comparability=comparability, support=_support(reasons),
-                          reasons=tuple(reasons), valid_samples=self.good)
-        mean = np.divide(self.sum, self.area, where=self.area > 0,
-                         out=np.full(self.count, np.nan))
-        return replace(annular_peak(mean, self.occupancy, self.width),
-                       comparability=comparability, valid_samples=self.good)
+            return Metric(
+                comparability=comparability,
+                support=_support(reasons),
+                reasons=tuple(reasons),
+                valid_samples=self.good,
+            )
+        mean = np.divide(self.sum, self.area, where=self.area > 0, out=np.full(self.count, np.nan))
+        return replace(
+            annular_peak(mean, self.occupancy, self.width),
+            comparability=comparability,
+            valid_samples=self.good,
+        )
 
 
 def _tiles(shape, side):
@@ -230,15 +267,21 @@ def _group_result(centre, group, view, request, comparability):
     geod = Geod(a=grid.earth[0], b=grid.earth[1])
     perimeter = view_perimeter(view, grid.shape)
     budget = 4 * sum(grid.shape) * PERIMETER_BYTES
-    coverage = {r: certify_disc(centre, perimeter, geod=geod, radius_m=r,
-                               budget_bytes=budget) for r in set(distances)}
+    coverage = {
+        r: certify_disc(centre, perimeter, geod=geod, radius_m=r, budget_bytes=budget)
+        for r in set(distances)
+    }
     topology = set()
     for start, window, inner in _tiles(grid.shape, group.tile_side):
         lat, lon = view.geography(window)
         info = tile_geometry(centre, (lat, lon), geod=geod)
         y, x = np.indices((lat.shape[0] - 1, lat.shape[1] - 1))
-        norm = ((y >= inner[0].start) & (y < inner[0].stop)
-                & (x >= inner[1].start) & (x < inner[1].stop))
+        norm = (
+            (y >= inner[0].start)
+            & (y < inner[0].stop)
+            & (x >= inner[1].start)
+            & (x < inner[1].stop)
+        )
         sign = orientation(info, norm)
         if sign is not None:
             topology.add(sign)
@@ -267,23 +310,30 @@ def _group_result(centre, group, view, request, comparability):
                 outside = max(outside, np.max(values[available]))
     if len(topology) != 1 or 0 in topology:
         coverage = dict.fromkeys(distances, "unknown_geometry")
-    coverage = {r: group.truncated if state == "truncated" else state
-                for r, state in coverage.items()}
+    coverage = {
+        r: group.truncated if state == "truncated" else state for r, state in coverage.items()
+    }
     metric = extrema.result(
-        coverage[core], comparability,
+        coverage[core],
+        comparability,
         stronger_outside=bool(wind and extrema.value is not None and outside > extrema.value),
     )
     if not wind:
         return (metric,)
-    return metric, annuli.result(coverage[rmw], comparability), extents.result(
-        coverage[radii], comparability)
+    return (
+        metric,
+        annuli.result(coverage[rmw], comparability),
+        extents.result(coverage[radii], comparability),
+    )
 
 
 def reduce_time(centre, provider, plan):
     """Read only one time/group at once; all scientific decisions remain in the row."""
     missing = unavailable("missing_input_sample")
     result = {
-        "maximum_wind": missing, "central_pressure": missing, "rmw": missing,
+        "maximum_wind": missing,
+        "central_pressure": missing,
+        "rmw": missing,
         "gust": missing if "gust" in plan.request["fields"] else unavailable("gust_not_selected"),
         "wind_radii": (missing,) * 16,
     }
@@ -291,14 +341,24 @@ def reduce_time(centre, provider, plan):
         cmp = "qualified"
         if not group.qualified:
             field = group.fields[0]
-            if (group.role != "wind" or plan.request["wind_time_policy"] != "native_proxy"
-                    or field.statistic == "unverified" or field.averaging_seconds is None):
-                why = unavailable("temporal_semantics_unverified",
-                                  comparability="temporal_semantics_unverified")
+            undefined = any(f.statistic == "physical_definition_unverified" for f in group.fields)
+            if (
+                undefined
+                or group.role != "wind"
+                or plan.request["wind_time_policy"] != "native_proxy"
+                or field.statistic == "unverified"
+                or field.averaging_seconds is None
+            ):
+                reason = (
+                    "physical_definition_unverified"
+                    if undefined
+                    else "temporal_semantics_unverified"
+                )
+                why = unavailable(reason, comparability=reason)
                 if group.role == "wind":
                     result.update(maximum_wind=why, rmw=why, wind_radii=(why,) * 16)
                 else:
-                    result["gust"] = why
+                    result["central_pressure" if group.role == "pressure" else "gust"] = why
                 continue
             cmp = "model_native_proxy"
         with provider.open_group(group) as view:
@@ -306,5 +366,5 @@ def reduce_time(centre, provider, plan):
         if group.role == "wind":
             result["maximum_wind"], result["rmw"], result["wind_radii"] = metrics
         else:
-            result["central_pressure" if group.role == "pressure" else "gust"], = metrics
+            (result["central_pressure" if group.role == "pressure" else "gust"],) = metrics
     return DiagnosticResult(centre, **result)

@@ -66,8 +66,11 @@ def lifecycle_doubles(monkeypatch):
 
 
 def snapshot(root):
-    return {p.relative_to(root): p.read_bytes() for p in root.rglob("*")
-            if p.is_file() and "diagnostics" not in p.relative_to(root).parts}
+    return {
+        p.relative_to(root): p.read_bytes()
+        for p in root.rglob("*")
+        if p.is_file() and "diagnostics" not in p.relative_to(root).parts
+    }
 
 
 def test_noop_without_a_parent(tmp_path):
@@ -110,8 +113,9 @@ def test_parent_gate(completed, state):
         assert "test termination" in report["errors"][0]["message"]
 
 
-def test_locked_parent_and_diagnostic_lease_exclude_overwrite(completed, lifecycle_doubles,
-                                                            monkeypatch):
+def test_locked_parent_and_diagnostic_lease_exclude_overwrite(
+    completed, lifecycle_doubles, monkeypatch
+):
     root, path, _ = completed
     lock = root / ".frameit-run.lock"
     lock.write_text("other owner")
@@ -140,7 +144,7 @@ def test_relocated_parent_matches_the_authored_request(completed, lifecycle_doub
     raw["region"]["width_km"]["x"] += 1
     write_request(path, raw)
     report = run_diag(path, run_directory=destination, check=True)
-    issue, = report["errors"]
+    (issue,) = report["errors"]
     assert issue["code"] == "E2002"
     assert "region.width_km.x" in str(issue)
     assert snapshot(destination) == before
@@ -153,6 +157,7 @@ def test_cleanup_before_and_release_after_commit(completed, lifecycle_doubles, m
     root, path, _ = completed
     before = snapshot(root)
     if stage == "runtime_cleanup":
+
         @contextmanager
         def fail(options):
             with execution_scope(options):
@@ -171,7 +176,7 @@ def test_cleanup_before_and_release_after_commit(completed, lifecycle_doubles, m
         monkeypatch.setattr(Path, "unlink", unlink)
     report = run_diag(path)
     assert report["status"] == "error"
-    attempt, = (root / "diagnostics").iterdir()
+    (attempt,) = (root / "diagnostics").iterdir()
     status = record(attempt, "diagnostics-status.yaml")
     expected = "failed" if stage == "runtime_cleanup" else "completed"
     assert status["state"] == expected

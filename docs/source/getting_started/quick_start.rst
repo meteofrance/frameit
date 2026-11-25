@@ -37,6 +37,9 @@ moving window does not subtract storm motion.
 Useful commands
 ---------------
 
+For a completed regional run, see :doc:`../task_guides/best_track_comparison`
+to check and execute optional post-run diagnostics.
+
 .. code-block:: bash
 
    # Inspect the full source inventory.

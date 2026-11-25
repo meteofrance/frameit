@@ -20,6 +20,16 @@ Without overrides, Zarr blocks the spatial axes of each exported grid while
 keeping other scientific axes, such as depth and ensemble member, separate.
 Use the actual exported dimension names when overriding the layout.
 
+Post-run diagnostic buffers
+---------------------------
+
+The extraction RAM estimate is not a diagnostic limit. ``run-diag --check``
+reports the requested working buffers, selected decode units and unestimated
+backend overhead. ``working_memory_mib`` defaults to 256 MiB; it is not a
+guaranteed RSS limit. A tile can require a whole GRIB message or a larger
+Zarr storage unit. Diagnostic execution is serial. See
+:doc:`../diagnostics/index` before choosing the source representation.
+
 Input-reader chunks schedule source reads; product processing chunks schedule
 calculations; output chunks/shards encode storage. See
 :ref:`sharded-zarr-output` for layouts, reader requirements and replacement limits.
