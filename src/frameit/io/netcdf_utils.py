@@ -381,6 +381,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks, regio
                     for name in job["input_binding"]["dependencies"]}
     records = binding["records"]
     tracker_support = source.get("tracker_support", {})
+    constant_top = model == "MNH" and source.get("mnh_ztop", {}).get("value_m") is not None
     omit_dtcur = (any(record.get("scalar_dtcur_alias") for record in records)
                   and any("DTCUR" not in record["temporal_names"] for record in records))
 
@@ -397,6 +398,10 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks, regio
             raise ValueError(f"{name}: destination-grid transformation is not executable")
         original = normalize_isobaric_coordinates(
             resources.open_netcdf(path, engine=engine, chunks=None))
+        if top := record.get("mnh_recovered_ztop"):
+            from frameit.io.mnh_vertical_grid import assign_resolved_ztop
+
+            original = assign_resolved_ztop(original, top)
         variable = locator["variable"]
         grid = source["native_grids"][record["grid_id"]]
         coordinates = set(grid["coordinates"]) | {record["clock"]}
@@ -507,7 +512,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks, regio
                 support = support.isel({vertical["dimension"]: [
                     native.index(index) for index in parent["source_native_indices"]]})
             value = support[name].variable.copy(deep=False)
-            if model == "CROCO":
+            if model == "CROCO" or (constant_top and name == "ZTOP"):
                 value.attrs = effective_attrs(value, other, descriptor)
             dataset = dataset.assign_coords({
                 **{n: value.variable.copy(deep=False) for n, value in support.coords.items()
@@ -569,6 +574,8 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks, regio
 
     def groups(descriptors, *, export_support=False):
         by_grid, vertical_dims = {}, set()
+        # Keep the top a scalar coordinate until it is merged with any explicit export.
+        exported_coords = descriptors.keys() - {"ZTOP"} if constant_top else descriptors
         for name, descriptor in descriptors.items():
             if descriptor.get("operation"):
                 continue
@@ -579,7 +586,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks, regio
                 validation.append(prepared)
                 if export_support:
                     dataset = prepared.reset_coords(
-                        [field for field in descriptors if field in prepared.coords])
+                        [field for field in exported_coords if field in prepared.coords])
                 elif name in binding.get("interpretation", {}).get("fields", []):
                     dataset = prepared.reset_coords(
                         [field for field in descriptors if field in prepared.coords])
@@ -643,6 +650,11 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks, regio
                     concat_dim = varying[0]
                 static = (not source["fields"][descriptor["field_id"]]["time_varying"]
                           and len({r["locator"]["path"] for r in descriptor["records"]}) == 1)
+                if constant_top and source["fields"][descriptor["field_id"]]["name"] == "ZTOP":
+                    if any(not sequence[0][name].variable.identical(ds[name].variable)
+                           for ds in sequence[1:]):
+                        raise ValueError("Meso-NH ZTOP changed after binding")
+                    static = True
                 if not export_support and name in tracker_support.get("projection_constants", ()):
                     constant = sequence[0][name].variable
                     if constant.ndim or any(not constant.identical(ds[name].variable)

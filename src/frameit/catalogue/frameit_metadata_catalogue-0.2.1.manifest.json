@@ -2,22 +2,21 @@
   "manifest_version": 1,
   "format": "frameit.metadata.catalogue",
   "format_version": 2,
-  "catalogue_version": "0.2.0",
-  "date": "2026-11-25",
-  "previous_catalogue_version": "0.1.0",
-  "previous_sqlite_sha256": "f7531aaea03dc42585c8776d59dc2a24309bbe5d94f8a0eeffc9cfc475179498",
+  "catalogue_version": "0.2.1",
+  "date": "2026-11-26",
+  "previous_catalogue_version": "0.2.0",
   "artifact": {
-    "filename": "frameit_metadata_catalogue-0.2.0.jsonl.xz",
+    "filename": "frameit_metadata_catalogue-0.2.1.jsonl.xz",
     "compression": "xz",
     "filter": "LZMA2",
-    "preset": 9,
-    "extreme": true,
+    "preset": 6,
+    "extreme": false,
     "check": "CRC64",
-    "bytes": 1504656,
-    "sha256": "0fbd92ebfea2198ebb6b7c5b169314744ac51ccbd29ab8f4fe9664ba4f742baf",
-    "uncompressed_bytes": 104278670,
-    "uncompressed_sha256": "534f3adda55023b22826f0b19209789e2f8d2740414b4a90882f10740b890527",
-    "content_sha256": "ff7b1e735ff50370addda7c5a4308ff6457d960ab0c50fdd841dcbef598b41ec"
+    "bytes": 2140808,
+    "sha256": "628e89131780c375eadb124eb70159ba7b847a5fdc94a85533297388538fac26",
+    "uncompressed_bytes": 104280448,
+    "uncompressed_sha256": "b59f0c09aa5380707200e19e4ba7f77ee282c0bb3de1523fbfad9827fba10ea3",
+    "content_sha256": "271d1d167fcaf41b00b5d89267b82d0075b37ac3aa2751eef50efd9bfc929ead"
   },
   "serialization": {
     "encoding": "UTF-8",
@@ -1347,5 +1346,15 @@
       "bytes": 4637,
       "sha256": "fc08ba238771db3b415c0136fee105571511db3f15356eb3b5be1f7cbd445184"
     }
-  ]
+  ],
+  "audit_base_sqlite_sha256": "f7531aaea03dc42585c8776d59dc2a24309bbe5d94f8a0eeffc9cfc475179498",
+  "previous_content_sha256": "ff7b1e735ff50370addda7c5a4308ff6457d960ab0c50fdd841dcbef598b41ec",
+  "frameit_policy_changes": {
+    "Meso-NH ZTOP": {
+      "annotated_record_ids": [
+        11120,
+        14470
+      ]
+    }
+  }
 }

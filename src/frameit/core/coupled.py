@@ -1241,6 +1241,7 @@ def run_native_sources(runner, *, benchmark=False):
                    for entry in source["file_inventory"] if entry["path"] in source["files"]
                    for record in entry.get("unmapped_records", [])]),
                 "field_metadata": source["metadata_origins"].get("field_metadata", {}),
+                **({"mnh_ztop": source["mnh_ztop"]} if "mnh_ztop" in source else {}),
                 **({"metadata_catalogue": applied_catalogue[name]} if name in applied_catalogue
                    else {}),
                "interpretation": source.get("interpretation"),

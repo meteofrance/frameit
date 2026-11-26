@@ -448,6 +448,54 @@ def test_formula_dependencies_survive_loading(tmp_path):
             [1000, 3000])
 
 
+@pytest.mark.parametrize("case", ["recovered", "truncated", "mass_alt", "missing_pressure"])
+def test_ztop_resolution_is_shared_with_centroid_inputs(tmp_path, case):
+    from .test_v3_boundary_review import ztop_axes
+
+    scene, _ = native_vortex(n=9)
+    scene = scene.drop_vars("ALT").isel(level=[0, 0, 1, 1]).assign_coords(ztop_axes(10.))
+    scene["ZS"] = xr.full_like(scene.MSLP.isel(time=0), 200.).assign_attrs(units="m")
+    scene["ALT"] = xr.broadcast(scene.level_w, scene.ZS)[0].assign_attrs(
+        units="m", standard_name="altitude", positive="up")
+    scene.level.attrs.update(formula_definition=HEIGHT_FORMULA,
+                             formula_terms="s: level height: ZTOP orog: ZS")
+    if case in {"truncated", "mass_alt"}:
+        scene = scene.isel(level=slice(None, -1), level_w=slice(None, -1))
+    if case == "mass_alt":
+        scene["ALT"] = xr.broadcast(scene.level, scene.ZS)[0]
+        scene.ALT.attrs = {"units": "m", "standard_name": "altitude", "positive": "up"}
+    if case == "missing_pressure":
+        scene = scene.drop_vars("PABST")
+    path = tmp_path / "native.nc"
+    scene.to_netcdf(path, engine="h5netcdf")
+    conf = config(tmp_path)
+    report = collect_preflight(conf)
+    if case == "truncated":
+        assert any("ZTOP" in e.message for e in report.errors), report.errors
+        return
+    if case == "missing_pressure":
+        assert any("Missing absolute pressure" in e.message for e in report.errors)
+        assert not any("Missing physical model-level altitude" in e.message for e in report.errors)
+        return
+    assert not report.errors, report.errors
+    if case == "mass_alt":
+        assert "ALT" in report.facts["sources"]["atmosphere"]["tracker_support"]["inputs"]
+        return
+    source = report.facts["sources"]["atmosphere"]
+    assert source["mnh_ztop"]["value_m"] == 3000.
+    with DatasetResources() as resources:
+        _, tree = concat_nc2ds_by_vert_coord(
+            [path], {}, {}, resources=resources, selected_records=source["field_binding"],
+            source_plan=source)
+        merged = xr.merge(list(tree["internal"].values()), join="exact", compat="identical")
+        prepared = prepare_mnh_inputs(merged, wind_settings())
+        np.testing.assert_allclose(prepared.height.isel(nj=0, ni=0),
+                                   [2000/3, 6200/3], rtol=1e-13, atol=0.)
+        native = prepare_mnh_inputs(scene.assign(ZTOP=xr.DataArray(3000., attrs={"units": "m"})),
+                                    wind_settings())
+        np.testing.assert_array_equal(prepared.height, native.height)
+
+
 def test_bundled_mnh_header_identifies_pressure_as_missing():
     from frameit.testing.datasets import ci_dataset_root
 

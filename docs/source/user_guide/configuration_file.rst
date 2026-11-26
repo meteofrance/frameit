@@ -87,7 +87,8 @@ cannot label an Earth-relative wind. If the selected method requires native
 headers, correct those upstream. An unlisted tracer or custom diagnostic is
 not an error by itself.
 
-The installed offline catalogue is release 0.2.0.
+The installed offline catalogue is release 0.2.1. The :ref:`Meso-NH ZTOP policy
+<mesonh-ztop>` is reference metadata, not a catalogue value supplied to a run.
 ``data.plan.metadata_catalogue`` records its content SHA-256, matched
 assertions, applied values, and missing or conflicting evidence. The catalogue
 covers the audited sources in its bundled manifest, not every configuration,

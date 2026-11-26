@@ -138,8 +138,9 @@ W1302: Native levels were kept without a usable altitude formula
 ----------------------------------------------------------------------
 
 FrameIt kept the source level labels. One or more terms needed to
-compute altitude were missing. Read the named term. Do not read the
-native labels as physical heights unless their metadata establish that.
+compute altitude were missing or inconsistent. If the warning names
+``ZTOP``, check ``mnh_ztop`` in ``frameit validate --json`` and
+see :ref:`mesonh-ztop`. Native labels are not physical heights.
 Select complete support if the analysis needs altitude.
 
 .. _w1303:

@@ -1660,7 +1660,7 @@ def _initial_gap_clock(dataset, source):
 def _warn_archived_altitude(binding, context, axis, term):
     warning = format_message(
         "W1302", f"{context}: {axis} native labels retained; altitude formula archived "
-        f"because {term} is missing from the selected samples.")
+        f"because {term} could not be resolved consistently for the selected samples.")
     if warning not in binding["warnings"]:
         binding["warnings"].append(warning)
 

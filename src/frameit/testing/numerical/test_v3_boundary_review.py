@@ -500,6 +500,171 @@ def test_transformed_and_native_fields_share_unchanged_scalar_support_across_fil
         assert saved.ZTOP.attrs["units"] == "m"
 
 
+def ztop_axes(scale=1.):
+    """Complete two-layer writer layout, including the external mass points."""
+    return {
+        "level": ("level", scale * np.array([-50., 50., 200., 400.]), {
+            "units": "m", "axis": "Z", "positive": "up", "c_grid_axis_shift": 0.,
+            "c_grid_dynamic_range": "2:3", "computed_standard_name": "altitude"}),
+        "level_w": ("level_w", scale * np.array([-100., 0., 100., 300.]), {
+            "units": "m", "axis": "Z", "positive": "up", "c_grid_axis_shift": -.5,
+            "c_grid_dynamic_range": "2:4", "computed_standard_name": "altitude_at_w_location"}),
+    }
+
+
+def test_ztop_native_keeps_source_variable_and_length_encoding():
+    from frameit.io.mnh_vertical_grid import assign_resolved_ztop, resolve_ztop
+
+    source = xr.Dataset({"ZTOP": xr.DataArray(.3, attrs={"units": "km"})})
+    decision = resolve_ztop(source)
+    assert (decision["status"], decision["method"], decision["value_m"]) == ("native", "native", 300.)
+    xr.testing.assert_identical(assign_resolved_ztop(source, decision), source)
+
+
+@pytest.mark.parametrize(("value", "attrs"), [
+    (300., {}), (300., {"units": "Pa"}), (-1., {"units": "m"}),
+    (np.inf, {"units": "m"}), (300., {"units": "m", "_FillValue": 300.}),
+    ([300.], {"units": "m"}),
+])
+def test_ztop_invalid_native_does_not_fall_back_to_a_different_value(value, attrs):
+    from frameit.io.mnh_vertical_grid import assign_resolved_ztop, resolve_ztop
+
+    source = xr.Dataset(coords=ztop_axes()).assign(ZTOP=xr.DataArray(value, attrs=attrs))
+    decision = resolve_ztop(source)
+    assert (decision["status"], decision["value_m"]) == ("conflicting", None)
+    xr.testing.assert_identical(assign_resolved_ztop(source, decision), source)
+
+
+def test_ztop_native_conflict_with_independently_proven_interface():
+    from frameit.io.mnh_vertical_grid import resolve_ztop
+
+    ds = xr.Dataset(coords=ztop_axes()).assign(ZTOP=xr.DataArray(301., attrs={"units": "m"}))
+    decision = resolve_ztop(ds)
+    assert decision["status"] == "conflicting" and decision["value_m"] is None
+    assert ds.ZTOP.item() == 301.
+
+
+def test_ztop_pinned_chido_fixture():
+    from frameit.io.mnh_vertical_grid import assign_resolved_ztop, resolve_ztop
+    from frameit.testing.datasets import ci_dataset_root
+
+    path = ci_dataset_root() / "MNH" / "CHIDO" / "3CH09.1.MXX30.011diag.nc"
+    with xr.open_dataset(path, engine="h5netcdf") as original:
+        assert resolve_ztop(original)["status"] == "native"
+        source = original.drop_vars("ZTOP")
+        decision = resolve_ztop(source)
+        assert (decision["status"], decision["method"], decision["value_m"]) == (
+            "reconstructed", "level_w", 21660.)
+        assert source.level[-1].item() == 21960.
+        assert assign_resolved_ztop(source, decision).ZTOP.item() == 21660.
+        assert "ZTOP" not in source and original.ZTOP.item() == 21660.
+
+
+@pytest.mark.parametrize(("scale", "top"), [(1., 300.), (2., 600.)])
+def test_ztop_proven_staggered_grid_not_mass_maximum(scale, top):
+    from frameit.io.mnh_vertical_grid import resolve_ztop
+
+    source = xr.Dataset(coords=ztop_axes(scale))
+    decision = resolve_ztop(source)
+    assert (decision["status"], decision["method"], decision["value_m"]) == (
+        "reconstructed", "level_w", top)
+    assert source.level[-1].item() > top
+
+
+@pytest.mark.parametrize("case", [
+    "top_cut", "bottom_cut", "decimated", "stale_range", "kmax", "halo",
+    "wrong_native_index", "wrong_phase", "no_interface", "wrong_units",
+    "bad_midpoint", "zhat_conflict", "not_native",
+])
+def test_ztop_incomplete_or_conflicting_grid_is_not_a_value(case):
+    from frameit.io.mnh_vertical_grid import resolve_ztop
+
+    ds = xr.Dataset(coords=ztop_axes())
+    if case in {"top_cut", "bottom_cut", "decimated"}:
+        extent = {"top_cut": slice(0, -1), "bottom_cut": slice(1, None),
+                  "decimated": slice(None, None, 2)}[case]
+        ds = ds.isel(level=extent, level_w=extent)
+    elif case == "stale_range":
+        ds.level_w.attrs["c_grid_dynamic_range"] = "2:3"
+    elif case == "kmax":
+        ds["KMAX"] = 3
+    elif case == "halo":
+        ds.attrs["JPVEXT"] = 2
+    elif case == "wrong_native_index":
+        ds["level_w_source_native_index"] = ("level_w", [0, 1, 2, 5])
+    elif case == "wrong_phase":
+        ds.level_w.attrs["c_grid_axis_shift"] = .5
+    elif case == "no_interface":
+        ds = ds.drop_vars("level_w")
+    elif case == "wrong_units":
+        ds.level_w.attrs["units"] = "Pa"
+    elif case == "bad_midpoint":
+        ds = ds.assign_coords(level=ds.level.copy(data=[-50., 50., 201., 400.]))
+    elif case == "zhat_conflict":
+        ds["ZHAT"] = ds.level_w.copy(data=[-100., 0., 100., 301.])
+    elif case == "not_native":
+        del ds.level_w.attrs["c_grid_dynamic_range"]
+    decision = resolve_ztop(ds)
+    assert decision["status"] in {"missing", "conflicting"} and decision["value_m"] is None
+
+
+def ztop_settings(case):
+    tagged = {"MNH_VERSION": [5, 6, 2]}
+    if case == "manual":
+        return {**tagged, "YZGRID_TYPE": "MANUAL", "NKMAX": 3, "ZHAT": [0., 10., 25., 60.]}
+    if case == "constant":
+        return {**tagged, "YZGRID_TYPE": "FUNCTN", "NKMAX": 4, "ZDZGRD": 25., "ZDZTOP": 25.}
+    return {**tagged, "YZGRID_TYPE": "FUNCTN", "NKMAX": 4, "ZDZGRD": 10., "ZDZTOP": 25.,
+            "ZZMAX_STRGRD": 15., "ZSTRGRD": 50., "ZSTRTOP": 100.}
+
+
+@pytest.mark.parametrize(("case", "top"), [("constant", 100.), ("stretch", 75.), ("manual", 60.)])
+def test_ztop_reconstructs_original_grid_settings(case, top):
+    from frameit.io.mnh_vertical_grid import resolve_ztop
+
+    source = xr.Dataset(attrs=ztop_settings(case))
+    decision = resolve_ztop(source)
+    assert (decision["status"], decision["method"], decision["value_m"]) == (
+        "reconstructed", "nam_ver_grid", top)
+
+
+@pytest.mark.parametrize("case", ["unknown_version", "partial", "samegr", "bad_overlap", "bad_zhat"])
+def test_ztop_grid_settings_must_be_complete_and_consistent(case):
+    from frameit.io.mnh_vertical_grid import resolve_ztop
+
+    source = xr.Dataset(attrs=ztop_settings("stretch"))
+    if case == "unknown_version":
+        source.attrs["MNH_VERSION"] = [9, 0, 0]
+    elif case == "partial":
+        source.attrs = {"ZDZTOP": 25.}
+    elif case == "samegr":
+        source.attrs["YZGRID_TYPE"] = "SAMEGR"
+    elif case == "bad_zhat":
+        source = source.assign_coords(level_w=("level_w", [0., 10.], {"units": "m"}))
+        source["ZHAT"] = ("level_w", [0., 15.], {"units": "m"})
+    else:
+        source = source.assign_coords(level_w=("level_w", [0., 15.], {"units": "m"}))
+    assert resolve_ztop(source)["value_m"] is None
+
+
+@pytest.mark.parametrize("with_level_w", [False, True])
+def test_ztop_rejects_multidimensional_geometry_without_reading_it(with_level_w):
+    import dask
+    import dask.array as da
+
+    from frameit.io.mnh_vertical_grid import resolve_ztop
+
+    @dask.delayed
+    def payload():
+        pytest.fail("Model-top recovery read a multidimensional scientific field")
+
+    malformed = (("y", "x"), da.from_delayed(payload(), shape=(2, 2), dtype=float), {"units": "m"})
+    source = xr.Dataset({"ZHAT": malformed}, attrs=ztop_settings("stretch"))
+    if with_level_w:
+        source = source.assign_coords(level_w=malformed)
+    assert resolve_ztop(source)["status"] == "missing"
+
+
 def _native_altitude_scene():
     from .test_wind_collocation import native
 
@@ -528,6 +693,158 @@ def _native_altitude_request(tmp_path, paths, *, fmt="netcdf"):
         "output": {"directory": str(tmp_path / "out"), "format": fmt},
         "resources": {"cpus": 1, "synchronous_export": True},
     }
+
+
+def _ztop_export_scene():
+    scene = _native_altitude_scene().drop_dims(["level", "level_w"])
+    scene = scene.assign_coords(ztop_axes())
+    for name in ("level", "level_w"):
+        scene[name].attrs.update(
+            formula_terms=f"s: {name} height: ZTOP orog: ZS",
+            formula_definition="z(n,k,j,i)=s(k)*(height-orog(j,i))/height+orog(j,i)")
+    scene["THT"] = (("time", "level", "nj", "ni"), np.arange(36.).reshape(1, 4, 3, 3),
+                    {"units": "K"})
+    return scene
+
+
+@pytest.mark.parametrize(("fmt", "mixed", "explicit", "precision"), [
+    ("netcdf", False, False, "float64"), ("zarr", False, False, "float64"),
+    ("netcdf", True, False, "float64"), ("netcdf", True, True, "float32"),
+])
+def test_ztop_reconstructed_before_subsetting_and_shared_by_run(
+    tmp_path, fmt, mixed, explicit, precision,
+):
+    import yaml
+
+    from frameit.core.preflight import collect_preflight
+    from frameit.core.reports import project_report
+    from frameit.testing.datasets import sha256_file
+
+    scene = _ztop_export_scene()
+    native_value = np.dtype(precision).type(.3)
+    files = []
+    for i in range(2):
+        path = tmp_path / f"native-{i}.nc"
+        sample = scene.assign_coords(time=scene.time.values + np.timedelta64(i, "h"))
+        if mixed and i == 0:
+            sample["ZTOP"] = xr.DataArray(native_value, attrs={"units": "km", "long_name": "native top"})
+        sample.to_netcdf(path, engine="h5netcdf")
+        files.append(path)
+    hashes = [sha256_file(path) for path in files]
+    raw = _native_altitude_request(tmp_path, files, fmt=fmt)
+    variables = raw["sources"]["atmosphere"]["variables"] = {
+        "3d": ["THT"], "levels": {"indices": [1, 2]}}
+    if explicit:
+        variables["2d"] = ["ZTOP"]
+    report = collect_preflight(raw)
+    assert not report.errors, report.errors
+    if explicit:
+        assert report.facts["products"][0]["dimensions"]["ZTOP"] == []
+    facts = project_report(report)["data"]["plan"]["sources"]["atmosphere"]["mnh_ztop"]
+    assert facts["status"] == "reconstructed"
+    assert facts["value_m"] == (float(native_value) * 1000. if mixed else 300.)
+    assert {entry["method"] for entry in facts["files"]} == (
+        {"native", "level_w"} if mixed else {"level_w"})
+    conf = SimulationConfig.from_mapping_with_model_preset(raw)
+    result = execute_simulation(conf)
+    provenance = yaml.safe_load((conf.output_dir / "run-provenance.yaml").read_text())
+    assert provenance["sources"]["atmosphere"]["mnh_ztop"] == facts
+    product, = result.products
+    opened = (xr.open_zarr(product["path"], decode_coords=False, consolidated=False)
+              if fmt == "zarr" else xr.open_dataset(product["path"], decode_coords=False))
+    with opened as saved:
+        assert saved.ZTOP.dims == ()
+        assert (saved.ZTOP.item(), saved.ZTOP.attrs["units"]) == (
+            (float(native_value), "km") if mixed else (300., "m"))
+        assert saved.level.attrs["formula_terms"] == scene.level.attrs["formula_terms"]
+        np.testing.assert_array_equal(saved.level, [50., 200.])
+        np.testing.assert_array_equal(saved.THT[0], scene.THT.isel(time=0, level=[1, 2]))
+    assert [sha256_file(path) for path in files] == hashes
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_conflicting_native_ztop_is_never_selected_as_formula_support(tmp_path, strict):
+    from frameit.core.preflight import collect_preflight
+
+    scene = _ztop_export_scene()
+    del scene.level_w.attrs["c_grid_dynamic_range"]  # Two scalar claims, no independent top.
+    paths = []
+    for i in range(2):
+        path = tmp_path / f"native-{i}.nc"
+        sample = scene.assign_coords(time=scene.time.values + np.timedelta64(i, "h"))
+        sample["ZTOP"] = xr.DataArray(300. + i, attrs={"units": "m"})
+        sample.to_netcdf(path, engine="h5netcdf")
+        paths.append(path)
+    raw = _native_altitude_request(tmp_path, paths)
+    variables = raw["sources"]["atmosphere"]["variables"] = {"3d": ["THT"]}
+    if strict:
+        variables["2d"] = ["ZTOP"]
+    report = collect_preflight(raw)
+    assert report.facts["sources"]["atmosphere"]["mnh_ztop"]["status"] == "conflicting"
+    if strict:
+        assert any("ZTOP" in error.message for error in report.errors), report.errors
+        assert not (tmp_path / "out").exists()
+    else:
+        assert not report.errors, report.errors
+        result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+        with xr.open_dataset(result.products[0]["path"], decode_coords=False) as saved:
+            assert "ZTOP" not in saved
+            assert "formula_terms" not in saved.level.attrs
+            assert "ZTOP" in saved.level.attrs["source_formula_terms"]
+
+
+@pytest.mark.parametrize("case", ["unowned", "other_time", "other_grid"])
+def test_ztop_does_not_consume_unowned_or_time_excluded_grid(tmp_path, case):
+    from frameit.core.preflight import collect_preflight
+
+    owner = _ztop_export_scene()
+    owner_path, other_path = tmp_path / "owner.nc", tmp_path / "other.nc"
+    if case == "other_time":
+        wrong_top = owner.assign_coords(time=owner.time.values + np.timedelta64(1, "h"))
+        wrong_top["ZTOP"] = xr.DataArray(999., attrs={"units": "m"})
+        wrong_top.to_netcdf(other_path, engine="h5netcdf")
+    else:
+        other = owner.drop_vars(["THT", "ZS"])
+        if case == "other_grid":
+            other = other.assign_coords(ztop_axes(2.))
+            other["ZTOP"] = xr.DataArray(600., attrs={"units": "m"})
+        other.assign(other=("level", [0, 1, 2, 3])).to_netcdf(other_path, engine="h5netcdf")
+        owner = owner.isel(level=slice(None, -1), level_w=slice(None, -1))
+    owner.to_netcdf(owner_path, engine="h5netcdf")
+    raw = _native_altitude_request(tmp_path, [owner_path, other_path])
+    atmosphere = raw["sources"]["atmosphere"]
+    atmosphere["variables"] = {"3d": ["THT"]}
+    if case == "other_time":
+        atmosphere["time"] = {"values": ["2024-01-01T00:00:00"]}
+    report = collect_preflight(raw)
+    assert not report.errors, report.errors
+    top = report.facts["sources"]["atmosphere"]["mnh_ztop"]
+    assert [item["file"] for item in top["files"]] == [str(owner_path)]
+    assert (top["status"], top["value_m"]) == (
+        ("reconstructed", 300.) if case == "other_time" else ("missing", None))
+    if case == "other_grid":
+        result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+        with xr.open_dataset(result.products[0]["path"], decode_coords=False) as saved:
+            assert "ZTOP" not in saved
+            axis = next(dim for dim in saved.THT.dims if dim.startswith("level"))
+            assert "ZTOP" in saved[axis].attrs["source_formula_terms"]
+
+
+def test_explicit_ztop_support_does_not_add_unrequested_samples(tmp_path):
+    from frameit.core.preflight import collect_preflight
+
+    owner = _ztop_export_scene()
+    owner_path, other_path = tmp_path / "owner.nc", tmp_path / "other.nc"
+    owner.to_netcdf(owner_path, engine="h5netcdf")
+    owner.drop_vars(["THT", "ZS"]).assign_coords(
+        time=owner.time.values + np.timedelta64(1, "h")).to_netcdf(other_path, engine="h5netcdf")
+    raw = _native_altitude_request(tmp_path, [owner_path, other_path])
+    raw["sources"]["atmosphere"]["variables"] = {"3d": ["THT"], "2d": ["ZTOP"]}
+    report = collect_preflight(raw)
+    assert not report.errors, report.errors
+    source = report.facts["sources"]["atmosphere"]
+    assert source["selected_times"] == [owner.time.values[0]]
+    assert source["files"] == [str(owner_path)]
 
 
 @pytest.mark.parametrize("fmt", ["netcdf", "zarr"])
@@ -641,10 +958,11 @@ def test_altitude_formula_distinguishes_partial_complete_and_required_support(tm
     complete = scene.assign(ZTOP=xr.DataArray(20., attrs={"units": "m"}))
     if case.startswith("linked"):
         complete.THT.encoding = {"coordinates": "ZTOP latitude longitude"}
-    complete.to_netcdf(first, engine="h5netcdf")
     missing = scene.assign_coords(time=scene.time.values + np.timedelta64(1, "h"))
     if case == "ancillary":
+        complete.WT.attrs["ancillary_variables"] = "ZTOP"
         missing.WT.attrs["ancillary_variables"] = "ZTOP"
+    complete.to_netcdf(first, engine="h5netcdf")
     missing.to_netcdf(second, engine="h5netcdf")
     paths = [first, second]
     if case == "linked_last":
@@ -663,6 +981,8 @@ def test_altitude_formula_distinguishes_partial_complete_and_required_support(tm
     report = collect_preflight(raw)
     if case in {"requested", "ancillary", "conflict", "linked_first", "linked_last"}:
         assert any("ZTOP" in error.message for error in report.errors), report.errors
+        if case in {"requested", "ancillary"}:
+            assert report.facts["sources"]["atmosphere"]["mnh_ztop"]["status"] == "missing"
         assert not (tmp_path / "out").exists()
         return
     assert not report.errors, report.errors

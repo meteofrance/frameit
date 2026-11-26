@@ -13,9 +13,9 @@ from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
-VERSION = "0.2.0"
-CONTENT_SHA256 = "ff7b1e735ff50370addda7c5a4308ff6457d960ab0c50fdd841dcbef598b41ec"
-_MANIFEST_SHA256 = "63201541711c7c363f1b06865f6b552587aabd71029fb6fb5c978c11fb15e1b9"
+VERSION = "0.2.1"
+CONTENT_SHA256 = "271d1d167fcaf41b00b5d89267b82d0075b37ac3aa2751eef50efd9bfc929ead"
+_MANIFEST_SHA256 = "96b54eb4b9df15fa4f54099348c774a09ce7e466bfaf2c7a09d7429ce98f50f4"
 _ARTIFACT = f"frameit_metadata_catalogue-{VERSION}.jsonl.xz"
 _FORMAT = "frameit.metadata.catalogue"
 _FORMAT_VERSION = 2

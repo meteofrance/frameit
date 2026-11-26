@@ -340,7 +340,8 @@ def _native_grid(ds, variable, temporal_dims, coordinate_metadata=None, *, previ
     return _metadata_id("grid_", grid), grid
 
 
-def _netcdf_inventory(path, source, resources, *, previous_grids=None, header_observer=None):
+def _netcdf_inventory(path, source, resources, *, previous_grids=None, header_observer=None,
+                      resolve_vertical=False, requested_fields=()):
     from frameit.io.grib_utils import normalize_isobaric_coordinates
     from frameit.io.netcdf_utils import mnh_altitude_terms
 
@@ -352,6 +353,17 @@ def _netcdf_inventory(path, source, resources, *, previous_grids=None, header_ob
         raise tag_error(exc, "E1202")
     ds = normalize_isobaric_coordinates(ds)
     model, evidence = _source_model(source, [ds], path, fmt="netcdf")
+    ztop = None
+    if model == "mesonh" and (resolve_vertical or any(
+            {"level", "level_w"} & set(ds[name].dims) or any(
+                "ZTOP" in str(ds[name].attrs.get(
+                    key, ds[name].encoding.get(key, ""))).split()
+                for key in ("coordinates", "ancillary_variables", "formula_terms", "cell_measures"))
+            for name in requested_fields if name in ds)):
+        from frameit.io.mnh_vertical_grid import assign_resolved_ztop, resolve_ztop
+
+        ztop = resolve_ztop(ds)
+        ds = assign_resolved_ztop(ds, ztop)
     if model == "nemo":
         if "time_counter" not in ds or ds.time_counter.dims != ("time_counter",):
             raise tag_error(ValueError(f"{path}: NEMO requires its native time_counter sample clock"),
@@ -519,7 +531,8 @@ def _netcdf_inventory(path, source, resources, *, previous_grids=None, header_ob
              "physical_type": "ocean" if model in {"nemo", "croco"} else "atmosphere",
              "dataset_attributes": dataset_attributes,
              "altitude_height_terms": altitude_height_terms,
-            "profile": None, "evidence": evidence, "fields": fields,
+             **({"mnh_ztop": ztop} if ztop is not None else {}),
+             "profile": None, "evidence": evidence, "fields": fields,
              "native_grids": grids, "records": records, "samples": samples}
 
 
@@ -871,7 +884,7 @@ def _source_file_entries(source, name, *, sample_only=False):
         return entries, excluded, overlaps, errors or [failure(original, patterns)]
 
 
-def _incomplete_mnh_altitude(fields, grids, selected, records, candidates):
+def _incomplete_mnh_altitude(fields, grids, selected, records, candidates, *, unresolved=()):
     """Use the whole closed selection so per-sample operations see the same contract."""
     from frameit.io.netcdf_utils import mnh_native_level_attributes
     from frameit.processing.requests import _sample_context
@@ -883,7 +896,7 @@ def _incomplete_mnh_altitude(fields, grids, selected, records, candidates):
         if record["name"] in providers:
             providers[record["name"]].append(record)
     samples = {_sample_context(record) for record in selected}
-    missing = set()
+    missing = set(unresolved)
     for term, matches in providers.items():
         available = {_sample_context(record) for record in matches}
         # Leave competing providers to the usual strict dependency checks.
@@ -907,6 +920,89 @@ def _incomplete_mnh_altitude(fields, grids, selected, records, candidates):
     return sorted(missing)
 
 
+def _bind_mnh_ztop(entries, fields, selected, pool, *, required):
+    """Keep an evidenced scalar tied to its selected NetCDF provider and sample."""
+    from frameit.io.mnh_vertical_grid import equal_metres
+    from frameit.processing.requests import _sample_context
+
+    evidence = {entry["path"]: entry["mnh_ztop"] for entry in entries if "mnh_ztop" in entry}
+    if not evidence:
+        return None, pool
+    owners, paths_by_sample, calendars = {}, {}, {}
+    for record in selected:
+        clock, path = _sample_context(record), record["locator"]["path"]
+        paths_by_sample.setdefault(clock, set()).add(path)
+        calendars[clock] = record["calendar"], record.get("reference_calendar")
+        if "ZTOP" in fields[record["field_id"]].get("dependencies", {}):
+            owners.setdefault(clock, set()).add(path)
+    kept, tops, calendar_conflicts = [], [], set()
+    for record in pool:
+        if record["name"] != "ZTOP":
+            kept.append(record)
+            continue
+        path, clock = record["locator"]["path"], _sample_context(record)
+        if path not in evidence or clock not in paths_by_sample:
+            continue
+        if (record["calendar"], record.get("reference_calendar")) != calendars[clock]:
+            if clock in owners or (required and path in paths_by_sample[clock]):
+                calendar_conflicts.add(path)
+            continue
+        # A scalar has no grid of its own; a matching timestamp cannot link another grid.
+        if path in paths_by_sample[clock] and owners.get(clock, {path}) == {path}:
+            tops.append(record)
+            kept.append(record)
+    included = set().union(*(owners.get(clock, paths) for clock, paths in paths_by_sample.items()))
+    files = [{"file": path, **evidence[path]} for path in sorted(included) if path in evidence]
+    if not files:
+        return None, kept
+    verified = [item for item in files if item["value_m"] is not None]
+    native = [item for item in verified if item["status"] == "native"]
+    reference = next(iter(native or verified), None)
+    value_m = reference["value_m"] if reference else None
+    # Native values are never reconciled by replacing them with one another.
+    conflicting = (calendar_conflicts or any(item["status"] == "conflicting" for item in files)
+                   or len({item["value_m"] for item in native}) > 1
+                   or any(not equal_metres(value_m, item["value_m"], max(
+                       reference["evidence"].get("length_epsilon", np.finfo(float).eps),
+                       item["evidence"].get("length_epsilon", np.finfo(float).eps)))
+                          for item in verified))
+    available = {_sample_context(r) for r in tops
+                 if evidence[r["locator"]["path"]]["value_m"] is not None}
+    if conflicting:
+        status = "conflicting"
+    elif value_m is None or set(paths_by_sample if required else owners) - available:
+        status = "missing"
+    elif any(item["status"] == "reconstructed" for item in files):
+        status = "reconstructed"
+    else:
+        status = "native"
+    result = {
+        "status": status, "value_m": value_m if status in {"native", "reconstructed"} else None,
+        "files": files,
+    }
+    if calendar_conflicts:
+        result["calendar_conflicts"] = sorted(calendar_conflicts)
+    if conflicting or not tops:
+        return result, kept
+    # Match the sole native scalar definition in a mixed sequence; native bytes are untouched.
+    native_paths = {r["field_id"]: r["locator"]["path"] for r in tops
+                    if evidence[r["locator"]["path"]]["status"] == "native"}
+    for record in tops:
+        decision = evidence[record["locator"]["path"]]
+        if decision["status"] != "reconstructed":
+            continue
+        decision = {**decision, "value_m": value_m}
+        if len(native_paths) == 1:
+            identity, path = next(iter(native_paths.items()))
+            field = fields[identity]
+            field["grid_ids"] = sorted(set(field["grid_ids"]) | {record["grid_id"]})
+            record["field_id"] = identity
+            decision.update(attributes=field["attributes"],
+                            native_value=evidence[path]["evidence"]["native_value"])
+        record["mnh_recovered_ztop"] = decision
+    return result, kept
+
+
 def _source_origins(source, fmt, model, physical, profile, facts):
     return {
         "model": {"origin": "yaml" if ("model" in source or fmt == "fa"
@@ -926,8 +1022,16 @@ def _provider_key(record):
 def inventory_source(conf, name, *, resources=None, progress=None,
                      sample_only: bool = False, catalogue_advice=None) -> dict:
     """Populate a v3 source's metadata handoff without binding or processing fields."""
+    from frameit.core.configuration import field_selection
+
     source = conf.sources[name]
     request = conf.source_requests[name]
+    requested = {field_selection(request, ref)[0] for ref in (
+        set(request["internal_inputs"]).union(*request["exports"].values()) - request["derived"].keys()
+    )} if not sample_only else set()
+    resolve_vertical = not sample_only and (
+        "ZTOP" in requested or bool(request["fields"]["3d"])
+        or conf.tracking_method in {"pressure_centroid", "multifield_vortex"})
     if progress is not None:
         progress("discovery", name, None, None)
     entries, excluded, overlaps, errors = _source_file_entries(
@@ -971,7 +1075,9 @@ def inventory_source(conf, name, *, resources=None, progress=None,
                     header_observer = (partial(catalogue_advice.netcdf_header, name, path)
                                        if catalogue_advice is not None else None)
                     info = _netcdf_inventory(path, source, owned, previous_grids=previous_grids,
-                                             header_observer=header_observer)
+                                              header_observer=header_observer,
+                                              resolve_vertical=resolve_vertical,
+                                              requested_fields=requested)
                 elif fmt == "grib":
                     info = _grib_source_inventory(path, source, sample_only=sample_only)
                 else:
@@ -996,6 +1102,8 @@ def inventory_source(conf, name, *, resources=None, progress=None,
                             known.extend(
                                 provider for provider in providers if provider not in known)
                 records.extend(info["records"])
+                if "mnh_ztop" in info:
+                    entry["mnh_ztop"] = info["mnh_ztop"]
                 if info.get("dataset_attributes"):
                     entry["dataset_attributes"] = info["dataset_attributes"]
                 entry["fields"] = sorted({f["name"] for f in info["fields"].values()
@@ -1100,8 +1208,6 @@ def inventory_source(conf, name, *, resources=None, progress=None,
             or "polar" in request["exports"]
             or tracker and physical == "atmosphere"):
         dependency_resolution = "pending_method_binding"
-    from frameit.core.configuration import field_selection
-
     selection_source = {"fields": fields, "native_grids": grids, "format": fmt}
     by_name = {}
     for index, record in enumerate(records):
@@ -1132,7 +1238,11 @@ def inventory_source(conf, name, *, resources=None, progress=None,
                     candidates[dep] = field_candidates(selection_source, request, dep, by_name)
                     pending.append(dep)
                 strict_inputs.add(dep)
+    top_refs = ({ref for ref in required if field_selection(request, ref)[0] == "ZTOP"}
+                if model == "mesonh" and fmt == "netcdf" else set())
     missing = {ref for ref in required if not candidates.get(ref)}
+    if required - top_refs:
+        missing -= top_refs  # Report a missing bound ZTOP together with its evidence.
     if missing:
         raise PreflightError([Diagnostic(
             f"sources.{name}.variables",
@@ -1147,17 +1257,35 @@ def inventory_source(conf, name, *, resources=None, progress=None,
              code="E1302")])
     relevant_indices = {i for ref in needed for i, _ in candidates.get(ref, [])}
     relevant = [r for i, r in enumerate(records) if i in relevant_indices]
+    if model == "mesonh" and fmt == "netcdf":
+        # Use the requested fields to close the clock before choosing support.
+        fields_without_top = [r for r in relevant if r["name"] != "ZTOP"]
+        relevant = (fields_without_top or relevant) if top_refs & declared_needed else fields_without_top
     if not relevant and not required and not tracker and not source.get("time"):
         selected, times = [], []
     else:
         selected, times = _select_source_records(
             relevant, source.get("time", {}), f"sources.{name}")
+    selected_times = set(times)
+    selected_cycles = {r["cycle"] for r in selected}
+    record_inventory = sorted(
+        (r for r in records if r["time"] in selected_times and r["cycle"] in selected_cycles),
+        key=lambda r: (r["time"], r["name"] or "", r["field_id"], str(r["level"])))
+    ztop = None
+    if model == "mesonh" and fmt == "netcdf":
+        ztop, record_inventory = _bind_mnh_ztop(
+            entries, fields, selected, record_inventory, required=bool(top_refs))
+        if top_refs and ztop is not None and ztop["value_m"] is not None and all(
+                r["name"] != "ZTOP" for r in selected):
+            selected.extend(r for r in record_inventory if r["name"] == "ZTOP")
     errors, providers, conflicts, allowed_gaps = [], {}, [], []
     required_ids = {ref: {r["field_id"] for _, r in candidates[ref]} for ref in required}
     tracker_method = conf.tracking_method if tracker and physical == "atmosphere" else None
     grouped_levels = {group for group, spec in request.get("groups", {}).items()
                       if spec.get("levels")}
     for field_name in sorted(required):
+        if field_name in top_refs and ztop is not None and ztop["value_m"] is None:
+            continue  # Fail during binding so validation retains the model-top decision.
         matching = [r for r in selected if r["field_id"] in required_ids[field_name]]
         identities = {r["field_id"] for r in matching}
         if len(identities) > 1:
@@ -1241,13 +1369,10 @@ def inventory_source(conf, name, *, resources=None, progress=None,
                 set().union(*required_ids.values()), blocked=True, tracker=tracker_method)
         raise tag_error(ValueError("\n".join(errors)), "E1302")
     selected.sort(key=lambda r: (r["time"], r["name"], r["field_id"], str(r["level"])))
-    selected_times = set(times)
-    selected_cycles = {r["cycle"] for r in selected}
-    record_inventory = sorted(
-        (r for r in records if r["time"] in selected_times and r["cycle"] in selected_cycles),
-        key=lambda r: (r["time"], r["name"] or "", r["field_id"], str(r["level"])))
+    bad_top = ztop is not None and ztop["status"] == "conflicting"
     missing_altitude = (_incomplete_mnh_altitude(
-        fields, grids, selected, record_inventory, altitude_height_terms)
+        fields, grids, selected, record_inventory, altitude_height_terms,
+        unresolved=("ZTOP",) if bad_top and "ZTOP" in altitude_height_terms else ())
                          if model == "mesonh" and fmt == "netcdf" else [])
     for grid in grids.values():
         for providers in grid.get("coordinate_providers", {}).values():
@@ -1280,6 +1405,9 @@ def inventory_source(conf, name, *, resources=None, progress=None,
                   records=selected, record_inventory=record_inventory, selected_times=times,
                   dependency_resolution=dependency_resolution, provider_conflicts=conflicts,
                   tracker_input_groups=tracker_groups)
+    if ztop is not None:
+        result["mnh_ztop"] = ztop
+        result["mnh_ztop_required"] = bool(top_refs)
     if catalogue_advice is not None:
         catalogue_advice.capture(name, result, set().union(*required_ids.values()),
                                  tracker=tracker_method)
@@ -1552,6 +1680,15 @@ def bind_source(conf, name, *, representations=None, required_inputs=(), resourc
     request["binding"] = None
     source["requests"]["binding"] = None
     source["field_binding"] = None
+    top = source.get("mnh_ztop", {})
+    if top.get("calendar_conflicts"):
+        raise tag_error(ValueError(
+            f"sources.{name}: ZTOP has a conflicting calendar or forecast reference calendar "
+            f"in {top['calendar_conflicts']}"), "E1302")
+    if source.get("mnh_ztop_required") and top["value_m"] is None:
+        raise tag_error(ValueError(
+            f"sources.{name}: ZTOP is {top['status']}; select inputs with a consistent "
+            "native or reconstructed model top"), "E1302")
     if conf.yaml_config["region"].get("tracker") and source["physical_type"] == "atmosphere":
         from frameit.tracking.tracker_core import resolve_tracker_support
 
@@ -1653,10 +1790,12 @@ def describe_model_grid_output(source, binding, product, *, regional=False, layo
                     dims.insert(0, vertical["dimension"])
             facts = _output_grid_facts(layout, grid_id, name)
             exported = [facts["dimensions"].get(dim, dim) for dim in dims]
-            if (field["time_varying"] or descriptor.get("operation")
-                    or len({r["locator"]["path"] for r in descriptor["records"]}) > 1
-                    or any(gap["field"] == name for gap in source.get("allowed_gaps", []))
-                    or source["format"] in {"grib", "fa"}):
+            constant_top = (field["name"] == "ZTOP"
+                            and source.get("mnh_ztop", {}).get("value_m") is not None)
+            if not constant_top and (field["time_varying"] or descriptor.get("operation")
+                                     or len({r["locator"]["path"] for r in descriptor["records"]}) > 1
+                                     or any(gap["field"] == name for gap in source.get("allowed_gaps", []))
+                                     or source["format"] in {"grib", "fa"}):
                 exported.insert(0, "time")
             previous = product["dimensions"].setdefault(name, exported)
             if previous != exported:

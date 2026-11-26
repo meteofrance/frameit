@@ -75,6 +75,8 @@ Valid mass-level ``ALT`` takes precedence over the formula. An ``ALT`` field
 on the ``level_w`` interfaces is not a mass-level input; if supplied alone,
 the tracker requires the complete declared ``level`` formula instead. It
 never substitutes or interpolates interface altitude onto the mass grid.
+FrameIt can :ref:`recover ZTOP <mesonh-ztop>` from suitable inputs before
+binding this formula. This does not recover missing model-level pressure.
 
 Every selected sample must have a complete input set with consistent field
 names, units, wind metadata and native coordinate labels. A missing field

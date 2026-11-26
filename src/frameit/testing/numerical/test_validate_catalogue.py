@@ -56,7 +56,7 @@ def _request(tmp_path, *, name="THT", target="K", paths=None):
 def _suggestions(report):
     table = report["data"]["plan"].get("metadata_catalogue")
     assert table is not None, "Full validation did not report catalogue advice"
-    assert table["catalogue_version"] == "0.2.0"
+    assert table["catalogue_version"] == "0.2.1"
     return table["fields"]
 
 
@@ -88,7 +88,7 @@ def test_validated_lookup_resolves_required_units_without_a_yaml_declaration(
     assert report["data"]["origins"]["inputs.sources.atmosphere.field_metadata"]["THT"][
         "units"] == "catalogue"
     text = render_projection(report)
-    assert "Metadata catalogue 0.2.0" in text and "units=K" in text
+    assert "Metadata catalogue 0.2.1" in text and "units=K" in text
     assert (path.read_bytes(), request.read_bytes()) == before
     assert not (tmp_path / "out").exists()
 

@@ -128,14 +128,12 @@ When forecast times are split across files, the forecast period stays attached
 to its sample. Different lead times do not make an otherwise identical
 sampling grid a different tracker grid.
 
-For Meso-NH NetCDF, a native-level request can proceed if its declared altitude
-formula lacks the model-top operand (often ``ZTOP``) and no requested operation
-needs it. FrameIt warns and keeps the native ``level`` or ``level_w`` labels. It
-does not infer a model-top value or physical altitudes. Other required links to
-that operand still have to resolve. A transform to mass levels checks the
-destination axis's formula, not just the input axis's formula. A method that
-needs physical height requires valid altitude on its working grid or a complete
-supported formula.
+For Meso-NH NetCDF, FrameIt checks :ref:`the model-top operand <mesonh-ztop>`
+before selecting vertical levels. If the top is unresolved and no operation
+requires it, FrameIt warns, archives the unusable altitude formula, and keeps
+the native ``level`` or ``level_w`` labels. A transform to mass levels checks
+the destination axis's formula. Physical-height methods still need valid
+altitude on their working grid or a complete supported formula.
 
 A matched file is skipped by the full inventory only when metadata proves it
 supplies no requested field or required dependency. The reason is reported.
@@ -146,6 +144,66 @@ selected inventory after exclusions, not another format or neighbouring stream.
 Source data are read-only. GRIB indexes belong in the run's ``cache/``, not
 beside inputs. Available fields do not automatically enable diagnostics, unit
 conversions, interval changes or missing-value filling.
+
+.. _mesonh-ztop:
+
+Meso-NH model top (ZTOP)
+------------------------
+
+``ZTOP`` is the altitude of the physical upper model boundary. It varies with
+the simulation. ``ZDZTOP`` is a grid spacing near the top, not an altitude.
+FrameIt resolves the model top in this order:
+
+1. Use a finite, positive native ``ZTOP`` scalar with compatible length units.
+   Do not replace invalid or contradictory native evidence.
+2. Without a native value, use the physical upper interface identified by a
+   complete native ``level_w`` and ``level`` pair. FrameIt checks dimensions,
+   staggering, lengths, external levels, declared ranges and the relationship
+   between mass and interface positions. Matching ``ZHAT`` or count metadata
+   must agree if present. A monotone or truncated coordinate is not enough.
+3. If the axes do not prove the top, replay sufficient original grid settings
+   stored with the NetCDF source, for the inspected Meso-NH 5.6.2 recipe only.
+   Include a supported producer version declaration, ``NKMAX`` and
+   ``YZGRID_TYPE`` as root attributes. For ``MANUAL``, include the original
+   ``ZHAT`` physical interface list (metres, including ground and top) as a
+   root attribute. For ``FUNCTN``, include ``ZDZGRD`` and ``ZDZTOP`` in metres.
+   For stretched grids, also include ``ZZMAX_STRGRD`` in metres and
+   ``ZSTRGRD`` and ``ZSTRTOP`` in percent. FrameIt uses the model's recurrence
+   from ground to top, applying the stretch in the appropriate altitude range
+   and capping each new interval. It compares the replay with stored axis
+   values where available. If different producer real precisions give
+   different tops and the precision cannot be established, the value is
+   unresolved. Recorded ``MNH_REAL`` can specify 4 or 8 bytes. The replay
+   limit is 10,000 physical levels. FrameIt does not search for adjacent
+   namelists or import an unverified ``SAMEGR`` parent grid.
+4. Leave the top unresolved when the evidence is insufficient.
+
+The `Meso-NH NAM_VER_GRID guide
+<https://mesonh.readthedocs.io/en/mnh-6-0/documentation/users_guide/executables_namelists/namelists/nam_ver_grid.html>`_
+describes one external level at each end of the mass grid. In the
+`inspected NetCDF writer
+<https://github.com/filippi/Meso-NH/blob/7cd43af7387df685e3304ac88a999c41b014083a/src/LIB/SURCOUCHE/src/mode_io_write_nc4.f90#L1657-L1664>`_,
+both axes store ``NKMAX+2`` labels. Their one-based inclusive physical ranges
+end at the last physical mass point and the upper interface, respectively.
+The `model height calculation
+<https://github.com/filippi/Meso-NH/blob/7cd43af7387df685e3304ac88a999c41b014083a/src/MNH/vert_coord.f90#L269-L277>`_
+uses that interface. The highest external mass point can be above it.
+FrameIt checks geometry to within four relative machine epsilons for the
+stored precision; it does not apply this writer rule to other halo layouts.
+The configuration replay follows the pinned
+`READ_VER_GRID source
+<https://github.com/filippi/Meso-NH/blob/7cd43af7387df685e3304ac88a999c41b014083a/src/MNH/read_ver_grid.f90#L207-L335>`_.
+
+For a request involving vertical support or an explicit ``ZTOP``,
+``frameit validate --json`` records ``mnh_ztop`` per selected source: native,
+reconstructed, missing or conflicting, with the method and evidence for each
+file. ``run-provenance.yaml`` records the same decision. A matching time alone
+does not establish that another file supplies the formula's model top. FrameIt
+compares the selected tops in metres, keeps agreeing native values, and binds
+the recovered operand as a scalar in memory. A required top that cannot be
+bound fails the operation. Source files are not modified. A frozen regression
+fixture checks recovery against the producer's scalar; this is not validation
+of other layouts or model versions.
 
 Times and cycles
 -----------------

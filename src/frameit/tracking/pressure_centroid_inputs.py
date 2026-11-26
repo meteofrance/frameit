@@ -105,6 +105,8 @@ def resolve_mnh_fields(ds, context="Dataset"):
     height = ("ALT",) if "ALT" in ds and not interface_alt else _height_terms(ds)
     if height is None or any(name not in ds for name in height):
         problems.append("Missing physical model-level altitude: ALT or its explicit level formula")
+        if height is not None:
+            problems.extend(f"Altitude formula requires {name}" for name in height if name not in ds)
         if interface_alt:
             problems.append(f"ALT has incompatible dimensions {ds.ALT.dims} for mass-level altitude")
     for name in ("MSLP", "UM10", "VM10", "time", "latitude", "longitude", "level", "ni", "nj"):
@@ -227,6 +229,10 @@ def selected_mnh_metadata(source, conf, resources):
                                  f"{sorted(seen & variables)}")
             seen.update(variables)
             original = resources.open_netcdf(path, engine=conf.netcdf_engine, chunks=None)
+            if top := next((r["mnh_recovered_ztop"] for r in local if "mnh_recovered_ztop" in r), None):
+                from frameit.io.mnh_vertical_grid import assign_resolved_ztop
+
+                original = assign_resolved_ztop(original, top)
             indexers = local[0]["locator"]["coordinate_indexers"]
             if any(r["locator"]["coordinate_indexers"] != indexers for r in local):
                 raise ValueError("Tracker inputs have conflicting native sample axes")

@@ -18,7 +18,7 @@ def test_packaged_release_preserves_records_and_reuses_read_only_cache(
 ):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     resources = files("frameit") / "catalogue"
-    release = "frameit_metadata_catalogue-0.2.0"
+    release = "frameit_metadata_catalogue-0.2.1"
     manifest = json.loads((resources / (release + ".manifest.json")).read_bytes())
     compressed = resources / (release + ".jsonl.xz")
     artifact = manifest["artifact"]
@@ -49,6 +49,13 @@ def test_packaged_release_preserves_records_and_reuses_read_only_cache(
             assert catalogue.connection.execute(
                 "SELECT json FROM records WHERE id=?", (record_id,)).fetchone() == (complete_line,)
         assert [r["id"] for r in catalogue.lookup(*key)] == list(range(10540, 10548))
+        top, = [r for r in catalogue.lookup("mesonh", "6.0.0", "ZTOP", key[-1])
+                if r["completion"]["candidate"]]
+        assert top["completion"]["values"]["units"] == "m"
+        assert top["completion"]["values"]["standard_name"] == "altitude_at_top_of_atmosphere_model"
+        policy = top["frameit_recovery"]
+        assert policy["resolution_order"] == ["native", "level_w", "nam_ver_grid", "unresolved"]
+        assert "default" not in policy and "value" not in policy
         assert not catalogue.lookup("mesonh", "6.0.0", "tht", key[-1])
         assert not catalogue.lookup("mesonh", "6.0.0", "THT", "netcdf_variable_name")
         assert catalogue.connection.execute("PRAGMA query_only").fetchone() == (1,)
@@ -78,7 +85,8 @@ def _mini_release(records, *, version=2, content=None, whole=None, kind="change"
     counts = {kind: len(records)}
     header = {
         "type": "catalogue", "format": "frameit.metadata.catalogue", "format_version": version,
-        "catalogue_version": "0.2.0", "previous_version": "0.1.0", "cf_table_version": "95",
+        "catalogue_version": catalogue_module.VERSION, "previous_version": "0.2.0",
+        "cf_table_version": "95",
         "date": "2026-11-25", "record_ids": "version_scoped", "unknown_values": "not_imputed",
         "content_sha256": content or hashlib.sha256(body).hexdigest(), "counts": counts,
         "completion_attributes": ["units", "long_name", "standard_name"],
@@ -88,7 +96,7 @@ def _mini_release(records, *, version=2, content=None, whole=None, kind="change"
     compressed = lzma.compress(raw)
     return {
         "manifest_version": 1, "format": header["format"], "format_version": version,
-        "catalogue_version": "0.2.0", "previous_catalogue_version": "0.1.0",
+        "catalogue_version": catalogue_module.VERSION, "previous_catalogue_version": "0.2.0",
         "date": header["date"], "completeness": header["completeness"],
         "cf_table": {"version": "95"},
         "counts": counts, "body_records": len(records),
@@ -167,7 +175,7 @@ def test_concurrent_readers_only_see_completed_snapshots(tmp_path, monkeypatch):
 
 
 def test_bad_compressed_checksum_cannot_reuse_any_index(tmp_path, monkeypatch):
-    name = "frameit_metadata_catalogue-0.2.0"
+    name = "frameit_metadata_catalogue-0.2.1"
     original = files("frameit") / "catalogue"
     package = tmp_path / "package"
     bundle = package / "catalogue"
