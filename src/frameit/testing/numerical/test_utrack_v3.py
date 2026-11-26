@@ -70,7 +70,7 @@ def write_grib(path, ds, *, omit_850=False, wind_height=10):
 @pytest.fixture
 def backend(monkeypatch):
     """Do not install Torch or open a Lightning checkpoint for this test."""
-    calls = SimpleNamespace(loaded=[], batches=[], center=(1.8, 2.7))
+    calls = SimpleNamespace(loaded=[], batches=[], latitudes=[], center=(1.8, 2.7))
     modules = {name: ModuleType(name) for name in ("torch", "utrack", "utrack.prepare")}
     for name, module in modules.items():
         module.__spec__ = ModuleSpec(name, None)
@@ -81,6 +81,7 @@ def backend(monkeypatch):
         np.testing.assert_allclose(absv, -2e-4)
         assert np.all(lat < 0)
         calls.batches.append(u10[:, 0, 0].tolist())
+        calls.latitudes.append(lat)
         return np.stack([np.hypot(u10, v10), -absv], axis=1)
 
     class Utracker:
@@ -163,11 +164,60 @@ def test_utrack_selected_850_and_track(tmp_path, monkeypatch, backend, fmt):
         np.testing.assert_allclose(out.longitude, 60.2)
 
 
+@pytest.mark.parametrize("case", ["radians", "transposed"])
+def test_utrack_uses_the_same_geography_for_inference_and_the_track(tmp_path, backend, case):
+    ds = scene()
+    if case == "radians":
+        ds = ds.assign_coords({name: (name, np.deg2rad(ds[name].values), {"units": "rad"})
+                               for name in ("latitude", "longitude")})
+    else:
+        lat, lon = ds.latitude.values, ds.longitude.values
+        ds = ds.rename({"latitude": "y", "longitude": "x"}).assign_coords(
+            latitude=(("x", "y"), np.broadcast_to(lat[None, :], (6, 5)),
+                      {"units": "degrees_north"}),
+            longitude=(("x", "y"), np.broadcast_to(lon[:, None], (6, 5)),
+                       {"units": "degrees_east"}))
+    path = tmp_path / "in.nc"
+    ds.to_netcdf(path, engine="h5netcdf")
+    raw = config(tmp_path, path)
+    report = collect_preflight(raw)
+    assert not report.errors, report.errors
+    result = execute_simulation(SimulationConfig.from_mapping_with_model_preset(raw))
+    with xr.open_dataset(result.products[0]["path"]) as out:
+        np.testing.assert_allclose(out.latitude, -20.1)
+        np.testing.assert_allclose(out.longitude, 60.2)
+    for lat in backend.latitudes:
+        at_fix = lat[1] if case == "radians" else lat[1, 2]
+        assert at_fix == pytest.approx(-20.1)
+
+
+@pytest.mark.parametrize("v_basis", ["earth", "grid"])
+def test_utrack_checks_each_winds_owning_file_metadata(tmp_path, backend, v_basis):
+    ds = scene()
+    east, north = tmp_path / "east.nc", tmp_path / "north.nc"
+    ds[["u10", "absv"]].assign_attrs(wind_reference_frame="earth").to_netcdf(
+        east, engine="h5netcdf")
+    ds[["v10"]].assign_attrs(wind_reference_frame=v_basis).to_netcdf(north, engine="h5netcdf")
+    raw = config(tmp_path, east)
+    raw["sources"]["atm"].update(
+        files=[str(east), str(north)],
+        wind_pairs=[{"u": "u10", "v": "v10", "basis": "earth"}])
+    report = collect_preflight(raw)
+    if v_basis == "earth":
+        assert not report.errors, report.errors
+    else:
+        assert any("reference metadata" in e.message and "v10" in e.message
+                   for e in report.errors), report.errors
+    assert backend.loaded == [] and not (tmp_path / "out").exists()
+
+
 @pytest.mark.parametrize(("case", "message"), [
     ("no_weights", "checkpoint"), ("empty_weights", "checkpoint"),
     ("wrong_units", "vorticity"), ("wrong_quantity", "vorticity"),
     ("other_grid", "grid"), ("missing_850", "850"),
     ("grib_height", "u10"), ("netcdf_height", "10 m"), ("mesonh", "AROME"),
+    ("height_above_sea", "10 m"), ("height_pressure_units", "10 m"),
+    ("absv_height", "isobaric"), ("near_850", "850"),
 ])
 def test_utrack_rejects_incompatible_preflight_inputs(tmp_path, backend, case, message):
     ds = scene()
@@ -186,6 +236,14 @@ def test_utrack_rejects_incompatible_preflight_inputs(tmp_path, backend, case, m
         ds["absv"] = ds.absv.rename(longitude="lon").assign_coords(lon=ds.longitude.values + 1)
     elif case == "netcdf_height":
         ds = ds.assign_coords(height=xr.DataArray(11., attrs={"units": "m", "standard_name": "height"}))
+    elif case == "height_above_sea":
+        ds = ds.assign_coords(heightAboveSea=xr.DataArray(100., attrs={"units": "m"}))
+    elif case == "height_pressure_units":
+        ds = ds.assign_coords(height=xr.DataArray(100., attrs={"units": "Pa", "standard_name": "height"}))
+    elif case == "absv_height":
+        ds.absv.attrs["GRIB_typeOfLevel"] = "heightAboveGround"
+    elif case == "near_850":
+        ds = ds.assign_coords(isobaric=ds.isobaric.copy(data=[70000., 85000.00000000001, 95000.]))
     if case in {"missing_850", "grib_height"}:
         path = tmp_path / "in.grib"
         source["files"] = str(path)

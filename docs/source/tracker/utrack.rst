@@ -27,11 +27,13 @@ export. Supply all three fields at every selected time on the same grid:
 - Raw signed absolute vorticity (``absv``), in inverse seconds, at exactly
   850 hPa. FrameIt does not interpolate to 850 hPa.
 
-The dataset must also carry a latitude coordinate named ``latitude`` or ``lat``.
-Latitude is passed to UTrack to reverse the sign of raw absolute vorticity south
-of the equator, matching the model's cyclonic-positive convention. Input
-vorticity must retain its raw signed convention to avoid applying this correction
-twice.
+FrameIt checks the recorded wind basis in each component's source file and
+rejects height metadata that do not support 10 m above ground. The dataset
+must also carry latitude (``latitude`` or ``lat``) and longitude (``longitude``
+or ``lon``) on the input grid. FrameIt converts geography to degrees before
+inference and uses the same named axes to locate the track centres. UTrack
+uses latitude to reverse the sign of raw absolute vorticity south of the
+equator. Do not apply this correction to the input.
 
 Output
 ------

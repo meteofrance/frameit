@@ -430,13 +430,35 @@ def _utrack_horizontal_identity(source, record):
     })
 
 
+def utrack_850_position(pressure):
+    """The native label must be 850 hPa after unit conversion, not a nearby level."""
+    import numpy as np
+
+    from frameit.utils.units import convert_units
+
+    levels = convert_units(pressure.astype("float64"), "pressure", target="hPa")
+    matches = np.flatnonzero(levels.values == 850.)
+    if len(matches) != 1:
+        raise ValueError("UTrack requires one exact 850 hPa level for absolute vorticity")
+    return int(matches[0])
+
+
+def _utrack_vertical_label(name, attrs):
+    return (name in {"height", "heightAboveGround", "heightAboveSea", "meanSea", "isobaric",
+                     "level", "hybrid", "altitude", "depth"}
+            or attrs.get("axis") == "Z" or attrs.get("positive") in {"up", "down"}
+            or attrs.get("standard_name") in {"height", "altitude", "depth", "air_pressure",
+                                              "height_above_mean_sea_level", "surface_altitude"})
+
+
 def resolve_tracker_support(conf, source):
     """Resolve existing method inputs from the closed selected metadata pool."""
+    from frameit.io.grib_utils import GRIB_PRESSURE_UNITS
+    from frameit.processing.requests import _field_axis
     from frameit.processing.wind_reference import (
         _metadata_frames,
         validate_pair_frame,
     )
-    from frameit.processing.requests import _field_axis
     from frameit.utils.units import convert_units, unit_metadata
 
     method = conf.tracking_method
@@ -529,7 +551,12 @@ def resolve_tracker_support(conf, source):
     pool = source["record_inventory"]
     by_name = {n: [(i, r) for i, r in enumerate(pool) if r["name"] == n] for n in names}
     headers, inputs, axes = {}, {}, {}
+    file_frames = {}
     horizontal = set()
+    # A conflicting linked level may have been excluded from the admitted grid roles.
+    unbound_labels = ({f["name"] for f in source["fields"].values()
+                       if _utrack_vertical_label(f["name"], f["attributes"])}
+                      if utrack and source["format"] == "netcdf" else set())
     for name in names:
         candidates = [(i, record) for i, record in by_name[name] if (
             name not in upper or source["fields"][record["field_id"]].get("group") == "isobaric"
@@ -554,7 +581,7 @@ def resolve_tracker_support(conf, source):
         axis = _field_axis(source, field, record, by_name)
         selector = {}
         if name in upper:
-            if axis is None or axis["dimension"] != "isobaric":
+            if axis is None or axis["dimension"] != "isobaric" or axis["descriptor"] is None:
                 raise ValueError(f"{method}: {name} requires the admitted AROME isobaric axis")
             axes[name] = axis["descriptor"]
             unit_metadata(xr.DataArray(0., attrs=axes[name]["attributes"]), "pressure")
@@ -564,22 +591,38 @@ def resolve_tracker_support(conf, source):
             elif utrack:
                 if attrs.get("standard_name") not in {None, "", "atmosphere_absolute_vorticity"}:
                     raise ValueError("UTrack absv metadata must describe absolute vorticity")
-                selector = {"values": [850], "units": "hPa"}
+                label = axes[name]
+                if (attrs.get("GRIB_typeOfLevel") not in {None, "", *GRIB_PRESSURE_UNITS}
+                        or label["attributes"].get("standard_name") not in {None, "", "air_pressure"}):
+                    raise ValueError("UTrack absv metadata must describe an isobaric level")
+                position = utrack_850_position(xr.DataArray(
+                    label["values"], attrs=label["attributes"], name=axis["coordinate"]))
+                selector = {"indices": [int(axis["native"][position])], "units": "hPa"}
         elif axis is not None:
             raise ValueError(f"{method}: {name} must be a 2d horizontal input")
         if utrack:
             gridded_records = {r["grid_id"]: r for r in records}
             if name in surface:
+                file_frames[name] = _metadata_frames(
+                    field.get("dataset_attributes", {}), f"{name} in {record['locator']['path']}")
                 if source["format"] == "grib":
                     if (attrs.get("GRIB_typeOfLevel") != "heightAboveGround"
                             or any(r["level"] != 10 for r in records)):
                         raise ValueError(f"UTrack {name} requires 10 m above-ground wind")
+                elif (attrs.get("GRIB_typeOfLevel") not in {None, "", "heightAboveGround"}
+                      or attrs.get("GRIB_level", 10) != 10
+                      or any(dep in unbound_labels for dep, role in field["dependencies"].items()
+                             if role == "coordinates")):
+                    raise ValueError(f"UTrack {name} requires 10 m above-ground wind; "
+                                     "the linked vertical metadata do not support it")
                 for grid_id in gridded_records:
-                    for coord in source["native_grids"][grid_id]["coordinates"].values():
-                        if not coord["dimensions"] and coord["attributes"].get(
-                                "standard_name") == "height":
-                            height = xr.DataArray(coord["values"], attrs=coord["attributes"])
-                            if convert_units(height, "distance").item() != 10.:
+                    for label, coord in source["native_grids"][grid_id]["coordinates"].items():
+                        meta = coord["attributes"]
+                        if _utrack_vertical_label(label, meta):
+                            if (coord["dimensions"] or meta.get("standard_name") != "height"
+                                    or meta.get("positive", "up") != "up"
+                                    or convert_units(xr.DataArray(
+                                        coord["values"], attrs=meta), "distance").item() != 10.):
                                 raise ValueError(f"UTrack {name} requires 10 m above-ground wind")
             horizontal.update(_utrack_horizontal_identity(source, r) for r in gridded_records.values())
         inputs[name] = selector
@@ -603,13 +646,19 @@ def resolve_tracker_support(conf, source):
             pair = dict(declarations[0], group=group, reference_frame=declarations[0]["basis"])
             pair.pop("basis")
         else:
-            evidence = [set(_metadata_frames(headers[name].attrs, name)) for name in components]
+            evidence = [set(_metadata_frames(headers[name].attrs, name)
+                            + file_frames.get(name, [])) for name in components]
             if len(evidence[0]) != 1 or evidence[0] != evidence[1]:
                 raise ValueError(f"{method}: wind basis is missing or conflicting; "
                                  "declare sources.*.wind_pairs")
             pair = dict(group=group, u=components[0], v=components[1],
                         reference_frame=next(iter(evidence[0])))
         validate_pair_frame(xr.Dataset(headers), pair, conf)
+        for name in components:
+            if any(frame != pair["reference_frame"] for frame in file_frames.get(name, ())):
+                raise ValueError(f"Conflicting wind reference metadata on {name} in its owning "
+                                 f"file: declared {pair['reference_frame']}, metadata "
+                                 f"{file_frames[name]}")
         if pair["reference_frame"] != "earth":
             raise ValueError(f"{method}: grid winds require explicit supported preparation")
         conf.wind_pairs.append(pair)

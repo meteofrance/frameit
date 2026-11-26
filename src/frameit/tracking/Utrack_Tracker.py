@@ -9,7 +9,7 @@ from frameit.core.settings_class import SimulationConfig
 from frameit.utils.diagnostics import tag_error
 from frameit.utils.units import convert_units
 
-from .tracker_core import TcTracker, register_tracker
+from .tracker_core import TcTracker, register_tracker, utrack_850_position
 
 
 def _common_input_grid(u, v, absv, lat, lon):
@@ -138,7 +138,7 @@ class UtrackTracker(TcTracker):
         Returns
         -------
         xr.Dataset
-            Dataset with variables ``cy(time)`` and ``cx(time)``.
+            Native ``cy(time)``, ``cx(time)`` and the associated degree coordinates.
         """
         from utrack.prepare import get_latitude, prepare_input
 
@@ -147,20 +147,21 @@ class UtrackTracker(TcTracker):
         absv = self._field(ds, "absv")
         if "isobaric" not in absv.coords or absv.isobaric.dims != ("isobaric",):
             raise ValueError("UTrack requires a labelled isobaric axis for absolute vorticity")
-        indices = np.flatnonzero(convert_units(absv.isobaric, "pressure", target="hPa") == 850.)
-        if len(indices) != 1:
-            raise ValueError("UTrack requires one exact 850 hPa level for absolute vorticity")
-        absv = convert_units(absv.isel(isobaric=int(indices[0]), drop=True), "vorticity")
-        lat = get_latitude(ds)
+        position = utrack_850_position(absv.isobaric)
+        absv = convert_units(absv.isel(isobaric=position, drop=True), "vorticity")
+        lat = convert_units(get_latitude(ds), "angle",
+                            target="degrees_north", assumed="degrees_north")
         lon_name = next((n for n in ("longitude", "lon") if n in ds), None)
         if lon_name is None:
             raise ValueError("UTrack requires longitude to verify common geographic locations")
-        u10, v10, absv = _common_input_grid(u10, v10, absv, lat, ds[lon_name])
+        lon = convert_units(ds[lon_name], "angle",
+                            target="degrees_east", assumed="degrees_east")
+        u10, v10, absv = _common_input_grid(u10, v10, absv, lat, lon)
         _, ny, nx = u10.shape
         lat = lat.transpose(*(d for d in u10.dims if d in lat.dims))
         inputs = xr.Dataset({"u10": u10, "v10": v10, "absv": absv},
                             coords={"utrack_latitude": lat})
-        if not np.isfinite(ds[lon_name].values).all():
+        if not np.isfinite(lon.values).all():
             raise ValueError("UTrack requires finite longitudes on its horizontal grid")
         cx, cy = [], []
         for start in range(0, inputs.sizes["time"], self.batch_size):
@@ -188,4 +189,10 @@ class UtrackTracker(TcTracker):
                 # Preserve the adapter's historical conversion of fractional pixel centres.
                 cy.append(int(y))
                 cx.append(int(x))
-        return xr.Dataset({"cy": ("time", cy), "cx": ("time", cx)}, coords={"time": ds.time})
+        track = xr.Dataset({"cy": ("time", cy), "cx": ("time", cx)}, coords={"time": ds.time})
+        _, y, x = u10.dims
+        for name, geo in (("lat", lat), ("lon", lon)):
+            sampled = geo.isel({dim: track[index] for dim, index in ((y, "cy"), (x, "cx"))
+                                if dim in geo.dims})
+            track[name] = sampled.variable
+        return track
