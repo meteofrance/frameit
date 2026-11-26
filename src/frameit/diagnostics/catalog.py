@@ -43,7 +43,7 @@ BEST_TRACK = DiagnosticSpec(
     ),
     (
         "saved centres and exact sample times",
-        "declared grid Earth model",
+        "source grid Earth model (declared or documented default)",
         "physical height, units, frame and temporal statistic",
         "physical cell area for RMW",
     ),

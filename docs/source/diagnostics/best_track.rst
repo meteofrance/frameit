@@ -48,7 +48,16 @@ labels to add to force an otherwise unsupported comparison.
 Finite-disc estimators
 ----------------------
 
-Distances and initial bearings use the source's declared sphere or ellipsoid.
+Distances and initial bearings use the source's sphere or ellipsoid. If an
+original NetCDF source selected as ``model: mesonh`` does not declare its Earth
+model, the diagnostic uses the standard Meso-NH sphere (radius **6,371,229 m**,
+zero flattening), defined by `INI_CST`_ and used in the `Meso-NH projection`_.
+Explicit geometry takes precedence. An unresolved grid-mapping link or
+conflicting Earth-model declarations are errors, not reasons to use the
+default. The default does not apply to model-grid products, GRIB or other
+models. The diagnostic check and ``diagnostics-provenance.yaml`` record the
+axes and their origin. Model–observation track separation still uses WGS84.
+
 The ``structured_center_perimeter_v1`` support test uses the outer native
 sample centres, a local centre-based azimuthal-equidistant projection, and
 a 1 m containment guard. Geodesic short-edge bounds and native adjacency
@@ -114,3 +123,7 @@ open. Completion is not evidence of observational equivalence or forecast skill.
 
 .. _Météo-France archive and technical description:
    https://www.data.gouv.fr/datasets/historique-des-cyclones-tropicaux-du-sud-ouest-de-locean-indien
+.. _INI_CST:
+   https://github.com/filippi/Meso-NH/blob/7cd43af7387df685e3304ac88a999c41b014083a/src/MNH/ini_cst.f90#L99
+.. _Meso-NH projection:
+   https://github.com/filippi/Meso-NH/blob/7cd43af7387df685e3304ac88a999c41b014083a/src/MNH/mode_gridproj.f90#L461

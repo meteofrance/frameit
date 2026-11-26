@@ -11,6 +11,7 @@ from frameit.core.execution import ExecutionOptions, execute_simulation
 from frameit.core.settings_class import SimulationConfig
 from frameit.testing.numerical.test_run_diag_configuration import request
 from frameit.testing.numerical.test_run_diag_lifecycle import run_diag, write_request
+from frameit.testing.numerical.test_v3_run_state import record
 
 
 def vortex_input(path, *, temporal="qualified", size=45, declared_height=10.0, edit_input=None):
@@ -86,6 +87,7 @@ def vortex_parent(
     tmp_path,
     *,
     kind="original",
+    model="arome",
     temporal="qualified",
     size=45,
     fields=("wind10", "mslp", "area"),
@@ -97,7 +99,10 @@ def vortex_parent(
 ):
     raw = request(kind=kind)
     raw["sources"]["weather"].update(
-        files="vortex*.nc", variables={"2d": list(fields)}, reader={"engine": "h5netcdf"}
+        model=model,
+        files="vortex*.nc",
+        variables={"2d": list(fields)},
+        reader={"engine": "h5netcdf"},
     )
     raw["output"] = {"directory": "parent", "format": output_format}
     raw["resources"] = {"cpus": 1, "scheduler": "synchronous", "synchronous_export": True}
@@ -123,6 +128,115 @@ def vortex_parent(
     conf = SimulationConfig(**to_runtime(original, base_dir=tmp_path))
     execute_simulation(conf, ExecutionOptions.from_config(conf))
     return write_request(tmp_path / "config.yaml", raw), raw, raw_source, conf.output_dir
+
+
+@pytest.mark.parametrize(
+    ("kind", "model", "earth_attrs", "mapping_attrs", "expected"),
+    [
+        pytest.param(
+            "original", "mesonh", {}, None,
+            (6371229.0, "Meso-NH default (INI_CST.XRADIUS)"), id="mesonh",
+        ),
+        pytest.param(
+            "original", "mesonh", {"earth_radius": 6371000.0}, None,
+            (6371000.0, "dataset Earth model"), id="explicit",
+        ),
+        pytest.param("model_grid", "mesonh", {}, None, None, id="crop"),
+        pytest.param("original", "arome", {}, None, None, id="other-model"),
+        pytest.param(
+            "original", "mesonh", {"semi_major_axis": 6371000.0}, None, None, id="incomplete",
+        ),
+        pytest.param("original", "mesonh", {"earth_radius": -1.0}, None, None, id="invalid"),
+        pytest.param(
+            "original", "mesonh", {"earth_radius": 6371000.0}, ("crs", {"earth_radius": 6372000.0}),
+            None, id="conflict",
+        ),
+        pytest.param("original", "mesonh", {}, ("crs", None), None, id="dangling-mapping"),
+        pytest.param("original", "mesonh", {}, ("crs", {}), None, id="empty-mapping"),
+        pytest.param(
+            "original", "mesonh", {}, ("crs", {"grid_mapping_name": "latitude_longitude"}),
+            (6371229.0, "Meso-NH default (INI_CST.XRADIUS)"), id="projection-only",
+        ),
+        pytest.param(
+            "original", "mesonh", {"earth_radius": 6371000.0},
+            ("crs: latitude longitude", {"earth_radius": 6350000.0}),
+            None, id="unresolved-expanded-mapping",
+        ),
+        pytest.param(
+            "original", "mesonh", {},
+            ("crs", {
+                "crs_wkt": 'GEOGCS["Test sphere",DATUM["Test",SPHEROID["S",6350000,0]],'
+                           'PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]',
+                "earth_radius": 6371000.0,
+            }),
+            None, id="conflicting-wkt",
+        ),
+    ],
+)
+def test_original_netcdf_earth_model_default(
+    tmp_path, kind, model, earth_attrs, mapping_attrs, expected,
+):
+    from pyproj import Geod
+
+    def edit_input(ds):
+        ds.latitude.attrs["axis"] = "Y"
+        ds.longitude.attrs["axis"] = "X"
+        del ds.attrs["earth_radius"]
+        ds.attrs.update(earth_attrs)
+        if mapping_attrs is not None:
+            link, attrs = mapping_attrs
+            for name in ("wind10", "mslp", "area"):
+                ds[name].attrs["grid_mapping"] = link
+            if attrs is not None:
+                ds["crs"] = xr.DataArray(0, attrs=attrs)
+
+    cfg, _, _, _ = vortex_parent(tmp_path, kind=kind, model=model, edit_input=edit_input)
+    report = run_diag(cfg, check=True)
+    if expected is None:
+        assert report["status"] == "error" and report["errors"][0]["code"] == "E2003", report
+        assert "Earth model" in report["errors"][0]["message"]
+        return
+
+    assert report["status"] == "ok", report["errors"]
+    radius, origin = expected
+    groups = report["data"]["plan"]["groups"]
+    assert groups
+    for group in groups:
+        for source in group["sources"]:
+            grid = source["grid"]
+            assert grid["earth"] == [radius, radius]
+            assert grid["earth_origin"] == origin
+            a, b = grid["earth"]
+            assert Geod(a=a, b=b).inv(0, 0, 1, 0)[2] == pytest.approx(
+                radius * np.pi / 180, rel=1e-12,
+            )
+
+
+def test_mesonh_default_reuses_admitted_metadata_for_execution(tmp_path):
+    def edit_input(ds):
+        ds.latitude.attrs["axis"] = "Y"
+        ds.longitude.attrs["axis"] = "X"
+        del ds.attrs["earth_radius"]
+        ds.unused.attrs["grid_mapping"] = "crs rubbish"
+        wind = np.zeros(ds.wind10.shape)
+        wind[:, ds.sizes["latitude"] // 2 + 5, ds.sizes["longitude"] // 2] = 40
+        ds.wind10.data = wind
+
+    cfg, _, _, _ = vortex_parent(tmp_path, model="mesonh", edit_input=edit_input)
+    check = run_diag(cfg, check=True)
+    assert check["status"] == "ok", check["errors"]
+    report = run_diag(cfg)
+    assert report["status"] == "ok" and report["data"]["plan"]["committed"], report["errors"]
+    attempt = Path(report["data"]["plan"]["attempt_directory"])
+    with xr.open_dataset(attempt / "best_track/model_best_track.nc") as ds:
+        # The only threshold exceedance is 0.25 degrees due north of the centre.
+        np.testing.assert_allclose(
+            ds.wind_radius.isel(threshold=0, quadrant=0), 6371229.0 * np.pi / 720, rtol=1e-10,
+        )
+    provenance = record(attempt, "diagnostics-provenance.yaml")
+    grids = [source["grid"] for group in provenance["plan"]["groups"] for source in group["sources"]]
+    assert grids and all(g["earth"] == [6371229.0, 6371229.0] for g in grids)
+    assert {g["earth_origin"] for g in grids} == {"Meso-NH default (INI_CST.XRADIUS)"}
 
 
 def test_exact_netcdf_selection(tmp_path, monkeypatch):

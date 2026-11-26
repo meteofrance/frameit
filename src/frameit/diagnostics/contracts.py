@@ -53,6 +53,7 @@ class DiagnosticPlan:
     files: tuple = ()
     reference: object | None = None
     zarr_evidence: dict | None = None
+    decode_coords: str = "all"
 
 
 @dataclass(frozen=True)

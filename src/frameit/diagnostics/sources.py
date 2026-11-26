@@ -18,6 +18,12 @@ from frameit.utils.output_paths import OutputPaths
 from frameit.utils.units import UNITS, unit_key
 
 UTC_CALENDARS = {"standard", "gregorian", "proleptic_gregorian"}
+_ORIGINAL_NETCDF_SPHERES = {"mesonh": (6371229.0, "Meso-NH default (INI_CST.XRADIUS)")}
+_EARTH_MODEL_KEYS = {
+    "earth_radius", "fa_earth_radius_m", "semi_major_axis", "semi_minor_axis",
+    "inverse_flattening", "crs_wkt", "spatial_ref", "reference_ellipsoid_name",
+    "horizontal_datum_name", "geographic_crs_name",
+}
 AREA_UNITS = {"m2": 1, "m^2": 1, "m**2": 1, "km2": 10**6, "km^2": 10**6, "km**2": 10**6}
 WIND_NAMES = {
     "speed": {"wind_speed"},
@@ -156,9 +162,9 @@ def _verify_file(file):
 
 
 @contextmanager
-def _open(file, *, zarr_objects=None, object_limit=0):
+def _open(file, *, zarr_objects=None, object_limit=0, decode_coords="all"):
     with ExitStack() as scope, DatasetResources() as resources:
-        options = {"chunks": None, "create_default_indexes": False, "decode_coords": "all"}
+        options = {"chunks": None, "create_default_indexes": False, "decode_coords": decode_coords}
         if file.representation == "zarr3":
             from frameit.diagnostics.zarr_source import open_store
 
@@ -298,15 +304,24 @@ def _units_factor(unit, quantity, *, target=None):
     return factors[key] / factors[unit_key(target or canonical)]
 
 
-def _earth_model(ds, field):
+def _earth_model(ds, field, *, original_model=None):
     from pyproj import CRS
+    from pyproj.exceptions import CRSError
 
+    default = _ORIGINAL_NETCDF_SPHERES.get(original_model)
     mapping = field.encoding.get("grid_mapping", field.attrs.get("grid_mapping"))
     grid = ds[mapping].attrs if mapping in ds.variables else {}
-    if grid.get("crs_wkt") or grid.get("spatial_ref"):
-        model = CRS.from_wkt(grid.get("crs_wkt") or grid["spatial_ref"]).ellipsoid
-        return (float(model.semi_major_metre), float(model.semi_minor_metre)), str(mapping)
+    if default is not None and mapping is not None and not grid:
+        raise _error(f"{field.name!r} has an unresolved Earth model grid_mapping", observed=mapping)
+
     candidates = []
+    if wkt := grid.get("crs_wkt") or grid.get("spatial_ref"):
+        model = CRS.from_wkt(wkt).ellipsoid
+        declared = (float(model.semi_major_metre), float(model.semi_minor_metre)), str(mapping)
+        if default is None:
+            return declared
+        candidates.append(declared)
+
     for attrs, origin in ((grid, f"grid_mapping:{mapping}"), (ds.attrs, "dataset Earth model")):
         if "earth_radius" in attrs:
             a = b = float(attrs["earth_radius"])
@@ -324,6 +339,21 @@ def _earth_model(ds, field):
         if not (isfinite(a) and isfinite(b) and a > 0 and b > 0):
             raise _error(f"Invalid Earth model on {field.name!r}", observed=(a, b))
         candidates.append(((a, b), origin))
+    if (
+        not candidates
+        and default is not None
+        and _EARTH_MODEL_KEYS.isdisjoint(grid.keys() | ds.attrs.keys())
+    ):
+        radius, origin = default
+        if mapping is not None:
+            try:
+                CRS.from_cf({**grid, "earth_radius": radius})
+            except (CRSError, KeyError, TypeError, ValueError) as exc:
+                raise _error(
+                    f"{field.name!r} has an invalid Earth model grid_mapping: {exc}",
+                    observed=mapping,
+                ) from exc
+        return (radius, radius), origin
     if not candidates or len({model for model, _ in candidates}) != 1:
         raise _error(f"{field.name!r} requires one declared Earth model for geodesic distances")
     return candidates[0]
@@ -653,7 +683,7 @@ def _validity_limits(field, file):
     return lower, upper
 
 
-def _bind_field(ds, file, role, selector, sample, attrs, evidence, wind_pairs):
+def _bind_field(ds, file, role, selector, sample, attrs, evidence, wind_pairs, *, original_model):
     field = ds[selector["field"]]
     if role in {"u", "v"}:
         from frameit.processing.derived.wind import require_collocated_location
@@ -682,7 +712,7 @@ def _bind_field(ds, file, role, selector, sample, attrs, evidence, wind_pairs):
     units = attrs.get("units")
     quantity = role if role in {"pressure", "area"} else "velocity"
     factor = _units_factor(units, quantity) if units else 1.0
-    earth, origin = _earth_model(ds, field)
+    earth, origin = _earth_model(ds, field, original_model=original_model)
     grid = Grid(
         dims,
         tuple(ds.sizes[d] for d in dims),
@@ -859,6 +889,9 @@ def _plan_source(parent, request):
         budget -= object_limit * 1024
     selectors = _selectors(request)
     original = bool(inventory)
+    original_model = evidence["model"] if original else None
+    # Keep dangling grid_mapping references visible before considering a default.
+    decode_coords = "coordinates" if original_model in _ORIGINAL_NETCDF_SPHERES else "all"
     times = {centre.time for centre in parent.centres}
     bindings, seen = {}, set()
 
@@ -883,7 +916,8 @@ def _plan_source(parent, request):
                     add(field)
                 continue
             with _open(
-                file, zarr_objects=zarr_objects.get(file.path), object_limit=object_limit
+                file, zarr_objects=zarr_objects.get(file.path), object_limit=object_limit,
+                decode_coords=decode_coords,
             ) as ds:
                 if not original and (
                     ds.attrs.get("product_type") != "model_grid"
@@ -933,6 +967,7 @@ def _plan_source(parent, request):
                             attrs,
                             metadata,
                             cfg.get("wind_pairs", ()) if original else (),
+                            original_model=original_model,
                         )
                         add(field)
     if absent := selectors.keys() - seen:
@@ -978,7 +1013,10 @@ def _plan_source(parent, request):
     if zarr_objects:
         facts["initial_zarr_accesses"] = {p.name: len(keys) for p, keys in zarr_objects.items()}
         facts["working_buffers"]["max_zarr_access_records"] = object_limit
-    return DiagnosticPlan(parent, request, facts, groups, files, zarr_evidence=zarr_objects)
+    return DiagnosticPlan(
+        parent, request, facts, groups, files,
+        zarr_evidence=zarr_objects, decode_coords=decode_coords,
+    )
 
 
 def _group_facts(stamp, group):
@@ -1071,6 +1109,7 @@ class _Provider:
             file,
             zarr_objects=self.zarr_evidence.get(file.path),
             object_limit=self.plan.facts["working_buffers"].get("max_zarr_access_records", 0),
+            decode_coords=self.plan.decode_coords,
         ) as ds:
             yield _GroupView(ds, group)
 
