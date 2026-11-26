@@ -304,7 +304,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--utrack-weights",
         type=Path,
         default=None,
-        help="UTrack checkpoint; v3 execution binding is unavailable, including with weights.",
+        help="Trusted checkpoint for the optional AROME UTrack tracker.",
     )
     pm.add_argument("--log-level", default=None, choices=("DEBUG", "INFO", "WARNING", "ERROR"))
 
@@ -317,7 +317,7 @@ def _build_parser() -> argparse.ArgumentParser:
                          "FRAMEIT_CI_DATA_ROOT or the package fixture location.")
     pa.add_argument(
         "--utrack-weights", type=Path, default=None,
-        help="UTrack checkpoint; v3 execution binding is unavailable, including with weights.")
+        help="Trusted checkpoint for the optional AROME UTrack tracker.")
     pa.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
 
     return p

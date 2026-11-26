@@ -75,7 +75,8 @@ Set `output.format: zarr` for `.zarr` stores instead of `.nc` files. See
 - **Extraction and tracking:** fixed boxes, prescribed tracks, pressure-wind and
   adaptive pressure-centroid tracking (AROME isobaric and Meso-NH native levels).
   The seeded multi-field vortex tracker is experimental, with scientific
-  qualification pending. The optional UTrack adapter cannot execute v3 requests.
+  qualification pending. The optional [UTrack tracker](https://meteofrance.github.io/frameit/tracker/utrack.html)
+  supports AROME NetCDF and GRIB with a trusted checkpoint and 850 hPa vorticity.
 - **Coupled inputs:** sources share centres but keep their own grids, masks,
   quantities, clocks and products. Operations needing shared centres require
   an explicit time association. See

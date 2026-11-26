@@ -349,7 +349,7 @@ def capabilities():
         method: {
             "maturity": ("experimental_native_grid_adaptation" if method == "multifield_vortex"
                          else "implemented; no new scientific validation claim"),
-            "v3_execution": method != "utrack",
+            "v3_execution": True,
             "models": ["arome", "mesonh"], "dependencies": [],
             "inputs": ["selected pressure/wind metadata and Earth-relative wind evidence"],
             "limits": ["Selected metadata, values and geometry must pass preflight and execution; "
@@ -363,11 +363,11 @@ def capabilities():
     tracking["multifield_vortex"]["inputs"] += [
         "explicit seed/motion", "pressure-level or Meso-NH native multi-field support"]
     tracking["utrack"].update(
-        models=["arome"],
+        maturity="beta_external_model",
+        models=["arome"], formats=["netcdf", "grib"],
         dependencies=["torch", "utrack"],
-        inputs=["weights_file", "UTrack-compatible input fields"],
-        limits=["Configuration and optional adapter exist, but v3 selected tracker binding "
-                "is not yet executable. Dependency presence does not enable it."])
+        inputs=["trusted weights_file", "collocated u10/v10 and signed absv at 850 hPa"],
+        limits=["A missing detection fails the run. Meso-NH and FA are not supported."])
     for method, inputs in (
         ("fixed_box", ["geographic center"]),
         ("prescribed_track", ["track file with exact selected timestamps and geographic degrees"]),

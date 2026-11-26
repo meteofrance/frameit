@@ -26,7 +26,8 @@ UNITS = {
                        "degree_east": np.pi / 180, "degree_north": np.pi / 180}),
     "pressure": ("Pa", {"pa": 1, "hpa": 100, "mbar": 100}),
     "geopotential": ("m2 s-2", {"m**2s**-2": 1, "m2s-2": 1,
-                                "m2s**-2": 1, "m^2s^-2": 1, "m2/s2": 1}),
+                                 "m2s**-2": 1, "m^2s^-2": 1, "m2/s2": 1}),
+    "vorticity": ("s-1", {"s-1": 1, "s^-1": 1, "s**-1": 1, "1/s": 1}),
 }
 
 

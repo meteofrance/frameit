@@ -19,9 +19,9 @@ E1502: The tracker cannot run with these inputs
 
 Check the tracker name and source profile with ``frameit capabilities``
 and :doc:`../reference/tracking`. A tracker can require a particular
-model, grid, or level type. UTrack cannot execute a v3 request, even
-with weights installed. Use a supported method only if it fits the
-task. Validate the new request against your files.
+model, grid, or level type. For :doc:`../tracker/utrack`, check the AROME inputs,
+optional packages and trusted checkpoint path. Use a supported method only
+if it fits the task. Validate the new request against your files.
 
 .. _e1503:
 
@@ -98,9 +98,9 @@ the distance in metres. Do not divide an existing metre value by 1,000.
 W1506: An older UTrack caller did not detect a centre
 ----------------------------------------------------------------------
 
-The legacy caller returned the index pair ``(0, 0)`` for that
-sample. It is not a detected centre. Do not use it as one or try to
-make UTrack run a v3 request. Check :ref:`e1502` for supported choices.
+The legacy caller returned the index pair ``(0, 0)`` for that sample.
+It is not a detected centre. Current UTrack runs fail at a time without a
+detection; see :ref:`e1503`.
 
 .. _w1507:
 

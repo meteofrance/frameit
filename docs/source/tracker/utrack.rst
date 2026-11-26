@@ -1,11 +1,10 @@
 Utrack (AI) tracker
 ===================
 
-.. warning::
+.. note::
 
-   UTrack cannot execute current tracking requests: its selected-input binding
-   is unavailable. Installing dependencies or weights does not enable it.
-   The beta adapter below is limited to AROME.
+   This beta adapter runs on AROME NetCDF and GRIB inputs only. Meso-NH and
+   FA inputs are not supported.
 
 Overview
 --------
@@ -21,11 +20,12 @@ West Indies domain, covering Atlantic hurricane seasons 2016–2018.
 Required input fields
 ---------------------
 
-This tracker requires the following variables to be available in the dataset:
+FrameIt reads the following inputs independently of the fields selected for
+export. Supply all three fields at every selected time on the same grid:
 
-- 10 m zonal wind component (``u10``),
-- 10 m meridional wind component (``v10``),
-- Absolute vorticity at 850 hPa (``absv``).
+- 10 m Earth-relative wind components (``u10``, ``v10``), compatible with m/s;
+- Raw signed absolute vorticity (``absv``), in inverse seconds, at exactly
+  850 hPa. FrameIt does not interpolate to 850 hPa.
 
 The dataset must also carry a latitude coordinate named ``latitude`` or ``lat``.
 Latitude is passed to UTrack to reverse the sign of raw absolute vorticity south
@@ -36,18 +36,16 @@ twice.
 Output
 ------
 
-The tracker returns two 1D arrays:
-
-- ``cy(time)``: row index of the estimated center,
-- ``cx(time)``: column index of the estimated center,
-
-Both are integers in the adapter's track dataset, not available current-run outputs.
+The tracker uses the first detection's maximum-wind centre at each time.
+Fractional pixel coordinates are truncated to native row and column indices,
+as in the original adapter. Select ``products.track: true`` to publish the
+ordinary FrameIt trajectory with geographic coordinates. If no centre is
+detected at a selected time, the run fails without publishing a track.
 
 Configuration and usage
 -----------------------
 
-The declaration uses the following fragment. These settings do not remove the
-execution limitation above.
+Add the following to an AROME configuration:
 
 .. code-block:: yaml
 
@@ -57,6 +55,10 @@ execution limitation above.
        weights_file: ./model_latest.ckpt
        use_gpu: false
        batch_size: 16
+
+Run ``frameit validate`` before ``frameit run``. Validation checks input
+metadata, the checkpoint path and availability of the optional modules. It
+does not load the checkpoint or test whether the cyclone will be detected.
 
 .. list-table::
    :header-rows: 1
@@ -74,15 +76,15 @@ execution limitation above.
        available.
    * - ``region.tracker.batch_size``
      - ``16``
-     - Number of time steps processed in a single forward pass. Reduce this value if
-       GPU or CPU memory is limited.
+     - Maximum number of full-grid time steps loaded and sent to the model
+       together. Reduce this value if GPU or CPU memory is limited.
 
 Dependencies
 ------------
 
 The optional adapter requires ``torch`` and the external
 `utrack package <https://git.meteo.fr/hoarauk/unet_tracker>`_.
-Neither is needed for core extraction, and neither enables the missing binding.
+Neither is needed for core extraction.
 
 Model weights
 -------------
@@ -91,6 +93,12 @@ A trained model checkpoint file is required. The weights are **not publicly dist
 contact the model authors to obtain a copy. Once you have the file, set
 ``region.tracker.weights_file`` as shown above; paths are YAML-relative.
 
+.. warning::
+
+   Run only with a checkpoint whose origin you trust. The external UTrack
+   checkpoint loader can deserialize Python objects. Do not run a configuration
+   that points to weights obtained from an untrusted source.
+
 Known limitations
 ------------------
 
@@ -98,9 +106,8 @@ Known limitations
   are required. Their presence is not verification of a new dataset or regime.
 * **AROME scope:** generalisation beyond the model's training conditions is
   unestablished.
-* **No detection:** the current implementation warns and returns native grid
-  indices ``(0,0)`` when no cyclone is found. These are not a confirmed centre or
-  geographical zero; downstream users must treat the failure explicitly.
+* **Input values:** the tracker requires finite wind and vorticity across
+  the input grid. FrameIt does not fill gaps before inference.
 * **Multiple detections:** the adapter selects the first returned detection and
   does not provide researcher-seeded multi-object association.
 * **Input conventions:** winds and signed 850-hPa vorticity must share compatible

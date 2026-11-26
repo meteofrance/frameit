@@ -4,8 +4,8 @@ How to add a new tracker
 To add a tracker, implement its class, register it, declare its inputs and expose
 its settings in the configuration schema.
 
-The ``UtrackTracker`` is a low-level adapter reference, not an executable v3
-binding; see :doc:`../tracker/utrack`. A supported new method also needs explicit
+The ``UtrackTracker`` is an optional adapter with an AROME v3 binding;
+see :doc:`../tracker/utrack`. A supported new method also needs explicit
 scientific inputs, selected-input binding and independent verification.
 
 Overview of the tracker system

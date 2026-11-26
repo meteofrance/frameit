@@ -8,7 +8,8 @@ atmospheric centres, compare :doc:`../tracker/pressure_wind_tracker`,
 :doc:`../tracker/multifield_vortex`.
 
 Each method lists its required inputs and limits. The beta
-:doc:`../tracker/utrack` adapter cannot execute current requests.
+:doc:`../tracker/utrack` tracker requires compatible AROME inputs and a trusted
+checkpoint.
 For a worked calculation, see :doc:`../task_guides/calculate_track`.
 To use positions you already have, see :doc:`../task_guides/moving_region`.
 

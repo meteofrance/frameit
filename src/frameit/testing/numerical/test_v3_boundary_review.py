@@ -749,7 +749,7 @@ def test_preview_keeps_per_file_static_samples_separate_but_not_single_file_stat
             np.testing.assert_array_equal(saved.flux, 0.)
 
 
-def test_missing_utrack_dependencies_do_not_promise_executable_v3_support(tmp_path, monkeypatch):
+def test_missing_utrack_dependencies_are_actionable(tmp_path, monkeypatch):
     import importlib.util
 
     from frameit.core.preflight import _required_dependencies
@@ -767,8 +767,7 @@ def test_missing_utrack_dependencies_do_not_promise_executable_v3_support(tmp_pa
     missing = [error for error in errors if error.path == "region.tracker"]
     assert len(missing) == 2
     assert {error.code for error in missing} == {"E1502"}
-    assert all(error.repairs == ["UTrack v3 execution is unavailable; select another tracker."]
-               for error in missing)
+    assert all(error.observed["module"] in error.repairs[0] for error in missing)
     assert {fact["module"] for fact in facts if fact["path"] == "region.tracker"} == {
         "torch", "utrack"}
     assert not conf.output_dir.exists()

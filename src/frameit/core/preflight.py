@@ -1073,6 +1073,10 @@ def inventory_source(conf, name, *, resources=None, progress=None,
         from frameit.io.loader import DEFAULT_PRESETS_ROOT, _load_yaml
 
         method = conf.tracking_method
+        if method == "utrack":
+            from frameit.tracking.tracker_core import require_utrack_source
+
+            require_utrack_source(model, fmt)
         preset = (DEFAULT_PRESETS_ROOT / {"mesonh": "MNH", "arome": "AROME"}[model]
                   / "vars_trackers.yaml")
         if method in {"wind_pressure", "utrack"} or model == "arome":
@@ -1514,7 +1518,7 @@ def _required_dependencies(conf, execution_options=None):
                          f"the {engine} writer dependency"))
     facts, errors = [], []
     for path, module, installation in selected:
-        repair = ("UTrack v3 execution is unavailable; select another tracker."
+        repair = (f"Install {module} in {installation}, or select another tracker."
                   if path == "region.tracker" else
                   f"Install {installation} in the selected environment, or deselect this feature.")
         code = "E1004" if module == "xesmf" else (

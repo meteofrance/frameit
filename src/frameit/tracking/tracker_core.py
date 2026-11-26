@@ -397,15 +397,53 @@ def build_tracker_from_config(conf: SimulationConfig) -> TcTracker:
     return tracker_cls.from_config(conf)
 
 
+def require_utrack_source(model, fmt):
+    if model != "arome" or fmt not in {"netcdf", "grib"}:
+        raise tag_error(ValueError("UTrack requires an AROME NetCDF or GRIB source"), "E1502")
+
+
+def _utrack_checkpoint(conf):
+    from os import R_OK, access
+    from pathlib import Path
+
+    path = Path(conf.utrack_weights_file)
+    if not (path.is_file() and access(path, R_OK) and path.stat().st_size):
+        raise tag_error(ValueError(
+            "UTrack checkpoint must be a readable, nonempty local file; "
+            "check region.tracker.weights_file"), "E1502")
+
+
+def _utrack_horizontal_identity(source, record):
+    from frameit.core.preflight import _metadata_id
+
+    grid = source["native_grids"][record["grid_id"]]
+    if source["format"] == "grib":
+        return grid["grib_grid_section"]
+    dims = set(grid["dimensions"]) - {"isobaric"}
+    if len(dims) != 2:
+        raise ValueError("UTrack requires a two-dimensional horizontal grid")
+    return _metadata_id("utrack_grid_", {
+        "dimensions": {dim: grid["dimensions"][dim] for dim in dims},
+        "coordinates": {name: coord for name, coord in grid["coordinates"].items()
+                        if coord["dimensions"] and set(coord["dimensions"]) <= dims},
+        "grid_mapping": grid["grid_mapping"],
+    })
+
+
 def resolve_tracker_support(conf, source):
     """Resolve existing method inputs from the closed selected metadata pool."""
     from frameit.processing.wind_reference import (
         _metadata_frames,
         validate_pair_frame,
     )
-    from frameit.utils.units import unit_metadata
+    from frameit.processing.requests import _field_axis
+    from frameit.utils.units import convert_units, unit_metadata
 
     method = conf.tracking_method
+    utrack = method == "utrack"
+    if utrack:
+        require_utrack_source(source["model"], source["format"])
+        _utrack_checkpoint(conf)
     if method in {"pressure_centroid", "multifield_vortex"} and source["model"] == "mesonh":
         from frameit.io.loader import DatasetResources
 
@@ -480,43 +518,42 @@ def resolve_tracker_support(conf, source):
                 "selected_time_count": len(source["selected_times"]),
                 "value_checks": (
                     "pending execution: physical brackets, masks, geometry and convergence")}
-    if (method not in {"wind_pressure", "pressure_centroid", "multifield_vortex"}
+    if (method not in {"wind_pressure", "pressure_centroid", "multifield_vortex", "utrack"}
             or source["format"] == "fa"):
         raise tag_error(ValueError(f"{method}: selected tracker method support is not yet executable"),
-                        "E1502")
-    names = (("MSLP", "UM10", "VM10") if source["model"] == "mesonh" else
-             ("prmsl", "u10", "v10"))
-    if method != "wind_pressure":
-        names = (*names, "u", "v", "z")
+                         "E1502")
+    surface = (("UM10", "VM10") if source["model"] == "mesonh" else ("u10", "v10"))
+    pressure = "MSLP" if source["model"] == "mesonh" else "prmsl"
+    upper = (("absv",) if utrack else ("u", "v", "z") if method != "wind_pressure" else ())
+    names = (*surface, *upper) if utrack else (pressure, *surface, *upper)
+    pool = source["record_inventory"]
+    by_name = {n: [(i, r) for i, r in enumerate(pool) if r["name"] == n] for n in names}
     headers, inputs, axes = {}, {}, {}
+    horizontal = set()
     for name in names:
-        candidates = [record for record in source["record_inventory"]
-                      if record["name"] == name and (
-                          name not in {"u", "v", "z"}
-                          or source["fields"][record["field_id"]].get("group") == "isobaric"
-                          or "isobaric" in source["fields"][record["field_id"]]["dimensions"])]
-        identities = {record["field_id"] for record in candidates}
+        candidates = [(i, record) for i, record in by_name[name] if (
+            name not in upper or source["fields"][record["field_id"]].get("group") == "isobaric"
+            or "isobaric" in source["fields"][record["field_id"]]["dimensions"])]
+        by_name[name] = candidates
+        records = [record for _, record in candidates]
+        identities = {record["field_id"] for record in records}
         if len(identities) != 1:
             raise ValueError(
                 f"{method}: required input {name} missing or ambiguous in selected metadata")
         field = source["fields"][next(iter(identities))]
-        record = candidates[0]
+        record = records[0]
         attrs = field["attributes"]
         if record.get("catalogue_values"):
             from frameit.processing.requests import source_field_metadata
 
             attrs = source_field_metadata(source, field, record=record)["attributes"]
         headers[name] = xr.DataArray(0., attrs=attrs, name=name)
-        quantity = "pressure" if name == names[0] else "geopotential" if name == "z" else "velocity"
+        quantity = {"absv": "vorticity", "z": "geopotential", pressure: "pressure"}.get(
+            name, "velocity")
         unit_metadata(headers[name], quantity)
-        from frameit.processing.requests import _field_axis
-
-        pool = source["record_inventory"]
-        by_name = {n: [(i, r) for i, r in enumerate(pool) if r["name"] == n
-                      and (n != name or r["field_id"] in identities)] for n in names}
-        axis = _field_axis(source, field, by_name[name][0][1], by_name)
+        axis = _field_axis(source, field, record, by_name)
         selector = {}
-        if name in {"u", "v", "z"}:
+        if name in upper:
             if axis is None or axis["dimension"] != "isobaric":
                 raise ValueError(f"{method}: {name} requires the admitted AROME isobaric axis")
             axes[name] = axis["descriptor"]
@@ -524,12 +561,33 @@ def resolve_tracker_support(conf, source):
             if method == "multifield_vortex":
                 selector = {"values": [850, 700] if name == "z" else [850, 700, 500],
                             "units": "hPa"}
+            elif utrack:
+                if attrs.get("standard_name") not in {None, "", "atmosphere_absolute_vorticity"}:
+                    raise ValueError("UTrack absv metadata must describe absolute vorticity")
+                selector = {"values": [850], "units": "hPa"}
         elif axis is not None:
             raise ValueError(f"{method}: {name} must be a 2d horizontal input")
+        if utrack:
+            gridded_records = {r["grid_id"]: r for r in records}
+            if name in surface:
+                if source["format"] == "grib":
+                    if (attrs.get("GRIB_typeOfLevel") != "heightAboveGround"
+                            or any(r["level"] != 10 for r in records)):
+                        raise ValueError(f"UTrack {name} requires 10 m above-ground wind")
+                for grid_id in gridded_records:
+                    for coord in source["native_grids"][grid_id]["coordinates"].values():
+                        if not coord["dimensions"] and coord["attributes"].get(
+                                "standard_name") == "height":
+                            height = xr.DataArray(coord["values"], attrs=coord["attributes"])
+                            if convert_units(height, "distance").item() != 10.:
+                                raise ValueError(f"UTrack {name} requires 10 m above-ground wind")
+            horizontal.update(_utrack_horizontal_identity(source, r) for r in gridded_records.values())
         inputs[name] = selector
+    if utrack and len(horizontal) != 1:
+        raise ValueError("UTrack winds and vorticity must share the same horizontal grid")
     conf.wind_pairs = []
-    for group, components in (("surface", names[1:3]), *(
-            [("isobaric", ("u", "v"))] if method != "wind_pressure" else [])):
+    for group, components in (("surface", surface), *(
+            [("isobaric", ("u", "v"))] if "u" in upper else [])):
         from frameit.core.configuration import field_selection
 
         request = conf.source_requests[conf.source_name]
@@ -558,16 +616,16 @@ def resolve_tracker_support(conf, source):
     if method == "pressure_centroid":
         if len(source["selected_times"]) < 2:
             raise ValueError("pressure_centroid requires at least two selected source times")
-        from frameit.utils.units import convert_units
-
         levels = [convert_units(xr.DataArray(axis["values"], attrs=axis["attributes"]),
                                 "pressure", target="hPa").values for axis in axes.values()]
         if any(len(values) < 2 for values in levels) or any(
                 not (levels[0] == values).all() for values in levels[1:]):
             raise ValueError("pressure_centroid requires matching pressure support on u/v/z")
-    conf.tracking_var_aliases = {
-        **dict(zip(("mslp", "u10m", "v10m"), names[:3], strict=True)),
-        **({"u": "u", "v": "v", "geopot": "z"} if method != "wind_pressure" else {})}
+    conf.tracking_var_aliases = dict(zip(("u10m", "v10m"), surface, strict=True))
+    if not utrack:
+        conf.tracking_var_aliases.update(mslp=pressure)
+        if upper:
+            conf.tracking_var_aliases.update(u="u", v="v", geopot="z")
     return {"method": method, "inputs": inputs,
             "selected_time_count": len(source["selected_times"]),
             "value_checks": "pending execution; no scientific payload read during binding"}

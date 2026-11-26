@@ -539,7 +539,8 @@ finally:
         "experimental_native_grid_adaptation")
     assert set(support["tracking"]["utrack"]["dependencies"]) == {"torch", "utrack"}
     assert support["tracking"]["utrack"]["models"] == ["arome"]
-    assert support["tracking"]["utrack"]["v3_execution"] is False
+    assert support["tracking"]["utrack"]["v3_execution"] is True
+    assert support["tracking"]["utrack"]["formats"] == ["netcdf", "grib"]
     assert "weights" in str(support["tracking"]["utrack"]["inputs"])
     assert support["products"]["polar"]["dependencies"] == ["xesmf", "ESMF"]
     assert set(support["products"]) == {"model_grid", "polar", "track"}

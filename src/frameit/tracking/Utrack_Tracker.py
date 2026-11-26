@@ -2,17 +2,14 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file or http://www.apache.org/licenses/LICENSE-2.0
 
-import logging
-
+import numpy as np
 import xarray as xr
 
 from frameit.core.settings_class import SimulationConfig
+from frameit.utils.diagnostics import tag_error
+from frameit.utils.units import convert_units
 
 from .tracker_core import TcTracker, register_tracker
-
-from frameit.utils.diagnostics import format_message
-
-logger = logging.getLogger(__name__)
 
 
 def _common_input_grid(u, v, absv, lat, lon):
@@ -22,8 +19,8 @@ def _common_input_grid(u, v, absv, lat, lon):
         raise ValueError("UTrack winds require time and exactly two horizontal dimensions")
     if set(v.dims) != set(u.dims) or set(absv.dims) != set(u.dims):
         raise ValueError("UTrack winds and absolute vorticity must share common grid locations")
-    if any(d not in a.coords for a in (u, v, absv) for d in horizontal):
-        raise ValueError("UTrack requires labelled horizontal coordinates to verify locations")
+    if any(len({d in a.coords for a in (u, v, absv)}) != 1 for d in horizontal):
+        raise ValueError("UTrack requires consistent horizontal labels to verify locations")
     for geo in (lat, lon):
         if not set(geo.dims) <= set(u.dims) or not (set(geo.dims) & horizontal):
             raise ValueError("UTrack geography must share the wind grid locations")
@@ -42,7 +39,7 @@ def _common_input_grid(u, v, absv, lat, lon):
         y = lat.dims[0]
     else:
         candidates = [d for d in horizontal if d in {"nj", "y", "latitude", "lat"}
-                      or u[d].attrs.get("axis") == "Y"]
+                      or (d in u.coords and u[d].attrs.get("axis") == "Y")]
         if len(candidates) != 1:
             raise ValueError("UTrack requires an identifiable named y axis")
         y = candidates[0]
@@ -135,7 +132,7 @@ class UtrackTracker(TcTracker):
         ds : xr.Dataset
             Flat tracking dataset.  Must contain the fields aliased to
             ``"u10m"``, ``"v10m"``, and ``"absv"`` (absolute vorticity
-            on isobaric levels; the first level is used), and a ``latitude``
+            on the exact 850 hPa level), and a ``latitude``
             or ``lat`` coordinate for the hemisphere vorticity correction.
 
         Returns
@@ -145,58 +142,50 @@ class UtrackTracker(TcTracker):
         """
         from utrack.prepare import get_latitude, prepare_input
 
-        u10 = self._field(ds, "u10m")
-        v10 = self._field(ds, "v10m")
-        absv = self._field(ds, "absv").isel(isobaric=0)
+        u10 = convert_units(self._field(ds, "u10m"), "velocity")
+        v10 = convert_units(self._field(ds, "v10m"), "velocity")
+        absv = self._field(ds, "absv")
+        if "isobaric" not in absv.coords or absv.isobaric.dims != ("isobaric",):
+            raise ValueError("UTrack requires a labelled isobaric axis for absolute vorticity")
+        indices = np.flatnonzero(convert_units(absv.isobaric, "pressure", target="hPa") == 850.)
+        if len(indices) != 1:
+            raise ValueError("UTrack requires one exact 850 hPa level for absolute vorticity")
+        absv = convert_units(absv.isel(isobaric=int(indices[0]), drop=True), "vorticity")
         lat = get_latitude(ds)
         lon_name = next((n for n in ("longitude", "lon") if n in ds), None)
         if lon_name is None:
             raise ValueError("UTrack requires longitude to verify common geographic locations")
         u10, v10, absv = _common_input_grid(u10, v10, absv, lat, ds[lon_name])
+        _, ny, nx = u10.shape
         lat = lat.transpose(*(d for d in u10.dims if d in lat.dims))
-
-        time_da = ds["time"]
-
-        # Applying utrack model
-
-        x = prepare_input(
-            u10=u10.values,
-            v10=v10.values,
-            absv=absv.values,
-            lat=lat.values,
-        )
-        y_pred, cyclones = self.utracker.predict_batch(
-            x, use_gpu=self.use_gpu, match=False, batch_size=self.batch_size
-        )
-
-        # Processing output
-
-        cx = []
-        cy = []
-
-        for i, cycs in enumerate(cyclones):
-            if len(cycs) > 0:
-                y, x = cycs[0].last_fix().vmax_center
-            else:
-                logger.warning(
-                    format_message(
-                        "W1506", "No cyclone detected by the tracker at position=%s,"
-                        " returning coordinates (x=0, y=0)"
-                    ),
-                    i,
-                )
-                y, x = 0, 0  # np.nan, np.nan
-
-            cx.append(x)
-            cy.append(y)
-
-        # Build the output dataset
-
-        out = xr.Dataset(
-            {
-                "cy": xr.DataArray(cy, dims=("time",), coords={"time": time_da}).astype(int),
-                "cx": xr.DataArray(cx, dims=("time",), coords={"time": time_da}).astype(int),
-            }
-        )
-
-        return out
+        inputs = xr.Dataset({"u10": u10, "v10": v10, "absv": absv},
+                            coords={"utrack_latitude": lat})
+        if not np.isfinite(ds[lon_name].values).all():
+            raise ValueError("UTrack requires finite longitudes on its horizontal grid")
+        cx, cy = [], []
+        for start in range(0, inputs.sizes["time"], self.batch_size):
+            batch = inputs.isel(time=slice(start, start + self.batch_size)).compute()
+            values = {name: batch[name].values for name in ("u10", "v10", "absv")}
+            latitude = batch.utrack_latitude.values
+            if not (np.isfinite(latitude).all() and (np.abs(latitude) <= 90).all()
+                    and all(np.isfinite(var).all() for var in values.values())):
+                raise tag_error(ValueError(
+                    f"UTrack requires finite inputs and valid latitudes at {batch.time.values}"),
+                    "E1503")
+            _, detections = self.utracker.predict_batch(
+                prepare_input(**values, lat=latitude),
+                use_gpu=self.use_gpu, match=False, batch_size=self.batch_size)
+            if len(detections) != batch.sizes["time"]:
+                raise tag_error(ValueError("UTrack did not return one detection list per time"),
+                                "E1503")
+            for stamp, cyclones in zip(batch.time.values, detections, strict=True):
+                if not cyclones:
+                    raise tag_error(ValueError(f"UTrack: No cyclone detected at {stamp}"), "E1503")
+                y, x = cyclones[0].last_fix().vmax_center
+                if not (0 <= y <= ny - 1 and 0 <= x <= nx - 1):
+                    raise tag_error(ValueError(
+                        f"UTrack centre ({y}, {x}) at {stamp} is outside the input grid"), "E1503")
+                # Preserve the adapter's historical conversion of fractional pixel centres.
+                cy.append(int(y))
+                cx.append(int(x))
+        return xr.Dataset({"cy": ("time", cy), "cx": ("time", cx)}, coords={"time": ds.time})
