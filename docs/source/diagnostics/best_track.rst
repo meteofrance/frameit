@@ -10,6 +10,10 @@ Physical and temporal inputs
 
 Select one atmospheric source. Bind actual names for mean sea-level pressure
 and 10 m Earth-relative scalar wind speed or a collocated component pair.
+For NetCDF mean sea-level pressure, the diagnostic accepts
+``air_pressure_at_mean_sea_level`` and its `CF standard-name alias`_,
+``air_pressure_at_sea_level``.
+
 A name like ``U10`` is not height evidence. Use producer standard names,
 units, an above-ground height coordinate or verified height attribute, and
 physical/basis metadata. ``level`` selects an exact physical value with
@@ -127,3 +131,5 @@ open. Completion is not evidence of observational equivalence or forecast skill.
    https://github.com/filippi/Meso-NH/blob/7cd43af7387df685e3304ac88a999c41b014083a/src/MNH/ini_cst.f90#L99
 .. _Meso-NH projection:
    https://github.com/filippi/Meso-NH/blob/7cd43af7387df685e3304ac88a999c41b014083a/src/MNH/mode_gridproj.f90#L461
+.. _CF standard-name alias:
+   https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#air_pressure_at_mean_sea_level

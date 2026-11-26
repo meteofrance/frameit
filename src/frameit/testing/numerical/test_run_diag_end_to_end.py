@@ -23,8 +23,15 @@ def diag(cfg, *args):
     return process.returncode, report
 
 
-def test_original_and_crop_equivalent(tmp_path):
-    cfg, raw, path, root = vortex_parent(tmp_path)
+@pytest.mark.parametrize(
+    "pressure_name", ["air_pressure_at_mean_sea_level", "air_pressure_at_sea_level"],
+    ids=["canonical", "cf-alias"],
+)
+def test_original_and_crop_equivalent(tmp_path, pressure_name):
+    def tag_pressure(ds):
+        ds.mslp.attrs["standard_name"] = pressure_name
+
+    cfg, raw, path, root = vortex_parent(tmp_path, edit_input=tag_pressure)
     before = snapshot(root)
     code, check = diag(cfg, "--check")
     assert code == 0 and check["report_version"] == 1, check

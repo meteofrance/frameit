@@ -30,7 +30,7 @@ WIND_NAMES = {
     "u": {"eastward_wind", "grid_eastward_wind", "x_wind"},
     "v": {"northward_wind", "grid_northward_wind", "y_wind"},
     "gust": {"wind_speed_of_gust"},
-    "pressure": {"air_pressure_at_mean_sea_level"},
+    "pressure": {"air_pressure_at_mean_sea_level", "air_pressure_at_sea_level"},
     "area": {"cell_area"},
 }
 CELLS_BYTES = 320  # fields, coordinates, float64 temporaries, masks, neighbour halo
