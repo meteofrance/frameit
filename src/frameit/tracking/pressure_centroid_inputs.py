@@ -229,7 +229,7 @@ def selected_mnh_metadata(source, conf, resources):
                                  f"{sorted(seen & variables)}")
             seen.update(variables)
             original = resources.open_netcdf(path, engine=conf.netcdf_engine, chunks=None)
-            if top := next((r["mnh_recovered_ztop"] for r in local if "mnh_recovered_ztop" in r), None):
+            if top := next((r["mnh_bound_ztop"] for r in local if "mnh_bound_ztop" in r), None):
                 from frameit.io.mnh_vertical_grid import assign_resolved_ztop
 
                 original = assign_resolved_ztop(original, top)

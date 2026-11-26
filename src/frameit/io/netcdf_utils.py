@@ -398,7 +398,7 @@ def _selected_netcdf(files, binding, source, resources, *, engine, chunks, regio
             raise ValueError(f"{name}: destination-grid transformation is not executable")
         original = normalize_isobaric_coordinates(
             resources.open_netcdf(path, engine=engine, chunks=None))
-        if top := record.get("mnh_recovered_ztop"):
+        if top := record.get("mnh_bound_ztop"):
             from frameit.io.mnh_vertical_grid import assign_resolved_ztop
 
             original = assign_resolved_ztop(original, top)

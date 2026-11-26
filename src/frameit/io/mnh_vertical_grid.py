@@ -24,6 +24,10 @@ def equal_metres(left, right, epsilon=np.finfo(float).eps):
 def _length(value):
     if value.dtype.kind not in "fiu" or value.attrs.get("positive", "up") != "up":
         raise ValueError(f"{value.name} is not a numeric positive-up length")
+    packing = {"scale_factor", "add_offset", "_Unsigned"}
+    if packing & value.attrs.keys() or (packing & value.encoding.keys()
+            and value.attrs.keys() & {"valid_min", "valid_max", "valid_range"}):
+        raise ValueError(f"{value.name} requires decoded lengths and unambiguous validity limits")
     native = np.asarray(value)
     if (not np.isfinite(native).all()
             or any(np.isin(native, value.attrs[key]).any()
@@ -58,6 +62,15 @@ def _mass_labels(interfaces):
                  1.5 * interfaces[-1] - .5 * interfaces[-2]]
 
 
+def _native_indices(ds, dimension):
+    for name in (f"{dimension}_source_native_index", "source_native_index"):
+        if name in ds and (name != "source_native_index" or dimension in ds[name].dims):
+            indices = ds[name]
+            if indices.dims != (dimension,) or indices.dtype.kind not in "iu":
+                raise ValueError(f"{name} must be an integer index on {dimension}")
+            yield np.asarray(indices)
+
+
 def _complete_interfaces(ds):
     """Check the documented one-external-level writer, not merely the last label."""
     mass, flux = "level", "level_w"
@@ -77,9 +90,7 @@ def _complete_interfaces(ds):
                 or attrs.get("c_grid_axis_shift") != shift
                 or attrs.get("c_grid_dynamic_range") != f"2:{edge}"):
             raise ValueError(f"{name} does not establish the complete native physical range")
-        index = f"{name}_source_native_index"
-        if index in ds and (ds[index].dims != (name,) or
-                            not np.array_equal(ds[index], np.arange(n))):
+        if any(not np.array_equal(indices, np.arange(n)) for indices in _native_indices(ds, name)):
             raise ValueError(f"{name} has non-native or incomplete indices")
     m, w = _length(ds[mass]), _length(ds[flux])
     epsilon = max(_epsilon(ds[mass].dtype), _epsilon(ds[flux].dtype))
@@ -146,12 +157,10 @@ def _matches_stored_axis(ds, name, expected, *, dimension=None):
     if not stored.size or not np.all(np.diff(stored) > 0):
         return False
     epsilon = max(_epsilon(ds[name].dtype), _epsilon(expected.dtype))
-    index = f"{dimension}_source_native_index"
-    if index in ds:
-        indices = np.asarray(ds[index])
-        return (ds[index].dims == (dimension,) and indices.dtype.kind in "iu"
-                and np.all((indices >= 0) & (indices < expected.size))
-                and equal_metres(stored, expected[indices], epsilon).all())
+    native = tuple(_native_indices(ds, dimension))
+    if native:
+        return all(np.all((indices >= 0) & (indices < expected.size))
+                   and equal_metres(stored, expected[indices], epsilon).all() for indices in native)
     if len(stored) == len(expected):
         return equal_metres(stored, expected, epsilon).all()
     positions = np.searchsorted(expected, stored)
@@ -173,7 +182,7 @@ def _configured_top(ds):
     count = _parameter(attrs, "NKMAX")
     if not isinstance(count, int) or not 1 <= count <= 10_000:
         raise ValueError("Original NKMAX must be a positive integer within the replay limit")
-    _count(ds, ("KMAX",), count)
+    _count(ds, ("KMAX", "NKMAX"), count)
     _count(ds, ("JPVEXT",), 1)
     if "ZHAT" in ds and "level_w" in ds.coords:
         zhat, flux = ds.ZHAT, ds.level_w
@@ -209,14 +218,21 @@ def _decision(status, method=None, value_m=None, **evidence):
     return dict(status=status, method=method, value_m=value_m, evidence=evidence)
 
 
+def _native_top(native):
+    if native.attrs.get("standard_name") not in {None, "", "altitude", ZTOP_ATTRS["standard_name"]}:
+        raise ValueError("Native ZTOP metadata does not describe model-top altitude")
+    if native.ndim or (top := _length(native).item()) <= 0.:
+        raise ValueError("Native ZTOP must be a positive scalar altitude")
+    return top
+
+
 def resolve_ztop(ds: xr.Dataset) -> dict:
     """Resolve only instrumented native layouts or complete original grid recipes."""
     native = ds.get("ZTOP")
     top = None
     if native is not None:
         try:
-            if native.ndim or (top := _length(native).item()) <= 0.:
-                raise ValueError("Native ZTOP must be a positive scalar altitude")
+            top = _native_top(native)
         except (ValueError, TypeError) as exc:
             return _decision("conflicting", reason=str(exc))
     try:
@@ -242,8 +258,12 @@ def resolve_ztop(ds: xr.Dataset) -> dict:
 
 
 def assign_resolved_ztop(ds: xr.Dataset, decision: dict) -> xr.Dataset:
-    """Attach the bound scalar only in memory, never modifying native variables."""
-    if "ZTOP" in ds or decision["status"] != "reconstructed":
+    """Attach a bound scalar in memory without changing on-disk native values."""
+    if decision.get("normalize_native"):
+        # A frozen unit conversion is not permission to replace changed native evidence.
+        if "ZTOP" not in ds or _native_top(ds.ZTOP) != decision["value_m"]:
+            raise ValueError("Native ZTOP changed after binding")
+    elif "ZTOP" in ds or decision["status"] != "reconstructed":
         return ds
     attrs = decision.get("attributes", ZTOP_ATTRS)
     value = decision.get("native_value", decision["value_m"])

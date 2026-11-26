@@ -933,7 +933,9 @@ def _bind_mnh_ztop(entries, fields, selected, pool, *, required):
         clock, path = _sample_context(record), record["locator"]["path"]
         paths_by_sample.setdefault(clock, set()).add(path)
         calendars[clock] = record["calendar"], record.get("reference_calendar")
-        if "ZTOP" in fields[record["field_id"]].get("dependencies", {}):
+        field = fields[record["field_id"]]
+        # Interface fields can use their owning file's mass axis after a transform.
+        if "ZTOP" in field.get("dependencies", {}) or {"level", "level_w"} & set(field["dimensions"]):
             owners.setdefault(clock, set()).add(path)
     kept, tops, calendar_conflicts = [], [], set()
     for record in pool:
@@ -984,11 +986,33 @@ def _bind_mnh_ztop(entries, fields, selected, pool, *, required):
         result["calendar_conflicts"] = sorted(calendar_conflicts)
     if conflicting or not tops:
         return result, kept
-    # Match the sole native scalar definition in a mixed sequence; native bytes are untouched.
     native_paths = {r["field_id"]: r["locator"]["path"] for r in tops
                     if evidence[r["locator"]["path"]]["status"] == "native"}
+    normalized = None
+    if len(native_paths) > 1 and result["value_m"] is not None:
+        definitions = [fields[identity] for identity in native_paths]
+        # Units alone can differ. Do not relabel ranges or other producer definitions.
+        signatures = {_metadata_json({
+            "attributes": {k: v for k, v in f["attributes"].items() if k != "units"},
+            **{k: f.get(k) for k in ("grid_id", "dataset_attributes", "xarray_coordinate")},
+        }) for f in definitions}
+        if len(signatures) != 1 or any(f["attributes"].keys() & {
+                "actual_range", "valid_min", "valid_max", "valid_range"} for f in definitions):
+            return {**result, "status": "conflicting", "value_m": None,
+                    "reason": "Native ZTOP definitions differ beyond convertible length units"}, kept
+        normalized = _metadata_id("field_", {"equivalent_ztop": sorted(native_paths)})
+        seed = definitions[0]
+        fields[normalized] = {**seed, "dtype": "float64",
+                              "attributes": dict(seed["attributes"], units="m")}
+        result["bound_units"] = "m"
     for record in tops:
         decision = evidence[record["locator"]["path"]]
+        if normalized is not None:
+            record.update(field_id=normalized, decoded_dtype="float64", mnh_bound_ztop={
+                **decision, "value_m": value_m, "normalize_native": decision["status"] == "native",
+                "attributes": fields[normalized]["attributes"],
+            })
+            continue
         if decision["status"] != "reconstructed":
             continue
         decision = {**decision, "value_m": value_m}
@@ -999,7 +1023,7 @@ def _bind_mnh_ztop(entries, fields, selected, pool, *, required):
             record["field_id"] = identity
             decision.update(attributes=field["attributes"],
                             native_value=evidence[path]["evidence"]["native_value"])
-        record["mnh_recovered_ztop"] = decision
+        record["mnh_bound_ztop"] = decision
     return result, kept
 
 
@@ -1244,12 +1268,15 @@ def inventory_source(conf, name, *, resources=None, progress=None,
     if required - top_refs:
         missing -= top_refs  # Report a missing bound ZTOP together with its evidence.
     if missing:
+        top_evidence = ({"mnh_ztop": {"status": "missing", "value_m": None, "files": [
+            {"file": entry["path"], **entry["mnh_ztop"]}
+            for entry in entries if "mnh_ztop" in entry]}} if missing & top_refs else {})
         raise PreflightError([Diagnostic(
             f"sources.{name}.variables",
             f"required fields/dependencies {sorted(missing)} unavailable in selected files",
             {"required_fields": sorted(required)},
-            {"available_fields": sorted(n for n in by_field_name if n is not None),
-             "missing_fields": sorted(missing)},
+             {"available_fields": sorted(n for n in by_field_name if n is not None),
+              "missing_fields": sorted(missing), **top_evidence},
             [f"Select files containing {', '.join(sorted(missing))}, "
              "or correct the required field names. "
              "Dependencies cannot widen the authored files/time selection."],

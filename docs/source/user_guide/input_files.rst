@@ -155,12 +155,13 @@ the simulation. ``ZDZTOP`` is a grid spacing near the top, not an altitude.
 FrameIt resolves the model top in this order:
 
 1. Use a finite, positive native ``ZTOP`` scalar with compatible length units.
-   Do not replace invalid or contradictory native evidence.
+   Reject contradictory quantity metadata or validity limits declared in
+   packed rather than decoded units. Do not replace invalid native evidence.
 2. Without a native value, use the physical upper interface identified by a
    complete native ``level_w`` and ``level`` pair. FrameIt checks dimensions,
    staggering, lengths, external levels, declared ranges and the relationship
-   between mass and interface positions. Matching ``ZHAT`` or count metadata
-   must agree if present. A monotone or truncated coordinate is not enough.
+   between mass and interface positions. Any stored ``ZHAT``, native indices
+   and grid counts must agree. A monotone or truncated coordinate is not enough.
 3. If the axes do not prove the top, replay sufficient original grid settings
    stored with the NetCDF source, for the inspected Meso-NH 5.6.2 recipe only.
    Include a supported producer version declaration, ``NKMAX`` and
@@ -197,10 +198,12 @@ The configuration replay follows the pinned
 For a request involving vertical support or an explicit ``ZTOP``,
 ``frameit validate --json`` records ``mnh_ztop`` per selected source: native,
 reconstructed, missing or conflicting, with the method and evidence for each
-file. ``run-provenance.yaml`` records the same decision. A matching time alone
-does not establish that another file supplies the formula's model top. FrameIt
-compares the selected tops in metres, keeps agreeing native values, and binds
-the recovered operand as a scalar in memory. A required top that cannot be
+file. ``run-provenance.yaml`` records the same decision. FrameIt checks the
+owning file's model top even when transforming interface fields to mass
+levels. It does not borrow a top from another grid at the same time. If two
+otherwise identical native definitions differ only in their units and the
+converted values agree exactly, FrameIt binds a scalar in metres and records
+the original encodings and the bound units. A required top that cannot be
 bound fails the operation. Source files are not modified. A frozen regression
 fixture checks recovery against the producer's scalar; this is not validation
 of other layouts or model versions.
