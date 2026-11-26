@@ -116,6 +116,13 @@ def native_scene(hour=0, units="m/s"):
     return ds
 
 
+def native_series(units="m/s"):
+    snapshots = [native_scene(hour, units=units) for hour in range(3)]
+    # The fixed model top stays scalar; concatenation must not broadcast it over time.
+    return xr.concat(snapshots, dim="time", compat="identical",
+                     data_vars=[name for name in snapshots[0].data_vars if name != "ZTOP"])
+
+
 def test_sparse_w_only_keeps_selected_mass_targets(tmp_path):
     path = tmp_path / "native.nc"
     native_scene().to_netcdf(path, engine="netcdf4")

@@ -1467,9 +1467,9 @@ def test_derived_input_sampling_is_honoured_or_incompatible_preparation_rejected
 def test_polar_w_mass_payload_reads_only_actual_native_neighbours(tmp_path, monkeypatch):
     from xarray.backends.h5netcdf_ import H5NetCDFArrayWrapper
 
-    from frameit.testing.numerical.test_grid_representations import native_scene
+    from frameit.testing.numerical.test_grid_representations import native_series
 
-    ds = xr.concat([native_scene(hour) for hour in (0, 1, 2)], dim="time", data_vars="all")
+    ds = native_series()
     ds.to_netcdf(tmp_path / "input.nc")
     conf = configuration(tmp_path, source={
         "variables": {"3d": ["WT", "THT"], "levels": {"indices": [2]}},
@@ -1671,9 +1671,9 @@ def test_execution_guard_rejects_damaged_actual_plan_before_ownership(
 
 def test_polar_preparation_uses_each_records_rotation_and_typed_provenance(tmp_path, monkeypatch):
     from frameit.processing.polar.regrid_plan import PolarRegridPlan
-    from frameit.testing.numerical.test_grid_representations import native_scene
+    from frameit.testing.numerical.test_grid_representations import native_series
 
-    ds = xr.concat([native_scene(hour) for hour in (0, 1, 2)], dim="time", data_vars="all")
+    ds = native_series()
     ds.UT.values[:] = 3.
     ds.VT.values[:] = 4.
     ds = ds.assign_coords(angle=("time", [0., .25, np.pi / 2], {

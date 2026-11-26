@@ -208,10 +208,9 @@ def test_derived_result_cannot_shadow_an_unexported_source_field(tmp_path):
 
 
 def staggered_scene():
-    from frameit.testing.numerical.test_grid_representations import native_scene
+    from frameit.testing.numerical.test_grid_representations import native_series
 
-    ds = xr.concat([native_scene(hour, units="km/h") for hour in range(3)],
-                   dim="time", data_vars="all")
+    ds = native_series(units="km/h")
     ds["UT"][:] = 10.8
     ds["VT"][:] = 14.4
     return ds
