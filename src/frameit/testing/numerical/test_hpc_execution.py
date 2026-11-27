@@ -296,30 +296,30 @@ if __name__ == "__main__":
     assert not result["unwanted_importable"]
 
 
-def test_cli_info_reports_selected_installation():
-    from importlib.metadata import PackageNotFoundError, version
-
+def test_cli_info_reports_selected_installation(tmp_path):
     import frameit
 
-    try:
-        selected_version = version("frameit")
-    except PackageNotFoundError:
-        selected_version = frameit.__version__
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "frameit"\nversion = "99.0"\n')
+    env = cli_environment()
+    env["PYTHONPATH"] = str(Path(frameit.__file__).resolve().parents[1])
     for short in (False, True):
         run = subprocess.run(
             [sys.executable, "-m", "frameit", "info", *(["--short"] if short else [])],
-            env=cli_environment(), capture_output=True, text=True, timeout=30,
+            cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30,
         )
         assert run.returncode == 0, run.stdout + run.stderr
         if short:
-            assert run.stdout == f"FrameIt {selected_version}\n"
+            assert run.stdout == f"FrameIt {frameit.__version__}\n"
         else:
+            assert f"FrameIt: {frameit.__version__}" in run.stdout.splitlines()
             assert f"FrameIt location: {frameit.__file__}" in run.stdout.splitlines()
             assert "Overall: OK" in run.stdout.splitlines()
 
 
 @pytest.fixture(scope="module")
 def cli_attempts(tmp_path_factory):
+    import frameit
+
     tmp_path = tmp_path_factory.mktemp("hpc-concurrent")
     dataset(tmp_path)
     config = tmp_path / "case.yaml"
@@ -355,6 +355,7 @@ def cli_attempts(tmp_path_factory):
         assert not (root / ".frameit-run.lock").exists()
         assert not list(root.rglob("*.partial"))
         provenance = yaml.safe_load((root / "run-provenance.yaml").read_text())
+        assert provenance["runtime"]["frameit_version"] == frameit.__version__
         assert "netCDF4" in provenance["runtime"]["loaded_backends"]
         replay = SimulationConfig.from_yaml(root / "resolved-config.yaml")
         assert replay.yaml_config["resources"]["synchronous_export"] == (mode == "sync")

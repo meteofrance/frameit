@@ -35,6 +35,27 @@ Run ``frameit info`` to show the imported FrameIt file and environment details.
 Check this path when more than one checkout or installation is available.
 If the command does not start, see :doc:`../troubleshooting/start`.
 
+Refresh editable metadata after a Git update
+--------------------------------------------
+
+For an editable install, ``frameit info --short`` and new run provenance
+report the version declared by the imported checkout. ``python -m pip show
+frameit`` reports the version recorded when pip installed it, which can still
+be older after ``git pull``.
+
+To update the pip record, activate the environment for that checkout and run:
+
+.. code-block:: bash
+
+   frameit refresh-install
+   python -m pip show frameit
+
+The refresh verifies that the active interpreter's pip editable install
+points to the imported checkout. It reinstalls FrameIt using the build tools
+already in that environment and checks the resulting version. It leaves
+dependencies alone. A wheel install uses the version recorded in its package
+metadata; upgrade it through the usual pip installation path.
+
 Continue with :doc:`first_run` for a small processing example.
 
 If you manage your own Python environment or need native-library troubleshooting,

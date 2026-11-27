@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReleaseTests(unittest.TestCase):
-    def test_candidate_metadata_and_source_fallback_agree(self):
+    def test_candidate_metadata_and_checkout_version_agree(self):
         from frameit._version import get_frameit_version
 
         project = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']
@@ -30,8 +30,24 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(citation['version'], project['version'])
         self.assertEqual(citation['date-released'], date(2026, 11, 25))
         self.assertEqual(project['requires-python'], '>=3.13,<3.14')
-        with patch('frameit._version.version', side_effect=PackageNotFoundError('frameit')):
+        with patch('frameit._version.version', return_value='2.0.0rc2') as installed:
             self.assertEqual(get_frameit_version(), project['version'])
+            installed.assert_not_called()
+
+    def test_wheel_version_and_missing_metadata_fallback(self):
+        from frameit._version import get_frameit_version
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = root / 'site-packages/frameit/_version.py'
+            module.parent.mkdir(parents=True)
+            module.touch()
+            (root / 'pyproject.toml').write_text('[project]\nname = "frameit"\nversion = "99.0"\n')
+            with patch('frameit._version.__file__', str(module)):
+                with patch('frameit._version.version', return_value='2.0.0rc2'):
+                    self.assertEqual(get_frameit_version(), '2.0.0rc2')
+                with patch('frameit._version.version', side_effect=PackageNotFoundError('frameit')):
+                    self.assertEqual(get_frameit_version(), '2.0.0rc4')
 
     def test_distributions_keep_runtime_assets_but_exclude_private_payloads_and_indexes(self):
         with tempfile.TemporaryDirectory() as directory:

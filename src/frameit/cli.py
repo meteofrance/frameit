@@ -249,6 +249,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pi.add_argument("--short", action="store_true", help="Print only 'FrameIt <version>'")
 
+    sub.add_parser("refresh-install", allow_abbrev=False,
+                   help="Refresh pip metadata for this editable FrameIt checkout.")
+
     pd = sub.add_parser(
         "prepare-ci-dataset", help="Prepare and verify the frozen scientific CI fixture."
     )
@@ -475,7 +478,7 @@ def _cmd_saved_report(args):
 def _cmd_info(short: bool) -> int:
     import frameit
 
-    frameit_ver = _package_version("frameit") or frameit.__version__
+    frameit_ver = frameit.__version__
     if short:
         print(f"FrameIt {frameit_ver}")
         return 0
@@ -524,6 +527,18 @@ def _cmd_info(short: bool) -> int:
         return 1
 
     print("Overall: OK")
+    return 0
+
+
+def _cmd_refresh_install() -> int:
+    from frameit._install import refresh_editable_install
+
+    try:
+        release = refresh_editable_install()
+    except ValueError as exc:
+        print(f"Cannot refresh FrameIt: {exc}", file=sys.stderr)
+        return 1
+    print(f"Refreshed FrameIt installation metadata: {release}")
     return 0
 
 
@@ -793,6 +808,8 @@ def main(argv: list[str] | None = None) -> None:
             code = 0 if facts["state"] in {"completed", "incomplete"} else 1
         elif args.command == "info":
             code = _cmd_info(short=bool(args.short))
+        elif args.command == "refresh-install":
+            code = _cmd_refresh_install()
         elif args.command == "generate-tests-fixtures":
             from frameit.testing.documentation_example import create_task_fixtures
 
