@@ -12,7 +12,9 @@ launch directory would let an unrelated project change the result.
 Only `frameit refresh-install` may refresh metadata. Verify a single pip
 editable installation in the active interpreter's site-packages, and match
 its `direct_url.json` checkout to the imported source. Use the requested
-pip flags and verify the version with a separate `pip show` process.
+pip flags. Check the child interpreter's install paths and pip's selected
+editable record before installing; verify the checkout and version with a
+fresh `pip show` process after installing.
 Automatic reinstalls and direct edits to metadata would hide environment
 changes and are outside the workflow.
 

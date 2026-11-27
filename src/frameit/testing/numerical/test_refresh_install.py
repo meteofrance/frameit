@@ -1,6 +1,7 @@
 """Exercise refresh-install with on-disk install evidence and a fake pip boundary."""
 
 import json
+import os
 import subprocess
 import sys
 import sysconfig
@@ -11,8 +12,8 @@ from frameit import _version, cli
 
 
 @pytest.fixture
-def installation(tmp_path, monkeypatch):
-    checkout = tmp_path / "FrameIt checkout"
+def installation(tmp_path, monkeypatch, request):
+    checkout = tmp_path / getattr(request, "param", "FrameIt checkout")
     module = checkout / "src/frameit/_version.py"
     module.parent.mkdir(parents=True)
     module.touch()
@@ -49,12 +50,20 @@ def _refresh(capsys):
     return caught.value.code, capsys.readouterr()
 
 
+def _show(release, site_packages, checkout):
+    return (f"Name: frameit\nVersion: {release}\nLocation: {site_packages}\n"
+            f"Editable project location: {checkout}\n")
+
+
+@pytest.mark.parametrize("installation", ["FrameIt checkout", "FrameIt checkout[test]"],
+                         indirect=True)
 def test_refresh_confirms_pip_version_in_separate_process(installation, monkeypatch, capsys):
     checkout, site_packages = installation
     alias = checkout.with_name("checkout-alias")
     alias.symlink_to(checkout, target_is_directory=True)
     _install_metadata(site_packages, "2.0.0rc2", alias)
     monkeypatch.setenv("PYTHONPATH", str(checkout / "src"))
+    monkeypatch.setenv("PYTHONHOME", str(checkout / "other-python"))
     monkeypatch.setenv("PIP_TARGET", str(checkout / "other-target"))
     calls = []
 
@@ -62,15 +71,26 @@ def test_refresh_confirms_pip_version_in_separate_process(installation, monkeypa
         calls.append(args)
         assert not kwargs.get("shell")
         assert "PYTHONPATH" not in kwargs["env"]
+        assert "PYTHONHOME" not in kwargs["env"]
         assert "PIP_TARGET" not in kwargs["env"]
-        return subprocess.CompletedProcess(args, 0, stdout="Name: frameit\nVersion: 2.0.0rc4\n")
+        if args[1] == "-c":
+            output = json.dumps([str(site_packages)] * 2)
+        else:
+            release = "2.0.0rc4" if len(calls) == 4 else "2.0.0rc2"
+            output = _show(release, site_packages, checkout)
+        return subprocess.CompletedProcess(args, 0, stdout=output)
 
     monkeypatch.setattr(subprocess, "run", pip)
     code, output = _refresh(capsys)
     assert code == 0 and "2.0.0rc4" in output.out and not output.err
-    assert calls == [
+    assert calls[0][:2] == [sys.executable, "-c"]
+    install_path = str(checkout.resolve())
+    if checkout.name.endswith("]"):
+        install_path += os.sep
+    assert calls[1:] == [
+        [sys.executable, "-m", "pip", "show", "frameit"],
         [sys.executable, "-m", "pip", "install", "--no-deps", "--no-build-isolation",
-         "-e", str(checkout.resolve())],
+         "-e", install_path],
         [sys.executable, "-m", "pip", "show", "frameit"],
     ]
 
@@ -113,7 +133,7 @@ def test_unverified_install_is_refused(installation, monkeypatch, capsys, kind, 
     assert "activate" in output.err.lower()
 
 
-@pytest.mark.parametrize("failure", ["install", "show", "stale-version"])
+@pytest.mark.parametrize("failure", ["install", "show", "stale-version", "different-checkout"])
 def test_refresh_does_not_report_success_on_pip_failure(
         installation, monkeypatch, capsys, failure):
     checkout, site_packages = installation
@@ -121,16 +141,48 @@ def test_refresh_does_not_report_success_on_pip_failure(
     steps = []
 
     def pip(args, **kwargs):
+        if args[1] == "-c":
+            return subprocess.CompletedProcess(args, 0, stdout=json.dumps([str(site_packages)]))
         step = args[3]
         steps.append(step)
-        if step == failure:
+        if step == failure and steps != ["show"]:
             raise subprocess.CalledProcessError(1, args)
-        return subprocess.CompletedProcess(args, 0, stdout="Name: frameit\nVersion: 2.0.0rc2\n")
+        if failure == "different-checkout" and len(steps) == 3:
+            output = _show("2.0.0rc4", site_packages, checkout.with_name("other"))
+        else:
+            output = _show("2.0.0rc2", site_packages, checkout)
+        return subprocess.CompletedProcess(args, 0, stdout=output)
 
     monkeypatch.setattr(subprocess, "run", pip)
     code, output = _refresh(capsys)
     assert code == 1 and not output.out
     assert ("pip install" if failure == "install" else "pip show") in output.err
-    assert steps == (["install"] if failure == "install" else ["install", "show"])
+    assert steps == (["show", "install"] if failure == "install" else ["show", "install", "show"])
     if failure == "stale-version":
         assert "2.0.0rc2" in output.err and "2.0.0rc4" in output.err
+
+
+@pytest.mark.parametrize("different", ["child-site", "pip-location", "pip-checkout"])
+def test_refresh_will_not_install_into_a_different_environment_or_checkout(
+        installation, monkeypatch, capsys, different):
+    checkout, site_packages = installation
+    _install_metadata(site_packages, "2.0.0rc2", checkout)
+    other_site = site_packages.with_name("other-site")
+    calls = []
+
+    def pip(args, **kwargs):
+        if args[1] == "-c":
+            calls.append("python")
+            paths = [str(other_site if different == "child-site" else site_packages)]
+            return subprocess.CompletedProcess(args, 0, stdout=json.dumps(paths))
+        calls.append(args[3])
+        if args[3] == "install":
+            pytest.fail("pip tried to install after a conflicting check")
+        location = other_site if different == "pip-location" else site_packages
+        editable = checkout.with_name("other") if different == "pip-checkout" else checkout
+        return subprocess.CompletedProcess(args, 0, stdout=_show("2.0.0rc2", location, editable))
+
+    monkeypatch.setattr(subprocess, "run", pip)
+    code, output = _refresh(capsys)
+    assert code == 1 and "activate" in output.err.lower()
+    assert calls == (["python"] if different == "child-site" else ["python", "show"])

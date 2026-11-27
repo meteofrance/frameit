@@ -50,11 +50,11 @@ To update the pip record, activate the environment for that checkout and run:
    frameit refresh-install
    python -m pip show frameit
 
-The refresh verifies that the active interpreter's pip editable install
-points to the imported checkout. It reinstalls FrameIt using the build tools
-already in that environment and checks the resulting version. It leaves
-dependencies alone. A wheel install uses the version recorded in its package
-metadata; upgrade it through the usual pip installation path.
+The refresh checks that pip selects the imported checkout in the active
+interpreter's environment before reinstalling. It uses the build tools
+already in that environment, leaves dependencies alone, and verifies the
+result with a fresh ``pip show``. A wheel install uses the version recorded in
+its package metadata; upgrade it through the usual pip installation path.
 
 Continue with :doc:`first_run` for a small processing example.
 
